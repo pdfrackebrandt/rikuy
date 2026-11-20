@@ -279,7 +279,30 @@ def sample_spelling(page, w):
     check(f'the sample opens with no spelling errors ({w})', st[1] == 'ok' and st[2] == 0 and 'spelling error' not in st[0], st)
 
 
-PARTS = {'sample_spelling': (sample_spelling, [(1366, False), (390, True)]),
+def pdf_bar(page, w):
+    """On a phone the PDF pane's bar says what TeX made in full and keeps every control whole and
+    under a finger: two rows (what TeX made and Close; the engine, shell escape, Recompile and
+    Download)."""
+    tag = w.replace(' ', '').replace(',', '-')
+    page.evaluate('window.rikuy.togglePdf(true)')
+    try:
+        page.wait_for_function('document.querySelector("#pdf-host canvas, #pdf-host .pdfpage, #pdf-host img") || /could not|error/i.test(document.getElementById("pdf-status").textContent)', timeout=120000)
+    except Exception:
+        pass
+    page.wait_for_timeout(800)
+    g = page.evaluate("""(() => { const W = innerWidth, s = document.getElementById('pdf-status');
+      const box = (id) => { const e = document.getElementById(id), r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.height)]; };
+      return { cut: s.scrollWidth > s.clientWidth + 1, status: s.textContent, W, x: box('pdf-x'), re: box('pdf-re'), dl: box('pdf-dl'), eng: box('pdf-engine'),
+               shell: document.querySelector('.pdf-shell').innerText.trim(), bar: Math.round(document.querySelector('.pdf-bar').getBoundingClientRect().height) }; })()""")
+    shot(page, f'pdf-bar-{tag}')
+    check(f'the PDF bar says what TeX made in full ({w})', not g['cut'] and g['status'], g)
+    check(f'Close, the engine, Recompile and Download are whole inside the screen ({w})', all(0 <= g[k][0] and g[k][1] <= g['W'] for k in ('x', 're', 'dl', 'eng')) and g['shell'] in ('Shell escape', 'Shell'), g)
+    check(f'in two rows ({w})', g['bar'] <= 2 * 44 + 16, g)
+    check(f'and 44 px under a finger ({w})', all(g[k][2] >= 44 for k in ('x', 're', 'dl', 'eng')), g)
+
+
+PARTS = {'pdf_bar': (pdf_bar, [(390, False), (360, True)]),
+         'sample_spelling': (sample_spelling, [(1366, False), (390, True)]),
          'doc_name': (doc_name, [(390, False), (360, True), (700, False), (1366, True)]),
          'panes': (panes, [(1366, False), (1920, True), (390, False)]),
          'status_bar': (status_bar, None),

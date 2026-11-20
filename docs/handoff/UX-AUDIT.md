@@ -131,7 +131,10 @@ second) is the one number a Word user would call slow; it is the model's and the
 
 ### 9. Smaller ones (LOW)
 
-- The PDF pane's bar on a phone cuts its words: "pdfLaTe…", "Auto: pdfL", "Shell".
+- The PDF pane's bar on a phone cuts its words: "pdfLaTe…", "Auto: pdfL", "Shell", and its
+  buttons were 20 to 26 px tall. **Fixed** ("Lay the PDF bar out in two rows on a phone"): what
+  TeX made and Close, then the engine, shell escape, Recompile and Download, all 44 px under a
+  finger; `test/ux.py pdf_bar`.
 - Dialogs open beside their ribbon group, not centred as Word's; they are not modal, on purpose
   (the page stays in reach).
 - On a phone the Spelling pane stays open when Esc is pressed with the focus on the page.

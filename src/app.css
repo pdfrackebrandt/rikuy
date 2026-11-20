@@ -928,11 +928,28 @@ body.dropping .dropzone { display: grid; }
   /* one line on a 360px phone: there it wrapped to two and took the height of a line of text */
   #status { gap: 10px; padding: 0 8px; white-space: nowrap; overflow-x: auto; scrollbar-width: none; }
   #status::-webkit-scrollbar { display: none; }
-  /* the PDF bar's close button stays on the screen */
-  .pdf-bar { padding-left: 8px; gap: 2px; }
-  .pdf-status { flex: 0 10 auto; }
-  .pdf-engine { max-width: 86px; }
-  .pdf-bar .btn.sm { padding: 0 6px; }
+  /* the PDF bar in two rows: what TeX made and the close button, then the engine, shell escape,
+     Recompile and Download (in one row each of them was cut to its first letters) */
+  .pdf-bar { flex-wrap: wrap; padding: 4px 4px 4px 10px; gap: 2px 4px; }
+  .pdf-bar > .grow { display: none; }
+  .pdf-status { order: 0; flex: 1 1 calc(100% - 56px); }
+  #pdf-x { order: 1; }
+  .pdf-engine, .pdf-shell, #pdf-re, #pdf-dl { order: 2; }
+  .pdf-engine { max-width: none; }
+  .pdf-shell { font-size: 12px; gap: 4px; }
+  .pdf-shell::after { content: none; }
+  #pdf-re { margin-left: auto; }
+  .pdf-bar .btn.sm { padding: 0 8px; }
+}
+/* under a finger: 44 px, and on the narrowest phones shell escape's label is "Shell" again, so the
+   second row holds all four */
+@media (max-width: 520px) and (pointer: coarse) {
+  .pdf-bar .btn.sm, #pdf-x, .pdf-engine, .pdf-shell { min-height: 44px; }
+  #pdf-x { min-width: 44px; }
+}
+@media (max-width: 380px) {
+  .pdf-shell { font-size: 0; gap: 0; }
+  .pdf-shell::after { content: 'Shell'; font-size: 11.5px; margin-left: 3px; }
 }
 /* (the name is back on a phone: with Save and Copy source gone from the bar, it fits at 360px) */
 @container (max-width: 119px) { .title-name { display: none; } }
