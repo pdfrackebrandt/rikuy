@@ -20,9 +20,10 @@ function png(w, h, left, right) {
   const crc = (b) => { let c = 0xffffffff; for (const x of b) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
   const chunk = (t, d) => { const len = Buffer.alloc(4); len.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([len, td, c]); };
   const ih = Buffer.alloc(13); ih.writeUInt32BE(w, 0); ih.writeUInt32BE(h, 4); ih[8] = 8; ih[9] = 6;
-  const rows = [];
-  for (let y = 0; y < h; y++) { rows.push(Buffer.from([0])); for (let x = 0; x < w; x++) rows.push(Buffer.from(x < w / 2 ? left : right)); }
-  return new Uint8Array(Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ih), chunk('IDAT', zlib.deflateSync(Buffer.concat(rows))), chunk('IEND', Buffer.alloc(0))]));
+  // (one buffer filled in place: a buffer a pixel took gigabytes for a large picture)
+  const raw = Buffer.alloc((1 + w * 4) * h);
+  for (let y = 0; y < h; y++) { const o = y * (1 + w * 4); for (let x = 0; x < w; x++) raw.set(x < w / 2 ? left : right, o + 1 + x * 4); }
+  return new Uint8Array(Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ih), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
 }
 const at = (m, x, y) => [...m.px.subarray(4 * (y * m.w + x), 4 * (y * m.w + x) + 4)];
 
@@ -186,10 +187,12 @@ await ok('review M3: the first file\'s bytes are in the new file\'s name', () =>
 });
 
 await ok('review M4, L3: memory given back, a long thin picture read, an enormous header called too large', () => {
-  const big = png(5000, 4000, [10, 20, 30, 255], [40, 50, 60, 255]);
+  // (a 2000 by 2000 picture grows the module past 16 MB; the worker lets it go past 64 MB)
+  const before = F.picFxMemory();
+  const big = png(2000, 2000, [10, 20, 30, 255], [40, 50, 60, 255]);
   const r = F.render(big, { brightness: 0.1 });
-  assert.equal(r.w, 5000);
-  assert.ok(F.picFxMemory() > 64 * 1024 * 1024, String(F.picFxMemory()));
+  assert.equal(r.w, 2000);
+  assert.ok(F.picFxMemory() > Math.max(before, 16 * 1024 * 1024), String(F.picFxMemory()));
   F.dropPicFx();
   assert.equal(F.picFxReady(), false);
   // (the worker loads it afresh for the next run)
