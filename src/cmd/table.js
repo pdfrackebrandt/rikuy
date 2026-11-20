@@ -242,7 +242,7 @@ register(
     tab: 'table-design', group: 'borders', order: 40, kind: 'toggle', icon: ICON.painter, label: 'Border Painter', synonyms: ['Draw border', 'Paint borders'],
     when: (app, at) => !!app.tableDraw || inTable(app, at), on: (app) => app.tableDraw === 'paint', run: (app) => app.tableDrawMode('paint') }),
   T('borders-shading', 'Borders and Shading', { title: 'Borders and Shading…: the borders of the selected cells or the table (a setting, the style, colour and width, each edge on its own) and their shading',
-    synonyms: ['Borders and Shading dialog', 'Border options', 'Table borders dialog'], menu: { table: 65 }, run: (app, args) => (args ? app.tableBordersShading(args) : bordersDialog(app)) }),
+    synonyms: ['Borders and Shading dialog', 'Border options', 'Table borders dialog'], run: (app, args) => (args ? app.tableBordersShading(args) : bordersDialog(app)) }),
 
   // Table Layout: View Gridlines (the page only), Draw Table and Eraser (cells split, merged, and
   // their borders drawn or taken off where pressed), Formula and Update Formulas
@@ -254,10 +254,10 @@ register(
   T('table-eraser', 'Eraser', { title: 'Eraser: press a cell\'s edge to take its rule or bar off, or, where it has none, to merge the two cells it parts; Escape stops', tab: 'table-layout', group: 'draw', order: 20,
     kind: 'toggle', icon: ICON.eraser, label: 'Eraser', synonyms: ['Erase lines', 'Merge by erasing', 'Remove border'], when: (app, at) => !!app.tableDraw || inTable(app, at), on: (app) => app.tableDraw === 'eraser', run: (app) => app.tableDrawMode('eraser') }),
   T('table-formula', 'Formula', { title: 'Formula…: Word\'s =SUM(ABOVE), AVERAGE, COUNT, MIN, MAX, PRODUCT, cells such as B2, computed by Rikuy now and written as the value; the formula kept on a "% formula" line before the table for Update Formulas',
-    tab: 'table-layout', group: 'data', order: 40, icon: ICON.formula, label: 'Formula', synonyms: ['Sum', 'SUM(ABOVE)', 'Total', 'Average', 'Calculate', 'fx'], menu: { table: 75 },
+    tab: 'table-layout', group: 'data', order: 40, icon: ICON.formula, label: 'Formula', synonyms: ['Sum', 'SUM(ABOVE)', 'Total', 'Average', 'Calculate', 'fx'],
     run: (app, args) => (args && (args.text || args.remove) ? app.tableFormula(args) : formulaDialog(app)) }),
   T('update-formulas', 'Update Formulas', { title: 'Update Formulas: every formula of the table computed again from its cells now (Word\'s Update Field)', tab: 'table-layout', group: 'data', order: 50, icon: ICON.update,
-    synonyms: ['Update field', 'Recalculate', 'Recompute', 'F9'], menu: { table: 76 }, when: (app, at) => { const h = here(app, at); return !!h && X.formulasOf(h.src, h.T).length > 0; },
+    synonyms: ['Update field', 'Recalculate', 'Recompute', 'F9'], when: (app, at) => { const h = here(app, at); return !!h && X.formulasOf(h.src, h.T).length > 0; },
     whyNot: () => 'This table has no formula: Table Layout › Formula writes one.', run: (app) => app.tableUpdateFormulas() })
 );
 

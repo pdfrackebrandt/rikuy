@@ -24,7 +24,7 @@ export const LAYOUT = {
     links: ['link L I', 'bookmark L K', 'cross-reference L RF'],
     comments: ['comment-new L L'],
     headfoot: ['header L H', 'footer L O', 'page-number L NU'],
-    text: ['insert-textbox L X', 'quick-parts S Q', 'insert-dropcap S RC', 'form-fields S FF'],
+    text: ['insert-textbox L X', 'quick-parts S Q', 'insert-dropcap S RC', 'form-fields S FF', '|', 'signature-line S SG', 'date-time S D', 'object S J'],
     symbols: ['equation-insert L E', 'symbol L U']
   },
   design: {
@@ -39,12 +39,12 @@ export const LAYOUT = {
     document: ['doc-class S DC', 'base-size S DS', 'two-sided S DT']
   },
   references: {
-    toc: ['table-of-contents L T', 'toc-add-text S A'],
+    toc: ['table-of-contents L T', 'toc-add-text S A', 'update-toc S U'],
     footnotes: ['footnote L F Insert Footnote', 'endnote S E', 'next-footnote S O', 'show-notes S H', 'footnote-options I -'],
     citations: ['citation L C Insert Citation', 'manage-sources S M', 'citation-style S L', 'bibliography S B', 'add-source S W'],
-    captions: ['insert-caption L P', 'table-of-figures S G', 'cross-reference S RF'],
-    index: ['mark-entry L N', 'insert-index S X'],
-    authorities: ['mark-citation L I', 'insert-toa S S']
+    captions: ['insert-caption L P', 'table-of-figures S G', 'update-tof S V Update Table', 'cross-reference S RF'],
+    index: ['mark-entry L N', 'insert-index S X', 'update-index S D'],
+    authorities: ['mark-citation L I', 'insert-toa S S', 'update-toa S Y Update Table']
   },
   review: {
     proofing: ['spelling L S', 'thesaurus S E', 'word-count S W Word Count'],
@@ -60,10 +60,11 @@ export const LAYOUT = {
   view: {
     views: ['read-mode L F', 'print-layout L P', 'web-layout L L', 'latex-mode L X', 'outline-view S U', 'draft S E'],
     immersive: ['focus L O'],
-    movement: ['side-to-side L 7'],
+    movement: ['page-vertical L V', 'side-to-side L 7'],
     mode: ['dark-page L D'],
-    show: ['ruler S R', 'navigation-pane S K', 'show-latex S SL', 'show-marks S SM Formatting marks'],
-    zoom: ['zoom-100 L J', 'one-page S 1', 'multiple-pages S M', 'page-width S I']
+    show: ['ruler S R', 'view-gridlines-page S G', 'navigation-pane S K', 'show-latex S SL', 'show-marks S SM Formatting marks'],
+    zoom: ['zoom-dialog L Q Zoom', 'zoom-100 L J', 'one-page S 1', 'multiple-pages S M', 'page-width S I'],
+    window: ['split-view L B']
   },
   help: {
     help: ['help-how L H', 'help-report L C', 'help-tour L T', 'help-new L W', 'help-keys L K', 'help-graphs L G', 'help-agents L A', 'ask-grok L Q']
@@ -93,7 +94,7 @@ export const LAYOUT = {
   },
   equation: {
     tools: ['eq-gallery L E', 'eq-numbered S N', 'eq-display S D'],
-    conversions: ['show-latex L L'],
+    conversions: ['eq-convert L CV', 'eq-unicode S K', 'eq-latex-format S X LaTeX', 'eq-normal-text S T', 'show-latex L L'],
     symbols: ['eq-sym-basic S S1 Basic math', 'eq-sym-greek S S2 Greek letters', 'eq-sym-ops S S3 Operators', 'eq-sym-arrows S S4 Arrows', 'eq-sym-relations S S5 Relations',
       'eq-sym-sets S S6 Sets and logic', 'eq-sym-geometry S S7 Geometry'],
     structures: ['eq-fraction L F Fraction', 'eq-script L SC Script', 'eq-radical L R Radical', 'eq-integral L I Integral', 'eq-largeop L O Large Operator', 'eq-bracket L B Bracket',
@@ -101,8 +102,10 @@ export const LAYOUT = {
   },
   headfoot: {
     headfoot: ['header L H', 'footer L O', 'page-number L NU'],
-    insert: ['hf-date L D', 'hf-docinfo L I', 'hf-pagenum L NH'],
-    options: ['hf-first S A', 'hf-oddeven S V', 'hf-position S P'],
+    insert: ['hf-date L D', 'hf-docinfo L I', 'hf-quick-parts L Q Quick Parts', 'hf-picture L L Pictures', 'hf-pagenum L NH'],
+    navigation: ['hf-goto-header L GH Go to Header', 'hf-goto-footer L GF Go to Footer', 'hf-prev S R Previous', 'hf-next S X Next'],
+    options: ['hf-first S A', 'hf-oddeven S V', 'hf-show-text S T Show Document Text', 'hf-position S P'],
+    position: ['hf-header-top S W', 'hf-footer-bottom S FB'],
     close: ['hf-close L C Close Header and Footer']
   }
 };
@@ -131,6 +134,7 @@ export const LAUNCH = {
   'references/footnotes': ['footnote-options', 'Footnote and Endnote…', 'Q'],
   'table-layout/size': ['table-properties', 'Table Properties…', 'I'],
   'table-design/borders': ['borders-shading', 'Borders and Shading…', 'D'],
+  'equation/tools': ['eq-options', 'Equation Options…', 'Q'],
   'picture-format/size': ['picture-size', 'Size and Position…', 'SL']
 };
 

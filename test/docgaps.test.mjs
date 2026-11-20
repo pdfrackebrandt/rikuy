@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import * as F from '../src/formula.js';
 import * as X from '../src/table.js';
 import { buildModel } from '../src/model.js';
+import * as U from '../src/unimath.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -146,6 +147,23 @@ ok('Pen Style Double: \\hline\\hline and ||, single again gives the bytes of a s
   const M = buildModel({ files: new Map([['main.tex', '\\documentclass{article}\n\\begin{document}\n' + d + '\n\\end{document}\n']]), main: 'main.tex' });
   const tb = M.blocks.flatMap((b) => b.items || []).flatMap((it) => [it, ...(it.parts || [])]).find((x) => x.type === 'tabular');
   assert.ok(tb && tb.rows[0].rules.length === 2 && tb.cols[0].vl === 2 && tb.cols[1].vr === 2, JSON.stringify(tb && { r: tb.rows[0].rules, c: tb.cols }));
+});
+
+// ---- Word's linear format (UnicodeMath) and LaTeX ---------------------------------------------------------
+ok('LaTeX to Word\'s linear format and back: fractions, scripts, roots, big operators, Greek, functions, matrices, text', () => {
+  const cases = [['\\frac{a+b}{c}', '(a+b)/c'], ['x^{2}+y^{2}=z^{2}', 'x^2+y^2=z^2'], ['\\sqrt{x+1}', '√(x+1)'], ['\\sqrt[3]{x}', '√(3&x)'], ['\\sum_{i=1}^{n} i^{2}', '∑_(i=1)^n i^2'],
+    ['\\alpha \\le \\beta', 'α≤β'], ['\\int_{0}^{\\infty} e^{-x}dx', '∫_0^∞ e^(-x)dx'], ['\\sin x + \\cos^{2} y', 'sin x+cos^2y'], ['\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}', '(■(a&b@c&d))'],
+    ['\\text{if } x > 0', '"if "x>0'], ['\\frac{1}{2}', '1/2'], ['\\lim_{x \\to 0} \\frac{\\sin x}{x}', 'lim_(x→0)(sin x)/x']];
+  const norm = (t) => t.replace(/\s+/g, '');
+  for (const [tex, linear] of cases) {
+    assert.equal(U.toLinear(tex), linear, tex);
+    assert.equal(norm(U.fromLinear(linear)), norm(tex), linear);
+  }
+  // typed as Word types it
+  assert.equal(U.fromLinear('a/b+c'), 'a/b+c'.replace('a/b', '\\frac{a}{b}'));
+  assert.equal(U.fromLinear('e^(iπ)+1=0'), 'e^{i\\pi}+1=0');
+  assert.equal(U.fromLinear('[■(1&0@0&1)]'), '\\begin{bmatrix}1 & 0 \\\\ 0 & 1\\end{bmatrix}');
+  assert.equal(U.fromLinear('x_1, …, x_n'), 'x_{1},\\ldots,x_{n}');
 });
 
 console.log('docgaps: ' + n + ' passed');
