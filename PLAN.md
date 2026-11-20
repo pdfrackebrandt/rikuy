@@ -3323,7 +3323,21 @@ Tests:
     edits equal, its fast path share check failing on main (4063ad1) the same way (334 of 7600,
     the floor 380); `page.py long_document` 6 of 6 (11 ms for every command at a look at the
     caret); `browser.py` 199 of 199. No LaTeX-examples clone on this machine: the corpus runs not
-    run.
+    run. *B0's hostile review* (no go until F1): F1, an open undo step kept the untouched region of
+    a file that was opened over it between two keystrokes, and Ctrl+Z wrote a text that never was:
+    openFiles closes the step, and the step checks itself (`stepStart`, `stepJoin` in
+    src/editor.js: a file found changed between its commits is compared from the ends); F2, the
+    .bib cache let a closed project's entries go never (38 MB for 8 projects): it keeps what the
+    last build asked for (6 MB); F3, the kept entries are frozen; and preamble.js's
+    `stripComments` no longer says a stretch twice past 400,000 characters (a bug from before
+    B0). The long incremental run's fast path share check, failing on main too, was the streams'
+    luck, not a regression (every paragraph of every repository document takes the fast path as
+    often as with f5bb84d's sources): its floor is now 1 in 40, and an exact check per paragraph
+    guards the fast path. Evidence: the reviewer's repro "consistent" (with and without the
+    step's closing); edge.test.mjs 10691 of 10691 with 1145 outside changes (524 differ without
+    the check); model.test.mjs's .bib checks; scan.test.mjs 8; incremental 35 of 35 and with
+    `INCR_FULL=1` 35 of 35; `npm test` green but V4 (flaky, 2 of 3 alone); `history.py` 40 of 40,
+    `browser.py` 199 of 199, `page.py long_document` 6 of 6.
 ## Rules
 
 - No status commits ("Note ...", "Record ...") and no log in this file. One commit per
