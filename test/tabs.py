@@ -591,12 +591,23 @@ def word_layout(page):
     check('every tab is as tall as Home (%d px): the page does not jump when a tab opens' % home, all(h == home for h in hs.values()), (home, hs))
     # a large button's name over two lines, as Word breaks it; a menu's arrow after the name
     page.evaluate("rikuy.selectTab('references')"); page.wait_for_timeout(150)
-    toc = page.evaluate("[...document.querySelectorAll('#rc-table-of-contents .rb-ln')].map((x) => [x.textContent, Math.round(x.getBoundingClientRect().top)])")
-    check('References: "Table of Contents" over two lines under its icon, "Table of" above "Contents"; its accessible name whole', [x[0] for x in toc] == ['Table of', 'Contents'] and toc[1][1] > toc[0][1] and page.get_by_role('button', name='Table of Contents', exact=True).count() == 1, toc)
+    toc = page.evaluate("[...document.querySelectorAll('#rc-table-of-contents-x .rb-ln')].map((x) => [x.textContent, Math.round(x.getBoundingClientRect().top)])")
+    icon = page.evaluate("[document.querySelector('#rc-table-of-contents svg').getBoundingClientRect().top, document.querySelector('#rp-references [data-cmd=footnote] svg').getBoundingClientRect().top]")
+    check('References: Table of Contents as Word\'s large split button, its icon as high as Footnote\'s, "Table of" above "Contents" in the part that opens its menu; its accessible name whole',
+          [x[0] for x in toc] == ['Table of', 'Contents'] and toc[1][1] > toc[0][1] and abs(icon[0] - icon[1]) < 1 and page.get_by_role('button', name='Table of Contents', exact=True).count() == 1, (toc, icon))
     # Word's check boxes, still buttons with their state
     page.evaluate("rikuy.selectTab('view')"); page.wait_for_timeout(150)
     box = page.evaluate("(() => { const b = document.getElementById('rw-ruler') || document.querySelector('#rp-view [data-cmd=ruler]'); const s = getComputedStyle(b, '::before'); return [b.getAttribute('aria-pressed') !== null, s.width, getComputedStyle(b.querySelector('svg')).display]; })()")
     check('View › Show: Ruler drawn as Word\'s check box, a toggle button still', box[0] and box[1] == '13px' and box[2] == 'none', box)
+    # the arrows in the grid: down a column, across a row
+    page.evaluate("rikuy.selectTab('review')"); page.wait_for_timeout(150)
+    page.focus('#rc-thesaurus' if page.locator('#rc-thesaurus').count() else '[data-cmd=thesaurus]')
+    ids = []
+    for k in ('ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'ArrowLeft'):
+        page.keyboard.press(k); page.wait_for_timeout(60)
+        ids.append(page.evaluate('document.activeElement.dataset.cmd'))
+    check('in Word\'s grid the arrows move as the eye does: Thesaurus, down to Word Count, up again, right to Read Aloud (the next group), left to Thesaurus, left to Spelling', ids == ['word-count', 'thesaurus', 'read-aloud', 'thesaurus', 'spelling'], ids)
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
     # narrower: the steps before any group folds
     page.set_viewport_size({'width': 1100, 'height': 900}); page.wait_for_timeout(300)
     r = page.evaluate(LAID, 'review')

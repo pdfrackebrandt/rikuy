@@ -513,14 +513,58 @@ export function installRibbon(app) {
     if (e.key === 'Escape' && e.target.closest('button')) { e.preventDefault(); app.ribbonBack(); return; }
     // a menu button opens its menu with the down arrow too
     if (e.key === 'ArrowDown' && e.target.matches('.rb-gbtn, [data-cmd][aria-haspopup]')) { e.preventDefault(); e.target.click(); return; }
-    if (!/^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key) || e.altKey || e.ctrlKey || e.metaKey) return;
+    // (a split button's arrow opened its menu on the down arrow already)
+    if (!/^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Home|End)$/.test(e.key) || e.altKey || e.ctrlKey || e.metaKey || e.defaultPrevented) return;
     // in a box the keys move in its text; past its first or last character they go on to the controls beside it
     const t = e.target;
-    if (t.matches && t.matches('input') && (/^(Home|End)$/.test(e.key) || t.selectionStart !== t.selectionEnd || (e.key === 'ArrowLeft' ? t.selectionStart > 0 : t.selectionEnd < t.value.length))) return;
+    if (t.matches && t.matches('input') && (/^(Home|End|ArrowUp|ArrowDown)$/.test(e.key) || t.selectionStart !== t.selectionEnd || (e.key === 'ArrowLeft' ? t.selectionStart > 0 : t.selectionEnd < t.value.length))) return;
     const all = app.ribbonRove().filter((x) => !isOff(x)), i = all.indexOf(document.activeElement);
     if (i < 0) return;
+    // In Word's grid (a laid out group, a mouse, 900 px and wider) the arrows move as the eye does:
+    // up and down a column, left and right to the control beside it in its row; past the group's
+    // edge, to the next group's first control or the last group's last
+    const grp = t.closest && t.closest('.rb-grp.lay:not(.folded)');
+    const grid = grp && wideLay() && /^Arrow/.test(e.key);
+    if (/^(ArrowUp|ArrowDown)$/.test(e.key) && !grid) return;
     e.preventDefault();
-    const to = all[e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + all.length) % all.length];
+    let to = null;
+    if (grid) {
+      const mine = all.filter((x) => grp.contains(x)), r = t.getBoundingClientRect(), cy = (r.top + r.bottom) / 2;
+      const over = (a, b, lo, hi) => Math.min(a[hi], b[hi]) - Math.max(a[lo], b[lo]) > 2;
+      if (/^(ArrowUp|ArrowDown)$/.test(e.key)) {
+        const down = e.key === 'ArrowDown';
+        let best = Infinity;
+        for (const x of mine) {
+          const q = x.getBoundingClientRect(), gap = down ? q.top - r.bottom : r.top - q.bottom;
+          if (x !== t && gap > -3 && over(q, r, 'left', 'right') && gap < best) { best = gap; to = x; }
+        }
+        if (!to) return;
+      } else {
+        const right = e.key === 'ArrowRight';
+        // (one beside it in its row first, the nearest; then the nearest at all. Columns line up on
+        // their left edges: a column's buttons are as wide as their names)
+        const near = (xs) => {
+          let best = null, pick = null;
+          for (const x of xs) {
+            const q = x.getBoundingClientRect(), gap = right ? q.left - r.left : r.left - q.left;
+            if (x === t || gap < 3) continue;
+            const row = over(q, r, 'top', 'bottom');
+            const score = [row ? 0 : 1, gap + (row ? 0 : Math.abs((q.top + q.bottom) / 2 - cy)), q.top];
+            if (!best || score[0] < best[0] || (score[0] === best[0] && (score[1] < best[1] - 0.5 || (Math.abs(score[1] - best[1]) <= 0.5 && score[2] < best[2])))) { best = score; pick = x; }
+          }
+          return pick;
+        };
+        to = near(mine);
+        if (!to) {
+          // the next group's control beside it (its first or last where that group is no grid)
+          const first = all.indexOf(mine[0]), last = all.indexOf(mine[mine.length - 1]);
+          to = right ? all[(last + 1) % all.length] : all[(first - 1 + all.length) % all.length];
+          const g2 = to.closest('.rb-grp.lay:not(.folded)');
+          if (g2 && g2 !== grp) to = near(all.filter((x) => g2.contains(x))) || to;
+        }
+      }
+    }
+    if (!to) to = all[e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + all.length) % all.length];
     app.ribbonRove(to);
     to.focus();
   });
