@@ -773,7 +773,30 @@ def selpane(page):
     page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it")', timeout=30000); page.wait_for_timeout(500)
     load_doc(page, TWO_D); page.wait_for_timeout(600)
     check('M7: after a reload the circle is hidden again, the rectangle shown', page.evaluate(vis) == ['visible', 'hidden'], page.evaluate(vis))
+    # review N7: the hidden one formatted (selected through the pane) or renamed stays hidden
+    run_cmd(page, 'selection-pane'); page.wait_for_timeout(200)
+    page.get_by_role('button', name='Drawing 2, drawing').click(); page.wait_for_timeout(300)
+    run_cmd(page, 'shape-fill', {'color': 'green!40'}); page.wait_for_timeout(400)
+    check('N7: Shape Fill on the hidden circle, selected through the pane: written, and it stays hidden', 'fill=green!40] (0,0) circle (1)' in src(page) and page.evaluate(vis) == ['visible', 'hidden'], (page.evaluate(vis), src(page)[-260:]))
+    page.keyboard.press('Escape')
+    load_doc(page, D); page.wait_for_timeout(400)
+    run_cmd(page, 'selection-pane'); page.wait_for_timeout(200)
+    page.get_by_role('button', name='Show A box').click(); page.wait_for_timeout(200)
+    fig_vis = "getComputedStyle(document.querySelector('#pages svg.tz').closest('.raw')).visibility"
+    page.get_by_role('textbox', name='Name of A box').fill('fig:box'); page.get_by_role('textbox', name='Name of A box').press('Enter'); page.wait_for_timeout(400)
+    check('N7: the hidden figure renamed (fig:a to fig:box) stays hidden', 'fig:box' in src(page) and page.evaluate(fig_vis) == 'hidden' and page.evaluate("document.querySelector('[aria-label=\"Show A box\"]').getAttribute('aria-pressed')") == 'false', page.evaluate(fig_vis))
+    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it")', timeout=30000); page.wait_for_timeout(500)
+    load_doc(page, D.replace('fig:a', 'fig:box')); page.wait_for_timeout(600)
+    check('N7: and after a reload', page.evaluate(fig_vis) == 'hidden', page.evaluate(fig_vis))
     page.evaluate('() => { localStorage.removeItem("galley.selhidden.v1"); window.rikuy.selHiddenFor = null; window.rikuy.selHidden.clear(); window.rikuy.selApplyHidden(); }')
+    # review N6: a rename that cannot follow every place (a reference in verbatim) says so
+    V = D.replace('End words.', 'End words.\n\\begin{verbatim}\n\\ref{fig:a}\n\\end{verbatim}\n')
+    load_doc(page, V); page.wait_for_timeout(400)
+    run_cmd(page, 'selection-pane'); page.wait_for_timeout(200)
+    page.get_by_role('textbox', name='Name of A box').fill('fig:box'); page.get_by_role('textbox', name='Name of A box').press('Enter'); page.wait_for_timeout(400)
+    st = page.evaluate("document.querySelector('#sel-pane .fr-st').textContent")
+    check('N6: renamed, the verbatim copy left, and the pane says so: ' + st, src(page).count('fig:box') == 2 and '\\begin{verbatim}\n\\ref{fig:a}' in src(page) and '1 more place still names fig:a' in st, (st, src(page)[-200:]))
+    page.keyboard.press('Escape')
 
 
 def run():

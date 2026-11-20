@@ -65,4 +65,29 @@ ok('review M6: \\crefrange\'s second key, \\hyperref[..], \\subref, fancyref; no
   assert.equal(apply(f, L.renameLabel(f, 'eq:z', 'eq:w')).get('m.tex'), T.replace(/eq:z/g, 'eq:w'));
 });
 
+ok('review N6: a reference in a tikzpicture, in an \\input file of any name, through the document\'s own \\figref; what is left said; a listing\'s label= is a name', () => {
+  const F = new Map([
+    ['main.tex', '\\documentclass{article}\n\\newcommand{\\figref}[1]{Figure~\\ref{#1}}\n\\newcommand{\\see}[2][see]{#1 \\autoref{#2}}\n\\def\\Fig#1{Fig.~\\ref{#1}}\n\\begin{document}\n\\input{chap1}\n\\begin{figure}\\caption{A}\\label{fig:a}\\end{figure}\n'
+      + 'See \\figref{fig:a}, \\see[look at]{fig:a}, \\Fig{fig:a}.\n\\begin{tikzpicture}\\node {see \\ref{fig:a}};\\end{tikzpicture}\n\\begin{align}x\\label{eq:a}\\text{ by \\cref{fig:a}}\\end{align}\n\\input{plot.tikz}\n\\end{document}\n'],
+    ['chap1.tex', 'In chapter one, \\ref{fig:a}, and \\begin{lstlisting}\n\\ref{fig:a}\n\\end{lstlisting} and \\footnote{see \\Cref{fig:a}}. % \\ref{fig:a}\n'],
+    ['plot.tikz', '\\begin{tikzpicture}\\node {\\ref{fig:a}};\\end{tikzpicture}'],
+    ['data.csv', 'fig:a,1\n']]);
+  const E = L.renameLabel(F, 'fig:a', 'fig:b');
+  const G = apply(F, E);
+  assert.equal((G.get('main.tex').match(/fig:a/g) || []).length, 0, G.get('main.tex'));
+  assert.ok(G.get('main.tex').includes('\\figref{fig:b}') && G.get('main.tex').includes('\\see[look at]{fig:b}') && G.get('main.tex').includes('\\Fig{fig:b}') && G.get('main.tex').includes('\\node {see \\ref{fig:b}}'));
+  assert.equal(G.get('plot.tikz'), '\\begin{tikzpicture}\\node {\\ref{fig:b}};\\end{tikzpicture}');
+  assert.equal(G.get('data.csv'), 'fig:a,1\n');
+  // the listing's text and the comment stay; the listing is said to still name it
+  assert.equal(G.get('chap1.tex'), 'In chapter one, \\ref{fig:b}, and \\begin{lstlisting}\n\\ref{fig:a}\n\\end{lstlisting} and \\footnote{see \\Cref{fig:b}}. % \\ref{fig:a}\n');
+  assert.equal(E.left, 1); assert.deepEqual(E.leftIn, ['chap1.tex']);
+  // and back, byte for byte
+  const H = apply(G, L.renameLabel(G, 'fig:b', 'fig:a'));
+  for (const [f, t] of F) assert.equal(H.get(f), t, f);
+  // a listing's label= is a name taken, renamed with its references
+  const lst = new Map([['m.tex', '\\begin{lstlisting}[caption=Code, label=lst:x]\nx\n\\end{lstlisting}\nSee \\ref{lst:x}.\n\\label{fig:a}']]);
+  assert.match(L.renameLabel(lst, 'fig:a', 'lst:x').error, /taken/);
+  assert.equal(apply(lst, L.renameLabel(lst, 'lst:x', 'lst:y')).get('m.tex'), lst.get('m.tex').replace(/lst:x/g, 'lst:y'));
+});
+
 console.log('objlist: ' + n + ' groups passed');

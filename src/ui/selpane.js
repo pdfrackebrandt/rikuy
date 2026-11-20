@@ -136,6 +136,8 @@ export const methods = {
     if (!this.selHidden || !this.selHidden.size) return;
     const items = this.selItems(), K = keysOf(this, items);
     items.forEach((it, i) => { if (this.selHidden.has(K[i])) for (const el of this.selElements(it)) el.classList.add('sel-hidden'); });
+    const list = items.map((x, i) => ({ key: K[i], f: x.f, s: x.s, e: x.e, kind: x.kind })).filter((h) => this.selHidden.has(h.key));
+    this.selHiddenAt = { list, size: this.selHidden.size, src: new Map(list.map((h) => [h.f, this.src(h.f)])) };
   },
   selGo(it) {
     const els = this.selElements(it);
@@ -158,6 +160,13 @@ export const methods = {
       this.closeGroup();
       this.commit(E, null, 'label');
       this.closeGroup();
+      // (what still names the old key where Rikuy could not follow it: said, never left silent)
+      if (E.left) {
+        const msg = 'Renamed ' + it.label.key + ' to ' + to + '. ' + E.left + ' more place' + (E.left > 1 ? 's' : '') + ' still name' + (E.left > 1 ? '' : 's') + ' ' + it.label.key + ' (' + E.leftIn.join(', ') + '): in verbatim or a command Rikuy cannot follow. Change ' + (E.left > 1 ? 'them' : 'it') + ' by hand if ' + (E.left > 1 ? 'they refer' : 'it refers') + ' to this ' + KIND_NAMES[it.kind].toLowerCase() + '.';
+        this.selPane.st.textContent = msg;
+        this.toast(msg, 8000);
+        return true;
+      }
     } else {
       const P = labelPlace(src, it);
       if (!P || !to) return false;
@@ -185,4 +194,43 @@ export function installSelPane(app) {
     this.selT = setTimeout(() => this.selPaneRefresh(), 120);
     return r;
   };
+  // (a hidden object an edit changes, formatted, moved or its label renamed, keeps its mark: where
+  // it stands after the step, read again, takes its new key)
+  const commit = app.commit;
+  app.commit = function (edits, ...rest) {
+    if (!this.selHidden || !this.selHidden.size || !Array.isArray(edits) || !edits.length) return commit.call(this, edits, ...rest);
+    const H = hiddenAt(this), before = new Map();
+    const moved = [];
+    for (const h of H) {
+      const es = edits.filter((x) => x.f === h.f);
+      if (!es.some((x) => (x.s < h.e && x.e > h.s) || (x.s === x.e && x.s > h.s && x.s < h.e))) continue;
+      const at = h.s + es.filter((x) => x.e <= h.s && !(x.s === h.s && x.e === h.s)).reduce((a, x) => a + x.t.length - (x.e - x.s), 0);
+      moved.push({ ...h, at });
+      before.set(h.f, this.src(h.f));
+    }
+    const r = commit.call(this, edits, ...rest);
+    if (!moved.length || moved.every((m) => this.src(m.f) === before.get(m.f))) return r;
+    const items = this.selItems(), K = keysOf(this, items);
+    for (const m of moved) {
+      // (the smallest object of its kind round where it began)
+      let best = -1;
+      items.forEach((x, i) => { if (x.f === m.f && x.kind === m.kind && x.s <= m.at && x.e > m.at && (best < 0 || x.e - x.s < items[best].e - items[best].s)) best = i; });
+      if (best >= 0 && K[best] !== m.key) { this.selHidden.delete(m.key); this.selHidden.add(K[best]); }
+    }
+    saveHidden(this);
+    this.selHiddenAt = null;
+    // (the page drawn in the step hid by the keys before it)
+    this.selApplyHidden();
+    this.selPaneRefresh();
+    return r;
+  };
+}
+// The hidden objects with where they stand: [{ key, f, s, e, kind }], read again when a file changed
+function hiddenAt(app) {
+  const C = app.selHiddenAt;
+  if (C && C.list.every((h) => app.src(h.f) === C.src.get(h.f)) && C.size === app.selHidden.size) return C.list;
+  const items = app.selItems(), K = keysOf(app, items);
+  const list = items.map((x, i) => ({ key: K[i], f: x.f, s: x.s, e: x.e, kind: x.kind })).filter((h) => app.selHidden.has(h.key));
+  app.selHiddenAt = { list, size: app.selHidden.size, src: new Map(list.map((h) => [h.f, app.src(h.f)])) };
+  return list;
 }
