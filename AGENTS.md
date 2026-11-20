@@ -168,9 +168,10 @@ Pick the checks by what you touched, and run them before you call it done:
 - The page runs under a strict Content Security Policy (`build/app.mjs` `policy`; `test/serve.py`
   and `browser.py`'s `open_page` serve it, read from `dist/_headers`): scripts only from the page's own
   site and the page's one inline script by its hash, WebAssembly but no eval, `connect-src 'self'`
-  and the Git panel's CORS proxy (`GIT_PROXY` in `src/app.js`; the worker, which shares the policy,
-  can fetch only files next to the page and that proxy). A test whose own servers stand in for
-  hosts passes them to `open_page(connect=[...])` (`test/git.py`). Code that needs `eval`, `Function`, an
+  (the worker, which shares the policy, can fetch only files next to the page; git goes through
+  the site's own proxy, `/git`, a Pages Function: `functions/git/[[path]].js`, `src/gitproxy.js`).
+  A test whose own servers stand in for hosts passes them to `open_page(connect=[...])`;
+  `test/gitproxy_server.mjs` runs the proxy's code locally (`test/git.py`). Code that needs `eval`, `Function`, an
   inline script or an `on*` attribute fails there. Playwright's `wait_for_function` with an
   expression evals it in the page each time it polls; `browser.py` hands every one over as a
   function, so import it before Playwright starts. A live figure runs in its own document

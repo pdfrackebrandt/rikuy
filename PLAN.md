@@ -3249,11 +3249,14 @@ Tests:
     New `test/csp.py`: a whole session with every refusal reported to the server, none (21
     checks, in `tex.yml`). Safari 15 cannot compile on the hosted copy (no `'wasm-unsafe-eval'`).
     Running the tests under the real policy showed that `connect-src 'self' blob:` had refused
-    every git push, pull and clone on the hosted copy: `connect-src` now also names the Git
-    panel's CORS proxy (`GIT_PROXY`, `https://cors.isomorphic-git.org`) and no other host, and
-    the panel's message names it when a remote is refused (`git.py` 46: its servers stand in for
-    the hosts the proxy reaches, and under the policy as it ships a clone through the proxy's
-    address works and one straight to a host is refused). `para.py`, `picture.py`, `refs.py` and
+    every git push, pull and clone on the hosted copy (the Git panel went through a third party's
+    CORS proxy). Git now goes through Rikuy's own proxy on the same site, `/git`, a Cloudflare
+    Pages Function (`functions/git/[[path]].js`, `src/gitproxy.js`): git's smart HTTP alone, to
+    public https hosts by name, the token to that host alone, 32 MiB at most; `connect-src`
+    stays `'self' blob:` (docs/HOSTING.md: what it lets through, what it costs).
+    `test/gitproxy.test.mjs` (9 groups) checks what it lets through; `git.py` runs it locally
+    (`test/gitproxy_server.mjs`): under the policy as it ships, a clone through `/git` works, one
+    straight to a host is refused with a message naming `/git`, and `/git` refuses an IP address. `para.py`, `picture.py`, `refs.py` and
     `styles.py` serve the policy too.
     Under the new policy: `browser.py` 199, `agent.py` 143, `offline.py` 60, `launch.py` 18,
     `engines.py` 44, `word.py` 111, `spell.py` 124, `widgets.py` 62, `insert.py` 224,
