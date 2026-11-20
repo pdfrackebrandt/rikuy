@@ -346,10 +346,12 @@ export class Renderer {
         if (it.depth) { el.classList.add('deep'); el.style.setProperty('--depth', it.depth); }
         // a wrapfigure: its parts as wide as it is (its pictures' \linewidth), until the page wraps
         // text round it (B6); a share of the line, or a length in points
-        const ww = it.wrapW ? cssLength(it.wrapW) : null;
+        // (a width of 0pt is wrapfig's "as wide as what is in it": max-content, measured as drawn)
+        const natural = it.wrapW != null && /^0+(\.0*)?\s*(pt|cm|mm|in|bp|em)?$/.test(String(it.wrapW).trim());
+        const ww = natural ? 'max-content' : it.wrapW ? cssLength(it.wrapW) : null;
         if (ww) { el.classList.add('flt-wrap'); el.style.setProperty('--wrapw', ww); item.wrapSide = it.side || 'r'; }
         const lwWas = this.lineW;
-        if (ww) this.lineW = it.wrapW;
+        if (ww && !natural) this.lineW = it.wrapW;
         for (const p of it.parts) el.appendChild(this.floatPart(p));
         this.lineW = lwWas;
         item.isFloat = it.kind !== 'inline';
@@ -672,6 +674,18 @@ export class Renderer {
       return d;
     }
     if (p.type === 'h') { const d = div('fp'); this.inl(p.inl, d); return d; }
+    if (p.type === 'raw') {
+      // a TikZ picture in a figure: drawn as in the text, selected as there (src/ui/shapes.js)
+      const d = div('fp raw atom al-' + (p.align || 'center'));
+      d.contentEditable = 'false';
+      const whole = p.e - p.s < 20000 ? (this.app.files.get(p.f) || '').slice(p.s, p.e) : '';
+      const pic = whole ? drawRaw(whole) : null;
+      if (pic) { d.classList.add('drawn'); d.appendChild(pic); } else { const h = div('raw-h'); h.textContent = 'tikzpicture'; d.appendChild(h); }
+      const idx = B.atoms.length;
+      B.atoms.push({ kind: 'raw', f: p.f, s: this.rel(p.s), e: this.rel(p.e), is: this.rel(p.is), ie: this.rel(p.ie), name: 'tikzpicture' });
+      d.dataset.a = B.id + '.' + idx;
+      return d;
+    }
     return div('fp');
   }
 
@@ -904,8 +918,10 @@ export class Renderer {
         break;
       }
       case 'smart': {
-        s.appendChild(drawSmart(x.kind, smartItems(x.items || '')));
-        s.title = 'smartdiagram: click to edit its items';
+        s.appendChild(drawSmart(x.kind, smartItems(x.items || ''), document, x.set || ''));
+        s.title = 'SmartArt (smartdiagram): click to select it, double click to edit its items';
+        // (its \smartdiagramset just before it is part of the object: SmartArt Design's colours)
+        rec.ss = this.rel(x.ss != null ? x.ss : x.s); rec.se = this.rel(x.se != null ? x.se : x.e);
         break;
       }
       case 'widget': {
