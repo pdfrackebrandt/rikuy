@@ -296,7 +296,10 @@ export const methods = {
   },
   tableApply(h, r) {
     const f = h.f;
-    const edits = (r.edits || []).map((x) => ({ f, s: x.s, e: x.e, t: x.t }));
+    // (the formula lines follow their cells: renamed where a cell moved, taken off where it went)
+    const fx = r.edits && r.edits.length ? X.formulasAfter(h.src, h.T, r.edits, r.moved) : { edits: [], dropped: [] };
+    const edits = [...(r.edits || []), ...fx.edits].map((x) => ({ f, s: x.s, e: x.e, t: x.t }));
+    if (fx.dropped.length) setTimeout(() => this.toast((fx.dropped.length === 1 ? 'The formula of ' + fx.dropped[0] + ' went' : 'The formulas of ' + fx.dropped.join(', ') + ' went') + ' with its cell.', 6000), 0);
     const pk = this.tablePackages(r.packages || []);
     if (!edits.length && !pk.length) return false;
     const mine = [...edits, ...pk.filter((x) => x.f === f)];
@@ -487,7 +490,9 @@ export const methods = {
     const at = this.ribbonAt(), h = at && this.tableHere(at);
     if (!h) return false;
     const F = X.floatOf(h.src, h.T);
-    const s = F && F.only ? F.s : h.T.s, e = F && F.only ? F.e : h.T.e;
+    // (its formula and alt lines with it: another table put there later would take them)
+    const lines = [...X.formulasOf(h.src, h.T).map((x) => x.s), ...[X.tableAlt(h.src, h.T)].filter(Boolean).map((x) => x.s)];
+    const s = F && F.only ? F.s : Math.min(h.T.s, ...lines), e = F && F.only ? F.e : h.T.e;
     // (the blank line it stood in goes with it)
     let a = s, z = e;
     while (a > 0 && /[ \t]/.test(h.src[a - 1])) a--;
@@ -911,12 +916,13 @@ export const methods = {
         return out;
       }
       const stored = joinFormula(o.text, o.format);
+      if (stored.length > X.FORMULA_MAX) return { error: 'A formula of at most ' + X.FORMULA_MAX + ' characters: this one has ' + stored.length + '.' };
       const v = this.tableCompute(src, T, r, c, stored);
       if (v.error) return v;
       const name = FX.cellName(r, c);
       const out = composeOps(src, T, [
         (s, t) => { const cell = cellAtRC(t, r, c); return cell ? X.setCellValue(s, cell, v.value) : null; },
-        (s, t) => X.setFormula(s, t, name, stored)
+        (s, t) => X.setFormula(s, t, name, stored, v.value)
       ]);
       errs = out.errors;
       return out;
@@ -930,13 +936,19 @@ export const methods = {
     const ok = this.tableOp((src, T) => {
       const Fs = X.formulasOf(src, T);
       if (!Fs.length) return { error: 'This table has no formula: Table Layout › Formula writes one.' };
-      return composeOps(src, T, Fs.map((F) => (s, t) => {
+      // (a cell that holds something else than the value its formula wrote last is left as it is:
+      // its row was moved by hand, or a number typed over it; Word's field would be overwritten)
+      const same = (a, b) => { const x = FX.cellNumber(a), y = FX.cellNumber(b); return a.trim() === b.trim() || (x != null && y != null && Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(x))); };
+      return composeOps(src, T, Fs.flatMap((F) => [(s, t) => {
         const cell = cellAtRC(t, F.r, F.c);
         if (!cell) { errs.push(F.name + ': the table has no such cell now.'); return null; }
+        const now = X.cellText(s, cell);
+        if (F.value != null && now.trim() && !same(now, F.value)) { errs.push(F.name + ' holds ' + now.trim().slice(0, 30) + ', not ' + F.value + ', the value its formula wrote last: Update Formulas left it. Formula in that cell writes the formula there again.'); return null; }
         const v = this.tableCompute(s, t, F.r, F.c, F.text);
         if (v.error) { errs.push(v.error); return null; }
+        F.next = v.value;
         return X.setCellValue(s, cell, v.value);
-      }));
+      }, (s, t) => (F.next != null && F.next !== F.value ? X.setFormula(s, t, F.name, F.text, F.next) : null)]));
     });
     if (errs.length) this.toast(errs[0], 7000);
     else if (ok === false) { /* nothing changed: every value was right */ }
