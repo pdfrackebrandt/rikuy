@@ -87,7 +87,7 @@ const WORD = [
   ['Alt+Shift+O', 'toc-add-text', 'Control+Shift+O'], ['Alt+Shift+X', 'mark-entry', 'Control+Shift+X'], ['Alt+Shift+I', 'mark-citation', 'Control+Shift+I'], ['Ctrl+Shift+F5', 'bookmark'],
   ['Ctrl+Shift+E', 'track-changes'], ['F7', 'spelling'], ['Alt+F7', 'spelling-next'], ['Shift+F7', 'thesaurus'], ['Ctrl+Shift+G', 'word-count'],
   ['Ctrl+Alt+P', 'print-layout'], ['Ctrl+Alt+O', 'outline-view'], ['Ctrl+Alt+N', 'draft'], ['Alt+F9', 'latex-mode'], ['Shift+F9', 'show-latex'], ['Ctrl+F2', 'preview'],
-  ['Ctrl+P', 'print'], ['Ctrl+Shift+F12', 'print'], ['Ctrl+F12', 'open'], ['Shift+F12', 'download-latex'], ['Alt+Shift+F2', 'download-latex'],
+  ['Ctrl+P', 'print'], ['Ctrl+Shift+F12', 'print'], ['Ctrl+F12', 'open'], ['Shift+F12', 'save'], ['Alt+Shift+F2', 'save'], ['F12', 'save-as'],
   ['F1', 'help-how'], ['Shift+F1', 'show-in-source'], ['Ctrl+F1', 'ribbon-collapse', 'Ctrl+Alt+R'], ['Shift+F10', 'context-menu'], ['Alt+Q', 'search', 'Control+Alt+Q'], ['F4', 'repeat'],
   ['Ctrl+F6', 'next-pane'], ['Ctrl+Shift+F6', 'previous-pane'], ['Alt+=', 'insert-equation', 'Control+='],
   ['Alt+Home', 'cell-row-first', 'Control+Home'], ['Alt+End', 'cell-row-last', 'Control+End'], ['Alt+PageUp', 'cell-col-first', 'Control+PageUp'], ['Alt+PageDown', 'cell-col-last', 'Control+PageDown'],
@@ -106,8 +106,10 @@ ok('Word\'s keys: each bound to its command, on Windows and Linux and on a Mac (
   // Word for Mac's own: Cmd+Option+L spelling, Cmd+Option+A a comment, Control+Shift+M indents, Cmd+G finds again
   const M = bindings(true);
   for (const [k, id] of [['Ctrl+Alt+L', 'spelling'], ['Ctrl+Alt+A', 'comment-new'], ['Control+Shift+M', 'paragraph-indent'], ['Ctrl+G', 'find-next'], ['Ctrl+8', 'show-marks']]) assert.ok(M.some((b) => b.id === id && b.chord === k), k);
+  // Save (Ctrl+S) says the document is kept; Save As (F12) and Download LaTeX download
+  assert.ok(command('save').keysElsewhere.includes('Ctrl+S') && !command('download-latex').keysElsewhere && command('save-as').keys.includes('F12'));
   // Word's keys a browser keeps are bound to nothing here
-  for (const k of ['Ctrl+N', 'Ctrl+W', 'Ctrl+T', 'Ctrl+Tab', 'F6', 'F11', 'F12', 'Ctrl+F4']) assert.ok(!bindings(false).some((b) => b.chord === k), k);
+  for (const k of ['Ctrl+N', 'Ctrl+W', 'Ctrl+T', 'Ctrl+Tab', 'F6', 'F11', 'Ctrl+F4']) assert.ok(!bindings(false).some((b) => b.chord === k), k);
 });
 
 ok('the insert list keeps its items and their order', () => {

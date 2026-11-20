@@ -1167,7 +1167,7 @@ class App {
     $('#b-copy').addEventListener('click', () => this.copySource());
     $('#b-share').addEventListener('click', () => this.openSharePanel());
     const qatSave = $('#qat-save');
-    if (qatSave) qatSave.addEventListener('click', () => this.runCommand('download-latex'));
+    if (qatSave) qatSave.addEventListener('click', () => this.runCommand('save'));
     const comments = $('#b-comments');
     if (comments) comments.addEventListener('click', () => this.toggleNav(true, 'changes'));
     $('#guest-send').addEventListener('click', () => this.openSharePanel());
@@ -1272,7 +1272,8 @@ class App {
   onGlobalKey(e) {
     const mod = isMac ? e.metaKey : e.ctrlKey;
     this.plainPaste = !!(mod && e.shiftKey && e.key.toLowerCase() === 'v');
-    if (mod && !e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); this.save(); }
+    // (Ctrl+S is Save as Word's: kept in this browser, said; Save As, F12, downloads: src/cmd/file.js)
+    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); this.runCommand('save'); }
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); $('#fileinput').click(); }
     // Ctrl+N is a new browser tab in some browsers; where the page hears it, it is a new document
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'n' && !e.defaultPrevented) { e.preventDefault(); this.runCommand('new-document'); }
