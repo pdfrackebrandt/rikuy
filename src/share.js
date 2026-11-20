@@ -215,7 +215,7 @@ export function findComments(text, f) {
     if (end < 0) end = text.length;
     const c = parseCommentLine(text.slice(pos, end));
     if (c && c.kind === 'comment') {
-      thread = { f, s: pos, e: next, who: c.who, quote: c.quote, body: c.body, replies: [], as: prevS, ae: prevE };
+      thread = { f, s: pos, e: next, who: c.who, quote: c.quote, body: c.body, replies: [], as: prevS, ae: prevE, safe: !!c.safe };
       out.push(thread);
     } else if (c && c.kind === 'reply' && thread && thread.e === pos) {
       thread.replies.push({ who: c.who, body: c.body });
