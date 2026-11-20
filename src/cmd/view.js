@@ -302,7 +302,9 @@ export const methods = {
   },
   showLatexScan(at) {
     let f, a, b;
-    if (this.pop && this.pop.el && this.pop.el.classList.contains('pop-math') && this.pop.anchorPos) ({ f, s: a } = this.pop.anchorPos), b = a;
+    // (the open equation's own block: a place inside it, not its first character, where the
+    // paragraph before it ends too; from a new equation the paragraph before was shown)
+    if (this.pop && this.pop.el && this.pop.el.classList.contains('pop-math') && this.pop.anchorPos) ({ f, s: a } = this.pop.anchorPos), a += 1, b = a;
     else if (at && at.c && !at.c.ghost && at.c.f != null) { f = at.c.f; a = at.c.a; b = at.c.b; }
     else return [];
     const out = [];
@@ -595,6 +597,9 @@ onInstall((app) => {
     const mod = /Mac|iPhone|iPad/.test(navigator.platform || '') ? e.metaKey : e.ctrlKey;
     if (mod && e.shiftKey && !e.altKey && e.code === 'Equal' && app.pop && app.pop.el && app.pop.el.classList.contains('pop-math')) {
       e.preventDefault(); e.stopImmediatePropagation();
+      // (a formula not written yet, the first keys of $: its LaTeX box is its linear form)
+      if (!app.pop.anchorPos) { const ta = app.pop.el.querySelector('textarea'); if (ta) ta.focus(); return; }
+      if (app.pop.flush) app.pop.flush();
       app.runCommand('show-latex');
     }
   }, true);

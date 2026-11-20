@@ -9,7 +9,8 @@ field cannot hold carried on in its LaTeX box (3). tab: Tab keeps the keyboard o
 first line indent at a paragraph's start, a gap elsewhere; Esc then Tab leaves (6). pickers: the
 reference and citation pickers by the keys, Enter closing them, with what each label names (7).
 follow: F12 or Ctrl+click on a cross reference goes to its label, Shift+F5 back; Enter or F2 on a
-formula selected alone opens it (8).
+formula selected alone opens it (8). linear: Ctrl+Shift+= in a new equation shows that equation
+as its LaTeX on the page, never the paragraph before it (13).
 Each part is a function; `python3 power.py
 footnote` runs one."""
 import os, sys
@@ -178,7 +179,17 @@ def follow(page):
         key(page, 'Escape', 300)
 
 
-PARTS = [footnote, dollars, latex, tab, pickers, follow]
+def linear(page):
+    load_doc(page, MATH)
+    click_text(page, 'gamma.', 6)
+    key(page, 'Enter'); key(page, 'Alt+Equal', 600); typed(page, 'x+1', 300)
+    key(page, 'Control+Shift+Equal', 600)
+    box = page.evaluate("(() => { const b = [...document.querySelectorAll('.it.tex.texview')]; return b.map((x) => x.textContent); })()")
+    check('linear: Ctrl+Shift+= in a new equation shows it as its LaTeX on the page', len(box) == 1 and box[0].startswith('\\begin{equation}') and 'x+1' in box[0] and 'gamma' not in box[0], box)
+    page.evaluate('window.rikuy.hideLatexViews()')
+
+
+PARTS = [footnote, dollars, latex, tab, pickers, follow, linear]
 
 
 def run():
