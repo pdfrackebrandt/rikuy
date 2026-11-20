@@ -291,17 +291,17 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
    of 22 px rows would overlap and cut off: test/tabs.py tablet) */
 @media (min-width: 900px) and (pointer: fine) {
   /* every tab as tall as Home, so the page does not jump when another tab opens */
-  body:not(.file-open) .rb { height: 92px; }
+  body:not(.file-open) .rb { height: 98px; }
   /* Clipboard: a large Paste, and Cut, Copy, Format Painter in a column beside it (a touch screen's
      44 px buttons keep a row), its name on the line of the other groups' names */
-  .rb-grp[data-group="clipboard"]:not(.folded) { display: grid; grid-template-columns: 54px auto; grid-template-rows: repeat(3, 20px); column-gap: 2px; align-content: center; justify-content: center; padding: 4px 0 18px; }
-  .rb-grp[data-group="clipboard"] > [data-cmd="paste"] { grid-column: 1; grid-row: 1 / span 3; flex-direction: column; height: 60px; width: 52px; gap: 1px; justify-content: center; padding: 2px 2px; font-size: 12px; border-radius: 4px; }
-  .rb-grp[data-group="clipboard"] > [data-cmd="paste"] svg { width: 22px; height: 22px; }
-  .rb.rb-fold .rb-grp[data-group="clipboard"] > [data-cmd="paste"] { width: 52px; height: 60px; flex-direction: column; padding: 2px; }
+  .rb-grp[data-group="clipboard"]:not(.folded) { display: grid; grid-template-columns: 54px auto; grid-template-rows: repeat(3, 24px); column-gap: 2px; align-content: start; justify-content: center; padding: 4px 0 22px; }
+  .rb-grp[data-group="clipboard"] > [data-cmd="paste"] { grid-column: 1; grid-row: 1 / span 3; flex-direction: column; height: 72px; width: 52px; gap: 3px; justify-content: flex-start; padding: 4px 2px 2px; font-size: 12px; border-radius: 4px; }
+  .rb-grp[data-group="clipboard"] > [data-cmd="paste"] svg { width: 24px; height: 24px; }
+  .rb.rb-fold .rb-grp[data-group="clipboard"] > [data-cmd="paste"] { width: 52px; height: 72px; flex-direction: column; padding: 4px 2px 2px; }
   .rb.rb-fold .rb-grp[data-group="clipboard"] > [data-cmd="paste"] span:not(.sr) { display: inline; }
   .rb-grp[data-group="clipboard"] > [data-cmd="cut"],
   .rb-grp[data-group="clipboard"] > [data-cmd="copy"],
-  .rb-grp[data-group="clipboard"] > [data-cmd="format-painter"] { grid-column: 2; height: 20px; width: 26px; padding: 0; }
+  .rb-grp[data-group="clipboard"] > [data-cmd="format-painter"] { grid-column: 2; height: 24px; width: 26px; padding: 0; }
   /* Home's Styles name on the same line as its other groups' names */
   #rp-home .rb-grp[data-group="styles"]:not(.folded) { padding-bottom: 0; align-items: stretch; }
   #rp-home .rb-grp[data-group="styles"] > .rb-gw { padding-bottom: 16px; }
@@ -309,31 +309,31 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   /* Word's layout of the other tabs (src/ribbon/layout.js): large buttons, the icon over the name;
      small ones three to a column; the group's name on a row of its own under them, as wide as the
      group (so the group is at least as wide as its name). --c: the columns it takes. */
-  .rb-grp.lay:not(.folded) { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, 22px) minmax(0, 1fr); grid-template-columns: repeat(var(--c), auto); grid-auto-columns: auto; column-gap: 1px; align-items: center; justify-items: start; padding: 4px 1px 3px; }
+  .rb-grp.lay:not(.folded) { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, 24px) 19px; align-content: start; grid-template-columns: repeat(var(--c), auto); grid-auto-columns: auto; row-gap: 0; column-gap: 1px; align-items: center; justify-items: start; padding: 4px 1px 3px; }
   .rb-grp.lay:not(.folded) > .rb-glab { position: static; grid-row: 4; grid-column: 1 / -1; align-self: end; justify-self: stretch; padding: 0 4px; white-space: nowrap; }
   .rb-grp.lay:not(.folded):has(> .rb-launch, > .rb-launch-c) > .rb-glab { padding: 0 16px; }
   /* the corner arrow that is the group's own button (src/ribbon/tabs.js) */
   /* (#ribbon: every ribbon button is position relative, #ribbon .btn) */
-  #ribbon .rb-grp.lay:not(.folded) > .rb-launch-c { position: absolute; right: 0; bottom: 1px; width: 16px; min-width: 0; height: 14px; padding: 0; gap: 0; align-items: center; justify-content: center; border: 0; border-radius: 2px; background: transparent; color: var(--mute); }
+  #ribbon .rb-grp.lay:not(.folded) > .rb-launch-c { position: absolute; right: 0; bottom: 1px; width: 16px; min-width: 0; height: 14px; padding: 0; gap: 0; align-items: center; justify-content: center; border: 0; border-radius: 2px; background: transparent; color: var(--ink-ui); }
   .rb-grp.lay:not(.folded) > .rb-launch-c:hover { background: var(--blue-wash); color: var(--ink-ui); }
   .rb-grp.lay:not(.folded) > .rb-launch-c > :not(.rb-larrow):not(.sr) { display: none; }
   .rb-grp.lay:not(.folded) > .rb-launch-c > .rb-larrow { display: block; width: 10px; height: 10px; stroke-width: 1.3; }
   .rb-grp.lay > [data-brk] { grid-row-start: 1; }
-  .rb-grp.lay > .btn, .rb-grp.lay > .rb-split > .btn { height: 22px; border-radius: 4px; font-size: 12px; font-weight: 400; }
+  .rb-grp.lay > .btn, .rb-grp.lay > .rb-split > .btn { height: 24px; border-radius: 4px; font-size: 12px; font-weight: 400; }
   .rb-grp.lay > .btn svg, .rb-grp.lay > .rb-split > .btn svg { width: 16px; height: 16px; }
   .rb-grp.lay .rb-ln { white-space: nowrap; }
   .rb-grp.lay .rb-car { display: inline-block; width: 10px; height: 10px; margin-left: 1px; vertical-align: -1px; }
   /* small: the icon and its name */
   .rb-grp.lay > .btn[data-size="S"] { padding: 0 6px 0 3px; gap: 4px; width: auto; }
   .rb-grp.lay > .rb-split[data-size="S"] > .btn:first-child { padding: 0 3px 0 3px; gap: 4px; width: auto; }
-  .rb-grp.lay > .rb-split > .rb-x { width: 14px; height: 22px; }
+  .rb-grp.lay > .rb-split > .rb-x { width: 24px; height: 24px; }
   .rb-grp.lay > .rb-split > .rb-x svg { width: 10px; height: 10px; }
   /* the icon alone */
-  .rb-grp.lay > .btn[data-size="I"], .rb-grp.lay > .rb-split[data-size="I"] > .btn:first-child { width: 26px; padding: 0; justify-content: center; }
+  .rb-grp.lay > .btn[data-size="I"], .rb-grp.lay > .rb-split[data-size="I"] > .btn:first-child { width: 24px; padding: 0; justify-content: center; }
   .rb-grp.lay > .btn[data-size="I"] .rb-bl { display: none; }
   /* large: the icon over its name, a column of its own */
   .rb-grp.lay > [data-size="L"] { grid-row-end: span 3; justify-self: center; align-self: start; }
-  .rb-grp.lay > .btn[data-size="L"], .rb-grp.lay > .rb-split[data-size="L"] > .btn:first-child { flex-direction: column; justify-content: flex-start; align-items: center; height: 66px; width: auto; min-width: 42px; padding: 4px 5px 2px; gap: 3px; line-height: 14px; }
+  .rb-grp.lay > .btn[data-size="L"], .rb-grp.lay > .rb-split[data-size="L"] > .btn:first-child { flex-direction: column; justify-content: flex-start; align-items: center; height: 72px; width: auto; min-width: 42px; padding: 4px 5px 2px; gap: 3px; line-height: 14px; }
   .rb-grp.lay > .btn[data-size="L"] svg:not(.rb-car), .rb-grp.lay > .rb-split[data-size="L"] > .btn:first-child svg { width: 24px; height: 24px; }
   .rb-grp.lay .btn[data-size="L"] .rb-bl, .rb-grp.lay > .rb-split[data-size="L"] .rb-bl { display: flex; flex-direction: column; align-items: center; text-align: center; }
   /* (a glyph for an icon, Symbol's Ω, in the icon's box, so its name lines up with the others') */
@@ -341,10 +341,10 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   .rb-grp.lay .btn[data-size="L"] .rb-bl > .rb-car { margin: 1px 0 0; }
   /* a large split button as Word's: its icon alone above (as high as a large button's), its name
      and arrow below, in the part that opens the menu, where a large button has its name */
-  .rb-grp.lay > .rb-split[data-size="L"] { flex-direction: column; height: 66px; }
+  .rb-grp.lay > .rb-split[data-size="L"] { flex-direction: column; height: 72px; }
   .rb-grp.lay > .rb-split[data-size="L"] > .btn:first-child { height: 30px; width: 100%; padding: 4px 5px 2px; gap: 0; border-radius: 4px 4px 0 0; }
   .rb-grp.lay > .rb-split[data-size="L"] > .btn:first-child > .rb-bl { display: none; }
-  .rb-grp.lay > .rb-split[data-size="L"] > .rb-x { display: flex; flex-direction: column; justify-content: flex-start; align-items: center; width: 100%; height: 36px; padding: 1px 5px 0; border-radius: 0 0 4px 4px; font-size: 12px; line-height: 14px; }
+  .rb-grp.lay > .rb-split[data-size="L"] > .rb-x { display: flex; flex-direction: column; justify-content: flex-start; align-items: center; width: 100%; height: 42px; padding: 1px 5px 0; border-radius: 0 0 4px 4px; font-size: 12px; line-height: 14px; }
   .rb-grp.lay > .rb-split[data-size="L"] > .rb-x > svg:not(.rb-car) { display: none; }
   .rb-grp.lay > .rb-split[data-size="L"] > .rb-x > .rb-xname { display: flex; flex-direction: column; align-items: center; text-align: center; }
   /* a gallery's tiles, side by side in one box */
@@ -354,8 +354,8 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   .rb-grp.lay > .btn[data-size="T"] svg { width: 26px; height: 26px; }
   .rb-grp.lay > .btn[data-size="T"][aria-pressed="true"] { border-color: var(--blue); position: relative; z-index: 1; }
   /* the spin fields: a row each */
-  .rb-grp.lay > .pf, .rb-grp.lay > .pf-field { height: 22px; padding: 0 2px; }
-  .rb-grp.lay > .pf .pf-v, .rb-grp.lay > .pf-field .pf-v { height: 20px; }
+  .rb-grp.lay > .pf, .rb-grp.lay > .pf-field { height: 24px; padding: 0 2px; }
+  .rb-grp.lay > .pf .pf-v, .rb-grp.lay > .pf-field .pf-v { height: 22px; }
   .rb-grp.lay > .pf:has(#rl-spacing-before), .rb-grp.lay > .pf:has(#rl-spacing-after) { margin-left: 8px; }
   /* Word's check boxes (Table Style Options, View's Show, the header's Options): a box ticked when on */
   .rb-grp.lay-check:not(.nm) > .btn[aria-pressed][data-size="S"] { position: relative; padding-left: 4px; }
@@ -375,22 +375,22 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   /* (a run of small ones, Previous over Next, starts a column where it would not fit in this one) */
   .rb-grp.lay:is(.sm, .nm) > [data-sbrk] { grid-row-start: 1; }
   .rb-grp.lay:is(.sm, .nm) > .btn[data-size="L"], .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .btn:first-child,
-  .rb-grp.lay:is(.sm, .nm) > .btn[data-size="T"] { flex-direction: row; height: 22px; min-width: 0; padding: 0 6px 0 3px; gap: 4px; border: 1px solid transparent; margin: 0; background: transparent; line-height: normal; }
+  .rb-grp.lay:is(.sm, .nm) > .btn[data-size="T"] { flex-direction: row; height: 24px; min-width: 0; padding: 0 6px 0 3px; gap: 4px; border: 1px solid transparent; margin: 0; background: transparent; line-height: normal; }
   .rb-grp.lay:is(.sm, .nm) > .btn[data-size="L"] svg:not(.rb-car), .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .btn:first-child svg, .rb-grp.lay:is(.sm, .nm) > .btn[data-size="T"] svg { width: 16px; height: 16px; }
   .rb-grp.lay:is(.sm, .nm) .btn[data-size="L"] .rb-bl, .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] .rb-bl { flex-direction: row; gap: 3px; }
-  .rb-grp.lay:is(.sm, .nm) > .btn[data-size="T"] { width: 26px; padding: 0; justify-content: center; border-radius: 4px; }
+  .rb-grp.lay:is(.sm, .nm) > .btn[data-size="T"] { width: 24px; padding: 0; justify-content: center; border-radius: 4px; }
   .rb-grp.lay:is(.sm, .nm) > .btn[data-size="T"][aria-pressed="true"] { background: var(--blue-wash); }
-  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] { flex-direction: row; height: 22px; }
-  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .btn:first-child { width: auto; height: 22px; padding: 0 6px 0 3px; gap: 4px; border-radius: 4px 0 0 4px; }
+  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] { flex-direction: row; height: 24px; }
+  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .btn:first-child { width: auto; height: 24px; padding: 0 6px 0 3px; gap: 4px; border-radius: 4px 0 0 4px; }
   .rb-grp.lay.sm:not(.nm) > .rb-split[data-size="L"] > .btn:first-child > .rb-bl { display: flex; }
-  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x { width: 14px; height: 22px; padding: 0; border-radius: 0 4px 4px 0; }
+  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x { width: 24px; height: 24px; padding: 0; border-radius: 0 4px 4px 0; }
   .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x > svg:not(.rb-car) { display: inline; }
   .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x > .rb-xname { display: none; }
   .rb-grp.lay.nm > [data-size] .rb-bl, .rb-grp.lay.nm > .rb-split > .btn .rb-bl { display: none; }
   /* (rb-fold's 32 px for a button whose name went must not widen a group already without names:
      every step of ribbonFit takes room) */
   .rb-grp.lay.nm > .btn[data-size], .rb-grp.lay.nm > .rb-split > .btn:first-child,
-  .rb.rb-fold .rb-grp.lay.nm > .btn[data-size]:not(.icon) { width: 26px; padding: 0; gap: 0; justify-content: center; }
+  .rb.rb-fold .rb-grp.lay.nm > .btn[data-size]:not(.icon) { width: 24px; padding: 0; gap: 0; justify-content: center; }
   .rb-grp.lay.nm > .pf .pf-l, .rb-grp.lay.nm > .pf .pf-u, .rb-grp.lay.nm > .pf-field .pf-lab { display: none; }
   .rb-grp.lay.nm.lay-check > .btn[aria-pressed]::before, .rb-grp.lay.nm.lay-check > .btn[aria-pressed]::after { display: none; }
   .rb-grp.lay.nm.lay-check > .btn[aria-pressed] > svg { display: inline; }
@@ -486,9 +486,11 @@ body.file-open #rp-file .rb-dl::before { display: none; }
    are one Download button, its icon alone, as a folded group is. A touch screen and a narrower row
    keep their row. */
 @media (min-width: 900px) and (pointer: fine) {
-  body:not(.file-open) .rb-dl { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, 22px) minmax(0, 1fr); align-items: center; justify-items: stretch; gap: 0;
-    padding: 4px 12px 3px 9px; background: linear-gradient(var(--line), var(--line)) 0 8px / 1px calc(100% - 26px) no-repeat, var(--ribbon); }
-  body:not(.file-open) .rb-dl > .btn { height: 22px; padding: 0 8px 0 4px; gap: 5px; justify-content: flex-start; border-radius: 4px; font-size: 12px; font-weight: 400; }
+  body:not(.file-open) .rb-dl { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, 24px) 19px; align-content: start; align-items: center; justify-items: stretch; gap: 0;
+    padding: 4px 10px 3px 10px; }
+  /* (the line before them, as the separators between groups are drawn: 8 px from the top, 18 from the bottom) */
+  body:not(.file-open) .rb-dl::after { content: ""; position: absolute; left: 0; top: 8px; bottom: 18px; width: 1px; background: var(--line); }
+  body:not(.file-open) .rb-dl > .btn { height: 24px; padding: 0 8px 0 4px; gap: 5px; justify-content: flex-start; border-radius: 4px; font-size: 12px; font-weight: 400; }
   body:not(.file-open) .rb-dl > .btn svg { width: 16px; height: 16px; }
   body:not(.file-open) .rb-dl > .rb-lab, body:not(.file-open) .rb.rb-nolab .rb-dl > .rb-lab { display: block; grid-row: 4; grid-column: 1; align-self: end; justify-self: center; margin: 0; font: 11px/1 var(--font-ui); color: var(--mute); }
   body:not(.file-open) .rb.rb-dl1 .rb-dl > .rb-lab { display: none; }
@@ -1935,7 +1937,8 @@ body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outli
 #st-zoomv { min-width: 38px; text-align: right; color: var(--mute); text-decoration: none; font-size: 12px; }
 #st-zoomv:hover { color: var(--ink-ui); }
 /* Undo's arrow: the last steps (Word's Undo list) */
-#bar .btn.undo-x { width: 16px; margin-left: -6px; }
+/* (24 px, the smallest target, and beside Undo, not under it: test/consistency.py) */
+#bar .btn.undo-x { width: 24px; }
 #bar .btn.undo-x svg { width: 12px; height: 12px; }
 @media (max-width: 860px) { #bar .btn.undo-x { display: none; } }
 
@@ -2490,4 +2493,53 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
   .rb .btn[data-cmd="tab-next"] { min-width: 44px; min-height: 44px; }
   .pop-ps .pop-x, .pop-ps .btn, .pop-ps select, .pop-ps input { min-height: 44px; }
   .pop.pop-ps, .pop.pop-tabs { max-height: calc(100dvh - 16px); overflow: auto; overscroll-behavior: contain; }
+}
+
+/* ---- the ribbon's one look (test/consistency.py), with a mouse from 900 px ----
+   Every small control 24 px tall (WCAG 2.2's 2.5.8 target), three rows of them the height of a
+   large one (72 px); a split button's arrow 24 px wide; every small icon 16 px, every large one 24,
+   every menu's arrow 12; every button's name 12 px regular (#ribbon .btn); a folded group a large
+   button with the group's name, as Word's; Home's Font and Paragraph groups two rows of these in
+   the three rows' height; a corner arrow in the ink's colour, as every control that works. */
+@media (min-width: 900px) and (pointer: fine) {
+  .rb .rb-grp > .btn:not([data-size="L"]):not([data-size="T"]):not(.rb-gbtn):not(.rb-launch):not(.rb-launch-c):not([data-cmd="paste"]),
+  .rb .rb-grp > .rb-split:not([data-size="L"]), .rb .rb-grp > .rb-split:not([data-size="L"]) > .btn { height: 24px; }
+  .rb .rb-grp .rb-split > .rb-x:not(:is(.lay > [data-size="L"] > .rb-x)) { width: 24px; }
+  #ribbon .rb-grp > .btn:not([data-size="L"]):not([data-size="T"]):not(.rb-gbtn):not(.rb-launch):not(.rb-launch-c):not([data-cmd="paste"]) > svg:not(.rb-car):not(.rb-gico),
+  #ribbon .rb-grp > .rb-split:not([data-size="L"]) > .btn:not(.rb-x) > svg:not(.rb-car) { width: 16px; height: 16px; }
+  #ribbon .rb-grp .rb-x > svg, #ribbon .rb-grp .rb-car, #ribbon .rb-gbtn > svg:not(.rb-gico) { width: 12px; height: 12px; }
+  .rb .rb-grp:not(.folded) > .rb-launch { color: var(--ink-ui); }
+  /* Home's Clipboard and Editing: three rows of 24 */
+  #rp-home .rb-grp[data-group="editing"]:not(.folded) { justify-content: flex-start; padding: 4px 0 22px; }
+  #rp-home .rb-grp[data-group="editing"] > .btn, #rp-home .rb-grp[data-group="editing"] > .rb-split, #rp-home .rb-grp[data-group="editing"] > .rb-split > .btn { height: 24px; }
+  /* Font and Paragraph: two rows in the three rows' height (the second row's controls after a break
+     a whole line wide, by order), each control 24 px, the group as wide as its longer row */
+  /* (each as wide as its longer row: a wrapping row's own width would be all of it in one line) */
+  #rp-home .rb-grp:is([data-group="font"], [data-group="paragraph"]):not(.folded) { flex-wrap: wrap; gap: 2px 1px; align-content: center; align-self: stretch; padding: 4px 0 22px; }
+  #rp-home .rb-grp[data-group="font"]:not(.folded) { width: 298px; }
+  #rp-home .rb-grp[data-group="paragraph"]:not(.folded) { width: 224px; }
+  #rp-home .rb-grp[data-group="font"]:not(.folded)::after { content: ""; order: 1; flex-basis: 100%; height: 0; }
+  #rp-home .rb-grp[data-group="font"] > :is([data-cmd="bold"], [data-cmd="italic"], [data-cmd="strikethrough"], [data-cmd="subscript"], [data-cmd="superscript"], [data-cmd="font-more"]),
+  #rp-home .rb-grp[data-group="font"] > .rb-split:has(> :is([data-cmd="underline"], [data-cmd="highlight"], [data-cmd="font-color"])) { order: 2; }
+  #rp-home .rb-grp:is([data-group="font"], [data-group="paragraph"]) > .btn.icon:not(.rb-launch-c), #rp-home .rb-grp:is([data-group="font"], [data-group="paragraph"]) .rb-split > .btn.icon:not(.rb-x) { width: 24px; height: 24px; }
+  /* every icon alone 24 px wide, the names gone (rb-fold) too: the minimum target, one width */
+  .rb.rb-fold .rb-grp > .btn:not(.icon):not(.rb-gbtn):not([data-cmd="paste"]), .rb.rb-fold .rb-grp .rb-split > #rb-find, #ribbon .rb-grp:not(.lay) > .btn.icon:not(.rb-launch-c):not(.rb-gbtn), #ribbon .rb-grp:not(.lay) > .rb-split > .btn.icon:not(.rb-x) { width: 24px; padding: 0; }
+  #rp-home .rb-grp:is([data-group="font"], [data-group="paragraph"]) .rb-split > .rb-x { width: 24px; height: 24px; }
+  #rp-home .rb-grp[data-group="font"] .fbx { height: 24px; }
+  /* a folded group: a large button, its first command's icon over the group's name and a menu's
+     arrow, in the group's place (Word's); its separators stay */
+  .rb .rb-grp.folded { align-self: stretch; align-items: flex-start; padding: 4px 0 0; }
+  .rb .rb-grp.folded > .rb-gbtn, .rb .rb-grp.ico > .rb-gbtn { display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-start; width: auto; min-width: 42px; height: 72px; padding: 4px 5px 2px; gap: 3px; font-size: 12px; line-height: 14px; border-radius: 4px; }
+  .rb .rb-grp.folded > .rb-gbtn > .rb-gico, .rb .rb-grp.ico > .rb-gbtn > .rb-gico { display: block; width: 24px; height: 24px; }
+  .rb .rb-grp.folded > .rb-gbtn > span, .rb .rb-grp.ico > .rb-gbtn > span { display: block; white-space: nowrap; }
+  .rb .rb-grp.folded > .rb-gbtn > svg:not(.rb-gico), .rb .rb-grp.ico > .rb-gbtn > svg:not(.rb-gico) { display: block; }
+  .rb-tb > .sep:has(+ .rb-grp.ico) { display: block; }
+  .rb-tb > .rb-grp.ico { margin-left: 0; }
+  /* a corner arrow that is a group's own button, in any group (Home's Paragraph settings too) */
+  #ribbon .rb-grp:not(.folded) > .rb-launch-c { position: absolute; right: 0; bottom: 1px; width: 16px; min-width: 0; height: 14px; padding: 0; gap: 0; align-items: center; justify-content: center; border: 0; border-radius: 2px; background: transparent; color: var(--ink-ui); }
+  #ribbon .rb-grp:not(.folded) > .rb-launch-c > :not(.rb-larrow):not(.sr) { display: none; }
+  #ribbon .rb-grp:not(.folded) > .rb-launch-c > .rb-larrow { display: block; width: 10px; height: 10px; stroke-width: 1.3; }
+  #ribbon .rb-grp:not(.folded) > .rb-launch-c:hover { background: var(--blue-wash); }
+  /* the Styles gallery's name centred under it, as every group's */
+  #rp-home .rb-grp[data-group="styles"] .rb-cap { text-align: center; }
 }

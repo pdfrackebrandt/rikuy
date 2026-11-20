@@ -68,6 +68,8 @@ MEASURE = r"""(arg) => {
     out.controls.push({ n: name(e), id: e.id, kind, st, ...b, color: cs.color, op: op(e), svg: svg && !e.classList.contains('rb-x') ? [Math.round(svg.getBoundingClientRect().width * 10) / 10, Math.round(svg.getBoundingClientRect().height * 10) / 10, getComputedStyle(svg).stroke] : null,
       caret: caret ? Math.round(caret.getBoundingClientRect().width * 10) / 10 : null,
       group: g ? (g.dataset.group || g.className.split(' ')[0]) : null, folded: !!e.closest('.rb-grp.folded'), gbtn: e.classList.contains('rb-gbtn'),
+      // (what the layout asks of it: a large one must be drawn large where its group has room)
+      declared: (split || e).dataset.size || (e.dataset.cmd === 'paste' ? 'L' : null), shrunk: !!e.closest('.rb-grp.sm, .rb-grp.nm, .rb.rb-fold'),
       outline: [cs.outlineStyle, cs.outlineWidth].join(' '), focused: document.activeElement === e });
     if (label && !['gallery', 'icon', 'icon-split', 'tile', 'split-arrow', 'launcher', 'field'].includes(kind)) { const ls = getComputedStyle(label); out.labels.push({ n: name(e), size: ls.fontSize, weight: ls.fontWeight }); }
   }
@@ -162,6 +164,8 @@ def judge(S, where, m, touch, scope):
             if not any(meets(o) for o in m['controls']):
                 continue
         S.bad('target', where, c['n'], '%s %.0fx%.0f < %d' % (c['kind'], c['w'], c['h'], lo))
+        if c['declared'] == 'L' and not c['shrunk'] and not c['folded'] and not c['kind'].startswith('split-arrow') and c['h'] < 60:
+            S.bad('box', where, c['n'], 'a large button drawn small: %.0f px tall' % c['h'])
         if c['st'] == 'enabled' and c['op'] < 0.99:
             S.bad('icon', where, c['n'], 'enabled but looks disabled: opacity %.2f' % c['op'])
         if scope != 'bar' and not c['group']:
@@ -204,6 +208,9 @@ def across(S, where, ms):
     kinds = collections.defaultdict(collections.Counter)
     widths = collections.defaultdict(collections.Counter)
     icons = collections.defaultdict(collections.Counter)
+    who = collections.defaultdict(list)  # (rule, kind, value) -> a few controls, to find them by
+    def note(key, t, c):
+        if len(who[key]) < 3: who[key].append(t + ':' + c['n'])
     colors = collections.defaultdict(collections.Counter)
     labels = collections.Counter()
     glabs = collections.Counter()
@@ -211,28 +218,33 @@ def across(S, where, ms):
         for c in m['controls']:
             if c['kind'] in ('field', 'gallery'):
                 continue
-            kinds[c['kind']][rounded(c['h'], 1)] += 1
+            kinds[c['kind']][rounded(c['h'], 1)] += 1; note(('h', c['kind'], rounded(c['h'], 1)), t, c)
             if c['kind'] in ('icon', 'icon-split', 'split-arrow', 'launcher', 'folded'):
-                widths[c['kind']][rounded(c['w'], 1)] += 1
-            if c['svg'] and c['kind'] not in ('gallery', 'tile'):
-                icons['large' if c['kind'] in ('large', 'large-split') else 'small'][c['svg'][0]] += 1
-            if c['caret']:
-                icons['caret'][c['caret']] += 1
+                widths[c['kind']][rounded(c['w'], 1)] += 1; note(('w', c['kind'], rounded(c['w'], 1)), t, c)
+            if c['svg'] and c['kind'] not in ('gallery', 'tile', 'launcher'):
+                k = 'large' if c['kind'] in ('large', 'large-split') else 'small'
+                icons[k][c['svg'][0]] += 1; note(('i', k, c['svg'][0]), t, c)
+            if c['caret'] and c['kind'] != 'launcher':
+                icons['caret'][c['caret']] += 1; note(('i', 'caret', c['caret']), t, c)
             colors[c['st']][(c['color'], c['op'])] += 1
         for l in m['labels']:
             labels[(l['size'], l['weight'])] += 1
         for g in m['groups']:
             if g['lab']:
                 glabs[(g['lab']['size'], g['lab']['weight'])] += 1
+    # (the values each kind takes, the rarer with the controls that take them)
+    def spread(cnt, key):
+        top = cnt.most_common(1)[0][0]
+        return {v: (n if v == top else '%d %s' % (n, who[key(v)])) for v, n in cnt.items()}
     for k, cnt in kinds.items():
         if len(cnt) > 1:
-            S.bad('box', where, k + ' height', dict(cnt))
+            S.bad('box', where, k + ' height', spread(cnt, lambda v: ('h', k, v)))
     for k, cnt in widths.items():
         if len(cnt) > 1:
-            S.bad('box', where, k + ' width', dict(cnt))
+            S.bad('box', where, k + ' width', spread(cnt, lambda v: ('w', k, v)))
     for k, cnt in icons.items():
         if len(cnt) > 1:
-            S.bad('icon', where, k + ' icon size', dict(cnt))
+            S.bad('icon', where, k + ' icon size', spread(cnt, lambda v: ('i', k, v)))
     for st in ('enabled', 'disabled'):
         if len(colors[st]) > 1:
             S.bad('icon', where, st + ' colour', dict(colors[st]))
