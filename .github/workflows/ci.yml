@@ -3,6 +3,12 @@ on:
   push:
     branches: [main]
   pull_request:
+# A pull request's newer push cancels its older run (several agents push to their branches every
+# few minutes and the free runners queue); main's runs are never cancelled, they deploy.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 jobs:
