@@ -233,11 +233,20 @@ try:
         page.wait_for_timeout(200)
         ran = run_widgets(page, 1)
         check('one click runs it, and it posts its height', ran, page.evaluate("[...window.rikuy.widgets.heights]"))
-        info = page.evaluate("""() => { const f = document.querySelector('#wlayer iframe'); return f && { sandbox: f.getAttribute('sandbox'), inPages: !!f.closest('#pages'), csp: f.srcdoc.indexOf('Content-Security-Policy'), body: f.srcdoc.indexOf('<canvas'),
-          h: window.rikuy.widgets.heights.get(document.querySelector('.w-live').dataset.w) }; }""")
+        info = page.evaluate("""async () => { const f = document.querySelector('#wlayer iframe'); if (!f) return null;
+          const shell = /\\/widget-[0-9a-f]{16}$/.test(f.src);
+          return { sandbox: f.getAttribute('sandbox'), inPages: !!f.closest('#pages'), srcdoc: f.hasAttribute('srcdoc'), src: f.src, shell,
+            policy: shell ? (await fetch(f.src)).headers.get('content-security-policy') : null,
+            h: window.rikuy.widgets.heights.get(document.querySelector('.w-live').dataset.w) }; }""")
         check('the frame is sandboxed to scripts alone, without allow-same-origin', info and info['sandbox'] == 'allow-scripts', info)
         check('the frame lives outside the editable pages', info and not info['inPages'], info)
-        check('its policy comes before any of the widget', info and 0 <= info['csp'] < info['body'], info)
+        # the page's policy runs no inline script a widget brings (build/app.mjs policy), so on the
+        # hosted page the widget runs in a document of its own, with its own policy
+        check('the widget runs in the page\'s widget document (widget-<hash>, at its address without .html as Pages serves it), not srcdoc, which would take the page\'s policy', info and info['shell'] and not info['srcdoc'], info)
+        check('that document comes with the widgets\' policy alone, framed by the page only',
+              info and info['policy'] == "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; worker-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'", info)
+        doc = frame(page).evaluate('() => document.documentElement.outerHTML')
+        check('its policy comes before any of the widget, then the guard', 0 <= doc.find('Content-Security-Policy') < doc.find('(webkit|moz)?RTC') < doc.find('<canvas'), doc[:300])
         check('the height it asked for is taken', info and 150 < (info['h'] or 0) < 700, info)
         check('the box in the text took that height and the frame lies over it', page.evaluate("document.querySelector('.w-live').classList.contains('sized')") and aligned(page))
         page.screenshot(path=os.path.join(TMP, 'widget.png'))
@@ -359,7 +368,7 @@ try:
         page.wait_for_function('window.__probe', timeout=10000)
         pr = page.evaluate('window.__probe')
         page.wait_for_timeout(300)
-        check('inside the frame inline script runs under the page\'s policy, and eval', pr.get('evalOk') is True, pr)
+        check('inside the frame inline script runs, and eval (the widget\'s own policy)', pr.get('evalOk') is True, pr)
         check('its origin is opaque and it reaches no storage and not the page', pr.get('origin') == 'null' and pr.get('storage') == 'blocked' and pr.get('parent') == 'blocked', pr)
         check('no connection and no picture from the network (refused by the frame\'s policy); data pictures load', pr.get('fetch') == 'blocked' and pr.get('img') == 'blocked' and pr.get('dataImg') == 'open' and 'connect-src' in pr.get('violations', []) and 'img-src' in pr.get('violations', []), pr)
         check('no popups and no navigating the page', pr.get('popup') == 'blocked' and pr.get('top') == 'blocked', pr)
@@ -429,6 +438,50 @@ try:
         page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=30000)
         check('after a reload all six run again from what the browser kept, with no second click', wait_frames(page, 6) and not page.evaluate("document.querySelector('.w-run')"))
         check('no page errors with the large widgets', not errors, errors[:3])
+        browser.close()
+
+        # (review M1) the shell writes a widget only for the page that framed it, inside the sandbox:
+        # a frame of it with no sandbox gets nothing written, and a site of its own that frames a
+        # copy served with none of the page's headers (any static server) gets nothing written
+        # either, sandboxed or not
+        import glob
+        SHELL = os.path.basename(glob.glob(os.path.join(serve.ROOT, 'widget-*.html'))[0])
+        PWN = '<script>var r = { origin: self.origin }; try { localStorage.setItem("pwned", "1"); r.ls = "written" } catch (e) { r.ls = e.name } parent.postMessage({ pwn: r }, "*")</script>'
+        TRY = '''([u, h, sb]) => new Promise((res) => { const f = document.createElement('iframe'); if (sb) f.setAttribute('sandbox', 'allow-scripts');
+          addEventListener('message', (e) => { if (e.source !== f.contentWindow) return; if (e.data && e.data.rikuy === 'shell') e.source.postMessage({ rikuy: 'widget', html: h }, '*'); else if (e.data && e.data.pwn) res(e.data.pwn); });
+          setTimeout(() => res('nothing written'), 2500); f.src = u; document.body.append(f); })'''
+        browser, page, errors = open_app(p)
+        check('M1: the page\'s own sandboxed frame of the shell runs a widget, with an opaque origin', page.evaluate(TRY, [URL + SHELL, PWN, True]).get('origin') == 'null')
+        check('M1: a frame of the shell with no sandbox gets nothing written (it would be the site itself)', page.evaluate(TRY, [URL + SHELL, PWN, False]) == 'nothing written')
+        browser.close()
+        b = p.chromium.launch()
+        ctx = b.new_context()
+        body = open(os.path.join(serve.ROOT, SHELL), 'rb').read()
+        def hostless(route):
+            u = route.request.url
+            if u == 'https://copy.test/' + SHELL: return route.fulfill(status=200, content_type='text/html; charset=utf-8', body=body)
+            if u == 'https://evil.test/': return route.fulfill(status=200, content_type='text/html; charset=utf-8', body='<!doctype html><body></body>')
+            return route.abort()
+        ctx.route('**/*', hostless)
+        ev = ctx.new_page()
+        ev.goto('https://evil.test/')
+        got = [ev.evaluate(TRY, ['https://copy.test/' + SHELL, PWN, sb]) for sb in (False, True)]
+        check('M1: another site framing a copy served without the page\'s headers gets nothing written, sandboxed or not', got == ['nothing written', 'nothing written'], got)
+        b.close()
+
+        # (review L1) a widget document that never loads (offline, the browser's copy of it gone):
+        # the figure shows its picture, and the page says why
+        browser, page, errors = open_app(p)
+        page.route('**/widget-*', lambda r: r.abort())
+        page.evaluate("""([m, s, c, png]) => { const g = window.rikuy; g.files = new Map([['main.tex', m], ['rikuy.sty', s], ['widgets/clt.html', c]]);
+          const b = new Blob([Uint8Array.from(atob(png), (ch) => ch.charCodeAt(0))], { type: 'image/png' }); g.assetBlobs.set('figures/clt.png', b); g.assets.set('figures/clt.png', URL.createObjectURL(b));
+          g.main = 'main.tex'; g.forceRender = true; g.rebuild(); }""",
+                      [MAIN, STY, CLT, base64.b64encode(PNG).decode()])
+        page.wait_for_timeout(9500)
+        st = page.evaluate("""() => { const ph = document.querySelector('.w-live'), fb = ph && ph.querySelector('.wfb');
+          return { stalled: !!(ph && ph.classList.contains('w-stalled')), picture: fb ? getComputedStyle(fb).visibility : null,
+            frame: getComputedStyle(document.querySelector('#wlayer iframe')).visibility, toast: [...document.querySelectorAll('.toast, #toast')].map((e) => e.textContent).join(' ') }; }""")
+        check('L1: a live figure whose frame never loads shows its picture, and the page says why', st['stalled'] and st['picture'] == 'visible' and st['frame'] == 'hidden' and 'could not start' in st['toast'], st)
         browser.close()
 except Exception as e:
     # a run that stops part way has failed, whatever the checks before it said

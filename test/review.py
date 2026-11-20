@@ -264,6 +264,22 @@ def run():
         page.locator('.pop-comment').get_by_role('button', name='Save', exact=True).click(); page.wait_for_timeout(250)
         check('Edit Comment rewrites its words only', src(page) == DOC.replace('% comment (Bo): Shorter?', '% comment (Bo): Much shorter, please.'), src(page)[-120:])
         page.evaluate("window.rikuy.undo()"); page.wait_for_timeout(200)
+        # (review M2) a comment in base32, as a reader of a comments only link writes it: Edit
+        # Comment writes the line again whole, in that form, with the new words
+        import base64
+        b32 = lambda s: base64.b32encode(s.encode()).decode().rstrip('=') or '0'
+        line32 = lambda body: '% comment32 ' + b32('Bo') + ' 0 ' + b32(body)
+        safe_doc = DOC.replace('% comment (Bo): Shorter?', line32('Shorter?'))
+        fresh(page, safe_doc)
+        click_text(page, 'third paragraph', 0)
+        page.evaluate("window.rikuy.runCommand('comment-edit')"); page.wait_for_timeout(250)
+        check('Edit Comment on a comment in base32 shows its words', page.input_value('.pop-comment textarea') == 'Shorter?', page.input_value('.pop-comment textarea'))
+        page.fill('.pop-comment textarea', 'Much shorter, please.')
+        page.locator('.pop-comment').get_by_role('button', name='Save', exact=True).click(); page.wait_for_timeout(250)
+        check('and writes its line again, in base32, with the new words', src(page) == safe_doc.replace(line32('Shorter?'), line32('Much shorter, please.')), src(page)[-160:])
+        page.evaluate("window.rikuy.undo()"); page.wait_for_timeout(200)
+        check('one undo, byte for byte', src(page) == safe_doc)
+        fresh(page)
         click_text(page, 'third paragraph', 0)
         r = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); return [r.left, r.top]; })()")
         page.mouse.click(r[0] + 2, r[1] + 4, button='right'); page.wait_for_timeout(250)
