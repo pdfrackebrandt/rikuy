@@ -51,7 +51,7 @@ second) is the one number a Word user would call slow; it is the model's and the
   first key typed lands there, the page does not scroll, one Undo takes it back; on a touch screen
   the page is left unfocused (the keyboard stays down). `test/ux.py first_visit`.
 
-### 3. The File view does not behave as a view (HIGH, medium)
+### 3. The File view does not behave as a view (HIGH, medium) — fixed
 
 - **Where:** File (PR 75's backstage): `body.file-open` in `src/ribbon/tabs.js` and `app.css`.
 - **Word:** File is a view over the whole window with a back arrow; Esc or the arrow returns to
@@ -59,8 +59,15 @@ second) is the one number a Word user would call slow; it is the model's and the
 - **Rikuy did:** Esc left it open; it stayed open while Preview, a TeX error and new documents
   came and went; it covered only the ribbon's height, so on a 1366 or 1920 px window the page and
   the PDF pane showed below it, cut off; there was no way back but another tab.
-- **Fix:** the view over everything below the title band, a back button, Esc and any command run
-  from it close it and give the caret back.
+- **Status:** fixed ("Make File a view over the window, with Back, as Word's"): File takes the
+  window between the tabs and the status bar (the page keeps its width under it, so nothing is
+  laid out again); Back to the document, Esc, or any command run from it close it and bring back
+  the tab that was open before; Esc and Back give the caret back. A menu of File (Templates,
+  Recent, Export as) keeps it open until an item is chosen; Esc closes the menu first. On a phone
+  it is a column under the tab list with every command's name. `src/ui/fileview.js`, two lines in
+  `src/ribbon/tabs.js`'s `selectTab` (the ribbon tabs agent's file); `test/ux.py file_view`.
+  `test/agent.py` presses Back before it presses a picture on the page (the page is under the view,
+  as in Word).
 
 ### 4. The status bar cuts off the zoom (MEDIUM-HIGH, small)
 

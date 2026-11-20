@@ -105,7 +105,69 @@ def first_visit(page, w):
     check(f'one Undo takes it back ({w})', src(page) == before)
 
 
-PARTS = {'first_visit': (first_visit, [(1366, False), (1920, True), (390, False), (360, True)]),
+def open_tab(page, name, touch=False):
+    if touch or page.viewport_size['width'] <= 860:
+        page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label=name)
+    else:
+        page.get_by_role('tablist', name='Ribbon', exact=True).get_by_role('tab', name=name, exact=True).click()
+    page.wait_for_timeout(250)
+
+
+FILE_GEOM = """(() => { const r = document.getElementById('ribbon').getBoundingClientRect(), s = document.getElementById('status').getBoundingClientRect(),
+  d = document.getElementById('desk').getBoundingClientRect(), b = document.getElementById('rf-back');
+  return { open: document.body.classList.contains('file-open'), bottom: Math.round(r.bottom), status: Math.round(s.top), desk: Math.round(d.height),
+           back: b && b.offsetParent ? [b.getAttribute('aria-label'), Math.round(b.getBoundingClientRect().height)] : null, tab: window.rikuy.rbTab }; })()"""
+
+
+def file_view(page, w):
+    """Word's File is a view over the window with a Back button; Esc, Back or a command run from it
+    give the document back, with its caret, on the tab that was open before."""
+    touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
+    tag = w.replace(' ', '').replace(',', '-')
+    load_doc(page, DOC)
+    click_text(page, 'Second paragraph', 3)
+    px = page.evaluate('window.rikuy.px')
+    open_tab(page, 'Insert', touch)
+    open_tab(page, 'File', touch)
+    g = page.evaluate(FILE_GEOM)
+    shot(page, f'file-view-{tag}')
+    check(f'File covers the window from the tabs to the status bar; the page is out of sight ({w})', g['open'] and abs(g['bottom'] - g['status']) <= 1 and g['desk'] == 0, g)
+    check(f'File has a Back button "Back to the document"{", 44 px under a finger" if touch else ""} ({w})', g['back'] and g['back'][0] == 'Back to the document' and (not touch or g['back'][1] >= 44), g['back'])
+    if not touch:
+        page.keyboard.press('Escape'); page.wait_for_timeout(250)
+        g = page.evaluate(FILE_GEOM)
+        page.keyboard.type('Z'); page.wait_for_timeout(250)
+        check(f'Esc leaves File for the tab open before it (Insert), and the next key types at the caret ({w})', not g['open'] and g['tab'] == 'insert' and g['desk'] > 100 and 'SecZond paragraph' in src(page), (g, src(page)[-60:]))
+        check(f'and the page was not laid out again at another size ({w})', page.evaluate('window.rikuy.px') == px)
+        page.keyboard.press('Control+z'); page.wait_for_timeout(150)
+        open_tab(page, 'File')
+    click_text(page, 'Second paragraph', 3) if not touch else None
+    (page.locator('#rf-back').tap() if touch else page.locator('#rf-back').click()); page.wait_for_timeout(250)
+    g = page.evaluate(FILE_GEOM)
+    check(f'Back leaves File ({w})', not g['open'] and g['tab'] == 'insert' and g['desk'] > 100, g)
+    if not touch:
+        page.keyboard.type('Q'); page.wait_for_timeout(250)
+        check(f'and the caret is where it was ({w})', 'SecQond paragraph' in src(page), src(page)[-60:])
+        page.keyboard.press('Control+z'); page.wait_for_timeout(150)
+    # a command run from the view closes it; a menu of the view opening keeps it
+    open_tab(page, 'File', touch)
+    page.locator('#rf-template').click(); page.wait_for_timeout(250)
+    check(f'Templates opens its menu and File stays open under it ({w})', page.evaluate(FILE_GEOM)['open'] and page.locator('body > .pop [role=menu], body > [role=menu], .pop[role=menu]').count() >= 1)
+    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    check(f'Esc closes the menu first, File stays, and the keys stay in it, not on the page under it ({w})', page.evaluate(FILE_GEOM)['open'] and not dialog_open(page) and page.evaluate("document.activeElement.id") != 'pages', page.evaluate("document.activeElement.id"))
+    (page.locator('#rf-props').tap() if touch else page.locator('#rf-props').click()); page.wait_for_timeout(300)
+    g = page.evaluate(FILE_GEOM)
+    check(f'Properties opens its dialog over the document; File has closed ({w})', not g['open'] and dialog_open(page) and g['desk'] > 100, g)
+    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    open_tab(page, 'File', touch)
+    (page.locator('#rf-blank').tap() if touch else page.locator('#rf-blank').click()); page.wait_for_timeout(500)
+    g = page.evaluate(FILE_GEOM)
+    check(f'Blank document makes the new document and shows it ({w})', not g['open'] and g['desk'] > 100 and '\\begin{document}' in src(page) and 'Second paragraph' not in src(page), g)
+    check(f'no sideways scroll ({w})', page.evaluate('document.documentElement.scrollWidth') <= page.viewport_size['width'])
+
+
+PARTS = {'file_view': (file_view, [(1366, False), (1920, True), (390, False), (360, True)]),
+         'first_visit': (first_visit, [(1366, False), (1920, True), (390, False), (360, True)]),
          'dialogs': (dialogs_give_the_caret_back, [(1400, False), (1400, True)]),
          'phone_dialogs': (phone_dialogs, [(390, False), (360, True)])}
 
