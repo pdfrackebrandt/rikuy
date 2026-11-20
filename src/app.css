@@ -456,6 +456,11 @@ body.file-open #rp-file .rb-dl::before { display: none; }
 /* the row scrolls and clips anything drawn outside a button, so the focus ring sits inside */
 .rb .btn:focus-visible, .rb .rb-tile:focus-visible, .rb .rb-sb:focus-visible, .rb-style:focus-visible, .rb-tabsel:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 .rb .btn.icon b, .rb .btn.icon i, .rb .btn.icon u { font: 15px var(--font-doc); }
+/* every ribbon button's name in one regular weight, as Word draws them (Home's Find, Replace and
+   Select read bolder than the downloads beside them); a glyph keeps its own (Bold's B). With a
+   mouse from 900 px, one size too: Home's groups' names as the laid out groups' and the downloads' */
+#ribbon .btn { font-weight: 400; }
+@media (min-width: 900px) and (pointer: fine) { #ribbon .rb-grp > .btn, #ribbon .rb-grp > .rb-split > .btn { font-size: 12px; } }
 .rb .btn.icon b { font-weight: 700; }
 /* a press on a disabled button reaches the row, which keeps the caret on the page */
 .rb .btn:disabled { pointer-events: none; }

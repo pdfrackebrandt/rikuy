@@ -710,6 +710,12 @@ def downloads_group(p):
                 and d['lab'] and d['lab'][1] == 'Download' and d['lab'][0][1] > b[2][1] + 22 and len(set(d['icons'])) == 3
             if not ok: bad[(w, t)] = d
     check('from 900 px with a mouse, on Home and the laid out tabs at 1920 and 1366 px: PDF, Word and LaTeX one under another in the grid\'s three rows, each its own icon, the group\'s name Download under them', not bad, str(bad)[:400])
+    # one weight and size for every button's name, as Word's: Find, Replace and Select as PDF, Word
+    # and LaTeX (a glyph drawn for an icon, Bold's B, keeps its own)
+    page.evaluate("rikuy.selectTab('home')"); page.wait_for_timeout(150)
+    wts = page.evaluate("""() => { const out = {}; for (const x of document.querySelectorAll('#ribbon .rb-panel:not([hidden]) .btn:not(.icon) > span:not(.sr), #ribbon .rb-panel:not([hidden]) .btn > .rb-bl'))
+      if (x.offsetParent && x.textContent.trim()) out[x.textContent.trim()] = getComputedStyle(x).fontWeight + ' ' + getComputedStyle(x).fontSize; return out; }""")
+    check('Home at 1366 px: every button\'s name in one weight and size (%d names, Find and PDF among them)' % len(wts), len(set(wts.values())) == 1 and 'Find' in wts and 'PDF' in wts, wts)
     browser.close()
     browser, page, errors = open_page(p, width=1180, height=800, touch=True)
     d = page.evaluate(DL)
