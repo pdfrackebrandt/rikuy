@@ -56,6 +56,16 @@ const coreWasm = fs.readFileSync(R('tex/vendor/core/rikuy-core.wasm'));
 if (coreWasm.subarray(0, 4).toString('hex') !== '0061736d') throw new Error('tex/vendor/core/rikuy-core.wasm is no WebAssembly module');
 const coreSha = crypto.createHash('sha256').update(coreWasm).digest('hex');
 const CORE = { file: 'core/rikuy-core-' + coreSha.slice(0, 16) + '.wasm', sha256: coreSha };
+// Picture Format's picture tools (tex/vendor/pic/rikuy-pic.wasm, built by tex/build_tools.sh pic):
+// beside the core as core/rikuy-pic-<hash>.wasm, fetched the first time Corrections, Color,
+// Transparency or Compress Pictures runs (src/picfx.js), checked against this hash
+const picWasm = fs.readFileSync(R('tex/vendor/pic/rikuy-pic.wasm'));
+if (picWasm.subarray(0, 4).toString('hex') !== '0061736d') throw new Error('tex/vendor/pic/rikuy-pic.wasm is no WebAssembly module');
+const picSha = crypto.createHash('sha256').update(picWasm).digest('hex');
+// and its worker (src/picworker.js, bundled alone), beside it as core/rikuy-pic-worker-<hash>.js
+const picWorker = Buffer.from((await build({ entryPoints: [R('src/picworker.js')], bundle: true, format: 'iife', minify: !process.argv.includes('--dev'), write: false, target: ['chrome100', 'firefox100', 'safari15'], legalComments: 'none', charset: 'utf8' })).outputFiles[0].contents);
+const picWorkerSha = crypto.createHash('sha256').update(picWorker).digest('hex');
+const PIC = { file: 'core/rikuy-pic-' + picSha.slice(0, 16) + '.wasm', sha256: picSha, worker: 'core/rikuy-pic-worker-' + picWorkerSha.slice(0, 16) + '.js' };
 // Spelling (src/spell/): Hunspell (tex/vendor/hunspell/, built by tex/build_tools.sh hunspell) and
 // its dictionaries go beside the page in spell/, each named by the first 16 hex digits of its
 // SHA-256, with the spell worker (Emscripten's glue, then src/spell/worker.js, one classic
@@ -105,7 +115,7 @@ const WIDGET_FILE = APP ? 'widget-' + crypto.createHash('sha256').update(WIDGET_
 // name without it (and serves the file there), and the frame, the service worker's install and
 // the HTTP cache must all name the one address that answers 200
 const WIDGET_URL = WIDGET_FILE.replace(/\.html$/, '');
-const out = await build({ entryPoints: [R('src/app.js')], bundle: true, format: 'iife', minify: process.argv.includes('--dev') ? false : true, write: false, target: ['chrome100', 'firefox100', 'safari15'], legalComments: 'none', charset: 'utf8', define: { __RIKUY_MIRROR__: JSON.stringify(process.env.RIKUY_MIRROR || ''), __RIKUY_SHARE__: JSON.stringify(process.env.RIKUY_SHARE || ''), __RIKUY_APP__: JSON.stringify(APP), __RIKUY_WORD__: JSON.stringify(WORD), __RIKUY_WORD_HOST__: JSON.stringify(process.env.RIKUY_WORD_HOST || ''), __RIKUY_CORE__: JSON.stringify(CORE), __RIKUY_SPELL__: JSON.stringify(SPELL), __RIKUY_TEXNAMES__: JSON.stringify(TEXNAMES), __RIKUY_WIDGET_SHELL__: JSON.stringify(WIDGET_URL), __RIKUY_DEV__: JSON.stringify(process.argv.includes("--dev")) } });
+const out = await build({ entryPoints: [R('src/app.js')], bundle: true, format: 'iife', minify: process.argv.includes('--dev') ? false : true, write: false, target: ['chrome100', 'firefox100', 'safari15'], legalComments: 'none', charset: 'utf8', define: { __RIKUY_MIRROR__: JSON.stringify(process.env.RIKUY_MIRROR || ''), __RIKUY_SHARE__: JSON.stringify(process.env.RIKUY_SHARE || ''), __RIKUY_APP__: JSON.stringify(APP), __RIKUY_WORD__: JSON.stringify(WORD), __RIKUY_WORD_HOST__: JSON.stringify(process.env.RIKUY_WORD_HOST || ''), __RIKUY_CORE__: JSON.stringify(CORE), __RIKUY_PIC__: JSON.stringify(PIC), __RIKUY_SPELL__: JSON.stringify(SPELL), __RIKUY_TEXNAMES__: JSON.stringify(TEXNAMES), __RIKUY_WIDGET_SHELL__: JSON.stringify(WIDGET_URL), __RIKUY_DEV__: JSON.stringify(process.argv.includes("--dev")) } });
 let js = out.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 
 // 2b. git, loaded by the page the first time the Git panel opens; the packages it bundles keep
@@ -220,6 +230,8 @@ fs.writeFileSync(O('git.js'), gitJs);
 fs.rmSync(O('core'), { recursive: true, force: true });
 fs.mkdirSync(O('core'), { recursive: true });
 fs.writeFileSync(O(CORE.file), coreWasm);
+fs.writeFileSync(O(PIC.file), picWasm);
+fs.writeFileSync(O(PIC.worker), picWorker);
 fs.rmSync(O('spell'), { recursive: true, force: true });
 if (SPELL) { fs.mkdirSync(O('spell'), { recursive: true }); for (const [n, b] of SPELL_FILES) fs.writeFileSync(O(n), b); }
 // (in every build, the artifact's too; a list an earlier build left in dist/ goes)

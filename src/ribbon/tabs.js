@@ -317,6 +317,8 @@ export const tabs = {
     if (was !== id) $('#ribbon').scrollLeft = 0;
     if (focus) $('#rt-' + id).focus();
     document.body.classList.toggle('file-open', id === 'file');
+    // (File as a view: where it came from, the caret it leaves, its Back button: src/ui/fileview.js)
+    if ((id === 'file') !== (was === 'file') && this.fileViewChanged) this.fileViewChanged(id === 'file', was);
     if (was !== id) { this.ribbonSync(); this.ribbonFit(); }
   },
 

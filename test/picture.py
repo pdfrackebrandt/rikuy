@@ -19,7 +19,7 @@ picture's box in the PDF against the page's.
 RIKUY_DIST names another dist/."""
 import os, sys, re, base64, struct, zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import open_page, check, results, src, load_doc, click_text, roundtrip, pressed
+from browser import open_page, check, results, src, load_doc, click_text, roundtrip, pressed, PRINT_LAYOUT
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -592,6 +592,8 @@ def phones(p):
     for w, h in ((390, 844), (360, 740)):
         br = p.chromium.launch(args=[a for a in os.environ.get('CHROME_ARGS', '').split() if a])
         ctx = br.new_context(viewport={'width': w, 'height': h}, has_touch=True, is_mobile=True, device_scale_factor=2)
+        # (a phone's Print Layout, which this suite was written for: browser.py, PRINT_LAYOUT)
+        ctx.add_init_script(PRINT_LAYOUT)
         html = open(os.path.join(DIST, 'rikuy.html'), encoding='utf8').read()
         doc = B.SKELETON_HEAD + html + '</body></html>'
         def handler(route):
@@ -747,9 +749,9 @@ def r3_objects(page):
     D3 = WRAP('Intro.\n\n' + CHART + '\nAfter.', TIKZPRE)
     load_doc(page, D3); page.wait_for_timeout(300)
     box = page.evaluate("(() => { const e = document.querySelector('#pages .raw.drawn svg.pgf'); e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; })()")
-    page.mouse.click(box[0] + box[2] / 2, box[1] + box[3] / 2); page.wait_for_timeout(300)
+    page.mouse.dblclick(box[0] + box[2] / 2, box[1] + box[3] / 2); page.wait_for_timeout(300)
     vals = page.evaluate("[...document.querySelectorAll('.pop input.pd-cell')].slice(0, 12).map((i) => i.value)")
-    check('a click on a chart Rikuy made opens its grid again with its data', vals[:4] == ['', 'Series 1', '', ''] and vals[4:6] == ['A', '4.3'], vals)
+    check('a double click on a chart Rikuy made opens its grid again with its data (a click selects it: Chart Design)', vals[:4] == ['', 'Series 1', '', ''] and vals[4:6] == ['A', '4.3'], vals)
     h0 = page.evaluate('window.rikuy.hist.length')
     page.get_by_role('textbox', name='Row 2, series 1', exact=True).fill('7'); page.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(300)
     check('OK writes the chart again in its place: (B,7), one step', src(page) == D3.replace('(B,2.5)', '(B,7)') and page.evaluate('window.rikuy.hist.length') == h0 + 1, body(page))

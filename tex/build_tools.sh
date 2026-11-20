@@ -11,8 +11,8 @@
 # core is no program: the editor's own C++ (native/core/), one module with no JavaScript glue,
 # vendor/core/rikuy-core.wasm, which build.mjs puts inside the page and src/native.js loads.
 #
-# Usage: build_tools.sh [dvips] [asy] [xindy] [gnuplot] [core] [hunspell] [harper] [mesa] [gsl] [fftw] [eigen]
-#   (default: the four programs, core, hunspell and harper; mesa, gsl, fftw and eigen build only asy's libraries,
+# Usage: build_tools.sh [dvips] [asy] [xindy] [gnuplot] [core] [pic] [hunspell] [harper] [mesa] [gsl] [fftw] [eigen]
+#   (default: the four programs, core, pic, hunspell and harper; mesa, gsl, fftw and eigen build only asy's libraries,
 #   into $RIKUY_SRC)   env: RIKUY_SRC, RIKUY_VENDOR, UBUNTU_POOL
 # Needs: Ubuntu's emscripten 3.1.6 and node; git, curl, make, pkg-config, xz and bzip2; meson,
 #   ninja, bison, flex and Python 3 with mako (Mesa); gcc with libgmp-dev and libgc-dev (a native
@@ -250,6 +250,22 @@ core() {
   ls -l "$VENDOR/core"
 }
 
+# ---- pic -------------------------------------------------------------------------------------------
+# Picture Format's Corrections, Color, Transparency and Compress Pictures (native/pic/pic.c, read
+# by src/picfx.js): stb_image and stb_image_write (public domain) at a pinned commit of
+# github.com/nothings/stb, checked by hash, with Rikuy's C round them; a standalone module with no
+# JavaScript glue, built as the core is. The page fetches it only when one of those tools is used.
+STB_COMMIT=6b5799bae8a1fe3792691ef4b72ae26434c3e799
+pic() {
+  fetch https://raw.githubusercontent.com/nothings/stb/$STB_COMMIT/stb_image.h dfc2aadda6295f67f677587773f25e5bf8c8ad427ed0db7c518525c91e72e020
+  fetch https://raw.githubusercontent.com/nothings/stb/$STB_COMMIT/stb_image_write.h 5d89edc8bffd848f3e138b2a1dbec67aadbed591894bde16ade7c83dc233af9b
+  mkdir -p "$VENDOR/pic"
+  emcc -O3 -std=c11 -Wall -I"$SRC/dl" --no-entry -sSTANDALONE_WASM -sMALLOC=emmalloc -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=16MB -sTOTAL_STACK=512KB \
+    "$HERE/native/pic/pic.c" -o "$VENDOR/pic/rikuy-pic.wasm"
+  chmod 644 "$VENDOR/pic/rikuy-pic.wasm"
+  ls -l "$VENDOR/pic"
+}
+
 # ---- hunspell ------------------------------------------------------------------------------------
 # Hunspell 1.7.6 (Ubuntu's source package) with Rikuy's few C functions (native/spell/spell.cc),
 # for the editor's spelling (src/spell/): a classic script defining RikuyHunspell and its .wasm,
@@ -456,5 +472,5 @@ xindy() {
   ls -l "$VENDOR/xindy"
 }
 
-[ $# -gt 0 ] || set -- dvips asy xindy gnuplot core hunspell harper
+[ $# -gt 0 ] || set -- dvips asy xindy gnuplot core pic hunspell harper
 for t in "$@"; do "$t"; done
