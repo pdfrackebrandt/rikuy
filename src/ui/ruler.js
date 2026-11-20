@@ -78,6 +78,15 @@ export function rulerInstall(app) {
       if (!m || m.classList.contains('off') || e.button !== 0) return;
       drag(app, m.dataset.k, e);
     });
+    // a double press on a marker opens what sets it by number, as Word's ruler does: the
+    // Paragraph dialog for an indent, Page setup for a margin (a press of one pointer for every
+    // drag, UI-PRINCIPLES.md T5, WCAG 2.5.7)
+    el.addEventListener('dblclick', (e) => {
+      const m = e.target.closest('.ru-mk');
+      if (!m || m.classList.contains('off')) return;
+      e.preventDefault();
+      app.runCommand(/^m[lrtb]$/.test(m.dataset.k) ? 'page-setup' : 'paragraph-settings');
+    });
     el.addEventListener('keydown', (e) => {
       const m = e.target.closest('.ru-mk');
       if (!m || m.classList.contains('off')) return;
@@ -196,7 +205,7 @@ export function rulerSync(app) {
     const v = k === 'right' ? (S.para ? S.para.r : 0) : k === 'mr' ? S.mr : k === 'ml' ? S.ml : x - S.colL;
     e.setAttribute('aria-valuenow', String(Math.round(v / CM * 100) / 100));
     e.setAttribute('aria-valuetext', fmt(v));
-    e.title = NAMES[k] + ': ' + fmt(v) + (off && title ? '. ' + title : title ? ' ' + title : '');
+    e.title = NAMES[k] + ': ' + fmt(v) + (off && title ? '. ' + title : title ? ' ' + title : '') + (off ? '' : '. Drag, or double click for ' + (k === 'ml' || k === 'mr' ? 'Page setup' : 'the Paragraph dialog'));
   };
   const q = S.para, off = !q;
   place('first', S.colL + pos(S, 'first'), q ? (q.special === 'first' ? '(LaTeX\'s \\parindent; drag to the left indent for \\noindent, past it for a hanging indent)' : '') : S.why, off);
@@ -225,7 +234,7 @@ export function rulerSync(app) {
       e.setAttribute('aria-disabled', S.marginsOK ? 'false' : 'true');
       e.setAttribute('aria-valuenow', String(Math.round(v / CM * 100) / 100));
       e.setAttribute('aria-valuetext', fmt(v));
-      e.title = NAMES[k] + ': ' + fmt(v) + (S.marginsOK ? '' : '. ' + S.marginsWhy);
+      e.title = NAMES[k] + ': ' + fmt(v) + (S.marginsOK ? '. Drag, or double click for Page setup' : '. ' + S.marginsWhy);
     }
   }
 }

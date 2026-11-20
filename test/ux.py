@@ -901,8 +901,43 @@ def bar_room(p):
         browser.close()
 
 
+
+def tap_alternatives(page, w):
+    """Every drag has a single press alternative (UI-PRINCIPLES.md T5, WCAG 2.5.7): a double click
+    on a ruler's indent marker opens the Paragraph dialog, on a margin marker Page setup, as Word's
+    ruler does, and their tooltips say so; a picture's handles and Crop's bars have Height, Width
+    and Crop by Numbers."""
+    load_doc(page, DOC)
+    run_cmd(page, 'ruler') if not page.evaluate('!!window.rikuy.prefs.ruler') else None
+    click_text(page, 'Second paragraph', 3); page.wait_for_timeout(400)
+    got = {}
+    for k in ('left', 'first', 'ml', 'mt'):
+        loc = page.locator(f'#ruler .ru-mk.ru-{k}, #vruler .ru-mk.ru-{k}').first
+        if not loc.count() or not loc.is_visible():
+            got[k] = None
+            continue
+        title = loc.get_attribute('title') or ''
+        # (where view.py presses them: a margin's marker lies under the indents' at its edge)
+        r = loc.bounding_box()
+        x = r['x'] + 3 if k == 'ml' else r['x'] + r['width'] / 2
+        y = r['y'] + 2 if k == 'mt' else r['y'] + r['height'] / 2
+        page.mouse.dblclick(x, y); page.wait_for_timeout(400)
+        got[k] = [page.evaluate("(document.querySelector('body > .pop #pop-title') || {}).textContent || ''"), title]
+        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        click_text(page, 'Second paragraph', 3)
+    ok = got.get('left') and got['left'][0] == 'Paragraph' and got.get('first') and got['first'][0] == 'Paragraph' and got.get('ml') and got['ml'][0].startswith('Page') and 'double click' in got['left'][1] and 'Page setup' in got['ml'][1]
+    check(f'a ruler marker double clicked opens its dialog: an indent the Paragraph dialog, a margin Page setup, as its tooltip says ({w})', ok, got)
+    # (Picture Format's Height and Width are number fields, as Word's; Crop's arrow has Crop by Numbers)
+    import json
+    ctl = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist', 'controls.json')))['controls']
+    have = {x['command']: x['role'] for x in ctl if x.get('command') in ('picture-height', 'picture-width', 'picture-crop')}
+    crop = page.evaluate("(window.rikuy.commandMenu ? window.rikuy.commandMenu('picture-crop') : null)")
+    check(f'a picture\'s handles have Height and Width as number fields, Crop a button ({w})', have == {'picture-height': 'spinbutton', 'picture-width': 'spinbutton', 'picture-crop': 'button'}, (have, crop))
+
+
 PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
          'bar_room': (bar_room, None),
+         'tap_alternatives': (tap_alternatives, [(1366, False), (1920, True)]),
          'focus_rules': (focus_rules, [(1366, False), (1920, True), (390, False)]),
          'contrast': (contrast, [(1366, False), (1366, True), (390, False), (390, True)]),
          'dialog_kinds': (dialog_kinds, [(1366, False), (1920, True), (390, False), (360, True)]),
