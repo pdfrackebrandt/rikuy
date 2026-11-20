@@ -270,11 +270,11 @@ export function propertiesDialog(app, focus) {
   P1.append(row('tb-sec', mk('div', 'tb-gl', 'Size'), prefer, field('Table width', width)),
     row('tb-sec', align, mk('p', 'tb-note', F ? 'The float\'s \\centering or \\raggedleft.' : 'A table outside a float follows its paragraph: Insert Caption puts it in one.')),
     row('tb-sec', wrap, mk('p', 'tb-note', 'Around: wrapfig\'s wraptable, the paragraph after the table beside it.')),
-    row('tb-sec', mk('div', 'tb-gl', 'Default cell margins'), field('Left and right (\\tabcolsep)', sep), field('Top (\\extrarowheight)', top)), bs);
+    row('tb-sec', mk('div', 'tb-gl', 'Default cell margins'), field('Left and right', sep), field('Top', top)), bs);
   // Row: its height, the header rows repeated on every page
   const stretch = numberField({ id: 'tb-stretch', name: 'Row height', value: { value: S.arraystretch ? parseFloat(S.arraystretch.value) || 1 : 1, unit: '×' }, units: ['×'], step: 0.1, min: 0.5, max: 4 });
   const rep = check('Repeat as header row at the top of each page', X.repeats(h.T));
-  P2.append(row('tb-sec', mk('div', 'tb-gl', 'Rows'), field('Row height (\\arraystretch)', stretch)), row('tb-sec', mk('div', 'tb-gl', 'Options'), rep, mk('p', 'tb-note', 'The table\'s first rows, down to the caret\'s, again on every page it runs over (a longtable with \\endhead).')));
+  P2.append(row('tb-sec', mk('div', 'tb-gl', 'Rows'), field('Row height, times the usual', stretch)), row('tb-sec', mk('div', 'tb-gl', 'Options'), rep, mk('p', 'tb-note', 'The table\'s first rows, down to the caret\'s, again on every page it runs over (a longtable with \\endhead).')));
   // Column: the caret's column's width
   const w = col && col.w ? parseLength(col.w) : null;
   const fixed = check('Preferred width', !!w);
@@ -454,7 +454,15 @@ export function formulaDialog(app) {
   const text = mk('input', 'tb-ftext');
   text.type = 'text'; text.spellcheck = false; text.autocomplete = 'off';
   text.value = have ? (m ? m[1] : have.text) : numAbove || c === 0 ? '=SUM(ABOVE)' : '=SUM(LEFT)';
-  const fmt = select('Number format', [['', 'As the value is'], ...FX.FORMATS.map((f) => [f, f])], m ? m[2] : '');
+  // (Word's Number format box takes a format of your own too: a list to pick from, and a box)
+  const fmt = mk('input', 'tb-ftext tb-fmt');
+  fmt.type = 'text'; fmt.spellcheck = false; fmt.autocomplete = 'off'; fmt.placeholder = 'As the value is';
+  fmt.value = m ? m[2] : '';
+  fmt.setAttribute('aria-label', 'Number format');
+  const fmts = mk('datalist');
+  fmts.id = 'tb-fmt-list';
+  for (const f of FX.FORMATS) fmts.append(new Option(f, f));
+  fmt.setAttribute('list', fmts.id);
   const fn = select('Paste function', [['', 'Paste function'], ...FX.FUNCTIONS.map((f) => [f, f])], '');
   fn.addEventListener('change', () => {
     if (!fn.value) return;
@@ -469,10 +477,10 @@ export function formulaDialog(app) {
     const g = grid.map((row) => row.map((x) => (x == null ? x : { v: FX.cellNumber(x.tex) })));
     try { out.textContent = name + ' will read ' + FX.formatNumber(FX.evaluate(text.value, g, { r, c }), fmt.value).replace(/\\([$%])/g, '$1').replace(/\$-\$/g, '−'); out.classList.remove('bad'); } catch (e) { out.textContent = e.message; out.classList.add('bad'); }
   };
-  text.addEventListener('input', preview); fmt.addEventListener('change', preview);
+  text.addEventListener('input', preview); fmt.addEventListener('input', preview);
   preview();
   const ok = () => { const t = text.value, f = fmt.value; back(app); app.runCommand('table-formula', { text: t, format: f }); };
-  p.append(row('tb-sec', field('Formula', text), out, field('Number format', fmt), field('Paste function', fn)),
+  p.append(row('tb-sec', field('Formula', text), out, field('Number format', fmt), fmts, field('Paste function', fn)),
     mk('p', 'tb-note', 'Rikuy computes it now and writes the value in ' + name + ', so the table compiles anywhere; the formula stays on a "% formula" line before the table, and Update Formulas computes it again (Word updates its field when you press F9 or print).'), buttons(app, ok));
   finish(app, p, ok);
   text.focus(); text.select();
@@ -487,7 +495,7 @@ export function marginsDialog(app) {
   const side = numberField({ id: 'tb-sep', name: 'Left and right', value: (S.tabcolsep && parseLength(S.tabcolsep.value, 'pt')) || { value: 6, unit: 'pt' }, units: ['pt', 'mm', 'cm'], step: 1, min: 0, max: 72 });
   const top = numberField({ id: 'tb-top', name: 'Top', value: (S.extrarowheight && parseLength(S.extrarowheight.value, 'pt')) || { value: 0, unit: 'pt' }, units: ['pt', 'mm', 'cm'], step: 1, min: 0, max: 72 });
   const ok = () => { const a = side.get(), b = top.get(); back(app); app.runCommand('cell-margins', { side: a.value === 6 && a.unit === 'pt' ? null : formatLength(a), top: b.value === 0 ? null : formatLength(b) }); };
-  p.append(row('tb-sec', mk('div', 'tb-gl', 'Default cell margins'), field('Left and right (\\tabcolsep)', side), field('Top (\\extrarowheight)', top)), buttons(app, ok));
+  p.append(row('tb-sec', mk('div', 'tb-gl', 'Default cell margins'), field('Left and right', side), field('Top', top)), buttons(app, ok));
   finish(app, p, ok);
 }
 

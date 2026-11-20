@@ -89,6 +89,53 @@ ok('the grid of cells and a cell\'s value set, its wrapper kept', () => {
   assert.deepEqual(X.setCellValue(PRICES, g[1][1].cell, '2').edits, []);
 });
 
+// (the review of PR 84, H2, M2, L2: formula lines did not follow rows Rikuy added, Update then
+// overwrote data; a range was looped over its nominal size; numbers unlike Word's)
+const FX_TAB = 'Before.\n\n% formula B5 [10]: =SUM(ABOVE)\n% formula C2 [4]: =B2*2+SUM(B2:B4)\n\\begin{tabular}{lrr}\nItem & Price & x \\\\\napples & 2 & 4 \\\\\npears & 3 & \\\\\nplums & 5 & \\\\\nTotal & 10 & \\\\\n\\end{tabular}\n\nAfter.\n';
+const follow = (r, src = FX_TAB) => { const T = at(src), fa = X.formulasAfter(src, T, r.edits, r.moved), out = X.apply(src, [...r.edits, ...fa.edits]); return { lines: X.formulasOf(out, at(out)).map((x) => x.name + ' ' + x.text), dropped: fa.dropped, out }; };
+ok('formula lines follow rows and columns inserted, deleted, sorted, merged and cells deleted', () => {
+  const T = at(FX_TAB), rows = X.dataRows(T);
+  assert.deepEqual(follow(X.insertRow(FX_TAB, T, rows[2], false)).lines, ['B6 =SUM(ABOVE)', 'C2 =B2*2+SUM(B2:B5)']);
+  assert.deepEqual(follow(X.insertRow(FX_TAB, T, rows[1], true)).lines, ['B6 =SUM(ABOVE)', 'C2 =B2*2+SUM(B2:B5)']);
+  assert.deepEqual(follow(X.deleteRows(FX_TAB, T, rows[2], rows[2])).lines, ['B4 =SUM(ABOVE)', 'C2 =B2*2+SUM(B2:B3)']);
+  const gone = follow(X.deleteRows(FX_TAB, T, rows[1], rows[1]));
+  assert.deepEqual([gone.lines, gone.dropped], [['B4 =SUM(ABOVE)'], ['C2']]);
+  assert.deepEqual(follow(X.insertCol(FX_TAB, T, 1, false, { row: rows[0] })).lines, ['C5 =SUM(ABOVE)', 'D2 =C2*2+SUM(C2:C4)']);
+  assert.deepEqual(follow(X.insertCol(FX_TAB, T, 1, true, { row: rows[0] })).lines, ['B5 =SUM(ABOVE)', 'D2 =B2*2+SUM(B2:B4)']);
+  assert.deepEqual(follow(X.deleteCols(FX_TAB, T, 0, 0)).lines, ['A5 =SUM(ABOVE)', 'B2 =A2*2+SUM(A2:A4)']);
+  // (the column a formula reads deleted: #REF!, which Update Formulas reports)
+  assert.deepEqual(follow(X.deleteCols(FX_TAB, T, 1, 1)).lines, ['B2 =#REF!*2+SUM(#REF!)']);
+  assert.throws(() => F.evaluate('=#REF!*2', [[{ v: 1 }]], { r: 0, c: 0 }), /was deleted/);
+  const sorted = follow(X.sortRows(FX_TAB, T, rows[1], rows[4], 1, { desc: true }));
+  assert.deepEqual(sorted.lines, ['B2 =SUM(ABOVE)', 'C5 =B5*2+SUM(B3:B5)']);
+  // (Sort moves a row ending in an empty cell with its &: three cells a row still)
+  assert.ok(sorted.out.includes('Total & 10 & \\\\\nplums & 5 & \\\\\npears & 3 & \\\\\napples & 2 & 4 \\\\'), sorted.out);
+  const merged = follow(X.mergeCells(FX_TAB, T, X.grow(T, { r0: rows[4], r1: rows[4], c0: 0, c1: 1 })));
+  assert.deepEqual([merged.lines, merged.dropped], [['C2 =B2*2+SUM(B2:B4)'], ['B5']]);
+  assert.deepEqual(follow(X.deleteCells(FX_TAB, T, { r0: rows[2], r1: rows[2], c0: 1, c1: 1 }, 'up')).lines, ['B4 =SUM(ABOVE)', 'C2 =B2*2+SUM(B2:B4)']);
+  assert.deepEqual(follow(X.deleteCells(FX_TAB, T, { r0: rows[1], r1: rows[1], c0: 1, c1: 1 }, 'left')).lines, ['B5 =SUM(ABOVE)', 'B2 =#REF!*2+SUM(B2:B4)']);
+  // a formula line keeps the value it wrote last, read back
+  assert.deepEqual(X.formulasOf(FX_TAB, T).map((x) => x.value), ['10', '4']);
+  assert.equal(run(FX_TAB, X.setFormula(FX_TAB, T, 'B5', '=SUM(ABOVE)', '11')), FX_TAB.replace('B5 [10]', 'B5 [11]'));
+  assert.match(X.setFormula(FX_TAB, T, 'B5', '=' + '1+'.repeat(300) + '1').error, /at most 500/);
+});
+ok('a formula reads its range clamped to the table, any length it stores, and rounds as Word', () => {
+  const g = G([['1', '2'], ['3', '4']]);
+  const t0 = Date.now();
+  assert.equal(F.evaluate('=SUM(A1:ZZZ99999)', g, { r: 5, c: 5 }), 10);
+  assert.equal(F.evaluate('=MAX(A1:ZZZ99999)+MIN(A1:B2)', g, { r: 5, c: 5 }), 5);
+  assert.ok(Date.now() - t0 < 200, Date.now() - t0);
+  assert.throws(() => F.evaluate('=' + '1+'.repeat(300) + '1', g, { r: 0, c: 0 }), /at most 500 characters/);
+  assert.equal(F.evaluate('=ROUND(-2.5, 0)', g, { r: 0, c: 0 }), -3);
+  assert.equal(F.evaluate('=ROUND(2.675, 2)', g, { r: 0, c: 0 }), 2.68);
+  assert.equal(F.evaluate('=ROUND(1234, -2)', g, { r: 0, c: 0 }), 1200);
+  assert.equal(F.formatNumber(2.675, '#,##0.00'), '2.68');
+  assert.equal(F.formatNumber(1.005, '0.00'), '1.01');
+  assert.equal(F.formatNumber(1e21, ''), '1000000000000000000000');
+  assert.equal(F.formatNumber(5e-8, ''), '0.00000005');
+  assert.equal(F.formatNumber(1e21, '#,##0'), '1,000,000,000,000,000,000,000');
+});
+
 // ---- width, wrapping ----------------------------------------------------------------------------------------
 ok('Preferred width: a tabular becomes a tabularx that wide, the width changed in place, and back', () => {
   const T = at(PRICES);

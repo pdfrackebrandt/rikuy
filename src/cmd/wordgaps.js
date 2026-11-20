@@ -366,7 +366,7 @@ register(
     synonyms: ['LaTeX input', 'Linear LaTeX'], when: always, on: (app) => app.prefs.eqFormat === 'latex', run: (app) => app.eqFormat('latex') },
   { id: 'eq-normal-text', name: 'Normal Text', label: 'Normal Text', kind: 'toggle', title: 'Normal Text: what you type next is words, upright (\\text{…}); again for maths', icon: I.text, tab: 'equation', group: 'conversions', order: 8,
     synonyms: ['Text in equation', 'abc', 'text'], when: fieldOpen, whyNot: () => FIELD_WHY, on: (app) => { const mf = mfOf(app); return !!mf && mf.mode === 'text'; }, run: (app) => app.eqNormalText() },
-  { id: 'eq-options', name: 'Equation Options', title: 'Equation Options…: what Alt+= makes on an empty line (numbered, unnumbered, \\[ \\]), and the Linear format (Unicode or LaTeX)', icon: I.convert,
+  { id: 'eq-options', name: 'Equation Options', title: 'Equation Options…: what Alt+= makes on an empty line (numbered, unnumbered, or a display with no number), and the Linear format (Unicode or LaTeX)', icon: I.convert,
     synonyms: ['Equation settings', 'Math options', 'Default equation'], when: always, run: (app, args) => (args ? app.eqOptions(args) : eqOptionsDialog(app)) }
 );
 
@@ -379,7 +379,7 @@ function eqOptionsDialog(app) {
     g.value = () => (ins.find((i) => i.checked) || ins[0]).value;
     return g;
   };
-  const env = rg('New equations on an empty line', [['equation', 'Numbered (equation)'], ['equation*', 'Unnumbered (equation*)'], ['\\[', 'Display, no number (\\[ \\])']], app.prefs.eqNewEnv || 'equation');
+  const env = rg('New equations on an empty line', [['equation', 'Numbered (equation)'], ['equation*', 'Unnumbered (equation*)'], ['\\[', 'Display, no number']], app.prefs.eqNewEnv || 'equation');
   const fmt = rg('Linear format', [['unicode', 'Unicode (UnicodeMath)'], ['latex', 'LaTeX']], app.prefs.eqFormat === 'latex' ? 'latex' : 'unicode');
   const note = mk('p', 'tb-note', 'Alt+= in a sentence makes a formula in the line ($…$), as in Word.');
   const btns = mk('div', 'tb-btns'), o = mk('button', 'btn primary', 'OK'), c = mk('button', 'btn ghost', 'Cancel');
@@ -542,7 +542,7 @@ Object.assign(methods, {
     if (o.newEnv && /^(equation\*?|\\\[)$/.test(o.newEnv)) this.prefs.eqNewEnv = o.newEnv;
     if (o.format) this.prefs.eqFormat = o.format === 'latex' ? 'latex' : 'unicode';
     this.savePrefs();
-    this.toast('Equation Options kept: Alt+= on an empty line makes ' + ({ equation: 'a numbered equation', 'equation*': 'an unnumbered equation', '\\[': 'a display (\\[ \\])' }[this.prefs.eqNewEnv || 'equation']) + '; Linear is ' + (this.prefs.eqFormat === 'latex' ? 'LaTeX' : 'Unicode') + '.', 5000);
+    this.toast('Equation Options kept: Alt+= on an empty line makes ' + ({ equation: 'a numbered equation', 'equation*': 'an unnumbered equation', '\\[': 'a display with no number' }[this.prefs.eqNewEnv || 'equation']) + '; Linear is ' + (this.prefs.eqFormat === 'latex' ? 'LaTeX' : 'Unicode') + '.', 5000);
     this.ribbonSync();
     return true;
   }
