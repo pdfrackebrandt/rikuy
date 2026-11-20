@@ -142,7 +142,7 @@ def graph_kinds(page):
         # reader sees), the mean of the channels' differences
         diff = page.evaluate('''async ([shot, name]) => {
           const img = async (blob) => createImageBitmap(blob);
-          const a = await img(await (await fetch('data:image/png;base64,' + shot)).blob()), b = await img(window.rikuy.assetBlobs.get(name));
+          const a = await img(new Blob([Uint8Array.from(atob(shot), (c) => c.charCodeAt(0))], { type: 'image/png' })), b = await img(window.rikuy.assetBlobs.get(name));
           const draw = (bm) => { const c = new OffscreenCanvas(a.width, a.height), g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, a.width, a.height); g.filter = 'blur(1px)'; g.drawImage(bm, 0, 0, a.width, a.height); return g.getImageData(0, 0, a.width, a.height).data; };
           const x = draw(a), y = draw(b); let sum = 0;
           for (let i = 0; i < x.length; i += 4) sum += (Math.abs(x[i] - y[i]) + Math.abs(x[i + 1] - y[i + 1]) + Math.abs(x[i + 2] - y[i + 2])) / 3;
