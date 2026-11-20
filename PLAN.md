@@ -3414,15 +3414,16 @@ Tests:
     found two availability problems from a stranger's document, fixed with tests: the values
     pattern's backtracking on a run of digits, and an implicit graph's unbounded PGF.
     Evidence: `npm test` green (`test/graphs.test.mjs` 11 groups: the formula language both ways
-    on 2,000 random trees, Graph this on 18 equations, the kinds against known answers, PGF ASCII
-    and balanced and inside TeX's lengths, the web writer's escaping); `test/graphs.py` GRAPHS_N
+    on 2,000 random trees, Graph this on 19 equations (14 drawn, 5 refused with the reason), the kinds against known answers, PGF ASCII
+    and balanced and inside TeX's lengths, the web writer's escaping); `test/graphs.py` 137
     checks: TeX's PGF picture on pdfLaTeX, XeLaTeX and LuaLaTeX against the live drawing in
     pixels (mean difference 2.9 to 4.1 of 255, 96 to 100 % of the curves' pixels within 2 px;
     four templates), a slider frame at a phone's speed (CPU 4 times slower, 390 px; best of
-    three drags): SPEED; `test/csp.py` 25 under the hosted policy (a graph, Graph this and the
-    web page with no refusal); `insert.py` INSERT_N, `browser.py` BROWSER_N, `tabs.py` TABS_N,
-    `agent.py` AGENT_N, `ribbon.py` RIBBON_N, `file.py` FILE_N, `eqtab.py` EQTAB_N, `view.py`
-    VIEW_N, `widgets.py` WIDGETS_N. Screenshots in /tmp/graph-shots. Left: the description in the
+    three drags): median 3.2 to 5.1 ms, 90th percentile 5.6 to 11.1 ms, the full drawing at rest 3 to
+    10 ms, no long task of the graph's own over 50 ms; `test/csp.py` 25 under the hosted policy (a graph, Graph this and the
+    web page with no refusal); `insert.py` 225 (its pictures PGF now; a graph's file 49 KB in the
+    built page, under its budget of 52); `browser.py` 199; the other suites by CI on the pull
+    request (PR 88). Screenshots in /tmp/graph-shots. Left: the description in the
     `.tex` itself (a `rikuygraph` environment), Graph this on systems of more than two equations
     and on inequalities, the Ramsey saddle path, the web page's dark mode and font subsets, the
     Edit graph button over a graph on a phone (it covers the plot's top).
