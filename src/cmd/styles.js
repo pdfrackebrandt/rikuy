@@ -361,6 +361,9 @@ export const methods = {
   blockStyleOf(at) {
     const { c, it, B } = at, none = new Set();
     if (c.ghost) {
+      // (a place the search box kept, in a blank paragraph gone since it took the focus: none;
+      // it threw on every letter typed in the box)
+      if (!this.ghost) return { v: '', to: none };
       // a line to come in a LaTeX paragraph keeps its paragraph's style
       if (this.ghost.tex) return { v: 'latex', to: none, why: WHY.line };
       const K = this.styleCatalog();

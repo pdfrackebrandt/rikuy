@@ -1446,7 +1446,16 @@ class App {
           const tr = e.getTargetRanges()[0];
           if (tr) range = this.rangeToSrc(tr);
         }
+        const run = this.typedRun, c0 = this.caretNow();
         this.insertText(data, range);
+        // Word's Repeat (F4) types the last run of typing again: what was typed since the caret
+        // last went elsewhere (src/cmd/view.js repeatLast)
+        const c1 = this.caretNow();
+        if (!this.cmdDepth && c1 && !c1.ghost) {
+          const on = !range && run && c0 && !c0.ghost && run.f === c0.f && run.p === c0.a;
+          this.typedRun = { f: c1.f, p: c1.a, text: (on ? run.text : '') + data };
+          this.lastAct = { text: this.typedRun.text };
+        }
         break;
       }
       case 'insertParagraph': this.enter(false); break;
