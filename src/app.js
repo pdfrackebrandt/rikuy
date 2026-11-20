@@ -43,6 +43,9 @@ import { methods as galleryMethods } from './ui/gallery.js';
 import { methods as searchMethods, installSearch } from './ui/search.js';
 import { methods as menuMethods, installMenu } from './ui/menu.js';
 import { installKeys } from './keys.js';
+import { installMotion } from './motion.js';
+import { installCaret } from './caret.js';
+import { installWebMcp } from './webmcp.js';
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
 import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf } from './styles.js';
@@ -5435,6 +5438,11 @@ installRibbon(app);
 installKeys(app, isMac, (id, at) => app.runCommand(id, null, at));
 installSearch(app);
 installMenu(app);
+// motion (src/motion.js), Word's animated caret (src/caret.js), and the tools an AI agent in this
+// browser may use where the browser offers them (src/webmcp.js, WebMCP)
+installMotion(app);
+app.caret = installCaret(app);
+app.ready.then(() => installWebMcp(app), () => {});
 app.isBalanced = isBalanced;
 // for tests and the batches' own checks: the registry and the parts controls are made of
 app.cmds = { command, commands, describe, enabled, register, unregister, run: (id, args) => runCmd(app, id, args) };

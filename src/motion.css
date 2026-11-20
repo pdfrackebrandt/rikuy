@@ -1,0 +1,71 @@
+/* Motion (src/motion.js, src/caret.js): what the script's animations need of the style sheet, the
+   view transitions, the caret, and the existing transitions of app.css set to the tokens of
+   src/tokens.css. Loaded after app.css (build.mjs). <html data-motion> is "full", "reduced"
+   (the system asks for reduced motion) or "off" (File › Options › Animations off). */
+
+/* ---- the views: Page, LaTeX and PDF cross fade (View Transitions, where the browser has them).
+   The cross fade is the browser's own (opacity alone); a press or a key during one goes to the
+   page as it is now, under it, and ends it (src/motion.js) */
+::view-transition { pointer-events: none; }
+/* (the window's box keeps its size: its two pictures fade, the group around them does not move,
+   so nothing but opacity animates) */
+:root[data-motion]::view-transition-group(root) { animation-name: none; }
+:root[data-motion="full"]::view-transition-old(root),
+:root[data-motion="full"]::view-transition-new(root) { animation-duration: var(--rk-duration-normal); animation-timing-function: var(--rk-curve-standard); }
+:root[data-motion="reduced"]::view-transition-old(root),
+:root[data-motion="reduced"]::view-transition-new(root) { animation-duration: var(--rk-duration-fast); animation-timing-function: var(--rk-curve-standard); }
+
+/* ---- a ribbon tab's content slides inside its panel, which clips it meanwhile (a toolbar moved
+   to the right would widen the ribbon's scrolling row, which ribbonFit measures) */
+.rb-panel.rk-clip { overflow: hidden; overflow: clip; }
+
+/* ---- what leaves: an inert copy fading out above the page, under what opens next */
+.rk-ghosts { position: fixed; inset: 0; z-index: 39; pointer-events: none; }
+.rk-ghost, .rk-ghost * { pointer-events: none !important; }
+
+/* ---- the PDF's old pages held over the new ones until those are drawn (src/motion.js pdfPane);
+   the same look as .pdf-pages and .pdf-page in app.css, under names no other code looks for */
+.rk-pdf-xf { position: absolute; overflow: hidden; pointer-events: none; background: inherit; }
+.rk-xf-pages { display: flex; flex-direction: column; align-items: center; gap: 12px; box-sizing: border-box; }
+.rk-xf-page { position: relative; background: #fff; box-shadow: var(--rk-shadow-8); flex: none; }
+.rk-xf-page canvas { display: block; }
+
+/* ---- the caret (src/caret.js): the browser's own made transparent while this one draws it */
+/* (caret-color is inherited: #pages, and the one kind of paragraph that sets its own, rather than
+   every element of the page, so the attribute's change restyles two kinds of element, not all) */
+:root[data-caret="custom"] #pages, :root[data-caret="custom"] #pages .it.tex { caret-color: transparent !important; }
+.rk-caret { position: absolute; left: 0; top: 0; z-index: 3; width: 1px; height: 18px; background: var(--rk-color-caret); pointer-events: none;
+  transition: transform var(--rk-duration-faster) var(--rk-curve-standard); will-change: transform, opacity; }
+.rk-caret.rk-tex { background: var(--rk-color-caret-tex); }
+body.dark-page .rk-caret { background: var(--rk-color-caret-dark-page); }
+.rk-caret.rk-jump { transition: none; }
+@media print { .rk-caret { display: none !important; } }
+@media (forced-colors: active) { .rk-caret { display: none !important; } }
+
+/* ---- an AI agent's question (src/webmcp.js): Rikuy's one modal dialog, so the one with a
+   backdrop, which fades in with it */
+.rk-agent-ask { box-sizing: border-box; width: min(420px, calc(100vw - 32px)); padding: var(--rk-space-20) var(--rk-space-24); border: 1px solid var(--rk-color-stroke); border-radius: var(--rk-radius-surface);
+  background: var(--rk-color-panel); color: var(--rk-color-fg); box-shadow: var(--rk-shadow-64); font: var(--rk-type-body); }
+.rk-agent-ask::backdrop { background: var(--rk-color-backdrop); }
+.rk-agent-ask h2 { margin: 0 0 var(--rk-space-8); font: var(--rk-type-subtitle); }
+.rk-agent-ask p { margin: 0 0 var(--rk-space-20); color: var(--rk-color-fg); }
+.rk-agent-ask-row { display: flex; justify-content: flex-end; gap: var(--rk-space-8); }
+.rk-agent-ask .btn { min-height: 32px; padding: 0 var(--rk-space-16); border-radius: var(--rk-radius-control); }
+.rk-agent-ask .btn:focus-visible { outline: 2px solid var(--rk-color-brand); outline-offset: 2px; }
+:root[data-motion="full"] .rk-agent-ask[open] { animation: rk-dialog-in var(--rk-duration-normal) var(--rk-curve-decelerate) backwards; }
+:root[data-motion="full"] .rk-agent-ask[open]::backdrop { animation: rk-fade-in var(--rk-duration-normal) var(--rk-curve-decelerate) backwards; }
+:root[data-motion="reduced"] .rk-agent-ask[open], :root[data-motion="reduced"] .rk-agent-ask[open]::backdrop { animation: rk-fade-in var(--rk-duration-faster) var(--rk-curve-decelerate) backwards; }
+@keyframes rk-dialog-in { from { opacity: 0; scale: var(--rk-scale-dialog); } }
+@keyframes rk-fade-in { from { opacity: 0; } }
+@media (forced-colors: active) { .rk-agent-ask::backdrop { background: transparent; } }
+
+/* ---- app.css's own transitions, on the tokens (M1: 100 to 300 ms in Fluent's steps) and off
+   where motion is (a triangle's turn, a control fading in on hover) */
+.nv-tog svg, .fold-tg svg { transition-duration: var(--rk-duration-faster); transition-timing-function: var(--rk-curve-standard); }
+.w-src, .w-edit { transition-duration: var(--rk-duration-faster); transition-timing-function: var(--rk-curve-standard); }
+.focus-x { transition-duration: var(--rk-duration-fast); transition-timing-function: var(--rk-curve-standard); }
+/* (the PDF's progress grew by its width, a size: it steps instead; docs/handoff/FUTURE.md) */
+.pdf-prog span { transition: none; }
+:root[data-motion="off"] .nv-tog svg, :root[data-motion="off"] .fold-tg svg, :root[data-motion="reduced"] .nv-tog svg, :root[data-motion="reduced"] .fold-tg svg { transition: none; }
+:root[data-motion="off"] .w-src, :root[data-motion="off"] .w-edit, :root[data-motion="off"] .focus-x { transition: none; }
+@media (prefers-reduced-motion: reduce) { .pdf-prog.busy span { animation: none; } }
