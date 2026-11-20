@@ -176,6 +176,17 @@ second) is the one number a Word user would call slow; it is the model's and the
   window, as Word's"): from 1000 px Help is a pane at the right that stays while the page is
   worked on; Close, Esc in it, or Help again close it. `test/ux.py help_pane`.
 
+### 11. The hostile review of PR 79 (`/tmp/review-ux.md`), answered
+
+H1 and M2 (File's keys in the hidden page; Tab and screen readers there), M1 (Esc with a pane
+docked), L4, L5, L8 and M6 in "File view: the keys stay in it…"; H2, M3 and M5 (the caret by its
+place in the source; the line kept in view) in "Give the caret back by its place in the source…";
+M4 (panes squeezing the page) in "One task pane docked at a time…"; L1, L2, L3, L6, L7 in "The
+review's lows…"; the backstage at 1920 px in "File's Home, as Word's backstage…". L9 stays (a
+menu opened by mouse and closed with Esc gives the focus to its button, as a menu button does);
+the top bar's "Fit" beside the status bar's percentage stays (one names the mode, the other the
+size), open for the owner.
+
 ## Findings for other agents
 
 ### Ribbon tabs (`src/ribbon/`, the ribbon's CSS)
