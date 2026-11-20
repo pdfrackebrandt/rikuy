@@ -313,6 +313,10 @@ export const methods = {
   openApplyStyles() {
     const s = getSelection();
     if (s.rangeCount && this.root.contains(s.anchorNode)) this.rbRange = s.getRangeAt(0).cloneRange();
+    // (the caret's style read now: a key pressed just after a click comes before the ribbon's own
+    // reading of the new place)
+    const at = this.ribbonAt();
+    if (at) this.styleSync(at);
     const K = this.styleCatalog(), st = this.rbStyle || { v: 'p' };
     // (the box takes the focus: the place on the page is kept for Enter)
     const c0 = this.caretNow();
