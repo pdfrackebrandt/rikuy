@@ -741,7 +741,58 @@ def consistency(page, w):
         check(f'the Styles pane and Find and Replace: buttons 32 px, the same title style ({w})', sp['btn'] and fr['btn'] and all(abs(x - 32) <= 1 for x in sp['btn'] + fr['btn']) and tuple(sp['title']) == tuple(fr['title']) == ('14px', '600', '20px') and fr['radius'] == '8px', (sp, fr))
 
 
+KINDS = """(sel) => { const P = document.querySelector(sel); if (!P) return null; const vis = (e) => e.checkVisibility() && e.getBoundingClientRect().height > 0;
+  const R = (e) => e.getBoundingClientRect(), nm = (e) => (e.getAttribute('aria-label') || e.textContent || e.className).trim().slice(0, 16);
+  return { btns: [...P.querySelectorAll('.btn')].filter(vis).map((e) => [nm(e), Math.round(R(e).width), Math.round(R(e).height), e.scrollWidth > e.clientWidth + 1]),
+    fields: [...P.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), select, textarea')].filter(vis).filter((e) => !e.closest('.nf') && (e.tagName !== 'TEXTAREA' || e.rows === 1)).map((e) => [e.tagName + ' ' + nm(e), Math.round(R(e).height), getComputedStyle(e).borderTopLeftRadius]),
+    tabs: [...P.querySelectorAll('[role=tab]')].filter(vis).map((e) => [nm(e), Math.round(R(e).height)]),
+    rows: [...P.querySelectorAll('label')].filter(vis).filter((l) => l.querySelector('input[type=checkbox], input[type=radio]') && !l.querySelector('input[type=text], select, textarea')).map((e) => [nm(e), Math.round(R(e).height)]) }; }"""
+
+
+def dialog_kinds(page, w):
+    """Inside every dialog, one height per kind (UI-PRINCIPLES.md C1, C9, T1, T2; the verification
+    of 0a6ef7b): buttons whole and 32 px (44 under a finger, and at least as wide), single line fields
+    32 px with 4 px corners, a dialog's tabs as tall as its buttons, a check box's row at least 24 px
+    (44 under a finger), the Symbols grid's cell ringed when the keys reach it."""
+    touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
+    H = 44 if touch else 32
+    load_doc(page, DOC)
+    seen = {}
+    for cmd in ('font-dialog', 'paragraph-settings', 'page-setup', 'insert-table-dialog', 'share', 'properties', 'autocorrect-options', 'more-symbols', 'word-count', 'check-accessibility', 'find-replace'):
+        click_text(page, 'Second paragraph', 3)
+        if cmd == 'find-replace':
+            page.keyboard.press('Control+h'); page.wait_for_timeout(300)
+            seen[cmd] = page.evaluate(KINDS, '#fr')
+        else:
+            run_cmd(page, cmd); page.wait_for_timeout(300)
+            seen[cmd] = page.evaluate(KINDS, 'body > .pop')
+        if cmd == 'more-symbols' and not touch:
+            for _ in range(4):
+                page.keyboard.press('Tab'); page.wait_for_timeout(60)
+                if page.evaluate("document.activeElement.matches('.sym-b')"):
+                    break
+            ring = page.evaluate("(() => { const a = document.activeElement, c = getComputedStyle(a); return [a.className, c.outlineStyle, c.outlineWidth]; })()")
+            check(f'a cell of the Symbols grid reached by Tab has its ring, an outline ({w})', ring[0] == 'sym-b' and ring[1] != 'none' and float(ring[2][:-2]) >= 2, ring)
+        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    missing = [k for k, v in seen.items() if not v]
+    check(f'the eleven dialogs open ({w})', not missing, missing)
+    bad = {k: [b for b in v['btns'] if abs(b[2] - H) > 1 or b[3] or (touch and b[1] < 44)] for k, v in seen.items() if v}
+    bad = {k: v for k, v in bad.items() if v}
+    check(f'every dialog button whole, {H} px tall{" and at least 44 wide" if touch else ""} ({w})', not bad, bad)
+    badf = {k: [f for f in v['fields'] if abs(f[1] - H) > 1 or f[2] != '4px'] for k, v in seen.items() if v}
+    badf = {k: v for k, v in badf.items() if v}
+    check(f'every single line field {H} px tall with 4 px corners ({w})', not badf, badf)
+    badt = {k: [t for t in v['tabs'] if abs(t[1] - H) > 1] for k, v in seen.items() if v}
+    badt = {k: v for k, v in badt.items() if v}
+    check(f'a dialog\'s tabs as tall as its buttons, {H} px ({w})', not badt and any(v and v['tabs'] for v in seen.values()), badt)
+    R = 44 if touch else 24
+    badr = {k: [r for r in v['rows'] if r[1] < R] for k, v in seen.items() if v}
+    badr = {k: v for k, v in badr.items() if v}
+    check(f'every check box\'s and radio button\'s row at least {R} px ({w})', not badr and any(v and v['rows'] for v in seen.values()), badr)
+
+
 PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
+         'dialog_kinds': (dialog_kinds, [(1366, False), (1920, True), (390, False), (360, True)]),
          'verify_lows': (verify_lows, [(1366, False), (1920, True)]), 'widen': (widen, None),
          'place_kept': (place_kept, [(1366, False), (390, False)]),
          'lows': (lows, [(390, False), (768, False), (1024, True)]),
