@@ -32,6 +32,7 @@ import base64, json, os, re, sys, zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from browser import ROOT, open_page, check, results, src, load_doc
 from playwright.sync_api import sync_playwright, expect
+from tabs import OBJ_TABS, obj_select
 
 DIST = os.path.abspath(os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist'))
 TREE = os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm'))
@@ -41,7 +42,7 @@ DOC = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\\se
        'Second paragraph here.\n\n\\subsection{Details}\nThird paragraph here.\n\\end{document}\n')
 ZH = '\\documentclass{article}\n\\begin{document}\n\u4e2d\u6587\u6bb5\u843d\u3002\n\\end{document}\n'
 PNG = ('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360f8cf00000301010018dd8db00000000049454e44ae426082')
-HOW = 'The typeset page. Click a paragraph and type; edits change the LaTeX source.'
+HOW = 'The typeset page. Click a paragraph and type; edits change the LaTeX source. Tab indents; Escape, then Tab, leaves.'
 # every control, from the command registry: the build writes dist/controls.json
 CONTROLS = json.load(open(os.path.join(DIST, 'controls.json'), encoding='utf8'))['controls']
 # the controls of the bar, the status line, the downloads and the tab Home (open at start), by the
@@ -537,7 +538,7 @@ def audit(page, cdp, width):
     close_all(page)
     c = page.get_by_role('dialog', name='Citation', exact=True)
     first(); button('Citation').click(); c.wait_for(timeout=8000)
-    check('the citation dialog\'s fields have names: style, search, text before and after' + w, c.get_by_role('combobox', name='Citation style', exact=True).count() == 1 and c.get_by_role('searchbox', name='Search the bibliography', exact=True).count() == 1
+    check('the citation dialog\'s fields have names: style, search, text before and after' + w, c.get_by_role('combobox', name='Citation style', exact=True).count() == 1 and c.get_by_role('combobox', name='Search the bibliography', exact=True).count() == 1
           and c.get_by_label('Text before the citation', exact=True).count() == 1 and c.get_by_label('Text after the citation', exact=True).count() == 1)
     close_all(page)
     page.evaluate('rikuy.undo()')
@@ -613,7 +614,10 @@ def open_tab(page, width, name):
     if width > 1000:
         page.get_by_role('tablist', name='Ribbon', exact=True).get_by_role('tab', name=name, exact=True).click()
     else:
-        page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label=name)
+        # (two contextual tabs are named Format, as Word's: the chart's and the SmartArt's; only the
+        # one whose object is selected can be chosen)
+        v = page.evaluate("(n) => { const o = [...document.getElementById('rb-tabsel').options].find((x) => x.label === n && !x.disabled); return o ? o.value : null; }", name)
+        page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(value=v) if v else page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label=name)
     page.wait_for_timeout(200)
 
 
@@ -629,8 +633,11 @@ def reach(page, width):
         by_tab.setdefault((x['tab'], x['tabName'], x['contextual']), []).append(x)
     bad, opened = [], []
     for (tab, name, ctx), xs in by_tab.items():
-        if ctx and not tab.startswith('table') and tab not in ('headfoot', 'equation', 'picture-format'):
+        if ctx and not tab.startswith('table') and tab not in ('headfoot', 'equation', 'picture-format') and tab not in OBJ_TABS:
             continue  # (no command lives there yet: test/tabs.py brings one in for each)
+        # (File covers the page as Word's view does: its Back button gives the page back)
+        if page.evaluate("document.body.classList.contains('file-open')"):
+            page.get_by_role('button', name='Back to the document', exact=True).click(); page.wait_for_timeout(150)
         if ctx and tab == 'headfoot':
             # (the header open on the page, as a double click in its margin opens it)
             load_doc(page, DOC); page.evaluate('rikuy.pageHFOpen("head")'); page.wait_for_timeout(250)
@@ -638,6 +645,9 @@ def reach(page, width):
             # (the Equation tab shows while an equation's field is open: the button Formula opens one)
             load_doc(page, DOC); click_text(page, 'First paragraph', 5)
             page.evaluate('window.rikuy.runCommand("formula")'); page.wait_for_selector('.pop-math'); page.wait_for_timeout(250)
+        elif ctx and tab in OBJ_TABS:
+            # (the drawing, chart or SmartArt selected by a press on it: its tab opens)
+            obj_select(page, tab)
         elif ctx and tab == 'picture-format':
             # (a press on the picture selects it and opens its tab, as for a person)
             load_doc(page, PICTURE); page.wait_for_timeout(300); page.locator('#pages .a-img').click(); page.wait_for_timeout(250)
