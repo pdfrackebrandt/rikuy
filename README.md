@@ -230,7 +230,8 @@ the TeX tree fit together; [tex/README.md](tex/README.md) covers the worker and 
 Rikuy's tests run in Chromium, and that is where it is known to work. The bundle is built for
 Chrome 100, Firefox 100 and Safari 15 and later, but nothing tests Firefox or Safari yet; reports
 from them are welcome. The hosted copy's policy lets WebAssembly run through `'wasm-unsafe-eval'`,
-which Safari has from version 16: Safari 15 opens the editor there but cannot compile.
+which Safari has from version 16: Safari 15 opens the editor there but cannot compile, and the PDF
+pane says so.
 
 ## For AI agents
 

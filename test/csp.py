@@ -7,7 +7,9 @@ and type; the source pane (CodeMirror), the math field (MathLive), the Git panel
 compile with pdfLaTeX, XeLaTeX and LuaLaTeX and see the PDF pane (pdf.js); an Asymptote figure,
 minted (Pyodide) and biber; save as Word and open that file again (pandoc); spelling (Hunspell)
 and grammar (Harper); a live figure. Then no report, no refusal in the page's own console, and the
-features each answered. Needs dist/tex and dist/word (npm run build after the TeX tree)."""
+features each answered. And where a browser refuses WebAssembly under the policy (Safari 15 knows
+no 'wasm-unsafe-eval'; stood in for by the policy without it), the PDF pane says so plainly.
+Needs dist/tex and dist/word (npm run build after the TeX tree)."""
 import os, sys, json, time, tempfile, traceback
 sys.path.insert(0, os.path.dirname(__file__))
 import serve
@@ -179,6 +181,33 @@ try:
         got = [json.loads(r).get('csp-report', {}) for r in SRV.reports[n0:] if r.startswith('{')]
         check('the check sees what the policy refuses: eval in the page and in a worker, reported', not page.evaluate('() => window.__evaled')
               and any(x.get('document-uri', '').startswith('blob') for x in got) and any(x.get('document-uri', '').startswith(URL) for x in got), [(x.get('document-uri'), x.get('effective-directive')) for x in got])
+        b.close()
+
+        # (review L2) a browser that refuses WebAssembly under the policy (Safari 15 knows no
+        # 'wasm-unsafe-eval'): stood in for here by the policy without it; TeX cannot start, and
+        # the PDF pane says why in plain words
+        b = p.chromium.launch()
+        ctx = b.new_context(viewport={'width': 1500, 'height': 950})
+        def nowasm(r):
+            u = r.request.url
+            if u in ROUTES:
+                return r.fulfill(status=200, content_type='text/javascript', body=open(ROUTES[u], 'rb').read(), headers={'Access-Control-Allow-Origin': '*'})
+            if not u.startswith(URL):
+                return r.abort()
+            res = r.fetch()
+            h = dict(res.headers)
+            for k in list(h):
+                if k.lower() == 'content-security-policy': h[k] = h[k].replace(" 'wasm-unsafe-eval'", '')
+            r.fulfill(response=res, headers=h)
+        ctx.route('**/*', nowasm)
+        page = ctx.new_page()
+        page.goto(URL)
+        page.wait_for_function('() => window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=30000)
+        page.click('#b-pdf')
+        page.wait_for_function('() => /could not run/.test(document.getElementById("pdf-status").textContent)', timeout=120000)
+        said = page.evaluate("() => document.getElementById('pdf-host').innerText")
+        check('L2: where the browser refuses WebAssembly, the PDF pane says so plainly, and that the editor works', 'does not let the page run WebAssembly' in said and 'Safari 16' in said and 'The editor works' in said, said[:300])
+        ctx.unroute_all(behavior='ignoreErrors')
         b.close()
 except Exception as e:
     traceback.print_exc()
