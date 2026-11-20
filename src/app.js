@@ -855,6 +855,7 @@ class App {
     if (!el) return;
     el.hidden = false;
     el.textContent = kept === false || this.unsaved ? 'Not saved' : 'Saved';
+    el.title = kept === false ? 'This browser could not keep it: File, Save a copy, or a Download, keeps a copy' : this.unsaved ? 'Being kept in this browser' : 'Saved in this browser: it is here at your next visit';
   }
 
   // ---- Chinese, Arabic and India's scripts ---------------------------------------
@@ -1211,6 +1212,16 @@ class App {
     $('#b-sample').addEventListener('click', () => this.resetToSample());
     $('#b-new').addEventListener('click', () => this.newDocument());
     $('#st-warn').addEventListener('click', () => this.toggleNav(true, 'problems'));
+    // The status line's words on storage say only what the title's Saved does not: that this
+    // browser is not keeping the work, or Word's progress. Its ordinary "Saved in this browser"
+    // is the title's tooltip, as Word says where a document is saved by its name, not in its
+    // status bar (the line took the room the zoom needs on a 1366 px window).
+    const stSave = $('#st-save');
+    const quiet = () => { const t = stSave.textContent.trim(); stSave.classList.toggle('st-quiet', !t || /^(Kept|Saved) in this browser$/.test(t)); };
+    new MutationObserver(quiet).observe(stSave, { childList: true, characterData: true, subtree: true });
+    quiet();
+    // a click on the word count opens Word Count, as in Word
+    $('#st-words').addEventListener('click', () => this.runCommand('word-count'));
     // the status line scrolls when it is wider than the window; the fades follow the cut edges
     const stBar = $('#status');
     if (stBar) {

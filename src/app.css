@@ -1110,6 +1110,17 @@ body.guest #b-new, body.guest #b-sample { display: none; }
 @media print { ::highlight(rk-find), ::highlight(rk-find-cur) { background-color: transparent; } }
 #st-pages { color: var(--mute); text-decoration: none; font-size: 12px; font-variant-numeric: tabular-nums; }
 #st-pages:hover { color: var(--blue-ink); text-decoration: underline; }
+#st-words { color: var(--mute); text-decoration: none; font-size: 12px; font-variant-numeric: tabular-nums; }
+#st-words:hover { color: var(--blue-ink); text-decoration: underline; }
+/* the storage line when it only says what the title's Saved says (src/app.js, bindUI) */
+#st-save.st-quiet { display: none; }
+/* Word's status bar keeps its views and zoom at the right end: on a desktop window too narrow for
+   the whole line the slider goes first (the zoom's number stays) and the language is cut short,
+   before anything scrolls out of sight */
+@media (min-width: 861px) and (max-width: 1279px) {
+  .st-zoom input { display: none; }
+  #st-lang { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+}
 /* the Find and Replace dialog: open while the page is worked on, out of the text's way */
 .fr { position: fixed; z-index: 38; top: 112px; right: 18px; width: min(452px, calc(100vw - 16px)); box-sizing: border-box; background: var(--panel); color: var(--ink-ui); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 14px 44px rgba(10, 20, 30, .24); padding: 0 12px 12px; display: flex; flex-direction: column; gap: 9px; font: 13px/1.4 var(--font-ui); max-height: calc(100vh - 130px); overflow: auto; }
 .fr[hidden] { display: none; }

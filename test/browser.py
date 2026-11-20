@@ -236,7 +236,7 @@ def ui_fonts(page):
     cdp.send('CSS.enable')
     root = cdp.send('DOM.getDocument', {'depth': -1})['root']['nodeId']
     drawn = {}
-    for sel in ('#b-open span', '#st-save', '#monoprobe'):
+    for sel in ('#b-open span', '#st-pages', '#monoprobe'):
         nid = cdp.send('DOM.querySelector', {'nodeId': root, 'selector': sel})['nodeId']
         drawn[sel] = [(f['familyName'], f['isCustomFont']) for f in cdp.send('CSS.getPlatformFontsForNode', {'nodeId': nid})['fonts']]
     page.evaluate("document.getElementById('monoprobe').remove()")
@@ -244,7 +244,7 @@ def ui_fonts(page):
     # Chromium names a face with its style ("IBM Plex Sans Medium"); custom means the page's own
     only = lambda sel, fam: drawn[sel] and all(n.startswith(fam) and own for n, own in drawn[sel])
     check('and the interface is drawn in them: a toolbar label and the status line in Plex Sans, mono text in Plex Mono',
-          only('#b-open span', 'IBM Plex Sans') and only('#st-save', 'IBM Plex Sans') and only('#monoprobe', 'IBM Plex Mono'), drawn)
+          only('#b-open span', 'IBM Plex Sans') and only('#st-pages', 'IBM Plex Sans') and only('#monoprobe', 'IBM Plex Mono'), drawn)
 
 
 def latin_ext_fonts(page, where='', check=check):

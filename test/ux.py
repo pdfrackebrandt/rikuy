@@ -166,7 +166,47 @@ def file_view(page, w):
     check(f'no sideways scroll ({w})', page.evaluate('document.documentElement.scrollWidth') <= page.viewport_size['width'])
 
 
-PARTS = {'file_view': (file_view, [(1366, False), (1920, True), (390, False), (360, True)]),
+def status_bar(p):
+    """Word's status bar: page, words, language at the left; views, zoom slider and zoom at the
+    right end, always in view. A click on the word count opens Word Count. Checked on the hosted
+    app as pages.py serves it (its status bar has Make available offline too)."""
+    import pages
+    port = int(os.environ.get('UX_PORT', '8799'))
+    srv = pages.start(port, os.environ.get('RIKUY_DIST') or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'dist'))
+    try:
+        browser = p.chromium.launch()
+        for width, dark in ((1920, False), (1366, False), (1366, True), (1280, False), (1100, True), (900, False)):
+            w = '%d px%s' % (width, ', dark' if dark else '')
+            ctx = browser.new_context(viewport={'width': width, 'height': 800}, color_scheme='dark' if dark else 'light')
+            page = ctx.new_page()
+            errors = []
+            page.on('pageerror', lambda e: errors.append(str(e)))
+            page.goto('http://127.0.0.1:%d/' % port)
+            page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=60000)
+            page.wait_for_timeout(1200)
+            g = page.evaluate("""(() => { const s = document.getElementById('status').getBoundingClientRect(), r = (id) => { const e = document.getElementById(id); return e && e.offsetParent ? e.getBoundingClientRect() : null; };
+              const v = r('st-views'), z = r('st-zoomv'), sv = document.getElementById('st-save');
+              return { right: Math.round(s.right), views: v && [Math.round(v.left), Math.round(v.right)], zoom: z && Math.round(z.right), save: !!sv.offsetParent, saveText: sv.textContent,
+                       title: document.getElementById('savestate').title, off: !!(document.getElementById('b-offline') || {}).offsetParent }; })()""")
+            shot(page, 'status-' + w.replace(' ', '').replace(',', '-'))
+            check(f'the views and the zoom number are whole at the right end of the status bar ({w})', g['views'] and g['zoom'] and g['zoom'] <= g['right'] - 4 and g['views'][1] <= g['right'], g)
+            check(f'the line does not say "Saved in this browser" beside the title\'s Saved; the title\'s tooltip says it ({w})', not g['save'] and g['title'].startswith('Saved in this browser'), g)
+            if width == 1366 and not dark:
+                page.evaluate("document.getElementById('st-save').textContent = 'Not kept in this browser. Save the project as .zip.'"); page.wait_for_timeout(100)
+                check(f'a storage warning still shows in the status bar ({w})', page.evaluate("!!document.getElementById('st-save').offsetParent"))
+                page.evaluate("document.getElementById('st-save').textContent = 'Saved in this browser'")
+                page.click('#st-words'); page.wait_for_timeout(400)
+                check(f'a click on the word count opens Word Count ({w})', page.evaluate("[...document.querySelectorAll('body > .pop')].some((d) => /Word Count/.test(d.textContent))"))
+                page.keyboard.press('Escape')
+            check(f'no page errors ({w})', not errors, errors[:3])
+            ctx.close()
+        browser.close()
+    finally:
+        srv.shutdown()
+
+
+PARTS = {'status_bar': (status_bar, None),
+         'file_view': (file_view, [(1366, False), (1920, True), (390, False), (360, True)]),
          'first_visit': (first_visit, [(1366, False), (1920, True), (390, False), (360, True)]),
          'dialogs': (dialogs_give_the_caret_back, [(1400, False), (1400, True)]),
          'phone_dialogs': (phone_dialogs, [(390, False), (360, True)])}
@@ -176,6 +216,9 @@ def run(which):
     with sync_playwright() as p:
         for name in which:
             fn, sizes = PARTS[name]
+            if sizes is None:
+                fn(p)
+                continue
             for width, dark in sizes:
                 touch = width < 700
                 browser, page, errors = open_page(p, width=width, height=820 if touch else 900, dark=dark, touch=touch)

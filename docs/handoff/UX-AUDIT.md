@@ -69,7 +69,7 @@ second) is the one number a Word user would call slow; it is the model's and the
   `test/agent.py` presses Back before it presses a picture on the page (the page is under the view,
   as in Word).
 
-### 4. The status bar cuts off the zoom (MEDIUM-HIGH, small)
+### 4. The status bar cuts off the zoom (MEDIUM-HIGH, small) — fixed
 
 - **Where:** the status bar of the hosted app at 1366 px and narrower desktops.
 - **Word:** page, words, proofing and language at the left; views, the zoom slider and the zoom
@@ -78,8 +78,12 @@ second) is the one number a Word user would call slow; it is the model's and the
   sample in the middle, the row ran past the window and the zoom percentage was cut off (it
   scrolls sideways, with a fade). "Kept in this browser" says what the title's "Saved" already
   says. The word count was not a button.
-- **Fix:** the views and zoom never scroll away; the storage line shows only when it says
-  something the title does not (not kept, Word's progress); the word count opens Word Count.
+- **Status:** fixed ("Keep the status bar's views and zoom in sight; the word count opens Word
+  Count"): the storage line shows only when it says something the title does not (not kept,
+  figures not kept, Word's progress), and the title's Saved carries "Saved in this browser" as its
+  tooltip; between 861 and 1279 px the zoom slider goes first (its number stays) and the language
+  is cut short with an ellipsis; the word count is a button that opens Word Count. Checked on the
+  hosted app at 1920, 1366, 1280, 1100 and 900 px: `test/ux.py status_bar`.
 
 ### 5. Task panes float over the ribbon and the page (MEDIUM, medium)
 
