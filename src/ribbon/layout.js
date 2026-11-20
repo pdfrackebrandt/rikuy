@@ -120,7 +120,9 @@ const HOME = {
   bold: '1', italic: '2', underline: '3', strikethrough: '4', subscript: '5', superscript: '6', highlight: 'I', 'font-color': 'FC', 'font-more': 'FT',
   bullets: 'U', numbering: 'N', multilevel: 'M', 'indent-decrease': 'AO', 'indent-increase': 'AI', sort: 'SO', 'show-marks': '8',
   'align-left': 'AL', 'align-center': 'AC', 'align-right': 'AR', justify: 'AJ', 'line-spacing': 'K', shading: 'H', borders: 'B',
-  'styles-more': 'L', find: 'FD', replace: 'R', select: 'SL'
+  'styles-more': 'L', find: 'FD', replace: 'R', select: 'SL',
+  // (Rikuy's own Insert group on Home, which Word has not: free letters, Insert's where they are)
+  table: 'T', picture: 'P', footnote: 'O', citation: 'G', link: 'W', formula: 'D', equation: 'Q'
 };
 
 // Groups whose corner arrow opens a dialog that already exists: [command, its name, KeyTip]. The
