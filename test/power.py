@@ -13,7 +13,9 @@ formula selected alone opens it (8). linear: Ctrl+Shift+= in a new equation show
 as its LaTeX on the page, never the paragraph before it (13). modes: Esc leaves Focus and Read
 Mode with the caret on the page. keytips: F10 (or Alt), a tab's letter, then a command's letters run it
 (H 1 is Bold, N T Insert's Table, H T Home's own Table); a letter that matches nothing is taken by
-the KeyTips and never typed into the document (5).
+the KeyTips and never typed into the document (5). palette: Alt+Q finds by letters in order and
+initials ("tbl", "hed 2", "heading2", "eqn", "toc"), lists the commands run last when empty, and
+puts them first among matches as good (9).
 Each part is a function; `python3 power.py
 footnote` runs one."""
 import os, sys
@@ -228,7 +230,23 @@ def keytips(page):
     check('keytips: after Esc the keys type again', 'beZta' in src(page), src(page)[60:100])
 
 
-PARTS = [footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips]
+def palette(page):
+    load_doc(page, MATH)
+    for q, want in (('tbl', 'table'), ('hed 2', 'style-heading2'), ('heading2', 'style-heading2'), ('eqn', 'equation'), ('toc', 'table-of-contents'), ('insrt table', 'insert-table-dialog'), ('xref', 'cross-reference')):
+        got = page.evaluate('(q) => window.rikuy.searchCommands(q).map((c) => c.id)', q)
+        check('palette: "' + q + '" finds ' + want, want in got[:3], got[:5])
+    page.evaluate('window.rikuy.prefs.recentCmds = []')
+    select_text(page, 'beta'); key(page, 'Control+b'); key(page, 'Control+i')
+    click_text(page, 'gamma', 1); key(page, 'Alt+q', 300)
+    rows = page.evaluate("[...document.querySelectorAll('#rk-search-list .srch-opt')].map((o) => o.querySelector('.srch-n').textContent)")
+    check('palette: the empty box lists the commands run last, newest first', rows[:2] == ['Italic', 'Bold'], rows)
+    page.keyboard.type('b'); page.wait_for_timeout(200)
+    first = page.evaluate("(document.querySelector('#rk-search-list .srch-opt .srch-n') || {}).textContent")
+    check('palette: a command run lately comes first among matches as good', first == 'Bold', first)
+    key(page, 'Escape'); key(page, 'Escape')
+
+
+PARTS = [footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips, palette]
 
 
 def run():

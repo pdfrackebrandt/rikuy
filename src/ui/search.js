@@ -10,7 +10,20 @@ import { $, mk } from './dom.js';
 
 const MAX = 12;
 
+// (what Recently used keeps: not the box itself, Undo and Redo, the zoom, nor Repeat)
+const NOT_RECENT = /^(search|undo|redo|repeat|zoom|context-menu|next-pane|previous-pane)/;
+const RECENT_MAX = 20;
+
 export const methods = {
+  // a command just run, first in the box's Recently used and first among matches as good
+  noteRecent(id) {
+    const c = command(id);
+    if (!c || c.searchable === false || NOT_RECENT.test(id) || !this.prefs) return;
+    const r = (this.prefs.recentCmds || []).filter((x) => x !== id);
+    r.unshift(id);
+    this.prefs.recentCmds = r.slice(0, RECENT_MAX);
+    if (this.savePrefs) this.savePrefs();
+  },
   // Alt+Q: the focus to the box, with what it held selected; the place on the page is kept
   openSearch() {
     const inp = $('#rk-search');
@@ -56,11 +69,15 @@ export function installSearch(app) {
     return '';
   };
   const close = () => { list.hidden = true; inp.setAttribute('aria-expanded', 'false'); inp.removeAttribute('aria-activedescendant'); };
+  const recent = () => (app.prefs && app.prefs.recentCmds) || [];
   const draw = () => {
-    hits = search(inp.value, { max: MAX });
+    // the box empty: the commands run last, as Word's Search lists its recently used
+    const empty = !inp.value.trim();
+    hits = empty ? recent().map(command).filter((c) => c && c.run && c.searchable !== false).slice(0, 8) : search(inp.value, { max: MAX, recent: recent() });
     hi = Math.min(hi, Math.max(0, hits.length - 1));
     list.replaceChildren();
-    if (!inp.value.trim()) { close(); return; }
+    if (empty && (!hits.length || document.activeElement !== inp)) { close(); return; }
+    if (empty) list.append(mk('div', 'srch-head', 'Recently used'));
     const at = app.searchAt ?? null;
     if (at) at.memo = {};
     if (!hits.length) {
@@ -104,12 +121,12 @@ export function installSearch(app) {
     app.runCommand(c.id, null, at);
   };
   inp.addEventListener('pointerdown', () => app.keepPlace());
-  inp.addEventListener('focus', () => { if (!app.searchRange) app.keepPlace(); });
+  inp.addEventListener('focus', () => { if (!app.searchRange) app.keepPlace(); hi = 0; draw(); });
   inp.addEventListener('input', () => { hi = 0; draw(); });
   inp.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      if (list.hidden && inp.value.trim()) { draw(); return; }
+      if (list.hidden) { draw(); return; }
       if (!hits.length) return;
       hi = (hi + (e.key === 'ArrowDown' ? 1 : hits.length - 1)) % hits.length;
       draw();

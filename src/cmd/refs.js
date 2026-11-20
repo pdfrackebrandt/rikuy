@@ -66,7 +66,7 @@ register(
     keys: ['Ctrl+Shift+F5'],
     synonyms: ['Label', 'Anchor', 'phantomsection'], when: (app, at) => textAt(app, at), whyNot: () => NOT_HERE, run: (app, args, at) => (args && args.add ? app.bookmarkAdd(at, args.add) : openBookmarkDialog(app, at)) },
   { id: 'cross-reference', name: 'Cross-reference', order: 30, title: 'A reference to a heading, figure, table, equation or bookmark: its number, its page, or its name where cleveref or hyperref is loaded; a label is added where it has none',
-    synonyms: ['Reference', 'Cross reference', 'ref', 'cref', 'pageref', 'autoref'], tab: 'insert', group: 'links', el: 'ri-xref', label: 'Cross-reference', icon: '<path d="M6 4.5h8v11l-4-3-4 3zM8.5 8h3"/>',
+    synonyms: ['Reference', 'Cross reference', 'xref', 'ref', 'cref', 'pageref', 'autoref'], tab: 'insert', group: 'links', el: 'ri-xref', label: 'Cross-reference', icon: '<path d="M6 4.5h8v11l-4-3-4 3zM8.5 8h3"/>',
     also: [{ tab: 'references', group: 'captions', el: 'rr-xref', order: 30 }], when: (app, at) => textAt(app, at) && at.ctx !== 'ttl', whyNot: () => NOT_HERE,
     run: (app, args, at) => (args && args.target ? app.crossRefWrite(at, args) : openCrossRefDialog(app, at)), palette: { k: 'ref', d: 'Cross reference', order: 30, act: 'ref' } },
   { id: 'equation-reference', name: 'Equation reference', synonyms: ['eqref'], run: (app) => app.insertFromPalette('eqref'), palette: { k: 'eqref', d: 'Equation reference', order: 40, act: 'eqref' } },

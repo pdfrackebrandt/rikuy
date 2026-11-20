@@ -290,6 +290,7 @@ export const tabs = {
     if (at) at.memo = {};
     if (!enabled(this, c, at)) return false;
     const r = c.run(this, args, at);
+    if (r !== false && this.noteRecent) this.noteRecent(id);
     if (c.resync !== false) { if (r && typeof r.then === 'function') r.then(() => this.ribbonSync(), () => this.ribbonSync()); else this.ribbonSync(); }
     return r === undefined ? true : r;
   },
