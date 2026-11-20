@@ -229,8 +229,12 @@ def graph_phones(p):
             check('phone %d: every control of the dialog is 44 px each way' % w, fit['small'] == 0, fit)
             page.tap('#gd-ok'); page.wait_for_timeout(1500)
             page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); page.wait_for_timeout(600)
-            b = page.evaluate('(() => { const r = document.querySelector(".w-edit").getBoundingClientRect(); return [r.width, r.height, getComputedStyle(document.querySelector(".w-edit")).opacity]; })()')
-            check('phone %d: Edit graph is shown, 44 px on the screen though the page is zoomed out' % w, b[0] >= 43.5 and b[1] >= 43.5 and b[2] == '1', b)
+            # (a graph's buttons wait for a tap in it, then stand above it, off its curves)
+            fb = page.locator('#wlayer iframe.rk-widget').bounding_box()
+            hid = page.evaluate('getComputedStyle(document.querySelector(".wgraph .w-edit")).opacity')
+            page.touchscreen.tap(fb['x'] + fb['width'] * 0.5, fb['y'] + fb['height'] * 0.25); page.wait_for_timeout(400)
+            b = page.evaluate('(() => { const e = document.querySelector(".wgraph .w-edit"), r = e.getBoundingClientRect(), t = document.querySelector(".wgraph .w-src").getBoundingClientRect(); return [r.width, r.height, getComputedStyle(e).opacity, r.bottom, t.bottom, t.width, t.height, r.right <= t.left]; })()')
+            check('phone %d: Edit graph and LaTeX wait for a tap in the graph, then show above it, 44 px on the screen though the page is zoomed out' % w, hid == '0' and b[0] >= 43.5 and b[1] >= 43.5 and b[2] == '1' and b[3] <= fb['y'] + 0.5 and b[4] <= fb['y'] + 0.5 and b[5] >= 43.5 and b[6] >= 43.5 and b[7], (hid, b, fb))
             fr = page.frame_locator('#wlayer iframe.rk-widget')
             sb = fr.locator('#rk-0').bounding_box()
             v0 = fr.locator('#rk-0').input_value()
@@ -442,8 +446,9 @@ def review(page):
     check('review H7: rikuy.sty is written beside the main file though old/rikuy.sty exists', 'rikuy.sty' in files(page)[0], files(page)[0])
     size = len(src(page, newest(page, 'function') + '.html').encode())
     # (36 KB for the four kinds of B11; task 70's implicit curves, phase portraits, shading and
-    # crossings brought it to 49 KB: the budget moved with them, the LaTeX writer kept out of it)
-    check('review L7: a graph\'s file in the built page holds graphKit minified, under 52 KB (%d bytes)' % size, size < 52000, size)
+    # crossings brought it to 49 KB, its typeset labels placed off the curves, the paper's faces
+    # and the dark paper to 58 KB: the budget moved with them, the LaTeX writer kept out of it)
+    check('review L7: a graph\'s file in the built page holds graphKit minified, under 62 KB (%d bytes)' % size, size < 62000, size)
     # M3: a hand written graph's own shape and exact range: Update with nothing touched writes nothing
     html = src(page, newest(page, 'function') + '.html').replace('"aspect": 0.5', '"aspect": 0.6')
     hand = '\\documentclass{article}\n\\usepackage{rikuy}\n\\begin{document}\nText.\n\n\\rikuywidget{plot.html}{plot.png}\n\\end{document}\n'

@@ -2093,11 +2093,20 @@ textarea.gd-in { resize: vertical; line-height: 1.4; }
 .w-edit { position: absolute; top: 4px; right: 54px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 500 11px/1.4 var(--font-ui); padding: 1px 7px; cursor: pointer; opacity: 0; transition: opacity .12s; transform: scale(calc(1 / var(--ws, 1))); transform-origin: top right; }
 .wbox:hover .w-edit, .wbox.sel .w-edit, .w-edit:focus-visible { opacity: 1; }
 .wbox .w-src { transform: scale(calc(1 / var(--ws, 1))); transform-origin: top right; }
+/* a graph's two sit above its top edge, outside the figure: inside, they covered the sliders'
+   values and the curves */
+.wbox.wgraph .w-src, .wbox.wgraph .w-edit { top: auto; bottom: 100%; transform-origin: bottom right; }
+.wbox.wgraph .w-src { right: 0; width: 52px; box-sizing: border-box; }
+.wbox.wgraph .w-edit { right: calc(58px / var(--ws, 1)); }
 .w-hint { position: absolute; left: 0; top: calc(100% + 6px); z-index: 2; display: flex; align-items: center; gap: 10px; max-width: 520px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink-ui); font: 13px/1.4 var(--font-ui); box-shadow: 0 6px 20px rgba(10, 20, 30, .16); transform: scale(calc(1 / var(--ws, 1))); transform-origin: top left; }
 .w-hint .btn { flex: none; }
 @media (pointer: coarse) {
-  /* (centred at the top: at the right it covered the LaTeX tab and the sliders' values) */
-  .w-edit { opacity: 1; min-height: 44px; min-width: 44px; padding: 0 12px; font-size: 14px; top: 4px; right: auto; left: 50%; transform: translateX(-50%) scale(calc(1 / var(--ws, 1))); transform-origin: top center; }
+  /* a graph's buttons wait for a tap in it (the frame says so, src/widget.js), then stand above
+     it a while, 44 px on the screen: always shown, they covered its curves */
+  .wbox.wgraph .w-src, .wbox.wgraph .w-edit { opacity: 0; pointer-events: none; min-height: 44px; min-width: 44px; padding: 0 12px; font-size: 14px; }
+  .wbox.wgraph .w-src { width: 64px; }
+  .wbox.wgraph .w-edit { right: calc(70px / var(--ws, 1)); }
+  .wbox.wgraph.wtouch .w-src, .wbox.wgraph.wtouch .w-edit, .wbox.wgraph.sel .w-src, .wbox.wgraph.sel .w-edit, .wbox.wgraph .w-src:focus-visible, .wbox.wgraph .w-edit:focus-visible { opacity: 1; pointer-events: auto; }
   .w-hint { max-width: min(520px, calc(100vw - 32px)); }
   .w-hint .btn { min-height: 44px; min-width: 44px; }
 }

@@ -83,6 +83,18 @@ figure by construction.
    PDF; while a slider moves the drawing uses half the samples and grids, the full drawing 150 ms
    after it rests, so a frame stays under 16 ms at a phone's speed.
 
+8. **The figure as a paper's** (the polish after the first look): labels, legend, axis titles
+   and the sliders' values are typeset math in the paper's faces (KaTeX's Computer Modern,
+   which the page sends the frame as font data: `paperFaces` in `src/widget.js`, the web page's
+   own script in `src/webpage.js`), k′ with its prime, α a superscript, x₁^α stacked, the same
+   LaTeX in the `.pgf` (`seriesRuns` and `put` in the kit, `TEXER` outside it). No label has a box
+   behind it: the legend goes to a corner of the plot no curve crosses (the start curves
+   counted), else to rows over the plot beside the y label and the sliders' values, and a
+   crossing's coordinates to the side of its dot where no curve, guide or label is. The sliders
+   line up with the plot, Reset is a quiet word; on a touch screen Edit graph and LaTeX wait for
+   a tap in the graph and stand above it; View, Dark page gives the frame the dark paper's ink.
+   The opening document has no spelling marks.
+
 ## Security
 
 The formula language never evaluates JavaScript: text is read by Rikuy's own parser into
