@@ -3,8 +3,8 @@
 // The list shows what cannot run there faded, and says why when it is picked. Only the
 // registry's names and the text typed into the box are shown here, never the document's text.
 
-import { search, enabled } from '../commands.js';
-import { chordText } from '../keys.js';
+import { search, enabled, command } from '../commands.js';
+import { firstKey, macUA } from '../keys.js';
 import { tabById } from '../ribbon/order.js';
 import { $, mk } from './dom.js';
 
@@ -41,6 +41,9 @@ export const methods = {
 export function installSearch(app) {
   const inp = $('#rk-search'), list = $('#rk-search-list');
   if (!inp) return;
+  // (its key as this computer has it: Control+Option+Q on a Mac, where Option+Q types œ)
+  const sk = firstKey(command('search'), macUA()), kbd = inp.parentElement && inp.parentElement.querySelector('.srch-key');
+  if (sk) { if (kbd) kbd.textContent = sk; inp.title = 'Search for a command by its name (' + sk + ')'; }
   let hits = [], hi = 0;
   const where = (c) => {
     const t = c.tab && tabById(c.tab);
@@ -71,7 +74,7 @@ export function installSearch(app) {
       o.setAttribute('aria-selected', i === hi ? 'true' : 'false');
       if (!enabled(app, c, at)) { o.classList.add('off'); o.setAttribute('aria-disabled', 'true'); }
       o.append(mk('span', 'srch-n', c.name));
-      const w = where(c), k = chordText((c.keys || c.keysElsewhere || [])[0]);
+      const w = where(c), k = firstKey(c, macUA());
       if (w) o.append(mk('span', 'srch-w', w));
       if (k) { const kk = mk('span', 'srch-k', k); kk.setAttribute('aria-hidden', 'true'); o.append(kk); }
       if (c.title && c.title !== c.name) o.title = c.title;

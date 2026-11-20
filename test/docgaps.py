@@ -541,7 +541,7 @@ def headfoot_phones(p):
             named(page, 'Go to Footer', tap=True); page.wait_for_timeout(300)
             check('Go to Footer by a tap' + tag, page.evaluate('window.rikuy.hf && window.rikuy.hf.where') == 'foot')
             # (the ribbon's buttons are one size on a phone, the ribbon's own rule: the new ones as the old)
-            sz = page.evaluate("(() => { const b = [...document.querySelectorAll('.rb-panel:not([hidden]) button')].filter((x) => x.offsetParent); const of = (n) => { const x = b.find((y) => y.getAttribute('aria-label') === n); return x ? [Math.round(x.getBoundingClientRect().width), Math.round(x.getBoundingClientRect().height)] : null; }; return { mine: ['Go to Header', 'Go to Footer', 'Header Picture', 'Header Quick Parts', 'Show Document Text'].map(of), old: of('Header') }; })()")
+            sz = page.evaluate("(() => { const b = [...document.querySelectorAll('.rb-panel:not([hidden]) button')].filter((x) => x.offsetParent); const of = (n) => { const x = b.find((y) => y.getAttribute('aria-label') === n); return x ? [Math.round(x.getBoundingClientRect().width), Math.round(x.getBoundingClientRect().height)] : null; }; return { mine: ['Go to Header', 'Go to Footer', 'Header Pictures', 'Header Quick Parts', 'Show Document Text'].map(of), old: of('Header') }; })()")
             check('the new buttons of the Header & Footer tab as large as the tab\'s others on a phone' + tag, sz['old'] and all(x == sz['old'] for x in sz['mine']), sz)
             os.makedirs(SHOTS, exist_ok=True)
             page.screenshot(path=os.path.join(SHOTS, 'headfoot-%d.png' % w))

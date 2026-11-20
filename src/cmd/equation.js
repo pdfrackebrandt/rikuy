@@ -17,7 +17,7 @@ import { SYMBOLS, STRUCTURES, GALLERY, SAVED_KEY, readSaved, addSaved, mathNeeds
 import { provides, preambleEnd } from '../preamble.js';
 import { atomOfEl } from '../editor.js';
 import { openMenu } from '../ui/kit.js';
-import { chordText } from '../keys.js';
+import { firstKey, macUA } from '../keys.js';
 import { wrapSlot } from '../wordmath.js';
 import { eolAt } from '../blockenv.js';
 
@@ -745,7 +745,7 @@ export const methods = {
     const P = this.eqPop(), place = P ? null : this.eqPlace();
     const put = (tex) => () => (P ? this.eqInsert(tex) : this.eqInsertNew(tex, place));
     return [...GALLERY.map((g) => ({ name: g.name, title: g.tex, run: put(g.tex) })), ...this.eqSavedList().map((g) => ({ name: g.name, title: g.tex, run: put(g.tex) })),
-      null, { name: 'Insert new equation', keys: 'Alt+=', run: () => this.runCommand('insert-equation') }];
+      null, { name: 'Insert new equation', keys: firstKey(command('insert-equation'), macUA()), run: () => this.runCommand('insert-equation') }];
   },
   // where a menu of the tab opens: its button where it shows, else the button its group folded into
   eqAnchor(id) {
@@ -841,7 +841,7 @@ export const methods = {
       if (off && c.whyNot) { try { title = c.whyNot(this, at) || c.title; } catch (e) { title = c.title; } }
       // (the equation is the one right clicked, given to the command as it runs; closed with
       // nothing picked, none is: a command from the search box later must not act on it)
-      items.push({ name: c.name, title, keys: chordText((c.keys || [])[0]), disabled: off, run: () => { this.ribbonBack(); this.eqCtx = el; try { this.runCommand(c.id); } finally { if (this.eqCtx === el) this.eqCtx = null; } } });
+      items.push({ name: c.name, title, keys: firstKey(c, macUA()), disabled: off, run: () => { this.ribbonBack(); this.eqCtx = el; try { this.runCommand(c.id); } finally { if (this.eqCtx === el) this.eqCtx = null; } } });
     }
     // (a finger has no right click to give again: no such line under a long press)
     if (!touch) items.push(null, { name: 'Right click again for the browser\'s menu', title: 'Or hold Shift as you right click', disabled: true, cls: 'mi-hint' });
