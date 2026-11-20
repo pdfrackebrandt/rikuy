@@ -73,7 +73,7 @@ const WORD = [
   ['Ctrl+E', 'align-center'], ['Ctrl+L', 'align-left'], ['Ctrl+R', 'align-right'], ['Ctrl+J', 'justify'], ['Ctrl+Q', 'clear-paragraph-formatting'],
   ['Ctrl+1', 'line-spacing-1'], ['Ctrl+2', 'line-spacing-2'], ['Ctrl+5', 'line-spacing-15'], ['Ctrl+Shift+8', 'show-marks'], ['Ctrl+Shift+L', 'bullets'],
   ['Ctrl+Shift+N', 'style-normal'], ['Ctrl+Alt+1', 'style-heading1'], ['Ctrl+Alt+2', 'style-heading2'], ['Ctrl+Alt+3', 'style-heading3'], ['Ctrl+Shift+S', 'apply-styles'], ['Ctrl+Alt+Shift+S', 'styles-pane'],
-  ['Ctrl+F', 'find'], ['Ctrl+H', 'replace', 'Control+H'], ['Ctrl+G', 'go-to', 'Ctrl+Alt+G'], ['F5', 'go-to'], ['Shift+F4', 'find-next'], ['Shift+F5', 'go-back'], ['Ctrl+Alt+Z', 'go-back'],
+  ['Ctrl+F', 'find'], ['Ctrl+H', 'replace', 'Control+H'], ['Ctrl+G', 'go-to', 'Ctrl+Alt+G'], ['F5', 'go-to'], ['Shift+F4', 'find-next'], ['Ctrl+Alt+Y', 'find-next'], ['Shift+F5', 'go-back'], ['Ctrl+Alt+Z', 'go-back'],
   ['F8', 'extend-selection'], ['Shift+F8', 'shrink-selection'],
   ['Alt+Shift+ArrowLeft', 'promote', 'Control+Shift+ArrowLeft'], ['Alt+Shift+ArrowRight', 'demote', 'Control+Shift+ArrowRight'], ['Alt+Shift+ArrowUp', 'move-up', 'Control+Shift+ArrowUp'],
   ['Alt+Shift+A', 'headings-collapse-all', 'Control+Shift+A'], ['Alt+Shift+1', 'show-level-1', 'Control+Shift+1'], ['Alt+Shift+9', 'show-level-9', 'Control+Shift+9'],
@@ -105,7 +105,7 @@ ok('Word\'s keys: each bound to its command, on Windows and Linux and on a Mac (
   }
   // Word for Mac's own: Cmd+Option+L spelling, Cmd+Option+A a comment, Control+Shift+M indents, Cmd+G finds again
   const M = bindings(true);
-  for (const [k, id] of [['Ctrl+Alt+L', 'spelling'], ['Ctrl+Alt+A', 'comment-new'], ['Control+Shift+M', 'paragraph-indent'], ['Ctrl+G', 'find-next']]) assert.ok(M.some((b) => b.id === id && b.chord === k), k);
+  for (const [k, id] of [['Ctrl+Alt+L', 'spelling'], ['Ctrl+Alt+A', 'comment-new'], ['Control+Shift+M', 'paragraph-indent'], ['Ctrl+G', 'find-next'], ['Ctrl+8', 'show-marks']]) assert.ok(M.some((b) => b.id === id && b.chord === k), k);
   // Word's keys a browser keeps are bound to nothing here
   for (const k of ['Ctrl+N', 'Ctrl+W', 'Ctrl+T', 'Ctrl+Tab', 'F6', 'F11', 'F12', 'Ctrl+F4']) assert.ok(!bindings(false).some((b) => b.chord === k), k);
 });

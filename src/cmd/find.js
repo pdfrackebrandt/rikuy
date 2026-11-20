@@ -51,7 +51,7 @@ register(
     keys: ['Ctrl+G', 'F5'], mac: { 'Ctrl+G': 'Ctrl+Alt+G' }, when: () => true, run: (app) => openFindDialog(app, 'goto') },
   // Word's Shift+F4 finds the last words again, without the pane (Cmd+G on a Mac, as everywhere there)
   { id: 'find-next', name: 'Find Next', title: 'Find the words of the last Find again, the next place after the caret (Shift+F4)', synonyms: ['Repeat Find', 'Find again', 'Next result'],
-    keys: ['Shift+F4'], keysMac: ['Ctrl+G'], when: () => true, run: (app) => app.findNext() },
+    keys: ['Shift+F4', 'Ctrl+Alt+Y'], keysMac: ['Ctrl+G'], when: () => true, run: (app) => app.findNext() },
   // Word's Shift+F5 (and Ctrl+Alt+Z): back to where the last edits were, the four last in turn
   { id: 'go-back', name: 'Go Back', title: 'The caret back to where you last edited; again, the edit before, among the last four (Shift+F5)', synonyms: ['Last edit', 'Previous edit', 'Last change', 'Where was I'],
     keys: ['Shift+F5', 'Ctrl+Alt+Z'], when: (app) => !!(app.hist && app.hist.length), whyNot: () => 'Nothing has been edited yet.', run: (app) => app.goBack() },

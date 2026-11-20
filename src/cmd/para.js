@@ -91,7 +91,8 @@ register(
     // (Word for Mac's Control+Shift+M; elsewhere Ctrl+M is the formula's)
     keysMac: ['Control+Shift+M'],
     when: (app, at) => app.paraIndentCan(at, 1), whyNot: (app, at) => app.paraIndentWhy(at, 1), run: (app, args, at) => app.paraIndentStep(1, at) },
-  { id: 'show-marks', name: 'Show marks', order: 70, tab: 'home', group: 'paragraph', kind: 'toggle', icon: ICON.marks, keys: ['Ctrl+Shift+8'],
+  // (Word for Mac's Cmd+8 too)
+  { id: 'show-marks', name: 'Show marks', order: 70, tab: 'home', group: 'paragraph', kind: 'toggle', icon: ICON.marks, keys: ['Ctrl+Shift+8'], keysMac: ['Ctrl+8'],
     also: [{ tab: 'view', group: 'show', name: 'Formatting marks', order: 30 }],
     title: 'Show marks (Ctrl+Shift+8): ¶ at the end of each paragraph, ↵ at each line break (\\\\), → at each \\hfill, and the space of \\vspace; nothing is written',
     synonyms: ['Show/Hide', 'Show/Hide ¶', 'Formatting marks', 'Pilcrow', 'Paragraph marks', 'Hidden marks'],
