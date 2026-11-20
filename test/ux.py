@@ -494,7 +494,48 @@ def help_pane(page, w):
     page.evaluate('window.rikuy.closeHelpPane()')
 
 
-PARTS = {'help_pane': (help_pane, [(1366, False), (1920, True), (390, False)]),
+LONG = '\\documentclass{article}\n\\begin{document}\n' + ''.join('\\section{Part %d}\nWords of part %d, a paragraph long enough to fill a line or two of the page with plain text.\n\n' % (i, i) for i in range(1, 90)) + 'Here is a mispeled word.\n\\end{document}\n'
+
+
+def caret_back(page, w):
+    """The caret is where it was when a pane, Find and Replace, Go To, the Navigation pane, the
+    Thesaurus or the status bar's Word Count close with Esc, though a docked pane laid the page out
+    again at a new zoom; a pane opening keeps the caret's line on the screen."""
+    def lands(name, mark):
+        page.keyboard.type(mark); page.wait_for_timeout(250)
+        t = src(page)
+        # (Spelling selects the misspelling it shows, as Word's Editor does: the key types over it)
+        ok = ('Words of part 4%s' % mark) in t or ('Words of part %s4' % mark) in t or (name.startswith('Spelling') and 'Here is a %s word.' % mark in t)
+        check(f'{name}, then Esc: the next key lands at the caret (Spelling: over the misspelling it showed), not at the start ({w})', ok and '\\section{%sPart' % mark not in t, [l for l in t.splitlines() if mark in l][:2])
+        page.keyboard.press('Control+z'); page.wait_for_timeout(150)
+    load_doc(page, LONG); page.wait_for_timeout(400)
+    for name, how in (('Spelling (F7), docked', lambda: page.keyboard.press('F7')),
+                      ('Find and Replace (Ctrl+H)', lambda: page.keyboard.press('Control+h')),
+                      ('Go To (Ctrl+G)', lambda: page.keyboard.press('Control+g')),
+                      ('the Navigation pane\'s search (Ctrl+F)', lambda: page.keyboard.press('Control+f')),
+                      ('the Thesaurus (Shift+F7)', lambda: page.keyboard.press('Shift+F7')),
+                      ('Word Count from the status bar', lambda: page.locator('#st-words').click())):
+        click_text(page, 'Words of part 4', 15)
+        page.evaluate("document.getElementById('pages').focus()")
+        how(); page.wait_for_timeout(900)
+        page.keyboard.press('Escape'); page.wait_for_timeout(400)
+        if page.evaluate("!!document.querySelector('#sp-pane:not([hidden]), .th-pane:not([hidden])') && document.activeElement.id !== 'pages'"):
+            page.keyboard.press('Escape'); page.wait_for_timeout(300)
+        lands(name, 'Q')
+        page.evaluate("window.rikuy.toggleNav && window.rikuy.toggleNav(false)"); page.evaluate("document.querySelectorAll('#sp-pane, .th-pane').forEach((d) => d.hidden = true)")
+    # a pane docked on a long document: the caret's line stays on the screen
+    click_text(page, 'Words of part 40', 5)
+    page.evaluate("(() => { const s = getSelection().getRangeAt(0).getBoundingClientRect(); document.getElementById('desk').scrollTop += s.top - 300; })()")
+    page.wait_for_timeout(200)
+    y0 = page.evaluate("getSelection().getRangeAt(0).getBoundingClientRect().top")
+    run_cmd(page, 'styles-pane'); page.wait_for_timeout(900)
+    y1 = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(), d = document.getElementById('desk').getBoundingClientRect(); return [Math.round(r.top), Math.round(d.top), Math.round(d.bottom)]; })()")
+    check(f'the Styles pane docking keeps the caret\'s line on the screen, near where it was ({w})', y1[1] <= y1[0] <= y1[2] and abs(y1[0] - y0) < 120, (y0, y1))
+    run_cmd(page, 'styles-pane')
+
+
+PARTS = {'caret_back': (caret_back, [(1366, False), (1100, True)]),
+         'help_pane': (help_pane, [(1366, False), (1920, True), (390, False)]),
          'mobile_view': (mobile_view, [(390, False), (360, True)]), 'wide_print': (wide_print, [(1366, False)]),
          'first_comment': (first_comment, [(1366, False), (390, True)]),
          'download_pdf': (download_pdf, [(1366, False)]),

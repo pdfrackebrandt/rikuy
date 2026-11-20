@@ -479,7 +479,7 @@ class App {
     this.rebuild();
     $('#boot').hidden = true;
     document.fonts && document.fonts.addEventListener && document.fonts.addEventListener('loadingdone', debounce(() => this.relayout(true), 200));
-    new ResizeObserver(debounce(() => { if (this.computePx()) this.relayout(true); }, 150)).observe(this.desk);
+    new ResizeObserver(debounce(() => this.refit(), 150)).observe(this.desk);
     this.initCaps();
     await this.loadReview();
     await this.loadShareCtx();
@@ -801,6 +801,31 @@ class App {
     getSelection().collapse(this.ghost.el.firstChild.firstChild, 1);
   }
 
+  // The page's width changed (the window, a pane docked or closed): laid out again at the new fit,
+  // with what the reader looked at where it was on the screen: the caret when it is in view, else
+  // the line a third of the way down (a docked pane sent a caret at y 387 to y -2520)
+  refit() {
+    const desk = this.desk, D = desk.getBoundingClientRect();
+    let y = D.top + desk.clientHeight / 3;
+    const s = getSelection();
+    if (s.rangeCount && this.root.contains(s.anchorNode)) {
+      const q = s.getRangeAt(0).getBoundingClientRect();
+      if (q.height && q.top >= D.top && q.bottom <= D.bottom) y = q.top;
+    }
+    const pages = [...this.root.querySelectorAll('.page')];
+    let k = -1, fy = 0;
+    for (let i = 0; i < pages.length; i++) {
+      const q = pages[i].getBoundingClientRect();
+      if (y < q.bottom || i === pages.length - 1) { k = i; fy = q.height ? (y - q.top) / q.height : 0; break; }
+    }
+    if (!this.computePx()) return;
+    this.relayout(true);
+    const pg = k >= 0 && this.root.querySelectorAll('.page')[k];
+    if (!pg) return;
+    const q = pg.getBoundingClientRect();
+    desk.scrollTop += q.top + fy * q.height - y;
+  }
+
   relayout(force) {
     if (!this.model) return;
     const c = this.caretNow();
@@ -811,7 +836,9 @@ class App {
     // With a ribbon button or its menu holding the focus the page keeps its selection, for the
     // button to act on; the pass's new nodes left it at a page's start. It goes back where it was,
     // the focus left where it is (Select sentence from Home's Select menu selected nothing).
-    else if (c && !c.crossFile && document.activeElement && document.activeElement.closest('#ribbon, .pop') && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+    // (a docked pane's or the side panel's buttons and lists too: a pane that narrows the page lays it
+    // out again at a new zoom, and F7 then Esc put the caret at the document's start)
+    else if (c && !c.crossFile && document.activeElement && document.activeElement.closest('#ribbon, .pop, .stp, .sp-pane, .help-pane, #nav, #fr') && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
       const x = this.index.find(c.f, c.collapsed ? c.p : c.a, c.collapsed ? -1 : 1), y = c.collapsed ? x : this.index.find(c.f, c.b, -1);
       if (x && x.node && y && y.node) {
         getSelection().setBaseAndExtent(x.node, x.offset, y.node, y.offset);
@@ -1225,6 +1252,9 @@ class App {
     quiet();
     // a click on the word count opens Word Count, as in Word
     $('#st-words').addEventListener('click', () => this.runCommand('word-count'));
+    // a press on a button of the status bar leaves the page its focus, as the ribbon's do: the
+    // dialog it opens (Word Count, Go To) gives the caret back when it closes
+    $('#status').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
     // the status line scrolls when it is wider than the window; the fades follow the cut edges
     const stBar = $('#status');
     if (stBar) {
@@ -2255,6 +2285,13 @@ class App {
       if (!r || r.startContainer !== A.sc || r.startOffset !== A.so || r.endContainer !== A.ec || r.endOffset !== A.eo) this.allSel = null;
     }
     if (!inRoot) { this.hideBubble(); return; }
+    // the page's caret or selection by its place in the source, while the page has the focus: a
+    // pane, a dialog or a list that took the focus gives it back there (src/ribbon.js
+    // ribbonBack), as a DOM range does not survive the page being drawn again
+    if (document.activeElement === this.root && !this.stale) {
+      const c = this.caretNow();
+      if (c && !c.ghost && !c.crossFile) this.lastPagePos = c.collapsed ? { f: c.f, p: c.p } : { f: c.f, selA: c.a, selB: c.b };
+    }
     if (this.ourSel) { this.ourSel = false; }
     if (!sel.isCollapsed) { this.showBubble(); const c = this.caretNow(); if (c && !c.collapsed) { this.lastSel = c; this.lastSelT = Date.now(); } } else this.hideBubble();
     this.syncSoon();
