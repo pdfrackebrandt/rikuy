@@ -866,7 +866,7 @@ export function cleanApp(OUT) {
 // hosted page each runs in its own sandboxed document, widget-<hash>.html, with WIDGET_POLICY
 // (src/widget.js), and the rule for that file below takes this one away from it.
 // style-src keeps 'unsafe-inline': the page sets styles from script everywhere, and a style
-// cannot run code.
+// cannot run code. frame-src 'self': the hosted page frames only its widget document.
 // connect-src: the page's own files and blob:, no other host. Git's push, pull and clone go
 // through Rikuy's own proxy on this same site (/git: functions/git/[[path]].js, src/gitproxy.js),
 // which passes git's smart HTTP alone to public https hosts. The workers share this policy (they
@@ -885,7 +885,7 @@ export function policy(hashes) {
     "worker-src 'self' blob:",
     "manifest-src 'self'",
     "form-action 'self'",
-    "frame-src 'self' blob: data:",
+    "frame-src 'self'",
     "frame-ancestors 'none'",
     "object-src 'none'",
     "base-uri 'self'"
