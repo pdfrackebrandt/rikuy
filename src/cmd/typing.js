@@ -69,6 +69,9 @@ export function openBraces(src, p) {
   return d;
 }
 
+// what F2 and Shift+F2 say while they wait
+const MOVE_ASK = ['Move to where? Put the caret there with the arrow keys and press Enter; Escape cancels.', 'Copy to where? Put the caret there with the arrow keys and press Enter; Escape cancels.'];
+
 // ---- the accent keys ------------------------------------------------------------------------------
 // Word's international characters: a key, then the letter. Each: the combining mark, and the
 // letters Word makes otherwise (Ctrl+' then d is ð; Ctrl+Shift+& then a is æ, o œ, s ß).
@@ -166,15 +169,25 @@ export const methods = {
     this.dragMove = was;
     if (!ok || !M) return false;
     this.moveText = { M, copy };
-    this.toast((copy ? 'Copy to where?' : 'Move to where?') + ' Put the caret there and press Enter; Escape cancels.', 8000);
+    // (said for as long as it waits: a toast that went away left Enter taken with nothing on screen)
+    this.toast(MOVE_ASK[copy ? 1 : 0], 3600000, { label: 'Cancel', fn: () => this.moveTextEnd() });
     return true;
   },
+  // F2's waiting ends: Escape, a click, any key but the caret's own, an edit
+  moveTextEnd() {
+    if (!this.moveText) return;
+    this.moveText = null;
+    const t = document.getElementById('toast');
+    if (t && MOVE_ASK.some((x) => t.textContent.startsWith(x))) t.hidden = true;
+  },
+  // Enter after F2: the text moved (copied) to the caret; false where it could not be (the text
+  // changed meanwhile, another file, the caret inside it), and Enter is then Enter
   moveTextDrop() {
     const A = this.moveText;
-    this.moveText = null;
+    this.moveTextEnd();
     const c = this.caretNow();
-    if (!A || !c || c.ghost) return false;
-    return this.moveSource(A.M, { f: c.f, p: c.a }, A.copy);
+    if (!A || !c || c.ghost || this.src(A.M.f) !== A.M.src) return false;
+    return !!this.moveSource(A.M, { f: c.f, p: c.a }, A.copy);
   }
 };
 
@@ -186,18 +199,26 @@ onInsertText((app, data) => {
   return accented(kind, data) || undefined;
 });
 
+const NAV = /^(Arrow(Left|Right|Up|Down)|Home|End|PageUp|PageDown)$/;
 onInstall((app) => {
-  // Enter ends F2's move; Escape, or any key but a letter's (which the accent takes), ends what
-  // is waiting
+  // Enter ends F2's move; Escape, any key but the caret's own, a click or an edit ends it. An
+  // accent key waits for the next letter: any other key or a click ends that.
   app.root.addEventListener('keydown', (e) => {
     if (/^(Shift|Control|Alt|Meta|AltGraph|CapsLock)$/.test(e.key) || e.isComposing) return;
     if (app.accentNext && (e.key.length !== 1 || e.ctrlKey || e.metaKey)) app.accentNext = null;
     if (!app.moveText) return;
-    if (e.key === 'Escape') { app.moveText = null; return; }
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      app.moveTextDrop();
+      if (app.moveTextDrop()) { e.preventDefault(); e.stopImmediatePropagation(); }
+      return;
     }
+    if (!NAV.test(e.key)) app.moveTextEnd();
   }, true);
+  document.addEventListener('pointerdown', (e) => {
+    app.accentNext = null;
+    // (the toast's own Cancel ends it too, by its click)
+    if (app.moveText && !(e.target.closest && e.target.closest('#toast'))) app.moveTextEnd();
+  }, true);
+  // (an edit from anywhere, the ribbon's or an agent's: what F2 took is no longer the text)
+  const commit = app.commit;
+  app.commit = function (...a) { if (this.moveText) this.moveTextEnd(); return commit.apply(this, a); };
 });
