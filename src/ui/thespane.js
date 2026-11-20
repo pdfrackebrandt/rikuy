@@ -34,7 +34,8 @@ function build(app) {
   const st = mk('div', 'fr-st');
   st.setAttribute('role', 'status'); st.setAttribute('aria-live', 'polite');
   d.append(head, row, lab, list, st);
-  document.body.append(d);
+  // (in #main: on a desktop window it docks at the right as Word's panes do, app.css)
+  (document.getElementById('main') || document.body).append(d);
   const P = { d, q, list, lab, st, back, trail: [], target: null, seq: 0 };
   app.thPane = P;
   const close = () => { d.hidden = true; P.target = null; app.ribbonBack && app.ribbonBack(); };
