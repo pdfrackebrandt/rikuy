@@ -11,7 +11,9 @@ reference and citation pickers by the keys, Enter closing them, with what each l
 follow: F12 or Ctrl+click on a cross reference goes to its label, Shift+F5 back; Enter or F2 on a
 formula selected alone opens it (8). linear: Ctrl+Shift+= in a new equation shows that equation
 as its LaTeX on the page, never the paragraph before it (13). modes: Esc leaves Focus and Read
-Mode with the caret on the page.
+Mode with the caret on the page. keytips: F10 (or Alt), a tab's letter, then a command's letters run it
+(H 1 is Bold, N T Insert's Table, H T Home's own Table); a letter that matches nothing is taken by
+the KeyTips and never typed into the document (5).
 Each part is a function; `python3 power.py
 footnote` runs one."""
 import os, sys
@@ -204,7 +206,29 @@ def modes(page):
         load_doc(page, MATH)
 
 
-PARTS = [footnote, dollars, latex, tab, pickers, follow, linear, modes]
+def keytips(page):
+    load_doc(page, MATH)
+    select_text(page, 'beta')
+    for k in ('F10', 'h', '1'): key(page, k, 250)
+    check('keytips: F10, H, 1 makes the selection bold', '\\textbf{beta}' in src(page), src(page)[60:110])
+    load_doc(page, MATH)
+    click_text(page, 'beta', 2)
+    for k in ('F10', 'n', 'j', 'q', 'z'): key(page, k, 200)
+    check('keytips: letters no KeyTip has are taken, none typed into the text', src(page) == MATH and page.evaluate("document.querySelectorAll('.rb-kt-layer .rb-kt').length") > 0, src(page)[60:100])
+    key(page, 't', 400)
+    menu = page.evaluate("[...document.querySelectorAll('[role=menu], [role=dialog]')].filter((m) => m.offsetParent).length")
+    check('keytips: N then T opens Insert\'s Table', menu > 0 and src(page) == MATH, menu)
+    key(page, 'Escape', 200); key(page, 'Escape', 200)
+    page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+    click_text(page, 'beta', 2)
+    for k in ('Alt', 'q', 'x'): key(page, k, 200)
+    check('keytips: a letter no tab has is taken too', src(page) == MATH, src(page)[60:100])
+    key(page, 'Escape', 200); key(page, 'Escape', 200)
+    click_text(page, 'beta', 2); typed(page, 'Z')
+    check('keytips: after Esc the keys type again', 'betZa' in src(page), src(page)[60:100])
+
+
+PARTS = [footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips]
 
 
 def run():
