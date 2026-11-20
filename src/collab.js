@@ -447,7 +447,8 @@ export const collab = {
       this.prefs.who = who; this.savePrefs();
       const f = o.thread ? o.thread.f : o.f;
       const at = o.thread ? o.thread.e - 1 : o.p;
-      const ed = commentEdit(this.src(f), Math.max(0, at), { who, quote: o.quote, body: ta.value, reply: !!o.thread });
+      // (a reader of a comments only link writes the form the author's copy takes it in: src/share.js)
+      const ed = commentEdit(this.src(f), Math.max(0, at), { who, quote: o.quote, body: ta.value, reply: !!o.thread, safe: !!(this.shareCtx && this.shareCtx.role === 'comments') });
       if (!ed) {
         this.toast(ta.value.trim() ? 'A comment cannot go here: inside verbatim text or before \\begin{document} TeX would print it.' : 'Write the comment first.');
         return;

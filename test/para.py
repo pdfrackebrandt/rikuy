@@ -520,9 +520,9 @@ def open_phone(p, width, height, dark=False):
             path = url[len('https://rikuy.test/'):].split('?')[0]
             f = os.path.join(DIST, path)
             if path and os.path.isfile(f):
-                ct = 'text/javascript' if path.endswith(('.js', '.mjs')) else 'application/wasm' if path.endswith('.wasm') else 'application/octet-stream'
-                return route.fulfill(status=200, content_type=ct, body=open(f, 'rb').read())
-            return route.fulfill(status=200, content_type='text/html; charset=utf-8', body=doc)
+                ct = 'text/javascript' if path.endswith(('.js', '.mjs')) else 'application/wasm' if path.endswith('.wasm') else 'text/html; charset=utf-8' if path.endswith('.html') else 'application/octet-stream'
+                return route.fulfill(status=200, content_type=ct, headers=B.policy(DIST, '/' + path), body=open(f, 'rb').read())
+            return route.fulfill(status=200, content_type='text/html; charset=utf-8', headers=B.policy(DIST, '/'), body=doc)
         if url in B.ROUTES:
             return route.fulfill(status=200, content_type='application/javascript', headers={'Access-Control-Allow-Origin': '*'}, body=open(B.ROUTES[url], 'rb').read())
         return route.abort()
