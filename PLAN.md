@@ -3263,26 +3263,70 @@ Tests:
     `styles.py` 426, `view.py` 163; screenshots of every tab at 1920 and 1366 px, light and dark,
     and 390 px.
 
+68. **Objects formatted after they are in, as Word does** (branch `word-gaps-objects`). A drawing,
+    a chart or a SmartArt pressed on the page is selected (a frame; a drawing's points keep their
+    handles) and its contextual tabs show and open: **Shape Format** (Insert Shape into the same
+    drawing, Theme Styles, Shape Fill and Shape Outline from Word's colour grid as xcolor's names
+    and tints, Weight, Dashes, Arrows, Edit Text as a `\node` at its middle, Height and Width as
+    `scale=` or `xscale=`/`yscale=`, Bring Forward and Send Backward of one shape a second press
+    selects, Position, Align, Selection Pane), **Chart Design** (Add Chart Element: title, axis
+    titles, legend corner, gridlines, data labels; Change Colors as a `cycle list`; Switch
+    Row/Column; Edit Data; Change Chart Type, each keeping the others) and **Format** (Height,
+    Width, Position, Align), **SmartArt Design** (Add Shape, Text Pane, Right to Left, Change
+    Layout, Change Colors, Reset Graphic) and **Format** (Shape Fill, Shape Outline). Each is a
+    small edit of the object's LaTeX (`src/objfmt.js`), read back by the page's drawing
+    (`src/drawing.js` now draws nodes' words, scales, `draw=none`, dash dot, a chart's title, axis
+    titles, gridlines, data labels, legend corner and colours, a SmartArt's colours and border);
+    smartdiagram's colour lists are global, so a diagram with colours of its own is followed by a
+    line giving the package's back. A double click opens a chart's grid or a SmartArt's Text Pane,
+    Enter too, Delete takes the object off with its center; each has its right click menu and a
+    long press on a phone. **Picture Format's Corrections, Color, Transparency and Compress
+    Pictures** in C: `tex/native/pic/pic.c` over stb_image and stb_image_write (pinned by hash),
+    `sh tex/build_tools.sh pic` into `tex/vendor/pic/rikuy-pic.wasm` (82 KB, standalone, one
+    import, the same bytes from two empty source folders; a `vendor.yml` job), fetched on first
+    use beside the page and checked by SHA-256; a new file beside the picture (its own kept),
+    `\includegraphics` pointed at it and a comment naming the first file and the settings, so every
+    change starts from the first file and Reset Picture goes back; Compress keeps the printed size
+    (pHYs, JFIF density) and says the bytes saved; where the module cannot load, a plain message
+    and nothing changed. **Selection Pane** (Layout, Picture Format and every object's Arrange):
+    every figure, table, picture, drawing, chart, SmartArt and display equation with its caption;
+    go to it, rename its `\label` with every reference in every file, give one a name, hide it on
+    the page alone. **Arrange**: Position (in line, a figure at `[htbp]`/`[t]`/`[b]`/`[p]`/`[h]`/`[H]`,
+    wrapfig at its own width `{0pt}` left or right) and Align (center, flushleft, flushright; in a
+    figure `\centering`, `\raggedleft`) for drawings, charts, SmartArt and pictures; Bring Forward
+    and Send Backward between the shapes of one drawing (Insert Shape puts a shape in it: Word's
+    Group). A TikZ picture in a figure was not drawn on the page: it is now, and selected there.
+    Left out, with no meaning in LaTeX: shape effects, WordArt styles, a SmartArt shape's own
+    colour or size, Quick Layout, 3-D charts, Remove Background, Artistic Effects, Ungroup (a
+    TikZ picture's shapes keep no place of their own outside it), Rotate of a drawing.
+    Evidence: `npm test` green (`objfmt` 12 groups, `picfx` 8, `objlist` 3, `drawing`,
+    `objects`, `commands` 14); `test/objects.py` 229 (with `dist/tex`: everything compiled with
+    pdfLaTeX, XeLaTeX and LuaLaTeX, the shapes' words, chart titles and SmartArt items found in each
+    PDF; edited pictures, one seen through, on the three engines; phones at 390 and 360 px with
+    touch); `tabs.py` 127 (the fold sweep on all 19 tabs, the five new ones among them), `agent.py`, `picture.py`; screenshots
+    in `/tmp/g1-shots`.
+
 ## Open tasks
 
 67. **Word's ribbon buttons Rikuy has no command for** (task 66 left them out). Insert: 3D
     Models, Online Videos, Get Add-ins, WordArt, Signature Line, Object, and Date & Time (the
     command `insert-date` exists, without an icon or a place on the ribbon). Draw: the whole tab.
-    Design: Effects, Set as Default (File has `set-default`). Layout › Arrange: Bring Forward, Send
-    Backward, Selection Pane, Align, Group. References: Update Table (contents, figures,
+    Design: Effects, Set as Default (File has `set-default`). Layout › Arrange: Bring Forward and
+    Send Backward of a picture (no meaning: a picture is in the text, not over it; task 68 has them
+    for the shapes of a drawing), Group (task 68: Insert Shape puts a shape in the drawing).
+    References: Update Table (contents, figures,
     authorities), Update Index, Research (Search, Researcher). Mailings: the whole tab. Review:
     Translate, Protect (Block Authors, Restrict Editing), Hide Ink, the Tracking group's corner
     arrow (Track Changes Options). View: Immersive Reader, Vertical (Side to Side's other half),
     Gridlines, the Zoom dialog, the Window group, Macros. Table Design: Border Styles, Pen Style,
     Border Painter, the Borders corner arrow (Borders and Shading). Table Layout: View Gridlines,
     Draw Table, Eraser, Formula, the Rows & Columns corner arrow. Picture Format: Remove Background,
-    Corrections, Color, Artistic Effects, Transparency, Compress Pictures, Picture Effects, Picture
-    Layout, the Picture Styles gallery and its corner arrow, Bring Forward, Send Backward, Selection
-    Pane, Align, Group. Equation: Ink Equation, Unicode or LaTeX and Convert, Normal Text, the
+    Artistic Effects, Picture Effects, Picture Layout, the Picture Styles gallery and its corner
+    arrow (Corrections, Color, Transparency, Compress Pictures, Selection Pane and Align: task 68).
+    Equation: Ink Equation, Unicode or LaTeX and Convert, Normal Text, the
     Tools corner arrow (Equation Options). Header & Footer: Quick Parts and Pictures in its Insert
     group, the Navigation group, Show Document Text, Header from Top and Footer from Bottom as
-    fields. Contextual tabs Word has and Rikuy has not: Shape Format, Chart Design and Format,
-    SmartArt Design and Format.
+    fields. (Shape Format, Chart Design and Format, SmartArt Design and Format: task 68.)
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
     papers, every failure classified as in task 2. Needs arxiv.org (see task 3). The owner runs

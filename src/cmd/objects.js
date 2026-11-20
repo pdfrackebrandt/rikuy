@@ -199,8 +199,12 @@ onInstall((app) => {
   }, true);
   app.root.addEventListener('pointermove', (e) => { if (lp && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 10) endLong(); }, true);
   for (const k of ['pointerup', 'pointercancel']) app.root.addEventListener(k, endLong, true);
-  // (the touch that ended in a long press is no tap: the menu stays, the system's does not come)
-  for (const k of ['mousedown', 'mouseup', 'click']) document.addEventListener(k, (e) => { if (held() && objAt(e.target)) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+  // (the touch that ended in a long press is no tap: the menu stays, the system's does not come,
+  // and the item that opened under the finger is not run by the finger lifting from it)
+  // (a new touch anywhere is a tap of its own: the menu's items work again)
+  document.addEventListener('pointerdown', (e) => { if (!app.root.contains(e.target)) app.objHeld = false; }, true);
+  const lifting = (e) => held() && (objAt(e.target) || (e.target.closest && e.target.closest('.pop-ctx')));
+  for (const k of ['mousedown', 'mouseup', 'click']) document.addEventListener(k, (e) => { if (lifting(e)) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
 });
 
 const kindName = { shape: 'drawing', chart: 'chart', smart: 'SmartArt' };
