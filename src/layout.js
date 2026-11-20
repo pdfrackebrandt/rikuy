@@ -140,8 +140,15 @@ export function geometry(opts) {
   // the footer move; the text too, unless \topmargin moved the other way (src/pagesrc.js
   // headFootEdits writes it so)
   const HL = (!opts.geometry || opts.geoPass) && pg.lengths;
-  if (HL && HL.headsep) { if (!HL.headsep.keep) mt += HL.headsep.pt - hs; hs = HL.headsep.pt; }
-  if (HL && HL.footskip) fs = HL.footskip.pt;
+  if (HL && HL.headsep) {
+    // (each in order: one by hand moves the text, \addtolength{\topmargin}{\headsep} round one keeps it)
+    for (const x of HL.headsep.steps || [HL.headsep]) {
+      const to = x.add ? hs + x.pt : x.pt;
+      if (!x.keep) mt += to - hs;
+      hs = to;
+    }
+  }
+  if (HL && HL.footskip) { if (HL.footskip.pt != null) fs = HL.footskip.pt; for (const d of HL.footskip.adds || []) fs += d; }
   const colsep = pg.colsep != null ? pg.colsep : len(geo.columnsep) != null ? len(geo.columnsep) : pt === 10 ? 10 : 10;
   // (hyphenation rides along: a change of it measures the lines again, src/app.js layoutPass)
   // pw, ph: the sheet; paperW, paperH: LaTeX's \paperwidth and \paperheight, which the class's
@@ -930,7 +937,7 @@ export class Layout {
     const S = this.slotsFor(pg);
     const even = this.g.twoside && pg.num % 2 === 0;
     // (KOMA's \headmark: the left mark on even pages, the right one on odd)
-    const ctx = { page: fmtNum(pg.num, pg.fmt), total, left: mk.left, right: mk.right, headmark: even ? mk.left : mk.right, info: this.info };
+    const ctx = { page: fmtNum(pg.num, pg.fmt), total, left: mk.left, right: mk.right, headmark: even ? mk.left : mk.right, info: this.info, asset: this.assetURL || null };
     const fill = (box, list) => {
       box.replaceChildren();
       let any = false;
@@ -1292,6 +1299,13 @@ export function hfRuns(tex, ctx = {}) {
       else if (WRAP[name]) { const a = arg(); if (a != null) { stack.push(cur); cur = { ...cur, [WRAP[name]]: true }; for (const r of hfRuns(a, ctx)) { cur = { ...cur, ...Object.fromEntries(Object.entries(r.st).filter(([, v]) => v)) }; push(r.t); cur = { ...stack[stack.length - 1], [WRAP[name]]: true }; } cur = stack.pop(); } }
       else if (DECL[name]) cur = { ...cur, [DECL[name]]: true };
       else if (/^(fancyplain|ifthenelse)$/.test(name)) { arg(); }
+      // (G2) a picture in the header (a logo): its file and height, drawn as graphicx sets it
+      else if (name === 'includegraphics') {
+        let opts = '';
+        if (t[i] === '[') { const z = t.indexOf(']', i); if (z > 0) { opts = t.slice(i + 1, z); i = z + 1; } }
+        const file = arg();
+        if (file != null) out.push({ t: '', st: { ...cur }, pic: { file: file.trim(), height: (/height\s*=\s*([^,\]]+)/.exec(opts) || [])[1] || null } });
+      }
       continue;
     }
     if (c === '{') { stack.push(cur); i++; continue; }
@@ -1308,8 +1322,24 @@ export function hfRuns(tex, ctx = {}) {
   }
   return out;
 }
+// a height graphicx reads (1cm, 12pt, 1.5\baselineskip) in points, at a 10 pt text's 12 pt line
+function hfPicPt(h) {
+  const m = /^\s*([\d.]*)\s*(\\baselineskip|\\normalbaselineskip|cm|mm|in|pt|bp|em|ex)\s*$/.exec(String(h || ''));
+  if (!m) return 12;
+  const f = m[1] === '' ? 1 : parseFloat(m[1]) || 1;
+  return Math.max(1, Math.min(200, f * ({ cm: 28.4528, mm: 2.84528, in: 72.27, pt: 1, bp: 1.00375, em: 10, ex: 4.3 }[m[2]] || 12)));
+}
 function hfInto(el, tex, ctx) {
   for (const r of hfRuns(tex, ctx)) {
+    if (r.pic) {
+      const url = ctx.asset ? ctx.asset(r.pic.file) : null;
+      const img = document.createElement(url ? 'img' : 'span');
+      img.className = 'hf-pic';
+      if (url) { img.src = url; img.alt = r.pic.file; } else img.textContent = '[' + r.pic.file + ']';
+      img.style.height = 'calc(var(--pt) * ' + hfPicPt(r.pic.height) + 'px)';
+      el.appendChild(img);
+      continue;
+    }
     const s = document.createElement('span');
     s.textContent = r.st.up ? r.t.toUpperCase() : r.t;
     if (r.st.b) s.style.fontWeight = 'bold';
