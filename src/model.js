@@ -2699,6 +2699,9 @@ class Builder {
         if (n.t === 'cmd' && n.name === 'label') { this.label(this.argText(ctx, n.args[0]), ctx); continue; }
         if (n.t === 'env' && n.math) { flushP(); parts.push(this.displayMath(n, ctx, n.name)); continue; }
         if (n.t === 'math' && n.display) { flushP(); parts.push(this.displayMath(n, ctx, null)); continue; }
+        // a TikZ picture in a figure (Shape Format's and Chart Format's Position): drawn as in the
+        // text (src/render.js floatPart), its source box where the page cannot draw it
+        if (n.t === 'env' && n.name === 'tikzpicture' && !ctx.pm) { flushP(); parts.push({ type: 'raw', f: ctx.f, s: n.s, e: n.e, is: n.be, ie: n.es, name: 'tikzpicture', align: align || dflt }); continue; }
         para.push(n);
       }
     };

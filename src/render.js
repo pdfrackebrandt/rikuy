@@ -666,6 +666,18 @@ export class Renderer {
       return d;
     }
     if (p.type === 'h') { const d = div('fp'); this.inl(p.inl, d); return d; }
+    if (p.type === 'raw') {
+      // a TikZ picture in a figure: drawn as in the text, selected as there (src/ui/shapes.js)
+      const d = div('fp raw atom al-' + (p.align || 'center'));
+      d.contentEditable = 'false';
+      const whole = p.e - p.s < 20000 ? (this.app.files.get(p.f) || '').slice(p.s, p.e) : '';
+      const pic = whole ? drawRaw(whole) : null;
+      if (pic) { d.classList.add('drawn'); d.appendChild(pic); } else { const h = div('raw-h'); h.textContent = 'tikzpicture'; d.appendChild(h); }
+      const idx = B.atoms.length;
+      B.atoms.push({ kind: 'raw', f: p.f, s: this.rel(p.s), e: this.rel(p.e), is: this.rel(p.is), ie: this.rel(p.ie), name: 'tikzpicture' });
+      d.dataset.a = B.id + '.' + idx;
+      return d;
+    }
     return div('fp');
   }
 

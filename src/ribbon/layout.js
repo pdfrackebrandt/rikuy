@@ -35,7 +35,7 @@ export const LAYOUT = {
     setup: ['margins L M', 'orientation L O', 'size L SZ', 'columns L J', 'breaks S B', 'line-numbers S LN', 'hyphenation S H', 'page-setup S -'],
     // (Word's Indent and Spacing: Left over Right, then Before over After)
     paragraph: ['indent-left S IL', 'indent-right S IR', '|', 'spacing-before S SB', 'spacing-after S SA', '|', 'tab-next L TN'],
-    arrange: ['picture-position L PO', 'picture-wrap L TW', 'picture-rotate S AY', 'selection-pane S AP'],
+    arrange: ['picture-position L PO', 'picture-wrap L TW', 'object-align S AA', 'picture-rotate S AY', 'selection-pane S AP'],
     document: ['doc-class S DC', 'base-size S DS', 'two-sided S DT']
   },
   references: {
@@ -87,7 +87,7 @@ export const LAYOUT = {
     adjust: ['picture-corrections L R', 'picture-color L I', 'picture-transparency L TR', 'picture-compress S M', 'picture-change S G', 'picture-reset S Q Reset Picture'],
     styles: ['picture-border S SO', 'picture-caption S N'],
     accessibility: ['picture-alt L AT'],
-    arrange: ['picture-position L PO', 'picture-wrap L TW', 'picture-rotate S AY', 'selection-pane S AP'],
+    arrange: ['picture-position L PO', 'picture-wrap L TW', 'object-align S AA', 'picture-rotate S AY', 'selection-pane S AP'],
     size: ['picture-crop L C', 'picture-height S H', 'picture-width S W', '|', 'picture-lock I L', 'picture-size I SZ']
   },
   equation: {
@@ -102,7 +102,7 @@ export const LAYOUT = {
     insert: ['shape-insert L SI'],
     styles: ['shape-styles L SS', 'shape-fill S SF', 'shape-outline S SO'],
     text: ['shape-text L X'],
-    arrange: ['shape-forward S AF', 'shape-backward S AE', 'selection-pane S AP'],
+    arrange: ['object-position L PO', 'shape-forward S AF', 'shape-backward S AE', 'selection-pane S AP', 'object-align S AA'],
     size: ['shape-height S H', 'shape-width S W']
   },
   'chart-design': {
@@ -112,7 +112,7 @@ export const LAYOUT = {
     type: ['chart-type L Y']
   },
   'chart-format': {
-    arrange: ['selection-pane S AP'],
+    arrange: ['object-position L PO', 'object-align S AA', 'selection-pane S AP'],
     size: ['chart-height S H', 'chart-width S W']
   },
   'smart-design': {
@@ -123,7 +123,7 @@ export const LAYOUT = {
   },
   'smart-format': {
     styles: ['smart-fill S F', 'smart-outline S O'],
-    arrange: ['selection-pane S AP']
+    arrange: ['object-position L PO', 'object-align S AA', 'selection-pane S AP']
   },
   headfoot: {
     headfoot: ['header L H', 'footer L O', 'page-number L NU'],

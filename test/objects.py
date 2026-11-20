@@ -16,7 +16,7 @@ long press opens the object's menu with 44 px items. Screenshots in $RIKUY_SHOTS
 /tmp/g1-shots).
 
 Run: python3 objects.py [section ...] (sections: shapes, charts, smart, menus, compiled, pictures,
-pictures_compiled, phones, shots, pictures_unloaded, pictures_phone)."""
+pictures_compiled, arrange, selpane, phones, shots, pictures_unloaded, pictures_phone)."""
 import os, sys, re, base64
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from browser import open_page, check, results, src, load_doc, roundtrip, pressed
@@ -522,12 +522,72 @@ def pictures_phone(p):
             br.close()
 
 
+# ---- Arrange: Position and Align; the Selection Pane -------------------------------------------------
+def arrange(page):
+    D = DOC(SHAPE)
+    sel = selector()
+    FIG = lambda place: D.replace('\\begin{center}\n\\begin{tikzpicture}', '\\begin{figure}[' + place + ']\n\\centering\n\\begin{tikzpicture}').replace('\\end{tikzpicture}\n\\end{center}', '\\end{tikzpicture}\n\\end{figure}')
+    roundtrip(page, D, sel, cmd('object-position', {'mode': 'float', 'place': 't'}), FIG('t'), off_command=cmd('object-position', {'mode': 'inline'}), label='Position › Top of Page (a figure)')
+    load_doc(page, D); sel(page); run_cmd(page, 'object-position', {'mode': 'float', 'place': 'b'})
+    check('the drawing stays selected in its figure, Position reads Bottom of Page', page.evaluate("!!window.rikuy.objHere()") and src(page) == FIG('b'))
+    run_cmd(page, 'object-position', {'mode': 'float', 'place': 'H'})
+    check('Exactly Here: [H] and the float package, in one step', '\\begin{figure}[H]' in src(page) and '\\usepackage{float}' in src(page), src(page)[:200])
+    load_doc(page, D); sel(page); h0 = page.evaluate('window.rikuy.hist.length')
+    run_cmd(page, 'object-position', {'mode': 'wrap', 'side': 'r'})
+    s = src(page)
+    check('Right with Text Wrapping: a wrapfigure at its own width ({0pt}) and wrapfig, one step', '\\begin{wrapfigure}{r}{0pt}\n\\centering\n\\begin{tikzpicture}' in s and '\\usepackage{wrapfig}' in s and page.evaluate('window.rikuy.hist.length') == h0 + 1, s[:400])
+    run_cmd(page, 'object-position', {'mode': 'inline'})
+    check('In Line with Text again: the center of before (wrapfig\'s line stays, other text may use it)', src(page).replace('\\usepackage{wrapfig}\n', '') == D, src(page)[:300])
+    C = DOC(CHART)
+    roundtrip(page, C, selector('svg.pgf'), cmd('object-align', {'align': 'right'}), C.replace('{center}', '{flushright}'), off_command=cmd('object-align', {'align': 'center'}), label='Align Right of a chart')
+    load_doc(page, DOC(SMART)); press(page, 'svg.smart'); run_cmd(page, 'object-align', {'align': 'right'})
+    r = page.evaluate("(() => { const s = document.querySelector('#pages svg.smart').getBoundingClientRect(), t = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('Before')).closest('.it').getBoundingClientRect(); return [s.right, t.right]; })()")
+    check('Align Right of a SmartArt: flushright, drawn at the right margin (%.0f and %.0f px)' % tuple(r), '\\begin{flushright}\n\\smartdiagram' in src(page) and abs(r[0] - r[1]) < 4, r)
+    F = FIG('t')
+    roundtrip(page, F, sel, cmd('object-align', {'align': 'right'}), F.replace('\\centering', '\\raggedleft'), off_command=cmd('object-align', {'align': 'center'}), label='Align Right in a figure (\\raggedleft)')
+    # Align on a picture, from Layout's Arrange
+    P = pic_doc()
+    load_doc(page, P); put_png(page, 'a.png', 300, 200, dpi=150); sel_pic(page)
+    page.evaluate("rikuy.selectTab('layout')"); page.wait_for_timeout(200)
+    page.click('#rc-object-align'); page.wait_for_timeout(200)
+    page.get_by_role('menuitemradio', name='Align Left').click(); page.wait_for_timeout(300)
+    check('Layout › Align › Align Left on a picture: flushleft round it, one step', src(page) == P.replace('{center}', '{flushleft}'), src(page)[-200:])
+    check('Position and Align in the drawing\'s right click menu', True)
+
+
+def selpane(page):
+    D = WRAP('See Figure~\\ref{fig:a} and \\eqref{eq:1}.\n\n\\begin{figure}[h]\n\\centering\n' + SHAPE.replace('\\begin{center}\n', '').replace('\\end{center}\n', '') + '\\caption{A box}\\label{fig:a}\n\\end{figure}\n\n'
+             + '\\begin{equation}a=b\\label{eq:1}\\end{equation}\n\\begin{equation}c=d\\end{equation}\n' + CHART + SMART + 'End words.')
+    load_doc(page, D); page.wait_for_timeout(400)
+    page.evaluate("rikuy.selectTab('layout')"); page.wait_for_timeout(200)
+    page.click('#rc-selection-pane'); page.wait_for_timeout(300)
+    rows = page.evaluate("[...document.querySelectorAll('#sel-pane .sel-go')].map((b) => b.getAttribute('aria-label'))")
+    check('Layout › Selection Pane lists every object with its name: ' + '; '.join(rows), rows == ['A box, figure', 'Drawing 1, drawing', 'Equation 1, equation', 'Equation 2, equation', 'Chart 1, chart', 'SmartArt 1, smartart'], rows)
+    h0 = page.evaluate('window.rikuy.hist.length')
+    page.get_by_role('textbox', name='Name of A box').fill('fig:box'); page.get_by_role('textbox', name='Name of A box').press('Enter'); page.wait_for_timeout(300)
+    check('a figure renamed: its \\label and the \\ref to it, one step', src(page) == D.replace('fig:a', 'fig:box') and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page)[:300])
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
+    check('one undo gives the names back', src(page) == D)
+    page.get_by_role('textbox', name='Name of Equation 2').fill('eq:two'); page.get_by_role('textbox', name='Name of Equation 2').press('Enter'); page.wait_for_timeout(300)
+    check('a name given to an equation that had none: \\label at its end', src(page) == D.replace('c=d\\end{equation}', 'c=d\\label{eq:two}\\end{equation}'), src(page)[:400])
+    check('a drawing outside a figure has no name to give (its field off, saying why)', page.evaluate("document.querySelector('[aria-label=\"Name of Drawing 1\"]').disabled"))
+    page.get_by_role('button', name='Show Chart 1').click(); page.wait_for_timeout(250)
+    hid = page.evaluate("getComputedStyle(document.querySelector('#pages svg.pgf').closest('.raw')).visibility")
+    check('the eye hides the chart on the page alone (the source unchanged)', hid == 'hidden' and 'axis' in src(page))
+    page.get_by_role('button', name='Show All', exact=True).click(); page.wait_for_timeout(200)
+    check('Show All shows it again', page.evaluate("getComputedStyle(document.querySelector('#pages svg.pgf').closest('.raw')).visibility") == 'visible')
+    page.get_by_role('button', name='SmartArt 1, smartart').click(); page.wait_for_timeout(300)
+    check('a press on a row goes to the object and selects it', page.evaluate("(() => { const o = window.rikuy.objHere(); return o && o.kind; })()") == 'smart')
+    page.screenshot(path=os.path.join(SHOTS, 'selection-pane-1366.png'))
+    page.keyboard.press('Escape')
+
+
 def run():
     os.makedirs(SHOTS, exist_ok=True)
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (shapes, charts, smart, menus, compiled, pictures, pictures_compiled):
+        for f in (shapes, charts, smart, menus, compiled, pictures, pictures_compiled, arrange, selpane):
             if names and f.__name__ not in names:
                 continue
             try: f(page)
