@@ -319,7 +319,31 @@ def download_pdf(page, w):
     check(f'the PDF comes, and the status bar is quiet again ({w})', d.value.suggested_filename.endswith('.pdf') and not page.evaluate("document.getElementById('st-save').checkVisibility()"), d.value.suggested_filename)
 
 
-PARTS = {'download_pdf': (download_pdf, [(1366, False)]),
+def first_comment(page, w):
+    """A browser has no account name, as Word has: the first comment from it asks for one, the
+    name box first; Enter there goes on to the comment; Comment with no name says why."""
+    touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
+    load_doc(page, DOC)
+    select_text(page, 'bold word')
+    run_cmd(page, 'comment-new')
+    first = page.evaluate("document.activeElement.getAttribute('aria-label')")
+    check(f'the first comment\'s box starts at the name ({w})', first == 'Your name, shown with your comments and changes', first)
+    page.locator('.pop-comment textarea').fill('Is this the right word?')
+    page.locator('.pop-comment').get_by_role('button', name='Comment', exact=True).click(); page.wait_for_timeout(250)
+    g = page.evaluate("[document.activeElement.getAttribute('aria-invalid'), (document.querySelector('.cm-hint') || {}).textContent, document.querySelector('.cm-hint').checkVisibility()]")
+    shot(page, 'first-comment-' + w.replace(' ', '').replace(',', '-'))
+    check(f'Comment with no name says to type one, the name box marked ({w})', g[0] == 'true' and g[2] and 'your name' in (g[1] or '').lower(), g)
+    page.keyboard.type('Ana'); page.keyboard.press('Enter'); page.wait_for_timeout(150)
+    check(f'Enter in the name box goes on to the comment ({w})', page.evaluate("document.activeElement.tagName") == 'TEXTAREA' and not page.evaluate("document.querySelector('.cm-hint').checkVisibility()"))
+    page.keyboard.press('Control+Enter'); page.wait_for_timeout(300)
+    check(f'Ctrl+Enter sends it into the source ({w})', 'Ana' in src(page) and 'Is this the right word?' in src(page), src(page)[-200:])
+    run_cmd(page, 'comment-new')
+    check(f'the next comment starts at the comment, the name known ({w})', page.evaluate("document.activeElement.tagName") == 'TEXTAREA' and page.locator('.pop-comment .share-name').count() == 0)
+    page.keyboard.press('Escape')
+
+
+PARTS = {'first_comment': (first_comment, [(1366, False), (390, True)]),
+         'download_pdf': (download_pdf, [(1366, False)]),
          'pdf_bar': (pdf_bar, [(390, False), (360, True)]),
          'sample_spelling': (sample_spelling, [(1366, False), (390, True)]),
          'doc_name': (doc_name, [(390, False), (360, True), (700, False), (1366, True)]),

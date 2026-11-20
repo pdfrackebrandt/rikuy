@@ -149,9 +149,11 @@ second) is the one number a Word user would call slow; it is the model's and the
 - **Comments open on the left** (MEDIUM, medium; open): Comments opens the side panel's Review
   tab, at the left, with Changes and Versions in the same list. Word's Comments pane is at the
   right with the comment cards alone; the docking of finding 5 is where it could go.
-- **A first comment asks for a name** (LOW): Word takes the account's name; a browser has none,
-  so asking once is right. Ctrl+Enter with no name leaves the comment unsent with the name box
-  focused, which reads as nothing happening; it could say why.
+- **A first comment asks for a name** (LOW, small) — fixed ("Ask a first comment's name first,
+  and say why when it is missing"): Word takes the account's name; a browser has none, so asking
+  once is right, but the box opened at the comment and Comment with no name only changed a
+  placeholder, which read as nothing happening. The name box now comes first (Enter goes on to the
+  comment), and a missing name is marked and said. `test/ux.py first_comment`.
 - **Help is a narrow popover** (LOW, medium; open): How Rikuy works opens over the ribbon's end
   with a two column table of keys wrapped word by word. Word's Help is a pane at the right.
 - **The page on a phone is drawn at 58 to 62 %** (MEDIUM, a decision for Pedro): the text block

@@ -1144,6 +1144,9 @@ body.guest #b-new, body.guest #b-sample { display: none; }
 #st-pages:hover { color: var(--blue-ink); text-decoration: underline; }
 #st-words { color: var(--mute); text-decoration: none; font-size: 12px; font-variant-numeric: tabular-nums; }
 #st-words:hover { color: var(--blue-ink); text-decoration: underline; }
+/* the comment box's name, asked for and not given (src/collab.js) */
+.pop-comment .share-name[aria-invalid="true"] { border-color: var(--warn); outline: 2px solid color-mix(in srgb, var(--warn) 40%, transparent); }
+.cm-hint { font-size: 12px; color: var(--warn); margin: -2px 0 2px; }
 /* the storage line when it only says what the title's Saved says (src/app.js, bindUI) */
 #st-save.st-quiet { display: none; }
 /* Word's status bar keeps its views and zoom at the right end: on a desktop window too narrow for
