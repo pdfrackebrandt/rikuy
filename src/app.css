@@ -430,7 +430,8 @@ body.file-open #fr { display: none; }
    kept here) (src/ui/fileview.js) */
 .rf-home { display: none; }
 @media (min-width: 1000px) {
-  body.file-open #rp-file { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: stretch; }
+  body.file-open #rp-file { display: grid; grid-template-columns: 320px minmax(0, 1fr); align-items: stretch; }
+  body.file-open #rp-file .rb-dl { flex-wrap: wrap; row-gap: 4px; }
   body.file-open #rp-file > .rb-tb { width: auto; max-width: none; background: var(--chrome); border-right: 1px solid var(--line); min-height: 100%; }
   body.file-open #rp-file > .rf-home { display: block; padding: 22px 36px 40px; overflow: visible; }
   .rf-h { margin: 0 0 12px; font: 600 15px var(--font-ui); color: var(--ink-ui); }
@@ -1767,6 +1768,11 @@ body.fpainting #pages { cursor: copy; }
   #main > .stp, #main > .sp-pane { position: relative; inset: auto; z-index: 3; order: 10; flex: none; align-self: stretch; width: 320px; max-height: none; margin: 0; border: 0; border-left: 1px solid var(--line); border-radius: 0; box-shadow: none; }
   #main > .sp-pane { overflow-y: auto; padding-top: 0; }
 }
+/* Help on a window narrower than 1000 px (narrowed with the pane open): a sheet at the window's
+   corner, as the other panes are there, not a column that squeezes the page */
+@media (max-width: 999px) {
+  #main > .help-pane.help-pane { position: fixed; top: auto; right: 8px; bottom: 8px; left: auto; width: min(380px, calc(100vw - 16px)); max-height: 70vh; z-index: 30; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 40px rgba(10, 20, 30, .22); }
+}
 /* a task pane where the page would keep less than 560 px beside it (src/ui/dock.js): over the
    page's right side, the page keeping its width, as Word lays a pane over a narrow window */
 @media (min-width: 1000px) {
@@ -2602,4 +2608,31 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
   .rb .btn[data-cmd="tab-next"] { min-width: 44px; min-height: 44px; }
   .pop-ps .pop-x, .pop-ps .btn, .pop-ps select, .pop-ps input { min-height: 44px; }
   .pop.pop-ps, .pop.pop-tabs { max-height: calc(100dvh - 16px); overflow: auto; overscroll-behavior: contain; }
+}
+
+/* ---- One size and shape per kind, outside the ribbon (docs/handoff/UI-PRINCIPLES.md: C1, C5, C9,
+   C13, T1). Dialogs, panes and the popovers that hold a form: buttons and fields 32 px tall with
+   4 px corners; the surfaces themselves (dialogs, menus, panes as sheets, Find and Replace) 8 px;
+   one title style for a dialog's or a pane's name; 44 px under a finger. Kept to these parts: the
+   ribbon has its own sizes, and the equation field its compact keys. ---- */
+.pop, .fr, .stp, #main > .help-pane.pane-float { border-radius: 8px; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .stp-f, .help-pane, .pop-help) .btn { height: 32px; min-height: 32px; border-radius: 4px; box-sizing: border-box; padding: 0 12px; font-size: 13px; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) :is(input[type="text"], input[type="search"], input[type="number"], input:not([type]), select) { min-height: 32px; border-radius: 4px; box-sizing: border-box; }
+.pop-h, .stp-h, .fr-head, .help-pane-h { font: 600 14px/20px var(--font-ui); letter-spacing: 0; color: var(--ink-ui); }
+/* (the close button keeps the title's line; a ring only for the keyboard, as the other buttons) */
+.pop-x { min-width: 28px; min-height: 28px; display: inline-flex; align-items: center; justify-content: center; }
+.pop-x:focus:not(:focus-visible) { outline: none; }
+@media (pointer: coarse) {
+  :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .stp-f, .help-pane, .pop-help) .btn,
+  :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) :is(input[type="text"], input[type="search"], input[type="number"], input:not([type]), select) { height: auto; min-height: 44px; }
+  .pop-x { min-width: 44px; min-height: 44px; }
+}
+/* a phone's top bar: every button 44 px under a finger; Open and Source go to the menu panel
+   (its first button), where they are by name, so the rest fit a 360 px screen */
+@media (max-width: 520px) and (pointer: coarse) {
+  #bar .btn, #bar .qat .btn.icon { min-width: 44px; min-height: 44px; height: 44px; }
+  #bar .srch { width: 44px; min-width: 44px; }
+  #bar .srch input { height: 44px; }
+  #b-open, #b-src { display: none; }
+  #bar { gap: 0; }
 }

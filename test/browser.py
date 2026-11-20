@@ -649,7 +649,7 @@ def phone_layout(page):
     acts = page.evaluate('[...document.querySelectorAll("#nav-acts .nav-act:not([hidden])")].map((a) => [a.dataset.for, a.textContent.trim(), a.disabled, a.getBoundingClientRect().height])')
     bar = page.evaluate('[...document.querySelectorAll("#bar .tools button:not(.ai-only), #b-undo, #b-undo-x, #b-redo, #b-share, .rb-dl button:not(#rb-dl-menu), #b-copy")].map((b) => b.id)')
     check('the menu panel lists every action of the bar, the downloads and Copy source by name, each large enough to tap', sorted(a[0] for a in acts) == sorted(bar) and all(a[1] and a[3] >= 36 for a in acts), (acts, bar))
-    check('Undo and Redo are greyed there when there is nothing to undo, and the zoom shows its value', all(a[2] for a in acts if a[0] in ('b-undo', 'b-redo')) and re.match(r'Zoom: (Fit|\d+%)$', [a[1] for a in acts if a[0] == 'zoomv'][0]), acts)
+    check('Undo and Redo are greyed there when there is nothing to undo, and the zoom shows its value', all(a[2] for a in acts if a[0] in ('b-undo', 'b-redo')) and re.match(r'Zoom: \d+%$', [a[1] for a in acts if a[0] == 'zoomv'][0]), acts)
     page.click('#nav-acts [data-for=b-help]')
     page.wait_for_timeout(300)
     r = page.evaluate('(() => { const e = document.querySelector("body > .pop.pop-help"); if (!e) return null; const dd = e.querySelector(".keys dd").getBoundingClientRect(), b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right), Math.round(dd.width), document.documentElement.clientWidth]; })()')
@@ -735,11 +735,12 @@ def first_visit(p):
                 seen = []
                 for _ in range(3):
                     page.tap('#zoomv'); page.wait_for_timeout(300); seen.append(page.inner_text('#zoomv'))
-                check('the zoom button there goes to actual size, the whole sheet, and back', seen[0] == '100%' and seen[1] == 'Fit' and seen[2] == m['label'], seen)
+                # (the button says the zoom as a percentage, as the status bar does: the sheet's is smaller)
+                check('the zoom button there goes to actual size, the whole sheet, and back', seen[0] == '100%' and seen[1].endswith('%') and int(seen[1][:-1]) < int(m['label'][:-1]) and seen[2] == m['label'], seen)
                 page.tap('#zoomv'); page.tap('#zoomv'); page.wait_for_timeout(300)
                 z = page.evaluate('JSON.parse(localStorage.getItem("galley.prefs.v1")).zoom')
                 page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(300)
-                check('the whole sheet, once chosen, is kept too, under a zoom the previous version reads', page.inner_text('#zoomv') == 'Fit' and z == 'fit', (page.inner_text('#zoomv'), z))
+                check('the whole sheet, once chosen, is kept too, under a zoom the previous version reads', page.inner_text('#zoomv') == seen[1] and z == 'fit', (page.inner_text('#zoomv'), z))
                 page.tap('#zoomv'); page.wait_for_timeout(300)
                 page.tap('#zoomv'); page.wait_for_timeout(300)
                 page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(300)
