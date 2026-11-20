@@ -51,7 +51,14 @@ function fillHome(app) {
     const seen = new Map();
     for (const v of all || []) if (v.name && v.name !== app.name && !seen.has(v.name)) seen.set(v.name, v);
     const when = (t) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-    if (!seen.size) { list.append(mk('p', 'rf-none', 'No other documents yet. The ones you make or open here are kept in this browser and listed here.')); return; }
+    if (!seen.size) {
+      // (what belongs here, and the command that brings one, UI-PRINCIPLES.md N5)
+      const b = mk('button', 'btn ghost', 'Open');
+      b.type = 'button'; b.id = 'rf-none-open'; b.title = 'Open .tex, .bib, images, an Overleaf .zip or a Word .docx (Ctrl+O)';
+      b.addEventListener('click', () => app.runCommand('open'));
+      list.append(mk('p', 'rf-none', 'No other documents yet: the ones you make or open here are kept in this browser.'), b);
+      return;
+    }
     for (const v of [...seen.values()].slice(0, 15)) {
       const row = mk('div', 'rf-row'); row.setAttribute('role', 'listitem');
       const b = mk('button', 'rf-doc');
