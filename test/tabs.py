@@ -688,9 +688,12 @@ SWEEP = """() => { const app = window.rikuy, rb = document.getElementById('ribbo
     let n = 0;
     // (the gallery's tiles count, its paging arrows and More do not: they are its own way about)
     for (const x of P.querySelectorAll('button, select, input')) if (x.offsetParent && (!gal.contains(x) || x.dataset.style) && x.getBoundingClientRect().right <= innerWidth + 1) n++;
+    // the names shown on buttons (not the downloads': those are controls, counted above)
+    let names = 0;
+    for (const x of P.querySelectorAll('.rb-grp .btn:not(.rb-gbtn) > span:not(.sr), .rb-grp .btn > .rb-bl')) if (x.offsetParent && x.getClientRects().length && x.getBoundingClientRect().right <= innerWidth + 1) names++;
     const folded = [...P.querySelectorAll('.rb-grp.folded')], wasted = [];
     for (const g of folded) { const c = [...g.classList]; g.classList.remove('folded', 'ico'); if (fits()) wasted.push(g.dataset.group); g.className = c.join(' '); }
-    out[id] = { n, over: !fits(), folded: folded.map((g) => g.dataset.group), wasted };
+    out[id] = { n, names, over: !fits(), folded: folded.map((g) => g.dataset.group), wasted, small: [...P.querySelectorAll('.rb-grp.sm, .rb-grp.nm')].map((g) => g.dataset.group) };
   }
   app.rbTab = null; app.selectTab('home');
   return out; }"""
@@ -738,6 +741,9 @@ def fold_sweep(page):
             tag, len(tabs), {t: [(seen[w][t]['n'], len(seen[w][t]['folded'])) for w in (530, 860, 870, 1020, 1360)] for t in tabs}, [(t, a, b, seen[a][t]['folded'], seen[b][t]['folded']) for t, a, b in flips]))
         if extra == [] or extra == review:
             check('%s, on all %d tabs from 390 to 1920 px in 10 px steps: a wider window never shows fewer controls (but 530 px against 520, where a phone\'s row scrolls)' % (tag, len(tabs)), not fewer, fewer[:6])
+            # (names as well: the steps that take a name are one chain, given back from its end)
+            nfewer = [(t, a, b, seen[a][t]['names'], seen[b][t]['names']) for t in tabs for a, b in zip(widths, widths[1:]) if seen[b][t]['names'] < seen[a][t]['names'] and b != 530 and seen[b][t]['n'] == seen[a][t]['n']]
+            check('%s: a wider window never shows fewer names on buttons where it shows as many controls' % tag, not nfewer, nfewer[:6])
         else:
             # spare Insert folds before the buttons' names go. A few pixels wider, the names come
             # back while Insert stays folded: the names are not controls, so the count dips.

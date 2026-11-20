@@ -370,7 +370,10 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .btn:first-child { border-radius: 4px 0 0 4px; }
   .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x { width: 14px; height: 22px; border-radius: 0 4px 4px 0; }
   .rb-grp.lay.nm > [data-size] .rb-bl, .rb-grp.lay.nm > .rb-split > .btn .rb-bl { display: none; }
-  .rb-grp.lay.nm > .btn[data-size], .rb-grp.lay.nm > .rb-split > .btn:first-child { width: 26px; padding: 0; gap: 0; justify-content: center; }
+  /* (rb-fold's 32 px for a button whose name went must not widen a group already without names:
+     every step of ribbonFit takes room) */
+  .rb-grp.lay.nm > .btn[data-size], .rb-grp.lay.nm > .rb-split > .btn:first-child,
+  .rb.rb-fold .rb-grp.lay.nm > .btn[data-size]:not(.icon) { width: 26px; padding: 0; gap: 0; justify-content: center; }
   .rb-grp.lay.nm > .pf .pf-l, .rb-grp.lay.nm > .pf .pf-u, .rb-grp.lay.nm > .pf-field .pf-lab { display: none; }
   .rb-grp.lay.nm.lay-check > .btn[aria-pressed]::before, .rb-grp.lay.nm.lay-check > .btn[aria-pressed]::after { display: none; }
   .rb-grp.lay.nm.lay-check > .btn[aria-pressed] > svg { display: inline; }
