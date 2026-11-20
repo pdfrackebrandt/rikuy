@@ -27,7 +27,8 @@ function build(app) {
   x.addEventListener('click', () => { d.hidden = true; });
   head.append(title, x);
   const bar = mk('div', 'fr-btns');
-  const all = mk('button', 'btn ghost', 'Show All'), none = mk('button', 'btn ghost', 'Hide All');
+  // (sm: a narrow window's rule makes a plain .btn an icon of 32 px)
+  const all = mk('button', 'btn ghost sm', 'Show All'), none = mk('button', 'btn ghost sm', 'Hide All');
   all.type = none.type = 'button';
   all.addEventListener('click', () => { app.selHidden.clear(); app.selApplyHidden(); render(app); });
   none.addEventListener('click', () => { for (const it of app.selItems()) app.selHidden.add(key(it)); app.selApplyHidden(); render(app); });

@@ -614,7 +614,10 @@ def open_tab(page, width, name):
     if width > 1000:
         page.get_by_role('tablist', name='Ribbon', exact=True).get_by_role('tab', name=name, exact=True).click()
     else:
-        page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label=name)
+        # (two contextual tabs are named Format, as Word's: the chart's and the SmartArt's; only the
+        # one whose object is selected can be chosen)
+        v = page.evaluate("(n) => { const o = [...document.getElementById('rb-tabsel').options].find((x) => x.label === n && !x.disabled); return o ? o.value : null; }", name)
+        page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(value=v) if v else page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label=name)
     page.wait_for_timeout(200)
 
 

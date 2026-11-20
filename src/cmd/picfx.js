@@ -27,11 +27,11 @@ const pct = (v) => (v > 0 ? '+' : '') + Math.round(v * 100) + '%';
 
 register(
   P('picture-corrections', 'Corrections', { title: 'Corrections: sharpen or soften, brightness and contrast, worked into a copy of the picture (its file kept; Reset Picture goes back)', tab: 'picture-format', group: 'adjust', order: 3, kind: 'menu', icon: ICON.corrections, label: 'Corrections',
-    synonyms: ['Brightness', 'Contrast', 'Sharpen', 'Soften', 'Picture corrections'], menu: { picture: 70 }, run: (app, args) => (args ? app.picFx(args) : app.picFxMenu('corrections')) }),
+    synonyms: ['Brightness', 'Contrast', 'Sharpen', 'Soften', 'Picture corrections'], menu: { picture: 96 }, run: (app, args) => (args ? app.picFx(args) : app.picFxMenu('corrections')) }),
   P('picture-color', 'Color', { title: 'Color: saturation, colour tone, and recolour (grayscale, sepia, washout, black and white, a tint), worked into a copy of the picture', tab: 'picture-format', group: 'adjust', order: 4, kind: 'menu', icon: ICON.color, label: 'Color',
-    synonyms: ['Recolor', 'Grayscale', 'Black and white', 'Sepia', 'Saturation', 'Color tone', 'Picture colour'], menu: { picture: 71 }, run: (app, args) => (args ? app.picFx(args) : app.picFxMenu('color')) }),
+    synonyms: ['Recolor', 'Grayscale', 'Black and white', 'Sepia', 'Saturation', 'Color tone', 'Picture colour'], menu: { picture: 97 }, run: (app, args) => (args ? app.picFx(args) : app.picFxMenu('color')) }),
   P('picture-transparency', 'Transparency', { title: 'Transparency: the picture seen through, 15% to 95% (a PNG with an alpha channel; pdfLaTeX, XeLaTeX and LuaLaTeX keep it)', tab: 'picture-format', group: 'adjust', order: 5, kind: 'menu', icon: ICON.transparency, label: 'Transparency',
-    synonyms: ['See through', 'Opacity', 'Fade picture'], menu: { picture: 72 }, run: (app, args) => (args ? app.picFx(args) : app.picFxMenu('transparency')) }),
+    synonyms: ['See through', 'Opacity', 'Fade picture'], menu: { picture: 98 }, run: (app, args) => (args ? app.picFx(args) : app.picFxMenu('transparency')) }),
   P('picture-fx-options', 'Format Picture', { title: 'Format Picture: sharpen, brightness, contrast, saturation, tone, recolour and transparency in numbers', synonyms: ['Picture Corrections Options', 'Picture Color Options', 'Picture Transparency Options'],
     run: (app, args) => (args ? app.picFx(args, true) : picFxDialog(app)) }),
   { id: 'picture-compress', name: 'Compress Pictures', title: 'Compress Pictures: the PNG and JPEG pictures of the document made no larger than their place needs at 96, 150 or 220 pixels per inch; the bytes saved are said', tab: 'picture-format', group: 'adjust', order: 6, icon: ICON.compress, label: 'Compress Pictures',
