@@ -22,9 +22,9 @@ own; a theorem brings its \\newtheorem; Enter twice leaves a theorem (10). repea
 run of typing again, as Word's, and repeats a command as before (14); the search box throws
 nothing while its place is a blank paragraph gone since (18). quickopen: Ctrl+P goes to a file of the
 project by a few letters, the page's own files on the page, others in the source pane; Ctrl+P then
-Enter prints, as Word's (17). burst: letters and spaces typed faster than the page is built go in
-together, in order, AutoCorrect still acting on the words it corrects, and any other key first
-writes what waits (4).
+Enter prints, as Word's (17). burst: letters typed faster than the page is built go in together,
+in order, AutoCorrect still acting on the words it corrects; any other key, Undo, a paste first write
+what waits (4; review M1).
 Each part is a function; `python3 power.py
 footnote` runs one."""
 import os, sys
@@ -114,6 +114,21 @@ def latex(page):
                        ('x^(n+1)', [r'x^{n+1}'])):
         got = field(page, keys)
         check('latex: ' + keys + ' typed into the equation field', got in [''.join(w.split()) for w in want], got)
+    # an input method, dictation or the emoji panel in \\text{…}: on in the LaTeX box (review H2)
+    cdp = page.context.new_cdp_session(page)
+    for how, text in (('dictation', 'if '), ('an input method', '日本')):
+        page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+        load_doc(page, MATH)
+        click_text(page, 'gamma.', 6)
+        key(page, 'Enter'); key(page, 'Alt+Equal', 600)
+        page.keyboard.type('x=1\\text{', delay=15); page.wait_for_timeout(200)
+        if how == 'dictation': cdp.send('Input.insertText', {'text': text})
+        else: cdp.send('Input.imeSetComposition', {'text': 'ひ', 'selectionStart': 1, 'selectionEnd': 1}); page.wait_for_timeout(150); cdp.send('Input.insertText', {'text': text})
+        page.wait_for_timeout(250)
+        page.keyboard.type('}+y', delay=15); page.wait_for_timeout(500)
+        s = src(page); body = ''.join(s[s.find('\\begin{equation}'):s.find('\\end{equation}')].split())
+        check('latex: ' + how + ' in \\text{…} keeps it in the \\text', ('\\text{' + text.strip() + '}+y') in body, body)
+        key(page, 'Escape', 300)
     # what the field cannot hold goes on in its LaTeX box, typed on there
     load_doc(page, MATH)
     click_text(page, 'gamma.', 6)
