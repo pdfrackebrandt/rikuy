@@ -150,6 +150,35 @@ export function installFileView(app) {
     return r;
   };
 
+  // The keys in the view, as Word's backstage takes them: Up and Down along the column of commands
+  // and the Recent list, the arrows across the templates' pages, Tab from one part to the next
+  // (the column, the pages, Recent) and round again. The ribbon's own keys (one stop for the whole
+  // toolbar, Left and Right along it) do not reach here while the view is open.
+  const vis = (e) => e.offsetParent !== null && !e.disabled;
+  const parts = () => [[...document.querySelectorAll('#rp-file > .rb-tb button, #rp-file > .rb-tb select')], [...document.querySelectorAll('#rf-home .rf-tile')], [...document.querySelectorAll('#rf-home .rf-doc')]].map((l) => l.filter(vis)).filter((l) => l.length);
+  const last = new Map();
+  document.addEventListener('keydown', (e) => {
+    if (!isOpen() || app.pop || e.altKey || e.ctrlKey || e.metaKey || window.innerWidth < 1000) return;
+    const a = document.activeElement, P = parts(), k = P.findIndex((l) => l.includes(a));
+    if (k < 0) return;
+    const list = P[k], i = list.indexOf(a);
+    const go = (x) => { if (!x) return; e.preventDefault(); e.stopPropagation(); last.set(P.findIndex((l) => l.includes(x)), x); x.focus(); };
+    if (e.key === 'Tab') {
+      const n = P[(k + (e.shiftKey ? P.length - 1 : 1)) % P.length];
+      const kk = P.indexOf(n);
+      return go(last.get(kk) && n.includes(last.get(kk)) ? last.get(kk) : n[0]);
+    }
+    const tiles = list[0].classList.contains('rf-tile');
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!tiles) return go(list[(i + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length]);
+      // (the pages by rows: the one above or below, as far along as it can be)
+      const row = list.filter((t) => t.offsetTop === list[0].offsetTop).length || 1;
+      return go(list[Math.max(0, Math.min(list.length - 1, i + (e.key === 'ArrowDown' ? row : -row)))]);
+    }
+    if (tiles && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) return go(list[(i + (e.key === 'ArrowRight' ? 1 : list.length - 1)) % list.length]);
+    if (e.key === 'Home' || e.key === 'End') return go(e.key === 'Home' ? list[0] : list[list.length - 1]);
+  }, true);
+
   // (before the ribbon's own Esc, which would put the focus on the page under the view; a menu or
   // a dialog open over the view, or Alt's KeyTips, take their Esc first; the lists of the panes
   // docked in the page under the view are not open menus)
