@@ -11,6 +11,7 @@
 // between the characters too. Replace All is one commit: one undo. "In LaTeX source" searches
 // and replaces the files' own text, commands, labels and math included, the replacement as it is.
 
+import { openQuickOpen } from '../ui/quickopen.js';
 import { register, command, enabled, onInstall } from '../commands.js';
 import { firstKey } from '../keys.js';
 import { compile, expand, hitsIn, hitsInSource, runsWith, blockText, charSrc, hitSource, joinRanges, labelsIn, hasParaMark, pageParaText, paraHitSource, controlWords, inControlWord, PARA, PMARK, FMT, FORMATS, MAX_HITS } from '../find.js';
@@ -49,6 +50,10 @@ register(
     icon: '<path d="M4 7.5h9l-2.5-2.5M16 12.5H7l2.5 2.5"/>', keys: ['Ctrl+H'], mac: { 'Ctrl+H': 'Control+H' }, when: () => true, run: (app) => openFindDialog(app, 'replace') },
   { id: 'go-to', name: 'Go To', title: 'Go to a page, a heading, a footnote, an equation, a figure, a table, a comment or a label (Ctrl+G, or F5)', synonyms: ['Go to page', 'Jump to', 'Go to section', 'Go to label'],
     keys: ['Ctrl+G', 'F5'], mac: { 'Ctrl+G': 'Ctrl+Alt+G' }, when: () => true, run: (app) => openFindDialog(app, 'goto') },
+  // VS Code's quick open on Ctrl+P (POWER-USER.md 17): a project's files by a few letters; its first
+  // line is Print, so Ctrl+P then Enter prints as Word's does (src/ui/quickopen.js)
+  { id: 'go-to-file', name: 'Go to File', title: 'Go to a file of the project by a few letters of its name (Ctrl+P; Enter at once prints, as Word\'s Ctrl+P)', synonyms: ['Quick open', 'Open file of the project', 'Switch file', 'Files'],
+    keys: ['Ctrl+P'], keyRank: 1, keyScope: 'app', when: () => true, run: (app) => openQuickOpen(app) },
   // Word's Shift+F4 finds the last words again, without the pane (Cmd+G on a Mac, as everywhere there)
   { id: 'find-next', name: 'Find Next', title: 'Find the words of the last Find again, the next place after the caret (Shift+F4)', synonyms: ['Repeat Find', 'Find again', 'Next result'],
     keys: ['Shift+F4', 'Ctrl+Alt+Y'], keysMac: ['Ctrl+Shift+F4', 'Ctrl+G'], when: () => true, run: (app) => app.findNext() },

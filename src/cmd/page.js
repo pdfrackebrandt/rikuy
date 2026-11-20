@@ -212,7 +212,7 @@ register(
     synonyms: ['Page Borders', 'Border around page', 'Frame'], when: doc, whyNot: anyWhy, run: (app, args) => (args === 'off' || (args && typeof args === 'object') ? app.pageEdit(PS.borderEdits(app.src(app.main), args === 'off' ? null : args, { others: app.preambleOthers() }), 'page-border') : openBorders(app)) },
   // ---- File › Print ----
   // (named for what it prints: the group it sits in is Print, whose folded button has that name)
-  { id: 'print', name: 'Print PDF', label: 'Print PDF', title: 'Print the PDF as TeX makes it, its preview beside the page (Ctrl+P)', icon: I.print, tab: 'file', group: 'print', order: 10, keys: ['Ctrl+P', 'Ctrl+Shift+F12'], keyScope: 'app',
+  { id: 'print', name: 'Print PDF', label: 'Print PDF', title: 'Print the PDF as TeX makes it, its preview beside the page (Ctrl+P, then Enter)', icon: I.print, tab: 'file', group: 'print', order: 10, keys: ['Ctrl+P', 'Ctrl+Shift+F12'], keyScope: 'app',
     synonyms: ['Print', 'Print preview', 'Print view', 'Printer'], when: (app) => !!app.model, run: (app) => app.pagePrint() },
   // ---- the Header & Footer tab ----
   { id: 'hf-date', name: 'Date', label: 'Date', title: 'Today\'s date where the caret is in the header or footer (\\today)', icon: I.date, tab: 'headfoot', group: 'insert', order: 10,

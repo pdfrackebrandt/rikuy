@@ -95,6 +95,8 @@ jobs:
         run: cd test && python3 tabs.py
       - name: Word's keyboard shortcuts (each added key pressed on the page, the tooltips, Help's list, a Mac)
         run: cd test && python3 shortcuts.py
+      - name: A power user's keys (footnotes, formulas typed as LaTeX, Tab, the pickers, KeyTips, Alt+Q, the insert list, F4, Go to File)
+        run: cd test && python3 power.py
       # its PDF checks (page size, header, line numbers, Print) need dist/tex and run in tex.yml
       - name: The page's set up (margins, size, breaks, columns, headers and footers, line numbers, background)
         run: cd test && python3 page.py
