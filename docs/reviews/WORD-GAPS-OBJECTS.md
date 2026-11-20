@@ -171,3 +171,112 @@ Each finding with the commit that fixes it and the test that failed before it.
 - Numbering (0ab00f0): this branch's task is 69 in `PLAN.md`, and GAP.md's rows P4, P5, P9 to P12 with it.
 
 Checks at 3a9472f, with `dist/tex`: `npm test` green (`objfmt` 17 groups, `picfx` 12, `objlist` 4); `objects.py` 247 passed, 0 failed; `picture.py` 228; `tabs.py` 127; `agent.py` 143.
+
+---
+
+# Verification of ff46de0
+
+**Verdict: fix first.**
+
+What blocks: H2's fix (Position) holds for the one case it was tested on, Top of Page on `figure > center > tikzpicture`. Three neighbouring cases still break:
+- **Wrap breaks the compile on the very same `figure > center` form.**
+- **Position inside `multicols` drops the drawing from the PDF, with no error.**
+- **Position inside `tcolorbox`, `wraptable` or `sidewaysfigure` nests a float and stops TeX.**
+
+Everything else is fixed or reduced to Medium and Low. I reran the repros in `/tmp/review-g1-out/` (`probe.py`, `phone.py`, `t1.mjs` to `t7.mjs`) on dist/ with dist/tex. New attacks: `v1.mjs` to `v9.py` and `csp_pic.py`.
+
+## The findings, one by one
+
+| # | Status | Evidence |
+|---|---|---|
+| H1 | fixed | `probe.py chart_comment`: the new title goes before the comment, pdfLaTeX shows no problem. `v1.mjs`: eight odd hand-written forms all edited in place and read back. Those forms: comments between keys, a trailing comma, a comment holding `] , {`, CRLF, a commented-out key last, an escaped title, no spaces. Toggles on then off give the bytes back. |
+| H2 | **partly** | Top of Page on figure > center: one figure `[t]`, compiles; the menu shows Best Place. **Still broken**, see N1 to N3 below. |
+| H3 | fixed | Reset on the first of two pictures on one line changes nothing. The tools refuse that picture with a plain reason. |
+| H4 | fixed | `my photo.png`: the second step starts from the first file, one note, and Reset goes back. `v7.mjs`: braced names with unicode, commas, spaces, emoji and a subfolder are read back. A name over 240 characters is not (Low). |
+| H5 | fixed | `pdfimages -list` at 150 ppi gives: natural-size picture 150, `angle=90` picture 150, cropped picture left at 127 (below the target). Same on XeLaTeX. |
+| H6 | fixed | `phone.py`: every control of the five tabs, the Selection Pane's Close, Show All, Hide All and name field, and the colour tiles are at least 44 px, at 390 and 360 px. Two controls are left: `rb-tabsel` (28 px) and `rb-dl-menu` (30 px). They come from main's ribbon (PR 78) and sit on every tab: a matter for main, not this branch. |
+| M1 | **partly** | The page now draws `{0pt}` at the side with the words wrapped (`wrap-simple-page.png`). Wrap just before a list is refused. **Wrap inside a list item is not refused** (N4). |
+| M2 | **partly** | Hand-written line breaks are kept. **A key taken off loses a neighbour's comment** (N5). |
+| M3 | fixed | A replaced original gives a new file: the green picture shows. |
+| M4 | fixed | `csp_pic.py`, a 12 MP JPEG under the hosted policy served by serve.py with reports on: the work runs in the worker (`picFxStats.worker`). "Working on photo.jpg…" shows at 0.9 s and the result comes at 2.2 s. The page's longest frame gap is 97 ms. The module at 113 MB is let go (`dropped: true`). There were no policy refusals and no reports. `v8.mjs`: after the drop, node's ArrayBuffers fall back to 1 MB. |
+| M5 | fixed | One edited file per picture: the second step takes out the first edited file, and undo brings it back. The Compress toast now says plainly what the project keeps. |
+| M6 | **partly** | Fixed: `\crefrange`'s second key, `\hyperref[…]`, `\subref`, `\Cref*`, refs in `\footnote`, tabular and align, and an `\input` .tex file; verbatim and lstlisting are left alone. **Still missed** (N6). |
+| M7 | **partly** | Hiding now survives the deletion of another object, and a reload. **It is lost when the hidden object itself is edited** (N7). |
+| M8 | **partly** | Edit Text, Chart Title, Axis Titles and Text Pane escape `& % $ # _ \ { } ^ ~`. Each reads back identical (`v5.mjs`), the page shows the unescaped words (`v6.py`), and Change Chart Type keeps the title. **Edit Data still drops characters** (N8). |
+| L1 | fixed | A command sharing its line is refused. |
+| L2 | fixed | `\includegraphics{a}` finds a.png, and Corrections are on. |
+| L3 | fixed | 20000×2 is read. 100000×100000 is "too large". The message no longer calls CMYK JPEGs unreadable. Hostile files still neither crash nor trap. |
+| L5 | fixed | Compress lands at 150 ppi exactly. |
+| L6 | fixed | The colour grid shows as tiles. |
+| L7 | not rerun | Trusted to the author's test. |
+| L4, L8 | left on purpose | I agree with both reasons. |
+
+## New findings, from attacking the fixes
+
+**N1 (High). Wrap breaks the compile when the figure holds a `center`.**
+- This is the hand-written form H2 was about. `\begin{figure}…\begin{center}<tikz>\end{center}\caption{…}\end{figure}`, then Wrap with Text, gives `\begin{wrapfigure}{r}{0pt}\n\begin{center}…`.
+- pdfLaTeX stops: "Not allowed in LR mode (at \begin{center})", "Missing \endgroup inserted".
+- The cause: a `{0pt}` wrapfigure sets its body in LR mode, and a list environment cannot stand there. `\centering` with `\caption` compiles fine.
+- The same error comes from a `table` float that holds a `center`. There is a second problem with tables: Wrap writes `wrapfigure`, which turns "Table 1" into "Figure 1".
+- Repro: `v3.py`, `v3b.py`.
+- Fix: when wrapping, rewrite a `center`, `flushleft` or `flushright` in the float's body as `\centering`, `\raggedright` or `\raggedleft`. Alternatively give the wrapfigure the object's width instead of `0pt`. Write `wraptable` for a table, or refuse.
+
+**N2 (High). Position inside `multicols` makes the drawing vanish from the PDF.**
+- Top of Page writes `figure[t]` inside `multicols`. multicol says only "Floats and marginpars not allowed inside multicols" (an info line) and drops the float.
+- Repro (`v9.py`): the drawing's "MARKER" is in the PDF before the change and gone after it, and the problems list is empty.
+- Wrap there compiles, but wrapfig in multicols is not reliable.
+- Fix: add `multicols` to `BOXES` for float and wrap (`figure*` would be the only float allowed there).
+
+**N3 (High). Position nests a float inside other float-like environments.**
+- `blockOf`'s `FLOAT_ENVS` lacks `wraptable`, `sidewaysfigure`, `sidewaystable`, `SCfigure` and `SCtable`.
+- `BOXES` lacks `tcolorbox` (and `adjustbox`'s friends).
+- Top of Page in `tcolorbox`, in `wraptable` and in `sidewaysfigure` each writes `\begin{figure}[t]` inside, and TeX stops with "Not in outer par mode" (`v3.py`).
+- Fix: read every float environment the model knows (`src/model.js:2205`'s list) as a float. Treat any box environment the parser marks, or an allowlist plus `tcolorbox`, as a box.
+
+**N4 (Medium). Wrap inside a list item is not refused.**
+wrapfig logs "wrapfigure used inside a conflicting environment" and "Stationary wrapfigure forced to float", so the PDF does not show what the page shows. Fix: refuse wrap when an `itemize`, `enumerate` or `description` is round the object, as it is already refused before a list.
+
+**N5 (Low to Medium). Taking off the last key deletes the comment of the key before it.**
+Option lists edited in place still move user comments (`v2.mjs`):
+- Data Labels off on `…ymajorgrids, % grid lines help\n  nodes near coords % labels on bars\n]` gives `ymajorgrids % labels on bars`. "grid lines help" is gone, and the labels comment now sits on the grid line.
+- Dashes → Solid on a `\draw[…, draw=red, % its colour\n dashed % style]` drops "its colour" the same way.
+- A key added after the last moves that line's comment onto the new key (`title={Q1} % top left`).
+- The compile is safe. This breaks rule R4 (turning off removes exactly that construct).
+- Fix: when taking off the last entry, remove the separator before it together with the entry's own text, but keep the comment that follows that separator. Put a new key after the comment's line end, with its comma before the comment.
+
+**N6 (Medium). Label rename still misses some references (`v4.mjs`).**
+- Missed:
+  - `\ref` inside a `tikzpicture` (`\node {see \ref{fig:a}}`): raw environments other than math are skipped.
+  - A reference in an `\input` file whose name does not end in `.tex` (`plot.tikz`).
+  - A document's own reference macro (`\newcommand{\figref}[1]{Figure~\ref{#1}}` with `\figref{fig:a}`), which is common in papers.
+  - The PDF shows ?? for each, and nothing warns.
+- Also, `lstlisting`'s `label=lst:x` does not count as taken.
+- Fix:
+  - Scan `tikzpicture` and other non-verbatim raw environments with `scanRaw`.
+  - Read every text file the project inputs.
+  - After a rename, count `{old}` wherever it still appears and say "N more places still name fig:a".
+
+**N7 (Low). Hiding is lost when the hidden object itself is edited (`v6.py`).**
+- Shape Fill on a hidden drawing, selected through the pane, shows it again: its key is a hash of its source.
+- Renaming a hidden figure's label in the pane shows it again: its key is the label.
+- Fix: carry the hidden key across the commit that changes the object (`objApply`, `selRename`).
+
+**N8 (Medium to Low). Edit Data still drops characters (`v5.mjs`).**
+- In Chart Design's Edit Data grid, `chartTex`'s `safe()` still drops `& % _ $ #` and the comma.
+- Categories "R&D", "Q1 50%" and "a_b" become `R D`, `Q1 50` and `a b`.
+- Series "Sales & Co" and "100%" become legend entries `Sales Co` and `100`.
+- Legend entries can be escaped as the titles are. Symbolic categories cannot hold most of these characters: say so in the grid rather than dropping them silently.
+
+**N9 (Low). `object-align` costs 6.1 ms per look in a long document.**
+- With a drawing selected in page.py's long document (3000 paragraphs), `object-align`'s `when` takes 6.1 ms per look. It parses the whole file in `blockOf`, over page.py's 5 ms rule for one command.
+- Everything together stays well inside the 40 ms bound: 15 ms with a drawing selected, 27 ms with a picture (121 before main's merge).
+- Fix: memoise `blockOf` per text on `at.memo`.
+
+## The merge of main
+
+- `tabs.py`: 137 passed, 0 failed (the fold sweep at 530 to 1360 px on 19 tabs).
+- `agent.py`: 143 passed, 0 failed.
+- `csp.py`: 22 passed, 0 failed. It does not exercise the picture tools; `csp_pic.py` did, under the same policy and report-uri, with no refusal and no report.
+- `npm test`: every suite passed.
+- The worker loads as `core/rikuy-pic-worker-<hash>.js` through a `blob:` worker. The policy allows that: `worker-src 'self' blob:`, and `importScripts` of a file of the site.
+- The wasm in dist/ has the same SHA-256 as `tex/vendor/pic/rikuy-pic.wasm`. Rebuilding it from source (`vendor.yml`) is left to CI: building here would write into the worktree.

@@ -266,8 +266,9 @@ ok('review H2: an object in a center in a figure is in the figure; Position chan
   const t = ap(nest, O.positionEdits(nest, s, e, { mode: 'float', place: 't' }).edits);
   assert.equal(t, nest.replace('[htbp]', '[t]'));
   assert.equal((t.match(/\\begin\{figure\}/g) || []).length, 1);
+  // (review N1: a {0pt} wrapfigure's body is one line's mode, where a center cannot stand)
   const w = ap(nest, O.positionEdits(nest, s, e, { mode: 'wrap', side: 'r' }).edits);
-  assert.equal(w, nest.replace('\\begin{figure}[htbp]', '\\begin{wrapfigure}{r}{0pt}').replace('\\end{figure}', '\\end{wrapfigure}'));
+  assert.equal(w, 'A\n\\begin{wrapfigure}{r}{0pt}\n\\centering\n' + rect + '\n\\caption{Box}\n\\end{wrapfigure}\n\nWords.');
   assert.match(O.positionEdits(nest, s, e, { mode: 'inline' }).error, /caption/);
   // Align in it: its center becomes a flushright
   assert.equal(ap(nest, O.alignEdits(nest, s, e, 'right')), nest.replace(/\{center\}/g, '{flushright}'));
@@ -281,6 +282,79 @@ ok('review H2: an object in a center in a figure is in the figure; Position chan
     const ss = d.indexOf('\\begin{tikzpicture}'), ee = d.indexOf('\\end{tikzpicture}') + 17;
     assert.match(O.positionEdits(d, ss, ee, { mode: 'float' }).error, new RegExp(word), word);
   }
+});
+
+ok('review N1: Wrap on a float holding a center writes \\centering (no center in a wrapfigure), a table stays a table', () => {
+  const at = (d) => [d.indexOf('\\begin{tikzpicture}'), d.indexOf('\\end{tikzpicture}') + 17];
+  const fr = 'A\n\\begin{figure}[h]\n  \\begin{flushright}\n' + rect + '\n  \\end{flushright}\n\\caption{Box}\n\\end{figure}\n\nWords.';
+  const [s1, e1] = at(fr);
+  assert.equal(ap(fr, O.positionEdits(fr, s1, e1, { mode: 'wrap', side: 'l' }).edits), 'A\n\\begin{wrapfigure}{l}{0pt}\n  \\raggedleft\n' + rect + '\n\\caption{Box}\n\\end{wrapfigure}\n\nWords.');
+  const tb = 'A\n\\begin{table}[htbp]\n\\begin{center}\n' + rect + '\n\\end{center}\n\\caption{Data}\n\\end{table}\n\nWords.';
+  const [s2, e2] = at(tb);
+  const w = ap(tb, O.positionEdits(tb, s2, e2, { mode: 'wrap', side: 'r' }).edits);
+  assert.equal(w, 'A\n\\begin{wraptable}{r}{0pt}\n\\centering\n' + rect + '\n\\caption{Data}\n\\end{wraptable}\n\nWords.');
+  // back to a float: a table again, never a figure, never two
+  const [s3, e3] = at(w);
+  assert.equal(O.positionOf(w, s3, e3).mode, 'wrap');
+  const t = ap(w, O.positionEdits(w, s3, e3, { mode: 'float', place: 't' }).edits);
+  assert.equal(t, w.replace('\\begin{wraptable}{r}{0pt}', '\\begin{table}[t]').replace('\\end{wraptable}', '\\end{table}'));
+  assert.equal(ap(w, O.positionEdits(w, s3, e3, { mode: 'wrap', side: 'l' }).edits), w.replace('{wraptable}{r}', '{wraptable}{l}'));
+  assert.match(O.positionEdits(tb, s2, e2, { mode: 'inline' }).error, /caption needs a table/);
+});
+
+ok('review N2, N3: no float in columns, in a box or in another float of any kind; the reason said, the menu greyed', () => {
+  const at = (d) => [d.indexOf('\\begin{tikzpicture}'), d.indexOf('\\end{tikzpicture}') + 17];
+  const C = '\\begin{center}\n' + rect + '\n\\end{center}\n';
+  // multicols: a figure there is dropped ("Floats and marginpars not allowed inside multicols")
+  const mc = 'A\n\\begin{multicols}{2}\nWords.\n\n' + C + '\nMore words.\n\\end{multicols}\n';
+  const [s1, e1] = at(mc);
+  for (const to of [{ mode: 'float', place: 't' }, { mode: 'float', place: 'H' }, { mode: 'wrap', side: 'r' }]) assert.match(O.positionEdits(mc, s1, e1, to).error, /multicols/, to.mode);
+  assert.match(O.positionWhyNot(O.positionOf(mc, s1, e1), { mode: 'float', place: 't' }), /multicols/);
+  // a figure already lost there comes back in line; a figure* across the columns keeps its place's choice
+  const mf = mc.replace(C, '\\begin{figure}[h]\n\\centering\n' + rect + '\n\\end{figure}\n');
+  const [s2, e2] = at(mf);
+  assert.ok(O.positionEdits(mf, s2, e2, { mode: 'inline' }).edits.length);
+  assert.match(O.positionEdits(mf, s2, e2, { mode: 'float', place: 't' }).error, /multicols/);
+  const ms = mf.replace(/\{figure\}/g, '{figure*}');
+  const [s3, e3] = at(ms);
+  assert.equal(ap(ms, O.positionEdits(ms, s3, e3, { mode: 'float', place: 't' }).edits), ms.replace('[h]', '[t]'));
+  assert.match(O.positionEdits(ms, s3, e3, { mode: 'wrap', side: 'r' }).error, /figure\*/);
+  // boxes: tcolorbox, mdframed, adjustbox, framed, a \parbox, a \fbox
+  for (const [a, z, word] of [['\\begin{tcolorbox}', '\\end{tcolorbox}', 'tcolorbox'], ['\\begin{mdframed}', '\\end{mdframed}', 'mdframed'], ['\\begin{adjustbox}{max width=\\linewidth}', '\\end{adjustbox}', 'adjustbox'], ['\\begin{framed}', '\\end{framed}', 'framed'], ['\\parbox{5cm}{', '}', 'parbox'], ['\\fbox{', '}', 'fbox']]) {
+    const d = 'A\n' + a + '\n' + C + z + '\n\nB';
+    const [ss, ee] = at(d);
+    for (const to of [{ mode: 'float', place: 't' }, { mode: 'wrap', side: 'r' }]) assert.match(O.positionEdits(d, ss, ee, to).error, new RegExp(word), word);
+  }
+  // floats that set their own place: never a figure inside them
+  for (const env of ['sidewaysfigure', 'sidewaystable', 'SCfigure', 'marginfigure']) {
+    const d = 'A\n\\begin{' + env + '}\n\\centering\n' + rect + '\n\\caption{X}\n\\end{' + env + '}\n\nB';
+    const [ss, ee] = at(d);
+    assert.equal(O.positionOf(d, ss, ee).mode, 'fixed', env);
+    for (const to of [{ mode: 'float', place: 't' }, { mode: 'wrap', side: 'r' }, { mode: 'inline' }]) assert.match(O.positionEdits(d, ss, ee, to).error, new RegExp(env + ', which sets its own place'), env);
+  }
+  // a wraptable round it: Top of Page makes it the table, no figure inside
+  const wt = 'A\n\\begin{wraptable}{r}{5cm}\n\\centering\n' + rect + '\n\\end{wraptable}\nWords.';
+  const [s4, e4] = at(wt);
+  const t = ap(wt, O.positionEdits(wt, s4, e4, { mode: 'float', place: 't' }).edits);
+  assert.equal(t, wt.replace('\\begin{wraptable}{r}{5cm}', '\\begin{table}[t]').replace('\\end{wraptable}', '\\end{table}'));
+  // a float inside a list stays allowed (LaTeX floats from an item)
+  const li = 'A\n\\begin{itemize}\n\\item Words.\n\n' + C + '\\end{itemize}\n';
+  const [s5, e5] = at(li);
+  assert.ok(O.positionEdits(li, s5, e5, { mode: 'float', place: 't' }).edits.length);
+});
+
+ok('review N4: no wrap inside a list item, a quote or a theorem (wrapfig: "conflicting environment")', () => {
+  const at = (d) => [d.indexOf('\\begin{tikzpicture}'), d.indexOf('\\end{tikzpicture}') + 17];
+  const C = '\\begin{center}\n' + rect + '\n\\end{center}\n';
+  for (const [a, z, word] of [['\\begin{itemize}\n\\item Words.\n\n', '\nWords after.\n\\end{itemize}', 'in a list \\(itemize\\)'], ['\\begin{enumerate}\\item ', '\nMore.\n\\end{enumerate}', 'in a list \\(enumerate\\)'], ['\\begin{quote}\n', '\nWords.\n\\end{quote}', 'inside quote'], ['\\begin{theorem}\n', '\nWords.\n\\end{theorem}', 'inside theorem']]) {
+    const d = 'A\n' + a + C + z + '\n\nB';
+    const [ss, ee] = at(d);
+    assert.match(O.positionEdits(d, ss, ee, { mode: 'wrap', side: 'r' }).error, new RegExp(word), word);
+  }
+  // in a language's environment or at a smaller size wrapfig works
+  const ok1 = 'A\n\\begin{otherlanguage}{german}\n' + C + '\nWorte, die herumlaufen.\n\\end{otherlanguage}\n';
+  const [s1, e1] = at(ok1);
+  assert.ok(O.positionEdits(ok1, s1, e1, { mode: 'wrap', side: 'r' }).edits.length);
 });
 
 ok('review M1: no wrap before a list, a display or a heading (wrapfig would float it to the end)', () => {
