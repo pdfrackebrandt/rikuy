@@ -908,13 +908,15 @@ def focus_rules(page, w):
         check(f'one dialog at a time: a second replaces the first ({w})', len(n) == 1, n)
         page.keyboard.press('Escape'); page.wait_for_timeout(200)
         # Back's ring: none after a press on File, shown after Alt, F
-        page.get_by_role('tab', name='File').click(); page.wait_for_timeout(400)
-        r1 = page.evaluate("[document.activeElement.id, document.activeElement.matches(':focus-visible')]")
+        # (the ring as drawn: the browser's :focus-visible guess for a focus the code moves differs
+        # between Chromium's versions; the press is a real one, so the last input is the mouse)
+        page.get_by_role('tab', name='File').hover(); page.get_by_role('tab', name='File').click(); page.wait_for_timeout(400)
+        r1 = page.evaluate("[document.activeElement.id, getComputedStyle(document.activeElement).outlineStyle]")
         page.keyboard.press('Escape'); page.wait_for_timeout(300)
         click_text(page, 'Second paragraph', 3)
         page.keyboard.press('Alt'); page.wait_for_timeout(150); page.keyboard.press('f'); page.wait_for_timeout(400)
-        r2 = page.evaluate("[document.activeElement.id, document.activeElement.matches(':focus-visible')]")
-        check(f'File\'s Back: no ring after a press on File, a ring after Alt, F ({w})', r1 == ['rf-back', False] and r2 == ['rf-back', True], (r1, r2))
+        r2 = page.evaluate("[document.activeElement.id, getComputedStyle(document.activeElement).outlineStyle]")
+        check(f'File\'s Back: no ring after a press on File, a ring after Alt, F ({w})', r1 == ['rf-back', 'none'] and r2[0] == 'rf-back' and r2[1] != 'none', (r1, r2))
         page.keyboard.press('Escape')
 
 
@@ -1043,7 +1045,8 @@ def menus(page, w):
         dlg = {}
         sub = {}
         for name, label, off, _, popup in (m or {}).get('items', []):
-            if off or name in ('Paste', 'Cut', 'Copy', 'Ask Claude'):
+            # (Synonyms' menu comes when the thesaurus answers, after any Esc: its › is read below)
+            if off or name in ('Paste', 'Cut', 'Copy', 'Ask Claude', 'Synonyms'):
                 continue
             load_doc(page, MENU_DOC); click_text(page, word, 2)
             page.keyboard.press('Shift+F10'); page.wait_for_timeout(250)
@@ -1051,10 +1054,14 @@ def menus(page, w):
             dlg[label] = page.evaluate("!!document.querySelector('body > .pop.pop-dlg') || !!(document.getElementById('fr') && document.getElementById('fr').offsetParent)")
             sub[label] = [popup, page.evaluate("!!document.querySelector('body > .pop[role=menu]')")]
             page.keyboard.press('Escape'); page.wait_for_timeout(100)
+            # (Show in Source opens the source pane, which keeps the focus: closed for the next)
+            if page.evaluate("document.body.classList.contains('src-on')"):
+                page.evaluate("window.rikuy.toggleSource()"); page.wait_for_timeout(150)
         wrong = {k: v for k, v in dlg.items() if k.endswith('…') != v}
         check(f'"…" on exactly the items that open a dialog, in the {ctx} menu ({w})', dlg and not wrong, wrong or dlg)
         wrong = {k: v for k, v in sub.items() if v[0] != v[1]}
-        check(f'› and aria-haspopup on exactly the items that open a menu, in the {ctx} menu ({w})', not wrong and any(v[1] for v in sub.values()), wrong or sub)
+        syn = [x[4] for x in (m or {}).get('items', []) if x[0] == 'Synonyms']
+        check(f'› and aria-haspopup on exactly the items that open a menu, in the {ctx} menu ({w})', not wrong and (ctx != 'heading' or any(v[1] for v in sub.values())) and syn == [True], (wrong or sub, syn))
         # (the menu ends with where the LaTeX is and Next Tab Stop, under one line; a heading's
         # expand and collapse in one item, Expand/Collapse, as Word's)
         tail = m['groups'][-1] if m and m['groups'] else []
@@ -1075,12 +1082,14 @@ def menus(page, w):
     # (a menu opened by a press: no ring until a key moves in it)
     load_doc(page, MENU_DOC); click_text(page, 'Second paragraph', 3)
     r = page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('Second')); const b = s.getBoundingClientRect(); return [b.left + 10, b.top + b.height / 2]; })()")
-    page.mouse.click(r[0], r[1], button='right'); page.wait_for_timeout(300)
-    mr = page.evaluate("(() => { const a = document.activeElement; return [a.matches('.pop-ctx [role^=menuitem]'), a.matches(':focus-visible'), getComputedStyle(a).outlineStyle]; })()")
+    # (the ring as drawn, not the browser's :focus-visible guess, which differs between Chromium's
+    # versions for a focus the code moves; a real move and press first, so the last input is the mouse)
+    page.mouse.move(r[0] + 2, r[1] + 2); page.mouse.click(r[0], r[1], button='right'); page.wait_for_timeout(300)
+    mr = page.evaluate("(() => { const a = document.activeElement; return [a.matches('.pop-ctx [role^=menuitem]'), getComputedStyle(a).outlineStyle]; })()")
     page.keyboard.press('ArrowDown'); page.wait_for_timeout(100)
-    kr = page.evaluate("document.activeElement.matches(':focus-visible')")
+    kr = page.evaluate("getComputedStyle(document.activeElement).outlineStyle")
     page.keyboard.press('Escape')
-    check(f'a menu opened by a right click shows no ring on its first item; a key brings it ({w})', mr[0] and not mr[1] and mr[2] == 'none' and kr, (mr, kr))
+    check(f'a menu opened by a right click shows no ring on its first item; a key brings it ({w})', mr[0] and mr[1] == 'none' and kr != 'none', (mr, kr))
     check(f'the shortcuts in one column at the right, after the names ({w})', all(m['keys'] and max(x[0] for x in m['keys']) - min(x[0] for x in m['keys']) <= 1 and all(x[2] >= x[1] + 8 for x in m['keys']) for m in seen.values()), {k: m['keys'] for k, m in seen.items()})
 
 

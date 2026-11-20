@@ -382,12 +382,15 @@ function fromField(v, st) {
 }
 
 // whether the last thing the person did was a key or a press (a dialog's opener reached by the
-// keys gets the focus back; one pressed gives it to the page)
+// keys gets the focus back; one pressed gives it to the page). It is also html.keys, which the
+// focus rings follow where the code moves the focus (a menu's first item, File's Back): the
+// browser's own guess, :focus-visible, differs between Chromium's versions there
 let lastKeys = false;
 const keysLast = () => lastKeys;
 if (typeof document !== 'undefined') {
-  document.addEventListener('keydown', (e) => { if (!['Shift', 'Control', 'Meta'].includes(e.key)) lastKeys = true; }, true);
-  document.addEventListener('pointerdown', () => { lastKeys = false; }, true);
+  const set = (on) => { lastKeys = on; document.documentElement.classList.toggle('keys', on); };
+  document.addEventListener('keydown', (e) => { if (!['Shift', 'Control', 'Meta'].includes(e.key)) set(true); }, true);
+  document.addEventListener('pointerdown', () => set(false), true);
 }
 // A field of a dialog, a pane or File kept in sight when the window shrinks under it, as the
 // on-screen keyboard makes it (UI-PRINCIPLES.md T6, WCAG 2.4.11): the field the keys type into was
