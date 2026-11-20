@@ -181,7 +181,7 @@ try:
         eq.as_element().click(button='right')
         page.get_by_role('menuitem', name='Graph this').click(); page.wait_for_timeout(2500)
         check('Graph this under the policy', page.evaluate("() => window.rikuy.files.get('main.tex').split('\\\\rikuywidget').length - 1") == 2, page.evaluate("() => window.rikuy.files.get('main.tex')"))
-        page.evaluate('() => window.rikuy.runCommand("export-web-page")')
+        page.evaluate('() => window.rikuy.runCommand("export-web-page", { link: true })')
         page.wait_for_function('() => window.rikuy.lastExport && /\\.html$/.test(window.rikuy.lastExport.name)', timeout=60000)
         web = page.evaluate('() => window.rikuy.lastExport.blob.text()')
         check('the web page with live graphs is made under the policy: its frames, KaTeX, the fonts inside', web.count('<iframe class="rk-graph"') == 2 and 'class="katex"' in web and 'Paper Modern Serif' in web and 'url(data:font/woff2' in web, len(web))

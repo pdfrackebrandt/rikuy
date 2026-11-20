@@ -254,6 +254,49 @@ footer a{color:#1a4f8b}
 
 // The page: o = { model, files, main, name, assets (Map name -> Blob), graphs (fallback name ->
 // widget path), katex, openUrl, pdfPicture(bytes) } -> its HTML
+// The files the main document reads, the main first: what \input, \include and \subfile name,
+// its bibliography, its live figures and their pictures, the classes and packages the project
+// holds itself, pictures that are text (PGF). What else a project holds (notes, drafts, a
+// reviewer's letter) stays out of the web page's "Open in Rikuy" link. Pure (test/graphs-review).
+export function sourceFiles(files, main) {
+  const has = (n) => typeof files.get(n) === 'string';
+  const dir = main.includes('/') ? main.slice(0, main.lastIndexOf('/') + 1) : '';
+  const out = [], seen = new Set();
+  const add = (n, exts) => {
+    n = String(n).trim().replace(/^\.\//, '');
+    if (!n || n.includes('..') || n.length > 300) return null;
+    for (const c of [dir + n, n]) for (const e of ['', ...exts]) if (has(c + e) && !seen.has(c + e)) { seen.add(c + e); out.push(c + e); return c + e; }
+    return null;
+  };
+  const queue = [main];
+  seen.add(main); out.push(main);
+  while (queue.length && out.length < 300) {
+    const f = queue.shift(), t = String(files.get(f) || '').slice(0, 4e6).replace(/(^|[^\\])%.*$/gm, '$1');
+    const each = (re, fn) => { let m; re.lastIndex = 0; while ((m = re.exec(t))) fn(m); };
+    each(/\\(?:input|include|subfile|InputIfFileExists|subimport\{[^}]*\}|import\{[^}]*\})\s*\{([^{}]+)\}/g, (m) => { const n = add(m[1], ['.tex']); if (n && /\.(tex|ltx)$/i.test(n)) queue.push(n); });
+    each(/\\(?:bibliography|addbibresource(?:\[[^\]]*\])?)\s*\{([^{}]+)\}/g, (m) => m[1].split(',').forEach((b) => add(b, ['.bib'])));
+    each(/\\rikuywidget(?:\[[^\]]*\])?\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g, (m) => { add(m[1], []); add(m[2], []); });
+    each(/\\(?:usepackage|RequirePackage)(?:\[[^\]]*\])?\s*\{([^{}]+)\}/g, (m) => m[1].split(',').forEach((x) => add(x, ['.sty'])));
+    each(/\\documentclass(?:\[[^\]]*\])?\s*\{([^{}]+)\}/g, (m) => add(m[1], ['.cls']));
+    each(/\\(?:includegraphics(?:\[[^\]]*\])?|input)\s*\{([^{}]+\.(?:pgf|tikz))\}/g, (m) => add(m[1], []));
+    each(/\\bibliographystyle\s*\{([^{}]+)\}/g, (m) => add(m[1], ['.bst']));
+  }
+  return out;
+}
+// A TeX file without its % comments (a comment may be a note to oneself): a line that was only a
+// comment goes, a comment after text leaves its % (no space comes where the line ended); Rikuy's
+// own lines (% rikuy: words …) stay
+export function stripComments(t) {
+  return String(t).split('\n').flatMap((l) => {
+    const m = /(^|[^\\](?:\\\\)*)%/.exec(l);
+    if (!m) return [l];
+    const at = m.index + m[1].length;
+    if (/^%\s*rikuy:/.test(l.slice(at))) return [l];
+    const before = l.slice(0, at);
+    return before.trim() ? [before + '%'] : [];
+  }).join('\n');
+}
+
 export async function webPage(o) {
   const graphs = new Map();
   for (const [fb, path] of o.graphs) { const spec = readGraph(o.files.get(path)); if (spec) graphs.set(fb, { path, spec: K.normalize(spec) }); }

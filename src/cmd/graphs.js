@@ -5,7 +5,9 @@
 import { register } from '../commands.js';
 import { graphThis, paramValues } from '../graphthis.js';
 import { absAtom } from '../editor.js';
-import { webPage } from '../webpage.js';
+import { webPage, sourceFiles, stripComments } from '../webpage.js';
+import { dialog } from '../ui/kit.js';
+import { mk } from '../ui/dom.js';
 import { packShare } from '../share.js';
 import { readGraph, graphCanvas } from '../graph.js';
 
@@ -21,7 +23,7 @@ register(
   // (also in File's Export as list, src/cmd/file.js)
   { id: 'export-web-page', name: 'Web page with live graphs', title: 'Export as one .html file that reads like the paper, its math set, its interactive graphs live, with a link that opens the source in Rikuy: for a website',
     synonyms: ['Export as web page', 'Export HTML', 'Publish', 'Website', 'Interactive web page', 'Live web page', 'HTML with graphs'],
-    when: (app) => !!app.model, whyNot: () => 'The page cannot show the document as it is now', run: (app) => app.exportWebPage() }
+    when: (app) => !!app.model, whyNot: () => 'The page cannot show the document as it is now', run: (app, args) => app.exportWebPage(args) }
 );
 
 export const methods = {
@@ -55,8 +57,10 @@ export const methods = {
     if (r.error) { this.toast('Graph this: ' + r.error + '.', 7000); return false; }
     if (this.eqPop && this.eqPop()) this.closePop();
     this.eqCtx = null;
-    await this.graphInsert(r.spec, '', { f: T.f, p: T.e });
-    this.toast('Graph this: ' + r.what + '. Drag a slider; Edit graph changes the rest.', 6000);
+    await this.graphInsert(r.spec, '', { f: T.f, after: T.e });
+    // (the values the document's math gave, named: a slider that starts there is no surprise)
+    const used = r.spec.sliders.filter((q) => Object.prototype.hasOwnProperty.call(values, q.name) && values[q.name] === q.value).map((q) => q.name + ' = ' + q.value);
+    this.toast('Graph this: ' + r.what + (used.length ? '; from the document, ' + used.join(', ') : '') + '. Drag a slider; Edit graph changes the rest.', 7000);
     return true;
   },
 
@@ -69,21 +73,27 @@ export const methods = {
   },
 
   // File › Export as › Web page with live graphs: one .html file (src/webpage.js), downloaded.
-  // Its "Open in Rikuy" link is a #share= link of the project's text files, as Share makes.
-  async exportWebPage() {
+  // Its "Open in Rikuy" link is a #share= link of the main file and the files it reads (none of
+  // the project's other files), their % comments left out unless asked; the dialog says what it
+  // carries and can leave it out. args { link, comments } skip the dialog (an agent, a test).
+  async exportWebPage(args) {
     if (!this.model) return false;
+    if (!args || typeof args !== 'object' || !('link' in args)) return this.webPageDialog();
     if (this.webBusy) return false;
     this.webBusy = true;
     try {
       this.toast('Making the web page…', 60000);
       const model = this.plainModel ? this.plainModel() : this.model;
       let openUrl = null;
-      try {
-        const files = [...this.files].filter(([n, t]) => typeof t === 'string' && t.length < 2e6).slice(0, 200);
-        const u = this.shareBase() + '#share=' + await packShare({ v: 1, name: this.name || this.main, main: this.main, files });
-        // (an address past about 2 MB is one no browser opens)
-        if (u.length < 1.9e6) openUrl = u;
-      } catch (e) { /* no link */ }
+      if (args.link) {
+        try {
+          const files = sourceFiles(this.files, this.main).map((n) => [n, this.files.get(n)]).filter(([, t]) => t.length < 2e6)
+            .map(([n, t]) => [n, !args.comments && /\.(tex|ltx|sty|cls|bib)$/i.test(n) ? stripComments(t) : t]);
+          const u = this.shareBase() + '#share=' + await packShare({ v: 1, name: this.name || this.main, main: this.main, files });
+          // (an address past about 2 MB is one no browser opens)
+          if (u.length < 1.9e6) openUrl = u;
+        } catch (e) { /* no link */ }
+      }
       const html = await webPage({ model, files: this.files, main: this.main, name: this.name, assets: this.assetBlobs, graphs: this.graphFallbacks(), katex: window.katex, openUrl, pdfPicture: (b) => this.pdfPicture(b), lang: (model.opts && model.opts.lang) || 'en' });
       const blob = new Blob([html], { type: 'text/html' });
       const fname = ((this.name || '').replace(/\.tex$/i, '').replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '') || 'paper') + '.html';
@@ -91,11 +101,31 @@ export const methods = {
       if (D) await D.save({ filename: fname, data: blob });
       else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
       this.lastExport = { name: fname, size: blob.size, blob };
-      this.toast('Saved ' + fname + ': open it in any browser, or put it on your website. Its graphs are live.', 6000);
+      this.toast('Saved ' + fname + ': open it in any browser, or put it on your website. Its graphs are live' + (openUrl ? '; its Open in Rikuy link carries the source.' : '.'), 6000);
       return true;
     } catch (e) {
       if (!(e && e.code === 'declined')) this.toast('Could not make the web page: ' + ((e && e.message) || e), 8000);
       return false;
     } finally { this.webBusy = false; }
+  },
+  // What the web page's link carries, said before it is made, and the choice to leave it out
+  webPageDialog() {
+    const names = sourceFiles(this.files, this.main);
+    const p = dialog(this, { title: 'Web page with live graphs', cls: 'pop-web', rect: new DOMRect(Math.max(8, innerWidth / 2 - 230), 110, 0, 0) });
+    const box = (text, on) => { const l = mk('label', 'gd-ck'), c = mk('input'); c.type = 'checkbox'; c.checked = on; l.append(c, mk('span', '', text)); return [l, c]; };
+    const [l1, link] = box('Add an “Open in Rikuy” link to the page', true);
+    const [l2, keep] = box('Keep the source\'s % comments in it', false);
+    const what = mk('p', 'fd-note', 'The link carries the source: ' + names.slice(0, 6).join(', ') + (names.length > 6 ? ' and ' + (names.length - 6) + ' more' : '') + '. Anyone with the page can open it. The project\'s other files stay out.');
+    const ok = mk('button', 'btn sm', 'Export'); ok.type = 'button';
+    const cancel = mk('button', 'btn ghost sm', 'Cancel'); cancel.type = 'button';
+    const row = mk('div', 'fd-btns');
+    row.append(mk('span', 'grow'), ok, cancel);
+    const sync = () => { what.hidden = !link.checked; l2.hidden = !link.checked; };
+    link.addEventListener('change', sync);
+    p.append(mk('p', 'fd-note', 'One .html file that reads like the paper: its math set, its graphs live in sandboxed frames, no request out.'), l1, what, l2, row);
+    cancel.addEventListener('click', () => this.closePop());
+    ok.addEventListener('click', () => { const a = { link: link.checked, comments: keep.checked }; this.closePop(); this.exportWebPage(a); });
+    ok.focus();
+    return true;
   }
 };

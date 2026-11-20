@@ -45,7 +45,7 @@ export function graphKit() {
     sin: Math.sin, cos: Math.cos, tan: Math.tan, sec: (x) => 1 / Math.cos(x), csc: (x) => 1 / Math.sin(x), cot: (x) => 1 / Math.tan(x),
     asin: Math.asin, acos: Math.acos, atan: Math.atan, arcsin: Math.asin, arccos: Math.acos, arctan: Math.atan,
     sinh: Math.sinh, cosh: Math.cosh, tanh: Math.tanh, asinh: Math.asinh, acosh: Math.acosh, atanh: Math.atanh,
-    exp: Math.exp, ln: Math.log, log: (a, b) => (b === undefined ? Math.log10(a) : Math.log(b) / Math.log(a)), log10: Math.log10, log2: Math.log2, lg: Math.log10,
+    exp: Math.exp, ln: Math.log, log: (a, b) => (b === undefined ? Math.log10(a) : Math.log(b) / Math.log(a)), log10: Math.log10, log2: Math.log2, lg: Math.log10, lb: Math.log2,
     sqrt: Math.sqrt, cbrt: Math.cbrt, abs: Math.abs, floor: Math.floor, ceil: Math.ceil, round: Math.round, sign: Math.sign, sgn: Math.sign,
     min: Math.min, max: Math.max, mod: (a, b) => a - b * Math.floor(a / b), atan2: Math.atan2,
     gamma: gammaFn, lgamma: lg, factorial: fact, binom: (n, k) => Math.round(Math.exp(lg(n + 1) - lg(k + 1) - lg(n - k + 1))), erf,
@@ -71,17 +71,24 @@ export function graphKit() {
     // they can be, so a mistake is said near where it is)
     s = s.replace(/\\left\s*(?:\||\\[lv]vert(?![A-Za-z]))|\\lvert(?![A-Za-z])/g, ' abs(').replace(/\\right\s*(?:\||\\[rv]vert(?![A-Za-z]))|\\rvert(?![A-Za-z])/g, ') ').replace(/\\(?:left|right)\s*\./g, ' ').replace(/\\(?:left|right|[bB]igg?[lrm]?)(?![A-Za-z])/g, ' ').replace(/\\(?:displaystyle|textstyle|scriptstyle|limits|nolimits)(?![A-Za-z])/g, ' ')
       .replace(/\\[dtc]frac(?![A-Za-z])/g, '\\frac').replace(/\\frac\s*(\d)\s*(\d)/g, '\\frac{$1}{$2}')
+      // (\log in a paper is the natural log, its base written when it has another; log typed
+      // alone keeps Desmos's base 10. \Phi( is the normal cdf, \Gamma( the gamma function)
+      .replace(/\\log\s*_\s*(?:\{\s*10\s*\}|10)/g, ' lg ').replace(/\\log\s*_\s*(?:\{\s*2\s*\}|2)/g, ' lb ').replace(/\\log(?![A-Za-z])/g, '\\ln')
+      .replace(/\\Phi(?=\s*(?:\\left)?\s*[({])/g, ' normcdf').replace(/\\Gamma(?=\s*(?:\\left)?\s*[({])/g, ' gamma')
       .replace(/\\(?:mathrm|mathit|mathnormal|operatorname\*?|textrm|textit|text)\s*\{\s*([A-Za-z]{1,12})\s*\}/g, ' $1 ')
       .replace(/\\[vV]ert(?![A-Za-z])/g, '|').replace(/\\[{}]/g, (m) => (m[1] === '{' ? '(' : ')'))
       .replace(/\\(?:cdot|times|ast)(?![A-Za-z])|[·×⋅∗]/g, '*').replace(/\\div(?![A-Za-z])/g, '/').replace(/\\(?:leq?|leqslant)(?![A-Za-z])/g, '<=').replace(/\\(?:geq?|geqslant)(?![A-Za-z])/g, '>=')
       .replace(/[−–]/g, '-').replace(/÷/g, '/').replace(/\*\*/g, '^')
       .replace(/²/g, '^2').replace(/³/g, '^3').replace(/\\[,;:! ]|[~&]/g, ' ');
     const known = KNOWN.concat(names || []).sort((a, b) => b.length - a.length);
+    const marked = known.filter((n) => n.includes('^'));
     const out = [];
     let i = 0;
     while (i < s.length) {
       const ch = s[i];
       if (/\s/.test(ch)) { i++; continue; }
+      const mk = marked.length && marked.find((n) => s.startsWith(n, i) && !/[A-Za-z0-9α-ωΑ-Ω]/.test(s[i + n.length] || ''));
+      if (mk) { out.push({ t: 'name', v: mk, at: i }); i += mk.length; continue; }
       const num = /^(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?/.exec(s.slice(i, i + 40));
       // (1e3 is a number, but 2e alone is two times e)
       // (1e3 is a number; 2e is two times e, which the pattern leaves out)
@@ -96,7 +103,7 @@ export function graphKit() {
       }
       if (/[A-Za-zα-ωΑ-Ωϑϕ_]/.test(ch)) {
         let j = i;
-        while (j < s.length && /[A-Za-zα-ωΑ-Ωϑϕ]/.test(s[j])) j++;
+        while (j < s.length && /[A-Za-zα-ωΑ-Ωϑϕ]/.test(s[j]) && !(j > i && marked.some((n) => s.startsWith(n, j)))) j++;
         const run = s.slice(i, j);
         let k = 0;
         const parts = [];
@@ -237,10 +244,11 @@ export function graphKit() {
   }
 
   // the names a formula uses that are not functions or constants: its variables
-  function names(tree, out = new Set()) {
-    if (tree[0] === 'v') { if (!own(CONST, tree[1])) out.add(tree[1]); }
-    else if (tree[0] === 'f') for (const a of tree[2]) names(a, out);
-    else if (tree[0] !== 'n') for (let k = 1; k < tree.length; k++) names(tree[k], out);
+  // (keep: names that are a graph's own though a constant has them, π for inflation)
+  function names(tree, out = new Set(), keep = null) {
+    if (tree[0] === 'v') { if (!own(CONST, tree[1]) || (keep && keep.has(tree[1]))) out.add(tree[1]); }
+    else if (tree[0] === 'f') for (const a of tree[2]) names(a, out, keep);
+    else if (tree[0] !== 'n') for (let k = 1; k < tree.length; k++) names(tree[k], out, keep);
     return out;
   }
 
@@ -250,7 +258,8 @@ export function graphKit() {
     const op = tree[0];
     if (op === 'n') { const v = tree[1]; return () => v; }
     if (op === 'v') {
-      if (own(CONST, tree[1])) { const v = CONST[tree[1]]; return () => v; }
+      // (π is the constant unless the graph has a π of its own: inflation, a profit)
+      if (own(CONST, tree[1]) && slots[tree[1]] === undefined) { const v = CONST[tree[1]]; return () => v; }
       const k = slots[tree[1]];
       if (k === undefined) throw err('Unknown name ' + tree[1], 0);
       return (e) => e[k];
@@ -343,11 +352,16 @@ export function graphKit() {
   // ---- the description: everything a graph is, checked and capped -------------------------
   const KINDS = ['function', 'data', 'curve', 'implicit', 'phase', 'dist'];
   // a variable's or a slider's name: letters, Greek, a subscript
-  const NAME = /^[A-Za-zα-ωΑ-Ω][A-Za-z0-9α-ωΑ-Ω]*(_[A-Za-z0-9]{1,8})?$/;
+  // (a mark after ^ is part of a name: q^d, π^e, u^*, and u^- for ū, as economists write them;
+  // a graph declares such a name, so its formulas read it as the name and not as a power)
+  const NAME = /^[A-Za-zα-ωΑ-Ω][A-Za-z0-9α-ωΑ-Ω]*(_[A-Za-z0-9]{1,8})?(\^[A-Za-z*-])?$/;
   const FITS = ['none', 'linear', 'quadratic', 'cubic', 'exp', 'log', 'power'];
   const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(-1e9, Math.min(1e9, v)) : d);
   const opt = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(-1e9, Math.min(1e9, v)) : null);
   const str = (v, n, d = '') => (typeof v === 'string' ? v.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '').slice(0, n) : d);
+  // A label as one who knows LaTeX types it: $k_t$ is the name k_t, $\alpha$ is α; a $ alone (a
+  // price in $) stays a dollar sign
+  const unmath = (t) => t.replace(/\$([^$\s](?:[^$]{0,40}[^$\s])?)\$/g, (m, x) => x.replace(/\\([A-Za-z]+)\s*/g, (q, n) => (own(GREEK, n) ? GREEK[n] : n)).replace(/[{}]/g, ''));
   function normalize(raw) {
     const r = raw && typeof raw === 'object' ? raw : {};
     const kind = KINDS.includes(r.kind) ? r.kind : 'function';
@@ -355,11 +369,11 @@ export function graphKit() {
       a = a && typeof a === 'object' ? a : {};
       let min = opt(a.min), max = opt(a.max);
       if (min != null && max != null && !(max > min)) { min = null; max = null; }
-      return { min: min ?? lo, max: max ?? hi, label: str(a.label, 60, label) };
+      return { min: min ?? lo, max: max ?? hi, label: unmath(str(a.label, 60, label)) };
     };
     const s = { rikuy: 'graph', v: 1, kind, title: str(r.title, 200), aspect: Math.max(0.25, Math.min(1.2, num(r.aspect, 0.5))) };
     // the variables a kind draws against (a function of k, an indifference curve in x_1 and x_2)
-    const vname = (v, d) => { const t = str(v, 16).trim(); return NAME.test(t) && !own(CONST, t) && !own(FN, t) ? t : d; };
+    const vname = (v, d) => { const t = str(v, 16).trim(); return NAME.test(t) && (!own(CONST, t) || t === 'π') && !own(FN, t) ? t : d; };
     const two = (v, a, b) => { const V = Array.isArray(v) ? v : []; const x = vname(V[0], a); let y = vname(V[1], b); if (y === x) y = x === b ? a : b; return [x, y]; };
     if (kind === 'function') {
       s.vars = [vname(Array.isArray(r.vars) ? r.vars[0] : null, 'x')];
@@ -370,13 +384,17 @@ export function graphKit() {
       // where two curves cross: true (every pair) or the pairs [[i, j]]
       s.cross = r.cross === true ? true : (Array.isArray(r.cross) ? r.cross : []).slice(0, 8).filter((q) => Array.isArray(q) && q.length === 2 && q.every((k) => Number.isInteger(k) && k >= 0 && k < s.f.length) && q[0] !== q[1]).map((q) => [q[0], q[1]]);
       if (Array.isArray(s.cross) && !s.cross.length) s.cross = false;
+      // flip: the variable up and the curves' values across (a price up, quantities across, as
+      // economists draw supply and demand); lhs: each curve's own left side in the legend
+      if (r.flip === true) s.flip = true;
+      if (Array.isArray(r.lhs)) { const l = r.lhs.slice(0, s.f.length).map((t) => str(t, 16).trim()); if (l.length === s.f.length && l.every((t) => NAME.test(t))) s.lhs = l; }
       // shaded areas: under curve a down to b (another curve, 'axis', or 'cross', the level where
       // a meets curve w), from and to a formula of the sliders or 'cross' (where a meets w)
       const end = (v, d) => { const t = str(v, 80, d).trim(); return t || d; };
       s.shade = (Array.isArray(r.shade) ? r.shade : []).slice(0, 4).filter((q) => q && typeof q === 'object' && Number.isInteger(q.a) && q.a >= 0 && q.a < s.f.length).map((q) => {
         const b = q.b === 'axis' || q.b === 'cross' ? q.b : Number.isInteger(q.b) && q.b >= 0 && q.b < s.f.length && q.b !== q.a ? q.b : 'axis';
         const w = Number.isInteger(q.w) && q.w >= 0 && q.w < s.f.length && q.w !== q.a ? q.w : Number.isInteger(b) ? b : (q.a === 0 ? 1 : 0);
-        return { a: q.a, b, w: w < s.f.length ? w : null, from: end(q.from, 'min'), to: end(q.to, 'max'), label: str(q.label, 60) };
+        return { a: q.a, b, w: w < s.f.length ? w : null, from: end(q.from, 'min'), to: end(q.to, 'max'), label: unmath(str(q.label, 60)) };
       });
     } else if (kind === 'implicit') {
       s.vars = two(r.vars, 'x', 'y');
@@ -420,10 +438,10 @@ export function graphKit() {
     // sliders: a name each (letters, Greek, a subscript), its range, its step and where it starts
     const seen = new Set();
     s.sliders = [];
-    for (const q of (Array.isArray(r.sliders) ? r.sliders : []).slice(0, 8)) {
+    for (const q of (Array.isArray(r.sliders) ? r.sliders : []).slice(0, 12)) {
       if (!q || typeof q !== 'object') continue;
       const name = str(q.name, 16).trim();
-      if (!NAME.test(name) || seen.has(name) || own(CONST, name) || own(FN, name) || (s.vars && s.vars.includes(name))) continue;
+      if (!NAME.test(name) || seen.has(name) || (own(CONST, name) && name !== 'π') || own(FN, name) || (s.vars && s.vars.includes(name))) continue;
       seen.add(name);
       let min = num(q.min, 0), max = num(q.max, 10);
       if (!(max > min)) max = min + 1;
@@ -434,6 +452,8 @@ export function graphKit() {
     }
     // while a slider moves, the curves at the starting values stay, faint: what changed is seen
     if (kind !== 'data' && kind !== 'dist') s.ghost = r.ghost !== false;
+    // one scale on both axes: a circle round, the 45 degree line at 45 degrees
+    if (r.equal === true && (kind === 'function' || kind === 'implicit' || kind === 'phase')) s.equal = true;
     if (kind === 'dist') {
       // a distribution's sliders are its parameters (and n), whatever else the file says
       const F = FAM[s.dist.family];
@@ -497,7 +517,7 @@ export function graphKit() {
     const list = [];
     for (const F of sources(s)) {
       let tree;
-      try { tree = F.eq ? parseEq(F.text, declared) : parse(F.text, declared); } catch (e) { e.field = F.field; throw e; }
+      try { tree = F.eq ? parseEq(F.text, declared.concat(F.vars)) : parse(F.text, declared.concat(F.vars)); } catch (e) { e.field = F.field; throw e; }
       for (const n of names(tree)) if (!F.vars.includes(n) && !declared.includes(n)) { const e = err('No slider is called ' + n + (F.vars.length ? ': add one, or use ' + F.vars.join(' or ') : ''), 0); e.field = F.field; e.name = n; throw e; }
       list.push({ text: F.text, field: F.field, tree, shade: !!F.shade });
     }
@@ -507,7 +527,7 @@ export function graphKit() {
   function unknownNames(s) {
     const declared = new Set(s.sliders.map((q) => q.name)), out = [];
     for (const F of sources(s)) {
-      try { for (const n of names(F.eq ? parseEq(F.text, [...declared]) : parse(F.text, [...declared]))) if (!F.vars.includes(n) && !declared.has(n) && !out.includes(n)) out.push(n); } catch (e) { /* said elsewhere */ }
+      try { for (const n of names(F.eq ? parseEq(F.text, [...declared, ...F.vars]) : parse(F.text, [...declared, ...F.vars]))) if (!F.vars.includes(n) && !declared.has(n) && !out.includes(n)) out.push(n); } catch (e) { /* said elsewhere */ }
     }
     return out;
   }
@@ -541,11 +561,14 @@ export function graphKit() {
       // the legend's left side: the y label where it names the curve (p, k′, k̇, f(x)), else y
       // (tx: what the PDF's picture writes as LaTeX, src/graph.js seriesTex)
       const yl = String(s.y.label || '').trim();
-      const lhs = /^[A-Za-zα-ωΑ-Ω][\u0307′']?(_[A-Za-z0-9]{1,8})?$/.test(yl) || /^[A-Za-zα-ωΑ-Ω]\w*\([A-Za-zα-ωΑ-Ω]\w*(?:_\w+)?\)$/.test(yl) ? yl : 'y';
+      const LHS = (t) => /^[A-Za-zα-ωΑ-Ω][\u0307′']?(_[A-Za-z0-9]{1,8})?(\^[A-Za-z*-])?$/.test(t) || /^[A-Za-zα-ωΑ-Ω]\w*\([A-Za-zα-ωΑ-Ω]\w*(?:_\w+)?\)$/.test(t);
+      const lhs = LHS(yl) ? yl : 'y';
       curves.forEach((f, k) => {
-        const pts = xs.map((x) => [x, at(f.fn, x)]);
-        out.push({ kind: 'line', pts, label: lhs + ' = ' + f.text.trim(), tx: ['fn', lhs, f.text], slot: k });
+        const pts = xs.map((x) => [x, at(f.fn, x)]), l = s.lhs && LHS(s.lhs[k]) ? s.lhs[k] : lhs;
+        out.push({ kind: 'line', pts, label: l + ' = ' + f.text.trim(), tx: ['fn', l, f.text], slot: k });
       });
+      // (a curve that is a number: where another meets it, its value exactly, not 5.55e−17)
+      const level = (k) => (curves[k] && !names(curves[k].tree).size ? at(curves[k].fn, 0) : null);
       // where curves a and b cross, left to right: bisection from a change of sign on the samples
       // (not at the ends of the range, where a curve through the origin meets another at 0)
       const crossings = (a, b) => {
@@ -556,9 +579,14 @@ export function graphKit() {
           if (Number.isFinite(ph) && Number.isFinite(v) && i > 1 && (ph === 0 ? false : v === 0 ? i < N : (ph < 0) !== (v < 0))) {
             let lo = px, hi = x, hl = ph;
             for (let k = 0; k < 50; k++) { const m = (lo + hi) / 2, hm = h(m); if (!Number.isFinite(hm)) break; if ((hm < 0) === (hl < 0) && hm !== 0) { lo = m; hl = hm; } else hi = m; }
-            const r = (lo + hi) / 2, y = at(fa, r);
+            let r = (lo + hi) / 2, y = at(fa, r);
             // (a sign that changes through a pole is no crossing: tan x against 0)
-            if (Number.isFinite(y) && Math.abs(h(r)) < 1e-6 * (1 + Math.abs(y))) roots.push([r, y]);
+            if (Number.isFinite(y) && Math.abs(h(r)) < 1e-6 * (1 + Math.abs(y))) {
+              const c = level(b) ?? level(a);
+              if (c != null) y = c;
+              if (Math.abs(r) < 1e-9 * (s.x.max - s.x.min)) r = 0;
+              roots.push([r, y]);
+            }
           }
           px = x; ph = v;
         }
@@ -582,18 +610,48 @@ export function graphKit() {
         if (!(b > a)) continue;
         const lower = q.b === 'axis' ? () => 0 : q.b === 'cross' ? (cr ? () => cr[1] : null) : (x) => at(curves[q.b].fn, x);
         if (!lower) continue;
+        // The area between the two, as an economist means it (a surplus is never negative): the
+        // integral of |u − l|, with the steps made finer towards where the curve stops being
+        // defined (ln x at 0), and none at all across a pole (1/x over [−1, 1])
+        const gap = (x) => { const u = at(fa, x), l = lower(x); return Number.isFinite(u) && Number.isFinite(l) ? [u, l] : null; };
+        const xs2 = [];
+        for (let i = 0; i <= 200; i++) xs2.push(a + (b - a) * i / 200);
+        const G = xs2.map(gap), h = (b - a) / 200;
+        let pole = false;
+        for (let i = 0; i <= 200 && !pole; i++) {
+          // (a hole with the curve on both sides, or a value that keeps growing as x nears it)
+          if (!G[i] && i > 0 && i < 200 && G[i - 1] && G[i + 1]) pole = true;
+        }
+        if (!pole) {
+          let big = -1, m = 0;
+          G.forEach((g, i) => { if (g && Math.abs(g[0] - g[1]) > m) { m = Math.abs(g[0] - g[1]); big = i; } });
+          if (big >= 0) for (const d of [-h / 20, h / 20]) { const g = gap(xs2[big] + d); if (g && Math.abs(g[0] - g[1]) > 5 * m) pole = true; }
+        }
         const top = [], bot = [];
-        let area = 0, prev = null;
+        const edge = (from, to) => {
+          // from a point where it is undefined to one where it is: the boundary by halving, then
+          // points ever closer to it
+          let lo = from, hi = to;
+          for (let k = 0; k < 40; k++) { const m = (lo + hi) / 2; if (gap(m)) hi = m; else lo = m; }
+          const pts = [];
+          for (let k = 30; k >= 1; k--) { const x = hi + (to - hi) * Math.pow(2, -k), g = gap(x); if (g) pts.push([x, g]); }
+          return pts;
+        };
         for (let i = 0; i <= 200; i++) {
-          const x = a + (b - a) * i / 200, u = at(fa, x), l = lower(x);
-          if (!Number.isFinite(u) || !Number.isFinite(l)) continue;
-          top.push([x, u]); bot.push([x, l]);
-          if (prev) area += (x - prev[0]) * ((u - l) + prev[1]) / 2;
-          prev = [x, u - l];
+          const g = G[i];
+          if (!g) continue;
+          if (i > 0 && !G[i - 1]) for (const [x, e] of edge(xs2[i - 1], xs2[i])) { top.push([x, e[0]]); bot.push([x, e[1]]); }
+          top.push([xs2[i], g[0]]); bot.push([xs2[i], g[1]]);
+          if (i < 200 && !G[i + 1]) for (const [x, e] of edge(xs2[i + 1], xs2[i]).reverse()) { top.push([x, e[0]]); bot.push([x, e[1]]); }
         }
         if (top.length < 2) continue;
+        let area = 0;
+        for (let i = 1; i < top.length; i++) {
+          const dx = top[i][0] - top[i - 1][0];
+          if (dx > 0 && dx < 2 * h) area += dx * (Math.abs(top[i][1] - bot[i][1]) + Math.abs(top[i - 1][1] - bot[i - 1][1])) / 2;
+        }
         const name = q.label || 'area';
-        out.push({ kind: 'fill', pts: top.concat(bot.reverse()), label: name + ' = ' + fmt(Math.abs(area), 3), slot: q.a, area: Math.abs(area), shadeOf: k });
+        out.push({ kind: 'fill', pts: top.concat(bot.reverse()), label: pole ? name + ': no area, a pole' : name + ' = ' + fmt(area, 3), slot: q.a, area: pole ? NaN : area, shadeOf: k });
       }
       if (s.cross && curves.length > 1) {
         const pairs = s.cross === true ? curves.flatMap((_, i) => curves.map((__, j) => [i, j]).filter(([a, b]) => a < b)) : s.cross;
@@ -603,10 +661,13 @@ export function graphKit() {
           for (const p of crossings(a, b)) {
             if (seen.length >= 8 || seen.some((q) => Math.abs(q[0] - p[0]) < 1e-9 * (1 + Math.abs(p[0])) && Math.abs(q[1] - p[1]) < 1e-9 * (1 + Math.abs(p[1])))) continue;
             seen.push(p);
-            out.push({ kind: 'mark', pts: [p], label: '(' + fmt(p[0], 3) + ', ' + fmt(p[1], 3) + ')', slot: 0 });
+            const q = s.flip ? [p[1], p[0]] : p;
+            out.push({ kind: 'mark', pts: [p], label: '(' + fmt(q[0], 3, 1) + ', ' + fmt(q[1], 3, 1) + ')', slot: 0 });
           }
         }
       }
+      // flipped: every point drawn as (value, variable)
+      if (s.flip) for (const S of out) S.pts = S.pts.map((p) => [p[1], p[0]]);
     } else if (s.kind === 'curve') {
       const [t0, t1] = s.curve.t, pts = [], M = N * 2;
       for (let i = 0; i <= M; i++) {
@@ -718,6 +779,26 @@ export function graphKit() {
       const k = id >> 1, i = k % W1, j = (k - i) / W1, up = id & 1, a = V[k], b = up ? V[k + W1] : V[k + 1], t = a / (a - b);
       return up ? [x0 + i * hx, y0 + (j + t) * hy] : [x0 + (i + t) * hx, y0 + j * hy];
     };
+    // An edge whose sign changes through a pole, not a zero (tan x, 1/x): halved twelve times
+    // towards the change, F is no nearer 0 than at the corners. Its pieces are left out, so no
+    // line is drawn along the pole.
+    const pole = new Map();
+    const across = (id) => {
+      if (pole.has(id)) return pole.get(id);
+      const k = id >> 1, i = k % W1, j = (k - i) / W1, up = id & 1, a = V[k], b = up ? V[k + W1] : V[k + 1];
+      let lo = 0, hi = 1, v = a;
+      for (let n = 0; n < 12; n++) {
+        const t = (lo + hi) / 2;
+        v = up ? F(x0 + i * hx, y0 + (j + t) * hy) : F(x0 + (i + t) * hx, y0 + j * hy);
+        if (!Number.isFinite(v)) break;
+        if ((v > 0) === (a > 0)) lo = t; else hi = t;
+      }
+      // (and the guessed point itself near 0, as a zero's is: where two poles meet, both fail)
+      const p = point(id), w = F(p[0], p[1]), m = Math.max(Math.abs(a), Math.abs(b));
+      const bad = !(Math.abs(v) < 0.01 * m) || !(Math.abs(w) < 0.5 * m);
+      pole.set(id, bad);
+      return bad;
+    };
     const segA = [], segB = [];
     for (let j = 0; j < ny && segA.length < cap; j++) for (let i = 0; i < nx && segA.length < cap; i++) {
       const q = j * W1 + i, a = V[q], b = V[q + 1], c = V[q + W1 + 1], d = V[q + W1];
@@ -725,7 +806,7 @@ export function graphKit() {
       const k = (a > 0 ? 1 : 0) | (b > 0 ? 2 : 0) | (c > 0 ? 4 : 0) | (d > 0 ? 8 : 0);
       if (k === 0 || k === 15) continue;
       const S = 2 * q, E = 2 * (q + 1) + 1, Nn = 2 * (q + W1), Wd = 2 * q + 1;
-      const add = (p, r) => { segA.push(p); segB.push(r); };
+      const add = (p, r) => { if (!across(p) && !across(r)) { segA.push(p); segB.push(r); } };
       switch (k) {
         case 1: case 14: add(Wd, S); break;
         case 2: case 13: add(S, E); break;
@@ -849,14 +930,15 @@ export function graphKit() {
     return s;
   }
   // a number as a reader writes it: significant digits, the minus sign, no trailing zeros
-  function fmt(v, sig) {
+  // (span: the size of the plot's range; a value 10⁻⁹ of it from 0 is 0, floating point's noise)
+  function fmt(v, sig, span) {
     if (!Number.isFinite(v)) return '–';
-    if (v === 0) return '0';
+    if (v === 0 || Math.abs(v) < 1e-9 * (span || 1e-3)) return '0';
     const a = Math.abs(v);
     let t;
     if (a >= 1e6 || a < 1e-4) t = v.toExponential(sig - 1).replace(/\.?0+e/, 'e');
     else { const d = Math.max(0, sig - 1 - Math.floor(Math.log10(a))); t = v.toFixed(Math.min(8, d)); if (t.includes('.')) t = t.replace(/0+$/, '').replace(/\.$/, ''); }
-    return t.replace('-', '−');
+    return t === '-0' ? '0' : t.replace(/-/g, '−');
   }
   // a slider's value at its step's precision
   function fmtStep(v, step) {
@@ -864,14 +946,14 @@ export function graphKit() {
     let t = v.toFixed(d);
     if (t.includes('.')) t = t.replace(/0+$/, '').replace(/\.$/, '');
     if (/^-0$/.test(t)) t = '0';
-    return t.replace('-', '−');
+    return t.replace(/-/g, '−');
   }
 
   // The axes: their ranges, from the description where it gives them, else from what is drawn
   // at the sliders' starting values (kept while they move, so a slider's effect is seen)
   function ranges(s) {
     // (an implicit curve's and a phase portrait's plot is the region their axes give)
-    if (s.kind === 'implicit' || s.kind === 'phase') return { X: [s.x.min, s.x.max], Y: [s.y.min, s.y.max], equal: false };
+    if (s.kind === 'implicit' || s.kind === 'phase') return { X: [s.x.min, s.x.max], Y: [s.y.min, s.y.max], equal: !!s.equal };
     const { series } = compute(s, defaults(s));
     const xs = [], ys = [];
     for (const S of series) if (S.pts && S.kind !== 'fill') for (const p of S.pts) if (p && Number.isFinite(p[0]) && Number.isFinite(p[1])) { xs.push(p[0]); ys.push(p[1]); }
@@ -886,7 +968,16 @@ export function graphKit() {
       return [Math.max(lo, l5 - d), Math.min(hi, h5 + d)];
     };
     let X, Y;
-    if (s.kind === 'function') { X = [s.x.min, s.x.max]; Y = pad(...robust(ys)); }
+    if (s.kind === 'function' && s.flip) {
+      // (the variable up: its range is the description's x; the values across, as drawn)
+      X = pad(...robust(xs)); Y = [s.x.min, s.x.max];
+      if (s.y.min != null) X[0] = s.y.min;
+      if (s.y.max != null) X[1] = s.y.max;
+      if (!(X[1] > X[0])) X = [X[0] - 1, X[0] + 1];
+      return { X, Y, equal: !!s.equal };
+    }
+    // (one scale with the 45 degree line: the values' range is the variable's)
+    if (s.kind === 'function') { X = [s.x.min, s.x.max]; Y = s.equal ? [s.x.min, s.x.max] : pad(...robust(ys)); }
     else if (s.kind === 'dist') {
       X = [s.x.min, s.x.max];
       const top = ys.length ? Math.max(...ys) : 1;
@@ -901,7 +992,7 @@ export function graphKit() {
     if (s.y.max != null) Y[1] = s.y.max;
     if (!(X[1] > X[0])) X = [X[0] - 1, X[0] + 1];
     if (!(Y[1] > Y[0])) Y = [Y[0] - 1, Y[0] + 1];
-    return { X, Y, equal: s.kind === 'curve' && s.x.min == null && s.x.max == null && s.y.min == null && s.y.max == null };
+    return { X, Y, equal: !!s.equal || (s.kind === 'curve' && s.x.min == null && s.x.max == null && s.y.min == null && s.y.max == null) };
   }
 
   function ticks(lo, hi, n) {
@@ -935,9 +1026,12 @@ export function graphKit() {
   const PR = { '<': 0, '>': 0, '<=': 0, '>=': 0, '+': 1, '-': 1, '*': 2, '/': 2, neg: 3, '^': 4 };
   const pr = (t) => (t[0] in PR ? PR[t[0]] : 5);
   function nameRuns(n, z, y, o, acc) {
-    const m = /^([^_]+)(?:_(.+))?$/.exec(n) || [n, n];
+    const m = /^([^_^]+)(?:_([^^]+))?(?:\^(.))?$/.exec(n) || [n, n];
+    if (m[3] === '-') acc = 'b';
     for (const c of m[1]) o.push([c, /[Α-Ω0-9]/.test(c) ? 'r' : 'i', z, y, acc && m[1].length === 1 ? acc : 0]);
     if (m[2]) for (const c of m[2]) o.push([c, /[^A-Za-zα-ω]/.test(c) ? 'r' : 'i', z * 0.7, y + 0.2 * z]);
+    // (q^d, π^e, u^*: the mark above, over the subscript where there is one)
+    if (m[3] && m[3] !== '-') o.push([m[3] === '*' ? '∗' : m[3], m[3] === '*' ? 'r' : 'i', z * 0.7, y - 0.36 * z, 0, 0, 0, m[2] ? 's' : 0]);
   }
   function mathRuns(t, z, y, o) {
     const put = (s) => o.push([s, 'r', z, y]);
@@ -967,7 +1061,10 @@ export function graphKit() {
         if (n === 'abs') { put('|'); mathRuns(a[0], z, y, o); put('|'); return; }
         if (n === 'frac') { P(a[0], 2); put('/'); P(a[1], 4); return; }
         if (n === 'factorial') { P(a[0], 5); put('!'); return; }
-        put(n); put('(');
+        // (a logarithm's base below it where it is not e: log typed alone is base 10)
+        const base = { log: a.length === 1 ? '10' : null, log10: '10', lg: '10', log2: '2', lb: '2' }[n];
+        if (base) { put('log'); o.push([base, 'r', z * 0.7, y + 0.2 * z]); } else put(n);
+        put('(');
         a.forEach((x, k) => { if (k) { put(','); o.push(['', 'r', z, y, 0, 0.17]); } mathRuns(x, z, y, o); });
         put(')');
         return;
@@ -1001,21 +1098,22 @@ export function graphKit() {
   const rel = (o, s) => { o.push([s, 'r', 1, 0, 0, 0.28]); o.push(['', 'r', 1, 0, 0, 0.28]); return o; };
   // a legend's left side: p, k′, k̇, x₁, f(x)
   function lhsRuns(yl, o) {
-    const m1 = /^([A-Za-zα-ωΑ-Ω])([̇′']?)(_[A-Za-z0-9]{1,8})?$/.exec(yl), m2 = /^([A-Za-zα-ωΑ-Ω]\w*)\(([A-Za-zα-ωΑ-Ω]\w*(?:_\w+)?)\)$/.exec(yl);
-    if (m1) { nameRuns(m1[1], 1, 0, o, m1[2] === '̇' ? 'd' : 0); if (m1[2] && m1[2] !== '̇') o.push(['′', 'r', 0.7, -0.36]); if (m1[3]) nameRuns('_' + m1[3].slice(1), 1, 0, o); }
+    const m1 = /^([A-Za-zα-ωΑ-Ω])([̇′']?)(_[A-Za-z0-9]{1,8})?(\^[A-Za-z*-])?$/.exec(yl), m2 = /^([A-Za-zα-ωΑ-Ω]\w*)\(([A-Za-zα-ωΑ-Ω]\w*(?:_\w+)?)\)$/.exec(yl);
+    if (m1 && m1[4]) nameRuns(m1[1] + (m1[3] || '') + m1[4], 1, 0, o);
+    else if (m1) { nameRuns(m1[1], 1, 0, o, m1[2] === '̇' ? 'd' : 0); if (m1[2] && m1[2] !== '̇') o.push(['′', 'r', 0.7, -0.36]); if (m1[3]) nameRuns('_' + m1[3].slice(1), 1, 0, o); }
     else if (m2) { nameRuns(m2[1], 1, 0, o); o.push(['(', 'r', 1, 0]); nameRuns(m2[2], 1, 0, o); o.push([')', 'r', 1, 0]); }
     else nameRuns('y', 1, 0, o);
     return o;
   }
   // a label's words: a letter alone is a variable, Greek as Greek, words and numbers upright
   function labelRuns(t) {
-    const o = [], re = /([A-Za-zα-ωΑ-Ω])(̇?)(_[A-Za-z0-9]{1,8})?(?![A-Za-zα-ωΑ-Ω])|(−?\d+(?:\.\d+)?)|([A-Za-z]{2,})|([\s\S])/g;
+    const o = [], re = /([A-Za-zα-ωΑ-Ω])(̇?)(_[A-Za-z0-9]{1,8})?(\^[A-Za-z*-])?(?![A-Za-zα-ωΑ-Ω])|(−?\d+(?:\.\d+)?)|([A-Za-z]{2,})|([\s\S])/g;
     let m;
     while ((m = re.exec(String(t))) && o.length < 200) {
-      if (m[1]) nameRuns(m[1] + (m[3] || ''), 1, 0, o, m[2] ? 'd' : 0);
-      else if (m[4] || m[5]) o.push([m[4] || m[5], 'r', 1, 0]);
-      else if (m[6] === '′' || m[6] === '²' || m[6] === '³') o.push([m[6] === '′' ? '′' : m[6] === '²' ? '2' : '3', 'r', 0.7, -0.36]);
-      else o.push([m[6], /[α-ω]/.test(m[6]) ? 'i' : 'r', 1, 0]);
+      if (m[1]) nameRuns(m[1] + (m[3] || '') + (m[4] || ''), 1, 0, o, m[2] ? 'd' : 0);
+      else if (m[5] || m[6]) o.push([m[5] || m[6], 'r', 1, 0]);
+      else if (m[7] === '′' || m[7] === '²' || m[7] === '³') o.push([m[7] === '′' ? '′' : m[7] === '²' ? '2' : '3', 'r', 0.7, -0.36]);
+      else o.push([m[7], /[α-ω]/.test(m[7]) ? 'i' : 'r', 1, 0]);
     }
     return o;
   }
@@ -1080,6 +1178,7 @@ export function graphKit() {
       const ry = by + r[3] * px, rw = g.measureText(r[0]).width;
       g.fillText(r[0], cx, ry);
       if (r[4] === 'd') { g.beginPath(); g.arc(cx + rw * 0.62, ry - 0.8 * px * r[2], 0.06 * px * r[2] + 0.5, 0, 2 * Math.PI); g.fill(); }
+      if (r[4] === 'b') { g.fillRect(cx + rw * 0.18, ry - 0.78 * px * r[2], rw * 0.72, Math.max(0.7, px * r[2] / 18)); }
       if (r[6]) over = over ? [over[0], cx + rw, Math.min(over[2], ry - 0.8 * px * r[2])] : [cx, cx + rw, ry - 0.8 * px * r[2]];
     });
     if (over) { g.lineWidth = Math.max(0.6, px / 20); g.strokeStyle = g.fillStyle; g.beginPath(); g.moveTo(over[0], over[2]); g.lineTo(over[1], over[2]); g.stroke(); }
@@ -1100,13 +1199,14 @@ export function graphKit() {
     const yt0 = ticks(y0, y1, Math.max(3, Math.round(H / 55)));
     // A short y label (k′, p, x₂) stands upright over its axis, in a line above the plot that
     // also holds the sliders' values; a longer one reads upwards beside the axis
-    const yl = s.y.label, ylR = yl ? labelRuns(yl) : null, ylW = yl ? runsW(g, ylR, 13, true) : 0;
+    // (flipped, the variable's axis is the vertical one)
+    const xl = s.flip ? s.y.label : s.x.label, yl = s.flip ? s.x.label : s.y.label, ylR = yl ? labelRuns(yl) : null, ylW = yl ? runsW(g, ylR, 13, true) : 0;
     const yShort = yl && !/\s/.test(yl) && ylW <= 40, head = s.sliders.length > 0 || yShort;
     let L = 14;
     for (const v of yt0.out) L = Math.max(L, tw(tickText(v, yt0.step), 12) + 12);
     if (yl && !yShort) L += 16;
     if (yShort) L = Math.max(L, ylW / 2 + 4);
-    const Rm = 14, B = 28 + (s.x.label ? 16 : 0), HB = 20, pw = Math.max(10, W - L - Rm);
+    const Rm = 14, B = 28 + (xl ? 16 : 0), HB = 20, pw = Math.max(10, W - L - Rm);
     // The plot below the lines over it (rows: how many the legend takes there, where it goes)
     let T, ph, X, Y;
     const frame = (rows) => {
@@ -1114,10 +1214,11 @@ export function graphKit() {
       ph = Math.max(10, H - T - B);
       [x0, x1] = R.X; [y0, y1] = R.Y;
       if (R.equal) {
-        // a circle drawn as a circle: the larger of the two scales for both
+        // a circle drawn as a circle: the larger of the two scales for both, the plot widened
+        // about its middle, or from its corner where both axes start at 0 or above (quantities)
         const sx = (x1 - x0) / pw, sy = (y1 - y0) / ph, k = Math.max(sx, sy);
-        const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-        x0 = cx - k * pw / 2; x1 = cx + k * pw / 2; y0 = cy - k * ph / 2; y1 = cy + k * ph / 2;
+        if (x0 >= 0 && y0 >= 0) { x1 = x0 + k * pw; y1 = y0 + k * ph; }
+        else { const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; x0 = cx - k * pw / 2; x1 = cx + k * pw / 2; y0 = cy - k * ph / 2; y1 = cy + k * ph / 2; }
       }
       X = (x) => L + (x - x0) / (x1 - x0) * pw; Y = (y) => T + ph - (y - y0) / (y1 - y0) * ph;
     };
@@ -1226,7 +1327,7 @@ export function graphKit() {
     for (const v of yt.out) { const p = Y(v); g.beginPath(); g.moveTo(L - 4, Math.round(p) + 0.5); g.lineTo(L, Math.round(p) + 0.5); g.stroke(); g.fillText(tickText(v, yt.step), L - 6, p); }
     // the axes' titles, as typeset labels
     g.fillStyle = INK;
-    if (s.x.label) { g.textAlign = 'center'; g.textBaseline = 'bottom'; put(g, labelRuns(s.x.label), () => g.tex.label(s.x.label), L + pw / 2, H - 2, 13); }
+    if (xl) { g.textAlign = 'center'; g.textBaseline = 'bottom'; put(g, labelRuns(xl), () => g.tex.label(xl), L + pw / 2, H - 2, 13); }
     if (yShort) { g.textAlign = 'center'; g.textBaseline = 'alphabetic'; put(g, ylR, () => g.tex.label(yl), L, HB, 13); }
     else if (yl) { g.save(); g.translate(12, T + ph / 2); g.rotate(-Math.PI / 2); g.textAlign = 'center'; g.textBaseline = 'middle'; put(g, ylR, () => g.tex.label(yl), 0, 0, 13); g.restore(); }
     // the data, clipped to the plot
@@ -1457,9 +1558,10 @@ export function graphKit() {
       const r = D.createElement('div'); r.className = 'rk-r';
       // (the name as the page sets it: x₁ with its 1 below)
       const lab = D.createElement('label'); lab.htmlFor = 'rk-' + k;
-      const nm = /^([^_]+)(?:_(.+))?$/.exec(q.name) || [q.name, q.name];
-      lab.append(nm[1]);
+      const nm = /^([^_^]+)(?:_([^^]+))?(?:\^(.))?$/.exec(q.name) || [q.name, q.name];
+      lab.append(nm[3] === '-' ? nm[1] + '\u0304' : nm[1]);
       if (nm[2]) { const sub = D.createElement('sub'); sub.textContent = nm[2]; lab.append(sub); }
+      if (nm[3] && nm[3] !== '-') { const sup = D.createElement('sup'); sup.textContent = nm[3] === '*' ? '∗' : nm[3]; lab.append(sup); }
       const inp = D.createElement('input'); inp.type = 'range'; inp.id = 'rk-' + k;
       inp.min = String(q.min); inp.max = String(q.max); inp.step = String(q.step); inp.value = String(q.value);
       const out = D.createElement('output'); out.htmlFor = inp.id; out.textContent = fmtStep(q.value, q.step);
@@ -1585,12 +1687,14 @@ export const kit = K;
 // ---- a formula written out again: as a reader types it, or as LaTeX -----------------------------
   // show(tree, tex): the text parse reads back to the same tree's values (test/graphs.test.mjs),
   // with the brackets it needs and no more; tex: LaTeX for the PDF's legend and the web page
-  const GREEK_TEX = Object.fromEntries(Object.entries(K.GREEK).filter(([k]) => !/^var/.test(k)).map(([k, v]) => [v, '\\' + k]));
+  const GREEK_TEX = Object.fromEntries(Object.entries(K.GREEK).filter(([k]) => !/^var/.test(k)).map(([k, v]) => [v, '\\' + k]).concat([['π', '\\pi']]));
   const TEXFN = { sin: 1, cos: 1, tan: 1, sec: 1, csc: 1, cot: 1, arcsin: 1, arccos: 1, arctan: 1, sinh: 1, cosh: 1, tanh: 1, exp: 1, ln: 1, log: 1, lg: 1, min: 1, max: 1 };
   function nameTex(n) {
-    const m = /^([^_]+)(?:_(.+))?$/.exec(n);
-    const base = [...m[1]].length === 1 ? (GREEK_TEX[m[1]] || m[1]) : '\\mathit{' + m[1].replace(/[α-ωΑ-Ω]/g, (c) => GREEK_TEX[c] || c) + '}';
-    return m[2] ? base + '_{' + m[2] + '}' : base;
+    const m = /^([^_^]+)(?:_([^^]+))?(?:\^(.))?$/.exec(n);
+    let base = [...m[1]].length === 1 ? (GREEK_TEX[m[1]] || m[1]) : '\\mathit{' + m[1].replace(/[α-ωΑ-Ω]/g, (c) => GREEK_TEX[c] || c) + '}';
+    // (u^- is ū; u^*, q^d, π^e their marks above)
+    if (m[3] === '-') base = '\\bar{' + base + '}';
+    return base + (m[2] ? '_{' + m[2] + '}' : '') + (m[3] && m[3] !== '-' ? '^{' + (m[3] === '*' ? '*' : m[3]) + '}' : '');
   }
   function numText(v, tex) {
     let t = String(v);
@@ -1613,6 +1717,9 @@ export const kit = K;
           if (n === 'abs') return '\\lvert ' + show(a[0], tex) + '\\rvert';
           if (n === 'frac') return tex === 2 ? P(a[0], 2) + '/' + P(a[1], 4) : '\\frac{' + show(a[0], tex) + '}{' + show(a[1], tex) + '}';
           if (n === 'factorial') return P(a[0], 5) + '!';
+          // (log typed alone is Desmos's base 10: the PDF says so, as \log is natural in a paper)
+          const LOGS = { log: a.length === 1 ? '\\log_{10}' : null, log10: '\\log_{10}', log2: '\\log_{2}', lg: '\\log_{10}', lb: '\\log_{2}' };
+          if (LOGS[n]) return LOGS[n] + '\\left(' + show(a[0], tex) + '\\right)';
           return (TEXFN[n] ? '\\' + n : '\\operatorname{' + n + '}') + '\\left(' + a.map((x) => show(x, tex)).join(', ') + '\\right)';
         }
         if (n === 'factorial') return P(a[0], 5) + '!';
@@ -1643,19 +1750,23 @@ export const kit = K;
   const texOf = (text, declared, mode = 1) => { try { return show(K.parse(text, declared), mode); } catch (e) { return null; } };
   const eqTexOf = (text, declared, mode = 1) => { try { const t = K.parseEq(text, declared); return t[0] === '-' && /=/.test(text) ? show(t[1], mode) + ' = ' + show(t[2], mode) : show(t, mode) + ' = 0'; } catch (e) { return null; } };
 
-// a label's LaTeX: a variable's name in math, Greek as Greek, a minus as a minus; words as words
+// a label's LaTeX: a variable's name in math, Greek as Greek, a minus as a minus; words as words.
+// Pieces of text and of math, neighbouring math joined into one formula ($k'$, not $k$$'$): a $
+// of the label's own is an escaped dollar sign, never the end of a formula
 function labelTex(t) {
   const out = [];
-  const re = /([A-Za-zα-ωΑ-Ω])(\u0307?)(_[A-Za-z0-9]{1,8})?(?![A-Za-zα-ωΑ-Ω])|(−?\d+(?:\.\d+)?)|([A-Za-z]{2,})|([\s\S])/g;
-  const SYM = { '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '$': '\\$', '&': '\\&', '#': '\\#', '%': '\\%', '_': '\\_', '^': '\\^{}', '~': '\\~{}', '−': '$-$', '²': '\\textsuperscript{2}', '³': '\\textsuperscript{3}', '·': '$\\cdot$', '…': '\\dots{}', '≤': '$\\le$', '≥': '$\\ge$', '×': '$\\times$', '′': "$'$" };
+  const add = (math, x) => { const l = out[out.length - 1]; if (l && l[0] === math) l[1] += x; else out.push([math, x]); };
+  const re = /([A-Za-zα-ωΑ-Ω])(̇?)(_[A-Za-z0-9]{1,8})?(\^[A-Za-z*-])?(?![A-Za-zα-ωΑ-Ω])|(−?\d+(?:\.\d+)?)|([A-Za-z]{2,})|([\s\S])/g;
+  const TXT = { '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '$': '\\$', '&': '\\&', '#': '\\#', '%': '\\%', '_': '\\_', '^': '\\^{}', '~': '\\~{}', '…': '\\dots{}', '²': '\\textsuperscript{2}', '³': '\\textsuperscript{3}' };
+  const MATH = { '−': '-', '·': '\\cdot ', '≤': '\\le ', '≥': '\\ge ', '×': '\\times ', '′': "'" };
   let m;
   while ((m = re.exec(String(t)))) {
-    if (m[1]) { const n = nameTex(m[1] + (m[3] || '')), sub = /_\{.*$/.exec(n); out.push('$' + (m[2] ? '\\dot{' + n.replace(/_\{.*$/, '') + '}' + (sub ? sub[0] : '') : n) + '$'); }
-    else if (m[4]) out.push('$' + m[4].replace('−', '-') + '$');
-    else if (m[5]) out.push(m[5]);
-    else { const c = m[6]; out.push(SYM[c] || (GREEK_TEX[c] ? '$' + GREEK_TEX[c] + '$' : /[\x20-\x7e\u00a0-\u00ff]/.test(c) ? c : '?')); }
+    if (m[1]) { const n = nameTex(m[1] + (m[3] || '') + (m[4] || '')); add(true, m[2] ? n.replace(/^(\\[a-z]+\{[^}]*\}|\\[A-Za-z]+|.)/, '\\dot{$1}') : n); }
+    else if (m[5]) add(true, m[5].replace('−', '-'));
+    else if (m[6]) add(false, m[6]);
+    else { const c = m[7]; if (MATH[c]) add(true, MATH[c]); else if (GREEK_TEX[c]) add(true, GREEK_TEX[c] + ' '); else add(false, TXT[c] || (/[\x20-\x7e -ÿ]/.test(c) ? c : '?')); }
   }
-  return out.join('').replace(/\$\$/g, '');
+  return out.map(([math, x]) => (math ? '$' + x.trim() + '$' : x)).join('');
 }
 
 // The LaTeX of a picture's texts, for the PDF's (PGFContext gives paint this as g.tex): a label's
@@ -1676,7 +1787,8 @@ const TEXER = {
 };
 // a legend's left side as LaTeX: p, k′, k̇, x_1, f(x)
 function lhsTex(yl) {
-  const m1 = /^([A-Za-zα-ωΑ-Ω])([\u0307′']?)(_[A-Za-z0-9]{1,8})?$/.exec(yl), m2 = /^([A-Za-zα-ωΑ-Ω]\w*)\(([A-Za-zα-ωΑ-Ω]\w*(?:_\w+)?)\)$/.exec(yl);
+  const m1 = /^([A-Za-zα-ωΑ-Ω])([\u0307′']?)(_[A-Za-z0-9]{1,8})?(\^[A-Za-z*-])?$/.exec(yl), m2 = /^([A-Za-zα-ωΑ-Ω]\w*)\(([A-Za-zα-ωΑ-Ω]\w*(?:_\w+)?)\)$/.exec(yl);
+  if (m1 && m1[4]) return nameTex(m1[1] + (m1[3] || '') + m1[4]);
   if (m1) return (m1[2] === '\u0307' ? '\\dot{' + nameTex(m1[1]) + '}' : nameTex(m1[1]) + (m1[2] ? "'" : '')) + (m1[3] ? '_{' + m1[3].slice(1) + '}' : '');
   return m2 ? nameTex(m2[1]) + '(' + nameTex(m2[2]) + ')' : 'y';
 }
