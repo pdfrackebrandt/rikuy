@@ -20,7 +20,7 @@ with KOMA-Script and memoir; and, where dist/tex holds a TeX tree, all of it com
 Run it alone with names to run some: python3 styles.py gallery design."""
 import os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import ROOT, SKELETON_HEAD, ROUTES, open_page, check, results, src, wait_src, click_text, select_text, load_doc, roundtrip, pressed, place
+from browser import ROOT, SKELETON_HEAD, ROUTES, open_page, check, results, src, wait_src, click_text, select_text, load_doc, roundtrip, pressed, place, PRINT_LAYOUT
 from ribbon import DOC, DIST, state, style, undo_is, TILES, WRAP, body, boxes
 from playwright.sync_api import sync_playwright
 
@@ -656,6 +656,8 @@ def open_phone(p, width, height, dark=False):
     viewport, as open_page serves it."""
     browser = p.chromium.launch(args=[a for a in os.environ.get('CHROME_ARGS', '').split() if a])
     ctx = browser.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=2, has_touch=True, is_mobile=True)
+    # (a phone's Print Layout, which this suite was written for: browser.py, PRINT_LAYOUT)
+    ctx.add_init_script(PRINT_LAYOUT)
     page = ctx.new_page()
     errors = []
     page.on('console', lambda m: errors.append(m.text) if m.type == 'error' and 'Failed to load resource' not in m.text else None)

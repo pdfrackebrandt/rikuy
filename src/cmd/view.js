@@ -48,6 +48,12 @@ register(
     when: always, on: viewIs('latex'), run: (app) => app.setView('latex') },
   { id: 'view-pdf', name: 'PDF view', el: 'sv-pdf', static: true, place: 'status', kind: 'toggle', title: 'PDF: TeX\'s PDF across the window, at the same place', synonyms: ['Read Mode', 'Reading view', 'PDF preview'],
     when: always, on: viewIs('pdf'), run: (app) => app.setView('pdf') },
+  // Mobile View, as Word's phone app has it: Web Layout's reflowed text at a size to read, the
+  // default on a window under 700 px; off is Print Layout, TeX's pages. One tap in the status bar,
+  // remembered on this device (prefs.narrowWeb, apart from a wide window's Web Layout)
+  { id: 'mobile-view', name: 'Mobile View', el: 'sv-mobile', static: true, place: 'status', only: 'narrow', kind: 'toggle',
+    title: 'Mobile View: the text at a size to read, its lines as wide as the screen (Web Layout). Off: the pages as TeX sets them (Print Layout)', synonyms: ['Web Layout', 'Print Layout', 'Reflow', 'Phone view', 'Reading size'],
+    when: always, on: (app) => viewIs('page')(app) && app.webOn(), run: (app) => { const on = !(viewIs('page')(app) && app.webOn()); app.setView('page'); app.setWeb(on); } },
   { id: 'zoom-slider', name: 'Zoom', el: 'st-zoom', role: 'slider', static: true, place: 'status', only: 'wide', title: 'Zoom: drag, or Ctrl and + or -', synonyms: ['Zoom slider', 'Magnification'],
     when: always, run: (app, args) => app.zoomTo((+args || 100) / 100, null) },
   { id: 'zoom-level', name: 'Zoom level', el: 'st-zoomv', static: true, place: 'status', only: 'wide', title: 'The zoom; a press shows the page at its actual size (Ctrl+0)', when: always, run: (app) => app.zoomTo(1, null) },
@@ -197,6 +203,8 @@ export const methods = {
   viewSync() {
     const v = this.view || 'page';
     for (const k of VIEWS) { const b = $('#sv-' + k); if (b) b.setAttribute('aria-pressed', k === v ? 'true' : 'false'); }
+    const m = $('#sv-mobile');
+    if (m) m.setAttribute('aria-pressed', v === 'page' && this.webOn() ? 'true' : 'false');
     this.zoomShow();
     this.rulerSoon();
   },
@@ -445,12 +453,16 @@ export const methods = {
   // ---- Web Layout: the text set as wide as the window, one long sheet, no headers or footers;
   // the lines are the browser's, so this is the one view that does not show TeX's line breaks
   webOn() { return cls().contains('pg-web'); },
+  // (a choice made on a window under 700 px is a phone's, prefs.narrowWeb: a phone opens in Mobile
+  // View until Print Layout is chosen there; a wide window keeps its own, prefs.web)
   setWeb(on) {
     on = !!on;
     if (on) { cls().remove('pg-draft', 'pg-side', 'pg-grid'); this.prefs.draft = false; this.prefs.pages = 0; }
     const was = this.webOn();
     cls().toggle('pg-web', on);
-    this.prefs.web = on; this.savePrefs();
+    if (narrowNow()) this.prefs.narrowWeb = on; else this.prefs.web = on;
+    this.savePrefs();
+    this.viewSync && this.viewSync();
     if (was !== on && this.model) { const c = this.caretNow(); this.computePx(); this.relayout(true); if (c && !c.ghost && document.activeElement !== this.root) this.restoreCaret(c.collapsed ? { f: c.f, p: c.a, bias: 1 } : { f: c.f, selA: c.a, selB: c.b }); }
     this.rulerSoon();
     this.ribbonSync();
@@ -540,12 +552,16 @@ export const methods = {
 };
 
 // a stranger's preferences are the person's own: kept as the page opened, nothing to check
+// (a window under 700 px as the page opens: a phone, which opens in Mobile View unless Print
+// Layout was chosen on it. Read as the page opens only: a desktop window made narrow keeps its view)
+const narrowNow = () => window.innerWidth < 700;
 function restorePrefs(app) {
   const P = app.prefs || {};
+  const web = (narrowNow() ? P.narrowWeb !== false : !!P.web) && !P.draft;
   if (P.draft) cls().add('pg-draft');
-  if (P.web && !P.draft) cls().add('pg-web');
+  if (web) cls().add('pg-web');
   if (P.darkPage) cls().add('dark-page');
-  if (P.pages === 'side' || P.pages === 'grid') cls().add(P.pages === 'side' ? 'pg-side' : 'pg-grid');
+  if (!web && (P.pages === 'side' || P.pages === 'grid')) cls().add(P.pages === 'side' ? 'pg-side' : 'pg-grid');
 }
 
 onInstall((app) => {
@@ -558,6 +574,8 @@ onInstall((app) => {
   document.addEventListener('selectionchange', () => { if (!app.prefs.ruler) return; clearTimeout(rt); rt = setTimeout(() => app.rulerSoon(), 90); });
   app.desk.addEventListener('scroll', () => { if (app.prefs.ruler) app.rulerSoon(); }, { passive: true });
   addEventListener('resize', () => { if (app.prefs.ruler) app.rulerSoon(); });
+  const mv = $('#sv-mobile');
+  if (mv) { mv.addEventListener('mousedown', (e) => e.preventDefault()); mv.addEventListener('click', () => app.runCommand('mobile-view')); }
   for (const k of VIEWS) {
     const b = $('#sv-' + k);
     if (!b) continue;
