@@ -308,6 +308,7 @@ body.file-open #rp-file .rb-dl::before { display: none; }
    out again when the view closes. Its Back button, Esc and any command run from it close it
    (src/ui/fileview.js). */
 body.file-open #main { flex: 0 0 0; height: 0; min-height: 0; overflow: hidden; }
+body.file-open #fr { display: none; }
 body.file-open #ribbon { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; align-items: flex-start; border-bottom: 0; }
 .rf-back { display: none; }
 body.file-open #rp-file .rf-back { display: inline-flex; align-self: flex-start; width: auto; gap: 8px; margin: 0 0 8px; padding: 0 12px 0 8px; font-weight: 500; }
