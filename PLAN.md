@@ -3409,9 +3409,11 @@ Tests:
     Options › Animations off nothing; a press or a key finishes any animation. Word's animated
     caret (`src/caret.js`, File › Options › Animated caret) glides 100 ms, blinks by a timer, and
     jumps where keys take over 40 ms to show. `test/motion.py` 59 checks; motion's callbacks at
-    most 3.7 ms; typing on `dev/bench/long`, keydown to next paint, 240 keys alternating
+    most 4.2 ms; typing on `dev/bench/long`, keydown to next paint, 240 keys alternating
     (`dev/bench_typing.py`): this build 55.6 ms median and 110 p95, caret off 53.9 and 109, main
-    56.2 and 122 (a loaded two core machine). The feature suites run with motion off
+    56.2 and 122; again after the agent work, 200 keys: 46.1 and 85.8, 46.7 and 80.4, 46.6 and
+    71.4 (a loaded two core machine: medians equal, p95 within its noise; there keys took over
+    40 ms to show, so the caret jumped as the browser's does). The feature suites run with motion off
     (`open_page`'s default; `RIKUY_MOTION=1` runs one with it). *Ready:* `docs/handoff/FUTURE.md`
     (where app.css switches to the tokens after PRs 79, 86 and 90, what to adopt next and when,
     and a local MCP server for Claude Code and Desktop over Rikuy's model, with a first sketch).
