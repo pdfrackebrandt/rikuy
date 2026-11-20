@@ -555,7 +555,9 @@ class App {
     // (prefs.phone: 'sheet' once the whole sheet was chosen with the zoom button there)
     this.textFit = z === 'fit' && this.prefs.phone !== 'sheet' && window.innerWidth <= 520;
     // (Web Layout on a phone: the text at its actual size, the lines as wide as the screen)
-    if (this.textFit && document.body.classList.contains('pg-web')) px = PX_PER_PT;
+    // (Mobile View, Web Layout under 700 px: the text at its actual size, whatever a phone's
+    // sheet or text block setting is; a zoom chosen there scales it)
+    if (z === 'fit' && document.body.classList.contains('pg-web') && window.innerWidth < 700) px = PX_PER_PT;
     else if (this.textFit) px = Math.min(PX_PER_PT * 1.25, Math.max(avail / P.pw, (this.desk.clientWidth - 12) / P.tw));
     else if (z === 'fit') px = Math.min(PX_PER_PT * 1.25, avail / P.pw);
     else px = PX_PER_PT * z;
@@ -4090,7 +4092,9 @@ class App {
     const z = this.prefs.zoom;
     // text block, actual size, whole sheet, and round again
     if (dir === 0) {
-      if (window.innerWidth > 520) this.prefs.zoom = 'fit';
+      // (in Mobile View: the text at its actual size, or a quarter larger to read)
+      if (window.innerWidth < 700 && document.body.classList.contains('pg-web')) this.prefs.zoom = z === 'fit' ? 1.25 : 'fit';
+      else if (window.innerWidth > 520) this.prefs.zoom = 'fit';
       else if (z !== 'fit') { this.prefs.zoom = 'fit'; this.prefs.phone = 'sheet'; }
       else if (this.prefs.phone === 'sheet') this.prefs.phone = 'text';
       else this.prefs.zoom = 1;
