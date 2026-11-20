@@ -204,6 +204,19 @@ def file_view(page, w):
     shot(page, f'file-home-{tag}')
     check(f'File\'s Home beside the commands: a blank page and every template as a page to press ({w})', h['home'] and h['home'][0] >= h['rail'] - 1 and h['tiles'][:2] == ['New blank document', 'Article template'] and len(h['tiles']) >= 8, h)
     check(f'and the documents kept here, each a press away: the one open before the template is there ({w})', 'Open Untitled' in h['recent'] or any(x.startswith('Open ') for x in h['recent']), h['recent'])
+    # N2: the keys in the view: Down along the column, Tab to the pages, the arrows across them, Tab to Recent
+    page.focus('#rf-back')
+    keys = []
+    for k in ('ArrowDown', 'ArrowDown', 'ArrowUp', 'Tab', 'ArrowRight', 'Tab', 'Tab'):
+        page.keyboard.press(k); page.wait_for_timeout(60)
+        keys.append(page.evaluate("document.activeElement.getAttribute('aria-label') || document.activeElement.id"))
+    check(f'in File the keys go along the column (Down, Up), Tab to the pages, Right along them, Tab to Recent and round to the column ({w})',
+          keys[0] == 'Blank document' and keys[1] == 'New from template' and keys[2] == 'Blank document' and keys[3] == 'New blank document' and keys[4] == 'Article template' and keys[5].startswith('Open ') and keys[6] == 'Blank document', keys)
+    # N3: a dialog opened from File by the keys and closed with Esc gives the focus back to its command
+    page.focus('#rf-props'); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    opened = dialog_open(page)
+    page.keyboard.press('Escape'); page.wait_for_timeout(250)
+    check(f'Properties opened from File by the keys and closed with Esc: the focus back on Properties ({w})', opened and page.evaluate("document.activeElement.id") == 'rf-props', page.evaluate("document.activeElement.id"))
     page.get_by_role('button', name='Report template', exact=True).click(); page.wait_for_timeout(1200)
     check(f'a press on a template\'s page makes the document and closes File ({w})', not page.evaluate(FILE_GEOM)['open'] and '\\documentclass' in src(page) and 'report' in src(page)[:200], src(page)[:120])
 

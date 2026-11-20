@@ -2475,7 +2475,10 @@ class App {
     const pageHad = had === this.root || (!matchMedia('(pointer: coarse)').matches && (!had || had === document.body || !!had.closest('#ribbon, #rb-top')));
     const back = at && !at.ghost && !at.crossFile && pageHad ? { c: at.collapsed ? { f: at.f, p: at.p } : { f: at.f, selA: at.a, selB: at.b }, text: this.files.get(at.f) } : null;
     document.body.appendChild(p);
-    this.pop = { el: p, anchor, anchorPos: null, onClose: null, session: 'pop' + Date.now(), back };
+    // (the control it was opened from, by the keys: the focus goes back to it when the page does
+    // not take it, as a dialog's opener does; File's commands under File's view)
+    const opener = had && had !== this.root && had !== document.body && had.closest && !had.closest('#pages') ? had : null;
+    this.pop = { el: p, anchor, anchorPos: null, onClose: null, session: 'pop' + Date.now(), back, opener };
     p.addEventListener('mousedown', (e) => e.stopPropagation());
     setTimeout(() => {
       this.popOutside = (e) => {
@@ -2559,6 +2562,7 @@ class App {
     // Share, Save and Help open from a button of the bar: closed from the keyboard, the focus
     // goes back to it (it fell to the page's start, and Tab began again from the menu button)
     if (P.anchor instanceof HTMLButtonElement && P.anchor.offsetParent && (!document.activeElement || document.activeElement === document.body)) P.anchor.focus({ preventScroll: true });
+    else if (!silent && P.opener && P.opener.isConnected && P.opener.offsetParent && !P.opener.closest('[inert]') && (!document.activeElement || document.activeElement === document.body)) P.opener.focus({ preventScroll: true });
   }
 
   // The text of the project's files the main file's preamble reads: \input and \include files,
