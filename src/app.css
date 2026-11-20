@@ -303,6 +303,17 @@ body.file-open #rp-file .rb.rb-fold .rb-grp > .btn:not(.icon) span:not(.sr), bod
 body.file-open .rb.rb-fold #rp-file .btn:not(.icon):not(.rb-gbtn) { width: auto; padding: 0 10px; }
 body.file-open #rp-file .rb-dl { position: static; background: transparent; padding-left: 0; }
 body.file-open #rp-file .rb-dl::before { display: none; }
+/* File as a view, as Word's: it takes the window between the tabs and the status bar and scrolls
+   when taller. The page keeps its width under it (#main is only made no taller), so it is not laid
+   out again when the view closes. Its Back button, Esc and any command run from it close it
+   (src/ui/fileview.js). */
+body.file-open #main { flex: 0 0 0; height: 0; min-height: 0; overflow: hidden; }
+body.file-open #ribbon { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; align-items: flex-start; border-bottom: 0; }
+.rf-back { display: none; }
+body.file-open #rp-file .rf-back { display: inline-flex; align-self: flex-start; width: auto; gap: 8px; margin: 0 0 8px; padding: 0 12px 0 8px; font-weight: 500; }
+body.file-open #rp-file .rf-back svg { width: 20px; height: 20px; }
+body.file-open #rp-file .rf-back span { display: inline !important; }
+@media (pointer: coarse) { body.file-open #rp-file .rf-back { min-height: 44px; } }
 @media (max-width: 860px) { #b-comments { display: none; } #qat-save { display: none; } }
 @media (max-width: 400px) { .mark { display: none; } }
 /* each style's look: the page's body, title and heading faces (the headings in the accent colour,

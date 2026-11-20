@@ -42,6 +42,7 @@ import { tabs, installRibbon } from './ribbon/tabs.js';
 import { methods as galleryMethods } from './ui/gallery.js';
 import { methods as searchMethods, installSearch } from './ui/search.js';
 import { methods as menuMethods, installMenu } from './ui/menu.js';
+import { installFileView } from './ui/fileview.js';
 import { installKeys } from './keys.js';
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
@@ -2455,9 +2456,10 @@ class App {
     // the caret goes to the blank paragraph, so typing goes on
     if (!silent && this.ghost && this.root.contains(this.ghost.el) && !this.caretNow()) this.caretToGhost();
     // the caret or selection it opened on, unless a step since changed that file (the step then
-    // put the caret where it belongs) or the focus already went somewhere
+    // put the caret where it belongs) or the focus already went somewhere; not while File's view
+    // covers the page (a menu of File's closed: the keys stay in the view, src/ui/fileview.js)
     const B = P.back, lost = !document.activeElement || document.activeElement === document.body;
-    if (!silent && !P.returnCaret && B && lost && this.files.get(B.c.f) === B.text) this.restoreCaret(B.c, true);
+    if (!silent && !P.returnCaret && B && lost && !document.body.classList.contains('file-open') && this.files.get(B.c.f) === B.text) this.restoreCaret(B.c, true);
     // Share, Save and Help open from a button of the bar: closed from the keyboard, the focus
     // goes back to it (it fell to the page's start, and Tab began again from the menu button)
     if (P.anchor instanceof HTMLButtonElement && P.anchor.offsetParent && (!document.activeElement || document.activeElement === document.body)) P.anchor.focus({ preventScroll: true });
@@ -5414,6 +5416,7 @@ installRibbon(app);
 installKeys(app, isMac, (id, at) => app.runCommand(id, null, at));
 installSearch(app);
 installMenu(app);
+installFileView(app);
 app.isBalanced = isBalanced;
 // for tests and the batches' own checks: the registry and the parts controls are made of
 app.cmds = { command, commands, describe, enabled, register, unregister, run: (id, args) => runCmd(app, id, args) };
