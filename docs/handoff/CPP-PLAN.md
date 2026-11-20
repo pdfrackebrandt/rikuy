@@ -13,7 +13,7 @@ tasks 52 (the parse port) and 53 (the incremental model build).
 
 | batch | what | where it gains | expected gain |
 |---|---|---|---|
-| B0 | JavaScript first: the preamble read once per text, the .bib parsed once per text, the undo record from the edits | every full model build; typing in the preamble; long bibliographies | measured: a full build of the 141 KB paper 47 to 19 ms, a keystroke in its `\title` 97 to 30 ms; 46 ms less per full build with a 2 MB .bib |
+| B0 (done, PLAN.md task 66) | JavaScript first: the preamble read once per text, the .bib parsed once per text, the undo record from the edits | every full model build; typing in the preamble; long bibliographies | measured: a full build of the 141 KB paper 47 to 19 ms, a keystroke in its `\title` 97 to 30 ms; 46 ms less per full build with a 2 MB .bib |
 | B1 | the source scanner in C++ (comments, the preamble's end, packages, the document's signatures, scripts), and the texts kept in the core | full builds, every keystroke | about 2.5 ms per full build after B0; 0.4 to 0.8 ms per keystroke |
 | B2 | the parse made incremental in the core, edits sent as splices | every keystroke on long documents, phones | est. a keystroke's model 1.8 to 0.5 ms (paper), 7.2 to 1.5 ms (400 KB); about 6 times that at a phone's speed |
 | B3 | the model's text runs (characters, source maps, word counts) in C++ | full builds, first loads | est. a full build 19 to 13 ms (paper) |

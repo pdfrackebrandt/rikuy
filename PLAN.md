@@ -3309,6 +3309,21 @@ Tests:
     the comments of the whole file again (more than half of a full build; 2/3 of a keystroke in
     its `\title`, 97 ms); memoizing them in a scratch copy made it 19 ms and 30 ms. Every full build
     also parses every .bib again (46 ms for a 2 MB one). B0, in JavaScript, fixes both first.
+    *B0 done* (branch `cpp-plan`): `src/scan.js` reads a text's comments and the preamble's end
+    once per text for preamble.js, looks.js and styles.js (each keeps its cap, so every answer is
+    the one before); the model keeps each .bib's entries with the text they came from; the undo
+    record compares from where the edits were. `dev/bench_native.mjs -n 9` (one core of the busy
+    machine, two runs each, with the core): the paper's keystroke model 44.1 and 26.1 ms before,
+    14.7 and 15.2 ms after; its first load 40.0 and 41.0 ms before, 35.5 and 29.7 after; a
+    keystroke in its `\title` 82 to 95 ms before, 29 to 30 after; with a 2 MB .bib 83 and 87 ms
+    before, 36 and 25 after; the undo record's diff 0.5 to 0.05 ms. Evidence: `test/scan.test.mjs`
+    (new, 5), `model.test.mjs`'s .bib check and `edge.test.mjs`'s undo check (7677 of 7677 steps),
+    each failing on a planted bug; `npm test` green (view.test.mjs V4's 50 ms timing failed once on
+    the busy machine and passed alone); `INCR_FULL=1 incremental.test.mjs` every one of 8000
+    edits equal, its fast path share check failing on main (4063ad1) the same way (334 of 7600,
+    the floor 380); `page.py long_document` 6 of 6 (11 ms for every command at a look at the
+    caret); `browser.py` 199 of 199. No LaTeX-examples clone on this machine: the corpus runs not
+    run.
 ## Rules
 
 - No status commits ("Note ...", "Record ...") and no log in this file. One commit per
