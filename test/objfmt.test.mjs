@@ -228,14 +228,15 @@ ok('review H1, M2: a comment in an option list and a list one key a line: the ed
   const c = chart.replace(', legend pos=north west]', ', legend pos=north west % top left\n]');
   assert.ok(O.chartInfo(c));
   const t = ap(c, O.chartSet(c, 'title', 'Q1'));
-  assert.equal(t, c.replace('north west % top left', 'north west, title={Q1} % top left'));
+  // (review N5: the comment stays the key's it was written after; the new key on a line of its own)
+  assert.equal(t, c.replace('north west % top left\n', 'north west, % top left\ntitle={Q1}\n'));
   assert.ok(D.readAxis(t) && O.chartInfo(t).title === 'Q1');
   assert.equal(ap(t, O.chartSet(t, 'title', '')), c);
   // one key a line: a new key on a line of its own, an old one taken off with its line
   const hand = chart.replace(/\\begin\{axis\}\[[^\]]*\]/, (m) => '\\begin{axis}[\n  ' + m.slice(13, -1).split(', ').join(',\n  ') + ' % the end\n]');
   assert.ok(O.chartInfo(hand), hand);
   const g = ap(hand, O.chartSet(hand, 'grid', true));
-  assert.equal(g, hand.replace('legend pos=north west % the end', 'legend pos=north west,\n  ymajorgrids % the end'));
+  assert.equal(g, hand.replace('legend pos=north west % the end\n', 'legend pos=north west, % the end\n  ymajorgrids\n'));
   assert.equal(ap(g, O.chartSet(g, 'grid', false)), hand);
   const w = ap(hand, O.chartSet(hand, 'width', 0.5));
   assert.equal(w, hand.replace('width=0.8\\linewidth', 'width=0.5\\linewidth'));
@@ -282,6 +283,31 @@ ok('review H2: an object in a center in a figure is in the figure; Position chan
     const ss = d.indexOf('\\begin{tikzpicture}'), ee = d.indexOf('\\end{tikzpicture}') + 17;
     assert.match(O.positionEdits(d, ss, ee, { mode: 'float' }).error, new RegExp(word), word);
   }
+});
+
+ok('review N5: a key taken off takes its own line or its comma, never a neighbour\'s comment; one put after a comment keeps it its line\'s', () => {
+  const body = '\\addplot coordinates {(A,1) (B,2)};\n\\end{axis}\n\\end{tikzpicture}';
+  const t = '\\begin{tikzpicture}\n\\begin{axis}[\n  ybar,\n  symbolic x coords={A,B},\n  xtick=data,\n  ymajorgrids, % grid lines help\n  nodes near coords % labels on bars\n]\n' + body;
+  const l = ap(t, O.chartSet(t, 'labels', false));
+  assert.equal(l, t.replace('ymajorgrids, % grid lines help\n  nodes near coords % labels on bars\n', 'ymajorgrids % grid lines help\n'));
+  // on again: the comma before the comment, the key on its own line (its own old comment went with it)
+  assert.equal(ap(l, O.chartSet(l, 'labels', true)), t.replace(' % labels on bars', ''));
+  const g = ap(t, O.chartSet(t, 'grid', false));
+  assert.equal(g, t.replace('  ymajorgrids, % grid lines help\n', ''));
+  // a drawing's options with a comment on every line
+  const s = '\\begin{tikzpicture}\n\\draw[thick, % the line\n  draw=red, % its colour\n  dashed % style\n] (0,0) rectangle (2,1);\n\\end{tikzpicture}';
+  const d = ap(s, O.shapeSet(s, 'dash', 'solid'));
+  assert.equal(d, s.replace('draw=red, % its colour\n  dashed % style\n', 'draw=red % its colour\n'));
+  assert.ok(D.readTikz(d));
+  const f = ap(s, O.shapeSet(s, 'fill', 'blue!20'));
+  assert.equal(f, s.replace('dashed % style\n', 'dashed, % style\n  fill=blue!20\n'));
+  assert.equal(ap(f, O.shapeSet(f, 'fill', 'none')), s);
+  // on one line: the entry and the comma before it; a comment after stays
+  assert.equal(O.listSet('a, b % c', (x) => x === 'b'), 'a % c');
+  assert.equal(O.listSet('a, b, % c\n d', (x) => x === 'b'), 'a, % c\n d');
+  // all of them taken off: nothing left between them
+  assert.equal(O.listSet('xscale=1, yscale=2', (x) => /scale/.test(x)), '');
+  assert.equal(O.listSet('a,\n  b, % B\n  c % C\n', (x) => x !== 'a'), 'a\n');
 });
 
 ok('review N1: Wrap on a float holding a center writes \\centering (no center in a wrapfigure), a table stays a table', () => {
