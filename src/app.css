@@ -2454,6 +2454,8 @@ html.pic-moving, html.pic-moving * { cursor: grabbing !important; }
 .it.idx-right.idx-dots .idx-lead { border-bottom: 1px dotted currentColor; transform: translateY(-.25em); }
 .it.idx-right .idx-p { white-space: nowrap; }
 @media (pointer: coarse) { .rb .btn:is([data-cmd="mark-citation"], [data-cmd="insert-toa"], [data-cmd="thesaurus"]) { min-width: 44px; min-height: 44px; } }
+/* (task 68: Update Table, Update Index and the authorities' Update Table, a finger's 44 px as the tab's other buttons) */
+@media (pointer: coarse) { .rb .btn:is([data-cmd="update-toc"], [data-cmd="update-tof"], [data-cmd="update-index"], [data-cmd="update-toa"]) { min-width: 44px; min-height: 44px; } }
 /* (the Spelling and Grammar pane's sentence: the interface's ink in the dark, as the pane is dark) */
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sp-ctx { color: var(--ink-ui); } :root:not([data-theme="light"]) .sp-ctx .sp-g { color: #8ab4ff; } }
 :root[data-theme="dark"] .sp-ctx { color: var(--ink-ui); }
