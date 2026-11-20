@@ -22,31 +22,63 @@ import { tikzCmds, readTikz, readAxis, chartTex, cycleColors, smartItems, colorO
 import { parse } from './parser.js';
 
 // ---- option lists ----------------------------------------------------------------------------------
-// the entries of a list "a, b={c,d}, e" with where each is (trimmed), braces kept whole
+// the entries of a list "a, b={c,d}, e" with where each is (trimmed), braces kept whole; a %
+// comment to its line's end is no part of an entry, and a comma in it no separator
 export function entries(t, base = 0) {
   const out = [];
-  let d = 0, s = 0;
-  const push = (e) => { let a = s, z = e; while (a < z && /\s/.test(t[a])) a++; while (z > a && /\s/.test(t[z - 1])) z--; if (z > a) out.push({ s: base + a, e: base + z, x: t.slice(a, z) }); };
+  let d = 0, s = 0, last = -1;   // last: the end of the entry's last character that is no space or comment
+  const push = (e) => {
+    let a = s;
+    // (past spaces and whole comment lines before the entry)
+    for (;;) { while (a < e && /\s/.test(t[a])) a++; if (t[a] === '%') { const nl = t.indexOf('\n', a); a = nl < 0 || nl > e ? e : nl + 1; continue; } break; }
+    const z = last >= a ? last : a;
+    if (z > a) out.push({ s: base + a, e: base + z, x: t.slice(a, z) });
+  };
   for (let i = 0; i < t.length && i < 20000; i++) {
     const c = t[i];
+    if (c === '%' && t[i - 1] !== '\\') { const nl = t.indexOf('\n', i); if (nl < 0) break; i = nl; continue; }
     if (c === '{') d++;
     else if (c === '}') d = Math.max(0, d - 1);
-    else if (c === ',' && d === 0) { push(i); s = i + 1; }
+    else if (c === ',' && d === 0) { push(i); s = i + 1; last = -1; continue; }
+    if (!/\s/.test(c)) last = i + 1;
   }
   push(t.length);
   return out;
 }
 // A list's text with the entries match() finds taken out and put (when given) in the place of the
-// first of them, or at the end
+// first of them, or after the last entry. Edited in place: every other character stays where it is,
+// comments and a list written one key a line included (an entry goes with one separator; a new one
+// comes after the last entry's own characters, before any space or comment after it, with the
+// separator the list already uses).
 export function listSet(t, match, put) {
   const E = entries(t);
-  const keep = [];
-  let at = -1;
-  for (const x of E) { if (match(x.x)) { if (at < 0) at = keep.length; continue; } keep.push(x.x); }
-  if (put != null) keep.splice(at < 0 ? keep.length : at, 0, put);
-  // (the list's own spacing: ", " unless it is written without spaces)
-  const sep = E.length > 1 && !/,\s/.test(t) ? ',' : ', ';
-  return keep.join(sep);
+  const hits = E.filter((x) => match(x.x));
+  const cuts = [];
+  if (hits.length && put != null) cuts.push({ s: hits[0].s, e: hits[0].e, t: put });
+  for (const h of hits.slice(put != null ? 1 : 0)) {
+    const k = E.indexOf(h);
+    // (with the separator after it, or, the last one, the separator before it)
+    if (k + 1 < E.length) cuts.push({ s: h.s, e: E[k + 1].s, t: '' });
+    else if (k > 0 && !hits.includes(E[k - 1])) cuts.push({ s: E[k - 1].e, e: h.e, t: '' });
+    else if (k > 0) cuts.push({ s: E[k - 1].e, e: h.e, t: '' });
+    else cuts.push({ s: h.s, e: h.e, t: '' });
+  }
+  if (!hits.length && put != null) {
+    if (!E.length) { const lead = /^\s*/.exec(t)[0].length; cuts.push({ s: lead, e: lead, t: put }); }
+    else {
+      const L = E[E.length - 1];
+      // (the separator the list uses between its last two entries: ", ", "," or a comma and a new line)
+      let sep = ', ';
+      if (E.length > 1) { const between = t.slice(E[E.length - 2].e, L.s).replace(/%[^\n]*/g, ''); sep = /\n/.test(between) ? ',' + between.slice(between.lastIndexOf('\n')) : /,\s/.test(between) ? ', ' : ','; }
+      cuts.push({ s: L.e, e: L.e, t: sep + put });
+    }
+  }
+  // (overlapping cuts of two neighbours: the later from the end of the earlier)
+  cuts.sort((x, y) => x.s - y.s);
+  for (let i = 1; i < cuts.length; i++) if (cuts[i].s < cuts[i - 1].e) cuts[i].s = cuts[i - 1].e;
+  let out = t;
+  for (const c of cuts.slice().reverse()) out = out.slice(0, c.s) + c.t + out.slice(Math.max(c.s, c.e));
+  return out;
 }
 const apply = (src, edits) => { for (const x of [...edits].sort((a, b) => b.s - a.s)) src = src.slice(0, x.s) + x.t + src.slice(x.e); return src; };
 export { apply as applyEdits };
@@ -91,9 +123,14 @@ export function shapeInfo(text) {
 }
 
 // one command's options written: its [list] replaced, added after the command's name, or taken off
+// (the smallest edit inside the brackets; the brackets go when nothing is left in them)
 function optsEdit(text, c, list) {
-  if (c.os >= 0) return list ? { s: c.os, e: c.oe, t: '[' + list + ']' } : { s: c.os, e: c.oe, t: '' };
-  if (!list) return null;
+  if (c.os >= 0) {
+    if (!list.trim()) return { s: c.os, e: c.oe, t: '' };
+    const d = diff(text.slice(c.os + 1, c.oe - 1), list)[0];
+    return d ? { s: c.os + 1 + d.s, e: c.os + 1 + d.e, t: d.t } : null;
+  }
+  if (!list.trim()) return null;
   const at = c.s + 1 + c.name.length;
   return { s: at, e: at, t: '[' + list + ']' };
 }
@@ -203,12 +240,13 @@ export function shapeSize(text, w, h) {
   // (a line along one axis has no size across it: its scale there follows the other)
   if (B.nw <= 1e-9) xs = ys; if (B.nh <= 1e-9) ys = xs;
   const cur = T.po ? text.slice(T.po.s + 1, T.po.e - 1) : '';
-  let list = listSet(cur, (x) => /^(x|y)?scale\s*=/.test(x), null);
   const put = xs === ys ? (xs === 1 ? null : 'scale=' + xs) : 'xscale=' + xs + ', yscale=' + ys;
-  if (put) list = list ? list + ', ' + put : put;
+  const list = listSet(cur, (x) => /^(x|y)?scale\s*=/.test(x), put);
   if (list === cur) return [];
   const at = text.indexOf('\\begin{tikzpicture}') + 19;
-  return T.po ? [{ s: T.po.s, e: T.po.e, t: list ? '[' + list + ']' : '' }] : [{ s: at, e: at, t: '[' + list + ']' }];
+  if (!T.po) return [{ s: at, e: at, t: '[' + list + ']' }];
+  if (!list.trim()) return [{ s: T.po.s, e: T.po.e, t: '' }];
+  return diff(cur, list).map((x) => ({ s: T.po.s + 1 + x.s, e: T.po.s + 1 + x.e, t: x.t }));
 }
 
 // Bring Forward, Send Backward, Bring to Front, Send to Back: command k drawn later or earlier
@@ -220,20 +258,28 @@ export function shapeOrder(text, k, how) {
   const n = T.cmds.length;
   const to = how === 'forward' ? k + 1 : how === 'backward' ? k - 1 : how === 'front' ? n - 1 : how === 'back' ? 0 : -1;
   if (to < 0 || to >= n || to === k) return null;
-  // (each command with what follows it up to the next: its line's end)
-  const units = T.cmds.map((c, i) => text.slice(c.s, i + 1 < n ? T.cmds[i + 1].s : c.e));
-  const lastWs = /\s*$/.exec(units[n - 1])[0];
-  units[n - 1] = text.slice(T.cmds[n - 1].s, T.cmds[n - 1].e);
-  const tail = units.map((u) => /\s*$/.exec(u)[0]);
-  const gap = tail.find((x) => x) || '\n';
-  const body = units.map((u) => u.replace(/\s*$/, ''));
-  const order = [...Array(n).keys()];
-  order.splice(k, 1);
-  order.splice(to, 0, k);
   const lo = Math.min(k, to), hi = Math.max(k, to);
+  // each command a slot of whole lines: from its line's start to its last line's end, its own
+  // comment with it; the lines between slots stay. A command sharing a line with another moves
+  // nothing (its neighbour or a comment would go with it, or end up inside the comment).
+  const slot = (c) => {
+    const ls = text.lastIndexOf('\n', c.s - 1) + 1;
+    let le = text.indexOf('\n', c.e);
+    if (le < 0 || le > T.end) le = T.end;
+    const before = text.slice(ls, c.s), after = text.slice(c.e, le);
+    if (before.trim() || (after.trim() && !/^\s*%/.test(after))) return null;
+    return { s: ls, e: /\r$/.test(text.slice(ls, le)) ? le - 1 : le };
+  };
+  const slots = [];
+  for (let i = lo; i <= hi; i++) { const x = slot(T.cmds[i]); if (!x) return null; slots.push(x); }
+  const body = slots.map((x) => text.slice(x.s, x.e));
+  const order = [...Array(hi - lo + 1).keys()];
+  const from = k - lo;
+  order.splice(from, 1);
+  order.splice(to - lo, 0, from);
   let t = '';
-  for (let i = lo; i <= hi; i++) t += body[order[i]] + (i < hi ? (tail[i] || gap) : '');
-  return { edits: [{ s: T.cmds[lo].s, e: T.cmds[hi].e, t }], k: to, ws: lastWs };
+  for (let i = 0; i < slots.length; i++) t += body[order[i]] + (i + 1 < slots.length ? text.slice(slots[i].e, slots[i + 1].s) : '');
+  return { edits: [{ s: slots[0].s, e: slots[slots.length - 1].e, t }], k: to };
 }
 
 // ---- charts: Rikuy's pgfplots axis -------------------------------------------------------------------
@@ -275,6 +321,8 @@ function axisRange(text) {
   let d = 0;
   for (let j = i + 13; j < text.length && j < i + 4000; j++) {
     const c = text[j];
+    // (a ] in a comment ends nothing)
+    if (c === '%' && text[j - 1] !== '\\') { const nl = text.indexOf('\n', j); if (nl < 0) return null; j = nl; continue; }
     if (c === '{') d++; else if (c === '}') d--; else if (c === ']' && d === 0) return { s: i + 13, e: j };
   }
   return null;
@@ -296,7 +344,7 @@ export function chartSet(text, prop, value) {
   else if (prop === 'width') { const v = Math.round(parseFloat(value) * 100) / 100; if (!(v > 0.05 && v <= 1)) return null; list = listSet(list, keyIs('width'), 'width=' + v + '\\linewidth'); }
   else if (prop === 'height') { const v = Math.round(parseFloat(value) * 100) / 100; if (!(v >= 1 && v <= 30)) return null; list = listSet(list, keyIs('height'), 'height=' + v + 'cm'); }
   else return null;
-  return list === cur ? [] : [{ s: R.s, e: R.e, t: list }];
+  return diff(cur, list).map((x) => ({ s: R.s + x.s, e: R.s + x.e, t: x.t }));
 }
 // The chart written again (Change Chart Type, Switch Row/Column, Edit Data) with its settings kept;
 // a palette's cycle list rewritten for the new kind. One edit, over what differs.
@@ -401,7 +449,7 @@ function smartKey(text, key, put, eol) {
   if (list !== cur) {
     if (!I.set) edits.push({ s: I.ds, e: I.ds, t: '\\smartdiagramset{' + list + '}' + eol });
     else if (!list.trim()) edits.push({ s: I.set.s, e: I.ds, t: '' });
-    else edits.push({ s: I.set.is, e: I.set.ie, t: list });
+    else edits.push(...diff(cur, list).map((x) => ({ s: I.set.is + x.s, e: I.set.is + x.e, t: x.t })));
   }
   const want = hasColors(list);
   if (want && !I.reset) edits.push({ s: I.de, e: I.de, t: eol + '\\smartdiagramset{' + SMART_RESET + '}' });

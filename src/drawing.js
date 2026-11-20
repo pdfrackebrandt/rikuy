@@ -38,6 +38,14 @@ export function colorOf(t) {
 // builds on): { po: the picture's [options] { s, e } or null, end: where \end{tikzpicture} starts,
 // cmds: [{ name, s, e (after its ;), os, oe (its [options], -1 for none), rest: [s, e) of its path } ] },
 // or null where anything but those commands is in the body
+// the ] that closes the [ at i, past a comment's own ] (-1 where there is none before end)
+function closeBracket(text, i, end) {
+  for (let j = i + 1; j < end; j++) {
+    if (text[j] === '%' && text[j - 1] !== '\\') { const nl = text.indexOf('\n', j); if (nl < 0 || nl > end) return -1; j = nl; continue; }
+    if (text[j] === ']') return j;
+  }
+  return -1;
+}
 export function tikzCmds(text) {
   if (typeof text !== 'string' || text.length > MAX_TEXT) return null;
   const b = /^\s*\\begin\{tikzpicture\}/.exec(text);
@@ -57,7 +65,7 @@ export function tikzCmds(text) {
     i += c[0].length;
     while (text[i] === ' ' || text[i] === '\t') i++;
     let os = -1, oe = -1;
-    if (text[i] === '[') { const z = text.indexOf(']', i); if (z < 0 || z > end || z - i > 300) return null; os = i; oe = z + 1; i = z + 1; }
+    if (text[i] === '[') { const z = closeBracket(text, i, end); if (z < 0 || z - i > 600) return null; os = i; oe = z + 1; i = z + 1; }
     // (the ; that ends it, a comment's skipped)
     let j = i;
     while (j < end && text[j] !== ';') { if (text[j] === '%') { const nl = text.indexOf('\n', j); j = nl < 0 || nl > end ? end : nl; } else j++; }
@@ -103,7 +111,8 @@ export function readTikz(text) {
 const FONTS = { '\\tiny': 0.5, '\\scriptsize': 0.7, '\\footnotesize': 0.8, '\\small': 0.9, '\\normalsize': 1, '\\large': 1.2, '\\Large': 1.44, '\\LARGE': 1.73, '\\huge': 2.07, '\\Huge': 2.49 };
 function opts(t) {
   const o = {};
-  for (const raw of t.split(',')) {
+  // (a comment among the options, a list written one key a line: no part of any key)
+  for (const raw of t.replace(/(^|[^\\])%[^\n]*/g, '$1').split(',')) {
     const x = raw.trim();
     if (!x) continue;
     const kv = /^([a-z ]+?)\s*=\s*(.+)$/.exec(x);

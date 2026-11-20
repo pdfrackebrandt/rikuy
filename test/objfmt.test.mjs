@@ -222,4 +222,39 @@ ok('SmartArt Format: Shape Fill one colour for every item, in place of a palette
   assert.equal(O.smartFill(smart, 'nonsense'), null);
 });
 
+ok('review H1, M2: a comment in an option list and a list one key a line: the edit goes in place, nothing else moves', () => {
+  // a comment after the axis's last key: the new key before it, the ] after it untouched
+  const c = chart.replace(', legend pos=north west]', ', legend pos=north west % top left\n]');
+  assert.ok(O.chartInfo(c));
+  const t = ap(c, O.chartSet(c, 'title', 'Q1'));
+  assert.equal(t, c.replace('north west % top left', 'north west, title={Q1} % top left'));
+  assert.ok(D.readAxis(t) && O.chartInfo(t).title === 'Q1');
+  assert.equal(ap(t, O.chartSet(t, 'title', '')), c);
+  // one key a line: a new key on a line of its own, an old one taken off with its line
+  const hand = chart.replace(/\\begin\{axis\}\[[^\]]*\]/, (m) => '\\begin{axis}[\n  ' + m.slice(13, -1).split(', ').join(',\n  ') + ' % the end\n]');
+  assert.ok(O.chartInfo(hand), hand);
+  const g = ap(hand, O.chartSet(hand, 'grid', true));
+  assert.equal(g, hand.replace('legend pos=north west % the end', 'legend pos=north west,\n  ymajorgrids % the end'));
+  assert.equal(ap(g, O.chartSet(g, 'grid', false)), hand);
+  const w = ap(hand, O.chartSet(hand, 'width', 0.5));
+  assert.equal(w, hand.replace('width=0.8\\linewidth', 'width=0.5\\linewidth'));
+  // a drawing's options over several lines, a comment among them
+  const sh = '\\begin{tikzpicture}\n\\draw[thick,\n  draw=blue!60!black, % outline\n  fill=blue!20] (0,0) rectangle (2,1);\n\\end{tikzpicture}';
+  assert.ok(D.readTikz(sh));
+  const f = ap(sh, O.shapeSet(sh, 'fill', 'red'));
+  assert.equal(f, sh.replace('fill=blue!20', 'fill=red'));
+  const d = ap(sh, O.shapeSet(sh, 'dash', 'dashed'));
+  assert.equal(d, sh.replace('fill=blue!20]', 'fill=blue!20,\n  dashed]'));
+  assert.equal(ap(d, O.shapeSet(d, 'dash', 'solid')), sh);
+  // review L1: a command sharing its line with another, or followed by a comment, is ordered only
+  // where that cannot comment code out
+  const so = '\\begin{tikzpicture}\n\\draw (0,0) rectangle (1,1); % A\n\\draw (2,0) circle (0.5); \\node at (0,0) {x};\n\\end{tikzpicture}';
+  assert.equal(O.shapeOrder(so, 0, 'forward'), null);
+  const so2 = so.replace(' \\node at (0,0) {x};', '\n\\node at (0,0) {x};');
+  const r = O.shapeOrder(so2, 0, 'forward');
+  assert.equal(ap(so2, r.edits), '\\begin{tikzpicture}\n\\draw (2,0) circle (0.5);\n\\draw (0,0) rectangle (1,1); % A\n\\node at (0,0) {x};\n\\end{tikzpicture}');
+  // a comma in a comment is no separator
+  assert.deepEqual(O.entries('a, % b, c\n d').map((x) => x.x), ['a', 'd']);
+});
+
 console.log('objfmt: ' + n + ' groups passed');
