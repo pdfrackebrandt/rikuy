@@ -381,6 +381,12 @@ function fromField(v, st) {
   return lines.join(' \\\\\n');
 }
 
+// What the equation field is given, set as math. MathLive's setValue inserts in the mode at its
+// caret, and after a value whose caret ends in \text{...} every later value went in as one text
+// run: the LaTeX box's `a \text{s.t.} c` showed as \text{a \textbackslash text...}, and the next
+// key typed in the field wrote that run back into the source.
+const MATH_VALUE = { silenceNotifications: true, mode: 'math', format: 'latex' };
+
 class App {
   constructor() {
     this.files = new Map();
@@ -2561,11 +2567,23 @@ class App {
   }
   // force: for a box that would refuse (a formula's text that cannot be written, see
   // openMath) when another popover is opening over it; its text is then written as it is
+  // An arrow out of a formula in the line (attachField's move-out): Right puts the caret after it,
+  // Left before it, as Word's arrows leave an equation. A new formula still empty closes as Esc.
+  leaveMath(d) {
+    const P = this.pop;
+    if (!P) return;
+    P.leftBy = d;
+    this.closePop();
+  }
   closePop(silent, force) {
     if (!this.pop) return;
     const P = this.pop;
+    // (the equation field's last keys, which MathLive has not told its input yet: attachField)
+    if (P.pullField) P.pullField();
     if (!force && P.refuse && P.refuse()) return;
     if (P.onClose) { try { P.onClose(); } catch (e) { console.error(e); } }
+    // (left by Left at its start: the caret before the formula, where it stands once written)
+    if (P.leftBy === 'backward' && P.anchorPos && P.returnCaret) P.returnCaret = { f: P.anchorPos.f, p: P.anchorPos.s, bias: -1 };
     if (P.mathText) { try { this.ensurePackages(P.mathText(), P); } catch (e) { console.error(e); } }
     if (P.wordTyping) P.wordTyping.destroy();
     try { if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) window.mathVirtualKeyboard.hide(); } catch (e) { /* ignore */ }
@@ -2724,7 +2742,7 @@ class App {
     // read back how the field writes each one so it can be folded back to its name.
     const canon = {};
     for (const [k, d] of Object.entries(ops)) {
-      try { mf.setValue(d, { silenceNotifications: true }); canon[k] = modelValue(mf) || d; } catch (e) { canon[k] = d; }
+      try { mf.setValue(d, MATH_VALUE); canon[k] = modelValue(mf) || d; } catch (e) { canon[k] = d; }
     }
     let fieldMacros = [];
     try { fieldMacros = Object.keys(mf.macros).filter((k) => /^[A-Za-z]+$/.test(k) && !canon[k]); } catch (e) { fieldMacros = Object.keys(plain); }
@@ -2751,7 +2769,7 @@ class App {
     const same = window.katex ? makeSame(window.katex, strMacros, !!opts.display, R.si ? (t) => siInMath(t, R.si.opts, R.si.units, R.si.lang) : null) : null;
     let st = toField(ta.value, opts.display, opts.env(), D);
     st.same = same;
-    mf.setValue(st.latex, { silenceNotifications: true });
+    mf.setValue(st.latex, MATH_VALUE);
     st.ml = fieldRows(modelValue(mf), st.multi, D);
     // A formula the field cannot hold as written (an array with *{n}{c} columns, a command it
     // does not know) would come back changed after the first keystroke: keep it as source.
@@ -2778,7 +2796,7 @@ class App {
       if (fromMf) return;
       st = toField(ta.value, opts.display, opts.env(), D);
       st.same = same;
-      if (mf.getValue('latex') !== st.latex) mf.setValue(st.latex, { silenceNotifications: true });
+      if (mf.getValue('latex') !== st.latex) mf.setValue(st.latex, MATH_VALUE);
       st.ml = fieldRows(modelValue(mf), st.multi, D);
     };
     ta.addEventListener('input', sync);
@@ -2803,11 +2821,33 @@ class App {
       decimalComma,
       baseDepth: () => (st.multi ? 1 : 0)
     });
+    // MathLive tells its input a moment after the key: a formula typed fast and closed at once
+    // (x, Enter) closed the box empty and was lost. What the field holds is read into the LaTeX
+    // box first, whatever closes it.
+    const pull = () => {
+      try {
+        const tex = fromField(fieldValue(mf), st);
+        if (tex !== ta.value) { fromMf = true; ta.value = tex; ta.dispatchEvent(new Event('input')); fromMf = false; }
+      } catch (e) { /* as it was */ }
+    };
+    P.pullField = pull;
     mf.addEventListener('keydown', (e) => {
       if (wt.active() || mf.mode === 'latex') return;
-      if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); opts.onEscape(); }
-      else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) { e.preventDefault(); e.stopImmediatePropagation(); opts.onEnter(); }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); pull(); opts.onEscape(); }
+      else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) { e.preventDefault(); e.stopImmediatePropagation(); pull(); opts.onEnter(); }
     }, true);
+    // Right at a formula's end, Left at its start: the caret leaves it, as Word's does; the words
+    // typed next went into the formula, their spaces lost ($ihasincome$). Only in a formula in the
+    // line: in a display the arrows stay in it.
+    if (opts.onMoveOut) {
+      mf.addEventListener('move-out', (e) => {
+        const d = e.detail && e.detail.direction;
+        if ((d !== 'forward' && d !== 'backward') || wt.active() || mf.mode === 'latex') return;
+        e.preventDefault();
+        pull();
+        opts.onMoveOut(d);
+      });
+    }
     P.wordTyping = wt;
     P.field = mf;
     if (P.insertTex) this.eqWireField(P, mf, D, ta, () => focusField(mf));
@@ -2973,6 +3013,7 @@ class App {
         P.wordTyping.newRow();
       } : null,
       onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
+      onMoveOut: display ? null : (d) => { if (stay()) return; push.flush(); this.leaveMath(d); },
       onEscape: () => { push.flush(); this.closePop(); }
     });
   }
@@ -3115,6 +3156,7 @@ class App {
       display: false, initial: '', keepFocus: true,
       env: () => '$',
       onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
+      onMoveOut: (d) => { if (stay()) return; push.flush(); this.leaveMath(d); },
       onEscape: () => { push.flush(); this.closePop(); },
       onKey: (e) => {
         if (e.key === '$' && !ta.value && !ins) {
