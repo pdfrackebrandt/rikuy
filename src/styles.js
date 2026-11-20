@@ -83,8 +83,7 @@ export const VERB_UNSAFE = /[\\{}$&#^_~%]|\n[ \t]*\n/;
 
 // The \newtheorem line an environment of THM_STYLES needs here, with the \theoremstyle before it
 // where it has one, or '' where the preamble (or a file it reads) defines it already.
-export function thmLine(v, defined) {
-  const t = THM_STYLES[v];
+export function thmLine(v, defined, t = THM_STYLES[v]) {
   if (!t || v === 'proof' || defined) return '';
   return (t.style ? '\\theoremstyle{' + t.style + '}\n' : '') + '\\newtheorem{' + v + '}{' + t.name + '}';
 }

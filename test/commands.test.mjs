@@ -117,7 +117,8 @@ ok('Word\'s keys: each bound to its command, on Windows and Linux and on a Mac (
 });
 
 ok('the insert list keeps its items and their order', () => {
-  assert.deepEqual(paletteItems().map((x) => x.k), ['footnote', 'cite', 'ref', 'eqref', 'emph', 'textbf', 'texttt', 'equation', 'math', 'section', 'subsection', 'itemize', 'enumerate',
+  // (POWER-USER.md 10: align, align*, gather, cases and figure among the formulas)
+  assert.deepEqual(paletteItems().map((x) => x.k), ['footnote', 'cite', 'ref', 'eqref', 'emph', 'textbf', 'texttt', 'equation', 'align', 'align*', 'gather', 'cases', 'figure', 'math', 'section', 'subsection', 'itemize', 'enumerate',
     'description', 'proposition', 'lemma', 'theorem', 'definition', 'assumption', 'proof', 'label', 'url', 'ldots', 'newline',
     // (B11: the interactive graph and Insert › LaTeX's environments, after the items there were)
     'graph', 'center', 'flushleft', 'flushright', 'quote', 'quotation', 'verse', 'verbatim', 'minipage', 'abstract']);
