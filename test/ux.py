@@ -88,7 +88,25 @@ def phone_dialogs(page, w):
     check(f'on a phone, a dialog opened with the keyboard down leaves it down ({w})', page.evaluate("document.activeElement.id") != 'pages')
 
 
-PARTS = {'dialogs': (dialogs_give_the_caret_back, [(1400, False), (1400, True)]),
+def first_visit(page, w):
+    """Word opens a document with the caret at its start: the first key a newcomer types lands,
+    with no click first. Not on a phone, where focusing the page brings up the keyboard unasked."""
+    touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
+    shot(page, f'first-visit-{w.replace(" ", "").replace(",", "-")}')
+    top = page.evaluate("document.getElementById('desk').scrollTop")
+    before = src(page)
+    page.keyboard.type('Z'); page.wait_for_timeout(300)
+    if touch:
+        check(f'on a phone the first visit leaves the keyboard down: the page has no focus ({w})', page.evaluate("document.activeElement.id") != 'pages' and src(page) == before)
+        return
+    check(f'the first visit has the caret at the start of the first paragraph: a key typed lands there ({w})', src(page) != before and '\\begin{abstract}\nZYou are reading' in src(page), src(page)[:0] or [l for l in src(page).splitlines() if 'Z' in l][:2])
+    check(f'and the page did not scroll to it ({w})', page.evaluate("document.getElementById('desk').scrollTop") == top)
+    page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+    check(f'one Undo takes it back ({w})', src(page) == before)
+
+
+PARTS = {'first_visit': (first_visit, [(1366, False), (1920, True), (390, False), (360, True)]),
+         'dialogs': (dialogs_give_the_caret_back, [(1400, False), (1400, True)]),
          'phone_dialogs': (phone_dialogs, [(390, False), (360, True)])}
 
 

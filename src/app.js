@@ -1009,9 +1009,18 @@ class App {
     else if (rect.top < D.top + 20) this.desk.scrollTop -= D.top - rect.top + 80;
   }
 
+  // As Word opens a document with the caret at its start, so the first keys type: at the start
+  // of the first paragraph, without scrolling. Not on a touch screen, where focusing the page
+  // brings up the on-screen keyboard before anyone asked to type; not where something else
+  // already has the focus (a link's guest bar, a dialog).
   placeInitialCaret() {
     const first = this.root.querySelector('.it.p span.t');
-    if (!first || window.innerWidth < 700) return;
+    if (!first || !first.firstChild || window.innerWidth < 700 || matchMedia('(pointer: coarse)').matches) return;
+    const a = document.activeElement;
+    if (a && a !== document.body && a !== this.root) return;
+    if (this.caretNow()) return;
+    this.root.focus({ preventScroll: true });
+    getSelection().collapse(first.firstChild, 0);
   }
 
   // ---- edits & history ----------------------------------------------------------

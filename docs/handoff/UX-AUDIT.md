@@ -41,14 +41,15 @@ second) is the one number a Word user would call slow; it is the model's and the
   where its change put it; on a touch screen the page is focused again only if it had the focus
   (so the on-screen keyboard does not come up unasked). `test/ux.py dialogs`, `phone_dialogs`.
 
-### 2. The first visit has no caret: keys do nothing until a click (HIGH, small)
+### 2. The first visit has no caret: keys do nothing until a click (HIGH, small) — fixed
 
 - **Where:** the first visit and every reload; `placeInitialCaret` in `src/app.js` was empty from
   the start (it found the first paragraph and returned).
 - **Word:** a document opens with the caret at its start; typing works at once.
 - **Rikuy did:** the focus was on the body; a newcomer who types first sees nothing happen.
-- **Fix:** put the caret at the start of the first paragraph on wide screens (not on a phone,
-  where focusing brings up the keyboard), without scrolling.
+- **Status:** fixed ("Open with the caret at the start of the first paragraph"): on a desktop the
+  first key typed lands there, the page does not scroll, one Undo takes it back; on a touch screen
+  the page is left unfocused (the keyboard stays down). `test/ux.py first_visit`.
 
 ### 3. The File view does not behave as a view (HIGH, medium)
 
