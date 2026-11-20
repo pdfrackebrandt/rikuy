@@ -56,6 +56,33 @@ const tabbingOf = (app, at) => {
 const hasPre = once((src) => preambleEnd(src) >= 0);
 const widowsOn = once((src) => P.widowControl(src).on);
 const docOK = (app) => !!app.model && hasPre(app.src(app.main));
+// Hanging Indent's reading of a paragraph's start (U, src/parasrc.js unitOf): where its words
+// start, from its lead (\noindent, \hangindent on the words' line) or from its line, whichever
+// the model began the paragraph at
+const HANG = /^(\\noindent(?![A-Za-z])([ \t]*))?((?:\\hang(?:indent|after)[ \t]*(?:=[ \t]*)?[+-]?(?:\d+(?:\.\d*)?|\.\d+)[ \t]*(?:pt|bp|mm|cm|in|pc|em|ex)?[ \t]*)+)/;
+const starts = (src, U) => {
+  const out = [U.lead ? U.lead.s : U.s, U.s];
+  let ls = U.s; while (ls > 0 && src[ls - 1] !== '\n') ls--;
+  out.push(ls);
+  return [...new Set(out)].map((a) => { while (src[a] === ' ' || src[a] === '\t') a++; return a; });
+};
+function hangAt(src, U) {
+  for (const a of starts(src, U)) {
+    const m = HANG.exec(src.slice(a, a + 200));
+    if (!m || a + m[0].length > U.e) continue;
+    const hs = a + (m[1] ? m[1].length : 0);
+    return { ns: a, hs, he: a + m[0].length, ours: !!m[1] && m[2] === '' };
+  }
+  return null;
+}
+// just after a \noindent of the paragraph's own (and the spaces after it), or null
+function noindentAt(src, U) {
+  for (const a of starts(src, U)) {
+    const m = /^\\noindent(?![A-Za-z])[ \t]*/.exec(src.slice(a, a + 40));
+    if (m && a + m[0].length <= U.e) return a + m[0].length;
+  }
+  return null;
+}
 
 const ICON = {
   tabnext: '<path d="M3 10h11M10.5 6.5L14 10l-3.5 3.5M16.5 5v10"/>',
@@ -493,14 +520,21 @@ export const methods = {
   paraHanging(at) {
     const p = paraOf(this, at);
     if (!p || p.why || p.float) return null;
-    const u = p.units[0];
-    return P.firstLineOf(u.U, !!u.it.indent).special === 'hanging';
+    return !!hangAt(this.src(p.f), p.units[0].U);
   },
+  // On: \noindent\hangindent=1cm before the words, or \hangindent=1cm after a \noindent of the
+  // paragraph's own. Off: the \hangindent (and \hangafter) taken out, and the \noindent only
+  // where On wrote it with them (\noindent\hangindent, no space between): so On then Off gives
+  // the bytes back, and a hanging indent written by hand is read as on, and taken off whole.
   paraHangingToggle(at) {
     const p = paraOf(this, at);
     if (!p || p.why || p.float) { if (p && p.why) this.toast(p.why); return false; }
-    const on = !this.paraHanging(at);
-    return this.paraRun(p, [(text, V, u) => P.firstLineEdits(text, V, on ? 'hanging' : 'first', '1cm', { indented: !!u.it.indent })]);
+    return this.paraRun(p, [(text, V) => {
+      const h = hangAt(text, V);
+      if (h) return [{ s: h.ours ? h.ns : h.hs, e: h.he, t: '' }];
+      const n = noindentAt(text, V);
+      return n ? [{ s: n, e: n, t: '\\hangindent=1cm ' }] : [{ s: V.s, e: V.s, t: '\\noindent\\hangindent=1cm ' }];
+    }]);
   },
   paraSpacingMenu(at) {
     const p = paraOf(this, at), ok = !!p && !p.why && !p.float;
