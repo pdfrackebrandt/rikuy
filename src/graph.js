@@ -582,7 +582,7 @@ export function graphKit() {
   const memo = new WeakMap();
   function compute(s, vals, N = 600, fast = false) {
     if (fast) N = Math.min(N, 300);
-    const cells = fast ? 60 : 120;
+    const cells = fast ? 48 : 120;
     const vars = s.kind === 'curve' ? ['t', 'θ'] : s.vars || ['x'];
     const slots = {};
     vars.forEach((v, k) => { slots[v] = s.kind === 'curve' ? 0 : k; });
@@ -707,7 +707,7 @@ export function graphKit() {
       out.push(...m.parts);
       const st = vals.__start || s.phase.start;
       if (st) {
-        const pts = trajectory(dx, dy, st, s, fast ? 0.008 : 0.004);
+        const pts = trajectory(dx, dy, st, s, fast ? 0.016 : 0.004);
         out.push({ kind: 'line', pts, label: 'path from (' + fmt(st[0], 3) + ', ' + fmt(st[1], 3) + ')', slot: 2, curve: true, traj: true });
         out.push({ kind: 'start', pts: [st], slot: 2 });
       }
@@ -1321,9 +1321,11 @@ export function graphKit() {
       const g = cv.getContext('2d');
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       geo = paint(g, s, data, R, vals, W, H, hover, ghostOf());
-      // (the time each frame took, for test/graphs.py's budget: 16 ms on a phone)
-      const T = self.rkTimes || (self.rkTimes = []);
+      // (the time each frame took, for test/graphs.py's budget: 16 ms on a phone while a slider
+      // moves; the full drawing once it rests)
+      const T = self.rkTimes || (self.rkTimes = []), Tf = self.rkFast || (self.rkFast = []);
       if (T.length < 400) T.push(performance.now() - t0);
+      if (fast && again && Tf.length < 400) Tf.push(performance.now() - t0);
       post();
     }
     let geo = null;

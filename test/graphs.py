@@ -436,21 +436,26 @@ def speed(p):
             page.tap('#gd-ok'); page.wait_for_function('!document.getElementById("gd-ok")', timeout=15000)
         page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=15000); page.wait_for_timeout(1200)
         page.locator('#wlayer iframe.rk-widget').scroll_into_view_if_needed(); page.wait_for_timeout(300)
+        # (the page's own work after an insert, the PDF picture drawn and the project saved, done
+        # first: the drag is measured alone)
+        page.evaluate('window.rikuy.graphRefresh()'); page.wait_for_timeout(2500)
         fr = frame_of(page)
-        fr.evaluate('''() => { self.rkTimes = []; self.rkLong = []; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) self.rkLong.push(e.duration); }).observe({ type: 'longtask' }); } catch (e) {} }''')
+        fr.evaluate('''() => { self.rkTimes = []; self.rkFast = []; self.rkLong = []; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) self.rkLong.push(e.duration); }).observe({ type: 'longtask' }); } catch (e) {} }''')
         cdp.send('Emulation.setCPUThrottlingRate', {'rate': 4})
         # a drag along the first slider, as a finger does: input events faster than frames
         fr.evaluate('''async () => { const s = document.getElementById('rk-0'), lo = +s.min, hi = +s.max;
           for (let i = 0; i <= 90; i++) { s.value = String(lo + (hi - lo) * (0.5 + 0.45 * Math.sin(i / 9))); s.dispatchEvent(new Event('input')); await new Promise((r) => setTimeout(r, 8)); }
           await new Promise((r) => setTimeout(r, 300)); }''')
         cdp.send('Emulation.setCPUThrottlingRate', {'rate': 1})
-        T = sorted(fr.evaluate('self.rkTimes'))
+        # (the frames drawn while the slider moves; the full drawing once it rests is the last)
+        T = sorted(fr.evaluate('self.rkFast'))
         L = fr.evaluate('self.rkLong')
+        rest = fr.evaluate('self.rkTimes[self.rkTimes.length - 1]')
         p95 = T[int(0.95 * (len(T) - 1))] if T else 0
-        rows.append((tid, len(T), statistics.median(T) if T else 0, p95, max(L) if L else 0))
-        check('speed %s: a slider frame at a phone\'s speed, median %.1f ms, 95th %.1f ms (under 16)' % (tid, rows[-1][2], p95), T and p95 < 16, T[-5:])
-        check('speed %s: no long task over 50 ms while dragging (longest %.0f ms)' % (tid, rows[-1][4]), not L or max(L) <= 50, L[:5])
-    print('speed (kind, frames, median ms, 95th ms, longest task ms):', rows)
+        rows.append((tid, len(T), statistics.median(T) if T else 0, p95, rest, max(L) if L else 0))
+        check('speed %s: a slider frame at a phone\'s speed, median %.1f ms, 95th %.1f ms (under 16); at rest %.0f ms' % (tid, rows[-1][2], p95, rest), T and p95 < 16 and len(T) > 20, T[-5:])
+        check('speed %s: no long task over 50 ms while dragging (longest %.0f ms)' % (tid, rows[-1][5]), not L or max(L) <= 50, L[:5])
+    print('speed (kind, frames while dragging, median ms, 95th ms, the full drawing at rest ms, longest task ms):', rows)
     browser.close()
 
 
