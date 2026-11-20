@@ -28,9 +28,14 @@ export function openQuickOpen(app) {
   inp.type = 'text'; inp.id = 'pop-qo-q'; inp.placeholder = 'A file\'s name'; inp.autocomplete = 'off'; inp.spellcheck = false;
   inp.setAttribute('aria-label', 'File name');
   const list = mk('div', 'plist');
+  list.id = 'qo-list';
   list.setAttribute('role', 'listbox');
   list.setAttribute('aria-label', 'Files');
-  p.append(inp, list);
+  // (a combobox over its listbox, with a polite count, as the search box is: review M5)
+  inp.setAttribute('role', 'combobox'); inp.setAttribute('aria-controls', list.id); inp.setAttribute('aria-expanded', 'true'); inp.setAttribute('aria-autocomplete', 'list');
+  const live = mk('div', 'sr');
+  live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite');
+  p.append(inp, list, live);
   const onPage = (f) => app.renderer && app.renderer.blocks.find((B) => B.f === f && B.e > B.s);
   let rows = [], hi = 0;
   const go = async (r) => {
@@ -59,7 +64,9 @@ export function openQuickOpen(app) {
       b.addEventListener('click', () => go(r));
       list.append(b);
     });
-    if (rows[hi]) inp.setAttribute('aria-activedescendant', 'qo-' + hi);
+    if (rows[hi]) inp.setAttribute('aria-activedescendant', 'qo-' + hi); else inp.removeAttribute('aria-activedescendant');
+    const n = rows.filter((r) => !r.print).length;
+    live.textContent = n === 1 ? '1 file' : n + ' files';
     if (!rows.length) list.append(mk('div', 'empty', 'No file of this project by that name.'));
   };
   inp.addEventListener('input', () => { hi = 0; draw(); });

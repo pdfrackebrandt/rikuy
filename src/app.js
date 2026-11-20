@@ -3451,12 +3451,25 @@ class App {
   // and staying open, so the next words went into its search box.
   pickerKeys(input, list, more) {
     const items = () => [...list.querySelectorAll('.pitem')];
+    // (a combobox with its listbox, as the search box is, and a polite count: arrowing through the
+    // list said nothing to a screen reader; review M5)
+    list.id = list.id || 'pk-list';
+    list.setAttribute('role', 'listbox');
+    list.setAttribute('aria-label', input.getAttribute('aria-label') || 'Choices');
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-controls', list.id);
+    input.setAttribute('aria-expanded', 'true');
+    input.setAttribute('aria-autocomplete', 'list');
+    const live = document.createElement('div');
+    live.className = 'sr'; live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite');
+    list.after(live);
     const mark = (i) => {
       const all = items();
-      all.forEach((b, k) => { b.classList.toggle('on', k === i); b.id = 'pk-' + k; b.setAttribute('aria-selected', k === i ? 'true' : 'false'); });
-      if (all[i]) { all[i].scrollIntoView({ block: 'nearest' }); input.setAttribute('aria-activedescendant', all[i].id); }
+      all.forEach((b, k) => { b.classList.toggle('on', k === i); b.id = 'pk-' + k; b.setAttribute('role', 'option'); b.setAttribute('aria-selected', k === i ? 'true' : 'false'); b.tabIndex = -1; });
+      if (all[i]) { all[i].scrollIntoView({ block: 'nearest' }); input.setAttribute('aria-activedescendant', all[i].id); } else input.removeAttribute('aria-activedescendant');
     };
-    input.addEventListener('input', () => mark(0));
+    const count = () => { const n = items().length; live.textContent = n === 1 ? '1 match' : n + ' matches'; };
+    input.addEventListener('input', () => { mark(0); count(); });
     input.addEventListener('keydown', (e) => {
       const all = items(), i = all.findIndex((b) => b.classList.contains('on'));
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {

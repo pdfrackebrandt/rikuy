@@ -172,6 +172,12 @@ def pickers(page):
     typed(page, 'See '); typed(page, '\\', 300); typed(page, 'ref'); key(page, 'Enter', 400)
     rows = page.evaluate("[...document.querySelectorAll('.pitem')].map((b) => b.textContent)")
     check('pickers: each label shows what it names (the heading, the equation)', len(rows) == 2 and 'Intro' in rows[0] and 'β' in rows[1], rows)
+    # (review M5) a combobox over a listbox of options, and a polite count as the filter narrows
+    typed(page, 'eu')
+    aria = page.evaluate("""(() => { const i = document.getElementById('pop-refsearch'), l = document.getElementById(i.getAttribute('aria-controls') || '-'), live = l && l.parentElement.querySelector('[aria-live=polite]');
+      return [i.getAttribute('role'), l && l.getAttribute('role'), [...l.querySelectorAll('.pitem')].every((o) => o.getAttribute('role') === 'option'), !!document.getElementById(i.getAttribute('aria-activedescendant') || '-'), live && live.textContent]; })()""")
+    check('pickers: a combobox, a listbox of options, the highlighted one named, the count said', aria == ['combobox', 'listbox', True, True, '1 match'], aria)
+    page.keyboard.press('Backspace'); page.keyboard.press('Backspace'); page.wait_for_timeout(150)
     key(page, 'ArrowDown'); key(page, 'Enter', 400)
     check('pickers: Down, Enter takes the second label and closes the picker', 'See \\eqref{eq:euler}' in src(page) and active(page) == 'pages', (src(page)[src(page).find('See'):][:40], active(page)))
     typed(page, ' XYZ')
