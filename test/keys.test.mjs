@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { parseChord, matches, chordFor, lookup, bindings, chordText, keyLabel, keyTitle, keysInText, chordsOf, firstKey, KEPT } from '../src/keys.js';
 import { register, unregister } from '../src/commands.js';
+import '../src/cmd/index.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -173,17 +174,22 @@ ok('a tooltip names the command\'s key as this computer has it, once', () => {
 });
 
 ok('a Mac\'s own keys are bound on a Mac alone', () => {
-  register({ id: 't-m', name: 'M', keys: ['F9'], keysMac: ['Ctrl+Alt+L'] });
+  register({ id: 't-m', name: 'M', keys: ['Ctrl+Alt+Shift+F9'], keysMac: ['Ctrl+Alt+Shift+J'] });
   try {
-    assert.ok(bindings(true).some((b) => b.id === 't-m' && b.chord === 'Ctrl+Alt+L'));
-    assert.ok(!bindings(false).some((b) => b.id === 't-m' && b.chord === 'Ctrl+Alt+L'));
-    assert.deepEqual(lookup(ev('l', { meta: true, alt: true, code: 'KeyL' }), { mac: true, scope: 'page', can: () => true }), { hit: true, id: 't-m' });
+    assert.ok(bindings(true).some((b) => b.id === 't-m' && b.chord === 'Ctrl+Alt+Shift+J'));
+    assert.ok(!bindings(false).some((b) => b.id === 't-m' && b.chord === 'Ctrl+Alt+Shift+J'));
+    assert.deepEqual(lookup(ev('J', { meta: true, alt: true, shift: true, code: 'KeyJ' }), { mac: true, scope: 'page', can: (id) => id === 't-m' }), { hit: true, id: 't-m' });
   } finally { unregister('t-m'); }
 });
 
 ok('the keys the browser keeps: each a chord, its Word name and what to use, for one system or both', () => {
   for (const k of KEPT) { parseChord(k.keys); assert.ok(k.word && k.here && (!k.only || ['mac', 'win'].includes(k.only)), k.keys); }
   for (const k of ['Ctrl+N', 'Ctrl+W', 'Ctrl+T', 'F6', 'F12', 'Ctrl+=']) assert.ok(KEPT.some((x) => x.keys === k), k);
+});
+
+ok('on a Mac no key is Option (with or without Shift) and a character key alone: that types a character there (Ø, ¡, ≈)', () => {
+  const bad = bindings(true).filter((b) => b.k.alt && !b.k.mod && !b.k.control && !b.k.named).map((b) => b.id + ' ' + b.chord);
+  assert.deepEqual(bad, []);
 });
 
 console.log('keys: ' + n + ' groups of checks passed');

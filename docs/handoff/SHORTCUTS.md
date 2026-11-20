@@ -181,9 +181,9 @@ How to read it:
 | Ctrl+Alt+F | Cmd+Option+F | Footnote | `footnote` | works |
 | Ctrl+Alt+D | Cmd+Option+E | Endnote | `endnote` | works; Mac's chord added (Cmd+Option+D is the Dock) |
 | Alt+Shift+>, Alt+Shift+< | Control+Shift+>, < | Next, previous footnote | `next-footnote`, `previous-footnote` | added |
-| Alt+Shift+O | | Mark a contents entry | `toc-add-text` (the heading's place in the contents) | added |
-| Alt+Shift+X | | Mark an index entry | `mark-entry` | works |
-| Alt+Shift+I | | Mark a citation | `mark-citation` | works |
+| Alt+Shift+O | | Mark a contents entry | `toc-add-text` (the heading's place in the contents; Mac: Control+Shift+O, Option+Shift+O types Ø) | added |
+| Alt+Shift+X | | Mark an index entry | `mark-entry` (Mac: Control+Shift+X) | works; Mac's chord added |
+| Alt+Shift+I | | Mark a citation | `mark-citation` (Mac: Control+Shift+I) | works; Mac's chord added |
 | Alt+Shift+F12 | | The contents' button | | none |
 | Ctrl+Shift+F5 | Cmd+Shift+F5 | Bookmark | `bookmark` | added |
 | Ctrl+Alt+M | Cmd+Option+A | New comment | `comment-new` | works; Mac's chord added (Cmd+Option+M minimizes) |

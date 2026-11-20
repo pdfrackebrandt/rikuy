@@ -89,8 +89,9 @@ register(
   { id: 'toc-remove', name: 'Remove Table of Contents', title: 'Remove Table of Contents: \\tableofcontents taken out', synonyms: ['Delete table of contents'], when: (app) => app.tocSpots().length > 0, whyNot: () => 'The document has no table of contents', run: (app) => app.tocRemove() },
   { id: 'toc-add-text', name: 'Add Text', kind: 'menu', tab: 'references', group: 'toc', order: 20, label: 'Add Text', icon: ICON.addText,
     title: 'Add Text: the heading\'s level in the table of contents, or none (\\section*), or a short title for it (\\section[Short]{…})', synonyms: ['Do not show in table of contents', 'Heading level', 'Outline level', 'Short title'],
-    // (Word's Alt+Shift+O marks a contents entry: here the heading's place in the contents)
-    keys: ['Alt+Shift+O'],
+    // (Word's Alt+Shift+O marks a contents entry: here the heading's place in the contents. On a
+    // Mac Option and Shift type a character, Ø here: Control there, as for X and I below)
+    keys: ['Alt+Shift+O'], mac: { 'Alt+Shift+O': 'Control+Shift+O' },
     when: (app, at) => !!app.headingAt(at), whyNot: () => 'Put the caret in a heading first', run: (app, args, at) => app.addTextMenu(at) },
 
   // ---- References › Footnotes
@@ -146,7 +147,7 @@ register(
   { id: 'remove-list-of-tables', name: 'Remove List of Tables', synonyms: ['Delete list of tables'], when: (app) => app.listSpots('listoftables').length > 0, whyNot: () => 'The document has no list of tables', run: (app) => app.listRemove('listoftables') },
 
   // ---- References › Index
-  { id: 'mark-entry', name: 'Mark Entry', tab: 'references', group: 'index', order: 10, label: 'Mark Entry', icon: ICON.mark, keys: ['Alt+Shift+X'],
+  { id: 'mark-entry', name: 'Mark Entry', tab: 'references', group: 'index', order: 10, label: 'Mark Entry', icon: ICON.mark, keys: ['Alt+Shift+X'], mac: { 'Alt+Shift+X': 'Control+Shift+X' },
     title: 'Mark Entry (Alt+Shift+X): the selected words as an index entry (\\index{…}): its subentry, a cross reference, a page range, its page in bold or italic; Mark All for every place they stand',
     synonyms: ['Mark index entry', 'Index entry', 'index'], when: (app, at) => textAt(app, at) && !at.c.ghost && at.ctx !== 'ttl', whyNot: () => 'Select the words to index first', run: (app, args, at) => (args ? app.indexMark(at, args) : openMarkEntryDialog(app, at)) },
   { id: 'insert-index', name: 'Insert Index', tab: 'references', group: 'index', order: 20, label: 'Insert Index', icon: ICON.index,
@@ -154,7 +155,7 @@ register(
     when: (app, at) => !!at, whyNot: () => NOT_HERE, run: (app, args) => (args ? app.indexInsert(args) : openIndexDialog(app)) },
 
   // ---- References › Table of Authorities (R4): a second index, imakeidx's, under its categories
-  { id: 'mark-citation', name: 'Mark Citation', tab: 'references', group: 'authorities', order: 10, label: 'Mark Citation', icon: ICON.cite, keys: ['Alt+Shift+I'],
+  { id: 'mark-citation', name: 'Mark Citation', tab: 'references', group: 'authorities', order: 10, label: 'Mark Citation', icon: ICON.cite, keys: ['Alt+Shift+I'], mac: { 'Alt+Shift+I': 'Control+Shift+I' },
     title: 'Mark Citation (Alt+Shift+I): the selected words as a citation of the Table of Authorities, under its category (Cases, Statutes…): \\index[toa]{…}; Mark All for every place it stands',
     synonyms: ['Table of authorities', 'Legal citation', 'Mark authority', 'TA field'], when: (app, at) => textAt(app, at) && !at.c.ghost && at.ctx !== 'ttl' && !app.toaWhyNot(), whyNot: (app) => app.toaWhyNot() || 'Select the citation first',
     run: (app, args, at) => (args ? app.citationMark(at, args) : openMarkCitationDialog(app, at)) },

@@ -84,7 +84,7 @@ const WORD = [
   ['Ctrl+Alt+V', 'paste-special', 'Ctrl+Control+V'], ['Ctrl+F3', 'spike'], ['Ctrl+Shift+F3', 'spike-insert'], ['F2', 'move-text'], ['Shift+F2', 'copy-text'], ['Alt+F3', 'quick-part-save'],
   ['Alt+Shift+D', 'insert-date', 'Control+Shift+D'], ['Alt+Shift+T', 'insert-time', 'Control+Shift+T'], ['Alt+Shift+P', 'insert-page-field', 'Control+Shift+P'], ['Ctrl+F9', 'insert-field'],
   ['Ctrl+K', 'link'], ['Ctrl+Alt+F', 'footnote'], ['Ctrl+Alt+D', 'endnote', 'Ctrl+Alt+E'], ['Alt+Shift+>', 'next-footnote', 'Control+Shift+>'], ['Alt+Shift+<', 'previous-footnote', 'Control+Shift+<'],
-  ['Alt+Shift+O', 'toc-add-text'], ['Alt+Shift+X', 'mark-entry'], ['Alt+Shift+I', 'mark-citation'], ['Ctrl+Shift+F5', 'bookmark'],
+  ['Alt+Shift+O', 'toc-add-text', 'Control+Shift+O'], ['Alt+Shift+X', 'mark-entry', 'Control+Shift+X'], ['Alt+Shift+I', 'mark-citation', 'Control+Shift+I'], ['Ctrl+Shift+F5', 'bookmark'],
   ['Ctrl+Shift+E', 'track-changes'], ['F7', 'spelling'], ['Alt+F7', 'spelling-next'], ['Shift+F7', 'thesaurus'], ['Ctrl+Shift+G', 'word-count'],
   ['Ctrl+Alt+P', 'print-layout'], ['Ctrl+Alt+O', 'outline-view'], ['Ctrl+Alt+N', 'draft'], ['Alt+F9', 'latex-mode'], ['Shift+F9', 'show-latex'], ['Ctrl+F2', 'preview'],
   ['Ctrl+P', 'print'], ['Ctrl+Shift+F12', 'print'], ['Ctrl+F12', 'open'], ['Shift+F12', 'download-latex'], ['Alt+Shift+F2', 'download-latex'],
