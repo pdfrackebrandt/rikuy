@@ -27,11 +27,17 @@ export const WIDGET_CSP = "default-src 'none'; script-src 'unsafe-inline' 'unsaf
 // WIDGET_POLICY is WIDGET_CSP plus who may frame it: the page alone.
 export const WIDGET_POLICY = WIDGET_CSP + "; frame-ancestors 'self'";
 const SHELL = typeof __RIKUY_WIDGET_SHELL__ === 'undefined' ? '' : __RIKUY_WIDGET_SHELL__;
+// The shell writes what it is sent only for the page that framed it and only inside the sandbox:
+// a message from its parent window, sent by a page of its own origin (a site that frames a copy
+// served without the page's headers is another origin), and the shell's own origin opaque, which
+// it is only in a sandboxed frame (unsandboxed, the widget would run as the site itself, with its
+// storage and its parent page within reach). location.origin is the address's origin even in the
+// sandbox; self.origin is "null" there.
 function widgetShell() {
   'use strict';
   addEventListener('message', function (e) {
     var d = e.data;
-    if (e.source !== parent || !d || d.rikuy !== 'widget' || typeof d.html !== 'string') return;
+    if (e.source !== parent || e.origin !== location.origin || self.origin !== 'null' || !d || d.rikuy !== 'widget' || typeof d.html !== 'string') return;
     document.open();
     document.write(d.html);
     document.close();
@@ -55,6 +61,8 @@ function answerShell(e) {
 }
 // Run a widget's HTML in a sandboxed frame (allow-scripts alone), or run new HTML in it.
 export function runWidget(frame, html) {
+  // (scripts alone, set here as well as by each caller: the shell runs nothing outside the sandbox)
+  frame.setAttribute('sandbox', 'allow-scripts');
   const doc = widgetDoc(html);
   if (!SHELL) { frame.srcdoc = doc; return; }
   if (!shellsHeard) { shellsHeard = true; window.addEventListener('message', answerShell); }

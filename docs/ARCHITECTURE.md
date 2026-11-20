@@ -724,7 +724,8 @@ fallback from the widget's own generator.
   (`WIDGET_CSP` and `frame-ancestors 'self'`; the `/widget-*` rule of `headers()` takes the page's
   policy and `X-Frame-Options` away from it). It asks the page (`{rikuy: "shell"}`), the page
   answers only a frame of its own that it gave a widget, with that widget's document, and the shell
-  writes it over itself (`document.open()` drops the shell's listener with everything else). A
+  writes it over itself, only for a parent of its own origin and only in the sandbox (a site
+  framing a copy served without these headers, or a frame of it with no sandbox, gets nothing) (`document.open()` drops the shell's listener with everything else). A
   widget that reloads its frame gets the shell again, which asks again. The file is named by its
   hash and cached for a year; a sandboxed frame's request never reaches the service worker, so
   offline it comes from the HTTP cache, where the worker's install fetched it (`test/offline.py`).

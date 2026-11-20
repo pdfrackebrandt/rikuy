@@ -439,6 +439,35 @@ try:
         check('after a reload all six run again from what the browser kept, with no second click', wait_frames(page, 6) and not page.evaluate("document.querySelector('.w-run')"))
         check('no page errors with the large widgets', not errors, errors[:3])
         browser.close()
+
+        # (review M1) the shell writes a widget only for the page that framed it, inside the sandbox:
+        # a frame of it with no sandbox gets nothing written, and a site of its own that frames a
+        # copy served with none of the page's headers (any static server) gets nothing written
+        # either, sandboxed or not
+        import glob
+        SHELL = os.path.basename(glob.glob(os.path.join(serve.ROOT, 'widget-*.html'))[0])
+        PWN = '<script>var r = { origin: self.origin }; try { localStorage.setItem("pwned", "1"); r.ls = "written" } catch (e) { r.ls = e.name } parent.postMessage({ pwn: r }, "*")</script>'
+        TRY = '''([u, h, sb]) => new Promise((res) => { const f = document.createElement('iframe'); if (sb) f.setAttribute('sandbox', 'allow-scripts');
+          addEventListener('message', (e) => { if (e.source !== f.contentWindow) return; if (e.data && e.data.rikuy === 'shell') e.source.postMessage({ rikuy: 'widget', html: h }, '*'); else if (e.data && e.data.pwn) res(e.data.pwn); });
+          setTimeout(() => res('nothing written'), 2500); f.src = u; document.body.append(f); })'''
+        browser, page, errors = open_app(p)
+        check('M1: the page\'s own sandboxed frame of the shell runs a widget, with an opaque origin', page.evaluate(TRY, [URL + SHELL, PWN, True]).get('origin') == 'null')
+        check('M1: a frame of the shell with no sandbox gets nothing written (it would be the site itself)', page.evaluate(TRY, [URL + SHELL, PWN, False]) == 'nothing written')
+        browser.close()
+        b = p.chromium.launch()
+        ctx = b.new_context()
+        body = open(os.path.join(serve.ROOT, SHELL), 'rb').read()
+        def hostless(route):
+            u = route.request.url
+            if u == 'https://copy.test/' + SHELL: return route.fulfill(status=200, content_type='text/html; charset=utf-8', body=body)
+            if u == 'https://evil.test/': return route.fulfill(status=200, content_type='text/html; charset=utf-8', body='<!doctype html><body></body>')
+            return route.abort()
+        ctx.route('**/*', hostless)
+        ev = ctx.new_page()
+        ev.goto('https://evil.test/')
+        got = [ev.evaluate(TRY, ['https://copy.test/' + SHELL, PWN, sb]) for sb in (False, True)]
+        check('M1: another site framing a copy served without the page\'s headers gets nothing written, sandboxed or not', got == ['nothing written', 'nothing written'], got)
+        b.close()
 except Exception as e:
     # a run that stops part way has failed, whatever the checks before it said
     traceback.print_exc()
