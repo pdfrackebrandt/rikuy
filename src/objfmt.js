@@ -411,7 +411,9 @@ export function smartInfo(text) {
   while (/\s/.test(text[j] || '')) j++;
   SET_RE.lastIndex = j;
   const rm = SET_RE.exec(text);
-  if (rm && rm[1].trim() === SMART_RESET) reset = { s: de, e: SET_RE.lastIndex };
+  // (Rikuy's line that puts the colours of before back: marked by its comment, or the package's own
+  // list as the first ones were written)
+  if (rm) { const tail = /^% rikuy: colours back/.exec(text.slice(SET_RE.lastIndex, SET_RE.lastIndex + 30)); if (tail) reset = { s: de, e: SET_RE.lastIndex + tail[0].length }; else if (rm[1].trim() === SMART_RESET) reset = { s: de, e: SET_RE.lastIndex }; }
   const kind = m[2] != null ? m[2].trim() : 'flow diagram';
   const setText = set ? text.slice(set.is, set.ie) : '';
   const kv = entries(setText).map((x) => x.x);
@@ -441,7 +443,15 @@ export function smartItemsSet(text, items) {
 // A key of the diagram's \smartdiagramset set (null takes it off): the set made where there is none,
 // taken off when nothing is left in it; the line that puts the package's colours back follows a
 // set with colours, and goes with them
-function smartKey(text, key, put, eol) {
+// back: the colour list in effect before the diagram (the document's own, docColorList, or the
+// package's)
+export function docColorList(preamble) {
+  const re = /\\smartdiagramset\s*\{((?:[^{}]|\{[^{}]*\})*)\}/g;
+  let m, last = null;
+  while ((m = re.exec(String(preamble || '').slice(0, 200000)))) { const e = entries(m[1]).map((x) => x.x).filter((x) => /^set color list\s*=/.test(x)).pop(); if (e) last = e; }
+  return last || SMART_RESET;
+}
+function smartKey(text, key, put, eol, back = SMART_RESET) {
   const I = smartInfo(text);
   if (!I) return null;
   const cur = I.setText;
@@ -454,24 +464,24 @@ function smartKey(text, key, put, eol) {
     else edits.push(...diff(cur, list).map((x) => ({ s: I.set.is + x.s, e: I.set.is + x.e, t: x.t })));
   }
   const want = hasColors(list);
-  if (want && !I.reset) edits.push({ s: I.de, e: I.de, t: eol + '\\smartdiagramset{' + SMART_RESET + '}' });
+  if (want && !I.reset) edits.push({ s: I.de, e: I.de, t: eol + '\\smartdiagramset{' + back + '}% rikuy: colours back' });
   if (!want && I.reset) edits.push({ s: I.reset.s, e: I.reset.e, t: '' });
   return edits;
 }
-export function smartColors(text, id, eol = '\n') {
+export function smartColors(text, id, eol = '\n', back) {
   const P = SMART_PALETTES.find((p) => p[0] === id);
   if (!P) return null;
-  return smartKey(text, colorKeys, P[2] ? 'set color list={' + P[2].join(',') + '}' : null, eol);
+  return smartKey(text, colorKeys, P[2] ? 'set color list={' + P[2].join(',') + '}' : null, eol, back);
 }
 const colorKeys = (x) => /^(set|uniform) color list\s*=/.test(x);
 // Shape Fill: one colour for every item (smartdiagram's uniform color list, for its ten)
-export function smartFill(text, color, eol = '\n') {
+export function smartFill(text, color, eol = '\n', back) {
   if (!okColor(color)) return null;
-  return smartKey(text, colorKeys, 'uniform color list=' + color + ' for 10 items', eol);
+  return smartKey(text, colorKeys, 'uniform color list=' + color + ' for 10 items', eol, back);
 }
-export function smartBorder(text, color, eol = '\n') {
+export function smartBorder(text, color, eol = '\n', back) {
   if (color != null && !okColor(color)) return null;
-  return smartKey(text, 'border color', color ? 'border color=' + color : null, eol);
+  return smartKey(text, 'border color', color ? 'border color=' + color : null, eol, back);
 }
 // Reset Graphic: the \smartdiagramset and the line after it gone, the diagram as Insert wrote it
 export function smartResetEdits(text) {

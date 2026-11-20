@@ -292,7 +292,9 @@ function csvRows(text, sep) {
 // The end of a SmartArt with the line after it that puts smartdiagram's own colours back (SmartArt
 // Design's Change Colors writes it, src/objfmt.js SMART_RESET): the object a selection takes in
 const SMART_RESET_RE = /\s*\\smartdiagramset\s*\{\s*set color list=\{red!40,cyan!40,blue!40,green!40,orange!40,yellow!40,magenta!40,brown!40,violet!40,teal!40\}\s*\}/y;
-function smartEnd(src, e) { SMART_RESET_RE.lastIndex = e; return SMART_RESET_RE.test(src) ? SMART_RESET_RE.lastIndex : e; }
+// (or any list put back, marked by its comment: the document's own colours of before)
+const SMART_BACK_RE = /\s*\\smartdiagramset\s*\{(?:[^{}]|\{[^{}]*\})*\}% rikuy: colours back/y;
+function smartEnd(src, e) { SMART_BACK_RE.lastIndex = e; if (SMART_BACK_RE.test(src)) return SMART_BACK_RE.lastIndex; SMART_RESET_RE.lastIndex = e; return SMART_RESET_RE.test(src) ? SMART_RESET_RE.lastIndex : e; }
 
 export function buildModel(project, hint) {
   if (hint && hint.labels) {

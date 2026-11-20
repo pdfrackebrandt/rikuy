@@ -224,7 +224,7 @@ def smart(page):
     roundtrip(page, D, sel, cmd('smart-layout', {'kind': 'circular diagram:clockwise'}), D.replace('flow diagram:horizontal', 'circular diagram:clockwise'), off_command=cmd('smart-layout', {'kind': 'flow diagram:horizontal'}), label='Change Layout › Basic Cycle')
     C = D.replace('flow diagram:horizontal', 'circular diagram:clockwise')
     roundtrip(page, C, sel, 'smart-rtl', C.replace(':clockwise', ':counterclockwise'), forms=[C.replace(':clockwise', ':counterclockwise').replace('circular', ' circular').replace('[ circular', '[circular')], label='Right to Left')
-    teal = '\\smartdiagramset{set color list={teal!60,teal!52,teal!44,teal!37,teal!30,teal!24,teal!19,teal!14,teal!10,teal!7}}\n' + SD + '\n\\smartdiagramset{' + RESET + '}'
+    teal = '\\smartdiagramset{set color list={teal!60,teal!52,teal!44,teal!37,teal!30,teal!24,teal!19,teal!14,teal!10,teal!7}}\n' + SD + '\n\\smartdiagramset{' + RESET + '}% rikuy: colours back'
     roundtrip(page, D, sel, cmd('smart-colors', {'palette': 'teal'}), D.replace(SD, teal), off_command=cmd('smart-colors', {'palette': 'colorful'}), label='Change Colors › Teal (and the package\'s colours back after it)')
     load_doc(page, D.replace(SD, teal)); page.wait_for_timeout(300)
     check('the page draws the teal boxes, and no set\'s words as text', page.evaluate("document.querySelector('#pages svg.smart rect').getAttribute('fill')") == 'rgb(102,179,179)' and 'set color list' not in page.evaluate("document.getElementById('pages').innerText"))
@@ -232,7 +232,7 @@ def smart(page):
     check('a press on it takes in its set and the line after it (Reset Graphic can run)', not page.evaluate("document.getElementById('rc-smart-reset').disabled"))
     run_cmd(page, 'smart-reset')
     check('Reset Graphic takes both lines off: the bytes of before', src(page) == D, body(page))
-    roundtrip(page, D, sel, cmd('smart-fill', {'color': 'orange!50'}), D.replace(SD, '\\smartdiagramset{uniform color list=orange!50 for 10 items}\n' + SD + '\n\\smartdiagramset{' + RESET + '}'), off_command=cmd('smart-fill', {'color': None}), label='SmartArt Shape Fill')
+    roundtrip(page, D, sel, cmd('smart-fill', {'color': 'orange!50'}), D.replace(SD, '\\smartdiagramset{uniform color list=orange!50 for 10 items}\n' + SD + '\n\\smartdiagramset{' + RESET + '}% rikuy: colours back'), off_command=cmd('smart-fill', {'color': None}), label='SmartArt Shape Fill')
     roundtrip(page, D, sel, cmd('smart-outline', {'color': 'black'}), D.replace(SD, '\\smartdiagramset{border color=black}\n' + SD), off_command=cmd('smart-outline', {'color': None}), label='SmartArt Shape Outline')
     # the Text Pane by its dialog, from a double click
     load_doc(page, D); page.wait_for_timeout(300)
@@ -381,7 +381,7 @@ def phones(p):
 def shots(p):
     os.makedirs(SHOTS, exist_ok=True)
     D = DOC('Intro words before the objects.\n\n' + SHAPE.replace(RECT, RECT.replace('blue!20', 'teal!40').replace('blue!60!black', 'teal!75!black') + '\n\\node[align=center] at (1.5,1) {Start};') + '\n' + CHART.replace('legend pos=north west', 'legend pos=north west, title={Q1 sales}, ymajorgrids, nodes near coords') + '\n'
-            + SMART.replace('\\smartdiagram', '\\smartdiagramset{set color list={teal!60,teal!52,teal!44,teal!37,teal!30,teal!24,teal!19,teal!14,teal!10,teal!7}}\n\\smartdiagram').replace('Submit}', 'Submit}\n\\smartdiagramset{' + RESET + '}'))
+            + SMART.replace('\\smartdiagram', '\\smartdiagramset{set color list={teal!60,teal!52,teal!44,teal!37,teal!30,teal!24,teal!19,teal!14,teal!10,teal!7}}\n\\smartdiagram').replace('Submit}', 'Submit}\n\\smartdiagramset{' + RESET + '}% rikuy: colours back'))
     for w, hh, dark, touch in ((1920, 1080, False, False), (1366, 768, False, False), (1366, 768, True, False), (390, 844, False, True)):
         br, page, errs = open_page(p, w, hh, dark=dark, touch=touch)
         try:

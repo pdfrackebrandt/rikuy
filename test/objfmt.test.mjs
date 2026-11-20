@@ -194,7 +194,7 @@ ok('SmartArt: Change Layout, the items, Right to Left', () => {
 ok('SmartArt: Change Colors writes its set and the line that gives the package\'s colours back; Colorful and Reset Graphic take both off', () => {
   const a = ap(smart, O.smartColors(smart, 'teal'));
   const P = O.SMART_PALETTES.find((p) => p[0] === 'teal')[2];
-  assert.equal(a, '\\smartdiagramset{set color list={' + P.join(',') + '}}\n' + smart + '\n\\smartdiagramset{' + O.SMART_RESET + '}');
+  assert.equal(a, '\\smartdiagramset{set color list={' + P.join(',') + '}}\n' + smart + '\n\\smartdiagramset{' + O.SMART_RESET + '}% rikuy: colours back');
   const I = O.smartInfo(a);
   assert.equal(I.palette, 'teal'); assert.ok(I.reset);
   assert.deepEqual(D.smartLook(I.setText).colors.slice(0, 2), [D.colorOf('teal!60'), D.colorOf('teal!52')]);
@@ -217,7 +217,7 @@ ok('SmartArt: Change Colors writes its set and the line that gives the package\'
 ok('SmartArt Format: Shape Fill one colour for every item, in place of a palette; Colorful takes it off', () => {
   const a = ap(smart, O.smartColors(smart, 'blue'));
   const b = ap(a, O.smartFill(a, 'orange!50'));
-  assert.equal(b, '\\smartdiagramset{uniform color list=orange!50 for 10 items}\n' + smart + '\n\\smartdiagramset{' + O.SMART_RESET + '}');
+  assert.equal(b, '\\smartdiagramset{uniform color list=orange!50 for 10 items}\n' + smart + '\n\\smartdiagramset{' + O.SMART_RESET + '}% rikuy: colours back');
   assert.deepEqual(D.smartLook(O.smartInfo(b).setText).colors.slice(0, 2), [D.colorOf('orange!50'), D.colorOf('orange!50')]);
   assert.equal(ap(b, O.smartColors(b, 'colorful')), smart);
   assert.equal(O.smartFill(smart, 'nonsense'), null);
@@ -305,6 +305,20 @@ ok('review M8: & % $ _ # ^ ~ \\ { } escaped in a shape\'s words, a chart\'s titl
   assert.equal(sm, '\\smartdiagram[flow diagram:horizontal]{R\\&D, {50\\%, then \\$5}, a\\_b \\#1}');
   assert.deepEqual(O.smartInfo(sm).items, ['R&D', '50%, then $5', 'a_b #1']);
   assert.equal(D.unTeX(D.escTeX(w)), w);
+});
+
+ok('review L7: after a diagram with colours of its own, the document\'s own list comes back, not the package\'s', () => {
+  const pre = '\\usepackage{smartdiagram}\n\\smartdiagramset{border color=gray, set color list={blue!20,blue!30,blue!40}}\n';
+  const back = O.docColorList(pre);
+  assert.equal(back, 'set color list={blue!20,blue!30,blue!40}');
+  assert.equal(O.docColorList('\\usepackage{smartdiagram}'), O.SMART_RESET);
+  const a = ap(smart, O.smartColors(smart, 'teal', '\n', back));
+  assert.ok(a.endsWith('\n\\smartdiagramset{set color list={blue!20,blue!30,blue!40}}% rikuy: colours back'), a);
+  assert.ok(O.smartInfo(a).reset);
+  assert.equal(ap(a, O.smartColors(a, 'colorful', '\n', back)), smart);
+  // a set after a diagram with no comment is the next diagram's, never taken as this one's
+  const two = smart + '\n\\smartdiagramset{set color list={red!20}}';
+  assert.equal(O.smartInfo(two).reset, null);
 });
 
 console.log('objfmt: ' + n + ' groups passed');

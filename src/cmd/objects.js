@@ -131,7 +131,7 @@ register(
   SM('smart-fill', 'Shape Fill', { title: 'Shape Fill: one colour for every item (uniform color list)', tab: 'smart-format', group: 'styles', order: 10, kind: 'menu', icon: ICON.fill, label: 'Shape Fill',
     synonyms: ['Fill color', 'Item colour'], run: (app, args) => (args && 'color' in args ? app.smartFill(args.color) : app.objColorMenu('smart-fill')) }),
   SM('smart-outline', 'Shape Outline', { title: 'Shape Outline: the colour of the items\' borders (border color=…)', tab: 'smart-format', group: 'styles', order: 20, kind: 'menu', icon: ICON.outline, label: 'Shape Outline',
-    synonyms: ['Border color', 'Outline colour'], run: (app, args) => (args && 'color' in args ? app.objApply(O.smartBorder(sel(app, 'smart').text, args.color || null, app.objEol())) : app.objColorMenu('smart-outline')) }),
+    synonyms: ['Border color', 'Outline colour'], run: (app, args) => (args && 'color' in args ? app.objApply(O.smartBorder(sel(app, 'smart').text, args.color || null, app.objEol(), app.smartBack())) : app.objColorMenu('smart-outline')) }),
   SM('smart-source', 'Show SmartArt Source', { title: 'The diagram\'s smartdiagram, to edit as LaTeX', menu: { smart: 90 }, synonyms: ['Edit smartdiagram'], run: (app) => app.objSource() })
 );
 // ---- Arrange: Position and Align (a drawing, a chart, a SmartArt; Align a picture too) ---------------
@@ -262,7 +262,7 @@ export const methods = {
     if (!o) return false;
     const id = { fill: 'shape-fill', outline: 'shape-outline', 'smart-fill': 'smart-fill', 'smart-outline': 'smart-outline' }[what];
     const cur = what === 'fill' || what === 'outline' ? (O.shapeInfo(o.text) || { look: {} }).look[what] : what === 'smart-outline' ? (O.smartInfo(o.text) || {}).border : null;
-    const pick = (c) => (what === 'fill' || what === 'outline' ? this.shapeSet(what, c || 'none') : what === 'smart-fill' ? this.smartFill(c) : this.objApply(O.smartBorder(o.text, c, this.objEol())));
+    const pick = (c) => (what === 'fill' || what === 'outline' ? this.shapeSet(what, c || 'none') : what === 'smart-fill' ? this.smartFill(c) : this.objApply(O.smartBorder(o.text, c, this.objEol(), this.smartBack())));
     const items = [];
     if (what === 'fill') items.push({ name: 'No Fill', title: 'Nothing inside: the page shows through', checked: cur == null || cur === 'none', run: () => pick(null) });
     if (what === 'outline') items.push({ name: 'No Outline', title: 'No line round the shape (draw=none)', checked: cur === 'none', run: () => pick(null) });
@@ -442,8 +442,11 @@ export const methods = {
     openMenu(this, this.objAnchor('smart-layout'), O.SMART_LAYOUTS.map(([k, n, t]) => ({ name: n, title: t + ' (' + k + ')', radio: true, checked: I.kind === k, run: () => this.smartLayout(k) })), { label: 'Change Layout' });
     return true;
   },
-  smartColors(id) { const o = this.objHere(); return !!o && o.kind === 'smart' && this.objApply(O.smartColors(o.text, id, this.objEol())); },
-  smartFill(color) { const o = this.objHere(); if (!o || o.kind !== 'smart') return false; if (!color) return this.smartColors('colorful'); return this.objApply(O.smartFill(o.text, color, this.objEol())); },
+  // (the colours a diagram's own set gives way to after it: the document's \smartdiagramset in its
+  // preamble, or the package's: review L7)
+  smartBack() { const t = this.src(this.main), b = t.indexOf('\\begin{document}'); return O.docColorList(b > 0 ? t.slice(0, b) : ''); },
+  smartColors(id) { const o = this.objHere(); return !!o && o.kind === 'smart' && this.objApply(O.smartColors(o.text, id, this.objEol(), this.smartBack())); },
+  smartFill(color) { const o = this.objHere(); if (!o || o.kind !== 'smart') return false; if (!color) return this.smartColors('colorful'); return this.objApply(O.smartFill(o.text, color, this.objEol(), this.smartBack())); },
   smartColorsGallery() {
     const I = smartInfo(this);
     if (!I) return false;
