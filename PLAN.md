@@ -3312,6 +3312,31 @@ Tests:
     - 4 ran past the 240 s limit; corpus_full.py now records the worker's last steps for such a
       row, and pdfcompare.py the fonts on one side only for a mismatch (the run keeps no PDFs).
 
+    Second run, 44077385415 (2026-11-17, main cb4d5a8: the .bbl rule above and the packages):
+    998 papers, Rikuy compiled 960 (96.2 %), the desktop 962; of the desktop's 962 Rikuy compiled
+    960 (99.8 %); 872 of the 960 both compiled matched (90.8 %). Median compile 2.3 s, 90th
+    percentile 8.0 s. What is left, classified:
+    - 2 fail in Rikuy alone: `sourcesanspro.sty` and `foekfont.sty`, not in the tree yet (the
+      fbb and brushscr papers load them too).
+    - 31 fail on both, as in the first run (classes arXiv supplies beyond TeX Live, files missing
+      from the source, errors under TeX Live 2026); 5 ran past 240 s, their trails showing TeX run
+      again and again through shell escape (figures made by TeX) or a long biber run.
+    - About 43 of the 88 mismatches are the bibliography's: 31 papers ship a .bib lacking entries
+      their .bbl has, so Rikuy's bibtex run printed [?] where latexmk, which keeps a .bbl it finds
+      on a first run, printed numbers; 6 more print accents as combining characters pdfLaTeX
+      cannot set (bibtex rebuilt the .bbl from such a .bib), and several superscript or author
+      year citations print ? the same way. Fixed now: of the project's own .bbl and the one bibtex
+      or biber makes, the worker keeps the one that resolves more of the citations, the own one
+      on a tie in a project's first run (biber's only when its format version is the own one's);
+      and once bibtex's .bbl is taken, later runs no longer write the project's file over it (a
+      citation added after bibtex ran had gone back to [?] on the next run).
+    - 9 are the desktop's: it printed an older biblatex's .bbl as text ("author2hash=...") or
+      [?] where Rikuy, with biber's .bbl, printed the references.
+    - About 15 break lines at other places (pixels within 1 to 9 %; "cano-nique" against
+      "canon-ique", "Arbit-rum" against "Arbi-trum"); 4 differ in pixels only (text equal);
+      1502.01027 prints the hook name "begindocument/b..." on its first page; 2202.05036 lacks
+      cbfonts' `grmn` (the archaic koppa); the rest follow from a float or a page placed
+      elsewhere. Not classified further without the PDFs (the workflow keeps none).
 ## Rules
 
 - No status commits ("Note ...", "Record ...") and no log in this file. One commit per
