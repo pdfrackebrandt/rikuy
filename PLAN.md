@@ -3383,6 +3383,21 @@ Tests:
     `form-action 'self'` refuses to post, as `pdf.py` says to the user); `review.test.mjs` and
     `share.test.mjs` (base32 against RFC 4648's vectors, the forms read and refused).
 
+68. **A power user's keys** (branch power-keys, draft PR 87; `docs/handoff/POWER-USER.md`).
+    The owner's daily work done keys only and timed against Word, Overleaf and VS Code; the 18
+    findings ranked by cost, and the first fourteen fixed: a footnote left by Esc, Shift+F5, Right
+    and Ctrl+End; `$x^2$` and LaTeX typed into the equation field as in the source (braces,
+    `\mathbb`, `\text`, `\left(`, `\begin` carried on in the LaTeX box); Tab kept on the page
+    (first line indent, a gap; Esc then Tab leaves); the reference and citation pickers by the keys
+    with what each label names; Go to Label (F12, Ctrl+click) and back; Enter and F2 on a selected
+    formula; Ctrl+Shift+= in a new equation; Esc out of Read Mode; KeyTips for Home's Insert group
+    and Table's grid; Alt+Q by letters in order, initials and Recently used; the `\` list's valid
+    LaTeX (figure, align, gather, cases, theorems with their `\newtheorem`, Enter twice out of a
+    theorem); F4 repeating typing; Go to File on Ctrl+P (Print its first line); keys typed while
+    the page builds going in together (on dev/bench/long the page done 81 ms after a fast
+    typist's last key, 1605 ms before; at a phone's speed 306 ms, 2315 before). `test/power.py`
+    79 checks (54 fail on the build before), in CI. Open: findings 11, 12, 15 (PR 79's areas).
+
 ## Open tasks
 
 67. **Word's ribbon buttons Rikuy has no command for** (task 66 left them out). Insert: 3D

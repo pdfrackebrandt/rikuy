@@ -16,6 +16,20 @@ work in the two built copies, keys first, then keys and mouse, and timed it.
   **79** (outside the ribbon: bar, panes, dialogs, File view, status bar), or **core** (the editor
   itself: `app.js`, the math field, `commands.js`; neither PR).
 
+## Where it stands (branch `power-keys`, draft PR 87)
+
+Fixed, each with its part of `test/power.py` (79 checks; 54 of them fail on the build before):
+1 (footnotes), 2 (`$...$`), 3 (LaTeX in the equation field), 4 (keys typed while the page builds:
+the page done 81 ms after a fast typist's last key, 1605 ms before; 306 ms at a phone's speed, 2315
+before), 5 (KeyTips: PR 78 drew them on every tab; Home's own Insert group and Table's grid here),
+6 (Tab), 7 (the pickers), 8 (Go to Label, Enter and F2 on a formula), 9 (Alt+Q), 10 (the insert
+list), 13 (Ctrl+Shift+=), 14 (F4 typing), 16's Read Mode (Esc already left Focus), 17 (Go to File,
+Ctrl+P, with Print first), 18's TypeError. Each commit names its finding.
+
+Open, for PR 79's areas: 11 (the source pane's place and focus, its Ctrl+F, completion), 12 (the
+Quick Access Toolbar and custom keys), 15 (Alt+letter keys in dialogs), 16's Ctrl+P squeeze of the
+page (Ctrl+P is Go to File now), 18's Apply Styles caret and File view Tab order.
+
 ## The work, keys only
 
 A two page paper from Alt+Q › Blank document, measured per step (`paper.py`, `paper-ux.json`).
