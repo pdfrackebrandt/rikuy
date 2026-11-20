@@ -7,11 +7,15 @@ violation is printed with its place (tab, width, scheme), element and numbers.
 
   kind      every control, separator and group name says what kind it is (data-kind), and is drawn
             as that kind where its group has room (a large button large)
-  box       C1: one height per kind of control, one width for icons alone, an icon alone square
-  icon      C2, C3: icons 16 px on small controls and 32 on large ones, every line of them 1 px; one
-            colour per state: an enabled control never looks disabled, a disabled one one grey
+  box       C1: one height per kind of control (a field's box too: the ribbon's 24 px, 44 with
+            touch), one width for icons alone, an icon alone square
+  icon      C2, C3: icons 16 px on small controls and 32 on large ones, every icon drawn on the grid
+            of its pixels (its viewBox its drawn size: src/ui/icongrid.js), every line of every
+            shape 1 px (but a shape given a weight of its own, a border's); one colour per state:
+            an enabled control never looks disabled, a disabled one one grey
   type      C5: one size, weight and line height per kind of text; the ribbon's and the bar's
             button names and the group names 12 px regular
+  case      C11: every name the ribbon shows, a button's and a group's, in Word's title case
   group     C6, L4: every group named, its name centred under it, every name on one baseline; a
             folded group's button shows the group's name
   outside   L4: no control outside a group
@@ -25,14 +29,18 @@ violation is printed with its place (tab, width, scheme), element and numbers.
   stable    C12, L5: what cannot apply is disabled, never hidden; the caret's moving (a heading,
             words, a table's cell) moves no control and hides none
   collapse  L1: a group is never more folded at a wider width
-  focus     C13, D4: the focus ring only for the keyboard (none after a mouse press), drawn as an
+  focus     C13, D4: the focus ring only for the keyboard (none after a mouse press, nor on a
+            popover's button or its opener after the mouse opened and closed it), drawn as an
             outline at least 2 px wide, 3:1 against what is round it, and there in forced colours
   tooltip   C14: every control's tooltip says more than its name, and has its shortcut where it
-            has one
-  contrast  D1: text 4.5:1 and icons, the search box's line and the selected tab's mark 3:1
-            against what is behind them, light and dark (disabled controls aside)
-  forced    D4: under forced colours a pressed toggle and the selected tab still differ from the
-            others
+            has one, at every width and scheme
+  contrast  D1: text 4.5:1 and icons, the search box's line, a field's line, the selected tab's mark
+            and the bar's pressed mark 3:1 against what is behind them, light and dark (disabled
+            controls aside)
+  forced    D4: under forced colours the selected tab and a pressed toggle (the ribbon's, the bar's,
+            the status bar's) drawn apart from their other state, by the pixels of screenshots
+  surface   C9, C1: the menus and popovers the ribbon opens (a split button's menu, Frontier) with
+            corners of 8, their items 24 px tall (44 with touch), a dialog's buttons 32 (44)
   target    T1, T2: every control at least 24 by 24 px with a mouse (WCAG 2.2's 2.5.8, with its
             spacing exception), 44 by 44 with touch
   motion    M1, M2: every transition 0 to 300 ms in steps of 50; with reduced motion only fades
@@ -59,8 +67,8 @@ SCALE = [0, 2, 4, 6, 8, 10, 12, 16, 20, 24, 28, 32, 36, 40, 48]
 GAPS = [0, 1, 2, 4, 6, 8, 12, 16, 24]  # between groups and separators (a separator's 1 px among them)
 # where Word itself names one command two ways, by its tab: Insert's Comment, Review's New Comment
 WORD_NAMES = {'comment-new': {'Comment', 'New comment'}}
-RULES = ['kind', 'box', 'icon', 'type', 'group', 'outside', 'sep', 'space', 'radius', 'name', 'clip', 'overlap',
-         'stable', 'collapse', 'focus', 'tooltip', 'contrast', 'forced', 'target', 'motion', 'insert']
+RULES = ['kind', 'box', 'icon', 'type', 'case', 'group', 'outside', 'sep', 'space', 'radius', 'name', 'clip', 'overlap',
+         'stable', 'collapse', 'focus', 'tooltip', 'contrast', 'forced', 'surface', 'target', 'motion', 'insert']
 
 # colours as numbers, the colour behind an element, contrast: what the measures below share
 LIB = r"""
@@ -102,7 +110,7 @@ MEASURE = r"""(arg) => {
   const [tab, scope] = arg;
   """ + LIB + r"""
   const root = scope === 'bar' ? document.getElementById('bar') : scope === 'tabs' ? document.getElementById('rb-top') : scope === 'status' ? document.getElementById('status') : document.getElementById('rp-' + tab);
-  const out = { controls: [], groups: [], seps: [], gaps: [], clip: [], space: [], texts: [], untagged: [], motion: [], flags: [], box: R(scope === 'ribbon' ? document.getElementById('ribbon') : root || document.body) };
+  const out = { controls: [], groups: [], seps: [], gaps: [], clip: [], space: [], texts: [], untagged: [], motion: [], flags: [], svgs: [], names: [], marks: [], box: R(scope === 'ribbon' ? document.getElementById('ribbon') : root || document.body) };
   if (!root || !vis(root)) return out;
   const wide = matchMedia('(min-width: 900px) and (pointer: fine)').matches;
   const rb = document.getElementById('ribbon');
@@ -146,8 +154,14 @@ MEASURE = r"""(arg) => {
     // a field's line against what it stands on (WCAG 1.4.11)
     const fb = field ? [e.closest('.fbx'), e].find((x) => x && parseFloat(getComputedStyle(x).borderTopWidth) > 0) : null, fs = fb ? getComputedStyle(fb) : null;
     const fline = fb && fb.id !== 'rk-search' ? ratio(parse(fs.borderTopColor), bgOf(fb.parentElement)) : null;
-    out.controls.push({ fline, n: name(e), id: e.id, cmd: e.dataset.cmd || null, dk: e.dataset.kind || null, kind, st, ...b, color: cs.color, op: op(e),
-      icon, iconHTML: svg && !e.classList.contains('rb-x') ? svg.innerHTML.replace(/\s+/g, ' ') : null,
+    // (a field's own box, the one with the line round it, for its height)
+    const fh = fb ? Math.round(fb.getBoundingClientRect().height * 10) / 10 : null;
+    // (the name as shown, for its case: C11)
+    if (label && scope === 'ribbon' && !e.closest('.rb-gal')) out.names.push({ n: name(e), text: label.textContent.trim() });
+    // (a pressed toggle of the bar: the line under it against the bar, D5 and M4 of the review)
+    if (scope === 'bar' && st === 'pressed') { const a = getComputedStyle(e, '::after'); out.marks.push({ n: name(e), w: parseFloat(a.borderBottomWidth) || 0, cr: a.content !== 'none' ? ratio(parse(a.borderBottomColor), bg) : 0 }); }
+    out.controls.push({ fline, fh, n: name(e), id: e.id, cmd: e.dataset.cmd || null, dk: e.dataset.kind || null, kind, st, ...b, color: cs.color, op: op(e),
+      icon, iconHTML: svg && !e.classList.contains('rb-x') ? (svg.dataset.gm || svg.innerHTML).replace(/\s+/g, ' ') : null,
       caret: caret ? Math.round(caret.getBoundingClientRect().width * 10) / 10 : null,
       text: label ? { size: lab.fontSize, weight: lab.fontWeight, lh: lab.lineHeight, cr: ratio(seen(lab.color, label, bg), bg) } : null,
       title: e.title || (split && split.title) || '',
@@ -187,6 +201,7 @@ MEASURE = r"""(arg) => {
       // (the name's text, not its box: a box as wide as the group says nothing of where the words are)
       let tx = null;
       if (lab) { const rg = document.createRange(); rg.selectNodeContents(lab); const t = rg.getBoundingClientRect(); tx = { l: t.left, r: t.right, b: t.bottom }; }
+      if (lab) out.names.push({ n: 'group ' + (g.dataset.group || 'download'), text: lab.textContent.trim(), group: true });
       out.groups.push({ g: g.dataset.group || 'download', folded, state: folded ? 3 : g.classList.contains('nm') ? 2 : g.classList.contains('sm') ? 1 : 0,
         name: g.getAttribute('aria-label') || (g.querySelector('.rb-gbtn') || {}).ariaLabel || '', ...gb,
         lab: lab ? { text: lab.textContent.trim(), size: ls.fontSize, weight: ls.fontWeight, lh: ls.lineHeight, ...lr, tx, cr: ratio(seen(ls.color, lab, bgOf(lab)), bgOf(lab)) } : null, shown });
@@ -232,6 +247,21 @@ MEASURE = r"""(arg) => {
       out.texts.push({ n: '#' + e.id, kind: 'status', size: s.fontSize, weight: s.fontWeight, lh: s.lineHeight, cr: ratio(seen(s.color, e, bg), bg) });
     }
   }
+  // every icon drawn in this scope: its viewBox against the size it is drawn at (C2: drawn on the
+  // grid of its pixels), and the lines of every shape drawn without a weight of its own (C3: 1 px)
+  for (const svg of [...root.querySelectorAll('svg')].concat(dl ? [...dl.querySelectorAll('svg')] : [])) {
+    if (!vis(svg) || svg.closest('[role=menu], .pop, .srch-list')) continue;
+    const b = svg.getBoundingClientRect(); if (b.width < 1) continue;
+    const vb = svg.viewBox && svg.viewBox.baseVal ? [svg.viewBox.baseVal.width, svg.viewBox.baseVal.height] : null;
+    const lines = new Set();
+    for (const sh of svg.querySelectorAll('path, circle, rect, line, polyline, polygon, ellipse')) {
+      if (sh.hasAttribute('stroke-width')) continue;
+      const ss = getComputedStyle(sh); if (ss.stroke === 'none' || !(parseFloat(ss.strokeWidth) > 0)) continue;
+      lines.add(Math.round(parseFloat(ss.strokeWidth) * (ss.vectorEffect === 'non-scaling-stroke' ? 1 : b.width / (vb ? vb[0] : b.width)) * 100) / 100);
+    }
+    const host = svg.closest('button, .srch, label') || svg;
+    out.svgs.push({ n: name(host) + (svg.classList.length ? ' ' + svg.classList[0] : ''), w: Math.round(b.width * 10) / 10, h: Math.round(b.height * 10) / 10, vb, lines: [...lines] });
+  }
   // names cut short in buttons (and the document's name, the tabs')
   const texts = [...root.querySelectorAll('.btn span:not(.sr), .rb-ln, .rb-bl, .linkish')].concat(scope === 'bar' ? [...document.querySelectorAll('#docname')] : scope === 'tabs' ? [...root.querySelectorAll('.rb-tab')] : []);
   for (const s of texts) {
@@ -262,6 +292,47 @@ FOCUS = r"""(sel) => {
 FOCUS_SAMPLES = ['#rt-home', '#rp-home [data-cmd=paste]', '#rp-home [data-cmd=bold]', '#rp-home .rb-split > .rb-x', '#rp-home .fbx input',
                  '#rb-gallery .rb-tiles > button', '#rp-home .rb-launch, #rp-home .rb-launch-c', '.rb-dl button', '#rp-home .rb-gbtn',
                  '#b-share', '#qat-save', '#rk-search', '#sv-page', '#st-pages', '#rb-collapse']
+
+
+SMALL = {'a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'from', 'in', 'into', 'of', 'on', 'or', 'per', 'the', 'to', 'vs', 'with'}
+
+
+def title_case(text):
+    """Word's title case: every word's first letter a capital but the small words after the first
+    (a word that starts with no letter, a number or a sign, says nothing)."""
+    words = text.split()
+    return all(not w[0].isalpha() or w[0].isupper() or (i > 0 and w.lower() in SMALL) for i, w in enumerate(words))
+
+
+def png(data):
+    """A PNG as Playwright's screenshots make it (8 bit RGB or RGBA, not interlaced): width,
+    height and rows of (r, g, b) tuples, with the standard library alone."""
+    import struct, zlib
+    pos, w, h, ct, idat = 8, 0, 0, 0, b''
+    while pos < len(data):
+        n, typ = struct.unpack('>I4s', data[pos:pos + 8]); body = data[pos + 8:pos + 8 + n]; pos += 12 + n
+        if typ == b'IHDR': w, h, _, ct = struct.unpack('>IIBB', body[:10])
+        elif typ == b'IDAT': idat += body
+    bpp = 4 if ct == 6 else 3
+    raw, rows, prev, i = zlib.decompress(idat), [], bytearray(w * bpp), 0
+    for _ in range(h):
+        f = raw[i]; line = bytearray(raw[i + 1:i + 1 + w * bpp]); i += 1 + w * bpp
+        for x in range(len(line)):
+            a = line[x - bpp] if x >= bpp else 0; b = prev[x]; c = prev[x - bpp] if x >= bpp else 0
+            if f == 1: line[x] = (line[x] + a) & 255
+            elif f == 2: line[x] = (line[x] + b) & 255
+            elif f == 3: line[x] = (line[x] + (a + b) // 2) & 255
+            elif f == 4:
+                pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+                line[x] = (line[x] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        rows.append([tuple(line[x:x + 3]) for x in range(0, len(line), bpp)]); prev = line
+    return w, h, rows
+
+
+def drawn_apart(a, b):
+    """How many pixels two screenshots of one control, in two states, differ at."""
+    (w1, h1, r1), (w2, h2, r2) = png(a), png(b)
+    return sum(1 for y in range(min(h1, h2)) for x in range(min(w1, w2)) if sum(abs(p - q) for p, q in zip(r1[y][x], r2[y][x])) > 60)
 
 
 def rounded(v, q=0.5):
@@ -350,6 +421,17 @@ def judge(S, where, m, touch, scope, scheme):
                 S.bad('contrast', where, c['n'], "the field's line %.2f:1 < 3" % c['fline'])
         if c['kind'] not in ('field', 'gallery') and any(x not in (0, 4) for x in c['radius']):
             S.bad('radius', where, c['n'], 'corners %s, not 4 (or 0 where parts touch)' % c['radius'])
+    for v in m['svgs']:
+        if v['vb'] and (abs(v['vb'][0] - v['w']) > 0.5 or abs(v['vb'][1] - v['h']) > 0.5):
+            S.bad('icon', where, v['n'], 'drawn at %sx%s from a grid of %sx%s (C2: on the grid of its pixels)' % (v['w'], v['h'], v['vb'][0], v['vb'][1]))
+        if any(abs(x - 1) > 0.05 for x in v['lines']):
+            S.bad('icon', where, v['n'], 'lines %s px, not 1 (C3)' % v['lines'])
+    for x in m['names']:
+        if not title_case(x['text']):
+            S.bad('case', where, x['n'], '%r not in title case (C11)' % x['text'])
+    for x in m['marks']:
+        if scheme != 'forced' and (x['w'] < 2 or x['cr'] < 3):
+            S.bad('contrast', where, x['n'], 'pressed: its mark %s px, %.2f:1 against the bar (3:1, D5)' % (x['w'], x['cr']))
     for t in m['texts']:
         if scheme != 'forced' and t['cr'] < 4.5:
             S.bad('contrast', where, t['n'], 'text %.2f:1 < 4.5' % t['cr'])
@@ -428,6 +510,9 @@ def across(S, where, ms, chrome):
     for t, m in list(ms.items()) + list(chrome.items()):
         if not m: continue
         for c in m['controls']:
+            if c['kind'] == 'field' and c['fh']:
+                fk = 'field ' + ('ribbon' if t not in chrome else t)
+                kinds[fk][rounded(c['fh'], 1)] += 1; note(('h', fk, rounded(c['fh'], 1)), t, c)
             # (a corner arrow is named after its dialog; a check box shows no icon)
             if c['cmd'] and c['kind'] != 'launcher':
                 names[c['cmd']].add(c['n'])
@@ -466,6 +551,10 @@ def across(S, where, ms, chrome):
     for k, cnt in kinds.items():
         if len(cnt) > 1:
             S.bad('box', where, k + ' height', spread(cnt, lambda v: ('h', k, v)))
+    want = 44 if 'touch' in where else 24
+    for v in kinds.get('field ribbon', {}):
+        if abs(v - want) > 0.5:
+            S.bad('box', where, 'field ribbon height', '%s px, not %d (the small controls\' height)' % (v, want))
     for k, cnt in widths.items():
         if len(cnt) > 1:
             S.bad('box', where, k + ' width', spread(cnt, lambda v: ('w', k, v)))
@@ -532,6 +621,21 @@ def focus_rule(S, page, where, scheme):
             o = page.evaluate("() => { const a = document.activeElement; if (!a || a === document.body || a.id === 'pages') return null; const s = getComputedStyle(a); return [a.id || a.className, s.outlineStyle, s.outlineWidth, a.matches(':focus-visible')]; }")
             if o and o[1] != 'none' and o[2] != '0px':
                 S.bad('focus', where, sel, 'a ring after a mouse press: %s' % o)
+        # a popover opened and closed with the mouse: no ring on its button nor on its own (L1)
+        for opener, tab in (('#rc-frontier', 'references'), ('#b-share', None)):
+            if tab: page.evaluate('(t) => rikuy.selectTab(t)', tab); page.wait_for_timeout(150)
+            if not page.locator(opener).is_visible():
+                continue
+            page.click(opener); page.wait_for_timeout(250)
+            # (a field keeps its ring: it shows where typing goes)
+            ring = page.evaluate("() => { const a = document.activeElement; if (a.matches('input, textarea, select')) return null; const s = getComputedStyle(a); return s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0 ? (a.id || a.className || a.textContent) : null; }")
+            if ring:
+                S.bad('focus', where, opener, 'a ring on %r in the popover opened with the mouse' % ring)
+            x = page.locator('body > .pop .pop-x').first
+            if x.count(): x.click(); page.wait_for_timeout(250)
+            ring = page.evaluate("() => { const a = document.activeElement; const s = getComputedStyle(a); return s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0 ? (a.id || a.className) : null; }")
+            if ring:
+                S.bad('focus', where, opener, 'a ring on %r after the popover closed with the mouse' % ring)
     page.evaluate("rikuy.selectTab('home')"); page.wait_for_timeout(150)
     for sel in FOCUS_SAMPLES:
         page.keyboard.press('Shift')  # (the last input the keyboard's, as after Tab or an arrow)
@@ -573,7 +677,26 @@ def stable_rule(S, page, where):
 
 
 def forced_rule(S, page, where):
-    """Under forced colours a pressed toggle and the selected tab differ from the others."""
+    """Under forced colours a pressed toggle and the selected tab differ from the others, by what is
+    drawn: each screenshot in its two states (selected and not, pressed and not) apart at a line's
+    worth of pixels or more, not the weight of its name alone."""
+    def two(sel, on, off, label):
+        page.evaluate(off); page.wait_for_timeout(250)
+        a = page.locator(sel).screenshot()
+        page.evaluate(on); page.wait_for_timeout(250)
+        b = page.locator(sel).screenshot()
+        box = page.locator(sel).bounding_box()
+        n = drawn_apart(a, b)
+        if n < max(24, box['width'] * 2):
+            S.bad('forced', where, label, 'drawn %d pixels apart in its two states (a mark of 2 px across it at least)' % n)
+    page.mouse.move(2, 880)
+    two('#rt-home', "rikuy.selectTab('home')", "rikuy.selectTab('insert')", 'selected tab')
+    page.evaluate("rikuy.selectTab('home')")
+    two('#rp-home [data-cmd=show-marks]', "(!rikuy.marksOn) && rikuy.toggleMarks()", "rikuy.marksOn && rikuy.toggleMarks()", "Home's Show marks pressed")
+    two('#b-nav', 'rikuy.toggleNav(true)', 'rikuy.toggleNav(false)', 'the bar\'s Outline pressed')
+    page.evaluate('rikuy.toggleNav(false)')
+    two('#sv-page', "rikuy.setView('page')", "rikuy.setView('latex')", "the status bar's Page pressed")
+    page.evaluate("rikuy.setView('page')")
     r = page.evaluate("""() => {
       const look = (e) => { const s = getComputedStyle(e); return [s.backgroundColor, s.color, s.fontWeight, s.borderTopColor, s.outlineStyle].join(' '); };
       const tabs = [...document.querySelectorAll('.rb-tab:not([hidden])')];
@@ -588,6 +711,35 @@ def forced_rule(S, page, where):
       return on && off ? [on.getAttribute('aria-label'), look(on), look(off), getComputedStyle(on, '::before').content !== 'none'] : null; }""")
     if p and p[1] == p[2] and not p[3]:
         S.bad('forced', where, p[0], 'a pressed toggle looks as one not pressed: %s' % p[1])
+    page.evaluate("rikuy.selectTab('home')")
+
+
+def surface_rule(S, page, where, touch):
+    """The menus and popovers the ribbon opens: corners of 8 (C9), a dialog's buttons 32 px tall
+    (C1; 44 with touch), a menu's items 24 px or more (44 with touch)."""
+    click_text(page, 'A paragraph', 2); page.wait_for_timeout(150)
+    for tab, sel in (('home', '#rp-home .rb-split:has([data-cmd=bullets]) > .rb-x'), ('insert', '#rp-insert .rb-split:has([data-cmd=insert-table]) > .rb-x'), ('references', '#rc-frontier')):
+        page.evaluate('(t) => rikuy.selectTab(t)', tab); page.wait_for_timeout(150)
+        loc = page.locator(sel).first
+        if not loc.count() or not loc.is_visible() or not loc.is_enabled():
+            S.bad('surface', where, sel, 'not there to open'); continue
+        loc.click(); page.wait_for_timeout(300)
+        r = page.evaluate("""() => { const p = [...document.querySelectorAll('body > .pop, [role=menu]')].find((e) => e.getClientRects().length); if (!p) return null;
+          const s = getComputedStyle(p); const items = [...p.querySelectorAll('[role^=menuitem]')].filter((e) => e.getClientRects().length).map((e) => Math.round(e.getBoundingClientRect().height));
+          const btns = [...p.querySelectorAll('.btn, .pop-x')].filter((e) => e.getClientRects().length).map((e) => [e.textContent.trim() || e.getAttribute('aria-label'), Math.round(e.getBoundingClientRect().height)]);
+          return { radius: [s.borderTopLeftRadius, s.borderBottomRightRadius].map(parseFloat), items, btns, dialog: p.getAttribute('role') === 'dialog' }; }""")
+        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        if not r:
+            S.bad('surface', where, sel, 'no menu or popover opened'); continue
+        if any(x != 8 for x in r['radius']):
+            S.bad('surface', where, sel, 'corners %s, not 8 (C9)' % r['radius'])
+        low = [h for h in r['items'] if h < (44 if touch else 24)]
+        if low:
+            S.bad('surface', where, sel, 'menu items %s px tall (%d at least)' % (sorted(set(low)), 44 if touch else 24))
+        if r['dialog']:
+            bad = [b for b in r['btns'] if b[1] < (44 if touch else 32)]
+            if bad:
+                S.bad('surface', where, sel, "a dialog's buttons %s (C1: %d px)" % (bad, 44 if touch else 32))
     page.evaluate("rikuy.selectTab('home')")
 
 
@@ -641,7 +793,7 @@ def run():
     with sync_playwright() as p:
         for w in widths:
             touch = w in TOUCH
-            for scheme in (['light'] if touch else schemes):
+            for scheme in ([x for x in schemes if x != 'forced'] if touch else schemes):
                 browser, page, errors = open_page(p, width=w, height=900, dark=scheme == 'dark', touch=touch)
                 if scheme == 'forced':
                     page.emulate_media(forced_colors='active')
@@ -667,8 +819,10 @@ def run():
                     chrome[scope] = page.evaluate(MEASURE, ['', scope])
                     judge(S, '%s %s' % (scope, tag), chrome[scope], touch, scope, scheme)
                 across(S, 'all %s' % tag, ms, chrome)
-                if scheme == 'light' and w == widths[0] and 'tooltip' in rules:
+                if 'tooltip' in rules:
                     tooltip_rule(S, 'all %s' % tag, ms, chrome)
+                if 'surface' in rules and scheme != 'forced' and w in (1366, 1180, 390):
+                    surface_rule(S, page, 'surfaces %s' % tag, touch)
                 if not touch and 'focus' in rules and w in (1366, 900, widths[0]):
                     focus_rule(S, page, 'focus %s' % tag, scheme)
                 if scheme == 'forced' and 'forced' in rules:

@@ -691,7 +691,9 @@ def word_layout(page):
 DL = """() => { const r = (e) => { const b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; };
   const bs = ['rb-pdf', 'rb-word', 'b-save'].map((id) => document.getElementById(id)).filter((b) => b.offsetParent);
   const lab = document.querySelector('.rb-dl > .rb-lab'), rb = document.getElementById('ribbon').getBoundingClientRect();
-  return { b: bs.map(r), lab: lab.offsetParent ? [r(lab), lab.textContent] : null, top: Math.round(rb.top), icons: bs.map((b) => b.querySelector('svg').innerHTML) }; }"""
+  // (each icon as it is written, on its 20 grid: src/ui/icongrid.js draws it on its pixels' grid)
+  const src = (svg) => svg.dataset.gm || svg.innerHTML;
+  return { b: bs.map(r), lab: lab.offsetParent ? [r(lab), lab.textContent] : null, top: Math.round(rb.top), icons: bs.map((b) => src(b.querySelector('svg'))), preview: src(document.querySelector('#b-pdf svg')) }; }"""
 
 
 def downloads_group(p):
@@ -707,8 +709,10 @@ def downloads_group(p):
             page.evaluate('(t) => rikuy.selectTab(t)', t); page.wait_for_timeout(150)
             d = page.evaluate(DL)
             b = d['b']
+            # (each its own icon with a download's arrow, none Preview's: review L4)
             ok = len(b) == 3 and len({x[0] for x in b}) == 1 and [x[1] - d['top'] for x in b] == [4, 28, 52] and all(x[3] == 24 for x in b) \
-                and d['lab'] and d['lab'][1] == 'Download' and d['lab'][0][1] >= b[2][1] + 24 and len(set(d['icons'])) == 3
+                and d['lab'] and d['lab'][1] == 'Download' and d['lab'][0][1] >= b[2][1] + 24 and len(set(d['icons'])) == 3 \
+                and d['preview'] not in d['icons'] and all('L17 15' in i for i in d['icons'])
             if not ok: bad[(w, t)] = d
     check('from 900 px with a mouse, on Home and the laid out tabs at 1920 and 1366 px: PDF, Word and LaTeX one under another in the grid\'s three rows, each its own icon, the group\'s name Download under them', not bad, str(bad)[:400])
     # one weight and size for every button's name, as Word's: Find, Replace and Select as PDF, Word
@@ -821,6 +825,24 @@ def frontier(p):
     found = page.get_by_role('listbox', name='Commands', exact=True).get_by_role('option').all_inner_texts()
     page.keyboard.press('Escape'); page.wait_for_timeout(100)
     check('the search box finds Frontier by Researcher', found and found[0].startswith('Frontier'), found[:3])
+    # (review of PR 86, L1 to L3: each of these failed before)
+    fb = page.locator('#rc-frontier')
+    a0 = [fb.get_attribute('aria-haspopup'), fb.get_attribute('aria-expanded')]
+    fb.click(); page.wait_for_timeout(250)
+    d = page.get_by_role('dialog', name='Frontier', exact=True)
+    a1 = fb.get_attribute('aria-expanded')
+    desc = page.evaluate("(() => { const p = document.querySelector('.pop-frontier'); return (p.getAttribute('aria-describedby') || '').split(' ').map((id) => (document.getElementById(id) || {}).textContent || '').join(' '); })()")
+    ring = page.evaluate("(() => { const a = document.activeElement, s = getComputedStyle(a); return [a.textContent, s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0]; })()")
+    look = page.evaluate("(() => { const p = document.querySelector('.pop-frontier'), b = p.querySelector('.pop-row .btn'), x = p.querySelector('.pop-x'); return [parseFloat(getComputedStyle(p).borderTopLeftRadius), Math.round(b.getBoundingClientRect().height), Math.round(x.getBoundingClientRect().height)]; })()")
+    page.keyboard.press('Tab'); page.wait_for_timeout(80)
+    t1 = page.evaluate("document.activeElement.closest('.pop-frontier') ? document.activeElement.getAttribute('aria-label') || document.activeElement.textContent : document.activeElement.tagName")
+    page.keyboard.press('Tab'); page.wait_for_timeout(80)
+    t2 = page.evaluate("document.activeElement.closest('.pop-frontier') ? document.activeElement.textContent : document.activeElement.tagName")
+    d.locator('.pop-row .btn').click(); page.wait_for_timeout(250)
+    back = page.evaluate("(() => { const a = document.activeElement, s = getComputedStyle(a); return [a.id, s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0]; })()")
+    check('Frontier says it opens a dialog and whether it is open; the dialog is described by what it does and Coming soon.', a0 == ['dialog', 'false'] and a1 == 'true' and fb.get_attribute('aria-expanded') == 'false' and 'Coming soon.' in desc and 'ideas connect' in desc, (a0, a1, desc))
+    check('opened and closed with the mouse no ring shows, on Close or on Frontier after (the keyboard\'s ring for the keyboard)', ring == ['Close', False] and back == ['rc-frontier', False], (ring, back))
+    check('Tab goes round its two buttons while it is open; its corners 8 px, its buttons 32 px tall', t1 == 'Close' and t2 == 'Close' and look == [8, 32, 32], (t1, t2, look))
     browser.close()
     browser, page, errors = open_page(p, width=390, height=800, touch=True)
     load_doc(page, DOC)

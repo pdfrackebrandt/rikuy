@@ -803,6 +803,8 @@ def equations(p):
     "Display math" and its "Equation editor", the contextual tab "Equation" in front, its button
     "Fraction" and the menu item "stacked fraction"; Escape on the tab back to the field."""
     full = open(os.path.join(DIST, 'llms-full.txt'), encoding='utf8').read()
+    # (a control named in its guide as the ribbon names it: View's Show marks, review of PR 86 L6)
+    check('llms-full.txt names View\'s Show marks as the ribbon does, not Formatting marks', 'Show marks' in full and 'Formatting marks' not in full)
     check('llms-full.txt says Alt+= makes an equation, Ctrl+Shift+E is Track Changes, and names the Equation tab\'s controls',
           'Alt+= (Mac: Control+=)' in full and 'Ctrl+Shift+E: Track Changes' in full and all('"%s"' % n in full for n in ('Equation gallery', 'Numbered', 'Display', 'Fraction', 'Matrix', 'Change to inline', 'Copy as LaTeX')), full[:0])
     browser, page, errors = open_page(p, width=1400, height=900)
