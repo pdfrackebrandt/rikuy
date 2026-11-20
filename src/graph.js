@@ -271,7 +271,17 @@ export function graphKit() {
       case '*': return (e) => a(e) * b(e);
       case '/': return (e) => a(e) / b(e);
       // (a negative number's odd root is real: x^(1/3) is drawn left of 0 too)
-      case '^': return (e) => { const x = a(e), y = b(e); if (x < 0 && y !== Math.round(y)) { const q = 1 / y, r = Math.round(q); if (Math.abs(q - r) < 1e-9 && Math.abs(r) % 2 === 1) return -Math.pow(-x, y); } return Math.pow(x, y); };
+      case '^': {
+        // (a number for the power, the usual case: its kind settled once, x^2 as a product)
+        if (tree[2][0] === 'n') {
+          const y = tree[2][1];
+          if (y === 2) return (e) => { const x = a(e); return x * x; };
+          if (y === Math.round(y)) return (e) => Math.pow(a(e), y);
+          const q = 1 / y, r = Math.round(q), odd = Math.abs(q - r) < 1e-9 && Math.abs(r) % 2 === 1;
+          return odd ? (e) => { const x = a(e); return x < 0 ? -Math.pow(-x, y) : Math.pow(x, y); } : (e) => Math.pow(a(e), y);
+        }
+        return (e) => { const x = a(e), y = b(e); if (x < 0 && y !== Math.round(y)) { const q = 1 / y, r = Math.round(q); if (Math.abs(q - r) < 1e-9 && Math.abs(r) % 2 === 1) return -Math.pow(-x, y); } return Math.pow(x, y); };
+      }
       case '<': return (e) => +(a(e) < b(e));
       case '>': return (e) => +(a(e) > b(e));
       case '<=': return (e) => +(a(e) <= b(e));
@@ -567,8 +577,12 @@ export function graphKit() {
   // series: [{ kind: 'line' | 'points' | 'bars' | 'area' | 'segs' | 'fill' | 'mark' | 'arrows' |
   // 'start', pts: [[x, y]...] (null breaks a line), lines (segs: polylines), label, tex, slot }],
   // at the slider values vals
+  // fast: a slider is being dragged; half the samples, the grids and the steps, the full ones once it
+  // rests (mount), so a frame stays inside a phone's 16 ms
   const memo = new WeakMap();
-  function compute(s, vals, N = 600) {
+  function compute(s, vals, N = 600, fast = false) {
+    if (fast) N = Math.min(N, 300);
+    const cells = fast ? 60 : 120;
     const vars = s.kind === 'curve' ? ['t', 'θ'] : s.vars || ['x'];
     const slots = {};
     vars.forEach((v, k) => { slots[v] = s.kind === 'curve' ? 0 : k; });
@@ -664,13 +678,13 @@ export function graphKit() {
       out.push({ kind: 'line', pts, label: s.curve.mode === 'polar' ? 'r = ' + s.curve.r.trim() : '(' + s.curve.x.trim() + ', ' + s.curve.y.trim() + ')',
         tex: s.curve.mode === 'polar' ? 'r = ' + (texOf(s.curve.r, declared) || '') : '\\left(' + (texOf(s.curve.x, declared) || '') + ',\\ ' + (texOf(s.curve.y, declared) || '') + '\\right)', slot: 0, curve: true });
     } else if (s.kind === 'implicit') {
-      fns.forEach((f, k) => out.push({ kind: 'segs', lines: contour((x, y) => at2(f.fn, x, y), s), label: f.text.trim(), tex: eqTexOf(f.text, declared), slot: k }));
+      fns.forEach((f, k) => out.push({ kind: 'segs', lines: contour((x, y) => at2(f.fn, x, y), s, cells), label: f.text.trim(), tex: eqTexOf(f.text, declared), slot: k }));
     } else if (s.kind === 'phase') {
       const [fx, fy] = fns.map((f) => f.fn);
       const dx = (x, y) => at2(fx, x, y), dy = (x, y) => at2(fy, x, y);
       // the field and the nullclines move with the sliders only: a dragged start point redraws the
       // path alone
-      const key = env.slice(2).join(',');
+      const key = env.slice(2).join(',') + (fast ? ' fast' : '');
       let m = memo.get(s);
       if (!m || m.key !== key) {
         m = { key, parts: [] };
@@ -685,15 +699,15 @@ export function graphKit() {
         }
         if (s.phase.nullclines) {
           const [a, b] = s.vars;
-          m.parts.push({ kind: 'segs', lines: contour(dx, s), label: dotName(a) + ' = 0', tex: '\\dot{' + nameTex(a) + '} = 0', slot: 0 });
-          m.parts.push({ kind: 'segs', lines: contour(dy, s), label: dotName(b) + ' = 0', tex: '\\dot{' + nameTex(b) + '} = 0', slot: 1 });
+          m.parts.push({ kind: 'segs', lines: contour(dx, s, cells), label: dotName(a) + ' = 0', tex: '\\dot{' + nameTex(a) + '} = 0', slot: 0 });
+          m.parts.push({ kind: 'segs', lines: contour(dy, s, cells), label: dotName(b) + ' = 0', tex: '\\dot{' + nameTex(b) + '} = 0', slot: 1 });
         }
         memo.set(s, m);
       }
       out.push(...m.parts);
       const st = vals.__start || s.phase.start;
       if (st) {
-        const pts = trajectory(dx, dy, st, s);
+        const pts = trajectory(dx, dy, st, s, fast ? 0.008 : 0.004);
         out.push({ kind: 'line', pts, label: 'path from (' + fmt(st[0], 3) + ', ' + fmt(st[1], 3) + ')', slot: 2, curve: true, traj: true });
         out.push({ kind: 'start', pts: [st], slot: 2 });
       }
@@ -751,60 +765,61 @@ export function graphKit() {
   // page, 120 across at most), each crossing of a cell's edge at the linear guess between its
   // corners, the ambiguous saddle cells settled by the value at their middle; the pieces joined
   // into polylines. Bounded: 120 by 120 cells, 20000 pieces.
-  function contour(F, s) {
-    const nx = 120, ny = Math.max(10, Math.min(120, Math.round(nx * s.aspect)));
-    const x0 = s.x.min, y0 = s.y.min, hx = (s.x.max - s.x.min) / nx, hy = (s.y.max - s.y.min) / ny;
-    const V = new Float64Array((nx + 1) * (ny + 1));
-    for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) V[j * (nx + 1) + i] = F(x0 + i * hx, y0 + j * hy);
-    const v = (i, j) => V[j * (nx + 1) + i];
-    // an edge's point, the same from either cell it borders (the lower corner first): the pieces meet
-    const edge = (i, j, horiz) => {
-      const a = v(i, j), b = horiz ? v(i + 1, j) : v(i, j + 1), t = a / (a - b);
-      return horiz ? [x0 + (i + t) * hx, y0 + j * hy] : [x0 + i * hx, y0 + (j + t) * hy];
+  function contour(F, s, nx = 120) {
+    const ny = Math.max(10, Math.min(nx, Math.round(nx * s.aspect)));
+    const x0 = s.x.min, y0 = s.y.min, hx = (s.x.max - s.x.min) / nx, hy = (s.y.max - s.y.min) / ny, W1 = nx + 1;
+    const V = new Float64Array(W1 * (ny + 1));
+    for (let j = 0; j <= ny; j++) { const y = y0 + j * hy; for (let i = 0; i <= nx; i++) V[j * W1 + i] = F(x0 + i * hx, y); }
+    // An edge by its number: 2 (j (nx + 1) + i) for the one from corner (i, j) to the right, one more
+    // for the one up. Its point is the linear guess between its corners, the same from either cell.
+    const point = (id) => {
+      const k = id >> 1, i = k % W1, j = (k - i) / W1, up = id & 1, a = V[k], b = up ? V[k + W1] : V[k + 1], t = a / (a - b);
+      return up ? [x0 + i * hx, y0 + (j + t) * hy] : [x0 + (i + t) * hx, y0 + j * hy];
     };
-    const segs = [];
-    for (let j = 0; j < ny && segs.length < 20000; j++) for (let i = 0; i < nx; i++) {
-      const a = v(i, j), b = v(i + 1, j), c = v(i + 1, j + 1), d = v(i, j + 1);
+    const segA = [], segB = [];
+    for (let j = 0; j < ny && segA.length < 20000; j++) for (let i = 0; i < nx; i++) {
+      const q = j * W1 + i, a = V[q], b = V[q + 1], c = V[q + W1 + 1], d = V[q + W1];
       if (!(Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(c) && Number.isFinite(d))) continue;
       const k = (a > 0 ? 1 : 0) | (b > 0 ? 2 : 0) | (c > 0 ? 4 : 0) | (d > 0 ? 8 : 0);
       if (k === 0 || k === 15) continue;
-      const S = () => edge(i, j, true), E = () => edge(i + 1, j, false), Nn = () => edge(i, j + 1, true), W = () => edge(i, j, false);
-      // (a piece of no length, where the curve passes through a corner, is none)
-      const add = (p, q) => { if (p[0] !== q[0] || p[1] !== q[1]) segs.push([p, q]); };
+      const S = 2 * q, E = 2 * (q + 1) + 1, Nn = 2 * (q + W1), Wd = 2 * q + 1;
+      const add = (p, r) => { segA.push(p); segB.push(r); };
       switch (k) {
-        case 1: case 14: add(W(), S()); break;
-        case 2: case 13: add(S(), E()); break;
-        case 3: case 12: add(W(), E()); break;
-        case 4: case 11: add(E(), Nn()); break;
-        case 6: case 9: add(S(), Nn()); break;
-        case 7: case 8: add(W(), Nn()); break;
+        case 1: case 14: add(Wd, S); break;
+        case 2: case 13: add(S, E); break;
+        case 3: case 12: add(Wd, E); break;
+        case 4: case 11: add(E, Nn); break;
+        case 6: case 9: add(S, Nn); break;
+        case 7: case 8: add(Wd, Nn); break;
         case 5: case 10: {
           const mid = (a + b + c + d) / 4 > 0;
-          if ((k === 5) === mid) { add(W(), Nn()); add(S(), E()); } else { add(W(), S()); add(E(), Nn()); }
+          if ((k === 5) === mid) { add(Wd, Nn); add(S, E); } else { add(Wd, S); add(E, Nn); }
           break;
         }
       }
     }
-    // joined end to end where they meet
-    const key = (p) => p[0] + ',' + p[1], ends = new Map();
-    segs.forEach((sg, n) => { for (const p of sg) { const k = key(p); if (!ends.has(k)) ends.set(k, []); ends.get(k).push(n); } });
-    const used = new Uint8Array(segs.length), lines = [];
-    const next = (p, from) => { const l = ends.get(key(p)) || []; return l.find((n) => n !== from && !used[n]); };
-    for (let n = 0; n < segs.length; n++) {
-      if (used[n]) continue;
-      used[n] = 1;
-      const line = [segs[n][0], segs[n][1]];
+    // joined end to end where they share an edge (each edge borders two cells: two pieces at most)
+    const n = segA.length, adj = new Map(), used = new Uint8Array(n);
+    const link = (e, g) => { const l = adj.get(e); if (l) l.push(g); else adj.set(e, [g]); };
+    for (let g = 0; g < n; g++) { link(segA[g], g); link(segB[g], g); }
+    const lines = [];
+    for (let g = 0; g < n; g++) {
+      if (used[g]) continue;
+      used[g] = 1;
+      const ids = [segA[g], segB[g]];
       for (const back of [false, true]) {
-        let m = n;
         for (;;) {
-          const p = back ? line[0] : line[line.length - 1], q = next(p, m);
-          if (q === undefined) break;
-          used[q] = 1; m = q;
-          const o = key(segs[q][0]) === key(p) ? segs[q][1] : segs[q][0];
-          if (back) line.unshift(o); else line.push(o);
+          const e = back ? ids[0] : ids[ids.length - 1], l = adj.get(e), h = l && l.find((x) => !used[x]);
+          if (h === undefined) break;
+          used[h] = 1;
+          const o = segA[h] === e ? segB[h] : segA[h];
+          if (back) ids.unshift(o); else ids.push(o);
         }
       }
-      lines.push(line);
+      // (a piece of no length, where the curve passes through a corner, is none)
+      const pts = [];
+      for (const id of ids) { const p = point(id), q = pts[pts.length - 1]; if (!q || q[0] !== p[0] || q[1] !== p[1]) pts.push(p); }
+      if (pts.length > 1) lines.push(pts);
     }
     return lines;
   }
@@ -812,7 +827,7 @@ export function graphKit() {
   // A path of dx/dt, dy/dt from a point: classical Runge–Kutta, each step about 0.4 % of the plot
   // (the time step from the speed there), until it leaves the plot by a plot's width, stops at a
   // rest point, or has taken 3000 steps
-  function trajectory(dx, dy, st, s) {
+  function trajectory(dx, dy, st, s, step = 0.004) {
     const W = s.x.max - s.x.min, H = s.y.max - s.y.min, pts = [[st[0], st[1]]];
     let x = st[0], y = st[1];
     const f = (x, y) => [dx(x, y), dy(x, y)];
@@ -820,7 +835,7 @@ export function graphKit() {
       const [u, v] = f(x, y);
       const sp = Math.hypot(u / W, v / H);
       if (!Number.isFinite(sp) || sp < 1e-9) break;
-      const h = 0.004 / sp;
+      const h = step / sp;
       const k1 = [u, v], k2 = f(x + h / 2 * k1[0], y + h / 2 * k1[1]), k3 = f(x + h / 2 * k2[0], y + h / 2 * k2[1]), k4 = f(x + h * k3[0], y + h * k3[1]);
       const nx = x + h / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]), ny = y + h / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
       if (!Number.isFinite(nx) || !Number.isFinite(ny)) break;
@@ -1287,15 +1302,22 @@ export function graphKit() {
     const away = () => s.ghost && s.sliders.some((q) => vals[q.name] !== q.value);
     const ghostOf = () => { if (!away()) return null; if (!base) { try { base = compute(s, defaults(s)); } catch (e) { base = { series: [] }; } } return base; };
     let W = 0, H = 0, queued = 0;
-    // (a slider's input events come faster than frames: one compute a frame)
-    const soon = () => { if (!queued) queued = requestAnimationFrame(() => { queued = 0; redraw(true); }); };
+    // (a slider's input events come faster than frames: one compute a frame, a fast one while it
+    // moves, and the full one when it has rested for 150 ms)
+    let fast = false, rest = 0;
+    const soon = () => {
+      fast = true;
+      clearTimeout(rest);
+      rest = setTimeout(() => { fast = false; redraw(true); }, 150);
+      if (!queued) queued = requestAnimationFrame(() => { queued = 0; redraw(true); });
+    };
     function redraw(again) {
       W = Math.max(120, Math.round(cv.clientWidth || box.clientWidth || 600));
       H = Math.round(W * s.aspect);
       const dpr = window.devicePixelRatio || 1;
       if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.height = H + 'px'; }
       const t0 = performance.now();
-      if (again || !data) { try { data = compute(s, vals); say(''); } catch (e) { say(e.message); data = { series: [] }; } }
+      if (again || !data) { try { data = compute(s, vals, 600, fast); say(''); } catch (e) { say(e.message); data = { series: [] }; } }
       const g = cv.getContext('2d');
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       geo = paint(g, s, data, R, vals, W, H, hover, ghostOf());
