@@ -3432,9 +3432,11 @@ Tests:
     `& % _`, Align's look parses nothing. And its second (U1 to U4): a new float only where every
     environment round it is known safe (the preamble's own environments read: a `\newtcolorbox`
     refused, a `\newenvironment` of a quote allowed), language environments wrap, greyed places
-    reached by the arrows with their reason, one `\centering`.
-    Evidence: `npm test` green (`objfmt` 23 groups, `picfx` 12, `objlist` 5, `drawing`,
-    `objects`, `commands` 15); `test/objects.py` 285 (with `dist/tex`: everything compiled with
+    reached by the arrows with their reason, one `\centering`. And its third (V1): the files the
+    preamble reads are read too, and a theorem's usual name is trusted only where a `\newtheorem`
+    declares it.
+    Evidence: `npm test` green (`objfmt` 24 groups, `picfx` 12, `objlist` 5, `drawing`,
+    `objects`, `commands` 15); `test/objects.py` 292 (with `dist/tex`: everything compiled with
     pdfLaTeX, XeLaTeX and LuaLaTeX, the shapes' words, chart titles and SmartArt items found in each
     PDF; edited pictures, one seen through, on the three engines; phones at 390 and 360 px with
     touch); `tabs.py` 127 (the fold sweep on all 19 tabs, the five new ones among them), `agent.py` 143, `picture.py` 228, `ribbon.py` 195, `test:browser` 199, the corpus model run 716 of 716; screenshots

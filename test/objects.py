@@ -744,6 +744,22 @@ def review_arrange(page):
               len(items) >= 8 and len(off) == len(items) - 1 and all(name in t for n, d, t in items if d) and not items[0][1], items)
         run_cmd(page, 'object-position', {'mode': 'float', 'place': 't'})
         check('N2, N3: Top of Page there writes nothing', src(page) == doc, src(page)[-300:])
+    # review V1: a box under a theorem's name in \input{preamble}: greyed; declared a theorem there: a figure, compiled
+    VM = '\\documentclass{article}\n\\input{preamble}\n\\begin{document}\nBefore.\n\n\\begin{example}\n' + SHAPE + 'Words of the example.\n\\end{example}\n\nAfter.\n\\end{document}\n'
+    for label, pre_file, boxed in (('a tcolorbox', PRE + '\\usepackage{tcolorbox}\n\\newtcolorbox{example}{colback=blue!5}\n', True), ('a theorem', PRE + '\\usepackage{amsthm}\n\\newtheorem{example}{Example}\n', False)):
+        load_doc(page, {'main.tex': VM, 'preamble.tex': pre_file}); page.wait_for_timeout(400); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
+        page.evaluate('window.rikuy.objPositionMenu()'); page.wait_for_timeout(200)
+        top = page.evaluate("(() => { const a = [...document.querySelectorAll('.pop [role=menuitemradio]')].find((x) => x.getAttribute('aria-label') === 'Top of Page'); return a ? [a.getAttribute('aria-disabled') === 'true', a.title] : null; })()")
+        page.keyboard.press('Escape')
+        check('V1: example defined as %s in preamble.tex: Top of Page %s (%s)' % (label, 'greyed' if boxed else 'offered', (top or ['', ''])[1][:80]), top is not None and top[0] == boxed and (not boxed or 'example' in top[1]), top)
+        run_cmd(page, 'object-position', {'mode': 'float', 'place': 't'}); page.wait_for_timeout(200)
+        wrote = '\\begin{figure}[t]' in page.evaluate("window.rikuy.files.get('main.tex')")
+        check('V1: %s: Top of Page %s' % (label, 'writes nothing' if boxed else 'writes the figure'), wrote != boxed, page.evaluate("window.rikuy.files.get('main.tex')")[-300:])
+        if not boxed and TEX:
+            for eng in ('pdflatex', 'xelatex', 'lualatex'):
+                r = page.evaluate('''async ([m, p, eng]) => { const g = window.rikuy; g.files.set('main.tex', (eng === 'pdflatex' ? '' : '% !TEX program = ' + eng + '\\n') + m); g.files.set('preamble.tex', p); const r = await g.api.compile();
+                  return { ok: r.ok, problems: (r.problems || []).filter((x) => x.severity === 'error').map((x) => x.message).slice(0, 4) }; }''', [page.evaluate("window.rikuy.files.get('main.tex')").replace('% !TEX program = xelatex\n', '').replace('% !TEX program = lualatex\n', ''), pre_file, eng])
+                check('V1: the figure in the theorem compiles with %s' % eng, r['ok'] and not r['problems'], r)
     # review U3: in columns the greyed places are in the arrows' reach, each describing its reason; the note line says it, a tap too
     load_doc(page, WRAP('\\begin{multicols}{2}\nBefore.\n\n' + SHAPE + '\nAfter it, ' + words + '\n\\end{multicols}', PRE + '\\usepackage{multicol}\n')); page.wait_for_timeout(300)
     page.evaluate('window.rikuy.shapeSel.clear()'); press(page)

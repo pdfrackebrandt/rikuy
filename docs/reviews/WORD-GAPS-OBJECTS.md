@@ -354,3 +354,44 @@ On a figure that has both `\centering` and a `center`, Wrap writes `\centering\n
 - **U4** (7a9537d): Wrap on a figure with both `\centering` and a `center` drops the center's line. Test: `objfmt.test.mjs` (U group).
 
 Checks at 7a9537d, with `dist/tex`: `npm test` green (`objfmt` 23 groups); `objects.py` 285 passed, 0 failed; `picture.py` 228.
+
+---
+
+# Verification of 83fbded
+
+**Verdict: fix first.** One small hole is left in the U1 fix: an environment with a name on the allow list that is defined as a box in an `\input` preamble file. The rest holds.
+
+I tested on dist/ built at 19:35, which no source file is newer than. Repro scripts: `w1b.py`, `w2b.py` and `w3.py` in `/tmp/review-g1-out/`.
+
+| # | Status | Evidence |
+|---|---|---|
+| U1 | fixed for the main file's own preamble | `mybox` (a `\newenvironment` around a minipage) and `notebox` (`\newtcolorbox`) are refused, with the environment named. **The `\input` hole stays: V1.** |
+| U2 | fixed | Wrap inside polyglossia's `\begin{french}` is written and compiles with XeLaTeX. |
+| U3 | fixed | `w2b.py` in multicols: ArrowDown walks all eight greyed items (`aria-disabled`). Each item's `aria-describedby` points to the full reason, and a visible note line shows it. Enter on a greyed item writes nothing. |
+| U4 | fixed | Wrap on a figure with both `\centering` and a `center` writes one `\centering`, and it compiles with "Figure 1". |
+
+What still compiles (`w3.py`):
+- A figure written into a `\newtheorem` body compiles, with the drawing in the PDF, as does one written into a `proof`.
+- A `\newenvironment{aside}[1][Aside]{\begin{quote}\small}{\end{quote}}` (optional arguments, quote inside) is allowed for a float and compiles; Wrap there is correctly refused.
+
+**V1 (Medium to High, the one blocker). A box defined outside the main file, under a name on the allow list, still gets a float.**
+- `docEnvs` reads only the main file's preamble. `FLOAT_SAFE` trusts generic names: `note`, `example`, `problem`, `solution`, `exercise`, `remark`, `claim`, `definition`.
+- Repro (`w3.py`):
+  - The document has `\input{preamble}`, and `preamble.tex` holds `\newtcolorbox{example}{…}`.
+  - Or `preamble.tex` holds `\newenvironment{note}{\begin{minipage}{6cm}}{\end{minipage}}`.
+- In both, Top of Page writes a figure inside the box. TeX stops with "Not in outer par mode", and the drawing is missing from the PDF.
+- A separate preamble file holding tcolorbox `example`/`note` boxes is common in lecture-note and thesis templates.
+- Fix:
+  - Read every preamble file the main file pulls in (`App.preambleOthers`, which the paragraph and font commands already use).
+  - Treat those generic names as safe only when a `\newtheorem` or `\declaretheorem` seen somewhere declares them.
+  - Otherwise refuse them, as unknown environments already are.
+
+Lows, not blocking:
+- An `\AtBeginEnvironment{quote}{\begin{minipage}{6cm}}` trick lets a float through a `quote` and stops TeX. This is contrived; an `\AtBeginEnvironment` mention of an allowed environment could simply count as a definition.
+- A `\newtheorem` declared in an `\input` preamble file makes its theorem refused for a float. That is a false refusal, and the V1 fix resolves it too.
+
+## Fixes for the third verification
+
+- **V1** (this commit): Position reads the files the main file's preamble pulls in (`App.preambleOthers`: an `\input{preamble}`, the project's own `.sty`) as it reads the main preamble. A box defined in any of them (`\newtcolorbox{example}`, a `\newenvironment{note}` around a minipage) is a box. The names theorems often have (example, note, problem, solution, exercise, remark, claim, definition and their like) are no longer on the allow list. They are trusted only where a `\newtheorem` or `\declaretheorem` declares them, in the main preamble or one of its files, or where the class makes them theorems itself (llncs, svjour). That also ends the false refusal of a theorem declared in an `\input` preamble file. Code that an `\AtBeginEnvironment` or `\BeforeBeginEnvironment` puts at an environment's start, and that opens a box, makes that environment a box. Tests: `objfmt.test.mjs` (V1 group, failing before), `objects.py review_arrange` (in a project with `preamble.tex`, Top of Page is greyed and writes nothing in a tcolorbox `example`; in a `\newtheorem` `example` it writes the figure, which compiles with pdfLaTeX, XeLaTeX and LuaLaTeX).
+
+Checks with `dist/tex`: `npm test` green (`objfmt` 24 groups); `objects.py` 292 passed, 0 failed.

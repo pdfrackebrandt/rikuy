@@ -372,6 +372,25 @@ ok('review U1, U2, U4: a float only where LaTeX can float it (the document\'s ow
   assert.equal(w, 'A\n\\begin{wrapfigure}{r}{0pt}\n\\centering\n' + rect + '\n\\caption{Box}\n\\end{wrapfigure}\nWords.');
 });
 
+ok('review V1: the preamble\'s own files read; a theorem\'s name trusted only where a \\newtheorem declares it; a box anywhere is a box', () => {
+  const at = (d) => [d.indexOf('\\begin{tikzpicture}'), d.indexOf('\\end{tikzpicture}') + 17];
+  const C = '\\begin{center}\n' + rect + '\n\\end{center}\n';
+  const doc = (env, cls = 'article') => '\\documentclass{' + cls + '}\n\\input{preamble}\n\\begin{document}\nA\n\n\\begin{' + env + '}\n' + C + 'Words.\n\\end{' + env + '}\n\nB\n\\end{document}\n';
+  const T = { mode: 'float', place: 't' };
+  const run = (env, others, cls) => { const d = doc(env, cls); const [s, e] = at(d); return O.positionEdits(d, s, e, T, undefined, d, others); };
+  // a box in the preamble's file, under a theorem's name
+  assert.match(run('example', ['\\usepackage{tcolorbox}\n\\newtcolorbox{example}{colback=blue!5}\n']).error, /example, an environment of this document's own/);
+  assert.match(run('note', ['\\newenvironment{note}{\\begin{minipage}{6cm}}{\\end{minipage}}\n']).error, /note, an environment of this document's own/);
+  // a theorem's name nobody declares: refused as any unknown environment
+  assert.match(run('example', []).error, /stands in example/);
+  // declared a theorem in the preamble's file, or by a class that makes them theorems: a float may stand there
+  assert.ok(run('example', ['\\usepackage{amsthm}\n\\newtheorem{example}{Example}\n']).edits.length);
+  assert.ok(run('example', [], 'llncs').edits.length);
+  // code put at a quote's start that opens a box: the quote is a box then
+  assert.match(run('quote', ['\\usepackage{etoolbox}\n\\AtBeginEnvironment{quote}{\\begin{minipage}{6cm}}\n\\AtEndEnvironment{quote}{\\end{minipage}}\n']).error, /quote/);
+  assert.ok(run('quote', ['\\usepackage{etoolbox}\n\\AtBeginEnvironment{quote}{\\small}\n']).edits.length);
+});
+
 ok('review N1: Wrap on a float holding a center writes \\centering (no center in a wrapfigure), a table stays a table', () => {
   const at = (d) => [d.indexOf('\\begin{tikzpicture}'), d.indexOf('\\end{tikzpicture}') + 17];
   const fr = 'A\n\\begin{figure}[h]\n  \\begin{flushright}\n' + rect + '\n  \\end{flushright}\n\\caption{Box}\n\\end{figure}\n\nWords.';

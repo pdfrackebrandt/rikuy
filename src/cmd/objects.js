@@ -488,14 +488,14 @@ export const methods = {
     const t = target(this);
     if (!t) return false;
     const src = this.src(t.f);
-    const r = O.positionEdits(src, t.s, t.e, to, treeOf(this, t.f, src), this.src(this.main));
+    const r = O.positionEdits(src, t.s, t.e, to, treeOf(this, t.f, src), this.src(this.main), this.preambleOthers ? this.preambleOthers() : []);
     return r.error ? (this.toast(r.error, 6000), false) : this.objArrange(r.edits, r.packages);
   },
   objPositionMenu() {
     const t = target(this);
     if (!t) return false;
-    // (the main file's preamble defines the document's environments)
-    const src = this.src(t.f), P = O.positionOf(src, t.s, t.e, treeOf(this, t.f, src), this.src(this.main));
+    // (the main file's preamble defines the document's environments, and the files it reads)
+    const src = this.src(t.f), P = O.positionOf(src, t.s, t.e, treeOf(this, t.f, src), this.src(this.main), this.preambleOthers ? this.preambleOthers() : []);
     const on = (to) => to.mode === P.mode && (to.mode === 'inline' || (to.mode === 'float' ? (P.place || 'tbp').replace(/!/g, '') === to.place : P.side === to.side));
     // (what cannot apply where it stands is greyed, its reason in its tooltip, as Word greys it)
     // (what cannot apply where it stands is greyed, as Word greys it; the arrows still reach it, and

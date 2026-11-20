@@ -619,9 +619,9 @@ export function alignEdits(src, s, e, how, nodes) {
 // packages } or { error }. A float is never put inside a float: the one round it is changed; a
 // table stays a table (table, wraptable).
 // pre: the text whose preamble defines the document's environments (the main file's), src where omitted
-export function positionOf(src, s, e, nodes, pre) {
+export function positionOf(src, s, e, nodes, pre, others) {
   const B = blockOf(src, s, e, nodes);
-  B.D = docEnvs(pre == null ? src : pre);
+  B.D = docEnvs(pre == null ? src : pre, others);
   const F = B.float;
   if (F && !MOVABLE.test(F.name)) return { mode: 'fixed', block: F, B };
   if (F && WRAPS.test(F.name)) { const m = /^\\begin\{wrap(?:figure|table)\}(\[[^\]]*\])?\{([lrioLRIO])\}/.exec(src.slice(F.node.s, F.node.s + 60)); return { mode: 'wrap', side: m ? m[2].toLowerCase() : 'r', block: F, B, kind: /table/.test(F.name) ? 'table' : 'figure' }; }
@@ -644,19 +644,36 @@ const boxSays = (b) => (b.cmd ? (b.name === 'footnote' ? 'a footnote' : b.name =
 // environment it defines of these alone (\newenvironment{note}{\begin{quote}\small}{\end{quote}}).
 // Anything else, a box among them (\newtcolorbox, a minipage inside a \newenvironment), is refused.
 const LANG_ENVS = /^(otherlanguage\*?|hyphenrules|RTL|LTR)$/;
-const FLOAT_SAFE = /^(document|itemize|enumerate|description|list|trivlist|compactitem|compactenum|compactdesc|asparaenum|inparaenum|quote|quotation|verse|center|flushleft|flushright|proof|theorem|lemma|corollary|proposition|definition|example|remark|note|claim|conjecture|exercise|problem|solution|otherlanguage\*?|hyphenrules|spacing|singlespace|onehalfspace|doublespace|landscape|sloppypar|tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge|RTL|LTR)$/;
+const FLOAT_SAFE = /^(document|itemize|enumerate|description|list|trivlist|compactitem|compactenum|compactdesc|asparaenum|inparaenum|quote|quotation|verse|center|flushleft|flushright|proof|otherlanguage\*?|hyphenrules|spacing|singlespace|onehalfspace|doublespace|landscape|sloppypar|tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge|RTL|LTR)$/;
+// (names a theorem often has: trusted only where a \newtheorem or \declaretheorem of the document
+// declares them, or a class that makes them theorems itself; a template's preamble file as often
+// makes them tcolorboxes)
+const CLASS_THEOREMS = /\\documentclass\s*(\[[^\]]{0,400}\])?\s*\{(llncs|svjour[23]?|svmult|svmono|svproc)\}/;
+const THEOREM_NAMES = /^(theorem|lemma|corollary|proposition|definition|example|remark|note|claim|conjecture|exercise|problem|solution|property|question|case)$/;
 const DECLS = /^\\(tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge|itshape|bfseries|slshape|scshape|upshape|mdseries|rmfamily|sffamily|ttfamily|normalfont|em|it|bf|sl|sc|rm|sf|tt|centering|raggedright|raggedleft|noindent|par|medskip|smallskip|bigskip|ignorespaces|unskip|relax)\b\s*|^\\vspace\*?\s*\{[^{}]{0,40}\}\s*/;
-let envMemo = { t: null, D: null };
-export function docEnvs(text) {
-  if (envMemo.t === text) return envMemo.D;
-  const t = String(text || '').replace(/(^|[^\\])%[^\n]*/g, '$1'), end = t.indexOf('\\begin{document}'), pre = end < 0 ? t : t.slice(0, end);
-  const D = { theorems: new Set(), languages: new Set(), boxes: new Set(), defs: new Map() };
+let envMemo = { t: null, o: null, D: null };
+// text: the main file; others: the text of the files its preamble reads (App.preambleOthers: an
+// \input{preamble}, a .sty of the project's own), read as its preamble is
+export function docEnvs(text, others = []) {
+  const oj = (others || []).join('\n%%\n');
+  if (envMemo.t === text && envMemo.o === oj) return envMemo.D;
+  const t = String(text || '').replace(/(^|[^\\])%[^\n]*/g, '$1'), end = t.indexOf('\\begin{document}');
+  const pre = (end < 0 ? t : t.slice(0, end)) + '\n' + oj.replace(/(^|[^\\])%[^\n]*/g, '$1');
+  const D = { theorems: new Set(), languages: new Set(), boxes: new Set(), defs: new Map(), classTheorems: CLASS_THEOREMS.test(t) };
   let m;
   for (const re of [/\\newtheorem\*?\s*\{([A-Za-z@*]+)\}/g, /\\declaretheorem\s*(?:\[[^\]]{0,200}\])?\s*\{([A-Za-z@*,\s]+)\}/g]) while ((m = re.exec(pre))) for (const n of m[1].split(',')) if (n.trim()) D.theorems.add(n.trim());
   const L = /\\set(?:other|main|default)languages?\s*(?:\[[^\]]{0,200}\])?\s*\{([A-Za-z,\s]+)\}/g;
   while ((m = L.exec(pre))) for (const n of m[1].split(',')) { const x = n.trim(); if (x) { D.languages.add(x); D.languages.add(x[0].toUpperCase() + x.slice(1)); } }
   const BX = /\\(?:newtcolorbox|renewtcolorbox|DeclareTColorBox|NewTColorBox|newtcbtheorem|tcolorboxenvironment|newmdenv|newmdtheoremenv|surroundwithmdframed|newframedtheorem|newshadedtheorem)\s*(?:\[[^\]]{0,200}\])?\s*\{([A-Za-z@*]+)\}/g;
   while ((m = BX.exec(pre))) D.boxes.add(m[1]);
+  // (code put at an environment's start: a box opened there makes it one)
+  const AB = /\\(?:AtBeginEnvironment|BeforeBeginEnvironment)\s*\{([A-Za-z@*]+)\}\s*\{/g;
+  while ((m = AB.exec(pre))) {
+    let d = 1, i = m.index + m[0].length;
+    const b0 = i;
+    while (i < pre.length && d && i - b0 < 2000) { if (pre[i] === '\\') { i += 2; continue; } if (pre[i] === '{') d++; else if (pre[i] === '}') d--; i++; }
+    if (/\\begin\s*\{|\\(?:tcbset|mdfsetup|parbox|fbox|makebox|framebox|savebox)\b/.test(pre.slice(b0, i - 1))) D.boxes.add(m[1]);
+  }
   // (\newenvironment{name}[n][default]{begin}{end}, \NewDocumentEnvironment{name}{args}{begin}{end}: the begin part)
   const NE = /\\(?:(?:re)?newenvironment\*?\s*\{([A-Za-z@*]+)\}\s*(?:\[\d\])?\s*(?:\[[^\]]{0,80}\])?|(?:New|Renew|Provide|Declare)DocumentEnvironment\s*\{([A-Za-z@*]+)\}\s*\{[^{}]{0,80}\})\s*\{/g;
   while ((m = NE.exec(pre))) {
@@ -665,7 +682,7 @@ export function docEnvs(text) {
     while (i < pre.length && d && i - b0 < 2000) { if (pre[i] === '\\') { i += 2; continue; } if (pre[i] === '{') d++; else if (pre[i] === '}') d--; i++; }
     D.defs.set(m[1] || m[2], pre.slice(b0, i - 1));
   }
-  envMemo = { t: text, D };
+  envMemo = { t: text, o: oj, D };
   return D;
 }
 // whether a float (base FLOAT_SAFE) or a wrap (WRAP_OK) may stand in environment n
@@ -685,7 +702,7 @@ function envSafe(n, base, D, depth = 0) {
     return !code;
   }
   if (D.languages.has(n) || LANG_ENVS.test(n)) return true;
-  if (base === FLOAT_SAFE && D.theorems.has(n)) return true;
+  if (base === FLOAT_SAFE && (D.theorems.has(n) || (D.classTheorems && THEOREM_NAMES.test(n)))) return true;
   return base.test(n);
 }
 export function positionWhyNot(P, to) {
@@ -709,8 +726,8 @@ export function positionWhyNot(P, to) {
   }
   return null;
 }
-export function positionEdits(src, s, e, to, nodes, pre) {
-  const P = positionOf(src, s, e, nodes, pre);
+export function positionEdits(src, s, e, to, nodes, pre, others) {
+  const P = positionOf(src, s, e, nodes, pre, others);
   const why = positionWhyNot(P, to);
   if (why) return { error: why };
   const B = P.block, nl = /\r\n/.test(src.slice(B.node.s, B.node.e)) ? '\r\n' : '\n';
