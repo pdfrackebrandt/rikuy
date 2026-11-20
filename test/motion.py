@@ -304,7 +304,9 @@ def clicks(page):
 
 
 def reduced(page):
-    page.emulate_media(reduced_motion='reduce'); page.wait_for_timeout(100)
+    page.emulate_media(reduced_motion='reduce')
+    try: page.wait_for_function("document.documentElement.dataset.motion === 'reduced'", timeout=3000)
+    except Exception: pass
     check('reduced motion: the page knows (data-motion reduced)', ev(page, 'document.documentElement.dataset.motion') == 'reduced')
     click_text(page, 'Press', 1); page.wait_for_timeout(200)
     n = mark(page)
@@ -322,7 +324,9 @@ def reduced(page):
     click_text(page, 'Press', 2); page.wait_for_timeout(200)
     b = caret_box(page)
     check('and the caret is the browser\'s own', (b is None or b['hidden']) and ev(page, '!document.documentElement.dataset.caret'), b)
-    page.emulate_media(reduced_motion='no-preference'); page.wait_for_timeout(100)
+    page.emulate_media(reduced_motion='no-preference')
+    try: page.wait_for_function("document.documentElement.dataset.motion === 'full'", timeout=3000)
+    except Exception: pass
 
 
 def off(page):
