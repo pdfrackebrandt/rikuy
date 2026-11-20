@@ -429,12 +429,12 @@ def review(page):
     page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); page.wait_for_timeout(500)
     page.evaluate('window.rikuy.graphRefresh()'); page.wait_for_timeout(800)
     w = page.evaluate('''async (n) => { const app = window.rikuy, box = [...document.querySelectorAll('.w-live')].find((b) => b.dataset.wf === n + '.html');
-      const a = new Uint8Array(await app.assetBlobs.get(n + '.png').arrayBuffer()); return [box.getBoundingClientRect().width / app.widgets.host.scale(), new DataView(a.buffer).getUint32(16) / 3]; }''', G)
+      const t = await app.assetBlobs.get(n + '.pgf').text(); return [box.getBoundingClientRect().width / app.widgets.host.scale(), +/^% rikuy-graph: \\S+ \\S+ (\\d+)/.exec(t)[1]]; }''', G)
     check('review H3: in two columns the picture is drawn at the column\'s width, as the live figure', abs(w[0] - w[1]) < 3, w)
     # M1: a picture gone (a share link has none) is drawn again
-    page.evaluate('(n) => window.rikuy.setAsset(n + ".png", null)', G)
+    page.evaluate('(n) => window.rikuy.setAsset(n + ".pgf", null)', G)
     page.evaluate('window.rikuy.graphRefresh()'); page.wait_for_timeout(800)
-    check('review M1: a graph\'s missing picture is drawn again', page.evaluate('(n) => window.rikuy.assetBlobs.has(n + ".png")', G))
+    check('review M1: a graph\'s missing picture is drawn again', page.evaluate('(n) => window.rikuy.assetBlobs.has(n + ".pgf")', G))
     # H7: a rikuy.sty in another folder is not the one TeX reads
     load_doc(page, {'main.tex': DOC, 'old/rikuy.sty': '% old'})
     insert_graph(page)
@@ -547,11 +547,13 @@ def review_compiles(page):
     page.get_by_role('textbox', name='Formulas').fill('y = a cos(b x)'); page.wait_for_timeout(300); page.click('#gd-ok'); page.wait_for_timeout(1200)
     r = comp()
     check('review H4: a command with no width prints the picture at the text\'s width: one page, no overfull line', r['ok'] and r['pages'] == 1, r)
-    page.evaluate('window.rikuy.setAsset("plot.png", null)')
+    # (rikuy.sty v1.1 draws PGF: Update pointed the command at plot.pgf, task 70)
+    check('review H4: Update made the hand written PNG command a PGF picture', '{plot.html}{plot.pgf}' in src(page), src(page)[-120:])
+    page.evaluate('window.rikuy.setAsset("plot.pgf", null)')
     # (a change to the text, so TeX runs again: an unchanged text keeps the PDF it has)
     click_text(page, 'Text.', 4); page.keyboard.type('s'); page.wait_for_timeout(300)
     r = comp()
-    check('review M1: with its picture gone, the compile draws it again first', r['ok'] and page.evaluate('window.rikuy.assetBlobs.has("plot.png")'), r)
+    check('review M1: with its picture gone, the compile draws it again first', r['ok'] and page.evaluate('window.rikuy.assetBlobs.has("plot.pgf")'), r)
     # H6: a whole document read in by Text from file compiles
     load_doc(page, W('Para.')); click_text(page, 'Para', 2)
     tex = os.path.join(SHOTS, 'whole2.tex'); open(tex, 'w').write('\\documentclass{article}\n\\usepackage{amssymb}\n\\begin{document}\nChapter $\\mathbb{R}$.\n\\end{document}\n')
