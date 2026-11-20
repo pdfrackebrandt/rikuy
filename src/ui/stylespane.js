@@ -163,7 +163,8 @@ export const methods = {
     const sel = getSelection();
     if (sel.rangeCount && this.root.contains(sel.anchorNode)) this.rbRange = sel.getRangeAt(0).cloneRange();
     list.addEventListener('focusin', () => { const s = getSelection(); if (s.rangeCount && this.root.contains(s.anchorNode)) this.rbRange = s.getRangeAt(0).cloneRange(); });
-    document.body.append(P);
+    // (in #main: on a desktop window it docks at the right as Word's panes do, app.css)
+    (document.getElementById('main') || document.body).append(P);
     this.paneFill();
     this.ribbonSync();
     const cur = list.querySelector('[aria-selected="true"]') || list.querySelector('[role=option]');

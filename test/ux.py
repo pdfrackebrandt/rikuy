@@ -205,7 +205,40 @@ def status_bar(p):
         srv.shutdown()
 
 
-PARTS = {'status_bar': (status_bar, None),
+PANES = (('styles-pane', '#stylespane'), ('spelling', '#sp-pane'), ('thesaurus', '.th-pane'))
+GEOM = """(sel) => { const p = document.querySelector(sel), r = p && !p.hidden && p.offsetParent ? p.getBoundingClientRect() : null, rb = document.getElementById('ribbon').getBoundingClientRect(),
+  st = document.getElementById('status').getBoundingClientRect(), d = document.getElementById('desk').getBoundingClientRect();
+  return r && { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), ribbon: Math.round(rb.bottom), status: Math.round(st.top), desk: Math.round(d.right), win: innerWidth }; }"""
+
+
+def panes(page, w):
+    """Word's task panes (Styles, Editor, Thesaurus) dock at the window's right under the ribbon,
+    and the page moves over: nothing of the ribbon or the page is under them. On a phone they are
+    sheets at the screen's foot."""
+    touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
+    tag = w.replace(' ', '').replace(',', '-')
+    load_doc(page, DOC + '')
+    click_text(page, 'Second paragraph', 3)
+    for cmd, sel in PANES:
+        click_text(page, 'Second paragraph', 3)
+        run_cmd(page, cmd); page.wait_for_timeout(700)
+        g = page.evaluate(GEOM, sel)
+        shot(page, f'pane-{cmd}-{tag}')
+        if not touch:
+            check(f'{cmd}: docked at the right, from under the ribbon to the status bar, the page beside it ({w})',
+                  g and g['right'] == g['win'] and g['top'] >= g['ribbon'] - 1 and abs(g['bottom'] - g['status']) <= 1 and g['desk'] <= g['left'] + 1, g)
+        else:
+            check(f'{cmd}: a sheet inside the screen ({w})', g and g['left'] >= 0 and g['right'] <= g['win'] and g['bottom'] <= page.viewport_size['height'], g)
+        page.keyboard.press('Escape') if cmd != 'styles-pane' else run_cmd(page, 'styles-pane')
+        page.evaluate("(s) => { const p = document.querySelector(s); if (p && !p.hidden && p.offsetParent) { const x = p.querySelector('.pop-x'); if (x) x.click(); } }", sel)
+        page.wait_for_timeout(300)
+        g = page.evaluate(GEOM, sel)
+        check(f'{cmd}: closed, the page has the width back ({w})', g is None, g)
+    check(f'no sideways scroll ({w})', page.evaluate('document.documentElement.scrollWidth') <= page.viewport_size['width'])
+
+
+PARTS = {'panes': (panes, [(1366, False), (1920, True), (390, False)]),
+         'status_bar': (status_bar, None),
          'file_view': (file_view, [(1366, False), (1920, True), (390, False), (360, True)]),
          'first_visit': (first_visit, [(1366, False), (1920, True), (390, False), (360, True)]),
          'dialogs': (dialogs_give_the_caret_back, [(1400, False), (1400, True)]),
