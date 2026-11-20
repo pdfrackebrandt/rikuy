@@ -1611,6 +1611,11 @@ body.fpainting #pages { cursor: copy; }
   #main > .stp, #main > .sp-pane { position: relative; inset: auto; z-index: 3; order: 10; flex: none; align-self: stretch; width: 320px; max-height: none; margin: 0; border: 0; border-left: 1px solid var(--line); border-radius: 0; box-shadow: none; }
   #main > .sp-pane { overflow-y: auto; padding-top: 0; }
 }
+/* a task pane where the page would keep less than 560 px beside it (src/ui/dock.js): over the
+   page's right side, the page keeping its width, as Word lays a pane over a narrow window */
+@media (min-width: 1000px) {
+  #main > .pane-float:is(.stp, .sp-pane, .help-pane) { position: absolute; top: 0; bottom: 0; right: 0; z-index: 25; box-shadow: -10px 0 30px rgba(10, 20, 30, .22); }
+}
 /* Help, Word's pane at the right (src/ui/helppane.js): the popover's content in #main's last column */
 #main > .help-pane { position: relative; z-index: 3; order: 11; flex: none; align-self: stretch; width: 380px; display: flex; flex-direction: column; min-height: 0; background: var(--panel); color: var(--ink-ui); border-left: 1px solid var(--line); }
 .help-pane-h { flex: none; padding: 8px 8px 6px 14px; border-bottom: 1px solid var(--line); }

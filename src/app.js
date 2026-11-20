@@ -44,6 +44,7 @@ import { methods as searchMethods, installSearch } from './ui/search.js';
 import { methods as menuMethods, installMenu } from './ui/menu.js';
 import { installFileView } from './ui/fileview.js';
 import { methods as helpPaneMethods } from './ui/helppane.js';
+import { installDock } from './ui/dock.js';
 import { installKeys } from './keys.js';
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
@@ -5478,6 +5479,7 @@ installKeys(app, isMac, (id, at) => app.runCommand(id, null, at));
 installSearch(app);
 installMenu(app);
 installFileView(app);
+installDock(app);
 app.isBalanced = isBalanced;
 // for tests and the batches' own checks: the registry and the parts controls are made of
 app.cmds = { command, commands, describe, enabled, register, unregister, run: (id, args) => runCmd(app, id, args) };

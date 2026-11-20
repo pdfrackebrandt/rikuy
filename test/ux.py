@@ -534,7 +534,33 @@ def caret_back(page, w):
     run_cmd(page, 'styles-pane')
 
 
-PARTS = {'caret_back': (caret_back, [(1366, False), (1100, True)]),
+def pane_room(page, w):
+    """One task pane docks at a time (a second one asked for takes its place), and only while the
+    page keeps 560 px beside it; else it lies over the page's right side and the page keeps its
+    width. Never wider than the window."""
+    G = """(() => { const d = document.getElementById('desk'), ps = [...document.querySelectorAll('#main > .stp, #main > .sp-pane, #main > .help-pane')].filter((e) => e.checkVisibility());
+      return { desk: Math.round(d.clientWidth), panes: ps.map((e) => e.id || e.className.split(' ')[0]), float: ps.map((e) => e.classList.contains('pane-float')), scroll: document.documentElement.scrollWidth - innerWidth,
+               right: Math.max(0, ...ps.map((e) => Math.round(e.getBoundingClientRect().right))) - innerWidth }; })()"""
+    load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
+    run_cmd(page, 'styles-pane'); page.wait_for_timeout(500)
+    page.keyboard.press('F7'); page.wait_for_timeout(900)
+    g = page.evaluate(G)
+    check(f'Spelling asked for with Styles docked takes its place: one pane at a time ({w})', g['panes'] == ['sp-pane'] and g['scroll'] <= 0, g)
+    page.evaluate('window.rikuy.toggleNav(true)'); page.keyboard.press('Shift+F7'); page.wait_for_timeout(900)
+    g = page.evaluate(G)
+    check(f'with the side panel and the Thesaurus too, nothing runs past the window ({w})', len(g['panes']) == 1 and g['scroll'] <= 0 and g['right'] <= 0, g)
+    page.evaluate('window.rikuy.toggleNav(false)'); page.evaluate("document.querySelectorAll('#sp-pane, .th-pane').forEach((d) => d.hidden = true)"); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.togglePdf(true)'); page.wait_for_timeout(600)
+    click_text(page, 'Second paragraph', 3); run_cmd(page, 'styles-pane'); page.wait_for_timeout(800)
+    g = page.evaluate(G)
+    shot(page, 'pane-room-' + w.replace(' ', '').replace(',', '-'))
+    want_float = page.viewport_size['width'] < 1400
+    check(f'beside the PDF pane the Styles pane {"lies over the page, which keeps its width" if want_float else "docks, the page keeping 560 px"} ({w})', g['panes'] == ['stylespane'] and (g['float'] == [True] and g['desk'] >= 400 if want_float else g['float'] == [False] and g['desk'] >= 560) and g['scroll'] <= 0, g)
+    run_cmd(page, 'styles-pane'); page.evaluate('window.rikuy.togglePdf(false)')
+
+
+PARTS = {'pane_room': (pane_room, [(1024, False), (1920, True)]),
+         'caret_back': (caret_back, [(1366, False), (1100, True)]),
          'help_pane': (help_pane, [(1366, False), (1920, True), (390, False)]),
          'mobile_view': (mobile_view, [(390, False), (360, True)]), 'wide_print': (wide_print, [(1366, False)]),
          'first_comment': (first_comment, [(1366, False), (390, True)]),
