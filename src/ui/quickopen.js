@@ -2,7 +2,8 @@
 // names, Enter goes to the one highlighted. A file drawn on the page (the main file, an \input)
 // puts the caret at its first paragraph; one that is not (a .bib, a .sty) opens in the source
 // pane. Print is the list's first line while nothing is typed, so Ctrl+P then Enter prints, as
-// Word's Ctrl+P then Enter does (docs/handoff/POWER-USER.md 17).
+// Word's Ctrl+P then Enter does (docs/handoff/POWER-USER.md 17); typed by its name, it comes after
+// the files whose names match.
 
 import { mk } from './dom.js';
 
@@ -52,7 +53,10 @@ export function openQuickOpen(app) {
     const q = inp.value.trim();
     const files = [...app.files.keys()].filter((f) => TEXT.test(f)).map((f) => ({ f, s: fileScore(q, f) })).filter((x) => x.s > 0)
       .sort((a, b) => b.s - a.s || (a.f === app.main ? -1 : b.f === app.main ? 1 : a.f.localeCompare(b.f)));
-    rows = [...(!q ? [{ print: true }] : []), ...files];
+    // (Print by its name too, from three letters, after the files that match: "print" then Enter
+    // prints, "pr" still opens proofs.tex; review M3's verification)
+    const byName = q.length > 2 && 'print'.startsWith(q.toLowerCase());
+    rows = [...(!q ? [{ print: true }] : []), ...files, ...(byName ? [{ print: true }] : [])];
     hi = Math.min(hi, Math.max(0, rows.length - 1));
     list.replaceChildren();
     rows.forEach((r, i) => {

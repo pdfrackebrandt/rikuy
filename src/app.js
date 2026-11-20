@@ -3046,6 +3046,9 @@ class App {
       // what the field cannot hold, typed as LaTeX (\begin{aligned}): it goes on in the LaTeX
       // box above, at the caret's place, the field showing what it makes
       toLatex: (more) => {
+        // (a box the field handed over to keeps the field's keys: Enter done, Ctrl+Enter a row;
+        // review N2, where Enter in a display's box was a newline and the next words went in)
+        if (this.pop) this.pop.boxFromField = true;
         let at = ta.value.length;
         try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (ta.value.startsWith(pre)) at = pre.length; } catch (e) { /* at the end */ }
         ta.focus();
@@ -3174,8 +3177,31 @@ class App {
     preview();
     const push = debounce(() => { if (this.pop && !held()) this.pop.applyInner(ta.value); }, 140);
     ta.addEventListener('input', () => { preview(); push(); ta.rows = Math.min(10, Math.max(display ? 3 : 1, ta.value.split('\n').length)); });
+    // a one line display made one of rows (Ctrl+Enter), as Word's: false, said why, where it cannot
+    const toRows = () => {
+      const P = this.pop;
+      const env = P.env || info.a.env;
+      if (/^(align|alignat|flalign|gather|multline|eqnarray)\*?$/.test(env)) return true;
+      const to = env === 'equation' ? 'align' : /^(equation\*|\\\[|\$\$|displaymath)$/.test(env) ? 'align*' : null;
+      if (!to) { this.toast('This display cannot take rows. Pick Aligned in the menu.'); return false; }
+      push.flush();
+      this.changeEnv(to);
+      const sel = P.el.querySelector('#pop-env');
+      if (sel) { if (![...sel.options].some((o) => o.value === to)) { const o = document.createElement('option'); o.value = to; o.textContent = to; sel.appendChild(o); } sel.value = to; }
+      return true;
+    };
     ta.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (!display || e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
+      const fieldKeys = display && this.pop && this.pop.boxFromField;
+      // (in a box the field handed over to: Ctrl+Enter a new row, inside an environment of rows
+      // the box holds or in the display made one of rows)
+      if (fieldKeys && e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        e.preventDefault();
+        const pre = ta.value.slice(0, ta.selectionStart), open = (pre.match(/\\begin\s*\{/g) || []).length > (pre.match(/\\end\s*\{/g) || []).length;
+        if (!open && !toRows()) return;
+        ta.setRangeText(' \\\\\n', ta.selectionStart, ta.selectionEnd, 'end'); ta.dispatchEvent(new Event('input'));
+        return;
+      }
+      if (e.key === 'Enter' && (!display || fieldKeys || e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
       // (the closing $ of a formula in the line, as typed in the source; \$ stays a dollar sign)
       if (e.key === '$' && (!display || (this.pop && this.pop.dollarClose)) && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); if (display) this.swallowDollar = performance.now(); this.closePop(); }
@@ -3215,14 +3241,7 @@ class App {
       // Ctrl+Enter in a one-line display: turn it into an align so it can take rows.
       onNewRowOutside: display ? () => {
         const P = this.pop;
-        if (!P) return;
-        const env = P.env || info.a.env;
-        const to = env === 'equation' ? 'align' : /^(equation\*|\\\[|\$\$|displaymath)$/.test(env) ? 'align*' : null;
-        if (!to) { this.toast('This display cannot take rows. Pick Aligned in the menu.'); return; }
-        push.flush();
-        this.changeEnv(to);
-        const sel = P.el.querySelector('#pop-env');
-        if (sel) { if (![...sel.options].some((o) => o.value === to)) { const o = document.createElement('option'); o.value = to; o.textContent = to; sel.appendChild(o); } sel.value = to; }
+        if (!P || !toRows()) return;
         const mf = P.field;
         if (!mf) return;
         focusField(mf);
@@ -3373,8 +3392,22 @@ class App {
       else this.commit([{ f: base.f, s: base.a, e: base.b, t: '\\$ ' }], { f: base.f, p: base.a + 3 }, 'type');
       return true;
     };
+    // $5 then a space: a price, as Word users type one, not the formula $5$ (review of M6); the
+    // formula written so far goes in the same step
+    const priceKey = (k) => {
+      if (k !== ' ' || o.closer || !/^\d+([.,]\d+)?[.,;:!?)]?$/.test(ta.value)) return false;
+      push.cancel();
+      const t = '\\$' + ta.value + ' ', at = ins, P = this.pop;
+      ins = null; ta.value = '';
+      if (at) this.commit([{ f: at.f, s: at.s, e: at.e, t }], null, P.session);
+      this.closePop(true);
+      if (at) this.restoreCaret({ f: at.f, p: at.s + t.length });
+      else if (ghost) { this.ghost = ghost; this.ghostInsert(t); }
+      else this.commit([{ f: base.f, s: base.a, e: base.b, t }], { f: base.f, p: base.a + t.length }, 'type');
+      return true;
+    };
     ta.addEventListener('beforeinput', (e) => {
-      if (emptyKey(e.data)) { e.preventDefault(); return; }
+      if (emptyKey(e.data) || priceKey(e.data)) { e.preventDefault(); return; }
       keys++;
     });
     ta.addEventListener('input', () => { preview(); push(); });
@@ -3417,7 +3450,7 @@ class App {
       onEscape: () => { push.flush(); this.closePop(); },
       onKey: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        if (emptyKey(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+        if (emptyKey(e.key) || priceKey(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
         if (e.key.length === 1) keys++;
       }
     });
@@ -3909,8 +3942,9 @@ class App {
       if (e.key === 'ArrowDown') { e.preventDefault(); hi = Math.min(shown.length - 1, hi + 1); draw(); }
       if (e.key === 'ArrowUp') { e.preventDefault(); hi = Math.max(0, hi - 1); draw(); }
       if (e.key === 'Enter') { e.preventDefault(); if (shown[hi]) run(shown[hi]); }
-      // (Esc keeps what was typed, written as typed: it went, and the keys after it with it)
-      if (e.key === 'Escape') { e.preventDefault(); const v = inp.value; this.closePop(true); if (v) this.insertPiece(base, ghost, '\\' + v, ''); else back(); }
+      // (Esc keeps what was typed, as the text it is: it went, and the keys after it with it; not
+      // as a command, \sec in prose being an error TeX stops at, review of M6)
+      if (e.key === 'Escape') { e.preventDefault(); const v = inp.value; this.closePop(true); if (v) this.insertPiece(base, ghost, escapeTeX('\\' + v, base ? this.src(base.f)[base.a - 1] || ' ' : ' '), ''); else back(); }
       if (e.key === 'Backspace' && !inp.value) { e.preventDefault(); this.closePop(); }
     });
     draw();
