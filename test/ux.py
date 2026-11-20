@@ -301,7 +301,26 @@ def pdf_bar(page, w):
     check(f'and 44 px under a finger ({w})', all(g[k][2] >= 44 for k in ('x', 're', 'dl', 'eng')), g)
 
 
-PARTS = {'pdf_bar': (pdf_bar, [(390, False), (360, True)]),
+def download_pdf(page, w):
+    """Download PDF before any PDF is made compiles first: while it does, the status bar says what
+    TeX is doing (Word shows a PDF being published there), and goes quiet again after."""
+    if not os.path.isfile(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'dist', 'tex', 'tree.wasm')):
+        print('SKIP download_pdf: no dist/tex'); return
+    seen = []
+    with page.expect_download(timeout=180000) as d:
+        page.click('#rb-pdf')
+        for _ in range(60):
+            page.wait_for_timeout(250)
+            t = page.evaluate("(() => { const s = document.getElementById('st-save'); return s.checkVisibility() ? s.textContent : ''; })()")
+            if t: seen.append(t)
+            if not page.evaluate("window.rikuy.pdfBusy"): break
+    shot(page, 'download-pdf-' + w.replace(' ', '').replace(',', '-'))
+    check(f'while Download PDF compiles, the status bar says what TeX is doing ({w})', any(x.startswith('Making the PDF: ') and len(x) > 18 for x in seen), seen[:4])
+    check(f'the PDF comes, and the status bar is quiet again ({w})', d.value.suggested_filename.endswith('.pdf') and not page.evaluate("document.getElementById('st-save').checkVisibility()"), d.value.suggested_filename)
+
+
+PARTS = {'download_pdf': (download_pdf, [(1366, False)]),
+         'pdf_bar': (pdf_bar, [(390, False), (360, True)]),
          'sample_spelling': (sample_spelling, [(1366, False), (390, True)]),
          'doc_name': (doc_name, [(390, False), (360, True), (700, False), (1366, True)]),
          'panes': (panes, [(1366, False), (1920, True), (390, False)]),

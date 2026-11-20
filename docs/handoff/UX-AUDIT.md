@@ -140,6 +140,23 @@ second) is the one number a Word user would call slow; it is the model's and the
 - On a phone the Spelling pane stays open when Esc is pressed with the focus on the page.
 - The Styles pane draws its names grey (as if disabled) until the caret is on the page.
 
+### 10. A second look (after fixes 1 to 8)
+
+- **Download PDF before a PDF exists** (LOW, small) — fixed ("Say what TeX is doing in the status
+  bar while Download PDF compiles"): the ribbon's button said "Making the PDF…" for the whole run
+  (9 s on this machine) and nothing else did; the status bar now says TeX's stage ("Making the
+  PDF: Fetching packages…"), as Word shows a PDF being published there. `test/ux.py download_pdf`.
+- **Comments open on the left** (MEDIUM, medium; open): Comments opens the side panel's Review
+  tab, at the left, with Changes and Versions in the same list. Word's Comments pane is at the
+  right with the comment cards alone; the docking of finding 5 is where it could go.
+- **A first comment asks for a name** (LOW): Word takes the account's name; a browser has none,
+  so asking once is right. Ctrl+Enter with no name leaves the comment unsent with the name box
+  focused, which reads as nothing happening; it could say why.
+- **Help is a narrow popover** (LOW, medium; open): How Rikuy works opens over the ribbon's end
+  with a two column table of keys wrapped word by word. Word's Help is a pane at the right.
+- **Download LaTeX gives a .zip** for a project of more than one file (the sample has its .bib):
+  the button and its tooltip say "LaTeX source"; the tooltip could say ".zip of the project".
+
 ## Findings for other agents
 
 ### Ribbon tabs (`src/ribbon/`, the ribbon's CSS)
@@ -147,6 +164,10 @@ second) is the one number a Word user would call slow; it is the model's and the
 - Dark mode: the open tab's name (Home) is drawn in a blue barely lighter than the band behind it
   at 1366 and 1920 px (see `/tmp/ux-shots/audit/first-1366-dark.png`).
 - The File view's open and close live in `tabs.js`; finding 3 touches it as little as it can.
+- While Download PDF runs, its label grows to "Making the PDF…" and the download group runs over
+  Home's Editing group at 1366 px ("Replac", "Selec" cut; `/tmp/ux-audit/dl-pdf-progress.png`):
+  the label could stay "PDF" with `aria-busy` and a spinner, now that the status bar says what
+  TeX is doing.
 
 ### Shortcuts (`src/keys.js`, the keys of commands)
 
