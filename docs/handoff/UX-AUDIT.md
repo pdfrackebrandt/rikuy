@@ -98,11 +98,16 @@ second) is the one number a Word user would call slow; it is the model's and the
   `test/ux.py panes`. Finding 1's caret is given back by dialogs only: a menu closed with Esc
   gives the focus to its button (`styles.py`'s More check).
 
-### 6. Phones: the title bar shows no document name and no Saved (MEDIUM, small)
+### 6. Phones: the title bar shows no document name and no Saved (MEDIUM, small) — fixed
 
 - **Where:** `.title-name` is hidden below 861 px.
 - **Word (phone):** the document's name at the top.
 - **Rikuy did:** nothing names the document on a phone; Saved or Not saved is not shown.
+- **Status:** fixed ("Name the document on narrow windows and phones; Make available offline in
+  the phone's menu"): below 861 px the name is beside the search's magnifier wherever the bar's
+  middle has 120 px (so from about 520 px; a name cut to its first letters said nothing on a
+  390 px phone), and the menu panel (the bar's first button) starts with the name and Saved on
+  every window up to 980 px. `test/ux.py doc_name`.
 
 ### 7. The sample opens with 16 spelling errors (MEDIUM, small)
 
@@ -113,11 +118,15 @@ second) is the one number a Word user would call slow; it is the model's and the
 - **Fix:** the sample's own word list (`% rikuy: words`, what Add to Dictionary writes) and
   "emphasize".
 
-### 8. Phones cannot reach Make available offline (MEDIUM, small)
+### 8. Phones cannot reach Make available offline (MEDIUM, small) — fixed
 
 - **Where:** `#b-offline` is hidden at 520 px and below; it is no command, so search does not find
   it either. The offline message in the PDF pane says to use it "in the status bar".
 - **Rikuy did:** on a phone the advice names a control that is not there.
+- **Status:** fixed with 6: the menu panel lists Make available offline where the installed app
+  shows it (saying what it is doing, as the status line's link does), the offline message says
+  "in the status bar, or the menu on a phone", and the panel's actions are 44 px under a finger.
+  `test/ux.py status_bar` (on the hosted app at 390 and 360 px).
 
 ### 9. Smaller ones (LOW)
 

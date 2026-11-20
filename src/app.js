@@ -1237,15 +1237,18 @@ class App {
     // Where the bar shows icons alone (a phone hides Help and the zoom steps too), the menu
     // panel lists each of its actions by name: the bar's own buttons, pressed from here.
     // The three downloads come first: on a phone the ribbon's end, where they are, is a swipe away.
-    for (const id of ['rb-pdf', 'rb-word', 'b-save', 'b-open', 'b-pdf', 'b-copy', 'b-share', 'b-undo', 'b-undo-x', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help']) {
+    // (Make available offline, the installed app's, too: a phone's status line has no room for it)
+    for (const id of ['rb-pdf', 'rb-word', 'b-save', 'b-open', 'b-pdf', 'b-copy', 'b-share', 'b-undo', 'b-undo-x', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help', 'b-offline']) {
       const b = $('#' + id), a = mk('button', 'nav-act');
+      if (!b) continue;
       a.type = 'button'; a.dataset.for = id;
       // (a menu item under the button's own name: the bar's button of that name is still there)
       a.setAttribute('role', 'menuitem');
-      a.setAttribute('aria-label', b.getAttribute('aria-label'));
+      a.setAttribute('aria-label', b.getAttribute('aria-label') || b.textContent.trim());
       const svg = b.querySelector('svg'), lab = b.querySelector('span');
       if (svg) a.appendChild(svg.cloneNode(true));
-      a.appendChild(mk('span', '', (b.closest('.rb-dl') ? 'Download ' : '') + (lab ? lab.textContent : '')));
+      else a.insertAdjacentHTML('beforeend', '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 14.5h8.5a3 3 0 0 0 .4-6 4.5 4.5 0 0 0-8.7-1A3.5 3.5 0 0 0 6 14.5z"/><path d="M10 9v4.5m-2-2 2 2 2-2"/></svg>');
+      a.appendChild(mk('span', '', (b.closest('.rb-dl') ? 'Download ' : '') + (lab ? lab.textContent : b.children.length ? '' : b.textContent.trim())));
       // the zoom steps leave the panel open, to press again
       a.addEventListener('click', () => { if (!/^b-z/.test(id)) this.toggleNav(false); b.click(); if (/^b-z|zoomv/.test(id)) this.navActs(); });
       $('#nav-acts').appendChild(a);
@@ -4887,7 +4890,7 @@ class App {
       const d = document.createElement('div'); d.className = 'pdf-empty';
       // offline, a file TeX has not kept fails to load; say what to do rather than "Failed to fetch"
       const need = e && e.unkept ? ' (' + e.unkept.slice(0, 5).join(', ') + (e.unkept.length > 5 ? ' and more' : '') + ')' : '';
-      const off = __RIKUY_APP__ && APP.on && navigator.onLine === false ? 'You are offline, and this document needs TeX files this browser has not kept yet' + need + '. Compile it once with a network and they stay; Make available offline in the status bar keeps those of a typical paper and of the open document. ' : '';
+      const off = __RIKUY_APP__ && APP.on && navigator.onLine === false ? 'You are offline, and this document needs TeX files this browser has not kept yet' + need + '. Compile it once with a network and they stay; Make available offline (in the status bar, or the menu on a phone) keeps those of a typical paper and of the open document. ' : '';
       const line = document.createElement('p');
       line.textContent = e && e.scripts ? e.message + ' The page preview can still be printed.' : off + this.texFailText(e, !!off, !!need) + 'The page preview can still be printed.';
       said = st.textContent + '. ' + line.textContent;
