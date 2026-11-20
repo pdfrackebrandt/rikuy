@@ -132,7 +132,7 @@ export const methods = {
     const p = guide(this, 'Keyboard shortcuts', 'rh-keys', 560, 'pop-help pop-guide');
     const mac = /Mac|iPhone|iPad/.test(navigator.platform || '');
     p.append(para(mac ? 'Ctrl means Cmd on a Mac. The keys act with the caret on the page unless said.' : 'The keys act with the caret on the page unless said.'));
-    p.append(para('Alt alone, or F10, shows the letters on the tabs (H Home, N Insert, G Design, P Layout, S References, R Review, W View, F File, Y then 2 Help). Esc puts them away.'));
+    p.append(para('Alt alone, or F10, shows the letters on the tabs (H Home, N Insert, G Design, P Layout, S References, R Review, W View, F File, Y then 2 Help); a tab\'s letter shows its buttons\' letters (Alt, N, T is Table). Esc goes back a step.'));
     p.append(para('A few of Word\'s keys stay with the browser, or already mean something else here. Ctrl+N starts a new document when the browser lets the page hear it; Ctrl+T is always a new browser tab. Ctrl+W closes the source or the PDF when one is open, and otherwise the browser closes the tab. Ctrl+= and Ctrl+- zoom the page, so subscript and superscript stay Ctrl+, and Ctrl+.. Ctrl+M inserts math; indent is Tab, or Increase Indent. Ctrl+Shift+V pastes the words alone; copying the formatting is Ctrl+Shift+C, the Format Painter. There is no mail merge and no split window.'));
     const byTab = new Map();
     for (const c of commands()) {
