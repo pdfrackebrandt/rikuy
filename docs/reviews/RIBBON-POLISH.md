@@ -149,3 +149,59 @@ Each finding, what changed and the test that failed before it:
 
   Tests: `tabs.py frontier`, three checks, and `downloads_group`; `agent.py`, llms-full.
 - Not done: L5 (Word's own layout differences, the oldest of them on main before this branch), L7 (fixed by 6fe04ee, as the review says) and L8 (`theme-color` has no value for forced colours to follow).
+## Verification of a36df98
+
+Built from a clean worktree at a36df98 (removed afterwards). Scripts are in /tmp/review-dl-out/scripts/ (v2 to v6, loop, loop2, icons2); screenshots are in /tmp/review-dl-out/shots2/.
+
+**Verdict: merge.** H1, H2 and M1 are fixed, and so are M2, M3, M4 and L1 to L6. The one new finding (N1, Low) fails safe and can follow in a later change.
+
+### Fixed
+
+**H1, the stale place.** Attacked again (`v2.py`):
+- **Source pane.** Typing before the kept place: Page break lands at "The |last", no table tab shows, and Table Layout › Insert Below returns false. Typing inside a kept selection ("be|ta" → "beXXta") widens it, and Bold bolds "beXXta".
+- **Undo and Redo with no caret.** Undo from the Quick Access bar, and Ctrl+Z, put the caret back on the page at the undone edit, as Word does.
+- **Git pull.** A pull that replaces the file (`loadGitFiles`) drops the kept place, so a command acts at the document's end. No table tab appears.
+- **Agent.** `setSource()` with a whole new document, then `run()`, acts at the end as llms.txt says (on a fresh page, `v4.py`).
+- **Two tabs.** Work from another tab comes in as one edit over the whole file (`adoptOtherTab`), so the kept place is dropped and the end stands for it. That is safe; it is not Word's exact place.
+
+**H2, the refresh loop.** After a press on the status bar, with no caret:
+- 0 refreshes in 3 s on a short document.
+- 0 in 5 s on 3000 paragraphs (`loop.py`, `loop2.py`).
+
+**M1, a lost selection.** Select "beta", press the status bar, Bold: `\textbf{beta}`.
+
+**M2, consistency.py and the fixes behind it.**
+- consistency.py now has 23 rules, including case and surface. The full run gives 23 PASS with 0 violations in 4.5 min. `tabs.py no_caret` gives 8 PASS.
+- Stroked lines are 1 px everywhere, except the 2 px drawn on purpose (Borders, Display for Review, Show Markup); the search icon is now 1 px.
+- Ribbon fields are 24 px; the search box is 28.
+- Insert's names are now title case.
+
+**M3, forced colours.** The selected tab and the pressed Preview now differ in pixels (212 and 400). The status bar's pressed view shows a Highlight-like background.
+
+**M4, the pressed title bar toggle.** It now has a 2 px underline in ink.
+
+**L1, the focus ring.** After opening Frontier with the mouse, Close has focus with no ring drawn. After closing with the mouse, Frontier has no ring.
+
+**L2 and L3, Frontier's popover.**
+- The button has `aria-haspopup="dialog"` and `aria-expanded` follows the popover.
+- `aria-describedby` reads both paragraphs.
+- Tab stays inside the popover.
+- Corners are 8 px and its buttons are 32 px.
+
+**L4 and L6.** The downloads have arrows. llms-full.txt no longer says "Formatting marks".
+
+### Icons, redrawn at 1366 and 1920, light and dark
+
+- **At device pixel ratio 1:** lines fall on whole pixels. The align, list, Review and Insert icons are crisp, with no shapes merged or skewed.
+- **At ratio 2:** crisp, and the shapes are unchanged.
+- **Positions:** 37 SVGs sit at fractional CSS positions (the bar's buttons right of the search box, rc-margins). They still render crisp, because Chrome snaps them to the pixel grid.
+- **At ratio 1.25:** the 1 px lines blur. A 1 px line cannot be crisp at that ratio, and `regrid` ignores `devicePixelRatio`. This is a note, not a finding.
+
+### New finding
+
+**N1 (Low): with focus on the page and no selection, everything is disabled.**
+- `ribbonAtRest`'s guard `a.closest('… [contenteditable="true"] …')` matches the page root `#pages` itself.
+- So when the page has the focus but no selection, the ribbon is all disabled and `api.run` returns false.
+- Repro (`v5.py`): click in a paragraph, then `api.setSource()` deletes that paragraph. The `gone` branch removes the selection and leaves the focus on `#pages`. Then `run('page-break')` returns false and Page break is disabled.
+- llms.txt promises the document's end. This fails safe: nothing is written.
+- Fix: `a !== this.root &&` in the guard, or blur the page in setSource's `gone` branch.

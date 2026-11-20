@@ -75,7 +75,9 @@ export const ribbon = {
   // the place the ribbon stands for with no caret on the page (see ribbonAt): the kept selection's
   // range, or a caret at the document's end, read as a caret there would be
   ribbonAtRest(a) {
-    if (a && a !== document.body && a.closest && a.closest('input, textarea, select, math-field, [contenteditable="true"], .pop, [role=dialog], .CodeMirror')) return null;
+    // (the page itself with the focus and no selection, as an agent's setSource leaves it when it
+    // takes the caret's words away, is no field: the kept place or the document's end stands)
+    if (a && a !== document.body && a !== this.root && a.closest && a.closest('input, textarea, select, math-field, [contenteditable="true"], .pop, [role=dialog], .CodeMirror')) return null;
     const sel = getSelection();
     if (sel.rangeCount && !sel.getRangeAt(0).collapsed) return null;
     let rng = null;

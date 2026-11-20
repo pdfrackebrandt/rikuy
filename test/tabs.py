@@ -783,6 +783,16 @@ def no_caret(p):
     page.evaluate("rikuy.api.run('page-break')"); page.wait_for_timeout(300)
     a2 = src(page)
     check('setSource with words before the place: Page break at the place moved with them; a new document set: at its end', 'The\n\\newpage\nlast paragraph.' in a1 and 'in it.\n\\newpage\n\\end{document}' in a2, (a1[-60:], a2[-60:]))
+    # N1 of the verification: the caret's paragraph taken away by setSource leaves the page with the
+    # focus and no selection; a command acts at the document's end, as llms.txt says
+    load_doc(page, NOCARET); page.wait_for_timeout(300)
+    page.mouse.click(*page.evaluate(AFTER, ['The last', 4])); page.wait_for_timeout(300)
+    page.evaluate('(t) => rikuy.api.setSource(t)', src(page).replace('\n\nThe last paragraph.', '')); page.wait_for_timeout(300)
+    st = page.evaluate("[document.activeElement.id, getSelection().rangeCount]")
+    r = page.evaluate("rikuy.api.run('page-break')"); page.wait_for_timeout(300)
+    end = src(page)
+    # (the document's end: its last words that can be edited, here the paragraph before the table)
+    check('the page with the focus and no selection (setSource took the caret\'s paragraph away): Page break runs, at the document\'s last words', r is True and 'gamma.\n\\newpage' in end and end.count('\\newpage') == 1, (st, r, end[end.find('Opening'):]))
     # H2: an idle page with no caret refreshes nothing
     load_doc(page, NOCARET); page.wait_for_timeout(300)
     page.mouse.click(*page.evaluate(AFTER, ['The last', 4])); page.wait_for_timeout(200)
