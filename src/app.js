@@ -45,6 +45,8 @@ import { methods as menuMethods, installMenu } from './ui/menu.js';
 import { installKeys } from './keys.js';
 import { installMotion } from './motion.js';
 import { installCaret } from './caret.js';
+import { installWebMcp } from './webmcp.js';
+import { TOOLS, agentTools, callTool as callAgentTool, describeCommand } from './agent.js';
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
 import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf } from './styles.js';
@@ -5304,8 +5306,12 @@ function stripTop(n) { const i = n.indexOf('/'); return i > 0 && n.split('/').le
 
 // ---- for scripts on the page ------------------------------------------------------------
 // window.rikuy.api: what a script on the page (an AI agent's, a test's) may count on. These
-// ten names stay from version to version (commands and run came in 0.26.0, the others before); the rest of window.rikuy is the app itself and
-// changes without notice. Nothing here does more than a person at the keyboard can: a new
+// names stay from version to version (commands and run came in 0.26.0; tools, callTool,
+// getDocument, select, runCommand, editSource, insertGraph and undo with the agent tools, task
+// 71, the others before); the rest of window.rikuy is the app itself and changes without notice.
+// The agent tools (src/agent.js) are the same as WebMCP's: callTool(name, input) runs one as the
+// browser's agent would, asking the person where the tool asks; the named methods are the same
+// tools, throwing an Error with the tool's words where it returns one. Nothing here does more than a person at the keyboard can: a new
 // source goes through the edit path typing takes (one undo takes it back), a compile is the
 // one Download PDF runs, and a copy someone shared is read here but not changed.
 function agentApi(app) {
@@ -5313,6 +5319,9 @@ function agentApi(app) {
   const mine = (what) => {
     if (document.body.classList.contains('guest')) throw new Error('rikuy.api.' + what + '() changes the document, and this one is open in guest view (a copy someone shared): a script can read it, not change it. getSource(), getFiles(), needs() and compile() work here.');
   };
+  let tools = null;
+  const T = () => tools || (tools = agentTools(app));
+  const call = async (name, input) => { const r = await callAgentTool(app, T(), name, input); if (r && r.error) throw new Error(r.error); return r; };
   return Object.freeze({
     // the build: the package's version, and in the installed app the hash of its files too
     version: VERSION + (__RIKUY_APP__ && appInit().on ? '+' + appInit().v : ''),
@@ -5358,7 +5367,7 @@ function agentApi(app) {
       flush();
       const at = app.ribbonAt();
       if (at) at.memo = {};
-      return commands().filter((c) => c.run && c.searchable !== false).map((c) => ({ id: c.id, name: c.name, tab: c.tab || null, group: c.group || null, keys: [...(c.keys || []), ...(c.keysElsewhere || [])], enabled: enabled(app, c, at) }));
+      return commands().filter((c) => c.run && c.searchable !== false).map((c) => describeCommand(app, c, at));
     },
     // one command by its id where the caret is, as its button does: resolves to true when it ran,
     // false when it cannot run there (commands() says which can)
@@ -5369,7 +5378,23 @@ function agentApi(app) {
       flush();
       const r = await app.runCommand(id, args);
       return r !== false;
-    }
+    },
+    // ---- the agent tools (src/agent.js), as WebMCP has them
+    tools: Object.freeze(TOOLS.map((t) => Object.freeze({ name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations, method: t.api }))),
+    // one tool by its name: its result, or { error } in plain words (never throws)
+    callTool(name, input) { return callAgentTool(app, T(), name, input); },
+    // the document as data: sections, formulas, figures, graphs, citations, labels, problems...
+    getDocument(include) { return call('get_document', include ? { include } : {}); },
+    // the caret (start) or a selection (start to end) at a place of a file's source
+    select(file, start, end) { return call('select', { file, start, end }); },
+    // a command, as run() does, saying what it changed: { ran, changed, undoSteps, selection }
+    runCommand(id, args) { return call('run_command', { id, args }); },
+    // { file, start, end, text, expected } or { at: 'selection', text }: one edit, said as changed
+    editSource(edit) { return call('edit_source', edit); },
+    // an interactive graph after the caret's paragraph
+    insertGraph(spec, caption) { return call('insert_graph', { spec, caption }); },
+    // the last steps of the history back
+    undo(steps) { return call('undo', steps ? { steps } : {}); }
   });
 }
 
@@ -5437,9 +5462,11 @@ installRibbon(app);
 installKeys(app, isMac, (id, at) => app.runCommand(id, null, at));
 installSearch(app);
 installMenu(app);
-// motion (src/motion.js) and Word's animated caret (src/caret.js)
+// motion (src/motion.js), Word's animated caret (src/caret.js), and the tools an AI agent in this
+// browser may use where the browser offers them (src/webmcp.js, WebMCP)
 installMotion(app);
 app.caret = installCaret(app);
+app.ready.then(() => installWebMcp(app), () => {});
 app.isBalanced = isBalanced;
 // for tests and the batches' own checks: the registry and the parts controls are made of
 app.cmds = { command, commands, describe, enabled, register, unregister, run: (id, args) => runCmd(app, id, args) };
