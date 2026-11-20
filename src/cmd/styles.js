@@ -116,7 +116,7 @@ register(
   // pane is where Modify and Update to Match are there, with no More menu and no right click)
   { id: 'styles-pane', name: 'Styles pane', keys: ['Ctrl+Alt+Shift+S'], keyScope: 'app', title: 'Styles pane (Ctrl+Alt+Shift+S): every style of this document, the one at the caret marked; Modify, New Style, Update to Match',
     synonyms: ['Styles window', 'Style list', 'Manage styles', 'Style Inspector'], when: () => true, run: (app) => app.toggleStylesPane() },
-  { id: 'modify-style', name: 'Modify Style', title: 'Modify Style: a heading level\'s font, size, colour, alignment, rule, spacing and numbering (titlesec\'s \\titleformat and \\titlespacing, once in the preamble), or a style of this document\'s own',
+  { id: 'modify-style', name: 'Modify Style', dialog: true, title: 'Modify Style: a heading level\'s font, size, colour, alignment, rule, spacing and numbering (titlesec\'s \\titleformat and \\titlespacing, once in the preamble), or a style of this document\'s own',
     synonyms: ['Modify', 'Change style', 'titleformat', 'Heading format'], menu: { heading: 72 }, when: (app, at) => { const st = styleOf(app, at); return !!st && app.canModifyStyle(st.v); },
     whyNot: (app, at) => { const st = styleOf(app, at); return st ? app.modifyWhy(st.v) : WHY.none; }, run: (app, args, at) => app.openModifyStyle(args && args.v ? args.v : (styleOf(app, at) || {}).v) },
   { id: 'create-style', name: 'Create a Style', title: 'Create a Style: a character style (\\newcommand{\\name}[1]{…}) or a paragraph style (\\newenvironment), from the formatting at the caret, written once in the preamble',
@@ -126,7 +126,7 @@ register(
     // (with { v } it names the style itself, wherever the caret is: the pane's menu and agents)
     when: (app) => !!app.model, whyNot: () => 'Put the caret in a style of this document\'s own (one it defines), or use Rename… in the Styles pane.',
     run: (app, args, at) => { const v = args && args.v ? args.v : (styleOf(app, at) || {}).v; return args && args.name ? app.renameStyle(v, args.name) : app.openRenameStyle(v); } },
-  { id: 'update-style', name: 'Update Style to Match Selection', title: 'Update to Match Selection: the formatting on the caret\'s heading (\\textsf{…}, \\textcolor{…}{…}) becomes its level\'s look, and comes off the heading',
+  { id: 'update-style', name: 'Update Style to Match Selection', menuName: 'Update to Match Selection', title: 'Update to Match Selection: the formatting on the caret\'s heading (\\textsf{…}, \\textcolor{…}{…}) becomes its level\'s look, and comes off the heading',
     synonyms: ['Update to Match', 'Match Selection'], menu: { heading: 73 }, when: (app, at) => { const st = styleOf(app, at); return !!st && app.canUpdateStyle(st.v); },
     whyNot: () => 'Put the caret in a heading whose words all have the formatting to take (\\textsf{…}, \\textcolor{…}{…}).', run: (app, args, at) => app.updateStyle(args && args.v ? args.v : (styleOf(app, at) || {}).v) },
   // the Design tab: the document's formatting as a whole

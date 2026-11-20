@@ -124,7 +124,7 @@ register(
     title: 'More Font Effects: small caps, all caps, double strikethrough, border, shading, enclosed characters, ruby', synonyms: ['Effects', 'Text effects'],
     when: can, whyNot: () => WHY, run: (app) => app.moreMenu() },
   // (Word's launcher at the group's corner: here More Font Effects' last item, the right click menu and Ctrl+D)
-  { id: 'font-dialog', name: 'Font Settings', keys: ['Ctrl+D'],
+  { id: 'font-dialog', name: 'Font Settings', dialog: true, keys: ['Ctrl+D'],
     title: 'Font… (Ctrl+D): every character format in one dialog, with a preview, and the spacing, scale and position of letters', synonyms: ['Font dialog', 'Font…', 'Character spacing', 'Advanced font'],
     menu: { selection: 80, text: 80 }, when: can, whyNot: () => WHY, run: (app) => openFontDialog(app) },
 

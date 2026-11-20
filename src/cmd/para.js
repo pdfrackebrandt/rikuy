@@ -157,7 +157,7 @@ register(
   { id: 'clear-paragraph-formatting', name: 'Clear Paragraph Formatting', keys: ['Ctrl+Q'],
     title: 'Clear Paragraph Formatting (Ctrl+Q): alignment, spacing, indents and breaks off the paragraph',
     synonyms: ['Reset paragraph', 'Clear paragraph'], when: can, whyNot: why, run: (app) => app.paraReset() || (app.toast('Nothing to clear here.'), false) },
-  { id: 'paragraph-settings', name: 'Paragraph Settings', order: 150, tab: 'home', group: 'paragraph', icon: ICON.settings, menu: { text: 92, selection: 92 },
+  { id: 'paragraph-settings', name: 'Paragraph Settings', dialog: true, order: 150, tab: 'home', group: 'paragraph', icon: ICON.settings, menu: { text: 92, selection: 92 },
     title: 'Paragraph…: indents, spacing, line spacing, alignment, page breaks and the whole document\'s settings',
     synonyms: ['Paragraph', 'Paragraph…', 'Paragraph dialog', 'Indents and Spacing', 'Line and Page Breaks'],
     when: (app, at) => can(app, at) || docOK(app), whyNot: why, run: (app, args, at) => app.paraDialog(args, at) },
