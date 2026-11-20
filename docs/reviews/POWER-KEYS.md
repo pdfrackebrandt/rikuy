@@ -220,3 +220,88 @@ item that cannot change level still lets the focus visit the status bar for a mo
 word, the same on base). M1 costs some of the queue's gain, since a space now ends each run: on
 `dev/bench/long`, 62 characters 15 ms apart, the page is done 527 ms after the last key with the
 queue and 891 ms without (3147 and 7312 at 4x CPU slowdown), on a machine shared with other runs.
+
+## Verification of 2308408
+
+Own worktree at 2308408 (main merged), `npm run build`, no TeX tree. I reran the first round's
+scripts and added `v2.py` (the fixes), `eqbox.py`, `eqins.py`, `eqeq.py`, `eqfast.py` and
+`price.py`, all in `/tmp/review-power-out/scripts/`.
+
+**Verdict: fix first.** Two small changes, both in the equation field's switch to its LaTeX box
+(N1 is new from H2's fix, N2 is now reached by every IME user). Everything else holds.
+
+### The findings, one by one
+
+| finding | result | evidence |
+|---|---|---|
+| H1 | fixed | F12 right after a picked `\ref`: caret stays (99 to 99) and `main.tex` downloads. Shift+Left over the ref, then F12: goes to the label (57), with no download. Shift+F5 comes back. |
+| H2 | fixed | Japanese IME inside `\text{`: `x=1\text{日本}+y`. Dead key: `x=1\text{café}+y`. In an inline formula: `$x=1\text{日本}$`. See N1 and N2 for what the fix brings. |
+| H3 | fixed | Enter twice in frame, center and multicols stays inside (`Inside text.\n\nNEW\n\n\end{frame}`). In theorem, proof and quote it leaves. |
+| M1 | fixed | Edit menu Undo with letters waiting: the text stays whole, and Undo, Undo, Redo, Redo gives `2004h}. Qxyz Important` (correct). A paste goes after the letters (`QxyPASTE`). A system replacement read at the space: `teh` becomes `the`, because the space's keydown now writes the word first. |
+| M2 | fixed | `\` figure or `begin{theorem}` in a heading goes after the heading. Nothing is written inside `\caption{}`. itemize gets `\item `, and tabular gets `{ll}` and a row. |
+| M3 | fixed | Ctrl+P, empty box, Enter: prints. `p` Enter: opens part1.tex on the page. `pr` Enter: opens proofs.tex in the source pane. |
+| M4 | fixed | `pages-how` ends with "Tab indents; Escape, then Tab, leaves." Help has the line. |
+| M5 | fixed | The reference picker and Go to File are a combobox (`aria-controls`, `aria-expanded`, `aria-activedescendant`) over a listbox of options, with a polite live region. |
+| M6 | fixed | `$$x^2$$` on a new paragraph gives `\[ x^2 \]`. `\(x\) y` gives `\(x\) y`; `\[x\] y` gives a display; `\$5 ok` gives `\$5 ok`; `a\\b` stays as typed. `\` then Esc writes nothing. |
+| L6 | fixed | `a $ $ b` gives `a \$ \$ b`. |
+| L1 | fixed | Ctrl+End goes after a closing equation and after a closing table. |
+| L4 | fixed | Tab over a selection gives `he\quad{}X`. Tab in a heading gives `\section{He\quad Xad}`. |
+| L5 | fixed | `\o` and `\quad` are written as text. |
+| L2, L3, L7 | left, as stated | L3 is still there: focus visits a button, then comes back. |
+
+- **Queue under real keys** at 6x CPU throttle: `Zebraaaaaaa cafeé worX end` (autorepeat,
+  capitals, dead key, Backspace, AltGr), in order.
+- **IME between waiting letters:** ` ab日本cd`.
+- **Input to paint at a normal pace** on `dev/bench/long`: median 40 ms (base 48 ms).
+- **Regression suites:** all pass.
+
+  | suite | checks |
+  |---|---|
+  | power.py | 111 |
+  | browser.py | 201 |
+  | mathfield.py | 19 |
+  | wordmath.py | 84 |
+  | eqtab.py | 158 |
+  | lists.py | 203 |
+  | find.py | 114 |
+  | outline.py | 103 |
+  | view.py | 154 |
+  | shortcuts.py | 82 |
+  | agent.py | 142 |
+  | ribbon.py | 195 |
+  | ux.py | 326 |
+
+### New
+
+**N1 (Medium, from H2's fix): with a `\text{` or `\mathbb{` still open, Ctrl+Enter writes the
+word "insertText" into the formula.**
+- Where: `src/wordmath.js`, the H2 `beforeinput` listener (`toBox(e.data || '')`). It catches the
+  field's own insertion for Ctrl+Enter (the display's new row).
+- Repro (`eqins.py`): Alt+= on a new line, type `x=1\text{if`, then Ctrl+Enter. The box reads
+  `x=1\text{ifinsertText}` and so does the source. `\mathbb{R` gives `\mathbb{RinsertText}`.
+  Enter instead gives `\text{if}`, which is correct.
+- Fix: take only trusted input from the person (`e.isTrusted`, no MathLive command in progress),
+  or let a Ctrl, Alt or Meta chord end the argument first, as Enter does.
+
+**N2 (Medium): after the switch to the LaTeX box in a display formula, Enter is a newline, and
+the next sentence goes into the equation.**
+- Where: `src/app.js`, the LaTeX box's keydown (`Enter && (!display || Ctrl)`).
+- Repro (`eqbox.py`): Alt+= on a new line, `x=1\text{`, IME `日本`, `}+y`, then Enter, then
+  "Next words."
+  - The source becomes `x=1\text{日本}+y\n Next words.\n\end{equation}`, and the popover is still
+    open.
+  - The same keys without an IME close on Enter: `\end{equation} Next words.`
+  - `x=\begin{aligned}…` lands in the same place: that part predates this round.
+  - The field's hint says "Enter done"; once the box takes over, Enter means something else.
+- Fix: a box opened by the switch (`toLatex`) keeps the field's keys. Enter is done and
+  Ctrl+Enter a new row, as the hint says.
+
+### Low, new
+
+- Ctrl+P, typing `print`, Enter does nothing: the Print row shows only while the box is empty.
+- Esc in the insert list writes what was typed as it stands: `\sec`, then Esc, gives `z \sec w`,
+  math-only in prose, a TeX error. Enter on the same text opens a formula; Esc should apply the
+  same rule, or write nothing.
+- Not this branch's, and the same on base: a price, `costs $5 each`, becomes `$5each$`. `$$`, which
+  was a dollar sign, is now a display (`pay $$ now` gives `\[ now \]`), with `$` then a space as
+  the new dollar sign. That is Overleaf's behaviour, but people who learned the old hint lose it.
