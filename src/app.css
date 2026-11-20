@@ -1181,9 +1181,17 @@ body.guest #b-new, body.guest #b-sample { display: none; }
 /* Word's status bar keeps its views and zoom at the right end: on a desktop window too narrow for
    the whole line the slider goes first (the zoom's number stays) and the language is cut short,
    before anything scrolls out of sight */
-@media (min-width: 861px) and (max-width: 1279px) {
+@media (min-width: 700px) and (max-width: 1279px) {
   .st-zoom input { display: none; }
   #st-lang { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+}
+/* from 700 px it folds as Word's does: the views and the zoom stay whole at the right end, and
+   the words in the middle (the language, Track Changes, the storage line, the links) are cut short
+   with an ellipsis before anything is pushed past the window (a wider font in CI's Chromium put the
+   zoom 11 px out at 900 px) */
+@media (min-width: 700px) {
+  #status > .linkish, #status > #st-lang, #status > #st-track, #status > #st-save, #status > #st-words { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #status > #st-pages, #status > .st-views, #status > .st-zoom { flex: none; }
 }
 /* the Find and Replace dialog: open while the page is worked on, out of the text's way */
 .fr { position: fixed; z-index: 38; top: 112px; right: 18px; width: min(452px, calc(100vw - 16px)); box-sizing: border-box; background: var(--panel); color: var(--ink-ui); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 14px 44px rgba(10, 20, 30, .24); padding: 0 12px 12px; display: flex; flex-direction: column; gap: 9px; font: 13px/1.4 var(--font-ui); max-height: calc(100vh - 130px); overflow: auto; }
@@ -1964,10 +1972,11 @@ body.focus #desk { display: block !important; }
 }
 /* (a window narrower than its line: the slider goes, and the line scrolls by itself, never the page) */
 @media (max-width: 860px) {
-  .st-zoom { display: none; }
   #status { white-space: nowrap; overflow-x: auto; scrollbar-width: none; }
   #status::-webkit-scrollbar { display: none; }
 }
+/* (the zoom's number from 700 px, as Word's status bar keeps it; a phone has the bar's) */
+@media (max-width: 699px) { .st-zoom { display: none; } }
 @media (max-width: 520px) {
   .st-views { order: -1; }
   .st-views button { padding: 0 8px; }
