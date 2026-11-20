@@ -3263,6 +3263,33 @@ Tests:
     (M2), a French keyboard's Ctrl+1 is Ctrl+1 (M3), Hanging Indent round trips (M4), Alt+X reads
     LaTeX's accents (M5), and the lows. Evidence: `npm test` green (`keys` 19 groups, `typing` 6, `commands` 13 with the
     `WORD` table on both systems, `table` 47), `test/shortcuts.py` 82 checks (screenshots in `/tmp/keys-shots`).
+67. **UX pass 2: what a newcomer meets outside the ribbon.** Done in the code (branch
+    `ux-pass-2`, draft PR 79). `docs/handoff/UX-AUDIT.md` is the audit at 1920, 1366, 390 and 360
+    px, light and dark, ranked by how much each finding hurts, with the first visit's and a
+    keystroke's times (cable, cold: document 1.27 s, a key lands 1.42 s, first PDF 19.6 s; a
+    keystroke on the long document 70 ms, 500 ms at a phone's speed). Fixed, each a commit with
+    its part of `test/ux.py` (new, in CI's editor job): a dialog closed with Esc, Cancel or Close
+    gives the caret back (`makePop`, `closePop`); the first visit opens with the caret at the first
+    paragraph on a desktop (`placeInitialCaret` had always been empty); File is a view over the
+    window with Back, Esc and any command run from it closing it (`src/ui/fileview.js`); the
+    status bar keeps its views and zoom in sight and its word count opens Word Count; the Styles,
+    Spelling and Thesaurus panes dock at the right; the document's name on narrow windows and in
+    the phone's menu panel, with Make available offline there; the sample without red marks; the
+    PDF bar in two rows on a phone, 44 px; Download PDF's progress in the status bar; Apply Styles
+    reads the caret's style when it opens; a phone opens in Mobile View (Web Layout at its actual
+    size) with Print Layout one tap away, kept on the device; Help is a pane at the right on a wide
+    window; llms.txt says File covers the page. The hostile review (`/tmp/review-ux.md`) is
+    answered in the commits named after it (File's keys, Esc with a pane docked, Back, a
+    template's caret, ...). The verification of 933773d (N1 to N6) is answered too: the reader's
+    place kept when Mobile View turns on or off, File's Home by the keys, Esc from a dialog opened
+    from File giving its command the focus, Help a sheet below 1000 px, a widened window taking a
+    wide window's view, File's column holding its Download row; the top bar's zoom says the same
+    percentage as the status bar. Outside the ribbon, one size and shape per kind
+    (`docs/handoff/UI-PRINCIPLES.md`): dialogs', Find and Replace's and the panes' buttons and
+    fields 32 px with 4 px corners (44 under a finger), dialogs and sheets 8 px, one title style
+    (14 px semibold), a close button 44 px under a finger, the status bar's words one size and
+    its views one height, File's column 32 px, a phone's top bar 44 px (`ux.py consistency`).
+    Open, in the audit: findings for the ribbon tabs agent.
 
 66a. **The ribbon's other tabs laid out as Word's.** Done in the code (branch `ribbon-tabs-word`).
     Home was done in PR 75; `src/ribbon/layout.js` now says, for Insert, Design, Layout,

@@ -100,6 +100,8 @@ jobs:
         run: cd test && python3 page.py
       - name: Rikuy as an agent meets it (the scripting surface, every control by its name)
         run: cd test && python3 agent.py
+      - name: What a newcomer meets outside the ribbon (dialogs, the File view, the status bar, panes, phones)
+        run: cd test && python3 ux.py
       # their PDF checks need dist/tex and run in tex.yml; here they say they skip that part
       - name: Find, Replace and Go To (the Navigation pane's search, the Find and Replace dialog, Select)
         run: cd test && python3 find.py

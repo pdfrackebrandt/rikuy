@@ -42,6 +42,9 @@ import { tabs, installRibbon } from './ribbon/tabs.js';
 import { methods as galleryMethods } from './ui/gallery.js';
 import { methods as searchMethods, installSearch } from './ui/search.js';
 import { methods as menuMethods, installMenu } from './ui/menu.js';
+import { installFileView } from './ui/fileview.js';
+import { methods as helpPaneMethods } from './ui/helppane.js';
+import { installDock } from './ui/dock.js';
 import { installKeys } from './keys.js';
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
@@ -499,7 +502,7 @@ class App {
     this.rebuild();
     $('#boot').hidden = true;
     document.fonts && document.fonts.addEventListener && document.fonts.addEventListener('loadingdone', debounce(() => this.relayout(true), 200));
-    new ResizeObserver(debounce(() => { if (this.computePx()) this.relayout(true); }, 150)).observe(this.desk);
+    new ResizeObserver(debounce(() => this.refit(), 150)).observe(this.desk);
     this.initCaps();
     await this.loadReview();
     await this.loadShareCtx();
@@ -575,14 +578,18 @@ class App {
     // (prefs.phone: 'sheet' once the whole sheet was chosen with the zoom button there)
     this.textFit = z === 'fit' && this.prefs.phone !== 'sheet' && window.innerWidth <= 520;
     // (Web Layout on a phone: the text at its actual size, the lines as wide as the screen)
-    if (this.textFit && document.body.classList.contains('pg-web')) px = PX_PER_PT;
+    // (Mobile View, Web Layout under 700 px: the text at its actual size, whatever a phone's
+    // sheet or text block setting is; a zoom chosen there scales it)
+    if (z === 'fit' && document.body.classList.contains('pg-web') && window.innerWidth < 700) px = PX_PER_PT;
     else if (this.textFit) px = Math.min(PX_PER_PT * 1.25, Math.max(avail / P.pw, (this.desk.clientWidth - 12) / P.tw));
     else if (z === 'fit') px = Math.min(PX_PER_PT * 1.25, avail / P.pw);
     else px = PX_PER_PT * z;
     px = Math.round(px * 1000) / 1000;
     const changed = px !== this.px;
     this.px = px;
-    $('#zoomv').textContent = this.textFit ? Math.round(px / PX_PER_PT * 100) + '%' : z === 'fit' ? 'Fit' : Math.round(z * 100) + '%';
+    // (the zoom as a percentage, the one the status bar shows, as Word's does; fitting the width is
+    // what a press does, its name)
+    $('#zoomv').textContent = Math.round(px / PX_PER_PT * 100) + '%';
     // (its name stays "Fit width", what a press does; the zoom it shows is its description)
     $('#zoomv').setAttribute('aria-description', 'Zoom: ' + $('#zoomv').textContent);
     // with the text block as wide as the screen, the view starts at the text, not at the margin
@@ -819,6 +826,58 @@ class App {
     getSelection().collapse(this.ghost.el.firstChild.firstChild, 1);
   }
 
+  // The reader's place by its source position: the caret when it is in view, else the text at the
+  // window's top, with its distance from the top. A layout at another width or in another view
+  // (a pane docked, Mobile View or Web Layout on and off) moves every line; kept as a place in the
+  // source, it is found again where the text now is (a page fraction lost it: Part 81 to 51)
+  readerSpot() {
+    const D = this.desk.getBoundingClientRect(), s = getSelection();
+    if (s.rangeCount && this.root.contains(s.anchorNode)) {
+      const q = s.getRangeAt(0).getBoundingClientRect(), c = this.caretNow();
+      if (q.height && q.top >= D.top && q.bottom <= D.bottom && c && !c.ghost && !c.crossFile) return { f: c.f, p: c.a, dy: q.top - D.top };
+    }
+    if (!document.caretRangeFromPoint) return null;
+    for (const fy of [16, 48, 96, 160]) {
+      for (const fx of [0.5, 0.3, 0.7]) {
+        const r = document.caretRangeFromPoint(D.left + D.width * fx, D.top + fy);
+        // (a letter of the page's text at that point: a point between lines or on a page's margin
+        // gives the place of a whole block, often far from what is in view)
+        if (!r || r.startContainer.nodeType !== 3 || !this.root.contains(r.startContainer)) continue;
+        const q = r.getBoundingClientRect();
+        if (!q.height || Math.abs(q.top + q.height / 2 - (D.top + fy)) > q.height) continue;
+        const A = posFromDom(r.startContainer, r.startOffset, this.root);
+        if (A && !A.ghost && A.f != null) return { f: A.f, p: A.p, dy: q.top - D.top };
+      }
+    }
+    return null;
+  }
+  toReaderSpot(sp) {
+    if (!sp) return;
+    const x = this.index.find(sp.f, sp.p, 1);
+    if (!x || !x.node) return;
+    const r = document.createRange();
+    try { r.setStart(x.node, x.offset); r.collapse(true); } catch (e) { return; }
+    const go = () => {
+      let q = r.getBoundingClientRect();
+      if (!q.height) { const e = x.node.nodeType === 1 ? x.node : x.node.parentElement; if (!e) return; q = e.getBoundingClientRect(); }
+      this.desk.scrollTop += q.top - this.desk.getBoundingClientRect().top - sp.dy;
+    };
+    go();
+    // (pages out of view are drawn when they come into it, at their real height: the place is
+    // looked up again once they are)
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (x.node.isConnected) go(); }));
+  }
+
+  // The page's width changed (the window, a pane docked or closed): laid out again at the new fit,
+  // with what the reader looked at where it was on the screen (a docked pane sent a caret at y 387
+  // to y -2520)
+  refit() {
+    const sp = this.readerSpot();
+    if (!this.computePx()) return;
+    this.relayout(true);
+    this.toReaderSpot(sp);
+  }
+
   relayout(force) {
     if (!this.model) return;
     const c = this.caretNow();
@@ -829,7 +888,9 @@ class App {
     // With a ribbon button or its menu holding the focus the page keeps its selection, for the
     // button to act on; the pass's new nodes left it at a page's start. It goes back where it was,
     // the focus left where it is (Select sentence from Home's Select menu selected nothing).
-    else if (c && !c.crossFile && document.activeElement && document.activeElement.closest('#ribbon, .pop') && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+    // (a docked pane's or the side panel's buttons and lists too: a pane that narrows the page lays it
+    // out again at a new zoom, and F7 then Esc put the caret at the document's start)
+    else if (c && !c.crossFile && document.activeElement && document.activeElement.closest('#ribbon, .pop, .stp, .sp-pane, .help-pane, #nav, #fr') && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
       const x = this.index.find(c.f, c.collapsed ? c.p : c.a, c.collapsed ? -1 : 1), y = c.collapsed ? x : this.index.find(c.f, c.b, -1);
       if (x && x.node && y && y.node) {
         getSelection().setBaseAndExtent(x.node, x.offset, y.node, y.offset);
@@ -876,6 +937,7 @@ class App {
     if (!el) return;
     el.hidden = false;
     el.textContent = kept === false || this.unsaved ? 'Not saved' : 'Saved';
+    el.title = kept === false ? 'This browser could not keep it: File, Save a copy, or a Download, keeps a copy' : this.unsaved ? 'Being kept in this browser' : 'Saved in this browser: it is here at your next visit';
   }
 
   // ---- Chinese, Arabic and India's scripts ---------------------------------------
@@ -1031,9 +1093,18 @@ class App {
     else if (rect.top < D.top + 20) this.desk.scrollTop -= D.top - rect.top + 80;
   }
 
+  // As Word opens a document with the caret at its start, so the first keys type: at the start
+  // of the first paragraph, without scrolling. Not on a touch screen, where focusing the page
+  // brings up the on-screen keyboard before anyone asked to type; not where something else
+  // already has the focus (a link's guest bar, a dialog).
   placeInitialCaret() {
     const first = this.root.querySelector('.it.p span.t');
-    if (!first || window.innerWidth < 700) return;
+    if (!first || !first.firstChild || window.innerWidth < 700 || matchMedia('(pointer: coarse)').matches) return;
+    const a = document.activeElement;
+    if (a && a !== document.body && a !== this.root) return;
+    if (this.caretNow()) return;
+    this.root.focus({ preventScroll: true });
+    getSelection().collapse(first.firstChild, 0);
   }
 
   // ---- edits & history ----------------------------------------------------------
@@ -1234,6 +1305,19 @@ class App {
     $('#b-sample').addEventListener('click', () => this.resetToSample());
     $('#b-new').addEventListener('click', () => this.newDocument());
     $('#st-warn').addEventListener('click', () => this.toggleNav(true, 'problems'));
+    // The status line's words on storage say only what the title's Saved does not: that this
+    // browser is not keeping the work, or Word's progress. Its ordinary "Saved in this browser"
+    // is the title's tooltip, as Word says where a document is saved by its name, not in its
+    // status bar (the line took the room the zoom needs on a 1366 px window).
+    const stSave = $('#st-save');
+    const quiet = () => { const t = stSave.textContent.trim(); stSave.classList.toggle('st-quiet', !t || /^(Kept|Saved) in this browser$/.test(t)); };
+    new MutationObserver(quiet).observe(stSave, { childList: true, characterData: true, subtree: true });
+    quiet();
+    // a click on the word count opens Word Count, as in Word
+    $('#st-words').addEventListener('click', () => this.runCommand('word-count'));
+    // a press on a button of the status bar leaves the page its focus, as the ribbon's do: the
+    // dialog it opens (Word Count, Go To) gives the caret back when it closes
+    $('#status').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
     // the status line scrolls when it is wider than the window; the fades follow the cut edges
     const stBar = $('#status');
     if (stBar) {
@@ -1249,15 +1333,19 @@ class App {
     // Where the bar shows icons alone (a phone hides Help and the zoom steps too), the menu
     // panel lists each of its actions by name: the bar's own buttons, pressed from here.
     // The three downloads come first: on a phone the ribbon's end, where they are, is a swipe away.
-    for (const id of ['rb-pdf', 'rb-word', 'b-save', 'b-open', 'b-pdf', 'b-copy', 'b-share', 'b-undo', 'b-undo-x', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help']) {
+    // (Make available offline, the installed app's, too: a phone's status line has no room for it)
+    for (const id of ['rb-pdf', 'rb-word', 'b-save', 'b-open', 'b-pdf', 'b-copy', 'b-share', 'b-undo', 'b-undo-x', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help', 'b-offline']) {
       const b = $('#' + id), a = mk('button', 'nav-act');
+      if (!b) continue;
       a.type = 'button'; a.dataset.for = id;
       // (a menu item under the button's own name: the bar's button of that name is still there)
       a.setAttribute('role', 'menuitem');
-      a.setAttribute('aria-label', b.getAttribute('aria-label'));
+      a.setAttribute('aria-label', b.getAttribute('aria-label') || b.textContent.trim());
       const svg = b.querySelector('svg'), lab = b.querySelector('span');
       if (svg) a.appendChild(svg.cloneNode(true));
-      a.appendChild(mk('span', '', (b.closest('.rb-dl') ? 'Download ' : '') + (lab ? lab.textContent : '')));
+      // (Make available offline's own icon; the zoom's item keeps its text alone, as before)
+      else if (id === 'b-offline') a.insertAdjacentHTML('beforeend', '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 14.5h8.5a3 3 0 0 0 .4-6 4.5 4.5 0 0 0-8.7-1A3.5 3.5 0 0 0 6 14.5z"/><path d="M10 9v4.5m-2-2 2 2 2-2"/></svg>');
+      a.appendChild(mk('span', '', (b.closest('.rb-dl') ? 'Download ' : '') + (lab ? lab.textContent : b.children.length ? '' : b.textContent.trim())));
       // the zoom steps leave the panel open, to press again
       a.addEventListener('click', () => { if (!/^b-z/.test(id)) this.toggleNav(false); b.click(); if (/^b-z|zoomv/.test(id)) this.navActs(); });
       $('#nav-acts').appendChild(a);
@@ -2261,6 +2349,13 @@ class App {
       if (!r || r.startContainer !== A.sc || r.startOffset !== A.so || r.endContainer !== A.ec || r.endOffset !== A.eo) this.allSel = null;
     }
     if (!inRoot) { this.hideBubble(); return; }
+    // the page's caret or selection by its place in the source, while the page has the focus: a
+    // pane, a dialog or a list that took the focus gives it back there (src/ribbon.js
+    // ribbonBack), as a DOM range does not survive the page being drawn again
+    if (document.activeElement === this.root && !this.stale) {
+      const c = this.caretNow();
+      if (c && !c.ghost && !c.crossFile) this.lastPagePos = c.collapsed ? { f: c.f, p: c.p } : { f: c.f, selA: c.a, selB: c.b };
+    }
     if (this.ourSel) { this.ourSel = false; }
     if (!sel.isCollapsed) { this.showBubble(); const c = this.caretNow(); if (c && !c.collapsed) { this.lastSel = c; this.lastSelT = Date.now(); } } else this.hideBubble();
     this.syncSoon();
@@ -2395,8 +2490,19 @@ class App {
       h.append(t, x);
       p.appendChild(h);
     }
+    // Where the caret or the selection was as it opened, when the page had it (a press on the
+    // ribbon keeps the page's focus): closed with Escape, Cancel or Close, the document gets them
+    // back, as Word gives the document back when a dialog closes. Without this the focus fell to
+    // the page's body and the next keys typed nothing. (On a touch screen only when the page had
+    // the focus: focusing it there brings up the on-screen keyboard.)
+    const at = this.caretNow(), had = document.activeElement;
+    const pageHad = had === this.root || (!matchMedia('(pointer: coarse)').matches && (!had || had === document.body || !!had.closest('#ribbon, #rb-top')));
+    const back = at && !at.ghost && !at.crossFile && pageHad ? { c: at.collapsed ? { f: at.f, p: at.p } : { f: at.f, selA: at.a, selB: at.b }, text: this.files.get(at.f) } : null;
     document.body.appendChild(p);
-    this.pop = { el: p, anchor, anchorPos: null, onClose: null, session: 'pop' + Date.now() };
+    // (the control it was opened from, by the keys: the focus goes back to it when the page does
+    // not take it, as a dialog's opener does; File's commands under File's view)
+    const opener = had && had !== this.root && had !== document.body && had.closest && !had.closest('#pages') ? had : null;
+    this.pop = { el: p, anchor, anchorPos: null, onClose: null, session: 'pop' + Date.now(), back, opener };
     p.addEventListener('mousedown', (e) => e.stopPropagation());
     setTimeout(() => {
       this.popOutside = (e) => {
@@ -2405,6 +2511,8 @@ class App {
         if (this.pop.inside && this.pop.inside(e.target)) return;
         const path = e.composedPath ? e.composedPath() : [];
         if (path.some((n) => n && n.classList && [...n.classList].some((c) => c.startsWith('ML__') || c.startsWith('MLK__') || c.startsWith('ui-menu') || c === 'wm-chip')) || path.some((n) => n && n.tagName && /^MATH-VIRTUAL-KEYBOARD|^UI-MENU/i.test(n.tagName))) return;
+        // (the press puts the caret where it lands: the old one is not put back under it)
+        this.pop.back = null;
         this.closePop();
       };
       document.addEventListener('mousedown', this.popOutside, true);
@@ -2469,9 +2577,16 @@ class App {
     // holds only what the popover made (a first formula) and has no text to put the caret in:
     // the caret goes to the blank paragraph, so typing goes on
     if (!silent && this.ghost && this.root.contains(this.ghost.el) && !this.caretNow()) this.caretToGhost();
+    // the caret or selection it opened on, unless a step since changed that file (the step then
+    // put the caret where it belongs) or the focus already went somewhere; not while File's view
+    // covers the page (a menu of File's closed: the keys stay in the view, src/ui/fileview.js)
+    const B = P.back, lost = !document.activeElement || document.activeElement === document.body;
+    // (dialogs only: a menu closed with Esc gives the focus back to its button, as a menu button does)
+    if (!silent && !P.returnCaret && B && lost && P.el.getAttribute('role') === 'dialog' && !document.body.classList.contains('file-open') && this.files.get(B.c.f) === B.text) this.restoreCaret(B.c, true);
     // Share, Save and Help open from a button of the bar: closed from the keyboard, the focus
     // goes back to it (it fell to the page's start, and Tab began again from the menu button)
     if (P.anchor instanceof HTMLButtonElement && P.anchor.offsetParent && (!document.activeElement || document.activeElement === document.body)) P.anchor.focus({ preventScroll: true });
+    else if (!silent && P.opener && P.opener.isConnected && P.opener.offsetParent && !P.opener.closest('[inert]') && (!document.activeElement || document.activeElement === document.body)) P.opener.focus({ preventScroll: true });
   }
 
   // The text of the project's files the main file's preamble reads: \input and \include files,
@@ -4087,7 +4202,9 @@ class App {
     const z = this.prefs.zoom;
     // text block, actual size, whole sheet, and round again
     if (dir === 0) {
-      if (window.innerWidth > 520) this.prefs.zoom = 'fit';
+      // (in Mobile View: the text at its actual size, or a quarter larger to read)
+      if (window.innerWidth < 700 && document.body.classList.contains('pg-web')) this.prefs.zoom = z === 'fit' ? 1.25 : 'fit';
+      else if (window.innerWidth > 520) this.prefs.zoom = 'fit';
       else if (z !== 'fit') { this.prefs.zoom = 'fit'; this.prefs.phone = 'sheet'; }
       else if (this.prefs.phone === 'sheet') this.prefs.phone = 'text';
       else this.prefs.zoom = 1;
@@ -4890,7 +5007,7 @@ class App {
       const d = document.createElement('div'); d.className = 'pdf-empty';
       // offline, a file TeX has not kept fails to load; say what to do rather than "Failed to fetch"
       const need = e && e.unkept ? ' (' + e.unkept.slice(0, 5).join(', ') + (e.unkept.length > 5 ? ' and more' : '') + ')' : '';
-      const off = __RIKUY_APP__ && APP.on && navigator.onLine === false ? 'You are offline, and this document needs TeX files this browser has not kept yet' + need + '. Compile it once with a network and they stay; Make available offline in the status bar keeps those of a typical paper and of the open document. ' : '';
+      const off = __RIKUY_APP__ && APP.on && navigator.onLine === false ? 'You are offline, and this document needs TeX files this browser has not kept yet' + need + '. Compile it once with a network and they stay; Make available offline (in the status bar, or the menu on a phone) keeps those of a typical paper and of the open document. ' : '';
       const line = document.createElement('p');
       line.textContent = e && e.scripts ? e.message + ' The page preview can still be printed.' : off + this.texFailText(e, !!off, !!need) + 'The page preview can still be printed.';
       said = st.textContent + '. ' + line.textContent;
@@ -5115,6 +5232,8 @@ class App {
   }
 
   openHelp() {
+    // (a wide window: Help is a pane at the right, src/ui/helppane.js; pressed again, it closes)
+    if (this.helpPaneOpen() && window.innerWidth >= 1000) { this.closeHelpPane(); return; }
     const p = this.makePop($('#b-help'), 'pop-help', 'How Rikuy works');
     const mod = isMac ? 'Cmd' : 'Ctrl';
     p.insertAdjacentHTML('beforeend', `
@@ -5184,6 +5303,7 @@ class App {
     const det = p.querySelector('.wm-all');
     det.addEventListener('toggle', () => { if (det.open && !det.dataset.filled) this.fillShortcutList(det); this.positionPop(); });
     this.positionPop();
+    if (window.innerWidth >= 1000) this.dockHelp();
   }
 
   // Every equation shortcut, grouped and rendered, with a filter.
@@ -5373,7 +5493,7 @@ function agentApi(app) {
 
 // (joined so that no module takes a name another or the app has: joinMethods throws, naming both)
 joinMethods(App.prototype, { 'src/collab.js': collab, 'src/word.js': word, 'src/ribbon.js': ribbon, 'src/nav.js': nav, 'src/review.js': review, 'src/ribbon/tabs.js': tabs,
-  'src/ui/gallery.js': galleryMethods, 'src/ui/search.js': searchMethods, 'src/ui/menu.js': menuMethods, 'src/cmd/*.js': cmdMethods });
+  'src/ui/gallery.js': galleryMethods, 'src/ui/search.js': searchMethods, 'src/ui/menu.js': menuMethods, 'src/ui/helppane.js': helpPaneMethods, 'src/cmd/*.js': cmdMethods });
 // one item of the insert list, where the caret is: what the ribbon's Insert buttons press
 App.prototype.insertFromPalette = function (k) {
   const c = this.caretNow(), x = paletteItems().find((y) => y.k === k);
@@ -5435,6 +5555,8 @@ installRibbon(app);
 installKeys(app, isMac, (id, at) => app.runCommand(id, null, at));
 installSearch(app);
 installMenu(app);
+installFileView(app);
+installDock(app);
 app.isBalanced = isBalanced;
 // for tests and the batches' own checks: the registry and the parts controls are made of
 app.cmds = { command, commands, describe, enabled, register, unregister, run: (id, args) => runCmd(app, id, args) };

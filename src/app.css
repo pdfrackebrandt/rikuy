@@ -412,13 +412,62 @@ body.file-open #rp-file { display: flex; flex: 1 1 auto; }
 body.file-open #rp-file .rb-tb { flex-direction: column; align-items: stretch; flex-wrap: nowrap; width: 100%; max-width: 880px; padding: 16px 28px 40px; box-sizing: border-box; gap: 4px; }
 body.file-open #rp-file .sep { display: none; }
 body.file-open #rp-file .rb-grp { flex-wrap: wrap; align-items: center; align-content: flex-start; width: auto; max-width: 100%; overflow: visible; padding: 8px 4px 12px; border-bottom: 1px solid var(--line); }
-body.file-open #rp-file .rb-glab { display: block; position: static; order: -1; flex: 1 0 100%; width: 100%; margin: 0 0 6px; text-align: left; font: 600 12px var(--font-ui); color: var(--mute); pointer-events: none; }
+body.file-open #rp-file .rb-glab { display: block; position: static; order: -1; flex: 1 0 100%; width: 100%; margin: 0 0 8px; text-align: left; font: 600 12px var(--font-ui); color: var(--mute); pointer-events: none; }
 body.file-open #rp-file .rb-grp.folded > .rb-gbtn { display: none !important; }
 body.file-open #rp-file .rb-grp.folded > .btn, body.file-open #rp-file .rb-grp.folded > .rb-split { display: inline-flex !important; }
 body.file-open #rp-file .rb.rb-fold .rb-grp > .btn:not(.icon) span:not(.sr), body.file-open .rb.rb-fold #rp-file .btn span:not(.sr) { display: inline; }
 body.file-open .rb.rb-fold #rp-file .btn:not(.icon):not(.rb-gbtn) { width: auto; padding: 0 10px; }
 body.file-open #rp-file .rb-dl { position: static; background: transparent; padding-left: 0; }
 body.file-open #rp-file .rb-dl::before { display: none; }
+/* File as a view, as Word's: it takes the window between the tabs and the status bar and scrolls
+   when taller. The page keeps its width under it (#main is only made no taller), so it is not laid
+   out again when the view closes. Its Back button, Esc and any command run from it close it
+   (src/ui/fileview.js). */
+body.file-open #main { flex: 0 0 0; height: 0; min-height: 0; overflow: hidden; }
+body.file-open #fr { display: none; }
+/* the view on a wide window, as Word's backstage: File's commands in a column at the left, the
+   view's Home beside them (a new document from a page drawn for each template, the documents
+   kept here) (src/ui/fileview.js) */
+.rf-home { display: none; }
+@media (min-width: 1000px) {
+  body.file-open #rp-file { display: grid; grid-template-columns: 320px minmax(0, 1fr); align-items: stretch; }
+  body.file-open #rp-file .rb-dl { flex-wrap: wrap; row-gap: 4px; }
+  body.file-open #rp-file > .rb-tb { width: auto; max-width: none; background: var(--chrome); border-right: 1px solid var(--line); min-height: 100%; }
+  body.file-open #rp-file > .rf-home { display: block; padding: 24px 36px 40px; overflow: visible; }
+  .rf-h { margin: 0 0 12px; font: 600 15px var(--font-ui); color: var(--ink-ui); }
+  .rf-h + .rf-tiles { margin-bottom: 28px; }
+  .rf-tiles { display: flex; flex-wrap: wrap; gap: 16px; }
+  .rf-tile { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 132px; padding: 12px 8px 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--ink-ui); font: 500 13px var(--font-ui); cursor: pointer; }
+  .rf-tile:hover, .rf-tile:focus-visible { background: var(--blue-wash); border-color: color-mix(in srgb, var(--blue) 30%, var(--line)); }
+  .rf-tile:focus-visible, .rf-doc:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+  .rf-sheet { display: flex; flex-direction: column; gap: 7px; width: 96px; height: 124px; padding: 18px 14px; box-sizing: border-box; background: #fff; border: 1px solid var(--line); box-shadow: 0 1px 3px rgba(20, 32, 44, .14); }
+  .rf-sheet i { display: block; height: 3px; border-radius: 2px; background: #C9D1DA; }
+  .rf-sheet i:first-child { width: 60%; height: 5px; margin: 0 auto 6px; background: #8996A4; }
+  .rf-tile.blank .rf-sheet i { visibility: hidden; }
+  .rf-tile-n { min-height: 2.5em; text-align: center; line-height: 1.25; }
+  .rf-recent-list { display: flex; flex-direction: column; max-width: 760px; border-top: 1px solid var(--line); }
+  .rf-doc { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; width: 100%; min-height: 32px; box-sizing: border-box; padding: 8px 12px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink-ui); font: 13px var(--font-ui); text-align: left; cursor: pointer; }
+  .rf-doc:hover, .rf-doc:focus-visible { background: var(--blue-wash); }
+  .rf-doc-n { font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rf-doc-t { flex: none; color: var(--mute); font-size: 12px; }
+  .rf-none { margin: 12px 0; color: var(--mute); font: 13px var(--font-ui); }
+}
+@media (min-width: 1000px) and (pointer: coarse) { .rf-doc { min-height: 44px; } }
+body.file-open #ribbon { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; align-items: flex-start; border-bottom: 0; }
+.rf-back { display: none; }
+body.file-open #rp-file .rf-back { display: inline-flex; align-self: flex-start; width: auto; gap: 8px; margin: 0 0 8px; padding: 0 12px 0 8px; font-weight: 500; }
+body.file-open #rp-file .rf-back svg { width: 20px; height: 20px; }
+body.file-open #rp-file .rf-back span { display: inline !important; }
+@media (pointer: coarse) { body.file-open #rp-file .rf-back { min-height: 44px; } }
+/* on a phone the view is a column under the tab list, every command with its name: icons alone
+   say little in a list of what to do with a document */
+@media (max-width: 860px) {
+  body.file-open #ribbon { flex-direction: column; align-items: stretch; padding: 0; }
+  body.file-open #ribbon > .rb-tabsel { align-self: flex-start; margin: 8px 8px 0; }
+  body.file-open #rp-file .rb-tb { padding: 8px 12px 24px; }
+  body.file-open #rp-file .btn span:not(.sr) { display: inline; }
+  body.file-open #rp-file .btn:not(.icon):not(.sm) { width: auto; padding: 0 12px 0 8px; justify-content: flex-start; gap: 8px; }
+}
 @media (max-width: 860px) { #b-comments { display: none; } #qat-save { display: none; } }
 @media (max-width: 400px) { .mark { display: none; } }
 /* each style's look: the page's body, title and heading faces (the headings in the accent colour,
@@ -998,7 +1047,13 @@ body.dropping .dropzone { display: grid; }
   .btn:not(.icon):not(.sm) { width: 32px; padding: 0; justify-content: center; }
   .zv { width: auto !important; padding: 0 4px !important; }
   .zv { display: inline-flex; }
-  .title-name, .docname { display: none; }
+  /* the document's name stays, beside the search's magnifier, as Word's phone app names the open
+     document at the top (cut short with an ellipsis), where the middle has room for a few words of
+     it (below, a name cut to its first letters said nothing); whether it is saved is its tooltip */
+  .title-mid { flex-direction: row; justify-content: center; gap: 2px; container-type: inline-size; }
+  .title-name { flex: 0 1 auto; justify-content: flex-start; }
+  .docname { font-size: 12.5px; }
+  .savestate { display: none; }
   body.src-on #srcpane { position: absolute; inset: 0 0 0 auto; width: min(100%, 520px) !important; z-index: 20; box-shadow: -10px 0 30px rgba(0, 0, 0, .2); }
   body.src-on #gutter { display: none; }
   body.pdf-on #pdfpane { position: absolute; inset: 0 0 0 auto; width: 100% !important; z-index: 22; box-shadow: -10px 0 30px rgba(0, 0, 0, .2); }
@@ -1022,7 +1077,9 @@ body.dropping .dropzone { display: grid; }
   body:has(> .pop) .toast { bottom: auto; top: calc(54px + env(safe-area-inset-top, 0px)); }
   .sheet { padding: 10px 0 40px; }
   #pages { gap: 12px; }
-  #st-save, #b-offline { display: none; }
+  /* (the storage line only when it says something: not kept, Word's progress, the PDF being made) */
+  #st-save.st-quiet, #b-offline { display: none; }
+  #st-save:not(.st-quiet) { order: -2; }
   .rb { padding: 0 0 0 6px; }
   .rb-style { width: 112px; }
   /* three named buttons would leave the others a third of the row: one Download button opens them */
@@ -1035,13 +1092,31 @@ body.dropping .dropzone { display: grid; }
   /* one line on a 360px phone: there it wrapped to two and took the height of a line of text */
   #status { gap: 10px; padding: 0 8px; white-space: nowrap; overflow-x: auto; scrollbar-width: none; }
   #status::-webkit-scrollbar { display: none; }
-  /* the PDF bar's close button stays on the screen */
-  .pdf-bar { padding-left: 8px; gap: 2px; }
-  .pdf-status { flex: 0 10 auto; }
-  .pdf-engine { max-width: 86px; }
-  .pdf-bar .btn.sm { padding: 0 6px; }
+  /* the PDF bar in two rows: what TeX made and the close button, then the engine, shell escape,
+     Recompile and Download (in one row each of them was cut to its first letters) */
+  .pdf-bar { flex-wrap: wrap; padding: 4px 4px 4px 10px; gap: 2px 4px; }
+  .pdf-bar > .grow { display: none; }
+  .pdf-status { order: 0; flex: 1 1 calc(100% - 56px); }
+  #pdf-x { order: 1; }
+  .pdf-engine, .pdf-shell, #pdf-re, #pdf-dl { order: 2; }
+  .pdf-engine { max-width: none; }
+  .pdf-shell { font-size: 12px; gap: 4px; }
+  .pdf-shell::after { content: none; }
+  #pdf-re { margin-left: auto; }
+  .pdf-bar .btn.sm { padding: 0 8px; }
+}
+/* under a finger: 44 px, and on the narrowest phones shell escape's label is "Shell" again, so the
+   second row holds all four */
+@media (max-width: 520px) and (pointer: coarse) {
+  .pdf-bar .btn.sm, #pdf-x, .pdf-engine, .pdf-shell { min-height: 44px; }
+  #pdf-x { min-width: 44px; }
+}
+@media (max-width: 380px) {
+  .pdf-shell { font-size: 0; gap: 0; }
+  .pdf-shell::after { content: 'Shell'; font-size: 11.5px; margin-left: 3px; }
 }
 /* (the name is back on a phone: with Save and Copy source gone from the bar, it fits at 360px) */
+@container (max-width: 119px) { .title-name { display: none; } }
 @media (prefers-reduced-motion: reduce) {
   .flash { animation: none; }
 }
@@ -1066,7 +1141,15 @@ body.nav-on #nav { display: flex; }
 .nav-act:disabled { opacity: .38; cursor: default; }
 .nav-act svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .nav-act span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 980px) { .nav-acts { display: grid; } }
+/* the panel's actions are 44 px under a finger, as every target on a phone */
+@media (pointer: coarse) { .nav-acts .nav-act { min-height: 44px; } }
+.nav-doc { display: none; }
+@media (max-width: 980px) {
+  .nav-acts { display: grid; }
+  .nav-doc { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 12px 14px 4px; font: 600 14px var(--font-ui); color: var(--ink-ui); }
+  .nav-doc-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nav-doc-s { flex: none; font-weight: 400; font-size: 12px; color: var(--mute); }
+}
 .nav-tab.on { background: var(--panel); color: var(--ink-ui); box-shadow: 0 1px 0 var(--panel), inset 0 2px 0 var(--blue); }
 .nt-count { font: 500 11px var(--font-ui); color: var(--warn); }
 #nt-ccount { color: var(--blue); }
@@ -1223,6 +1306,28 @@ body.guest #b-new, body.guest #b-sample { display: none; }
 @media print { ::highlight(rk-find), ::highlight(rk-find-cur) { background-color: transparent; } }
 #st-pages { color: var(--mute); text-decoration: none; font-size: 12px; font-variant-numeric: tabular-nums; }
 #st-pages:hover { color: var(--blue-ink); text-decoration: underline; }
+#st-words { color: var(--mute); text-decoration: none; font-size: 12px; font-variant-numeric: tabular-nums; }
+#st-words:hover { color: var(--blue-ink); text-decoration: underline; }
+/* the comment box's name, asked for and not given (src/collab.js) */
+.pop-comment .share-name[aria-invalid="true"] { border-color: var(--warn); outline: 2px solid color-mix(in srgb, var(--warn) 40%, transparent); }
+.cm-hint { font-size: 12px; color: var(--warn); margin: -2px 0 2px; }
+/* the storage line when it only says what the title's Saved says (src/app.js, bindUI) */
+#st-save.st-quiet { display: none; }
+/* Word's status bar keeps its views and zoom at the right end: on a desktop window too narrow for
+   the whole line the slider goes first (the zoom's number stays) and the language is cut short,
+   before anything scrolls out of sight */
+@media (min-width: 700px) and (max-width: 1279px) {
+  .st-zoom input { display: none; }
+  #st-lang { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+}
+/* from 700 px it folds as Word's does: the views and the zoom stay whole at the right end, and
+   the words in the middle (the language, Track Changes, the storage line, the links) are cut short
+   with an ellipsis before anything is pushed past the window (a wider font in CI's Chromium put the
+   zoom 11 px out at 900 px) */
+@media (min-width: 700px) {
+  #status > .linkish, #status > #st-lang, #status > #st-track, #status > #st-save, #status > #st-words { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #status > #st-pages, #status > .st-views, #status > .st-zoom { flex: none; }
+}
 /* the Find and Replace dialog: open while the page is worked on, out of the text's way */
 .fr { position: fixed; z-index: 38; top: 112px; right: 18px; width: min(452px, calc(100vw - 16px)); box-sizing: border-box; background: var(--panel); color: var(--ink-ui); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 14px 44px rgba(10, 20, 30, .24); padding: 0 12px 12px; display: flex; flex-direction: column; gap: 9px; font: 13px/1.4 var(--font-ui); max-height: calc(100vh - 130px); overflow: auto; }
 .fr[hidden] { display: none; }
@@ -1736,6 +1841,29 @@ body.fpainting #pages { cursor: copy; }
 .stp-prev { display: flex; align-items: center; gap: 4px; margin-right: auto; color: var(--mute); }
 .stp-f .btn[aria-pressed="true"] { background: var(--blue-wash); }
 @media (max-width: 700px) { .stp { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 52vh; } }
+/* Word's task panes dock at the window's right under the ribbon, and the page moves over to make
+   room: on a desktop window the Styles, Spelling and Thesaurus panes are #main's last column, not
+   cards over the ribbon's end and the page's text (narrower, they stay sheets) */
+@media (min-width: 1000px) {
+  #main > .stp, #main > .sp-pane { position: relative; inset: auto; z-index: 3; order: 10; flex: none; align-self: stretch; width: 320px; max-height: none; margin: 0; border: 0; border-left: 1px solid var(--line); border-radius: 0; box-shadow: none; }
+  #main > .sp-pane { overflow-y: auto; padding-top: 0; }
+}
+/* Help on a window narrower than 1000 px (narrowed with the pane open): a sheet at the window's
+   corner, as the other panes are there, not a column that squeezes the page */
+@media (max-width: 999px) {
+  #main > .help-pane.help-pane { position: fixed; top: auto; right: 8px; bottom: 8px; left: auto; width: min(380px, calc(100vw - 16px)); max-height: 70vh; z-index: 30; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 40px rgba(10, 20, 30, .22); }
+}
+/* a task pane where the page would keep less than 560 px beside it (src/ui/dock.js): over the
+   page's right side, the page keeping its width, as Word lays a pane over a narrow window */
+@media (min-width: 1000px) {
+  #main > .pane-float:is(.stp, .sp-pane, .help-pane) { position: absolute; top: 0; bottom: 0; right: 0; z-index: 25; box-shadow: -10px 0 30px rgba(10, 20, 30, .22); }
+}
+/* Help, Word's pane at the right (src/ui/helppane.js): the popover's content in #main's last column */
+#main > .help-pane { position: relative; z-index: 3; order: 11; flex: none; align-self: stretch; width: 380px; display: flex; flex-direction: column; min-height: 0; background: var(--panel); color: var(--ink-ui); border-left: 1px solid var(--line); }
+.help-pane-h { flex: none; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--line); }
+.help-pane-b { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 8px; }
+.help-pane-b p { margin: 0; font-size: 13px; }
+.help-pane .keys { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
 /* Apply Styles, Modify Style, Create a Style */
 .pop.pop-apply { width: min(300px, calc(100vw - 16px)); }
 .pop.pop-modstyle { width: min(430px, calc(100vw - 16px)); }
@@ -1978,8 +2106,8 @@ body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outli
 
 /* ---- B12: the views (Page · LaTeX · PDF), Show LaTeX, the View tab's page modes, Focus ---- */
 /* the status bar's three views, a segmented control as Word's view buttons beside the zoom */
-.st-views { display: inline-flex; flex: none; padding: 2px; gap: 2px; border-radius: 7px; background: color-mix(in srgb, var(--line) 55%, transparent); }
-.st-views button { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border: 0; border-radius: 5px; background: transparent; color: var(--mute); font-size: 12px; font-weight: 500; cursor: pointer; }
+.st-views { display: inline-flex; flex: none; padding: 2px; gap: 2px; border-radius: 6px; background: color-mix(in srgb, var(--line) 55%, transparent); }
+.st-views button { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--mute); font-size: 12px; font-weight: 500; cursor: pointer; }
 .st-views button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .st-views button:hover { color: var(--ink-ui); }
 .st-views button[aria-pressed="true"] { background: var(--paper); color: var(--blue-ink); box-shadow: 0 1px 2px rgba(20, 32, 44, .18); }
@@ -1987,6 +2115,14 @@ body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outli
 :root[data-theme="dark"] .st-views button[aria-pressed="true"] { background: var(--panel); }
 .st-views button:focus-visible, .st-zoom input:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .st-zoom { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+/* Mobile View's toggle: in the status bar of a window under 700 px, beside the views */
+.sv-mobile { display: none; align-items: center; gap: 4px; flex: none; height: 26px; padding: 0 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--mute); font: 500 12px var(--font-ui); cursor: pointer; }
+.sv-mobile svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.sv-mobile[aria-pressed="true"] { background: var(--blue-wash); color: var(--blue-ink); border-color: color-mix(in srgb, var(--blue) 35%, var(--line)); }
+.sv-mobile:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+@media (max-width: 699px) { .sv-mobile { display: inline-flex; } }
+@media (max-width: 520px) { .sv-mobile { order: -1; } }
+@media (max-width: 699px) and (pointer: coarse) { .sv-mobile { height: 44px; min-width: 44px; } }
 .st-zoom input { width: 110px; height: 16px; margin: 0; accent-color: var(--blue); cursor: pointer; }
 #st-zoomv { min-width: 38px; text-align: right; color: var(--mute); text-decoration: none; font-size: 12px; }
 #st-zoomv:hover { color: var(--ink-ui); }
@@ -2042,10 +2178,11 @@ body.focus #desk { display: block !important; }
 }
 /* (a window narrower than its line: the slider goes, and the line scrolls by itself, never the page) */
 @media (max-width: 860px) {
-  .st-zoom { display: none; }
   #status { white-space: nowrap; overflow-x: auto; scrollbar-width: none; }
   #status::-webkit-scrollbar { display: none; }
 }
+/* (the zoom's number from 700 px, as Word's status bar keeps it; a phone has the bar's) */
+@media (max-width: 699px) { .st-zoom { display: none; } }
 @media (max-width: 520px) {
   .st-views { order: -1; }
   .st-views button { padding: 0 8px; }
@@ -2083,8 +2220,13 @@ body.view-pdf #pdf-host { width: 100%; max-width: 1040px; margin: 0 auto; }
 /* File, View and Help (and Show LaTeX on the Equation tab) under a finger: 44 px each way */
 @media (pointer: coarse) {
   .rb-panel[data-tab="file"] .btn, .rb-panel[data-tab="view"] .btn, .rb-panel[data-tab="help"] .btn, #re-latex { min-width: 44px; min-height: 44px; }
-  #st-zoomv { min-height: 44px; }
+  #st-zoomv { min-height: 44px; min-width: 44px; }
 }
+/* a tablet's status bar (touch, up to 860 px): the views first, where a thumb finds them, not
+   scrolled out of sight behind New document and Load the sample */
+@media (max-width: 860px) and (pointer: coarse) { .st-views, .sv-mobile { order: -1; } }
+/* a first comment's name and the comment under a finger */
+@media (pointer: coarse) { .pop-comment .share-name, .pop-comment textarea { min-height: 44px; box-sizing: border-box; } }
 
 /* ---- B11: Insert › Interactive graph (src/ui/graphdialog.js) and a graph on the page ---- */
 .pop.pop-graph { width: min(860px, calc(100vw - 16px)); gap: 10px; }
@@ -2549,3 +2691,41 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
   .pop-ps .pop-x, .pop-ps .btn, .pop-ps select, .pop-ps input { min-height: 44px; }
   .pop.pop-ps, .pop.pop-tabs { max-height: calc(100dvh - 16px); overflow: auto; overscroll-behavior: contain; }
 }
+
+/* ---- One size and shape per kind, outside the ribbon (docs/handoff/UI-PRINCIPLES.md: C1, C5, C9,
+   C13, T1). Dialogs, panes and the popovers that hold a form: buttons and fields 32 px tall with
+   4 px corners; the surfaces themselves (dialogs, menus, panes as sheets, Find and Replace) 8 px;
+   one title style for a dialog's or a pane's name; 44 px under a finger. Kept to these parts: the
+   ribbon has its own sizes, and the equation field its compact keys. ---- */
+.pop, .fr, .stp, #main > .help-pane.pane-float { border-radius: 8px; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .stp-f, .help-pane, .pop-help) .btn { height: 32px; min-height: 32px; border-radius: 4px; box-sizing: border-box; padding: 0 12px; font-size: 13px; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) :is(input[type="text"], input[type="search"], input[type="number"], input:not([type]), select) { min-height: 32px; border-radius: 4px; box-sizing: border-box; }
+.pop-h, .stp-h, .fr-head, .help-pane-h { font: 600 14px/20px var(--font-ui); letter-spacing: 0; color: var(--ink-ui); }
+/* (the close button keeps the title's line; a ring only for the keyboard, as the other buttons) */
+.pop-x { min-width: 28px; min-height: 28px; display: inline-flex; align-items: center; justify-content: center; }
+.pop-x:focus:not(:focus-visible) { outline: none; }
+@media (pointer: coarse) {
+  :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .stp-f, .help-pane, .pop-help) .btn,
+  :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) :is(input[type="text"], input[type="search"], input[type="number"], input:not([type]), select) { height: auto; min-height: 44px; }
+  .pop-x { min-width: 44px; min-height: 44px; }
+}
+/* a phone's top bar: every button 44 px under a finger; Open and Source go to the menu panel
+   (its first button), where they are by name, so the rest fit a 360 px screen */
+@media (max-width: 520px) and (pointer: coarse) {
+  #bar .btn, #bar .qat .btn.icon { min-width: 44px; min-height: 44px; height: 44px; }
+  /* (only while closed: open, it takes the bar's width again, as the rules above give it) */
+  #bar .srch:not(:focus-within) { width: 44px; min-width: 44px; }
+  #bar .srch input { height: 44px; }
+  /* (closed, the search box is one of the bar's icons, drawn as they are: a white pill twice the
+     size of its neighbours stood out; open, it is the white box across the bar again) */
+  #bar .srch:not(:focus-within) input { background: transparent; border-radius: 4px; }
+  #bar .srch:not(:focus-within) input:active { background: rgba(255, 255, 255, .22); }
+  #bar .srch:not(:focus-within) > svg { left: 50%; margin-left: -9px; width: 18px; height: 18px; margin-top: -9px; stroke: #fff; }
+  #b-open, #b-src { display: none; }
+  #bar { gap: 0; }
+}
+/* the status bar's words all one size, as its other items */
+#status .linkish { font-size: 12px; }
+/* File's column: its commands one height, with the corners of every other control */
+body.file-open #rp-file .rb-tb .btn { height: 32px; min-height: 32px; border-radius: 4px; box-sizing: border-box; }
+@media (pointer: coarse) { body.file-open #rp-file .rb-tb .btn { height: auto; min-height: 44px; } }
