@@ -308,6 +308,14 @@ def insertlist(page):
     key(page, 'Enter'); key(page, 'Enter'); typed(page, 'After it.')
     s = src(page)
     check('insertlist: Enter twice leaves the theorem', '\\begin{theorem}\nStmt.\n\\end{theorem}\n\nAfter it.' in s, s[s.find('\\begin{theorem}'):][:80])
+    # (review H3) a minipage, a beamer frame or a center keep their paragraphs: Enter twice stays in
+    for env in ('minipage}{0.4\\linewidth', 'center'):
+        name = env.split('}')[0]
+        D = PLAIN.replace('Last one.', '\\begin{' + env + '}\nInside text.\n\\end{' + name + '}')
+        load_doc(page, D)
+        click_text(page, 'Inside text.', 12); key(page, 'Enter'); key(page, 'Enter'); typed(page, 'NEW')
+        s = src(page)
+        check('insertlist: Enter twice in a ' + name + ' stays in it', 'Inside text.\n\nNEW' in s and s.index('NEW') < s.index('\\end{' + name + '}'), s[s.find('Inside'):][:60])
     load_doc(page, PLAIN)
     click_text(page, 'gamma.', 6); key(page, 'Enter'); insert_list(page, 'proof'); typed(page, 'Easy.')
     check('insertlist: a proof brings amsthm', '\\usepackage{amsmath,amsthm}' in src(page) or '\\usepackage{amsthm}' in src(page), src(page)[:120])

@@ -46,7 +46,7 @@ import { methods as menuMethods, installMenu } from './ui/menu.js';
 import { installKeys } from './keys.js';
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
-import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf } from './styles.js';
+import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, THM_STYLES } from './styles.js';
 import { eolAt } from './blockenv.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
@@ -1938,7 +1938,10 @@ class App {
     const g = this.ghost;
     if (!g || g.before || g.style) return false;
     const m = /^\s*\\end\s*\{([^}]+)\}/.exec(this.src(g.f).slice(g.pos));
-    if (!m || /^(document|itemize|enumerate|description)$/.test(m[1].trim())) return false;
+    // (a theorem like one, a proof, a quote, quotation or verse alone: a beamer frame, a minipage,
+    // a center hold paragraphs of their own, and one left out of a frame is set nowhere; review H3)
+    const name = m && m[1].trim(), thm = name && (THM_STYLES[name] || name === 'assumption' || (this.model && this.model.thms && this.model.thms.has(name)));
+    if (!m || !(thm || /^(quote|quotation|verse)$/.test(name))) return false;
     const after = g.el.previousElementSibling;
     if (!after) return false;
     this.showGhost(after, g.f, g.pos + m[0].length);
