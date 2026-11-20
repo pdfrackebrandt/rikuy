@@ -192,6 +192,14 @@ register(
 );
 
 export const methods = {
+  // Whether AutoCorrect would act on ch typed after text at p of f: the typing queue (src/app.js
+  // typeQueueable) takes a space into a run of letters only where it would not
+  acActs(f, p, text, ch) {
+    const o = acOn(this);
+    if (o.off) return false;
+    const s = this.src(f);
+    return !!correct(s.slice(0, p) + text + s.slice(p), p + text.length, ch, o, (this.prefs.acList || []).filter((x) => Array.isArray(x) && x.length === 2), this.prefs.acExcept || []);
+  },
   // whether the caret means an interactive graph (the right click menu's 'graph' items)
   graphHere(at) { return !!graphAt(this, at); },
 

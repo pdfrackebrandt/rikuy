@@ -21,7 +21,9 @@ own; a theorem brings its \\newtheorem; Enter twice leaves a theorem (10). repea
 run of typing again, as Word's, and repeats a command as before (14); the search box throws
 nothing while its place is a blank paragraph gone since (18). quickopen: Ctrl+P goes to a file of the
 project by a few letters, the page's own files on the page, others in the source pane; Ctrl+P then
-Enter prints, as Word's (17).
+Enter prints, as Word's (17). burst: letters and spaces typed faster than the page is built go in
+together, in order, AutoCorrect still acting on the words it corrects, and any other key first
+writes what waits (4).
 Each part is a function; `python3 power.py
 footnote` runs one."""
 import os, sys
@@ -324,7 +326,51 @@ def quickopen(page):
     check('quickopen: Ctrl+P, Enter prints, as Word\'s', page.evaluate('window.__printed') == 1)
 
 
-PARTS = [footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips, palette, insertlist, repeat, quickopen]
+# keys fed to the page's own handler faster than it builds the page, every key already due handed
+# over before a timer, as the browser gives input the first turn (dev/bench's long document makes
+# the builds slow enough)
+BURST = '''([text, gap]) => new Promise((done) => {
+  const g = window.rikuy, n0 = g.files.get(g.main).length, t0 = performance.now(); let i = 0, builds = 0;
+  const rb = g.rebuild; g.rebuild = function (...a) { builds++; return rb.apply(this, a); };
+  const ev = (ch) => ({ inputType: 'insertText', data: ch, isComposing: false, preventDefault() {}, getTargetRanges: () => [] });
+  const tick = () => {
+    // (each key as late as it is: the keyboard made it at its time, the page hands it over now)
+    while (i < text.length && t0 + i * gap <= performance.now()) { g.keyLate = performance.now() - (t0 + i * gap); g.onBeforeInput(ev(text[i++])); }
+    if (i < text.length) setTimeout(tick, Math.max(0, t0 + i * gap - performance.now()));
+    else setTimeout(() => { g.rebuild = rb; done({ builds }); }, 300);
+  };
+  tick();
+})'''
+
+
+def burst(page):
+    D = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dev', 'bench', 'long')
+    files = {f: open(os.path.join(D, f)).read() for f in os.listdir(D) if f.endswith(('.tex', '.bib'))}
+    load_doc(page, files); page.wait_for_timeout(800)
+    # (a phone's speed: a key's build is then far longer than the time between a typist's keys)
+    cdp = page.context.new_cdp_session(page); cdp.send('Emulation.setCPUThrottlingRate', {'rate': 4})
+    page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')].filter((s) => s.textContent.length > 40); const s = sp[Math.floor(sp.length / 2)]; s.scrollIntoView({ block: 'center' }); const r = document.createRange(); r.setStart(s.firstChild, s.textContent.indexOf('. ') + 1); r.collapse(true); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''')
+    page.wait_for_timeout(300)
+    before = src(page, files and 'main.tex')
+    text = ' so the monday plan works'
+    r = page.evaluate(BURST, [text, 5])
+    after = src(page)
+    check('burst: a run typed faster than the page builds goes in whole and in order, AutoCorrect on its words', ' So the Monday plan works' in after, after[:0])
+    check('burst: in fewer builds of the page than keys', r['builds'] < len(text) - 5, r)
+    n = 0
+    while src(page) != before and n < 10:
+        page.evaluate('window.rikuy.undo()'); n += 1
+    check('burst: undo gives the bytes back', src(page) == before, n)
+    # another key first writes what waits: letters queued, then Backspace
+    page.evaluate('''() => { const g = window.rikuy; g.keyLate = 50; const ev = (ch) => ({ inputType: 'insertText', data: ch, isComposing: false, preventDefault() {}, getTargetRanges: () => [] });
+      g.onBeforeInput(ev('x')); g.onBeforeInput(ev('y')); g.onBeforeInput(ev('z'));
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true })); }''')
+    page.wait_for_timeout(100)
+    check('burst: a key that is no letter writes the letters waiting first', 'xyz' in src(page) and src(page).count('xyz') == 1, None)
+    cdp.send('Emulation.setCPUThrottlingRate', {'rate': 1})
+
+
+PARTS = [footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips, palette, insertlist, repeat, quickopen, burst]
 
 
 def run():
