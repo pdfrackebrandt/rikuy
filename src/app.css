@@ -2649,8 +2649,14 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
   #bar .srch:not(:focus-within) input:active { background: rgba(255, 255, 255, .22); }
   #bar .srch:not(:focus-within) > svg { left: 50%; margin-left: -9px; width: 18px; height: 18px; margin-top: -9px; stroke: #fff; }
   #b-open, #b-src { display: none; }
-  #bar { gap: 0; }
+  /* 8 px between two targets, as Google asks of a touch screen (UI-PRINCIPLES.md T3): at 320 px
+     Search ran 10 px into Share */
+  #bar, #bar .bar-left, #bar .qat, #bar .title-end, #bar .tools, #bar .zoom { column-gap: 8px; gap: 8px; }
+  #bar .tools .sep { display: none; }
 }
+/* under 380 px six targets fit with their gaps, seven did not: Redo goes to the menu panel, by
+   name (Undo stays, the one pressed most), the brand's mark goes, and the zoom is 44 px wide */
+@media (max-width: 379px) and (pointer: coarse) { #b-redo, #bar .brand { display: none; } #bar #zoomv { min-width: 44px; padding: 0 2px !important; font-size: 12px; } }
 /* the status bar's words all one size, as its other items */
 #status .linkish { font-size: 12px; }
 /* File's column: its commands one height, with the corners of every other control */

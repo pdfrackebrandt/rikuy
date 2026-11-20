@@ -875,7 +875,34 @@ def focus_rules(page, w):
         page.keyboard.press('Escape')
 
 
+
+BAR = """(() => [...document.querySelectorAll('#bar button, #bar input')].filter((e) => e.offsetParent && e.getClientRects().length).map((e) => { const r = e.getBoundingClientRect(); return [e.id || e.className.slice(0, 12), Math.round(r.left), Math.round(r.right), Math.round(r.width), Math.round(r.height)]; }).sort((a, b) => a[1] - b[1]))()"""
+
+
+def bar_room(p):
+    """A phone's top bar at 390, 360 and 320 px with touch (UI-PRINCIPLES.md T1, T3, L7): every
+    target 44 by 44 px, 8 px between two of them, none off the screen or over another (Search ran
+    10 px into Share at 320 px); Redo, gone below 380 px, is in the menu panel by name; and a
+    window 320 px wide, mouse or finger, scrolls neither way (WCAG 1.4.10)."""
+    for width, touch in ((390, True), (360, True), (320, True), (320, False)):
+        browser, page, errors = open_page(p, width=width, height=700, touch=touch, layout='mobile')
+        page.wait_for_timeout(600)
+        w = f'{width} px{", touch" if touch else ""}'
+        sw = page.evaluate('[document.documentElement.scrollWidth, document.body.scrollWidth]')
+        check(f'nothing wider than the window ({w})', max(sw) <= width, sw)
+        if touch:
+            bar = page.evaluate(BAR)
+            gaps = [b[1] - a[2] for a, b in zip(bar, bar[1:])]
+            check(f'the bar\'s targets 44 by 44 px, 8 px apart, inside the screen ({w})', all(b[3] >= 44 and b[4] >= 44 for b in bar) and all(g >= 8 for g in gaps) and bar[0][1] >= 0 and bar[-1][2] <= width, (bar, gaps))
+            if width < 380:
+                page.tap('#b-nav'); page.wait_for_timeout(400)
+                check(f'Redo, not on the bar, is in the menu panel by name ({w})', page.get_by_role('menuitem', name='Redo', exact=True).count() == 1)
+        check(f'no console errors (bar_room, {w})', not errors, errors[:3])
+        browser.close()
+
+
 PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
+         'bar_room': (bar_room, None),
          'focus_rules': (focus_rules, [(1366, False), (1920, True), (390, False)]),
          'contrast': (contrast, [(1366, False), (1366, True), (390, False), (390, True)]),
          'dialog_kinds': (dialog_kinds, [(1366, False), (1920, True), (390, False), (360, True)]),
