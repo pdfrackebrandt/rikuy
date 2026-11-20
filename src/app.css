@@ -916,7 +916,9 @@ body.dropping .dropzone { display: grid; }
   body:has(> .pop) .toast { bottom: auto; top: calc(54px + env(safe-area-inset-top, 0px)); }
   .sheet { padding: 10px 0 40px; }
   #pages { gap: 12px; }
-  #st-save, #b-offline { display: none; }
+  /* (the storage line only when it says something: not kept, Word's progress, the PDF being made) */
+  #st-save.st-quiet, #b-offline { display: none; }
+  #st-save:not(.st-quiet) { order: -2; }
   .rb { padding: 0 0 0 6px; }
   .rb-style { width: 112px; }
   /* three named buttons would leave the others a third of the row: one Download button opens them */
@@ -1977,8 +1979,13 @@ body.view-pdf #pdf-host { width: 100%; max-width: 1040px; margin: 0 auto; }
 /* File, View and Help (and Show LaTeX on the Equation tab) under a finger: 44 px each way */
 @media (pointer: coarse) {
   .rb-panel[data-tab="file"] .btn, .rb-panel[data-tab="view"] .btn, .rb-panel[data-tab="help"] .btn, #re-latex { min-width: 44px; min-height: 44px; }
-  #st-zoomv { min-height: 44px; }
+  #st-zoomv { min-height: 44px; min-width: 44px; }
 }
+/* a tablet's status bar (touch, up to 860 px): the views first, where a thumb finds them, not
+   scrolled out of sight behind New document and Load the sample */
+@media (max-width: 860px) and (pointer: coarse) { .st-views, .sv-mobile { order: -1; } }
+/* a first comment's name and the comment under a finger */
+@media (pointer: coarse) { .pop-comment .share-name, .pop-comment textarea { min-height: 44px; box-sizing: border-box; } }
 
 /* ---- B11: Insert › Interactive graph (src/ui/graphdialog.js) and a graph on the page ---- */
 .pop.pop-graph { width: min(860px, calc(100vw - 16px)); gap: 10px; }

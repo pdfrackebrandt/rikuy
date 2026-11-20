@@ -1281,7 +1281,8 @@ class App {
       a.setAttribute('aria-label', b.getAttribute('aria-label') || b.textContent.trim());
       const svg = b.querySelector('svg'), lab = b.querySelector('span');
       if (svg) a.appendChild(svg.cloneNode(true));
-      else a.insertAdjacentHTML('beforeend', '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 14.5h8.5a3 3 0 0 0 .4-6 4.5 4.5 0 0 0-8.7-1A3.5 3.5 0 0 0 6 14.5z"/><path d="M10 9v4.5m-2-2 2 2 2-2"/></svg>');
+      // (Make available offline's own icon; the zoom's item keeps its text alone, as before)
+      else if (id === 'b-offline') a.insertAdjacentHTML('beforeend', '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 14.5h8.5a3 3 0 0 0 .4-6 4.5 4.5 0 0 0-8.7-1A3.5 3.5 0 0 0 6 14.5z"/><path d="M10 9v4.5m-2-2 2 2 2-2"/></svg>');
       a.appendChild(mk('span', '', (b.closest('.rb-dl') ? 'Download ' : '') + (lab ? lab.textContent : b.children.length ? '' : b.textContent.trim())));
       // the zoom steps leave the panel open, to press again
       a.addEventListener('click', () => { if (!/^b-z/.test(id)) this.toggleNav(false); b.click(); if (/^b-z|zoomv/.test(id)) this.navActs(); });

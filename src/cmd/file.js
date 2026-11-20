@@ -220,7 +220,8 @@ export const methods = {
         while (this.compiling) await new Promise((r) => setTimeout(r, 150));
       } finally {
         this.pdfBusy = false;
-        if (watch) { watch.disconnect(); st.textContent = was; }
+        // (only the words it wrote go: a "Not kept in this browser" written meanwhile stays)
+        if (watch) { watch.disconnect(); if (/^Making the PDF: /.test(st.textContent)) st.textContent = was; }
         b.disabled = false; b.removeAttribute('aria-busy'); lab.textContent = 'PDF';
       }
     }
