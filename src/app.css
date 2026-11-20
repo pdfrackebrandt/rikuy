@@ -1610,6 +1610,12 @@ body.fpainting #pages { cursor: copy; }
   #main > .stp, #main > .sp-pane { position: relative; inset: auto; z-index: 3; order: 10; flex: none; align-self: stretch; width: 320px; max-height: none; margin: 0; border: 0; border-left: 1px solid var(--line); border-radius: 0; box-shadow: none; }
   #main > .sp-pane { overflow-y: auto; padding-top: 0; }
 }
+/* Help, Word's pane at the right (src/ui/helppane.js): the popover's content in #main's last column */
+#main > .help-pane { position: relative; z-index: 3; order: 11; flex: none; align-self: stretch; width: 380px; display: flex; flex-direction: column; min-height: 0; background: var(--panel); color: var(--ink-ui); border-left: 1px solid var(--line); }
+.help-pane-h { flex: none; padding: 8px 8px 6px 14px; border-bottom: 1px solid var(--line); }
+.help-pane-b { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 10px 14px 18px; display: flex; flex-direction: column; gap: 8px; }
+.help-pane-b p { margin: 0; font-size: 13px; }
+.help-pane .keys { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
 /* Apply Styles, Modify Style, Create a Style */
 .pop.pop-apply { width: min(300px, calc(100vw - 16px)); }
 .pop.pop-modstyle { width: min(430px, calc(100vw - 16px)); }
@@ -1861,6 +1867,14 @@ body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outli
 :root[data-theme="dark"] .st-views button[aria-pressed="true"] { background: var(--panel); }
 .st-views button:focus-visible, .st-zoom input:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .st-zoom { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+/* Mobile View's toggle: in the status bar of a window under 700 px, beside the views */
+.sv-mobile { display: none; align-items: center; gap: 5px; flex: none; height: 26px; padding: 0 9px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--mute); font: 500 12px var(--font-ui); cursor: pointer; }
+.sv-mobile svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.sv-mobile[aria-pressed="true"] { background: var(--blue-wash); color: var(--blue-ink); border-color: color-mix(in srgb, var(--blue) 35%, var(--line)); }
+.sv-mobile:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+@media (max-width: 699px) { .sv-mobile { display: inline-flex; } }
+@media (max-width: 520px) { .sv-mobile { order: -1; } }
+@media (max-width: 699px) and (pointer: coarse) { .sv-mobile { height: 44px; min-width: 44px; } }
 .st-zoom input { width: 110px; height: 16px; margin: 0; accent-color: var(--blue); cursor: pointer; }
 #st-zoomv { min-width: 38px; text-align: right; color: var(--mute); text-decoration: none; font-size: 12px; }
 #st-zoomv:hover { color: var(--ink-ui); }

@@ -342,7 +342,129 @@ def first_comment(page, w):
     page.keyboard.press('Escape')
 
 
-PARTS = {'first_comment': (first_comment, [(1366, False), (390, True)]),
+MV = """(() => { const d = document.getElementById('desk'), sp = [...document.querySelectorAll('#pages .it.p span.t')], r = sp[0].getBoundingClientRect(), m = document.getElementById('sv-mobile');
+  const wide = sp.filter((x) => { const b = x.getBoundingClientRect(); return b.right > d.getBoundingClientRect().right + 1 || b.left < -1; }).length;
+  return { web: document.body.classList.contains('pg-web'), pressed: m.getAttribute('aria-pressed'), shown: m.checkVisibility(), tap: Math.round(m.getBoundingClientRect().height),
+           font: parseFloat(getComputedStyle(sp[0]).fontSize), out: wide, scroll: document.documentElement.scrollWidth - innerWidth, desk: d.scrollWidth - d.clientWidth, zoom: document.getElementById('zoomv').textContent }; })()"""
+
+
+def tap_text(page, text, k=0):
+    """A tap on the page k letters into the first place text is drawn, as a finger puts the caret."""
+    at = page.evaluate("""([t, k]) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(t)); if (!s) return null;
+      s.scrollIntoView({ block: 'center' }); const i = s.textContent.indexOf(t) + k, r = document.createRange(); r.setStart(s.firstChild, i); r.setEnd(s.firstChild, i + 1);
+      const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }""", [text, k])
+    page.touchscreen.tap(at[0], at[1]); page.wait_for_timeout(250)
+
+
+def mobile_view(page, w):
+    """Word's phone app opens a document in Mobile View, its text reflowed to the screen. Rikuy's
+    is Web Layout, the default under 700 px: the text at its actual size, no sideways scroll;
+    typing, selecting, the phone's ribbon row and the on-screen keyboard work in it; Print Layout
+    is one tap away (Mobile View in the status bar) and the choice is kept on this device."""
+    tag = w.replace(' ', '').replace(',', '-')
+    g = page.evaluate(MV)
+    shot(page, f'mobile-view-{tag}')
+    check(f'a phone opens in Mobile View, its toggle pressed and 44 px in the status bar ({w})', g['web'] and g['pressed'] == 'true' and g['shown'] and g['tap'] >= 44, g)
+    check(f'the text at its actual size or more, every line inside the screen, no sideways scroll ({w})', g['font'] >= 13 and g['out'] == 0 and g['scroll'] <= 0 and g['desk'] <= 1 and g['zoom'] == '100%', g)
+    load_doc(page, DOC); page.wait_for_timeout(300)
+    # typing, by a tap
+    tap_text(page, 'Second paragraph', 3)
+    page.keyboard.type('Z'); page.wait_for_timeout(250)
+    check(f'a tap puts the caret in the words and typing lands there ({w})', 'SecZond paragraph' in src(page), src(page)[-80:])
+    page.keyboard.press('Backspace'); page.wait_for_timeout(200)
+    page.keyboard.press('Enter'); page.keyboard.type('New one.'); page.wait_for_timeout(300)
+    check(f'Enter makes a new paragraph ({w})', 'Sec\n\nNew one.ond paragraph' in src(page), src(page)[-80:])
+    page.evaluate('window.rikuy.undo()'); page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    # the phone's ribbon row on a selection
+    select_text(page, 'bold word'); page.wait_for_timeout(200)
+    page.locator('#rb-b').tap(); page.wait_for_timeout(250)
+    check(f'Bold in the phone\'s ribbon row on a selection ({w})', '\\textbf{bold word}' in src(page), src(page)[-120:])
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    tap_text(page, 'Second paragraph', 2)
+    page.locator('#rb-style').select_option('section'); page.wait_for_timeout(300)
+    check(f'the style list makes the paragraph Heading 1 ({w})', '\\section{Second paragraph here.}' in src(page), src(page)[-120:])
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    # the on-screen keyboard (a phone's browser reports it as a shorter visual viewport): the caret stays in sight above it
+    tap_text(page, 'Second paragraph', 6)
+    page.evaluate("""() => { const vv = visualViewport, H = innerHeight - 320; Object.defineProperty(vv, 'height', { configurable: true, get: () => H }); vv.dispatchEvent(new Event('resize')); }""")
+    page.wait_for_timeout(300)
+    page.keyboard.type('Y'); page.wait_for_timeout(400)
+    caret = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom), innerHeight - 320]; })()")
+    check(f'with the on-screen keyboard up, typing lands and the caret is above it ({w})', 'SecondY paragraph' in src(page) and caret[1] <= caret[2] and caret[0] >= 0, (caret, src(page)[-60:]))
+    page.evaluate("() => { delete visualViewport.height; visualViewport.dispatchEvent(new Event('resize')); }")
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    # the zoom button: the text a quarter larger, and back
+    seen = []
+    for _ in range(2):
+        page.locator('#zoomv').tap(); page.wait_for_timeout(300); seen.append(page.evaluate(MV))
+    check(f'the zoom button makes the text a quarter larger and back, lines still inside the screen ({w})', seen[0]['zoom'] == '125%' and seen[0]['font'] > g['font'] * 1.2 and seen[0]['out'] == 0 and seen[0]['desk'] <= 1 and seen[1]['zoom'] == '100%', [(x['zoom'], x['font'], x['out']) for x in seen])
+    # Print Layout one tap away, kept on this device
+    page.locator('#sv-mobile').tap(); page.wait_for_timeout(400)
+    g2 = page.evaluate(MV)
+    shot(page, f'mobile-view-off-{tag}')
+    check(f'a tap on Mobile View gives Print Layout, TeX\'s pages ({w})', not g2['web'] and g2['pressed'] == 'false' and page.evaluate("document.querySelectorAll('#pages .page').length") >= 1, g2)
+    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); page.wait_for_timeout(400)
+    check(f'Print Layout, chosen, is what this phone opens with next ({w})', not page.evaluate(MV)['web'])
+    page.locator('#sv-mobile').tap(); page.wait_for_timeout(400)
+    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); page.wait_for_timeout(400)
+    check(f'and Mobile View again, once chosen again ({w})', page.evaluate(MV)['web'])
+
+
+def wide_print(page, w):
+    """A wide window keeps Print Layout as its default, and has no Mobile View button."""
+    g = page.evaluate("[document.body.classList.contains('pg-web'), document.getElementById('sv-mobile').checkVisibility()]")
+    check(f'a wide window opens in Print Layout, without the Mobile View button ({w})', g == [False, False], g)
+
+
+HELP = """(() => { const p = document.getElementById('helppane'), pop = document.querySelector('body > .pop.pop-help'), rb = document.getElementById('ribbon').getBoundingClientRect(),
+  st = document.getElementById('status').getBoundingClientRect(), d = document.getElementById('desk').getBoundingClientRect();
+  const r = p && p.checkVisibility() ? p.getBoundingClientRect() : null;
+  return { pane: r && { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom) }, pop: !!pop, ribbon: Math.round(rb.bottom), status: Math.round(st.top), desk: Math.round(d.right), win: innerWidth,
+           text: p ? p.innerText.slice(0, 200) : '' }; })()"""
+
+
+def help_pane(page, w):
+    """Word's Help is a pane at the window's right, beside the page, that stays while the page is
+    worked on. Rikuy's: the dialog "How Rikuy works", docked; a press on the page and typing leave
+    it; Close, Esc in it, or Help pressed again close it. A phone keeps the sheet it was."""
+    tag = w.replace(' ', '').replace(',', '-')
+    touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
+    load_doc(page, DOC)
+    if touch:
+        page.locator('#b-nav').tap(); page.wait_for_timeout(250)
+        page.get_by_role('menu', name='Actions', exact=True).get_by_role('menuitem', name='Help', exact=True).tap(); page.wait_for_timeout(400)
+        g = page.evaluate(HELP)
+        shot(page, f'help-{tag}')
+        check(f'on a phone Help is the sheet it was, inside the screen ({w})', g['pop'] and not g['pane'], g)
+        page.get_by_role('dialog', name='How Rikuy works', exact=True).get_by_role('button', name='Close', exact=True).tap()
+        return
+    page.locator('#b-help').click(); page.wait_for_timeout(400)
+    g = page.evaluate(HELP)
+    shot(page, f'help-{tag}')
+    d = page.get_by_role('dialog', name='How Rikuy works', exact=True)
+    check(f'Help opens as a pane at the right, under the ribbon to the status bar, the page beside it ({w})', g['pane'] and not g['pop'] and g['pane']['right'] == g['win'] and g['pane']['top'] >= g['ribbon'] - 1 and abs(g['pane']['bottom'] - g['status']) <= 1 and g['desk'] <= g['pane']['left'] + 1 and 'Download gives you the paper' in g['text'], g)
+    check(f'it is the dialog "How Rikuy works", not modal, with its Close button ({w})', d.count() == 1 and d.get_attribute('aria-modal') is None and d.get_by_role('button', name='Close', exact=True).count() == 1)
+    click_text(page, 'Second paragraph', 3)
+    page.keyboard.type('Z'); page.wait_for_timeout(250)
+    check(f'a press on the page and typing leave the pane open ({w})', page.evaluate(HELP)['pane'] and 'SecZond paragraph' in src(page), src(page)[-60:])
+    page.locator('#b-help').click(); page.wait_for_timeout(300)
+    check(f'Help pressed again closes it ({w})', not page.evaluate(HELP)['pane'])
+    page.locator('#b-help').click(); page.wait_for_timeout(300)
+    page.locator('#helppane').get_by_role('button', name='Close', exact=True).click(); page.wait_for_timeout(250)
+    check(f'its Close button closes it, the page whole again ({w})', not page.evaluate(HELP)['pane'] and page.evaluate(HELP)['desk'] == page.evaluate('innerWidth') or not page.evaluate(HELP)['pane'], page.evaluate(HELP))
+    page.locator('#b-help').click(); page.wait_for_timeout(300)
+    page.locator('#helppane .pop-x').focus(); page.keyboard.press('Escape'); page.wait_for_timeout(250)
+    check(f'Esc in it closes it ({w})', not page.evaluate(HELP)['pane'])
+    # the Help tab's How it works opens the same pane
+    page.evaluate("window.rikuy.runCommand('help-how')")
+    page.wait_for_timeout(300)
+    check(f'the Help tab opens the same pane ({w})', page.evaluate(HELP)['pane'])
+    page.evaluate('window.rikuy.closeHelpPane()')
+
+
+PARTS = {'help_pane': (help_pane, [(1366, False), (1920, True), (390, False)]),
+         'mobile_view': (mobile_view, [(390, False), (360, True)]), 'wide_print': (wide_print, [(1366, False)]),
+         'first_comment': (first_comment, [(1366, False), (390, True)]),
          'download_pdf': (download_pdf, [(1366, False)]),
          'pdf_bar': (pdf_bar, [(390, False), (360, True)]),
          'sample_spelling': (sample_spelling, [(1366, False), (390, True)]),
@@ -355,6 +477,10 @@ PARTS = {'first_comment': (first_comment, [(1366, False), (390, True)]),
          'phone_dialogs': (phone_dialogs, [(390, False), (360, True)])}
 
 
+# the parts that meet a phone's own default, Mobile View (the others open in Print Layout, as the suites written for it do)
+MOBILE = {'mobile_view', 'first_visit', 'doc_name', 'sample_spelling'}
+
+
 def run(which):
     with sync_playwright() as p:
         for name in which:
@@ -364,7 +490,7 @@ def run(which):
                 continue
             for width, dark in sizes:
                 touch = width < 700
-                browser, page, errors = open_page(p, width=width, height=820 if touch else 900, dark=dark, touch=touch)
+                browser, page, errors = open_page(p, width=width, height=820 if touch else 900, dark=dark, touch=touch, layout='mobile' if name in MOBILE else 'print')
                 fn(page, '%d px%s' % (width, ', dark' if dark else ''))
                 check(f'no console errors ({name}, {width} px)', not errors, errors[:4])
                 browser.close()
