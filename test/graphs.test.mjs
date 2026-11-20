@@ -121,7 +121,8 @@ ok('Graph this: the kind, the variable and the sliders from the equation', () =>
 
 ok('Graph this: values the document gives its letters start their sliders', () => {
   const v = paramValues('We set $\\alpha = 0.3$, $\\beta=0.96$ and s = 0.25. Then x = 2y is no value, nor is $k_t = 3k$; $\\delta = 0.1$.');
-  assert.deepEqual(v, { 'α': 0.3, 'β': 0.96, s: 0.25, 'δ': 0.1 });
+  // (s = 0.25 in the prose is not read: the review found "n = 500 observations" taken for n)
+  assert.deepEqual(v, { 'α': 0.3, 'β': 0.96, 'δ': 0.1 });
   const r = gt('y = s k^{\\alpha}', { 'α': 0.3, s: 0.25 });
   assert.deepEqual(r.spec.sliders.map((q) => [q.name, q.value]), [['s', 0.25], ['α', 0.3]]);
   // a value outside the letter's usual range widens the range round it
@@ -129,9 +130,10 @@ ok('Graph this: values the document gives its letters start their sliders', () =
   assert.deepEqual([r2.spec.sliders[0].min, r2.spec.sliders[0].max, r2.spec.sliders[0].value], [0, 100, 40]);
   // bounded on a long document, and on a run of digits (the security audit: the old pattern tried
   // every split of them, and Graph this on such a document hung the page)
-  assert.ok(Object.keys(paramValues('a = 1 '.repeat(100000))).length === 1);
+  assert.ok(Object.keys(paramValues('$a = 1$ '.repeat(100000))).length === 1);
   const t0 = performance.now();
-  paramValues('a = ' + '1'.repeat(200000) + 'x b = .' + '2'.repeat(100000) + 'y');
+  paramValues('\\[a = ' + '1'.repeat(200000) + 'x b = .' + '2'.repeat(100000) + 'y\\]');
+  paramValues('$a = ' + '1'.repeat(1500) + 'x b = .' + '2'.repeat(400) + 'y$'.repeat(300));
   assert.ok(performance.now() - t0 < 300, 'digits read in ' + (performance.now() - t0) + ' ms');
 });
 
