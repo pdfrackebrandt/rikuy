@@ -18,8 +18,35 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const MAX_IMG = 8e6;
 
 // The script of the page itself: each graph's frame told its height (by its own message, from that
-// frame only)
-const SIZER = "(function(){var F=document.querySelectorAll('iframe.rk-graph');addEventListener('message',function(e){for(var i=0;i<F.length;i++)if(F[i].contentWindow===e.source&&e.data&&e.data.rikuy==='height'){var h=Math.round(+e.data.px);if(h>40&&h<3000)F[i].style.height=h+'px';}});})();";
+// frame only), and given the paper's faces when it asks (KaTeX's Computer Modern roman and math
+// italic, from this page's own @font-face rules, the labels' faces in the editor and the PDF)
+function sizer() {
+  var F = document.querySelectorAll('iframe.rk-graph'), faces = null;
+  function bytes(u) { var b = atob(u.slice(u.indexOf(',') + 1)), a = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a.buffer; }
+  function paper() {
+    if (faces) return faces;
+    faces = [];
+    for (var i = 0; i < document.styleSheets.length; i++) {
+      var R = document.styleSheets[i].cssRules;
+      for (var j = 0; j < R.length; j++) {
+        var r = R[j];
+        if (r.type !== 5) continue;
+        var f = r.style.getPropertyValue('font-family').replace(/["']/g, '').trim(), st = r.style.getPropertyValue('font-style') || 'normal', m = /url\(\s*["']?(data:[^"')]+)/.exec(r.style.getPropertyValue('src'));
+        if (!m || !(f === 'KaTeX_Main' && st === 'normal' || f === 'KaTeX_Math' && st === 'italic') || !/^(normal|400|)$/.test(r.style.getPropertyValue('font-weight'))) continue;
+        if (!faces.some(function (x) { return x.family === f; })) faces.push({ family: f, style: st, weight: '400', data: bytes(m[1]) });
+      }
+    }
+    return faces;
+  }
+  addEventListener('message', function (e) {
+    for (var i = 0; i < F.length; i++) {
+      if (F[i].contentWindow !== e.source || !e.data) continue;
+      if (e.data.rikuy === 'height') { var h = Math.round(+e.data.px); if (h > 40 && h < 3000) F[i].style.height = h + 'px'; }
+      if (e.data.rikuy === 'fonts' && !F[i].rkFonts) { F[i].rkFonts = 1; e.source.postMessage({ rikuy: 'fonts', faces: paper(), dark: false }, '*'); }
+    }
+  });
+}
+const SIZER = '(' + sizer.toString().split('\n').map((l) => l.trim()).join('') + ')();';
 
 // pandoc's tree as HTML: what wordast.js writes (paragraphs, headings, lists, tables, math, notes,
 // links, pictures), each element built from text, never from markup in the document

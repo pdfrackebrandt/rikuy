@@ -15,7 +15,7 @@
 import { dialog } from './kit.js';
 import { mk } from './dom.js';
 import { kit as K, graphHtml, TEMPLATES, GALLERY, template, parseData, dataText } from '../graph.js';
-import { runWidget } from '../widget.js';
+import { runWidget, sendFaces } from '../widget.js';
 
 const ICONS = {
   function: '<path d="M2.5 13c2-7 4-7 5.5-1.5S12 17 13.5 9 16 4 17.5 5"/>',
@@ -502,9 +502,11 @@ export function openGraphDialog(app, opts = {}) {
     if (k === 'y' || e.shiftKey) travel(future, past); else travel(past, future);
   }, true);
 
-  // the preview's height, from its own frame alone
+  // the preview's height, from its own frame alone; the paper's faces when it asks
   const onMsg = (e) => {
-    if (e.source !== frame.contentWindow || !e.data || e.data.rikuy !== 'height') return;
+    if (e.source !== frame.contentWindow || !e.data) return;
+    if (e.data.rikuy === 'fonts') { sendFaces(e.source, false); return; }
+    if (e.data.rikuy !== 'height') return;
     const px = Math.round(Number(e.data.px));
     if (Number.isFinite(px) && px > 0) frame.style.height = Math.min(px, 640) + 'px';
   };
