@@ -112,3 +112,40 @@ Reviewer: hostile reviewer, Word user and designer's eye. Built from a clean wor
 - **Frontier:** works by mouse, tap, Enter, KeyTips Alt S R S, and the search box. Esc returns focus to the button. The dialog is named "Frontier". No network request.
 - **Rename:** "Show marks" is consistent in controls.json and llms.txt. Search still finds "Formatting marks" (synonym), and agent.py passes.
 - **6fe04ee:** a ribbon refresh no longer moves the user's selection (P5 restored). But see H1, which is unchanged, and H2, which is new.
+
+## Response (the author, on ribbon-downloads)
+
+Each finding, what changed and the test that failed before it:
+
+- **H1**, `4855384`: the document's last selection is kept with both ends, its file's text and its project's files (`src/ribbon.js` `rbLast`, `restMove`, `restPlace`). `commit()` moves it with the step's edits (`mapPos`). Any other change (undo, the source pane, a coauthor) moves it by that change's one edit (`diffEdit`). A place whose words were taken away is gone, and so is another document's place (`loadProject`, a file opened over another): the document's end stands for it. `api.setSource` moves the page's caret with its edit, or drops it. Test: `tabs.py no_caret`, 8 checks; against a build of 6fe04ee its first case times out on the refused Page break.
+- **H2**, `4855384`: with no caret on the page, the place is read as a range of its own, without touching the selection. The selection goes there only when a command runs (`atRestDo`). `listAt` reads the caret's range. Test: `no_caret`, 3 s idle after a press outside the page: 0 refreshes. The reviewer's `loop.py` gives 0 syncs and 0 selectionchange events.
+- **M1**, `4855384`: a selection lost to a press outside the page stays a selection, and Bold bolds the words. At a place between words, with no caret on the page, a character format writes nothing. Test: `no_caret`, two checks.
+- **M2**, `d4da1a4` and `80c7844`. In the product:
+  - Every icon of the ribbon, tab row, bar and status bar is drawn on the grid of its pixels (`src/ui/icongrid.js`, unit checks in `commands.test.mjs`).
+  - Every line is 1 px.
+  - The ribbon's fields are 24 px (44 with touch).
+  - Every name the ribbon shows is in Word's title case; accessible names are unchanged.
+  - Popovers have 8 px corners.
+
+  In `consistency.py`:
+  - viewBox against drawn size, and every shape's lines.
+  - Field heights.
+  - A title-case rule (`case`).
+  - Forced colours checked by the pixels of screenshots.
+  - The menus and popovers the ribbon opens (`surface`).
+  - Tooltips at every width and scheme.
+  - Touch in dark mode, at 1180 and 390 px.
+  - A popover opened and closed with the mouse.
+
+  At 1366 px in light the stricter rules found 10 violations; the full sweep then left 27. All are fixed.
+- **M3**, `d4da1a4`: under forced colours the selected tab's mark is a border, and the pressed toggles of the bar and status bar are drawn in Highlight. Test: `consistency.py forced`, screenshots in both states.
+- **M4**, `d4da1a4`: the bar's pressed toggle has a 2 px line under it in the ink, 10:1 against the bar. Test: `consistency.py contrast`, the pressed mark at 3:1 or more.
+- **L1** to **L4** and **L6**, `d4da1a4`:
+  - The focus ring shows for the keyboard alone (`html[data-input]`).
+  - Frontier has aria-haspopup and aria-expanded, a description, and a Tab cycle.
+  - The popover has 8 px corners; its Close is 32 px tall (44 with touch).
+  - The downloads' icons each carry a download arrow, and none is Preview's.
+  - llms-full.txt says Show marks.
+
+  Tests: `tabs.py frontier`, three checks, and `downloads_group`; `agent.py`, llms-full.
+- Not done: L5 (Word's own layout differences, the oldest of them on main before this branch), L7 (fixed by 6fe04ee, as the review says) and L8 (`theme-color` has no value for forced colours to follow).
