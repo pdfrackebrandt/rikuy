@@ -29,10 +29,15 @@ export const nav = {
   // the list of actions in the menu panel shows what the bar shows now: Undo and Redo greyed
   // when there is nothing to undo, the zoom by its value
   navActs() {
+    // (the document's name and whether it is saved, at the panel's top: a phone's bar has no
+    // room for them, and Word's phone app names the open document)
+    if ($('#nav-doc-n')) { $('#nav-doc-n').textContent = this.name || ''; $('#nav-doc-s').textContent = $('#savestate').textContent || ''; }
     for (const a of $('#nav-acts').children) {
       const b = $('#' + a.dataset.for);
       a.disabled = b.disabled;
       if (a.dataset.for === 'zoomv') a.lastChild.textContent = 'Zoom: ' + b.textContent;
+      // (Make available offline: there only as the installed app shows it, saying what it is doing)
+      if (a.dataset.for === 'b-offline') { a.hidden = b.hidden; a.lastChild.textContent = b.textContent; }
     }
   },
 

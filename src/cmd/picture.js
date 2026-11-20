@@ -26,6 +26,8 @@ import { altDialog, sizeDialog, smartDialog, chartDialog, dropCapDialog } from '
 import * as D from '../drawing.js';
 import { openGallery } from '../ui/kit.js';
 import { BLOCKS } from '../render.js';
+import { chartRewrite, diff, applyEdits } from '../objfmt.js';
+import { lineOf, fxEdits } from '../picfx.js';
 
 const WHY = 'Select a picture first: click it on the page.';
 // the picture selected on the page, read once for each look at the ribbon (every button asks)
@@ -35,6 +37,18 @@ const pic = (app, at) => {
   return m.pic;
 };
 const has = (app, at) => !!pic(app, at);
+// a picture Corrections, Color, Transparency or Compress made (src/picfx.js): its comment names the
+// first file, which Reset Picture puts back, the comment going with it
+const noted = (app, at) => { const h = pic(app, at); return !!h && !!lineOf(h.src, h.P.e).note; };
+function withFirstFile(src, Q, r, app) {
+  const L = lineOf(src, Q.e);
+  if (!L.note || !r || r.error) return r;
+  const more = fxEdits(src, Q, Q.file.name, L.note.orig, {}, null);
+  if (more.error) return r;
+  // (the edited file goes with the step, undo bringing it back: src/cmd/picfx.js)
+  const blobs = app && app.picFxDropBlobs ? app.picFxDropBlobs(Q.file.name, app.picAssetName(L.note.orig)) : [];
+  return { ...r, edits: [...(r.edits || []), ...more].sort((a, b) => a.s - b.s || a.e - b.e), blobs };
+}
 const keyed = (app, at) => { const h = pic(app, at); return !!h && h.P.keyval; };
 // (a picture turned by a macro's angle: Rotate cannot add to it)
 const turnable = (app, at) => { const h = pic(app, at); return !!h && h.P.keyval && X.angleKnown(h.src, h.P); };
@@ -86,8 +100,8 @@ register(
   P('picture-change', 'Change Picture', { title: 'Change Picture: another file in its place, its size, crop, turn and alt text kept', tab: 'picture-format', group: 'adjust', order: 10, icon: ICON.change, label: 'Change Picture',
     synonyms: ['Replace picture', 'Replace image', 'Swap picture'], menu: { picture: 10 }, run: (app, args) => (args && args.file ? app.picChange(args.file, args.blob) : app.picChoose()) }),
   P('picture-reset', 'Reset Picture', { title: 'Reset Picture: its crop, turn, flips and border go (size and alt text stay); the arrow for Reset Picture & Size', tab: 'picture-format', group: 'adjust', order: 20, icon: ICON.reset, kind: 'split',
-    synonyms: ['Discard formatting'], when: keyed, run: (app) => app.picOp((src, Q) => X.reset(src, Q, false)), menuItems: () => [{ name: 'Reset Picture', command: 'picture-reset' }, { name: 'Reset Picture & Size', command: 'picture-reset-size' }] }),
-  P('picture-reset-size', 'Reset Picture & Size', { title: 'Reset Picture & Size: the picture as its file is, at its natural size', when: keyed, run: (app) => app.picOp((src, Q) => X.reset(src, Q, true)) }),
+    synonyms: ['Discard formatting'], when: (app, at) => keyed(app, at) || noted(app, at), run: (app) => app.picOp((src, Q) => withFirstFile(src, Q, X.reset(src, Q, false), app)), menuItems: () => [{ name: 'Reset Picture', command: 'picture-reset' }, { name: 'Reset Picture & Size', command: 'picture-reset-size' }] }),
+  P('picture-reset-size', 'Reset Picture & Size', { title: 'Reset Picture & Size: the picture as its file is, at its natural size', when: (app, at) => keyed(app, at) || noted(app, at), run: (app) => app.picOp((src, Q) => withFirstFile(src, Q, X.reset(src, Q, true), app)) }),
 
   // ---- Picture Styles ---------------------------------------------------------------------------
   P('picture-border', 'Picture Border', { title: 'Picture Border: a frame tight round the picture ({\\setlength{\\fboxsep}{0pt}\\fbox{…}}); again takes it off; Border Weight and Border Color in the right click menu', tab: 'picture-format', group: 'styles', order: 10, kind: 'toggle', icon: ICON.border, label: 'Picture Border',
@@ -166,9 +180,10 @@ register(
   { id: 'insert-chart', name: 'Chart', title: 'Chart: columns, bars or a line from a small table of numbers (pgfplots), drawn on the page from its coordinates', tab: 'insert', group: 'illustrations', order: 50, icon: IC.chart, label: 'Chart',
     synonyms: ['Graph', 'Plot', 'Bar chart', 'Column chart', 'Line chart', 'pgfplots'], when: atAny, run: (app, args) => (args && args.cats ? app.insertChart(args.kind, args.cats, args.series) : chartDialog(app)) },
   // (R3) a chart opened again in its grid: a click on it, or this with the chart's new data
-  { id: 'chart-edit-data', name: 'Edit Data', title: 'Edit Data: the chart\'s grid again (click a chart Rikuy made); OK writes it in its place', synonyms: ['Edit chart', 'Chart data', 'Change chart'],
-    when: (app) => app.chartLive(), whyNot: () => 'Click a chart on the page first (Insert › Chart makes one).',
-    run: (app, args) => (args && args.cats ? app.chartReplace(args.kind || 'column', args.cats, args.series || []) : app.chartReopen()) },
+  { id: 'chart-edit-data', name: 'Edit Data', title: 'Edit Data: the chart\'s grid again (a chart Rikuy made, selected on the page, or a double click on it); OK writes it in its place', synonyms: ['Edit chart', 'Chart data', 'Change chart', 'Select Data'],
+    tab: 'chart-design', group: 'data', order: 20, icon: '<path d="M3.5 4.5h13v11h-13zM3.5 8.5h13M3.5 12h13M8 4.5v11M12 4.5v11"/>', label: 'Edit Data', menu: { chart: 10 },
+    when: (app) => app.chartLive() || !!app.chartSelected(), whyNot: () => 'Click a chart on the page first (Insert › Chart makes one).',
+    run: (app, args) => { const o = app.chartSelected(); if (o && !(args && args.cats)) return editChart(app, o.el); if (o && args && args.cats) { editChart(app, o.el, true); } return args && args.cats ? app.chartReplace(args.kind || 'column', args.cats, args.series || []) : app.chartReopen(); } },
   { id: 'insert-screenshot', name: 'Screenshot', title: 'Screenshot: a window or the screen, captured as you choose, placed as a picture (PNG)', tab: 'insert', group: 'illustrations', order: 60, icon: IC.shot, label: 'Screenshot',
     synonyms: ['Screen capture', 'Screen clipping', 'Capture'], when: (app, at) => !!at && typeof navigator !== 'undefined' && !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia),
     whyNot: () => 'This browser lets no page capture the screen.', run: (app) => app.insertScreenshot() },
@@ -331,7 +346,7 @@ export const methods = {
     // (keys need graphicx: graphics alone reads a bounding box there)
     const keys = edits.some((x) => x.s >= h.P.s && x.e <= h.P.e) && h.P.keyval;
     const pk = this.picPackages([...(r.packages || []), ...(keys ? ['graphicx'] : [])]);
-    if (!edits.length) return false;
+    if (!edits.length && !(r.blobs && r.blobs.length)) return false;
     const mine = [...edits, ...pk.filter((x) => x.f === f)];
     const ns = mapPos(mine, h.P.s, 1);
     let caret;
@@ -339,7 +354,8 @@ export const methods = {
     else caret = { f, p: ns, bias: 1 };
     this.closeGroup();
     this.removeGhost();
-    this.commit([...edits, ...pk], caret, 'picture');
+    // (blobs: picture files the same step puts in or takes out, src/cmd/picfx.js)
+    this.commit([...edits, ...pk], caret, 'picture', r.blobs);
     this.closeGroup();
     if (r.p == null) this.picSelect({ f, s: ns });
     else this.ribbonSync();
@@ -691,7 +707,10 @@ export const methods = {
     let nm = base + ext;
     for (let k = 2; taken(nm); k++) nm = base + '-' + k + ext;
     if (blob && !this.assetBlobs.has(nm)) { this.addAsset(nm, blob); this.binaryDirty = true; this.zipDirty = true; this.forceRender = true; }
-    return this.picApply(h, X.changeFile(h.src, h.P, nm));
+    // (a new picture is no edited copy of the old one: the comment that said so goes)
+    const L = lineOf(h.src, h.P.e), ch = X.changeFile(h.src, h.P, nm);
+    if (L.note) ch.edits.push({ s: L.note.s, e: L.note.e, t: '' });
+    return this.picApply(h, ch);
   }
 };
 
@@ -762,6 +781,8 @@ Object.assign(methods, {
     if (list.length > D.smartMax(kind)) { this.toast('SmartArt (smartdiagram) holds at most ' + D.smartMax(kind) + ' items here: its colours stop there and TeX stops on more. Split the list into two diagrams.', 8000); return false; }
     return this.insertObject(D.smartTex(kind, list), ['smartdiagram']);
   },
+  // a chart selected on the page (src/ui/shapes.js), Chart Design's
+  chartSelected() { const o = this.objHere ? this.objHere() : null; return o && o.kind === 'chart' && D.readAxis(o.text) ? o : null; },
   // the chart opened last (editChart), while its text is as it was
   chartLive() { const C = this.chartAt; return !!C && this.files.has(C.f) && this.src(C.f).slice(C.s, C.e) === C.t; },
   chartReopen() {
@@ -777,10 +798,12 @@ Object.assign(methods, {
     const C2 = cats.slice(0, 50).map((x) => String(x)), S = series.slice(0, 8).map((x) => ({ name: String(x.name || ''), values: (x.values || []).slice(0, 50) }));
     if (!C2.length || !S.length) { this.toast('A chart needs at least one category and one series of numbers.'); return false; }
     const eol = /\r\n/.test(C.t) ? '\r\n' : '\n';
-    const t = D.chartTex(k, C2, S, eol);
+    // (Chart Design's settings kept: its title, gridlines, colours, size; one edit over what differs)
+    const ed = chartRewrite(C.t, k, C2, S) || diff(C.t, D.chartTex(k, C2, S, eol));
+    const t = applyEdits(C.t, ed);
     if (t === C.t) return false;
     this.closeGroup();
-    this.commit([{ f: C.f, s: C.s, e: C.e, t }], { f: C.f, p: C.s, bias: 1 }, 'insert');
+    this.commit(ed.map((x) => ({ f: C.f, s: C.s + x.s, e: C.s + x.e, t: x.t })), { f: C.f, p: C.s, bias: 1 }, 'insert');
     this.closeGroup();
     this.chartAt = { f: C.f, s: C.s, e: C.s + t.length, t };
     return true;
