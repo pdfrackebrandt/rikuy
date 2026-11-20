@@ -964,9 +964,53 @@ def motion(page, w):
     page.emulate_media(reduced_motion='no-preference')
 
 
+
+MENU_DOC = ('\\documentclass{article}\n\\begin{document}\n\\section{Opening}\nFirst paragraph here, with a bold word.\n\n'
+            'Second paragraph here.\n\\end{document}\n')
+SMALL = {'a', 'an', 'and', 'as', 'at', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to'}
+
+
+def menus(page, w):
+    """The right click menu as UI-PRINCIPLES.md C9, C11, C13 and P2 ask: 8 px corners, items with
+    4 px; every item's words capitalised (but the small ones inside), four at most, "…" on exactly
+    the items that open a dialog (each pressed to see); the shortcuts in one column at the right;
+    the keys' ring an outline."""
+    seen = {}
+    for ctx, word in (('text', 'Second paragraph'), ('heading', 'Opening')):
+        load_doc(page, MENU_DOC); click_text(page, word, 2)
+        page.keyboard.press('Shift+F10'); page.wait_for_timeout(300)
+        m = page.evaluate("""(() => { const m = document.querySelector('.pop-ctx'); if (!m) return null; const R = (e) => e.getBoundingClientRect(); const a = document.activeElement;
+          return { radius: getComputedStyle(m).borderTopLeftRadius, ring: [a.matches('.pop-ctx [role^=menuitem]'), getComputedStyle(a).outlineStyle],
+            items: [...m.querySelectorAll('[role^=menuitem]:not(.mi-hint)')].map((i) => [i.getAttribute('aria-label'), (i.querySelector('.mi-n') || {}).textContent || '', i.getAttribute('aria-disabled') === 'true', getComputedStyle(i).borderTopLeftRadius]),
+            keys: [...m.querySelectorAll('.mi-k')].map((k) => { const n = k.parentElement.querySelector('.mi-n'), r = document.createRange(); r.selectNodeContents(n); return [Math.round(R(k).right), Math.round(r.getBoundingClientRect().right), Math.round(R(k).left)]; }) }; })()""")
+        page.keyboard.press('Escape'); page.wait_for_timeout(100)
+        seen[ctx] = m
+        dlg = {}
+        for name, label, off, _ in (m or {}).get('items', []):
+            if off or name in ('Paste', 'Cut', 'Copy', 'Synonyms', 'Ask Claude'):
+                continue
+            load_doc(page, MENU_DOC); click_text(page, word, 2)
+            page.keyboard.press('Shift+F10'); page.wait_for_timeout(250)
+            page.locator('.pop-ctx [role^=menuitem]').and_(page.get_by_label(name, exact=True)).first.click(timeout=3000); page.wait_for_timeout(300)
+            dlg[label] = page.evaluate("!!document.querySelector('body > .pop.pop-dlg') || !!(document.getElementById('fr') && document.getElementById('fr').offsetParent)")
+            page.keyboard.press('Escape'); page.wait_for_timeout(100)
+        wrong = {k: v for k, v in dlg.items() if k.endswith('…') != v}
+        check(f'"…" on exactly the items that open a dialog, in the {ctx} menu ({w})', dlg and not wrong, wrong or dlg)
+    bad = []
+    for ctx, m in seen.items():
+        for name, label, off, rad in (m or {}).get('items', []):
+            words = label.rstrip('…').split()
+            if len(words) > 4 or any(not (x[0].isupper() or not x[0].isalpha() or (i and x in SMALL)) for i, x in enumerate(words)) or rad != '4px':
+                bad.append((ctx, label, rad))
+    check(f'every item\'s words capitalised, four at most, 4 px corners ({w})', seen and all(seen.values()) and not bad, bad)
+    check(f'the menus have 8 px corners and the keys\' ring is an outline ({w})', all(m['radius'] == '8px' and m['ring'][0] and m['ring'][1] != 'none' for m in seen.values()), {k: (m['radius'], m['ring']) for k, m in seen.items()})
+    check(f'the shortcuts in one column at the right, after the names ({w})', all(m['keys'] and max(x[0] for x in m['keys']) - min(x[0] for x in m['keys']) <= 1 and all(x[2] >= x[1] + 8 for x in m['keys']) for m in seen.values()), {k: m['keys'] for k, m in seen.items()})
+
+
 PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
          'bar_room': (bar_room, None),
          'motion': (motion, [(1366, False)]),
+         'menus': (menus, [(1366, False), (1920, True)]),
          'tap_alternatives': (tap_alternatives, [(1366, False), (1920, True)]),
          'focus_rules': (focus_rules, [(1366, False), (1920, True), (390, False)]),
          'contrast': (contrast, [(1366, False), (1366, True), (390, False), (390, True)]),

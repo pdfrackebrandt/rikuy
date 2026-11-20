@@ -9,6 +9,16 @@
 
 import { menuItems, enabled } from '../commands.js';
 import { firstKey, macUA } from '../keys.js';
+
+// A command's words in the menu as Word's menus write them (UI-PRINCIPLES.md C11): every word
+// capitalised but the small ones inside ("Select Heading and Content"), four words at most
+// (menuName), "…" after one that opens a dialog. Its accessible name stays its name, the one
+// agents and the search box use.
+const SMALL = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to']);
+export function menuLabel(c) {
+  const words = (c.menuName || c.name).split(' ').map((w, i) => (i && SMALL.has(w) ? w : /^[a-z]/.test(w) ? w[0].toUpperCase() + w.slice(1) : w));
+  return words.join(' ') + (c.dialog && !/…$/.test(c.name) ? '…' : '');
+}
 import { openMenu } from './kit.js';
 
 export const methods = {
@@ -41,7 +51,7 @@ export const methods = {
     if (s.rangeCount && this.root.contains(s.anchorNode)) this.rbRange = s.getRangeAt(0).cloneRange();
     // (Ask Claude only inside Claude)
     const items = menuItems(this.menuContexts(at)).filter((c) => !c || c.only !== 'claude' || document.body.classList.contains('has-ai')).map((c) => c && {
-      name: c.name, title: c.title, keys: firstKey(c, macUA()), disabled: !enabled(this, c, at),
+      name: c.name, label: menuLabel(c), title: c.title, keys: firstKey(c, macUA()), disabled: !enabled(this, c, at),
       run: () => { this.ribbonBack(); this.runCommand(c.id); }
     });
     // a word spelling marks: Hunspell's suggestions first, Ignore All, Add to Dictionary (src/cmd/review.js)
