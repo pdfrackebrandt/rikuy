@@ -552,19 +552,26 @@ export function installRibbon(app) {
   installKeyTips(app);
 }
 
-// Alt alone, or F10, shows Word's KeyTips on the tabs. A letter opens that tab (Help is Y then 2)
-// and shows the letters of its controls, as Word's do (src/ribbon/layout.js): typing one runs that
-// control, a group folded into a button has Z and a letter, Escape goes back to the tabs' letters
-// and then away. The letters are drawn over the ribbon, not in the buttons: their names stay theirs.
+// Alt alone, or F10, shows Word's KeyTips on the tabs. A letter opens that tab (Help is Y then 2,
+// a contextual tab J then its letter while it shows) and shows the letters of its controls, as
+// Word's do (src/ribbon/layout.js): typing one runs that control, a group folded into a button has
+// Z and a letter, Escape goes back to the tabs' letters and then away. The letters are drawn over
+// the ribbon, not in the buttons: their names stay theirs. A key the letters take goes nowhere
+// else (Escape would also let go of a selected picture). On a Mac, F10 alone: Option is how a Mac
+// types é and ©, and Word for Mac has no KeyTips.
 function installKeyTips(app) {
   const list = $('#rb-tabs');
   if (!list) return;
-  let altDown = false, altUsed = false, yWait = false, level = 0, typed = '', tips = [];
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  let altDown = false, altUsed = false, level = 0, typed = '', tips = [];
   const layer = mk('div', 'rb-kt-layer');
   layer.setAttribute('aria-hidden', 'true');
   document.body.append(layer);
   const field = (e) => e.target && e.target.closest && e.target.closest('input, textarea, select, math-field, [contenteditable="true"]:not(#pages), .CodeMirror');
   const shown = (el) => el && el.offsetParent !== null && el.getClientRects().length > 0;
+  // the tabs' letters there are now (a contextual tab's while it shows)
+  const tabTips = () => Object.entries(KEYTIPS).filter(([id]) => { const t = $('#rt-' + id); return t && !t.hidden; });
+  const tabBadges = () => { for (const b of list.querySelectorAll('.rb-ktip')) b.hidden = !b.dataset.k.startsWith(typed); };
   // the open tab's controls that have letters, where they are now
   const collect = () => {
     const tab = app.rbTab, panel = $('#rp-' + tab), map = TIPS[tab] || {}, out = [], used = new Set();
@@ -600,9 +607,10 @@ function installKeyTips(app) {
     }
   };
   const show = (on) => {
-    yWait = false; typed = '';
+    typed = '';
     level = on ? 1 : 0;
     document.body.classList.toggle('keytips', on);
+    tabBadges();
     tips = []; layer.replaceChildren();
   };
   const commandsOf = () => {
@@ -626,41 +634,46 @@ function installKeyTips(app) {
     if (el.disabled) return;
     el.click();
   };
+  // (a key the letters take: the page, the picture's and the app's own keys never see it)
+  const take = (e) => { e.preventDefault(); e.stopImmediatePropagation(); };
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Alt' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.shiftKey) { altDown = true; altUsed = false; return; }
     if (altDown && e.key !== 'Alt') altUsed = true;
     if (e.key === 'F10' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !field(e)) {
-      e.preventDefault();
+      take(e);
       show(!level);
       return;
     }
     if (!level || field(e)) return;
     if (e.key === 'Escape') {
-      e.preventDefault();
-      if (level === 2 && typed) { typed = ''; draw(); } else if (level === 2) show(true); else show(false);
+      take(e);
+      if (typed) { typed = ''; if (level === 2) draw(); else tabBadges(); } else if (level === 2) show(true); else show(false);
       return;
     }
     const k = e.key.length === 1 ? e.key.toUpperCase() : '';
     if (!k || e.ctrlKey || e.metaKey || e.altKey) return;
-    e.preventDefault();
+    take(e);
+    const want = typed + k;
     if (level === 2) {
-      const want = typed + k, hits = tips.filter((t) => t.k.startsWith(want));
+      const hits = tips.filter((t) => t.k.startsWith(want));
       if (!hits.length) return;
       const exact = hits.find((t) => t.k === want);
       if (exact) return press(exact);
       typed = want; draw();
       return;
     }
-    if (yWait) { yWait = false; if (k === '2' || k === 'Y') open('help'); return; }
-    if (k === 'Y') { yWait = true; return; }
-    const id = Object.keys(KEYTIPS).find((t) => KEYTIPS[t] === k);
-    if (id) open(id);
+    // (Y then Y opens Help too, as it always has here)
+    const hits = tabTips().filter(([, t]) => t.startsWith(want) || (want === 'YY' && t === 'Y2'));
+    if (!hits.length) return;
+    const exact = hits.find(([, t]) => t === want || (want === 'YY' && t === 'Y2'));
+    if (exact) return open(exact[0]);
+    typed = want; tabBadges();
   }, true);
   document.addEventListener('keyup', (e) => {
     if (e.key !== 'Alt') return;
     const alone = altDown && !altUsed && !e.ctrlKey && !e.metaKey && !e.shiftKey && !field(e);
     altDown = false;
-    if (alone) { e.preventDefault(); show(!level); }
+    if (alone && !mac) { e.preventDefault(); show(!level); }
   }, true);
   // (anything else puts them away: a press, the window resized or scrolled, the focus gone)
   const away = () => { if (level) show(false); };

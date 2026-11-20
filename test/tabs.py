@@ -635,8 +635,49 @@ def word_layout(page):
     page.keyboard.press('z'); page.keyboard.press('i'); page.wait_for_timeout(250)
     check('Home at 1000 px: its folded Insert has ZI, which opens its menu', 'ZI' in z and page.get_by_role('menu', name='Insert', exact=True).count() == 1, z)
     page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    page.set_viewport_size({'width': 1920, 'height': 900}); page.wait_for_timeout(300)
+    # a contextual tab's letters: J then its letter, while it shows
+    load_doc(page, TABLE); click_text(page, 'A paragraph', 2); page.wait_for_timeout(200)
+    page.keyboard.press('Alt'); page.wait_for_timeout(100)
+    before = page.evaluate("[...document.querySelectorAll('#rb-tabs .rb-ktip')].filter((b) => b.offsetParent).map((b) => b.dataset.k)")
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    click_text(page, 'cell', 2); page.wait_for_timeout(250)
+    page.keyboard.press('Alt'); page.wait_for_timeout(100)
+    shown = page.evaluate("[...document.querySelectorAll('#rb-tabs .rb-ktip')].filter((b) => b.offsetParent).map((b) => b.dataset.k)")
+    page.keyboard.press('j'); page.wait_for_timeout(100)
+    left = page.evaluate("[...document.querySelectorAll('#rb-tabs .rb-ktip')].filter((b) => b.offsetParent).map((b) => b.dataset.k)")
+    page.keyboard.press('l'); page.wait_for_timeout(250)
+    kts = page.evaluate("[...document.querySelectorAll('.rb-kt')].map((x) => x.textContent)")
+    check('the contextual tabs\' letters, as Word\'s: JT and JL with the caret in a table (none out of it); J leaves those two; L opens Table Layout and shows its controls\' letters (Delete D, Insert below BE)',
+          'JT' not in before and 'JT' in shown and 'JL' in shown and sorted(left) == ['JL', 'JT'] and page.evaluate('rikuy.rbTab') == 'table-layout' and 'D' in kts and 'BE' in kts, (before, shown, left, kts))
+    page.keyboard.press('Escape'); page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    # the keys the letters take go nowhere else: Escape keeps a selected picture selected
+    load_doc(page, PICDOC); page.wait_for_timeout(200); page.locator('#pages .a-img').click(); page.wait_for_timeout(200)
+    armed = page.evaluate('!!(rikuy.armed && rikuy.armed.kind === "img")')
+    page.keyboard.press('Alt'); page.wait_for_timeout(100); page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    check('Escape that puts the letters away does not let go of a selected picture', armed and page.evaluate('!!(rikuy.armed && rikuy.armed.kind === "img")') and not page.evaluate("document.body.classList.contains('keytips')"))
+    page.evaluate('rikuy.disarm()')
     page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
+    load_doc(page, DOC)
     open_tab(page, 'Home')
+
+
+def mac_keytips(p):
+    """On a Mac, Option alone types nothing and shows no letters (it is how a Mac types é and ©, and
+    Word for Mac has no KeyTips); F10 shows them."""
+    browser, page, errors = open_page(p, init="Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel' })")
+    load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
+    page.keyboard.press('Alt'); page.wait_for_timeout(100)
+    alt = page.evaluate("document.body.classList.contains('keytips')")
+    page.keyboard.press('h'); page.keyboard.press('e'); page.wait_for_timeout(150)
+    typed = src(page)
+    page.keyboard.press('Control+z'); page.wait_for_timeout(100)
+    click_text(page, 'Second paragraph', 3)
+    page.keyboard.press('F10'); page.wait_for_timeout(100)
+    f10 = page.evaluate("document.body.classList.contains('keytips')")
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    check('a Mac: Option alone shows no letters, and the letters after it are typed (no command runs); F10 shows them', not alt and 'he' in typed and f10, (alt, f10))
+    browser.close()
 
 
 
@@ -769,8 +810,9 @@ def run():
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
-        try: tablet(p)
-        except Exception as e: check('tablet runs to its end', False, str(e)[:300])
+        for f in (tablet, mac_keytips):
+            try: f(p)
+            except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
     bad = [r for r in results if not r[1]]
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     sys.exit(1 if bad else 0)

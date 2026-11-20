@@ -60,7 +60,10 @@ ok('every chord reads; two commands on one chord differ in rank, or one says whe
   assert.ok(command('style-heading1').keys.includes('Ctrl+Alt+1') && command('style-normal').keys.includes('Ctrl+Alt+0') && command('style-normal').keys.includes('Ctrl+Shift+N') && command('bullets').keys.includes('Ctrl+Shift+L'));
   assert.ok(command('double-underline').keys.includes('Ctrl+Shift+D') && command('clear-paragraph-formatting').keys.includes('Ctrl+Q'));
   assert.ok(command('format-painter').keys.includes('Ctrl+Shift+C') && command('paste-special').keys.includes('Ctrl+Alt+V'));
-  assert.deepEqual(KEYTIPS, { file: 'F', home: 'H', insert: 'N', design: 'G', layout: 'P', references: 'S', review: 'R', view: 'W', help: 'Y2' });
+  assert.deepEqual(KEYTIPS, { file: 'F', home: 'H', insert: 'N', design: 'G', layout: 'P', references: 'S', review: 'R', view: 'W', help: 'Y2',
+    'table-design': 'JT', 'table-layout': 'JL', 'picture-format': 'JP', equation: 'JE', headfoot: 'JH' });
+  // (no tab's letters the start of another's: Word waits for the second letter only after J and Y)
+  for (const a of Object.values(KEYTIPS)) for (const b of Object.values(KEYTIPS)) assert.ok(a === b || !b.startsWith(a), a + ' starts ' + b);
   assert.ok(command('search').keys.includes('Alt+Q') && command('ribbon-collapse').keys.includes('Ctrl+F1') && command('context-menu').keys.includes('Shift+F10'));
 });
 
