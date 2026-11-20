@@ -3233,6 +3233,26 @@ Tests:
     `outline.py` 105 and `view.py` 160 with `dist/tex`, `file.py` 100 with `dist/tex` and
     `dist/word`, `tabs.py` 115.
 
+66. **Word's keyboard shortcuts** (branch word-shortcuts, draft PR 80). Every shortcut on
+    Microsoft's Keyboard shortcuts in Word page, Windows and macOS, and the equation keys,
+    against Rikuy's registry: `docs/handoff/SHORTCUTS.md`, one table, each row works, added,
+    kept by the browser (with what to press instead) or without an equivalent in a LaTeX document
+    and why. Added: Ctrl+1, 2, 5 (line spacing), Alt+Shift+> and < (footnotes), F5 (Go To),
+    Shift+F4 and Ctrl+Alt+Y (Find Next), Shift+F5 and Ctrl+Alt+Z (Go Back), F8 and Shift+F8
+    (Extend and Shrink Selection), Alt+Shift+A and Alt+Shift+1 to 9 (outline levels),
+    Ctrl+Alt+P, Ctrl+Alt+N, Alt+F9, Ctrl+F2, Shift+F1, F1, Ctrl+F6 and Ctrl+Shift+F6 (panes),
+    Alt+X, the accent keys (Ctrl+' then e is é, and the rest), ¿ and ¡, Ctrl+F3 and
+    Ctrl+Shift+F3 (the Spike), F2 and Shift+F2 (move and copy, then Enter), Alt+F3, Ctrl+F9,
+    Alt+Shift+P, Ctrl+Shift+P, Alt+Shift+O, Ctrl+Shift+F5, Alt+F7, the number pad's dashes,
+    Alt+Home, End, Page Up, Page Down and Alt+Shift+Up and Down in a table, Alt and the pad's 5,
+    Shift+F12, Alt+Shift+F2, Ctrl+F12, Ctrl+Alt+F2, Ctrl+Shift+F12; Hanging Indent as a command
+    (Word's Ctrl+T is the browser's). Word for Mac's own chords (Cmd+Option+L, R, A, E,
+    Cmd+Control+V, Control+Space, Control+Shift+M, Cmd+8, Cmd+G). Tooltips, menus, the search
+    box and Help write a Mac's chords with ⌘ ⌥ ⌃ ⇧; Help ends with Word's keys the browser keeps.
+    Function keys reach their commands from fields and the source, Ctrl+Alt chords from the
+    source. Evidence: `npm test` green (`keys` 19 groups, `typing` 6, `commands` 13 with the
+    `WORD` table on both systems, `table` 47), `test/shortcuts.py` (see the commit).
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
