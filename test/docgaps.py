@@ -5,7 +5,7 @@ Formulas; View Gridlines; Draw Table and Eraser), each drawn on the page as TeX 
 dist/tex holds a TeX tree, what they write compiled in the page with pdfLaTeX, XeLaTeX and LuaLaTeX;
 phones at 390 and 360 px with touch; screenshots in $RIKUY_SHOTS (default /tmp/g2-shots).
 
-python3 docgaps.py [section ...]: tables, tables_compiled, tables_phones, shots, headfoot, headfoot_forms, footer_sheet, headfoot_compiled,
+python3 docgaps.py [section ...]: tables, tables_compiled, tables_phones, shots, headfoot, headfoot_forms, footer_sheet, headfoot_refused, headfoot_compiled,
 headfoot_phones, headfoot_shots, view, split_long, refs_update, equation, equation_linear, insert_text, rest_compiled, rest_phones,
 rest_shots."""
 import os, sys, base64, io, re as _re
@@ -554,6 +554,32 @@ def footer_sheet(page):
               a['ok'] and b['ok'] and fa is not None and fb is not None and abs(fa - v0) < 0.1 and abs(fb - 1.5) < 0.1 and abs((fa - v0) - (fb - 1.5)) < 0.02, (fa, fb, v0))
 
 
+# (the verification of 3d3bfc4, blocker 1: KOMA-Script, typearea and memoir lay the page out their
+# own way, which the page model does not read: a header set 1 cm from the top went off the sheet)
+HF_REFUSED = {
+    'scrartcl': '\\documentclass{scrartcl}\n\\usepackage{scrlayer-scrpage}\n\\ihead{HEADMARK}\n\\begin{document}\nText.\n\\end{document}\n',
+    'memoir': '\\documentclass{memoir}\n\\begin{document}\nText.\n\\end{document}\n',
+    'article with typearea': '\\documentclass{article}\n\\usepackage{typearea}\n\\begin{document}\nText.\n\\end{document}\n',
+}
+
+
+def headfoot_refused(page):
+    for name, doc in HF_REFUSED.items():
+        load_doc(page, doc); page.wait_for_timeout(400); at_src(page, 'Text.'); page.wait_for_timeout(200)
+        page.evaluate("window.rikuy.pageHFOpen('head', { page: 0 })"); page.wait_for_timeout(300)
+        st = page.evaluate("(() => { const i = document.getElementById('rc-hf-header-top'), j = document.getElementById('rc-hf-footer-bottom'); return i && j ? [i.disabled, i.value, i.title, j.disabled] : null; })()")
+        check('%s: Header from Top and Footer from Bottom greyed, the tooltip saying why' % name, st and st[0] and st[1] == '' and 'does not read that layout' in st[2] and st[3], st)
+        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        s0 = src(page)
+        run_cmd(page, 'hf-header-top', {'cm': 1.0}); page.wait_for_timeout(300)
+        check('%s: set by name anyway, nothing written' % name, src(page) == s0)
+    # (geometry lays the page out: the boxes work on a KOMA class again)
+    doc = HF_REFUSED['scrartcl'].replace('\\usepackage{scrlayer-scrpage}', '\\usepackage[margin=2.5cm]{geometry}\n\\usepackage{scrlayer-scrpage}')
+    load_doc(page, doc); page.wait_for_timeout(400); at_src(page, 'Text.'); page.wait_for_timeout(200)
+    run_cmd(page, 'hf-header-top', {'cm': 1.0}); page.wait_for_timeout(300)
+    check('scrartcl with geometry: Header from Top writes geometry\'s headsep', 'headsep=' in src(page), src(page).split('\\begin{document}')[0])
+
+
 def headfoot_compiled(page):
     if not HAS_TEX:
         print('SKIP the header and footer compiled: no TeX tree in %s' % DIST)
@@ -927,7 +953,7 @@ def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (tables, tables_compiled, headfoot, headfoot_forms, footer_sheet, headfoot_compiled, view, split_long, refs_update, equation, equation_linear, insert_text, rest_compiled):
+        for f in (tables, tables_compiled, headfoot, headfoot_forms, footer_sheet, headfoot_refused, headfoot_compiled, view, split_long, refs_update, equation, equation_linear, insert_text, rest_compiled):
             if names and f.__name__ not in names:
                 continue
             try: f(page)

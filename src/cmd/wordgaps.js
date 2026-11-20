@@ -6,7 +6,7 @@
 
 import { register, onInstall, command } from '../commands.js';
 import { openMenu } from '../ui/kit.js';
-import { usePackages, preambleEnd } from '../preamble.js';
+import { usePackages, preambleEnd, hasPackage } from '../preamble.js';
 import * as PS from '../pagesrc.js';
 import { hfOpen, hfInsert } from '../ui/headerfooter.js';
 import { readParts, partIsBlock } from '../quickparts.js';
@@ -21,13 +21,31 @@ const body = () => document.body.classList;
 const OPEN_WHY = 'Open the header or footer first (double click the top or bottom margin)';
 const hfOn = (app) => !!app.hf;
 // (a look at the caret asks this of two boxes: the preamble's end found once per text of the main file)
-let sheetMemo = { text: null, ok: false };
-const sheet = (app) => {
-  if (!(app.model && !app.stale && app.files && app.files.has(app.main)) || (app.model.opts && app.model.opts.cls === 'beamer')) return false;
+// (and whether the page's layout is one the page model reads: KOMA-Script's classes and typearea,
+// and memoir, work out their own margins, headsep and footskip, which the model does not read yet
+// (the verification of 3d3bfc4: a KOMA header set 1 cm from the top went off the sheet), so the
+// boxes say so there, until geometry lays the page out)
+let sheetMemo = { text: null, ok: false, why: null, pre: null };
+const sheetLook = (app) => {
+  if (!(app.model && !app.stale && app.files && app.files.has(app.main)) || (app.model.opts && app.model.opts.cls === 'beamer')) return { ok: false, why: null };
   const t = app.src(app.main);
-  if (sheetMemo.text !== t) sheetMemo = { text: t, ok: preambleEnd(t) >= 0 };
-  return sheetMemo.ok;
+  if (sheetMemo.text !== t) {
+    const end = preambleEnd(t);
+    let why = null;
+    // (the layout is the preamble's: typing in the body asks nothing again)
+    if (end >= 0 && sheetMemo.pre === t.slice(0, end)) why = sheetMemo.why;
+    else if (end >= 0) {
+      const others = app.preambleOthers ? app.preambleOthers() : [];
+      const M = PS.pageMode(t, { others });
+      const who = M.byGeometry ? null : M.koma ? 'KOMA-Script\'s class' : M.cls && M.cls.name === 'memoir' ? 'memoir' : hasPackage(t, 'typearea', end, others) ? 'typearea' : null;
+      if (who) why = 'Not in this document yet: ' + who + ' works out where the header and footer go, and Rikuy does not read that layout yet. Load geometry (Layout › Margins does) to set them here.';
+    }
+    sheetMemo = { text: t, ok: end >= 0, why, pre: end >= 0 ? t.slice(0, end) : null };
+  }
+  return sheetMemo;
 };
+const sheet = (app) => sheetLook(app).ok;
+const hfWhy = (app) => sheetLook(app).why;
 
 const I = {
   toHead: '<path d="M3.5 3.5h13v13h-13zM3.5 7.5h13"/><path d="M10 15V9.5M7.5 12L10 9.5l2.5 2.5"/>',
@@ -111,9 +129,9 @@ register(
     run: (app, args) => (args && args.tex != null ? app.hfPart(args) : (openMenu(app, app.hfAnchor('hf-quick-parts'), app.hfPartItems(), { label: 'Quick Parts' }), true)) },
   // ---- Header & Footer › Position ----
   { id: 'hf-header-top', name: 'Header from Top', title: 'Header from Top: the sheet\'s top edge to the header (Enter sets it; geometry\'s headsep, the text stays where it is)', tab: 'headfoot', group: 'position', order: 10, kind: 'custom', role: 'spinbutton', el: 'rc-hf-header-top',
-    synonyms: ['Header position', 'headsep'], when: sheet, render: (app) => app.hfField('top'), sync: (app) => app.hfFieldSync('top'), run: (app, args) => (args && args.cm != null ? app.hfSetDist('top', args.cm) : false) },
+    synonyms: ['Header position', 'headsep'], when: (app) => sheet(app) && !hfWhy(app), whyNot: (app) => hfWhy(app) || 'Open a LaTeX document first.', render: (app) => app.hfField('top'), sync: (app) => app.hfFieldSync('top'), run: (app, args) => (args && args.cm != null ? app.hfSetDist('top', args.cm) : false) },
   { id: 'hf-footer-bottom', name: 'Footer from Bottom', title: 'Footer from Bottom: the footer to the sheet\'s bottom edge (Enter sets it; geometry\'s footskip, the text stays where it is)', tab: 'headfoot', group: 'position', order: 20, kind: 'custom', role: 'spinbutton', el: 'rc-hf-footer-bottom',
-    synonyms: ['Footer position', 'footskip'], when: sheet, render: (app) => app.hfField('bottom'), sync: (app) => app.hfFieldSync('bottom'), run: (app, args) => (args && args.cm != null ? app.hfSetDist('bottom', args.cm) : false) },
+    synonyms: ['Footer position', 'footskip'], when: (app) => sheet(app) && !hfWhy(app), whyNot: (app) => hfWhy(app) || 'Open a LaTeX document first.', render: (app) => app.hfField('bottom'), sync: (app) => app.hfFieldSync('bottom'), run: (app, args) => (args && args.cm != null ? app.hfSetDist('bottom', args.cm) : false) },
   // ---- Header & Footer › Options: Show Document Text ----
   { id: 'hf-show-text', name: 'Show Document Text', label: 'Show Document Text', title: 'Show Document Text: the page\'s text shown (dimmed) while the header or footer is open; off, only the header and footer show', icon: I.show, tab: 'headfoot', group: 'options', order: 40, kind: 'toggle',
     synonyms: ['Hide text', 'Document text'], when: () => true, on: (app) => !app.hfHideText, run: (app) => { app.hfHideText = !app.hfHideText; app.root.classList.toggle('hf-hide-text', app.hfHideText); app.ribbonSync(); return true; } }
@@ -188,11 +206,15 @@ export const methods = {
   hfFieldSync(which) {
     const inp = document.getElementById(which === 'top' ? 'rc-hf-header-top' : 'rc-hf-footer-bottom');
     if (!inp || document.activeElement === inp) return;
-    const d = hfDist(this, which);
+    const why = hfWhy(this);
+    const d = why ? null : hfDist(this, which);
     inp.disabled = d == null;
     inp.value = d == null ? '' : fmt(d);
+    inp.title = why || (which === 'top' ? 'The sheet\'s top edge to the header, in cm' : 'The footer to the sheet\'s bottom edge, in cm');
   },
   hfSetDist(which, cm) {
+    const why = hfWhy(this);
+    if (why) { this.toast(why, 7000); return false; }
     const r = hfDistEdits(this, which, cm * CM);
     if (r.error) { this.toast(r.error, 6000); this.hfFieldSync(which); return false; }
     const ok = this.pageEdit(r.edits, 'page-hf');
