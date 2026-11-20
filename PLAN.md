@@ -3237,7 +3237,34 @@ Tests:
     `outline.py` 105 and `view.py` 160 with `dist/tex`, `file.py` 100 with `dist/tex` and
     `dist/word`, `tabs.py` 115.
 
-66. **The security review's open items (S2 to S5 of `docs/reviews/SECURITY.md`).** Done in the
+66. **Word's keyboard shortcuts** (branch word-shortcuts, draft PR 80). Every shortcut on
+    Microsoft's Keyboard shortcuts in Word page, Windows and macOS, and the equation keys,
+    against Rikuy's registry: `docs/handoff/SHORTCUTS.md`, one table, each row works, added,
+    kept by the browser (with what to press instead) or without an equivalent in a LaTeX document
+    and why. Added: Ctrl+1, 2, 5 (line spacing), Alt+Shift+> and < (footnotes), F5 (Go To),
+    Shift+F4 and Ctrl+Alt+Y (Find Next), Shift+F5 and Ctrl+Alt+Z (Go Back), F8 and Shift+F8
+    (Extend and Shrink Selection), Alt+Shift+A and Alt+Shift+1 to 9 (outline levels),
+    Ctrl+Alt+P, Ctrl+Alt+N, Alt+F9, Ctrl+F2, Shift+F1, F1, Ctrl+F6 and Ctrl+Shift+F6 (panes),
+    Alt+X, the accent keys (Ctrl+' then e is é, and the rest), ¿ and ¡, Ctrl+F3 and
+    Ctrl+Shift+F3 (the Spike), F2 and Shift+F2 (move and copy, then Enter), Alt+F3, Ctrl+F9,
+    Alt+Shift+P, Ctrl+Shift+P, Alt+Shift+O, Ctrl+Shift+F5, Alt+F7, the number pad's dashes,
+    Alt+Home, End, Page Up, Page Down and Alt+Shift+Up and Down in a table, Alt and the pad's 5,
+    Shift+F12, Alt+Shift+F2, Ctrl+F12, Ctrl+Alt+F2, Ctrl+Shift+F12; Hanging Indent as a command
+    (Word's Ctrl+T is the browser's). Word for Mac's own chords (Cmd+Option+L, R, A, E,
+    Cmd+Control+V, Control+Space, Control+Shift+M, Cmd+8, Cmd+G). Tooltips, menus, the search
+    box and Help write a Mac's chords with ⌘ ⌥ ⌃ ⇧; Help ends with Word's keys the browser keeps.
+    Function keys reach their commands from fields and the source, Ctrl+Alt chords from the
+    source. Save, as Word's keys mean it: Ctrl+S (and Shift+F12, Alt+Shift+F2, the bar's Save)
+    writes the project to this browser now and says "Saved in this browser", downloading nothing
+    (it downloaded a file at every press); Save As (F12 on the page) and Download LaTeX download.
+    The hostile review (`/tmp/review-keys.md`, changes requested) is answered in the commits named
+    after it: Move Row keeps each row's cells (H1), F2's wait ends at a click, a key or an edit
+    (H2), the Spike keeps a heading whole (M1), no Option and character key is taken on a Mac
+    (M2), a French keyboard's Ctrl+1 is Ctrl+1 (M3), Hanging Indent round trips (M4), Alt+X reads
+    LaTeX's accents (M5), and the lows. Evidence: `npm test` green (`keys` 19 groups, `typing` 6, `commands` 13 with the
+    `WORD` table on both systems, `table` 47), `test/shortcuts.py` 82 checks (screenshots in `/tmp/keys-shots`).
+
+67. **The security review's open items (S2 to S5 of `docs/reviews/SECURITY.md`).** Done in the
     code (branch `sec-followups`), one commit each. *S4:* the hosted copy sends
     `Strict-Transport-Security: max-age=31536000` on every file, for its own host only (no
     `includeSubDomains`, no preload: those would bind rackebrandt.pe's other names for a year);
