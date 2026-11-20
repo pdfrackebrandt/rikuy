@@ -588,7 +588,10 @@ def word_layout(page):
     cut = [(t, g['id']) for t, v in seen.items() for g in v['groups'] if not g['whole']]
     check('every group\'s name is whole under it (the group is at least as wide as its name)', not cut, cut)
     hs = {t: v['h'] for t, v in seen.items()}
-    check('every tab is as tall as Home (%d px): the page does not jump when a tab opens' % home, all(h == home for h in hs.values()), (home, hs))
+    page.set_viewport_size({'width': 880, 'height': 900}); page.wait_for_timeout(300)
+    h880 = {t: page.evaluate(LAID, t)['h'] for t in tabs if t != 'file'}
+    page.set_viewport_size({'width': 1920, 'height': 900}); page.wait_for_timeout(300)
+    check('every tab is as tall as Home (%d px), and at 880 px too: the page does not jump when a tab opens' % home, all(h == home for h in hs.values()) and len(set(h880.values())) == 1, (home, hs, h880))
     # a large button's name over two lines, as Word breaks it; a menu's arrow after the name
     page.evaluate("rikuy.selectTab('references')"); page.wait_for_timeout(150)
     toc = page.evaluate("[...document.querySelectorAll('#rc-table-of-contents-x .rb-ln')].map((x) => [x.textContent, Math.round(x.getBoundingClientRect().top)])")
@@ -608,6 +611,12 @@ def word_layout(page):
         ids.append(page.evaluate('document.activeElement.dataset.cmd'))
     check('in Word\'s grid the arrows move as the eye does: Thesaurus, down to Word Count, up again, right to Read Aloud (the next group), left to Thesaurus, left to Spelling', ids == ['word-count', 'thesaurus', 'read-aloud', 'thesaurus', 'spelling'], ids)
     page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    # a pressed toggle in a forced colour scheme (Windows' contrast themes)
+    page.evaluate("rikuy.selectTab('view')"); page.wait_for_timeout(150)
+    page.emulate_media(forced_colors='active'); page.wait_for_timeout(150)
+    fc = page.evaluate("[...document.querySelectorAll('#rp-view [data-cmd=print-layout], #rp-view [data-cmd=draft]')].map((b) => [b.getAttribute('aria-pressed'), getComputedStyle(b).backgroundColor])")
+    page.emulate_media(forced_colors='none'); page.wait_for_timeout(100)
+    check('in a forced colour scheme a pressed toggle (Print Layout) is drawn in the highlight, one not pressed (Draft) is not', len(fc) == 2 and fc[0][0] == 'true' and fc[1][0] == 'false' and fc[0][1] != fc[1][1], fc)
     # narrower: the steps before any group folds
     page.set_viewport_size({'width': 1100, 'height': 900}); page.wait_for_timeout(300)
     r = page.evaluate(LAID, 'review')
