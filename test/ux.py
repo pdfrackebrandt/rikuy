@@ -744,7 +744,8 @@ def consistency(page, w):
 KINDS = """(sel) => { const P = document.querySelector(sel); if (!P) return null; const vis = (e) => e.checkVisibility() && e.getBoundingClientRect().height > 0;
   const R = (e) => e.getBoundingClientRect(), nm = (e) => (e.getAttribute('aria-label') || e.textContent || e.className).trim().slice(0, 16);
   return { btns: [...P.querySelectorAll('.btn')].filter(vis).map((e) => [nm(e), Math.round(R(e).width), Math.round(R(e).height), e.scrollWidth > e.clientWidth + 1]),
-    fields: [...P.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), select, textarea')].filter(vis).filter((e) => !e.closest('.nf') && (e.tagName !== 'TEXTAREA' || e.rows === 1)).map((e) => [e.tagName + ' ' + nm(e), Math.round(R(e).height), getComputedStyle(e).borderTopLeftRadius]),
+    fields: [...P.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), select, textarea, .nf')].filter(vis).filter((e) => !e.parentElement.closest('.nf') && (e.tagName !== 'TEXTAREA' || e.rows === 1)).map((e) => [e.tagName + ' ' + nm(e), Math.round(R(e).height), getComputedStyle(e).borderTopLeftRadius]),
+    cropped: [...P.querySelectorAll('.nf input, .nf select')].filter(vis).filter((e) => R(e).height > R(e.closest('.nf')).height).map(nm),
     tabs: [...P.querySelectorAll('[role=tab]')].filter(vis).map((e) => [nm(e), Math.round(R(e).height)]),
     rows: [...P.querySelectorAll('label')].filter(vis).filter((l) => l.querySelector('input[type=checkbox], input[type=radio]') && !l.querySelector('input[type=text], select, textarea')).map((e) => [nm(e), Math.round(R(e).height)]) }; }"""
 
@@ -779,9 +780,9 @@ def dialog_kinds(page, w):
     bad = {k: [b for b in v['btns'] if abs(b[2] - H) > 1 or b[3] or (touch and b[1] < 44)] for k, v in seen.items() if v}
     bad = {k: v for k, v in bad.items() if v}
     check(f'every dialog button whole, {H} px tall{" and at least 44 wide" if touch else ""} ({w})', not bad, bad)
-    badf = {k: [f for f in v['fields'] if abs(f[1] - H) > 1 or f[2] != '4px'] for k, v in seen.items() if v}
+    badf = {k: [f for f in v['fields'] if abs(f[1] - H) > 1 or f[2] != '4px'] + v['cropped'] for k, v in seen.items() if v}
     badf = {k: v for k, v in badf.items() if v}
-    check(f'every single line field {H} px tall with 4 px corners ({w})', not badf, badf)
+    check(f'every single line field {H} px tall with 4 px corners, a number field\'s input inside its box ({w})', not badf, badf)
     badt = {k: [t for t in v['tabs'] if abs(t[1] - H) > 1] for k, v in seen.items() if v}
     badt = {k: v for k, v in badt.items() if v}
     check(f'a dialog\'s tabs as tall as its buttons, {H} px ({w})', not badt and any(v and v['tabs'] for v in seen.values()), badt)
