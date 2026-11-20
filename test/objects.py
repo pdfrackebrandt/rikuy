@@ -292,7 +292,7 @@ def compiled(page):
     steps = [('svg.tz', 0, 'shape-styles', {'style': 'teal-intense'}), ('svg.tz', 0, 'shape-text', {'text': 'Start here'}), ('svg.tz', 0, 'shape-width', {'cm': 4.5}),
              ('svg.tz', 0, 'shape-weight', {'pt': 1.5}), ('svg.tz', 0, 'shape-dashes', {'dash': 'dash dot'}), ('svg.tz', 1, 'shape-arrows', {'arrow': '<->'}), ('svg.tz', 1, 'shape-outline', {'color': 'red!75!black'}),
              ('svg.tz', 2, 'shape-insert', {'shape': 'star'}), ('svg.tz', 2, 'shape-back', None), ('svg.tz', 2, 'shape-fill', {'color': None}),
-             ('svg.pgf', 0, 'chart-title', {'text': 'Q1 sales'}), ('svg.pgf', 0, 'chart-axis-titles', {'x': 'Region', 'y': 'Units'}), ('svg.pgf', 0, 'chart-gridlines', None), ('svg.pgf', 0, 'chart-data-labels', None),
+             ('svg.pgf', 0, 'chart-title', {'text': 'Q1 sales & R&D: 50% of $5_000 #1'}), ('svg.pgf', 0, 'chart-axis-titles', {'x': 'Region', 'y': 'Units'}), ('svg.pgf', 0, 'chart-gridlines', None), ('svg.pgf', 0, 'chart-data-labels', None),
              ('svg.pgf', 0, 'chart-legend', {'pos': 'outer north east'}), ('svg.pgf', 0, 'chart-colors', {'palette': 'colorful-2'}), ('svg.pgf', 0, 'chart-height', {'cm': 5}), ('svg.pgf', 0, 'chart-width', {'share': 0.6}),
              ('svg.smart', 0, 'smart-colors', {'palette': 'blue'}), ('svg.smart', 0, 'smart-outline', {'color': 'blue!50!black'}), ('svg.smart', 0, 'smart-add', None), ('svg.smart', 1, 'smart-layout', {'kind': 'circular diagram:counterclockwise'})]
     for s, n, c, a in steps:
@@ -302,13 +302,13 @@ def compiled(page):
         run_cmd(page, c, a)
         page.keyboard.press('Escape'); page.wait_for_timeout(100)
     doc = src(page)
-    check('the steps wrote each its part (%d characters)' % len(doc), all(x in doc for x in ('fill=teal!80!black', 'Start here', 'scale=1.5', 'line width=1.5pt', 'dash dot', '<->', 'title={Q1 sales}', 'cycle list=', 'set color list={blue!50', 'border color=blue!50!black', 'counterclockwise', 'Item 4')), doc[doc.find('\\begin{document}'):][:1500])
+    check('the steps wrote each its part (%d characters)' % len(doc), all(x in doc for x in ('fill=teal!80!black', 'Start here', 'scale=1.5', 'line width=1.5pt', 'dash dot', '<->', 'title={Q1 sales \\& R\\&D: 50\\% of \\$5\\_000 \\#1}', 'cycle list=', 'set color list={blue!50', 'border color=blue!50!black', 'counterclockwise', 'Item 4')), doc[doc.find('\\begin{document}'):][:1500])
     open(os.path.join(SHOTS, 'objects-compiled.tex'), 'w').write(doc)
     for eng in ('pdflatex', 'xelatex', 'lualatex'):
         r = compile_pdf(page, ('% !TEX program = ' + eng + '\n' if eng != 'pdflatex' else '') + doc)
         t = pdf_text(r)
         check('all of it compiles with %s: the shape\'s words, the chart\'s title and axis titles, the SmartArt\'s items in the PDF' % eng,
-              r['ok'] and not r['problems'] and all(w in t for w in ('Start here', 'Q1 sales', 'Region', 'Units', 'Item 4', 'Again')), (r['problems'], t[:300]))
+              r['ok'] and not r['problems'] and all(w in t for w in ('Start here', 'Q1 sales & R&D: 50% of $5_000 #1', 'Region', 'Units', 'Item 4', 'Again')), (r['problems'], t[:300]))
         if eng == 'pdflatex' and r['pdf']:
             open(os.path.join(SHOTS, 'objects-compiled.pdf'), 'wb').write(base64.b64decode(r['pdf']))
 
@@ -330,6 +330,29 @@ def phones(p):
             page.get_by_role('menuitemradio', name='green!40', exact=True).tap(); page.wait_for_timeout(350)
             check('taps on Shape Fill and a colour write it' + tag, src(page) == D.replace('fill=blue!20', 'fill=green!40'), body(page))
             check('the page never scrolls sideways' + tag, page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1'))
+            # review H6: every visible control of each new tab a 44 px target; L6: the colour grid's tiles too
+            # (the Download button pinned at every tab's end is the ribbon's own, the same on Home)
+            SMALL = """(t) => [...document.querySelectorAll('#rp-' + t + ' button, #rp-' + t + ' input, #rp-' + t + ' select')].filter((e) => e.getClientRects().length && e.offsetParent && !e.closest('.rb-dl'))
+              .map((e) => { const b = e.getBoundingClientRect(); return [e.id || e.getAttribute('aria-label') || e.className, Math.round(b.width), Math.round(b.height)]; }).filter((x) => x[1] < 44 || x[2] < 44)"""
+            for obj, sel_, tabs in ((SHAPE, 'svg.tz', ['shape-format']), (CHART, 'svg.pgf', ['chart-design', 'chart-format']), (SMART, 'svg.smart', ['smart-design', 'smart-format'])):
+                load_doc(page, DOC(obj)); page.wait_for_timeout(400)
+                b = obj_box(page, sel_); page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2); page.wait_for_timeout(300)
+                for t in tabs:
+                    page.evaluate('(t) => rikuy.selectTab(t)', t); page.wait_for_timeout(250)
+                    n = page.evaluate("(t) => [...document.querySelectorAll('#rp-' + t + ' button, #rp-' + t + ' input')].filter((e) => e.getClientRects().length && e.offsetParent && !e.closest('.rb-dl')).length", t)
+                    small = page.evaluate(SMALL, t)
+                    check('H6: every one of %s\'s %d controls is a 44 px target%s' % (t, n, tag), n > 0 and not small, small[:6])
+            load_doc(page, DOC(SHAPE)); page.wait_for_timeout(300)
+            b = obj_box(page); page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2); page.wait_for_timeout(300)
+            page.evaluate("rikuy.selectTab('shape-format')"); page.wait_for_timeout(200)
+            page.locator('#rc-shape-fill').tap(); page.wait_for_timeout(300)
+            g = page.evaluate("""() => { const m = document.querySelector('.pop-colors'); const t = [...m.querySelectorAll('.gal-tile')].filter((a) => a.getClientRects().length).map((a) => a.getBoundingClientRect()); return { n: t.length, rows: new Set(t.map((r) => Math.round(r.top))).size, small: t.filter((r) => r.width < 44 || r.height < 44).length, right: Math.max(...t.map((r) => r.right)), w: innerWidth }; }""")
+            check('L6: the colour grid in rows of tiles, 44 px each, inside the screen (%d tiles in %d rows)%s' % (g['n'], g['rows'], tag), g['rows'] < g['n'] / 4 and g['small'] == 0 and g['right'] <= g['w'] + 1, g)
+            page.keyboard.press('Escape'); page.wait_for_timeout(150)
+            page.evaluate("rikuy.runCommand('selection-pane')"); page.wait_for_timeout(300)
+            sp = page.evaluate("""() => [...document.querySelectorAll('#sel-pane button, #sel-pane input')].filter((e) => e.getClientRects().length).map((e) => { const b = e.getBoundingClientRect(); return [e.getAttribute('aria-label') || e.textContent, Math.round(b.width), Math.round(b.height), Math.round(b.right)]; })""")
+            check('H6: the Selection Pane\'s Close, Show All, Hide All, rows, names and eyes are 44 px tall, inside the screen%s' % tag, sp and all(x[2] >= 44 and x[3] <= page.evaluate('innerWidth') + 1 for x in sp) and all(x[1] >= 44 for x in sp if x[0] in ('Close',) or (x[0] or '').startswith('Show ')), sp)
+            page.keyboard.press('Escape')
             # a long press: the object's menu, 44 px items in the screen
             for obj, sel_, name in ((CHART, 'svg.pgf', 'Chart Title'), (SMART, 'svg.smart', 'Text Pane'), (SHAPE, 'svg.tz', 'Edit Text')):
                 load_doc(page, DOC(obj)); page.wait_for_timeout(400)
@@ -659,6 +682,23 @@ def selpane(page):
     check('a press on a row goes to the object and selects it', page.evaluate("(() => { const o = window.rikuy.objHere(); return o && o.kind; })()") == 'smart')
     page.screenshot(path=os.path.join(SHOTS, 'selection-pane-1366.png'))
     page.keyboard.press('Escape')
+    # review M7: a hidden object keeps its mark when another before it goes, and across a reload;
+    # the pane says it is the page's view only
+    TWO_D = WRAP('Before.\n\n' + SHAPE + '\n' + SHAPE.replace('rectangle (3,2)', 'circle (1)') + '\nAfter.')
+    page.evaluate('() => { localStorage.removeItem("galley.selhidden.v1"); window.rikuy.selHiddenFor = null; }')
+    load_doc(page, TWO_D); page.wait_for_timeout(300)
+    run_cmd(page, 'selection-pane'); page.wait_for_timeout(200)
+    check('M7: the pane says hiding is the page\'s view only', 'page\'s view only' in page.evaluate("document.querySelector('#sel-pane .sel-note').textContent"))
+    page.get_by_role('button', name='Show Drawing 2').click(); page.wait_for_timeout(200)
+    vis = "[...document.querySelectorAll('#pages svg.tz')].map((x) => getComputedStyle(x.closest('.raw')).visibility)"
+    check('M7: Drawing 2 hidden, Drawing 1 shown', page.evaluate(vis) == ['visible', 'hidden'], page.evaluate(vis))
+    page.keyboard.press('Escape')
+    press(page, 'svg.tz', 0); page.keyboard.press('Delete'); page.wait_for_timeout(400)
+    check('M7: Drawing 1 deleted, the circle (Drawing 2 before) stays hidden', page.evaluate(vis) == ['hidden'] and 'circle (1)' in src(page), page.evaluate(vis))
+    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it")', timeout=30000); page.wait_for_timeout(500)
+    load_doc(page, TWO_D); page.wait_for_timeout(600)
+    check('M7: after a reload the circle is hidden again, the rectangle shown', page.evaluate(vis) == ['visible', 'hidden'], page.evaluate(vis))
+    page.evaluate('() => { localStorage.removeItem("galley.selhidden.v1"); window.rikuy.selHiddenFor = null; window.rikuy.selHidden.clear(); window.rikuy.selApplyHidden(); }')
 
 
 def run():

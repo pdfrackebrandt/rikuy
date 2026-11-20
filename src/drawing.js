@@ -12,6 +12,17 @@
 
 export const MAX_TEXT = 20000;
 const MAX_CMDS = 200, MAX_PTS = 2000;
+
+// ---- words typed into a drawing, a chart's title or a SmartArt's item --------------------------
+// What TeX reads as commands written so it prints them: & % $ # _ with a backslash, a backslash,
+// braces, ^ and ~ as LaTeX's text commands (their {} balanced, so a reader's brace count holds);
+// unTeX reads them back for the page and the dialogs
+const ESC = { '\\': '\\textbackslash{}', '{': '\\textbraceleft{}', '}': '\\textbraceright{}', '^': '\\textasciicircum{}', '~': '\\textasciitilde{}' };
+export function escTeX(t) { return String(t).replace(/[\\{}^~&%$#_]/g, (c) => ESC[c] || '\\' + c); }
+const UNESC = { textbackslash: '\\', textbraceleft: '{', textbraceright: '}', textasciicircum: '^', textasciitilde: '~' };
+export function unTeX(t) { return String(t).replace(/\\(text(?:backslash|braceleft|braceright|asciicircum|asciitilde))\{\}|\\([&%$#_])/g, (m, a, b) => (a ? UNESC[a] : b)); }
+// a stretch of such words, as the readers take it: plain characters, an escape, a text command
+export const WORDS = '(?:[^{}\\\\]|\\\\[&%$#_]|\\\\text(?:backslash|braceleft|braceright|asciicircum|asciitilde)\\{\\})';
 const num = (t) => { const m = /^\s*([+-]?(?:\d+\.?\d*|\.\d+))\s*(cm|mm|pt|in|em)?\s*$/.exec(t); if (!m) return NaN; const v = parseFloat(m[1]); return m[2] ? v * { cm: 1, mm: 0.1, pt: 2.54 / 72.27, in: 2.54, em: 0.35 }[m[2]] : v; };
 
 // ---- colours: xcolor's names and mixes ("blue!20", "red!50!black"), as RGB ---------------------
@@ -68,7 +79,9 @@ export function tikzCmds(text) {
     if (text[i] === '[') { const z = closeBracket(text, i, end); if (z < 0 || z - i > 600) return null; os = i; oe = z + 1; i = z + 1; }
     // (the ; that ends it, a comment's skipped)
     let j = i;
-    while (j < end && text[j] !== ';') { if (text[j] === '%') { const nl = text.indexOf('\n', j); j = nl < 0 || nl > end ? end : nl; } else j++; }
+    // (a ; in braces, a node's words, ends nothing)
+    let bd = 0;
+    while (j < end && !(text[j] === ';' && bd === 0)) { if (text[j] === '\\') j += 2; else if (text[j] === '%') { const nl = text.indexOf('\n', j); j = nl < 0 || nl > end ? end : nl; } else { if (text[j] === '{') bd++; else if (text[j] === '}') bd = Math.max(0, bd - 1); j++; } }
     if (j >= end) return null;
     cmds.push({ name: c[1], s, e: j + 1, os, oe, rest: [i, j] });
     i = j + 1;
@@ -88,10 +101,10 @@ export function readTikz(text) {
   for (const c of T.cmds) {
     const o = c.os >= 0 ? opts(text.slice(c.os + 1, c.oe - 1)) : {};
     if (!o) return null;
-    const rest = text.slice(c.rest[0], c.rest[1]).replace(/%[^\n]*/g, '');
+    const rest = text.slice(c.rest[0], c.rest[1]).replace(/(^|[^\\])%[^\n]*/g, '$1');
     if (c.name === 'node') {
       // \node[options] at (x,y) {text}; its text plain words, \\ breaking its lines
-      const m = /^\s*at\s*\(([^()]{1,60})\)\s*\{([^{}\\]{0,400}(?:\\\\[^{}\\]{0,400}){0,20})\}\s*$/.exec(rest);
+      const m = NODE_RE.exec(rest);
       const at = m && xy(m[1]);
       if (!at) return null;
       cmds.push({ node: true, at, text: m[2], opts: o });
@@ -107,6 +120,8 @@ export function readTikz(text) {
   const k = pic.scale || 1;
   return cmds.length ? { scale: k, xs: k * (pic.xscale || 1), ys: k * (pic.yscale || 1), cmds } : null;
 }
+// \node at (x,y) {words}: its words escaped as escTeX writes them, \\ breaking its lines
+const NODE_RE = new RegExp('^\\s*at\\s*\\(([^()]{1,60})\\)\\s*\\{((?:' + WORDS + '|\\\\\\\\){0,800})\\}\\s*$');
 // TikZ options this drawing knows; null for any other
 const FONTS = { '\\tiny': 0.5, '\\scriptsize': 0.7, '\\footnotesize': 0.8, '\\small': 0.9, '\\normalsize': 1, '\\large': 1.2, '\\Large': 1.44, '\\LARGE': 1.73, '\\huge': 2.07, '\\Huge': 2.49 };
 function opts(t) {
@@ -184,9 +199,10 @@ export function tikzPoints(text) {
     const z = c.rest[1];
     while (i < z) {
       const ch = text[i];
+      if (ch === '\\') { i += 2; continue; }
       if (ch === '%') { const nl = text.indexOf('\n', i); i = nl < 0 || nl > z ? z : nl + 1; continue; }
-      // (a node's text holds no coordinates)
-      if (ch === '{') { const q = text.indexOf('}', i); i = q < 0 || q > z ? z : q + 1; continue; }
+      // (a node's text holds no coordinates: past its group, escapes and inner groups and all)
+      if (ch === '{') { let d = 0, q = i; for (; q < z; q++) { if (text[q] === '\\') { q++; continue; } if (text[q] === '{') d++; else if (text[q] === '}' && --d === 0) break; } i = q + 1; continue; }
       if (ch !== '(') { if (/[a-z]/.test(ch)) { const m = /^(circle|ellipse|rectangle|cycle)/.exec(text.slice(i, i + 10)); if (m) { after = m[1]; i += m[1].length; continue; } } i++; continue; }
       const q = text.indexOf(')', i);
       if (q < 0 || q > z || q - i > 60) return;
@@ -220,7 +236,7 @@ export function pointText(P, x, y) {
 // Chart Design's and Format's keys (src/objfmt.js) besides: a title, axis titles, gridlines, data
 // labels, the legend's corner, the colours (a cycle list of xcolor's names), the size
 const AXIS_KEYS = [/^(x|y)bar$/, /^width=[\d.]*\\linewidth$/, /^height=[\d.]+cm$/, /^(x|y)min=0$/, /^symbolic (x|y) coords=\{[^{}]*\}$/, /^(x|y)tick=data$/,
-  /^legend pos=(north west|north east|south west|south east|outer north east)$/, /^title=\{[^{}\\]*\}$/, /^(x|y)label=\{[^{}\\]*\}$/, /^(x|y)majorgrids$/, /^nodes near coords$/];
+  /^legend pos=(north west|north east|south west|south east|outer north east)$/, new RegExp('^title=\\{' + WORDS + '*\\}$'), new RegExp('^(x|y)label=\\{' + WORDS + '*\\}$'), /^(x|y)majorgrids$/, /^nodes near coords$/];
 // a cycle list's entries, each [draw, fill] as xcolor names (or null where it is no list of colours)
 export function cycleColors(t) {
   const m = /^cycle list=\{((?:\{[^{}]*\},?\s*){1,12})\}$/.exec(t);
@@ -243,7 +259,9 @@ export function cycleColors(t) {
 function axisOpts(t) {
   const out = [];
   let d = 0, cur = '';
-  for (const c of t) {
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (c === '\\' && i + 1 < t.length) { cur += c + t[++i]; continue; }
     if (c === '{') d++;
     if (c === '}') d--;
     if (c === ',' && d === 0) { out.push(cur.trim()); cur = ''; continue; }
@@ -254,7 +272,7 @@ function axisOpts(t) {
 }
 export function readAxis(text) {
   if (typeof text !== 'string' || text.length > MAX_TEXT) return null;
-  const m = /^\\begin\{tikzpicture\}\s*\\begin\{axis\}\[([^\]]{0,2000})\]([\s\S]*)\\end\{axis\}\s*\\end\{tikzpicture\}\s*$/.exec(text.trim().replace(/%[^\n]*/g, ''));
+  const m = /^\\begin\{tikzpicture\}\s*\\begin\{axis\}\[([^\]]{0,2000})\]([\s\S]*)\\end\{axis\}\s*\\end\{tikzpicture\}\s*$/.exec(text.trim().replace(/(^|[^\\])%[^\n]*/g, '$1'));
   if (!m) return null;
   const opts = axisOpts(m[1]);
   if (!opts.every((o) => AXIS_KEYS.some((r) => r.test(o)) || cycleColors(o))) return null;
@@ -344,23 +362,29 @@ export const SMART = [
 // bubble diagram takes its centre and ten
 export const smartMax = (kind) => (/bubble/.test(kind) ? 11 : 10);
 export function smartTex(kind, items) {
-  const it = items.map((x) => String(x).replace(/[\\{}%#$&_^~]/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, smartMax(kind)).map((x) => (/,/.test(x) ? '{' + x + '}' : x));
+  const it = items.map((x) => escTeX(String(x).replace(/\s+/g, ' ').trim())).filter(Boolean).slice(0, smartMax(kind)).map((x) => (/,/.test(x) ? '{' + x + '}' : x));
   return '\\smartdiagram[' + kind + ']{' + it.join(', ') + '}';
 }
-// a smartdiagram's items from its argument's text (braced items keep their commas)
+// a smartdiagram's items from its argument's text: split at its commas outside braces, an item
+// braced whole (it holds a comma) unbraced; the braces of \textbackslash{} and the like kept
 export function smartItems(t) {
   const out = [];
   let d = 0, cur = '';
+  const push = () => { let x = cur.trim(); if (x[0] === '{' && x[x.length - 1] === '}' && whole(x)) x = x.slice(1, -1).trim(); if (x) out.push(x); cur = ''; };
   for (let i = 0; i < t.length && i < MAX_TEXT; i++) {
     const c = t[i];
-    if (c === '{') { d++; if (d === 1) continue; }
-    if (c === '}') { d--; if (d === 0) continue; }
-    if (c === ',' && d === 0) { out.push(cur.trim()); cur = ''; if (out.length >= 30) break; continue; }
+    if (c === '\\' && i + 1 < t.length) { cur += c + t[++i]; continue; }
+    if (c === '{') d++;
+    if (c === '}') d--;
+    if (c === ',' && d === 0) { push(); if (out.length >= 30) break; continue; }
     cur += c;
   }
-  if (cur.trim()) out.push(cur.trim());
-  return out.filter(Boolean);
+  push();
+  return out;
 }
+// whether "{…}" is one group (its first brace closed by its last)
+function whole(x) { let d = 0; for (let i = 0; i < x.length; i++) { if (x[i] === '\\') { i++; continue; } if (x[i] === '{') d++; else if (x[i] === '}') { d--; if (d === 0 && i < x.length - 1) return false; } } return d === 0; }
+
 
 // ---- icons: fontawesome5's names, and the page's drawing of each --------------------------------
 export const ICONS = [
@@ -399,7 +423,7 @@ export function drawTikz(text, doc = document) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const add = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
   let lw = 0;
-  const lines = (c) => c.text.split('\\\\').map((z) => z.trim());
+  const lines = (c) => c.text.split('\\\\').map((z) => unTeX(z.trim()));
   const fs = (c) => 10 * (c.opts.font || 1) / PT;
   for (const c of T.cmds) {
     if (c.node) {
@@ -494,7 +518,7 @@ export function drawAxis(text, doc = document) {
   const lpos = key(/^legend pos=(.+)$/), cyc = A.opts.map(cycleColors).find(Boolean);
   // (pgfplots puts the title above the axis and the axis titles outside its ticks; the box grows)
   const tH = title ? 18 : 0, xH = xl ? 15 : 0, yW = yl ? 15 : 0, legOut = lpos && lpos[1] === 'outer north east' && A.series.length > 1 ? 90 : 0;
-  const svg = sv(doc, 'svg', { viewBox: '0 0 ' + (VW + legOut) + ' ' + (VH + tH + xH), class: 'pgf', role: 'img', 'aria-label': 'Chart' + (title ? ': ' + title[1].slice(0, 80) : '') });
+  const svg = sv(doc, 'svg', { viewBox: '0 0 ' + (VW + legOut) + ' ' + (VH + tH + xH), class: 'pgf', role: 'img', 'aria-label': 'Chart' + (title ? ': ' + unTeX(title[1]).slice(0, 80) : '') });
   svg.style.width = share ? Math.min(100, share * 100 * (VW + legOut) / VW) + '%' : ptCss(240 * 0.75 * 1.33);
   const L = 40 + yW, R = VW - 10, Tp = 10 + tH, B = VH - 30 + tH;
   const cats = A.cats || [...new Set(A.series.flatMap((s) => s.pts.map((p) => (A.kind === 'xbar' ? p[1] : p[0]))))].slice(0, 50);
@@ -508,9 +532,9 @@ export function drawAxis(text, doc = document) {
   const frame = sv(doc, 'rect', { x: L, y: Tp, width: R - L, height: B - Tp, fill: 'none', stroke: 'currentColor', 'stroke-width': 0.8 });
   svg.append(frame);
   const text_ = (x, y, t, anchor, size, rot) => { const e = sv(doc, 'text', { x, y, 'font-size': size || 10, 'text-anchor': anchor || 'middle', fill: 'currentColor' }); if (rot) e.setAttribute('transform', 'rotate(-90 ' + x + ' ' + y + ')'); e.textContent = String(t).slice(0, 80); svg.append(e); return e; };
-  if (title) text_((L + R) / 2, 14, title[1], 'middle', 11);
-  if (xl) text_((L + R) / 2, B + 27, xl[1]);
-  if (yl) text_(12, (Tp + B) / 2, yl[1], 'middle', 10, true);
+  if (title) text_((L + R) / 2, 14, unTeX(title[1]), 'middle', 11);
+  if (xl) text_((L + R) / 2, B + 27, unTeX(xl[1]));
+  if (yl) text_(12, (Tp + B) / 2, unTeX(yl[1]), 'middle', 10, true);
   const horiz = A.kind === 'xbar';
   const vPos = (v) => (horiz ? L + (v - lo) / (hi - lo) * (R - L) : B - (v - lo) / (hi - lo) * (B - Tp));
   for (let v = lo, n = 0; v <= hi + step / 2 && n < 30; v += step, n++) {
@@ -571,7 +595,8 @@ export function smartLook(set) {
   return { colors: colors && colors.length && colors.every(Boolean) ? colors : null, border: bc && colorOf(bc) ? colorOf(bc) : null };
 }
 export function drawSmart(kind, items, doc = document, set = '') {
-  const it = items.slice(0, 12);
+  // (an item's escapes read back: R\\&D prints R&D)
+  const it = items.slice(0, 12).map(unTeX);
   const n = Math.max(1, it.length);
   const look = smartLook(set), COL = look.colors || SMART_COLORS;
   const svg = sv(doc, 'svg', { class: 'smart', role: 'img', 'aria-label': 'Diagram: ' + it.join(', ').slice(0, 200) });

@@ -77,7 +77,8 @@ ok('words in a shape: a node at its middle, its words changed in place, taken of
   assert.equal(O.shapeInfo(b).text, 'Two\nlines');
   assert.equal(ap(b, O.shapeTextSet(b, '')), rect);
   // a stranger's words lose what TeX would read as commands
-  assert.equal(D.readTikz(ap(rect, O.shapeTextSet(rect, 'a\\b{c}$d;e'))).cmds[1].text, 'a b c d e');
+  // (review M8: escaped as TeX prints them, read back whole)
+  assert.equal(O.shapeInfo(ap(rect, O.shapeTextSet(rect, 'a\\b{c}$d;e'))).text, 'a\\b{c}$d;e');
   // \r\n kept
   const crlf = rect.replace(/\n/g, '\r\n');
   assert.equal(ap(crlf, O.shapeTextSet(crlf, 'X', '\r\n')), crlf.replace('\r\n\\end', '\r\n\\node[align=center] at (1.5,1) {X};\r\n\\end'));
@@ -136,7 +137,7 @@ ok('Add Chart Element: a title, axis titles, gridlines, data labels, the legend\
   const bar = D.chartTex('bar', ['A', 'B'], [{ name: 'S', values: [1, 2] }]);
   assert.ok(ap(bar, O.chartSet(bar, 'grid', true)).includes('xmajorgrids'));
   // words that TeX would read are taken out
-  assert.equal(O.chartInfo(ap(chart, O.chartSet(chart, 'title', 'a}b\\c'))).title, 'a b c');
+  assert.equal(O.chartInfo(ap(chart, O.chartSet(chart, 'title', 'a}b\\c'))).title, 'a}b\\c');
 });
 
 ok('Change Colors and the size: a cycle list of xcolor names, width= and height=; the drawing reads both', () => {
@@ -287,6 +288,23 @@ ok('review M1: no wrap before a list, a display or a heading (wrapfig would floa
   const s = base.indexOf('\\begin{tikzpicture}'), e = base.indexOf('\\end{tikzpicture}') + 17;
   for (const after of ['\\begin{itemize}\n\\item x\n\\end{itemize}', '\\[ x \\]', '\\section{B}', '% note\n\\begin{enumerate}\\item x\\end{enumerate}']) assert.match(O.positionEdits(base + after, s, e, { mode: 'wrap', side: 'r' }).error, /floats? it to the end|float it to the end/, after);
   assert.ok(O.positionEdits(base + '\nWords to wrap round it.', s, e, { mode: 'wrap', side: 'r' }).edits.length);
+});
+
+ok('review M8: & % $ _ # ^ ~ \\ { } escaped in a shape\'s words, a chart\'s titles and SmartArt\'s items, and read back', () => {
+  const w = 'R&D: 50% of $5_000 #1 ^~ \\ {x}';
+  const a = ap(rect, O.shapeTextSet(rect, w));
+  assert.ok(a.includes('{R\\&D: 50\\% of \\$5\\_000 \\#1 \\textasciicircum{}\\textasciitilde{} \\textbackslash{} \\textbraceleft{}x\\textbraceright{}};'), a);
+  assert.equal(O.shapeInfo(a).text, w);
+  assert.ok(D.readTikz(a));
+  const t = ap(chart, O.chartSet(chart, 'title', w));
+  assert.equal(O.chartInfo(t).title, w);
+  assert.ok(D.readAxis(t));
+  const x = ap(chart, O.chartSet(chart, 'xlabel', '50% R&D'));
+  assert.equal(O.chartInfo(x).xlabel, '50% R&D');
+  const sm = ap(smart, O.smartItemsSet(smart, ['R&D', '50%, then $5', 'a_b #1']));
+  assert.equal(sm, '\\smartdiagram[flow diagram:horizontal]{R\\&D, {50\\%, then \\$5}, a\\_b \\#1}');
+  assert.deepEqual(O.smartInfo(sm).items, ['R&D', '50%, then $5', 'a_b #1']);
+  assert.equal(D.unTeX(D.escTeX(w)), w);
 });
 
 console.log('objfmt: ' + n + ' groups passed');
