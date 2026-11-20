@@ -1012,7 +1012,7 @@ def menus(page, w):
 def empty_panes(page, w):
     """An empty pane or list says in one sentence what belongs there and offers the one command
     that puts it there (UI-PRINCIPLES.md N5): the Navigation pane's headings, Apply Heading 1, which
-    makes the caret's paragraph a heading; File's Recent list, Open."""
+    makes the caret's paragraph a heading; File's Recent list, Open a file."""
     load_doc(page, '\\documentclass{article}\n\\begin{document}\nJust one paragraph of plain words.\n\\end{document}\n')
     click_text(page, 'one paragraph', 2)
     run_cmd(page, 'navigation-pane'); page.wait_for_timeout(400)
@@ -1024,7 +1024,7 @@ def empty_panes(page, w):
         check(f'which makes the caret\'s paragraph a heading, listed there ({w})', '\\section{Just one paragraph' in src(page) and page.evaluate("[...document.querySelectorAll('#nav .nv-row, #nav [role=treeitem]')].some((r) => r.offsetParent && r.textContent.includes('Just one'))"), src(page)[-120:])
     open_tab(page, 'File', page.evaluate("matchMedia('(pointer: coarse)').matches")); page.wait_for_timeout(500)
     r = page.evaluate("(() => { const p = document.querySelector('.rf-none'); return p && p.offsetParent ? [p.textContent, [...p.parentElement.querySelectorAll('button')].filter((b) => b.offsetParent).map((b) => b.textContent.trim())] : null; })()")
-    check(f'File\'s empty Recent list: one sentence and Open ({w})', r and one([r[0]]) and r[1] == ['Open'], r)
+    check(f'File\'s empty Recent list: one sentence and Open a file ({w})', r and one([r[0]]) and r[1] == ['Open a file'], r)
     if r:
         with page.expect_file_chooser(timeout=3000) as fc:
             page.click('#rf-none-open')
@@ -1110,9 +1110,26 @@ def target_gaps(page, w):
     check(f'every two targets 8 px apart in the status bar and five dialogs ({w})', not bad, bad)
 
 
+
+def tooltips(page, w):
+    """Every tooltip of the bar, the status bar and File's Home says the control's name first,
+    then its keys where it has some, then what it does (UI-PRINCIPLES.md C14): the template's own
+    titles had the description alone ("Show the PDF as TeX makes it, beside the page", without
+    Ctrl+F2). Native tooltips: Esc and the pointer are the browser's (WCAG 1.4.13 leaves them to it)."""
+    load_doc(page, DOC)
+    open_tab(page, 'File'); page.wait_for_timeout(400)
+    tips = page.evaluate("""(() => { const reg = window.rikuy.cmds.commands(), byEl = new Map(reg.filter((c) => c.static && c.el).map((c) => [c.el, c]));
+      return [...document.querySelectorAll('#bar button, #bar input, #status button, #status input, #rf-home button')].filter((e) => e.checkVisibility() && !['st-lang', 'st-track', 'st-words'].includes(e.id)).map((e) => { const c = byEl.get(e.id);
+        return [e.id || e.className, c ? c.name : e.getAttribute('aria-label'), e.title, c ? !!((c.keys || []).length + (c.keysElsewhere || []).length) : false]; }); })()""")
+    bad = [t for t in tips if not t[2].lower().startswith((t[1] or '').lower()) or len(t[2]) <= len(t[1] or '') + 3 or (t[3] and '(' not in t[2])]
+    check(f'every tooltip of the bar, the status bar and File\'s Home: its name, its keys, what it does ({w})', tips and not bad and not page.evaluate("!!document.querySelector('[role=tooltip]')"), bad)
+    page.keyboard.press('Escape')
+
+
 PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
          'bar_room': (bar_room, None),
          'motion': (motion, [(1366, False)]),
+         'tooltips': (tooltips, [(1366, False)]),
          'target_gaps': (target_gaps, [(390, False), (360, True)]),
          'text_spacing': (text_spacing, [(1366, False), (900, True), (390, False)]),
          'keyboard_room': (keyboard_room, [(390, False), (360, True)]),

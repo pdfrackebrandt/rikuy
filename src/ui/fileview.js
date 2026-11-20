@@ -30,7 +30,9 @@ function fillHome(app) {
   home.replaceChildren();
   const tile = (label, name, title, run, cls) => {
     const b = mk('button', 'rf-tile' + (cls ? ' ' + cls : ''));
-    b.type = 'button'; b.setAttribute('aria-label', name); b.title = title || name;
+    b.type = 'button'; b.setAttribute('aria-label', name);
+    // (its name, then what it is, as every tooltip: UI-PRINCIPLES.md C14)
+    b.title = title ? name + ': ' + (/^[A-Z][a-z]/.test(title) ? title[0].toLowerCase() + title.slice(1) : title) : name;
     b.innerHTML = PAGE;
     b.append(mk('span', 'rf-tile-n', label));
     b.addEventListener('click', run);
@@ -53,8 +55,9 @@ function fillHome(app) {
     const when = (t) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
     if (!seen.size) {
       // (what belongs here, and the command that brings one, UI-PRINCIPLES.md N5)
-      const b = mk('button', 'btn ghost', 'Open');
-      b.type = 'button'; b.id = 'rf-none-open'; b.title = 'Open .tex, .bib, images, an Overleaf .zip or a Word .docx (Ctrl+O)';
+      // (its own name: Open is the bar's, Browse the column's, and a name is in the tree once)
+      const b = mk('button', 'btn ghost', 'Open a file');
+      b.type = 'button'; b.id = 'rf-none-open'; b.title = 'Open a file (Ctrl+O): .tex, .bib, images, an Overleaf .zip or a Word .docx';
       b.addEventListener('click', () => app.runCommand('open'));
       list.append(mk('p', 'rf-none', 'No other documents yet: the ones you make or open here are kept in this browser.'), b);
       return;
@@ -62,7 +65,7 @@ function fillHome(app) {
     for (const v of [...seen.values()].slice(0, 15)) {
       const row = mk('div', 'rf-row'); row.setAttribute('role', 'listitem');
       const b = mk('button', 'rf-doc');
-      b.type = 'button'; b.setAttribute('aria-label', 'Open ' + v.name); b.title = 'Open it, as it was ' + when(v.t);
+      b.type = 'button'; b.setAttribute('aria-label', 'Open ' + v.name); b.title = 'Open ' + v.name + ': open it, as it was ' + when(v.t);
       b.append(mk('span', 'rf-doc-n', v.name), mk('span', 'rf-doc-t', when(v.t)));
       b.addEventListener('click', () => app.runCommand('recent', { open: v.name }));
       row.append(b); list.append(row);

@@ -4,7 +4,8 @@
 // Layout, LaTeX Mode, Draft, Show LaTeX, One page, Multiple pages, Side to Side, Dark page, Focus
 // (Formatting marks there is B2's Show marks). Nothing here writes to the source but what is typed into a block shown as LaTeX.
 
-import { register, onInstall } from '../commands.js';
+import { register, onInstall, commands } from '../commands.js';
+import { keyTitle, macUA } from '../keys.js';
 import { $, PREFS, store } from '../ui/dom.js';
 import { openMenu } from '../ui/kit.js';
 import { buildModel } from '../model.js';
@@ -38,9 +39,9 @@ register(
   // (Word's Ctrl+F2 is Print Preview: here the PDF as TeX makes it)
   { id: 'preview', name: 'Preview', el: 'b-pdf', static: true, place: 'bar', title: 'Show the PDF as TeX makes it, beside the page (Ctrl+F2)', keys: ['Ctrl+F2', 'Ctrl+Alt+I'], keyScope: 'app', synonyms: ['PDF', 'Compile', 'Print Preview'], when: always, run: (app) => app.togglePdf() },
   { id: 'source', name: 'Source', el: 'b-src', static: true, place: 'bar', title: 'Show the source beside the page (Ctrl+\\)', keysElsewhere: ['Ctrl+\\'], synonyms: ['LaTeX source', 'Code'], when: always, run: (app) => app.toggleSource() },
-  { id: 'zoom-out', name: 'Zoom out', el: 'b-zout', static: true, place: 'bar', only: 'wide', keysElsewhere: ['Ctrl+-'], when: always, run: (app) => app.setZoom(-1) },
-  { id: 'zoom-fit', name: 'Fit width', el: 'zoomv', static: true, place: 'bar', title: 'Zoom: the page at this percentage of its size; a press fits it to the window\'s width', synonyms: ['Zoom'], when: always, run: (app) => app.setZoom(0) },
-  { id: 'zoom-in', name: 'Zoom in', el: 'b-zin', static: true, place: 'bar', only: 'wide', keysElsewhere: ['Ctrl+='], when: always, run: (app) => app.setZoom(+1) },
+  { id: 'zoom-out', name: 'Zoom out', el: 'b-zout', static: true, place: 'bar', only: 'wide', title: 'Zoom out (Ctrl+-): the page a step smaller', keysElsewhere: ['Ctrl+-'], when: always, run: (app) => app.setZoom(-1) },
+  { id: 'zoom-fit', name: 'Fit width', el: 'zoomv', static: true, place: 'bar', title: 'Fit width: fit the page to the window\'s width; the button shows the zoom as a percentage of the page\'s size', synonyms: ['Zoom'], when: always, run: (app) => app.setZoom(0) },
+  { id: 'zoom-in', name: 'Zoom in', el: 'b-zin', static: true, place: 'bar', only: 'wide', title: 'Zoom in (Ctrl+=): the page a step larger', keysElsewhere: ['Ctrl+='], when: always, run: (app) => app.setZoom(+1) },
 
   // ---- the status bar: Page · LaTeX · PDF, and the zoom slider (Word's view buttons and slider)
   { id: 'view-page', name: 'Page view', el: 'sv-page', static: true, place: 'status', kind: 'toggle', title: 'Page: the typeset page you type on, at the same place', synonyms: ['Print Layout', 'Typeset page', 'Editing view'],
@@ -577,7 +578,20 @@ function restorePrefs(app) {
   if (!web && (P.pages === 'side' || P.pages === 'grid')) cls().add(P.pages === 'side' ? 'pg-side' : 'pg-grid');
 }
 
+// The bar's and the status bar's tooltips as the ribbon's (UI-PRINCIPLES.md C14): the control's
+// name, its keys, then what it does ("Preview (Ctrl+F2): show the PDF as TeX makes it, beside the
+// page"); the template's own titles had the description alone, some without the keys
+export function barTip(c, mac) {
+  const t = keyTitle(c, c.name, mac);
+  if (t.toLowerCase().startsWith(c.name.toLowerCase())) return t;
+  return c.name + ': ' + (/^[A-Z][a-z]/.test(t) ? t[0].toLowerCase() + t.slice(1) : t);
+}
 onInstall((app) => {
+  for (const c of commands()) {
+    if (!c.static || !c.el || !c.title || !['bar', 'status'].includes(c.place)) continue;
+    const el = document.getElementById(c.el);
+    if (el) el.title = barTip(c, macUA());
+  }
   restorePrefs(app);
   // a window that opened under 700 px (Mobile View) and widens past it takes a wide window's view,
   // where the Mobile View toggle is not; narrowed again, a phone's (N5 of the verification)
