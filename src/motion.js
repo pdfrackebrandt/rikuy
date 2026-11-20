@@ -33,7 +33,7 @@ const DEFAULTS = { anim: true, caret: true };
 export const TOKENS = {
   faster: 100, fast: 150, normal: 200, slow: 300,
   decelerate: 'cubic-bezier(0, 0, 0, 1)', accelerate: 'cubic-bezier(1, 0, 1, 1)', standard: 'cubic-bezier(0.33, 0, 0.67, 1)',
-  slide: 8, slidePane: 16, slideBackstage: 24, scaleMenu: 0.98, scaleDialog: 0.96, blink: 1060
+  slide: 8, slidePane: 16, slideBackstage: 24, scaleMenu: 0.98, scaleDialog: 0.96, blink: 1060, hold: 900
 };
 const T = { ...TOKENS };
 
@@ -93,7 +93,8 @@ function readTokens() {
     faster: ms('--rk-duration-faster', TOKENS.faster), fast: ms('--rk-duration-fast', TOKENS.fast), normal: ms('--rk-duration-normal', TOKENS.normal), slow: ms('--rk-duration-slow', TOKENS.slow),
     decelerate: v('--rk-curve-decelerate') || TOKENS.decelerate, accelerate: v('--rk-curve-accelerate') || TOKENS.accelerate, standard: v('--rk-curve-standard') || TOKENS.standard,
     slide: px('--rk-slide', TOKENS.slide), slidePane: px('--rk-slide-pane', TOKENS.slidePane), slideBackstage: px('--rk-slide-backstage', TOKENS.slideBackstage),
-    scaleMenu: num('--rk-scale-menu', TOKENS.scaleMenu), scaleDialog: num('--rk-scale-dialog', TOKENS.scaleDialog), blink: ms('--rk-caret-blink', TOKENS.blink)
+    scaleMenu: num('--rk-scale-menu', TOKENS.scaleMenu), scaleDialog: num('--rk-scale-dialog', TOKENS.scaleDialog), blink: ms('--rk-caret-blink', TOKENS.blink),
+    hold: ms('--rk-hold', TOKENS.hold)
   });
 }
 export const tokens = () => T;
@@ -125,6 +126,32 @@ export function finishAll(pdf = true) {
   for (const a of [...live]) { try { a.finish(); } catch (e) { try { a.cancel(); } catch (e2) { /* gone */ } } }
   if (vt) { try { vt.skipTransition(); } catch (e) { /* done */ } vt = null; }
   if (xf && pdf) dropOverlay();
+}
+
+// Where something landed (a heading gone to, a footnote, a found range): a wash over its boxes,
+// held --rk-hold, then faded in the slow duration, opacity alone (in reduced motion the faster
+// one; with Animations off held, then gone at once). The wash is a box of its own beside the
+// page's text, in #desk (it scrolls with the pages), never inside the editable page; the element
+// itself has the class flash meanwhile, unstyled (what was flashed, for the tests).
+export function flash(el, o = {}) {
+  if (!el || !el.isConnected) return;
+  el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), T.hold + T.slow);
+  const host = el.closest('#desk') || document.body;
+  const H = host.getBoundingClientRect(), dx = host === document.body ? scrollX : host.scrollLeft - host.clientLeft - H.left, dy = host === document.body ? scrollY : host.scrollTop - host.clientTop - H.top;
+  const boxes = (o.inline ? [...el.getClientRects()] : [el.getBoundingClientRect()]).filter((r) => r.width && r.height).slice(0, 24);
+  const m = motionMode();
+  for (const r of boxes) {
+    const w = document.createElement('div');
+    w.className = 'rk-flash';
+    w.setAttribute('aria-hidden', 'true');
+    Object.assign(w.style, { left: r.left + dx + 'px', top: r.top + dy + 'px', width: r.width + 'px', height: r.height + 'px' });
+    host.append(w);
+    if (m === 'off' || typeof w.animate !== 'function') { setTimeout(() => w.remove(), T.hold + T.slow); continue; }
+    const a = w.animate([{ opacity: 1 }, { opacity: 0 }], { id: 'rk-flash', duration: m === 'reduced' ? T.faster : T.slow, delay: T.hold, easing: T.accelerate, fill: 'both' });
+    const gone = () => w.remove();
+    a.addEventListener('finish', gone); a.addEventListener('cancel', gone);
+  }
 }
 
 // A surface that left the page fades out as a copy: the element itself is gone at once (its
@@ -231,6 +258,11 @@ function shownOrHidden(recs) {
 // meanwhile: a toolbar 8 px to the right would widen the ribbon's scrolling row, and the
 // ribbon's fitting (src/ribbon/tabs.js ribbonFit) measures that row. File's backstage comes in
 // from the left, as Word's does.
+// A press is hit tested where the button is drawn, so one aimed at a button's final place while
+// it slides lands beside it: the pointer moving onto the panel ends the slide first (a mouse always
+// moves there before it presses), and a tab opened by a finger or a pen, which presses with no
+// move before, only fades.
+let slide = null, fingerAt = -1e9;
 function panelShown(p) {
   const panels = [...p.parentElement.querySelectorAll(':scope > .rb-panel')];
   const from = lastPanel && lastPanel.isConnected ? panels.indexOf(lastPanel) : -1;
@@ -238,11 +270,12 @@ function panelShown(p) {
   const tb = p.querySelector(':scope > .rb-tb') || p;
   if (p.dataset.tab === 'file') return enter(tb, 'backstage', [{ opacity: 0, translate: -T.slideBackstage + 'px 0' }, { opacity: 1, translate: '0 0' }], T.slow);
   if (from < 0) return null;
+  if (performance.now() - fingerAt < 1000) return enter(tb, 'tab', [{ opacity: 0 }, { opacity: 1 }], T.fast);
   const dir = panels.indexOf(p) > from ? 1 : -1;
   p.classList.add('rk-clip');
   const a = enter(tb, 'tab', [{ opacity: 0, translate: dir * T.slide + 'px 0' }, { opacity: 1, translate: '0 0' }], T.fast);
-  const unclip = () => p.classList.remove('rk-clip');
-  if (a) { a.addEventListener('finish', unclip); a.addEventListener('cancel', unclip); } else unclip();
+  const unclip = () => { p.classList.remove('rk-clip'); if (slide && slide.a === a) slide = null; };
+  if (a) { slide = { a, p }; a.addEventListener('finish', unclip); a.addEventListener('cancel', unclip); } else unclip();
   return a;
 }
 
@@ -381,7 +414,8 @@ export function installMotion(a) {
   // (another tab changed the setting)
   addEventListener('storage', (e) => { if (e.key === KEY) { settings = null; applyMode(); } });
   // a press or a key during an animation acts at once, on the final state
-  addEventListener('pointerdown', timed((e) => { if (live.size || vt || xf) finishAll(!!(e.target && e.target.closest && e.target.closest('#pdfpane'))); }), true);
+  addEventListener('pointerdown', timed((e) => { if (e.pointerType === 'touch' || e.pointerType === 'pen') fingerAt = performance.now(); if (live.size || vt || xf) finishAll(!!(e.target && e.target.closest && e.target.closest('#pdfpane'))); }), true);
+  addEventListener('pointermove', (e) => { if (slide && e.target instanceof Node && slide.p.contains(e.target)) slide.a.finish(); }, true);
   addEventListener('keydown', timed(() => { if (live.size || vt) finishAll(false); }), true);
   const off = () => motionMode() === 'off';
   const gate = (fn) => timed((recs) => { if (!off()) fn(recs); });
