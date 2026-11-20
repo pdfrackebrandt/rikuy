@@ -12,7 +12,7 @@ comes in written in base32 and runs nothing where a document stopped % being a c
 reading of the source finds (\\csname, \\scantokens, Lua), compiled in the page (S5)."""
 import base64, io, json, os, sys, zipfile, zlib
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import open_page, check, results, src, wait_src, click_text, select_text
+from browser import open_page, check, results, src, wait_src, click_text, select_text, download
 from playwright.sync_api import sync_playwright
 
 # what the page would ask the TeX worker for: compile() is replaced by one that notes its
@@ -141,12 +141,12 @@ def run():
         except Exception: pass
         check('a one file project saves as .tex: the LaTeX download names the file', 'Download the LaTeX source, paper.tex' in page.evaluate('document.getElementById("b-save").title'), page.evaluate('document.getElementById("b-save").title'))
         with page.expect_download() as d:
-            page.click('#b-save')
+            download(page)
         f = d.value
         check('the download is that .tex, as it is', f.suggested_filename == 'paper.tex' and open(f.path(), encoding='utf8').read().endswith('Hello.\n% comment (Ana): hi\n\\end{document}\n'), f.suggested_filename)
         page.evaluate('() => { window.rikuy.prefs.stripComments = true; }')
         with page.expect_download() as d:
-            page.click('#b-save')
+            download(page)
         check('and without the comments when asked', '% comment' not in open(d.value.path(), encoding='utf8').read())
         page.evaluate('() => { window.rikuy.prefs.stripComments = false; }')
         # (the form as Rikuy hands it to the browser: the page's policy, form-action 'self' on the

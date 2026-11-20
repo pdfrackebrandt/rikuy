@@ -17,7 +17,9 @@ off a hand written group whose braces do something for the words around it; and 
 other findings: the folded ribbon kept over a reload and shown for a moment by a tab, Ctrl+F1 from
 a field and none kept below 861 px, the groups named, Ctrl+Shift+B, the search box with no place,
 the menu (no Ask Claude outside Claude, Shift+F10 again, a long press), a contextual tab's option
-on a phone, Page width on a phone, and Home whole at 860 px.
+on a phone, Page width on a phone, and Home whole at 860 px. Word's layout of the other tabs (src/ribbon/layout.js):
+large and small buttons, group names whole, every tab as tall as Home, the steps before a group folds, and the
+KeyTips of a tab's controls.
 
 RIKUY_DIST names another dist/."""
 import os, re, sys
@@ -548,6 +550,193 @@ def review_fixes(page):
     page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
 
 
+
+# What a laid out tab shows at a width, for each group: its controls' sizes and heights, whether
+# its name is whole, and the ribbon's height (a tab as tall as Home)
+LAID = """(tab) => { const app = window.rikuy, rb = document.getElementById('ribbon');
+  app.rbTab = tab;
+  for (const p of rb.querySelectorAll('.rb-panel')) p.hidden = p.dataset.tab !== tab;
+  const P = document.getElementById('rp-' + tab);
+  P.querySelector('.rb-tb').append(document.querySelector('.rb-dl'));
+  app.ribbonFit(); rb.scrollLeft = 0;
+  const out = { h: Math.round(rb.getBoundingClientRect().height), groups: [] };
+  for (const g of P.querySelectorAll('.rb-grp.lay')) {
+    const lab = g.querySelector('.rb-glab'), gb = g.getBoundingClientRect(), lb = lab.getBoundingClientRect();
+    const items = [...g.children].filter((x) => x.dataset.size).map((x) => { const b = x.getBoundingClientRect(); return [x.dataset.size, Math.round(b.height), Math.round(b.top - gb.top)]; });
+    out.groups.push({ id: g.dataset.group, cls: g.className, items, whole: lab.scrollWidth <= lab.clientWidth + 1 && lb.left >= gb.left - 1 && lb.right <= gb.right + 1 });
+  }
+  app.rbTab = null; app.selectTab('home');
+  return out; }"""
+
+
+def word_layout(page):
+    """Word's layout of the tabs other than Home (src/ribbon/layout.js): at 1920 px every group
+    open with its large buttons the icon over the name and its small ones three to a column, every
+    group's name whole under it, every tab as tall as Home; narrower, a group gives way one step at
+    a time (its large buttons small, then its names) before any group folds; the KeyTips of a tab's
+    controls after its own (Alt, a tab's letter, the control's letters), and Escape back."""
+    load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
+    page.set_viewport_size({'width': 1920, 'height': 900}); page.wait_for_timeout(300)
+    tabs = page.evaluate('rikuy.rbTabs')
+    home = page.evaluate("Math.round(document.getElementById('ribbon').getBoundingClientRect().height)")
+    seen = {t: page.evaluate(LAID, t) for t in tabs if t not in ('home', 'file')}
+    bad = {t: [(g['id'], g['cls']) for g in v['groups'] if 'folded' in g['cls'] or ' sm' in g['cls'] or ' nm' in g['cls']] for t, v in seen.items()}
+    check('at 1920 px every laid out group of the %d other tabs is open, its buttons as Word draws them on a wide window' % len(seen), not any(bad.values()) and all(v['groups'] for v in seen.values()), bad)
+    big = [(t, g['id'], i) for t, v in seen.items() for g in v['groups'] for i in g['items'] if i[0] == 'L' and not (60 <= i[1] <= 66 and i[2] <= 6)]
+    small = [(t, g['id'], i) for t, v in seen.items() for g in v['groups'] for i in g['items'] if i[0] in 'SI' and not (20 <= i[1] <= 24)]
+    check('large buttons are the height of three small ones, from the group\'s top; small ones and icons 20 to 24 px, three to a column', not big and not small, (big[:4], small[:4]))
+    cut = [(t, g['id']) for t, v in seen.items() for g in v['groups'] if not g['whole']]
+    check('every group\'s name is whole under it (the group is at least as wide as its name)', not cut, cut)
+    hs = {t: v['h'] for t, v in seen.items()}
+    page.set_viewport_size({'width': 880, 'height': 900}); page.wait_for_timeout(300)
+    h880 = {t: page.evaluate(LAID, t)['h'] for t in tabs if t != 'file'}
+    page.set_viewport_size({'width': 1920, 'height': 900}); page.wait_for_timeout(300)
+    check('every tab is as tall as Home (%d px), and at 880 px too: the page does not jump when a tab opens' % home, all(h == home for h in hs.values()) and len(set(h880.values())) == 1, (home, hs, h880))
+    # a large button's name over two lines, as Word breaks it; a menu's arrow after the name
+    page.evaluate("rikuy.selectTab('references')"); page.wait_for_timeout(150)
+    toc = page.evaluate("[...document.querySelectorAll('#rc-table-of-contents-x .rb-ln')].map((x) => [x.textContent, Math.round(x.getBoundingClientRect().top)])")
+    icon = page.evaluate("[document.querySelector('#rc-table-of-contents svg').getBoundingClientRect().top, document.querySelector('#rp-references [data-cmd=footnote] svg').getBoundingClientRect().top]")
+    check('References: Table of Contents as Word\'s large split button, its icon as high as Footnote\'s, "Table of" above "Contents" in the part that opens its menu; its accessible name whole',
+          [x[0] for x in toc] == ['Table of', 'Contents'] and toc[1][1] > toc[0][1] and abs(icon[0] - icon[1]) < 1 and page.get_by_role('button', name='Table of Contents', exact=True).count() == 1, (toc, icon))
+    # Word's check boxes, still buttons with their state
+    page.evaluate("rikuy.selectTab('view')"); page.wait_for_timeout(150)
+    box = page.evaluate("(() => { const b = document.getElementById('rw-ruler') || document.querySelector('#rp-view [data-cmd=ruler]'); const s = getComputedStyle(b, '::before'); return [b.getAttribute('aria-pressed') !== null, s.width, getComputedStyle(b.querySelector('svg')).display]; })()")
+    check('View › Show: Ruler drawn as Word\'s check box, a toggle button still', box[0] and box[1] == '13px' and box[2] == 'none', box)
+    # the arrows in the grid: down a column, across a row
+    page.evaluate("rikuy.selectTab('review')"); page.wait_for_timeout(150)
+    page.focus('#rc-thesaurus' if page.locator('#rc-thesaurus').count() else '[data-cmd=thesaurus]')
+    ids = []
+    for k in ('ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'ArrowLeft'):
+        page.keyboard.press(k); page.wait_for_timeout(60)
+        ids.append(page.evaluate('document.activeElement.dataset.cmd'))
+    check('in Word\'s grid the arrows move as the eye does: Thesaurus, down to Word Count, up again, right to Read Aloud (the next group), left to Thesaurus, left to Spelling', ids == ['word-count', 'thesaurus', 'read-aloud', 'thesaurus', 'spelling'], ids)
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    # a pressed toggle in a forced colour scheme (Windows' contrast themes)
+    page.evaluate("rikuy.selectTab('view')"); page.wait_for_timeout(150)
+    page.emulate_media(forced_colors='active'); page.wait_for_timeout(150)
+    fc = page.evaluate("[...document.querySelectorAll('#rp-view [data-cmd=print-layout], #rp-view [data-cmd=draft]')].map((b) => [b.getAttribute('aria-pressed'), getComputedStyle(b).backgroundColor])")
+    page.emulate_media(forced_colors='none'); page.wait_for_timeout(100)
+    check('in a forced colour scheme a pressed toggle (Print Layout) is drawn in the highlight, one not pressed (Draft) is not', len(fc) == 2 and fc[0][0] == 'true' and fc[1][0] == 'false' and fc[0][1] != fc[1][1], fc)
+    # narrower: the steps before any group folds
+    page.set_viewport_size({'width': 1100, 'height': 900}); page.wait_for_timeout(300)
+    r = page.evaluate(LAID, 'review')
+    check('at 1100 px Review gives way group by group (some small, some without names) and folds none', not any('folded' in g['cls'] for g in r['groups']) and any(' sm' in g['cls'] or ' nm' in g['cls'] for g in r['groups']) and all(g['whole'] for g in r['groups']), [(g['id'], g['cls']) for g in r['groups']])
+    page.set_viewport_size({'width': 1920, 'height': 900}); page.wait_for_timeout(300)
+    # KeyTips: Alt, then N for Insert, then its controls' letters
+    click_text(page, 'Second paragraph', 3)
+    page.keyboard.press('Alt'); page.wait_for_timeout(100)
+    t1 = page.evaluate("document.body.classList.contains('keytips')")
+    page.keyboard.press('n'); page.wait_for_timeout(200)
+    kts = page.evaluate("[...document.querySelectorAll('.rb-kt')].map((x) => x.textContent)")
+    check('Alt shows the tabs\' letters; N opens Insert and shows its controls\' (Table T, Shapes SH, Header H)', t1 and page.evaluate("rikuy.rbTab") == 'insert' and all(k in kts for k in ('T', 'SH', 'H', 'NP')) and not page.evaluate("document.body.classList.contains('keytips')"), kts)
+    page.keyboard.press('s'); page.wait_for_timeout(100)
+    left = page.evaluate("[...document.querySelectorAll('.rb-kt')].map((x) => x.textContent)")
+    page.keyboard.press('h'); page.wait_for_timeout(250)
+    m = page.get_by_role('menu', name='Shapes', exact=True)
+    check('S leaves the letters that start with S; then H opens Shapes\' menu, the letters gone', sorted(left) == ['SC', 'SH'] and m.count() == 1 and not page.evaluate("document.querySelectorAll('.rb-kt').length"), (left, m.count()))
+    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    click_text(page, 'Second paragraph', 3)
+    page.keyboard.press('Alt'); page.keyboard.press('p'); page.wait_for_timeout(200)
+    page.keyboard.press('i'); page.keyboard.press('l'); page.wait_for_timeout(150)
+    check('Alt, P, I, L: the focus in Layout\'s Indent Left field', page.evaluate('document.activeElement.id') == 'rl-indent-left', page.evaluate('document.activeElement.id'))
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    click_text(page, 'Second paragraph', 3)
+    page.keyboard.press('Alt'); page.keyboard.press('w'); page.wait_for_timeout(200)
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    back = page.evaluate("[document.body.classList.contains('keytips'), document.querySelectorAll('.rb-kt').length]")
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    off = page.evaluate("[document.body.classList.contains('keytips'), document.querySelectorAll('.rb-kt').length, document.activeElement.id]")
+    check('Escape goes back from a tab\'s letters to the tabs\' letters, and again away, the caret on the page', back == [True, 0] and off == [False, 0, 'pages'], (back, off))
+    # a folded group's letters: Z and a letter of its name
+    page.set_viewport_size({'width': 1000, 'height': 900}); page.wait_for_timeout(300)
+    click_text(page, 'Second paragraph', 3)
+    page.keyboard.press('Alt'); page.keyboard.press('h'); page.wait_for_timeout(200)
+    z = page.evaluate("[...document.querySelectorAll('.rb-kt')].map((x) => x.textContent).filter((k) => k[0] === 'Z')")
+    page.keyboard.press('z'); page.keyboard.press('i'); page.wait_for_timeout(250)
+    check('Home at 1000 px: its folded Insert has ZI, which opens its menu', 'ZI' in z and page.get_by_role('menu', name='Insert', exact=True).count() == 1, z)
+    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    page.set_viewport_size({'width': 1920, 'height': 900}); page.wait_for_timeout(300)
+    # a contextual tab's letters: J then its letter, while it shows
+    load_doc(page, TABLE); click_text(page, 'A paragraph', 2); page.wait_for_timeout(200)
+    page.keyboard.press('Alt'); page.wait_for_timeout(100)
+    before = page.evaluate("[...document.querySelectorAll('#rb-tabs .rb-ktip')].filter((b) => b.offsetParent).map((b) => b.dataset.k)")
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    click_text(page, 'cell', 2); page.wait_for_timeout(250)
+    page.keyboard.press('Alt'); page.wait_for_timeout(100)
+    shown = page.evaluate("[...document.querySelectorAll('#rb-tabs .rb-ktip')].filter((b) => b.offsetParent).map((b) => b.dataset.k)")
+    page.keyboard.press('j'); page.wait_for_timeout(100)
+    left = page.evaluate("[...document.querySelectorAll('#rb-tabs .rb-ktip')].filter((b) => b.offsetParent).map((b) => b.dataset.k)")
+    page.keyboard.press('l'); page.wait_for_timeout(250)
+    kts = page.evaluate("[...document.querySelectorAll('.rb-kt')].map((x) => x.textContent)")
+    check('the contextual tabs\' letters, as Word\'s: JT and JL with the caret in a table (none out of it); J leaves those two; L opens Table Layout and shows its controls\' letters (Delete D, Insert below BE)',
+          'JT' not in before and 'JT' in shown and 'JL' in shown and sorted(left) == ['JL', 'JT'] and page.evaluate('rikuy.rbTab') == 'table-layout' and 'D' in kts and 'BE' in kts, (before, shown, left, kts))
+    page.keyboard.press('Escape'); page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    # the keys the letters take go nowhere else: Escape keeps a selected picture selected
+    load_doc(page, PICDOC); page.wait_for_timeout(200); page.locator('#pages .a-img').click(); page.wait_for_timeout(200)
+    armed = page.evaluate('!!(rikuy.armed && rikuy.armed.kind === "img")')
+    page.keyboard.press('Alt'); page.wait_for_timeout(100); page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    check('Escape that puts the letters away does not let go of a selected picture', armed and page.evaluate('!!(rikuy.armed && rikuy.armed.kind === "img")') and not page.evaluate("document.body.classList.contains('keytips')"))
+    page.evaluate('rikuy.disarm()')
+    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
+    load_doc(page, DOC)
+    open_tab(page, 'Home')
+
+
+def mac_keytips(p):
+    """On a Mac, Option alone types nothing and shows no letters (it is how a Mac types é and ©, and
+    Word for Mac has no KeyTips); F10 shows them."""
+    browser, page, errors = open_page(p, init="Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel' })")
+    load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
+    page.keyboard.press('Alt'); page.wait_for_timeout(100)
+    alt = page.evaluate("document.body.classList.contains('keytips')")
+    page.keyboard.press('h'); page.keyboard.press('e'); page.wait_for_timeout(150)
+    typed = src(page)
+    page.keyboard.press('Control+z'); page.wait_for_timeout(100)
+    click_text(page, 'Second paragraph', 3)
+    page.keyboard.press('F10'); page.wait_for_timeout(100)
+    f10 = page.evaluate("document.body.classList.contains('keytips')")
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    check('a Mac: Option alone shows no letters, and the letters after it are typed (no command runs); F10 shows them', not alt and 'he' in typed and f10, (alt, f10))
+    browser.close()
+
+
+
+# Controls that overlap one another or are cut off by the ribbon, on one tab as the fit leaves it
+OVERLAP = """(tab) => { const app = window.rikuy, rb = document.getElementById('ribbon');
+  app.rbTab = tab;
+  for (const p of rb.querySelectorAll('.rb-panel')) p.hidden = p.dataset.tab !== tab;
+  const P = document.getElementById('rp-' + tab);
+  P.querySelector('.rb-tb').append(document.querySelector('.rb-dl'));
+  app.ribbonFit(); rb.scrollLeft = 0;
+  const R = rb.getBoundingClientRect(), vis = (e) => e.offsetParent !== null && e.getClientRects().length > 0;
+  const cs = [...P.querySelectorAll('button, input, select')].filter(vis), rs = cs.map((e) => e.getBoundingClientRect()), ov = [], cut = [];
+  for (let i = 0; i < cs.length; i++) {
+    if (rs[i].top < R.top - 0.5 || rs[i].bottom > R.bottom + 0.5) cut.push(cs[i].getAttribute('aria-label') || cs[i].id);
+    for (let j = i + 1; j < cs.length; j++) {
+      if (cs[i].contains(cs[j]) || cs[j].contains(cs[i])) continue;
+      const w = Math.min(rs[i].right, rs[j].right) - Math.max(rs[i].left, rs[j].left), h = Math.min(rs[i].bottom, rs[j].bottom) - Math.max(rs[i].top, rs[j].top);
+      if (w > 1.5 && h > 1.5) ov.push([cs[i].getAttribute('aria-label') || cs[i].id, cs[j].getAttribute('aria-label') || cs[j].id]);
+    }
+  }
+  const grid = [...P.querySelectorAll('.rb-grp.lay')].filter((g) => getComputedStyle(g).display === 'grid').length;
+  app.rbTab = null; app.selectTab('home');
+  return { ov, cut, grid }; }"""
+
+
+def tablet(p):
+    """A touch screen 900 px and wider (a tablet in landscape) keeps the row of 44 px targets its
+    own rules give it: Word's grid of 22 px rows is for a mouse; no control overlaps another or is
+    cut off by the ribbon."""
+    for w in (1024, 1180, 1366):
+        browser, page, errors = open_page(p, width=w, height=800, touch=True)
+        bad = {}
+        for t in ('home', 'insert', 'review', 'view', 'references', 'table-layout', 'picture-format', 'equation'):
+            r = page.evaluate(OVERLAP, t)
+            if r['ov'] or r['cut'] or r['grid']: bad[t] = r
+        check('a touch screen at %d px: no laid out group is a grid, no control overlaps another or is cut off, on 8 tabs' % w, not bad, str(bad)[:400])
+        browser.close()
+
+
 SWEEP = """() => { const app = window.rikuy, rb = document.getElementById('ribbon'), gal = document.getElementById('rb-gallery'), out = {};
   const fits = () => rb.scrollWidth <= rb.clientWidth + 1;
   for (const id of app.rbTabs) {
@@ -560,9 +749,12 @@ SWEEP = """() => { const app = window.rikuy, rb = document.getElementById('ribbo
     let n = 0;
     // (the gallery's tiles count, its paging arrows and More do not: they are its own way about)
     for (const x of P.querySelectorAll('button, select, input')) if (x.offsetParent && (!gal.contains(x) || x.dataset.style) && x.getBoundingClientRect().right <= innerWidth + 1) n++;
+    // the names shown on buttons (not the downloads': those are controls, counted above)
+    let names = 0;
+    for (const x of P.querySelectorAll('.rb-grp .btn:not(.rb-gbtn) > span:not(.sr), .rb-grp .btn > .rb-bl')) if (x.offsetParent && x.getClientRects().length && x.getBoundingClientRect().right <= innerWidth + 1) names++;
     const folded = [...P.querySelectorAll('.rb-grp.folded')], wasted = [];
     for (const g of folded) { const c = [...g.classList]; g.classList.remove('folded', 'ico'); if (fits()) wasted.push(g.dataset.group); g.className = c.join(' '); }
-    out[id] = { n, over: !fits(), folded: folded.map((g) => g.dataset.group), wasted };
+    out[id] = { n, names, over: !fits(), folded: folded.map((g) => g.dataset.group), wasted, small: [...P.querySelectorAll('.rb-grp.sm, .rb-grp.nm')].map((g) => g.dataset.group) };
   }
   app.rbTab = null; app.selectTab('home');
   return out; }"""
@@ -610,6 +802,9 @@ def fold_sweep(page):
             tag, len(tabs), {t: [(seen[w][t]['n'], len(seen[w][t]['folded'])) for w in (530, 860, 870, 1020, 1360)] for t in tabs}, [(t, a, b, seen[a][t]['folded'], seen[b][t]['folded']) for t, a, b in flips]))
         if extra == [] or extra == review:
             check('%s, on all %d tabs from 390 to 1920 px in 10 px steps: a wider window never shows fewer controls (but 530 px against 520, where a phone\'s row scrolls)' % (tag, len(tabs)), not fewer, fewer[:6])
+            # (names as well: the steps that take a name are one chain, given back from its end)
+            nfewer = [(t, a, b, seen[a][t]['names'], seen[b][t]['names']) for t in tabs for a, b in zip(widths, widths[1:]) if seen[b][t]['names'] < seen[a][t]['names'] and b != 530 and seen[b][t]['n'] == seen[a][t]['n']]
+            check('%s: a wider window never shows fewer names on buttons where it shows as many controls' % tag, not nfewer, nfewer[:6])
         else:
             # spare Insert folds before the buttons' names go. A few pixels wider, the names come
             # back while Insert stays folded: the names are not controls, so the count dips.
@@ -630,11 +825,14 @@ def fold_sweep(page):
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (mouse_and_keys, contextual, widths, collapse, every_command, keys, search_box, context_menu, kit, round_trips, kept_braces, review_fixes, fold_sweep):
+        for f in (mouse_and_keys, contextual, widths, collapse, every_command, keys, search_box, context_menu, kit, round_trips, kept_braces, review_fixes, word_layout, fold_sweep):
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
+        for f in (tablet, mac_keytips):
+            try: f(p)
+            except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
     bad = [r for r in results if not r[1]]
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     sys.exit(1 if bad else 0)

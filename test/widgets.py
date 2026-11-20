@@ -19,7 +19,7 @@ survive a reload."""
 import os, sys, io, re, json, zlib, base64, zipfile, tempfile, traceback, time, socket, threading
 sys.path.insert(0, os.path.dirname(__file__))
 import serve
-from browser import ROUTES, check, results, click_text
+from browser import ROUTES, check, results, click_text, download
 from playwright.sync_api import sync_playwright
 
 PORT = 8797
@@ -316,7 +316,7 @@ try:
 
         # leaving: the .zip and a share link carry the widget
         with page.expect_download() as d:
-            page.click('#b-save')
+            download(page)
         zout = os.path.join(TMP, 'out.zip')
         d.value.save_as(zout)
         with zipfile.ZipFile(zout) as z:
