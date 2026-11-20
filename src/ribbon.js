@@ -19,10 +19,10 @@ export const ribbon = {
   ribbonSoon() {},
   // Where the caret is, for the ribbon: its element, its item on the page and its block. None
   // while the source pane has the focus or the pages are stale: the buttons are then disabled.
-  // With no caret on the page at all (none yet, or the focus in the PDF or the side panel) the
-  // ribbon is as Word's, which always has one: as at the last place the caret was, or else the
-  // document's end (fallback: true); a command run there puts the caret there first (runCommand).
-  // Not while a field, a dialog or the equation field has the focus: they have their own place.
+  // With no caret on the page at all (none yet, or a press in the PDF or the side panel) the page
+  // gets one back, as Word's always has one: at the last place it was, or else the document's end
+  // (the selection only: the focus stays where it is). Not while a field, a dialog or the equation
+  // field has the focus, nor over words selected elsewhere: those keep their own place.
   ribbonAt() {
     if (this.stale || !this.model) return null;
     const a = document.activeElement;
@@ -44,9 +44,11 @@ export const ribbon = {
     return { c, el, it, B: it ? BLOCKS.get(+it.dataset.b) : null, ctx: near ? near.dataset.ctx : '', cell: !!(el && el.closest('td')), sty: !!(el && el.closest('[data-y]')),
       multi: !c.ghost && !r.collapsed && !!it && (end && end.closest('.it')) !== it };
   },
-  // the place the ribbon stands for when the page has no caret (see ribbonAt)
+  // the caret given back to the page when it has none (see ribbonAt)
   ribbonAtRest(a) {
     if (a && a !== document.body && a.closest && a.closest('input, textarea, select, math-field, [contenteditable="true"], .pop, [role=dialog], .CodeMirror')) return null;
+    const sel = getSelection();
+    if (sel.rangeCount && !sel.getRangeAt(0).collapsed) return null;
     let at = null;
     const L = this.rbLast;
     const x = L && this.files.has(L.f) && this.index ? this.index.find(L.f, L.p, -1) : null;
@@ -62,11 +64,10 @@ export const ribbon = {
     if (!at) return null;
     const A = posFromDom(at.node, at.offset, this.root);
     if (!A || A.ghost) return null;
-    const r = document.createRange();
-    r.setStart(at.node, at.offset); r.collapse(true);
-    const res = this.atOf({ f: A.f, p: A.p, a: A.p, b: A.p, collapsed: true }, at.node.nodeType === 1 ? at.node : at.node.parentElement, r);
-    res.fallback = true;
-    return res;
+    // (every command reads the place as it reads a caret put there by a press: the selection)
+    sel.collapse(at.node, at.offset);
+    const c = this.caretNow();
+    return c ? this.atOf(c, at.node.nodeType === 1 ? at.node : at.node.parentElement, sel.getRangeAt(0)) : null;
   },
 
   // a block that is one plain paragraph of the text: [s, e) of its words, or null

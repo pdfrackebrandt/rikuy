@@ -287,13 +287,6 @@ export const tabs = {
     const c = command(id);
     if (!c || !c.run) return false;
     if (at === undefined) at = this.ribbonAt();
-    // (no caret on the page: the ribbon stood for the last place, or the document's end; the caret
-    // goes there now, as Word's always is somewhere, and the command runs there)
-    if (at && at.fallback) {
-      this.restoreCaret({ f: at.c.f, p: at.c.p, bias: -1 }, true);
-      const now = this.ribbonAt();
-      if (now && !now.fallback) at = now;
-    }
     if (at) at.memo = {};
     if (!enabled(this, c, at)) return false;
     const r = c.run(this, args, at);
