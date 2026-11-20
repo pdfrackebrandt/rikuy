@@ -638,8 +638,25 @@ def arrange(page):
     run_cmd(page, 'object-position', {'mode': 'wrap', 'side': 'r'})
     s = src(page)
     check('Right with Text Wrapping: a wrapfigure at its own width ({0pt}) and wrapfig, one step', '\\begin{wrapfigure}{r}{0pt}\n\\centering\n\\begin{tikzpicture}' in s and '\\usepackage{wrapfig}' in s and page.evaluate('window.rikuy.hist.length') == h0 + 1, s[:400])
+    # review M1: the page draws wrapfig's {0pt} at the drawing's own width, at the right, the words beside it
+    page.evaluate("window.rikuy.files.set('main.tex', window.rikuy.files.get('main.tex').replace('After it.', 'After it. ' + 'Words that wrap round the drawing as TeX wraps them. '.repeat(8)))"); page.evaluate('window.rikuy.forceRender = true; window.rikuy.rebuild()'); page.wait_for_timeout(500)
+    g = page.evaluate("""() => { const d = document.querySelector('#pages svg.tz').getBoundingClientRect(), it = document.querySelector('#pages svg.tz').closest('.it'), p = [...document.querySelectorAll('#pages .it')].find((x) => x.textContent.includes('Words that wrap'));
+      const r = document.createRange(); const t = [...p.querySelectorAll('span.t')][0]; r.setStart(t.firstChild, 0); r.setEnd(t.firstChild, 5); const w = r.getBoundingClientRect();
+      const body = [...document.querySelectorAll('#pages .it')].find((x) => x.textContent.includes('Before it')).getBoundingClientRect();
+      return { dl: d.left, dr: d.right, dw: d.width, iw: it.getBoundingClientRect().width, wordRight: w.right, wordTop: w.top, dTop: d.top, dBottom: d.bottom, bodyRight: body.right }; }""")
+    check('M1: the wrapfigure drawn at the drawing\'s width at the right margin, and the next words beside it (%s)' % {k: round(v) for k, v in g.items()}, g['iw'] < g['dw'] + 40 and abs(g['dr'] - g['bodyRight']) < 30 and g['wordRight'] < g['dl'] and g['dTop'] - 30 < g['wordTop'] < g['dBottom'])
+    load_doc(page, src(page).replace(' ' + 'Words that wrap round the drawing as TeX wraps them. ' * 8, '').replace('After it. ' + 'Words that wrap round the drawing as TeX wraps them. ' * 8, 'After it.')); page.wait_for_timeout(200); sel(page)
     run_cmd(page, 'object-position', {'mode': 'inline'})
     check('In Line with Text again: the center of before (wrapfig\'s line stays, other text may use it)', src(page).replace('\\usepackage{wrapfig}\n', '') == D, src(page)[:300])
+    # review H2: a drawing in a center in a figure: Position changes the figure, compiled on three engines
+    N = WRAP('Before.\n\n\\begin{figure}[htbp]\n\\begin{center}\n\\begin{tikzpicture}\n' + RECT + '\n\\end{tikzpicture}\n\\end{center}\n\\caption{Box}\n\\end{figure}\n\nAfter.')
+    load_doc(page, N); page.wait_for_timeout(300); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
+    run_cmd(page, 'object-position', {'mode': 'float', 'place': 't'})
+    check('H2: Top of Page on a drawing in figure > center: [t] on that figure, no figure inside it', src(page) == N.replace('[htbp]', '[t]'), src(page)[-260:])
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        for eng in ('pdflatex', 'xelatex', 'lualatex'):
+            r = compile_pdf(page, ('% !TEX program = ' + eng + '\n' if eng != 'pdflatex' else '') + N.replace('[htbp]', '[t]'))
+            check('H2: it compiles with %s' % eng, r['ok'] and not r['problems'] and 'Box' in pdf_text(r), r['problems'])
     C = DOC(CHART)
     roundtrip(page, C, selector('svg.pgf'), cmd('object-align', {'align': 'right'}), C.replace('{center}', '{flushright}'), off_command=cmd('object-align', {'align': 'center'}), label='Align Right of a chart')
     load_doc(page, DOC(SMART)); press(page, 'svg.smart'); run_cmd(page, 'object-align', {'align': 'right'})
