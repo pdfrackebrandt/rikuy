@@ -1511,6 +1511,16 @@ function hhlineCols(src, x) {
   for (const ch of t) { if (ch === '-' || ch === '=') out.push(col++); else if (ch === '~') col++; }
   return out;
 }
+// whether an \hhline draws = (a double rule) over every column c0..c1
+function hhlineDoubles(src, x, c0, c1) {
+  const arg = x.args.filter(Boolean).find((y) => y.kind === 'm');
+  let t = arg ? src.slice(arg.is, arg.ie) : '';
+  for (let k = 0; k < 5 && /\*\{\d+\}/.test(t); k++) t = t.replace(/\*\{(\d+)\}\{([^{}]*)\}/g, (m, n, b) => b.repeat(Math.min(+n, 200)));
+  const kinds = [];
+  for (const ch of t) if (ch === '-' || ch === '=' || ch === '~') kinds.push(ch);
+  for (let c = c0; c <= c1; c++) if (kinds[c] !== '=') return false;
+  return true;
+}
 function gapCovers(src, T, g, c0, c1) {
   const lead = gapLead(T, g), have = new Set();
   for (const x of lead) {
@@ -1558,6 +1568,9 @@ export function setBorders(src, T, rect, parts, o = {}) {
   const gapWant = (g, on) => {
     // (on where it is on already, with no pen style asked: nothing to write, an \hhline kept as written)
     if (on && o.double == null && gapCovers(src, T, g, c0, c1)) return;
+    // (Pen Style Double where an \hhline draws = over these columns already: it is double there, its
+    // crossings kept)
+    if (on && o.double && gapLead(T, g).some((x) => x.name === 'hhline' && hhlineDoubles(src, x, c0, c1))) return;
     const lead = gapLead(T, g);
     const cur = lead.filter((x) => RULES.has(x.name)).map((x) => src.slice(x.s, x.e));
     // the rules of this gap over the columns of the selection go; the others stay

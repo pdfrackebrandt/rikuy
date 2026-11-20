@@ -160,6 +160,8 @@ ok('an \\hhline is read as the border it draws and kept; a booktabs table gets n
   assert.equal(X.bordersOf(hh, T, X.grow(T, { r0: rows[1], r1: rows[1], c0: 1, c1: 1 })).top, false);
   // (Top Border on where the \hhline draws it: nothing written, its crossings kept)
   assert.deepEqual(X.setBorders(hh, T, all, { top: true }).edits, []);
+  // (the verification of 3d3bfc4: Pen Style Double on a top that is \hhline{|=|=|} kept it)
+  assert.deepEqual(X.setBorders(hh, T, all, { top: true }, { double: true }).edits, []);
   const book = 'x\n\\begin{tabular}{ll}\n\\toprule\na & b \\\\\n\\midrule\nc & d \\\\\n\\bottomrule\n\\end{tabular}\ny';
   T = at(book);
   const r = X.setBorders(book, T, X.grow(T, { r0: X.dataRows(T)[0], r1: X.dataRows(T)[1], c0: 0, c1: 1 }), { top: true, bottom: true, left: true, right: true, insideH: true, insideV: true }, { double: true });
