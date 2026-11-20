@@ -6,7 +6,7 @@ dist/tex holds a TeX tree, what they write compiled in the page with pdfLaTeX, X
 phones at 390 and 360 px with touch; screenshots in $RIKUY_SHOTS (default /tmp/g2-shots).
 
 python3 docgaps.py [section ...]: tables, tables_compiled, tables_phones, shots, headfoot, headfoot_forms, headfoot_compiled,
-headfoot_phones, headfoot_shots, view, refs_update, equation, equation_linear, insert_text, rest_compiled, rest_phones,
+headfoot_phones, headfoot_shots, view, split_long, refs_update, equation, equation_linear, insert_text, rest_compiled, rest_phones,
 rest_shots."""
 import os, sys, base64, io, re as _re
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -567,6 +567,10 @@ def headfoot_shots(p):
 
 
 # ---- View: Gridlines, Zoom, Split, Vertical ---------------------------------------------------------------
+SPLIT_TOUCH = '''(() => { const bar = document.querySelector('.split-bar'), r = bar.getBoundingClientRect(), x = r.left + 50, y = r.top + 3;
+  const ev = (t, yy) => bar.dispatchEvent(new PointerEvent(t, { bubbles: true, pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: x, clientY: yy }));
+  ev('pointerdown', y); ev('pointermove', y + 60); ev('pointermove', y + 80); ev('pointerup', y + 80); })()'''
+
 LONG = WRAP('\\section{One}\n' + ('Words of the first part run on. ' * 120) + '\n\n\\section{Two}\n' + ('Words of the second part run on. ' * 120) + '\n\nThe end.', '')
 
 
@@ -600,7 +604,7 @@ def view(page):
     check('Vertical: the pages one under the other again', pressed(page, 'side-to-side') is False and pressed(page, 'page-vertical') is True)
     # Split: a second view, scrolled on its own, kept current; a press in it takes the caret there
     page.evaluate("window.rikuy.runCommand('split-view')"); page.wait_for_timeout(500)
-    sv = page.evaluate("(() => { const v = document.getElementById('split-view'), d = document.getElementById('desk'); if (!v) return null; const a = v.getBoundingClientRect(), b = d.getBoundingClientRect(); return { below: a.top >= b.bottom - 1, words: v.textContent.includes('second part'), ids: v.querySelectorAll('[id]').length, edit: v.querySelectorAll('[contenteditable=true]').length }; })()")
+    sv = page.evaluate("(() => { const v = document.getElementById('split-view'), d = document.getElementById('desk'); if (!v) return null; const a = v.getBoundingClientRect(), b = d.getBoundingClientRect(); return { below: a.top >= b.bottom - 1, words: (() => { const A = [...document.querySelectorAll('#pages > .page')], B = [...v.querySelectorAll('.split-pages > .page')]; const k = B.findIndex((x) => !x.classList.contains('split-stub')); return A.length === B.length && k >= 0 && B[k].textContent === A[k].textContent && B[k].textContent.length > 20; })(), ids: v.querySelectorAll('[id]').length, edit: v.querySelectorAll('[contenteditable=true]').length }; })()")
     check('Split: a second view under the first, the same pages, no ids twice, not editable', sv and sv['below'] and sv['words'] and sv['ids'] == 0 and sv['edit'] == 0, sv)
     page.evaluate("document.getElementById('split-view').scrollTop = 2000"); page.wait_for_timeout(100)
     tops = page.evaluate("[document.getElementById('desk').scrollTop, document.getElementById('split-view').scrollTop]")
@@ -609,8 +613,51 @@ def view(page):
     check('an edit shows in the second view too', page.evaluate("document.getElementById('split-view').textContent.includes('The very end.')"))
     ok = page.evaluate("""(() => { const v = document.getElementById('split-view'); const sp = [...v.querySelectorAll('[data-g]')].find((x) => x.textContent.includes('second part')); if (!sp) return false; sp.dispatchEvent(new MouseEvent('click', { bubbles: true })); const c = window.rikuy.caretNow(); return !!c && window.rikuy.files.get('main.tex').slice(c.a - 40, c.a + 40).includes('second part'); })()""")
     check('a press in the second view puts the caret there in the first', ok)
+    # (the review of PR 84, M5) read only, and says so; a key typed there writes nothing
+    page.evaluate("document.getElementById('split-view').focus()")
+    s0 = src(page); page.keyboard.type('Q'); page.wait_for_timeout(200)
+    toast = page.evaluate("() => (document.querySelector('.toast') || {}).textContent || ''")
+    note = page.evaluate("(document.querySelector('#split-view .split-note') || {}).textContent || ''")
+    check('the second view says it is read only, and a key typed there writes nothing and says where to type', 'read only' in note and src(page) == s0 and 'read only' in toast, (note, toast))
+    # the bar: dragged with the mouse, then with a finger (pointer events of a touch), and the arrow keys
+    b = page.evaluate("(() => { const r = document.querySelector('.split-bar').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()")
+    h0 = page.evaluate("document.getElementById('desk').getBoundingClientRect().height")
+    page.mouse.move(b['x'], b['y']); page.mouse.down(); page.mouse.move(b['x'], b['y'] - 120, steps=4); page.mouse.up(); page.wait_for_timeout(200)
+    h1 = page.evaluate("document.getElementById('desk').getBoundingClientRect().height")
+    check('the split bar dragged up 120 px with the mouse: the first view 120 px shorter', abs((h0 - h1) - 120) < 8, (h0, h1))
+    page.evaluate(SPLIT_TOUCH)
+    page.wait_for_timeout(200)
+    h2 = page.evaluate("document.getElementById('desk').getBoundingClientRect().height")
+    check('and down 80 px with a finger', abs((h2 - h1) - 80) < 8, (h1, h2))
+    page.focus('.split-bar'); page.keyboard.press('Home'); page.wait_for_timeout(150)
+    v = page.evaluate("document.querySelector('.split-bar').getAttribute('aria-valuenow')")
+    check('Home on the focused bar: the first view at its least, 15 %, its value said', v == '15', v)
     page.evaluate("window.rikuy.runCommand('split-view')"); page.wait_for_timeout(300)
     check('Split again: one view, the page as it was', page.evaluate("!document.getElementById('split-view') && document.getElementById('desk').parentElement.id === 'main'"))
+
+
+# (the review of PR 84, M5: Split copied the whole document after every edit, 190 ms a keystroke on
+# a long one, and kept the old width after a resize)
+def split_long(page):
+    doc = WRAP('\n\n'.join('Paragraph number %d with some words to type in, enough of them to fill a line or two of the page.' % i for i in range(400)), '')
+    load_doc(page, doc); page.wait_for_timeout(800)
+    page.evaluate("window.rikuy.runCommand('split-view')"); page.wait_for_timeout(800)
+    page.evaluate("(() => { const v = document.getElementById('split-view'); v.scrollTop = v.scrollHeight / 2; })()"); page.wait_for_timeout(800)
+    n = page.evaluate("(() => { const v = document.getElementById('split-view'); return [v.querySelectorAll('.split-pages > .page').length, v.querySelectorAll('.split-pages > .page:not(.split-stub)').length, document.querySelectorAll('#pages > .page').length]; })()")
+    check('Split on a long document: every page there, only those near the second view\'s window copied (%d of %d)' % (n[1], n[0]), n[0] == n[2] and n[0] > 15 and 1 <= n[1] <= 6, n)
+    words = page.evaluate("(() => { const v = document.getElementById('split-view'), r = v.getBoundingClientRect(); return [...v.querySelectorAll('.split-pages > .page:not(.split-stub) span.t')].some((x) => { const b = x.getBoundingClientRect(); return b.top > r.top && b.bottom < r.bottom && /Paragraph number/.test(x.textContent); }); })()")
+    check('and its window shows the pages\' words', words)
+    page.evaluate("window.__lt = []; new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__lt.push(e.duration); }).observe({ type: 'longtask', buffered: false })")
+    click_text(page, 'Paragraph number 3 ', 5); page.wait_for_timeout(200)
+    page.keyboard.type('abcde', delay=60); page.wait_for_timeout(1200)
+    lt = page.evaluate("window.__lt")
+    n2 = page.evaluate("document.querySelectorAll('#split-view .split-pages > .page:not(.split-stub)').length")
+    check('typing five letters with Split on: still only the pages near its window copied, the longest task %d ms' % (max(lt) if lt else 0), n2 <= 6 and 'abcde' in src(page), (n2, lt))
+    page.set_viewport_size({'width': 900, 'height': 800}); page.wait_for_timeout(1200)
+    wd = page.evaluate("(() => { const a = document.querySelector('#pages > .page'), b = document.querySelector('#split-view .split-pages > .page'); return [Math.round(a.getBoundingClientRect().width), Math.round(b.getBoundingClientRect().width)]; })()")
+    check('the window resized: the second view\'s pages as wide as the first\'s again', abs(wd[0] - wd[1]) <= 2, wd)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(600)
+    page.evaluate("window.rikuy.runCommand('split-view')"); page.wait_for_timeout(300)
 
 
 # ---- References: Update Table, Update Index -----------------------------------------------------------------
@@ -842,7 +889,7 @@ def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (tables, tables_compiled, headfoot, headfoot_forms, headfoot_compiled, view, refs_update, equation, equation_linear, insert_text, rest_compiled):
+        for f in (tables, tables_compiled, headfoot, headfoot_forms, headfoot_compiled, view, split_long, refs_update, equation, equation_linear, insert_text, rest_compiled):
             if names and f.__name__ not in names:
                 continue
             try: f(page)

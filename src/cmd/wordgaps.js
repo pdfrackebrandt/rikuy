@@ -288,7 +288,11 @@ Object.assign(methods, {
     return true;
   },
   // Split: the second view, a copy of the pages kept current as they change, scrolled on its own;
-  // a press in it puts the caret there in the first view
+  // a press in it puts the caret there in the first view. It is read only, and says so (Word's
+  // second pane takes typing; here the first view is the one that edits). Only the pages near its
+  // window are copied, at idle time, and only those that changed since: the others stand in as
+  // empty pages of their size (the review of PR 84, M5: a whole document copied per edit cost
+  // 190 ms a keystroke on a long document).
   splitView(on) {
     const want = on == null ? !this.split : !!on;
     if (want === !!this.split) return true;
@@ -299,26 +303,77 @@ Object.assign(methods, {
       desk.parentNode.insertBefore(col, desk);
       const bar = mk('div', 'split-bar');
       bar.setAttribute('role', 'separator'); bar.setAttribute('aria-label', 'Split');
+      bar.setAttribute('aria-orientation', 'horizontal'); bar.setAttribute('aria-valuemin', '15'); bar.setAttribute('aria-valuemax', '85'); bar.setAttribute('aria-valuenow', '50');
+      bar.tabIndex = 0;
+      bar.title = 'Drag to size the two views (or the arrow keys)';
       const view = mk('section', 'split-view');
-      view.id = 'split-view'; view.setAttribute('aria-label', 'Second view of the document'); view.tabIndex = 0;
+      view.id = 'split-view'; view.setAttribute('aria-label', 'Second view of the document (read only)'); view.tabIndex = 0;
+      const note = mk('div', 'split-note', 'Second view, read only: a press here puts the caret there in the top view, where you type.');
       col.append(desk, bar, view);
-      const copy = () => {
-        // (the sheet, whose style holds the page's sizes, with the pages and nothing else)
-        const sh = this.root.parentNode.cloneNode(false);
-        const c = this.root.cloneNode(true);
-        sh.removeAttribute('id'); sh.append(c);
+      const S = { col, view, bar, box: null, pages: [], nodes: [], dirty: new Set(), whole: true, timer: 0 };
+      const pagesNow = () => [...this.root.children].filter((x) => x.classList && x.classList.contains('page'));
+      const strip = (c) => {
         c.removeAttribute('id'); c.removeAttribute('contenteditable'); c.removeAttribute('role'); c.removeAttribute('aria-multiline'); c.removeAttribute('aria-describedby'); c.removeAttribute('spellcheck');
-        c.setAttribute('aria-label', 'Document (second view)');
         for (const x of c.querySelectorAll('[id]')) x.removeAttribute('id');
         for (const x of c.querySelectorAll('[contenteditable]')) x.removeAttribute('contenteditable');
-        c.className = this.root.className + ' split-pages';
+        return c;
+      };
+      const stub = (pg) => { const d = pg.cloneNode(false); strip(d); d.classList.add('split-stub'); d.style.width = pg.offsetWidth + 'px'; d.style.height = pg.offsetHeight + 'px'; return d; };
+      const refresh = () => {
+        S.timer = 0;
+        if (!this.split) return;
         const top = view.scrollTop, left = view.scrollLeft;
-        view.replaceChildren(sh);
+        if (S.whole) {
+          // (the sheet, whose style holds the page's sizes, and the pages' box, empty)
+          const sh = this.root.parentNode.cloneNode(false);
+          sh.removeAttribute('id');
+          const c = strip(this.root.cloneNode(false));
+          c.setAttribute('aria-label', 'Document (second view, read only)');
+          c.className = this.root.className + ' split-pages';
+          sh.append(c);
+          view.replaceChildren(note, sh);
+          S.box = c; S.pages = []; S.nodes = []; S.whole = false;
+        }
+        const P = pagesNow();
+        if (P.length !== S.pages.length || P.some((x, k) => x !== S.pages[k])) {
+          const was = new Map(S.pages.map((x, k) => [x, S.nodes[k]]));
+          S.nodes = P.map((pg) => (!S.dirty.has(pg) && was.get(pg)) || stub(pg));
+          S.pages = P;
+          S.box.replaceChildren(...S.nodes);
+        }
+        // the pages the view's window meets, and one either side: copied where a stand in or changed
+        const vr = view.getBoundingClientRect();
+        let n = 0;
+        for (let k = 0; k < P.length; k++) {
+          const r = S.nodes[k].getBoundingClientRect();
+          if (r.bottom < vr.top - vr.height || r.top > vr.bottom + vr.height) continue;
+          if (!S.nodes[k].classList.contains('split-stub') && !S.dirty.has(P[k])) continue;
+          const c = strip(P[k].cloneNode(true));
+          S.nodes[k].replaceWith(c); S.nodes[k] = c; S.dirty.delete(P[k]);
+          // (a few pages a turn: more wait for the next idle time)
+          if (++n >= 4) { soon(); break; }
+        }
         view.scrollTop = top; view.scrollLeft = left;
       };
-      let t = 0;
-      const mo = new MutationObserver(() => { clearTimeout(t); t = setTimeout(copy, 250); });
+      const soon = () => {
+        if (S.timer) return;
+        S.timer = typeof requestIdleCallback === 'function' ? requestIdleCallback(refresh, { timeout: 400 }) : setTimeout(refresh, 150);
+      };
+      S.cancel = () => { if (S.timer) (typeof cancelIdleCallback === 'function' ? cancelIdleCallback : clearTimeout)(S.timer); S.timer = 0; };
+      const mo = new MutationObserver((recs) => {
+        for (const r of recs) {
+          const t = r.target.nodeType === 1 ? r.target : r.target.parentElement;
+          if (t === this.root || t === this.root.parentNode) { if (r.type === 'attributes') S.whole = true; continue; }
+          const pg = t && t.closest && t.closest('.page');
+          if (pg && pg.parentNode === this.root) S.dirty.add(pg);
+        }
+        soon();
+      });
       mo.observe(this.root, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class', 'style'] });
+      mo.observe(this.root.parentNode, { attributes: true, attributeFilter: ['class', 'style'] });
+      S.onResize = () => { S.whole = true; soon(); };
+      addEventListener('resize', S.onResize);
+      view.addEventListener('scroll', soon, { passive: true });
       view.addEventListener('click', (e) => {
         const sp = e.target.closest && e.target.closest('[data-g]'), info = sp && segOfSpan(sp);
         if (!info) return;
@@ -327,12 +382,45 @@ Object.assign(methods, {
         const r = getSelection().rangeCount ? getSelection().getRangeAt(0).getBoundingClientRect() : null;
         if (r) desk.scrollTop += r.top - desk.getBoundingClientRect().top - desk.clientHeight / 3;
       });
-      this.split = { col, view, mo };
-      copy();
+      // (a key typed while the second view has the focus: it says where typing goes)
+      view.addEventListener('keydown', (e) => {
+        if (e.ctrlKey || e.metaKey || e.altKey || !(e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Enter')) return;
+        e.preventDefault();
+        this.toast('The second view is read only: type in the top view (a press here puts the caret there).', 5000);
+      });
+      // the bar: dragged with a mouse or a finger, or the arrow keys, between 15 and 85 % of the height
+      const share = (f) => {
+        f = Math.max(0.15, Math.min(0.85, f));
+        desk.style.flex = '0 0 ' + (f * 100).toFixed(1) + '%';
+        bar.setAttribute('aria-valuenow', String(Math.round(f * 100)));
+        S.share = f;
+        soon();
+      };
+      bar.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        try { bar.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+        bar.classList.add('dragging');
+        const move = (ev) => { const r = col.getBoundingClientRect(); share((ev.clientY - r.top) / r.height); };
+        const up = () => { bar.classList.remove('dragging'); bar.removeEventListener('pointermove', move); bar.removeEventListener('pointerup', up); bar.removeEventListener('pointercancel', up); };
+        bar.addEventListener('pointermove', move); bar.addEventListener('pointerup', up); bar.addEventListener('pointercancel', up);
+      });
+      bar.addEventListener('keydown', (e) => {
+        const d = { ArrowUp: -0.05, ArrowDown: 0.05, PageUp: -0.15, PageDown: 0.15 }[e.key];
+        if (d == null && e.key !== 'Home' && e.key !== 'End') return;
+        e.preventDefault();
+        share(e.key === 'Home' ? 0.15 : e.key === 'End' ? 0.85 : (S.share ?? 0.5) + d);
+      });
+      S.mo = mo;
+      this.split = S;
+      refresh();
       view.scrollTop = desk.scrollTop;
+      refresh();
     } else {
       const S = this.split;
       S.mo.disconnect();
+      S.cancel();
+      removeEventListener('resize', S.onResize);
+      desk.style.flex = '';
       S.col.parentNode.insertBefore(desk, S.col);
       S.col.remove();
     }
