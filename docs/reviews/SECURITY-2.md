@@ -140,3 +140,19 @@ Verdict: **merge.** H1, M3 and L4 are fixed. Two Low items and one task for Pedr
   - Option: keep the cap only when the host sends no Content-Length, and refuse a Content-Length over the cap up front.
   - Option: drop the cap, now that only known hosts are reached.
   - Measure it with a clone of 50 MB or more on the live site.
+
+# Verification of cea68c9
+
+Verdict: **merge.** L6 is fixed, and nothing that H1 and M3 relied on has weakened (`/tmp/review-sec-out/proxy5.mjs`, `proxy3.mjs`, `gitproxy.test` 12 groups).
+- **Refused before any byte is passed on, with the inert headers** (`default-src 'none'; sandbox`, `attachment`, plain text):
+  - a length past the cap (`20000` against a cap of `10000`), and `9999999999999999`
+  - a length that is not a plain number: `1e3`, `-1`, `0x10`, `10, 10`
+- **Passed through untouched, with no transform on the stream:**
+  - no length at all
+  - `10`, and `' 10 '` with spaces around it
+- **Unchanged from 9725d73:**
+  - the answer's type is git's own or `application/octet-stream`: an upstream `text/html` with a length still comes back as `application/octet-stream` under the sandbox CSP
+  - a navigation gets 403, and so does a request without the mark
+  - every probe in `proxy3.mjs` gives the same result as before
+- **The timeout still applies.** A body that stalls after its headers ends at the timeout (301 ms on a 300 ms limit). A host that sends no headers in time gets 504.
+- **Info.** For an answer with no length, or one sent compressed, the length is only a hint and the real bound is the 300 s timeout. That is acceptable now that only the known git hosts are reached.
