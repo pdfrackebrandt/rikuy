@@ -19,7 +19,7 @@ picture's box in the PDF against the page's.
 RIKUY_DIST names another dist/."""
 import os, sys, re, base64, struct, zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import open_page, check, results, src, load_doc, click_text, roundtrip, pressed
+from browser import open_page, check, results, src, load_doc, click_text, roundtrip, pressed, PRINT_LAYOUT
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -592,6 +592,8 @@ def phones(p):
     for w, h in ((390, 844), (360, 740)):
         br = p.chromium.launch(args=[a for a in os.environ.get('CHROME_ARGS', '').split() if a])
         ctx = br.new_context(viewport={'width': w, 'height': h}, has_touch=True, is_mobile=True, device_scale_factor=2)
+        # (a phone's Print Layout, which this suite was written for: browser.py, PRINT_LAYOUT)
+        ctx.add_init_script(PRINT_LAYOUT)
         html = open(os.path.join(DIST, 'rikuy.html'), encoding='utf8').read()
         doc = B.SKELETON_HEAD + html + '</body></html>'
         def handler(route):
