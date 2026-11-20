@@ -39,7 +39,7 @@ register(
     icon: '<circle cx="10" cy="10" r="7"/><path d="M8 8a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.2v.5M10 14v.2"/>', when: always, run: (app) => app.openHelp() },
   { id: 'help-tour', name: 'Learn Rikuy', order: 20, title: 'A short document to try things in: typing on the page, Page, LaTeX and PDF, an equation, a live graph', synonyms: ['Tour', 'Tutorial', 'Getting started', 'Show me', 'Training'],
     tab: 'help', group: 'help', el: 'rh-tour', label: 'Learn Rikuy', icon: '<path d="M3 6.5 10 3l7 3.5-7 3.5z"/><path d="M6 8v4c2.5 2 5.5 2 8 0V8M17 6.5V11"/>', when: always, run: (app) => app.openTour() },
-  { id: 'help-graphs', name: 'Interactive graphs', order: 30, title: 'Live figures: graphs with sliders on the page, a picture in the PDF; how to make one', synonyms: ['Live figure', 'Widget', 'Interactive figure', 'Slider', 'rikuywidget', 'Chart'],
+  { id: 'help-graphs', name: 'Interactive graphs', order: 30, title: 'Live figures: graphs with sliders on the page, the same graph in the PDF; Graph this, the templates, the web page', synonyms: ['Live figure', 'Widget', 'Interactive figure', 'Slider', 'rikuywidget', 'Chart'],
     tab: 'help', group: 'help', el: 'rh-graphs', label: 'Interactive graphs', icon: '<path d="M3 16.5h14M4 13c2-6 4-8 6-3s4 3 6-5"/><circle cx="10" cy="10" r="1.3"/>', when: always, run: (app) => app.openGraphsHelp() },
   { id: 'ask-grok', name: 'Ask Grok', order: 35, tab: 'help', group: 'help', el: 'rh-grok', label: 'Ask Grok',
     title: 'Open grok.com with the words you selected. Rikuy is not part of xAI.',
@@ -93,7 +93,12 @@ export const methods = {
   openGraphsHelp() {
     const p = guide(this, 'Interactive graphs', 'rh-graphs', 560, 'pop-help pop-guide');
     p.append(
-      para('A live figure is a graph you can move on the typeset page: drag a slider and it redraws. In the PDF, and in any TeX anywhere (Overleaf, a desktop TeX Live), it is a picture. So the paper prints as every journal wants, and your readers in Rikuy can play with it.'),
+      para('A live figure is a graph you can move on the typeset page: drag a slider and it redraws. In the PDF, and in any TeX anywhere (Overleaf, arXiv, a desktop TeX Live), it is the same graph at the sliders\' starting values, drawn as lines with its labels in the document\'s own fonts. So the paper prints as every journal wants, and your readers can play with it.'),
+      mk('h3', null, 'Make one'),
+      para('Right click any equation and choose Graph this: y = f(x), f(x) alone, x = g(t) with y = h(t), F(x, y) = c, or a pair of time derivatives becomes a live graph below it, every other letter a slider. Or Insert, Interactive graph: a function, data with a fit, a curve, an implicit curve (an indifference curve, an isoquant), a phase portrait (its field, its nullclines, a path from a point you drag), a distribution; or a template: supply and demand, IS–LM, Solow, Ramsey, a budget line and an indifference curve, densities, the central limit theorem. Where curves cross is marked; areas between them shade (a surplus, an integral); while a slider moves, the curve at its start stays faint.'),
+      para('Everything works from the keyboard: Tab to a slider, then the arrows, Page Up and Down, Home and End; Tab to a phase portrait and the arrows move where its path starts. In the dialog, Ctrl+Z and Ctrl+Y undo and redo its own changes.'),
+      mk('h3', null, 'On your website'),
+      para('File, Export as, Web page with live graphs: one .html file that reads like the paper, its math set, its graphs live, with a link that opens the source in Rikuy. It runs no script from the document, only Rikuy\'s drawing of its graphs.'),
       mk('h3', null, 'How it is written'),
       para('One line where the figure goes, from the package `rikuy.sty` (keep it beside the main file; Learn Rikuy has a copy):'),
       Object.assign(mk('pre', 'code-ex'), { textContent: '\\usepackage{rikuy}\n...\n\\rikuywidget[width=\\textwidth]{widgets/my.html}{figures/my.png}' }),
@@ -103,7 +108,7 @@ export const methods = {
       Object.assign(mk('pre', 'code-ex'), { textContent: 'parent.postMessage({ rikuy: "height", px: 320 }, "*")' }),
       para(command('insert-interactive-graph') ? 'Insert, Interactive graph makes one from a template, its picture included. By hand: add the .html and the picture with Open (or drop them on the page). A figure in a document from someone else waits for your click before it runs.' : 'Add the .html and the picture with Open (or drop them on the page), then write the line above where the figure goes. A figure in a document from someone else waits for your click before it runs.'),
       mk('h3', null, 'The picture'),
-      para('Any picture TeX takes: PNG, JPEG or PDF. Make it from the figure at the values it opens with (a screenshot, or the script that draws it), so the PDF shows what the page first shows. Press PDF in the status bar to see it.'),
+      para('For a graph made by Rikuy, a .pgf file Rikuy draws again whenever the graph changes. For a figure of your own, any picture TeX takes: PNG, JPEG or PDF, made from the figure at the values it opens with, so the PDF shows what the page first shows. Press PDF in the status bar to see it.'),
       mk('h3', null, 'Downloads'),
       para('Download LaTeX keeps the figure live. A PDF or a Word file carries its picture.')
     );
