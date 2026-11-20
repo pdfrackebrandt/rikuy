@@ -6,27 +6,30 @@ from the repository alone. This file is how. Read AGENTS.md first, then this, th
 requests. When this file and a pull request's own Handoff section disagree, the pull request is
 newer.
 
-## Start here (2026-11-20, 15:30 UTC: Claude)
+## Start here (2026-11-20, 19:00 UTC: Claude)
 
 Pedro's order of work, given 2026-11-20: **UI and UX first** (Word look-alike, clean room, as
-WordCraft; phones; plain words), maximum speed and quality; **then** move everything possible to
-C or C++ compiled to WebAssembly (`docs/handoff/CPP-PLAN.md`, batches B1 onward). Reviews of the
-work below are in `docs/reviews/` (RIBBON-TABS, UX-2, SHORTCUTS, SECURITY-2, CPP-B0).
+WordCraft; phones; plain words; consistency: like things the same size, for novices and power
+users), maximum speed and quality; **then** C or C++ for WebAssembly (`docs/handoff/CPP-PLAN.md`,
+B1 onward). Merged today: 78 (ribbon tabs as Word's), 80 (shortcuts), 81 (security S2 to S5 and
+the git proxy), 82 (B0), 85 (arXiv rerun). Reviews in `docs/reviews/`.
 
 | work | pull request, branch | state | next step |
 |---|---|---|---|
-| Ribbon tabs laid out like Word's | 78, `ribbon-tabs-word` | reviewed (RIBBON-TABS.md: merge); after merging main, CI's tabs.py fold rule fails on Home at 1150 to 1160 px (main's new commands); an agent is fixing it | fix, green, merge |
-| The downloads as a Word group (Pedro: PDF, Word, LaTeX stacked, prettier) | `ribbon-downloads`, no PR yet (based on 78) | built at 943b91c, being finished | PR once 78 merges; a short review |
-| UX outside the ribbon | 79, `ux-pass-2` | review UX-2.md: fix first; an agent is fixing H1, H2, M1 to M6, the lows, File backstage, the phone's reflowed view | finish, merge main, verify against UX-2.md, merge |
-| Security S2 to S5 and the git proxy | 81, `sec-followups` | SECURITY-2.md's last verification: merge | merge when green; then L6 (the proxy's byte cap costs Worker CPU on big clones) |
-| Word's gaps: objects (contextual tabs, picture corrections in C, Selection Pane, Arrange) | 83, `word-gaps-objects` | done; hostile review running | review, fixes, merge main after 78, renumber its PLAN task 68 (84 also has a 68), merge |
-| Word's gaps: document (Table Properties, Formula, Header & Footer tab, Split, UnicodeMath) | 84, `word-gaps-doc` | done; hostile review running | the same |
-| R6, the arXiv corpus | 85, `arxiv-resume` | run 3 (44728716263) stopped on arXiv's 429; this PR waits it out and reruns run 2's sample | merge; dispatch arXiv corpus with `sources_from_run=44077385415`; classify; rates into PLAN.md's table, README.md, tex/README.md; add `sourcesanspro`, `foekfont`, cbfonts' `grmn` to the tree; 1502.01027 printing "begindocument/b..." |
-| C and C++, B0 | 82, merged | B0 done | B1 to B3 after the UI work |
+| UX outside the ribbon | 79, `ux-pass-2` | review UX-2: fixed; N1 to N6 and a consistency pass done (0a6ef7b); a verifier is on 0a6ef7b | verdict, merge |
+| Word's gaps: objects | 83, `word-gaps-objects` | fixes verified except N1 to N9 (floats in floats, multicols, boxes; see the review's last section); author fixing | verification, merge |
+| Word's gaps: document | 84, `word-gaps-doc` | all review findings fixed and main merged (3d3bfc4); References' Update buttons 44 px on phones being fixed; verifier on 3d3bfc4 | verdict, merge |
+| Ribbon polish | 86, `ribbon-downloads` | the stacked Download group, one label weight and size, `test/consistency.py`, `docs/handoff/UI-PRINCIPLES.md`; in progress: light blue title bar, Frontier in References › Research (coming soon), 44 px touch for the tab picker and Download menu | finish, review against UI-PRINCIPLES.md, merge |
+| Power users | 87, `power-keys` | from `docs/handoff/POWER-USER.md`: footnote exit, Overleaf typing, pickers, KeyTips, fuzzy search, quick open, F4; latency next | finish, power user review, merge |
+| Interactive graphs as the edge | 88, `graphs-edge` | opening document with a live graph, Graph this, economics kinds, vector PDF, web page export (`docs/handoff/GRAPHS.md`); CI's editor job failing on tests that read the old sample | fix, finish, review, merge |
+| R6, the arXiv corpus | run 44766248361 | run 2's 998 papers again with the .bbl fix | classify; rates into PLAN.md task 16, README.md, tex/README.md; add `sourcesanspro`, `foekfont`, cbfonts' `grmn`; 1502.01027 |
 
-Pedro's to do (needs his accounts): a WAF rate rule on `/git/` (docs/HOSTING.md step 9) before
-or at the deploy of 81; optionally `RIKUY_GIT_HOSTS`. Open in Overleaf cannot post (the page's
-`form-action 'self'`); Safari 15 cannot compile.
+Pedro's to do (his accounts): the WAF rate rule on `/git/` (docs/HOSTING.md step 9), now that the
+git proxy is live. Optional `RIKUY_GIT_HOSTS`.
+
+PLAN.md's task numbers: main has 66 (shortcuts), 66 (C/C++), 66a (ribbon), 67 (security, and
+UX's 67 on its branch); 68 is word-gaps-doc's, 69 word-gaps-objects', 70 graphs-edge's. Renumber
+once these merge.
 
 If a branch above is not on GitHub yet, its agent's work is in `wip/<branch>` (dev/wip.sh) or
 not started.
