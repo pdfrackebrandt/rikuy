@@ -1,0 +1,126 @@
+/* Rikuy's design tokens: every colour, space, radius, type size, shadow and motion the interface
+   uses, as one set of custom properties, so a theme, a brand or a future look changes this file
+   alone. The names follow Fluent 2's kinds (clean room: the numbers are the published scales, the
+   names and values here Rikuy's own), with docs/ui-principles' rules beside each group (C5 type,
+   C8 spacing, C9 radii, M1 motion). build.mjs puts this file first, before src/app.css and
+   src/motion.css.
+
+   Who reads them today: src/motion.css and src/motion.js (all of motion, the caret, the agent's
+   dialog) read the --rk-* names. src/app.css still has its own short names (--desk, --blue, ...)
+   and literal values; the --rk-color-* values below are those same colours, and
+   docs/handoff/FUTURE.md lists where app.css switches to these names once the branches changing
+   it have merged. Until then a colour changed here changes only what motion draws. */
+
+:root {
+  /* ---- colour: neutral ground and chrome (light) */
+  --rk-color-desk: #DCE1E7;        /* the grey the pages lie on (app.css --desk) */
+  --rk-color-desk-2: #CDD4DC;      /* the PDF pane's ground (--desk-2) */
+  --rk-color-chrome: #F5F7F9;      /* bars, status line, panes' heads (--chrome) */
+  --rk-color-panel: #FFFFFF;       /* menus, dialogs, panes (--panel) */
+  --rk-color-ribbon: #FFFFFF;      /* the ribbon (--ribbon) */
+  --rk-color-tabrow: #F2F4F7;      /* the row of the ribbon's tabs (--tabrow) */
+  --rk-color-stroke: #C4CCD5;      /* every 1 px line (--line) */
+  --rk-color-fg: #18212A;          /* the interface's text (--ink-ui) */
+  --rk-color-fg-2: #5A6774;        /* quieter text, 5.9:1 on the panel (--mute) */
+  /* ---- colour: brand (Rikuy's non-repro blue) */
+  --rk-color-brand: #2B74B0;       /* accents, focus rings (--blue) */
+  --rk-color-brand-wash: #D7E8F5;  /* hover and selected backgrounds (--blue-wash) */
+  --rk-color-brand-fg: #1D5C91;    /* blue text (--blue-ink) */
+  --rk-color-title: #1A5C99;       /* the title band and File (--title) */
+  --rk-color-context: #7A3FA8;     /* contextual tabs (--ctx) */
+  /* ---- colour: status */
+  --rk-color-danger: #B3412C;      /* warnings (--warn) */
+  --rk-color-ins: #17713F;         /* inserted text in changes (--ins-ui) */
+  --rk-color-del: #B3312A;         /* deleted text (--del-ui) */
+  /* ---- colour: the page */
+  --rk-color-paper: #FFFFFF;       /* (--paper) */
+  --rk-color-ink: #141414;         /* the document's text (--ink) */
+  --rk-color-caret: #1E6BAA;       /* the caret on the page (#pages caret-color) */
+  --rk-color-caret-tex: #2B74B0;   /* the caret in a LaTeX source paragraph (.it.tex) */
+  --rk-color-caret-dark-page: #8CC4F2; /* on View, Dark page */
+  /* the modal dialog's backdrop (Fluent: modal dialogs dim the page, non-modal ones do not) */
+  --rk-color-backdrop: rgba(16, 24, 32, .32);
+
+  /* ---- spacing: the 4 px scale (rule C8); nothing else in the chrome's padding, margin, gap */
+  --rk-space-0: 0;
+  --rk-space-2: 2px;
+  --rk-space-4: 4px;
+  --rk-space-6: 6px;
+  --rk-space-8: 8px;
+  --rk-space-10: 10px;
+  --rk-space-12: 12px;
+  --rk-space-16: 16px;
+  --rk-space-20: 20px;
+  --rk-space-24: 24px;
+  --rk-space-28: 28px;
+  --rk-space-32: 32px;
+  --rk-space-36: 36px;
+  --rk-space-40: 40px;
+  --rk-space-48: 48px;
+
+  /* ---- radii (rule C9): one per kind */
+  --rk-radius-none: 0;             /* where parts touch */
+  --rk-radius-control: 4px;        /* buttons, fields, tooltips */
+  --rk-radius-surface: 8px;        /* menus, dialogs, flyouts, panes */
+  --rk-radius-circle: 50%;
+
+  /* ---- type (rule C5): one size, weight and line height per kind of text */
+  --rk-font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --rk-font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --rk-type-caption: 400 12px/16px var(--rk-font-ui);   /* ribbon labels, group names, status */
+  --rk-type-body: 400 14px/20px var(--rk-font-ui);      /* tabs, dialogs, menus */
+  --rk-type-subtitle: 600 20px/26px var(--rk-font-ui);  /* pane titles */
+  --rk-weight-regular: 400;
+  --rk-weight-medium: 500;
+  --rk-weight-semibold: 600;
+
+  /* ---- elevation: shadows by how far a surface floats (Fluent's 2, 8, 16, 28, 64) */
+  --rk-shadow-2: 0 1px 2px rgba(20, 32, 44, .18);
+  --rk-shadow-8: 0 1px 2px rgba(20, 32, 44, .18), 0 8px 28px rgba(20, 32, 44, .12);  /* pages (--shadow) */
+  --rk-shadow-16: 0 10px 32px rgba(10, 20, 30, .18);   /* panes */
+  --rk-shadow-28: 0 12px 40px rgba(10, 20, 30, .22);   /* menus, dialogs */
+  --rk-shadow-64: 0 16px 48px rgba(10, 20, 30, .28);   /* the modal dialog */
+
+  /* ---- motion (rules M1 to M4). Durations in Fluent 2's steps; frequent motion the shortest.
+     Entering surfaces decelerate (they arrive fast and settle), leaving ones accelerate (they go
+     quickly), things that move from one place to another ease both ways. */
+  --rk-duration-faster: 100ms;     /* leaving; the caret's glide; save state */
+  --rk-duration-fast: 150ms;       /* menus, flyouts, galleries, the ribbon's tabs, cross fades */
+  --rk-duration-normal: 200ms;     /* dialogs, panes, toasts, contextual tabs, view switches */
+  --rk-duration-slow: 300ms;       /* File's backstage, the largest surface */
+  --rk-curve-decelerate: cubic-bezier(0, 0, 0, 1);       /* entering (Fluent's decelerate mid) */
+  --rk-curve-accelerate: cubic-bezier(1, 0, 1, 1);       /* leaving (accelerate mid) */
+  --rk-curve-standard: cubic-bezier(0.33, 0, 0.67, 1);   /* moving (easy ease) */
+  --rk-slide: 8px;                 /* how far a tab's content or a toast travels */
+  --rk-slide-pane: 16px;           /* a pane from its edge */
+  --rk-slide-backstage: 24px;      /* File's backstage */
+  --rk-scale-menu: 0.98;           /* a menu grows from its anchor from this */
+  --rk-scale-dialog: 0.96;         /* a dialog from this */
+  --rk-caret-blink: 1060ms;        /* one on and off of the caret: the platform's 530 ms each */
+}
+
+/* dark: the same names, the interface's dark values (app.css's dark set) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --rk-color-desk: #151A20; --rk-color-desk-2: #0F1318; --rk-color-chrome: #1B222A; --rk-color-panel: #1F2730;
+    --rk-color-ribbon: #1F2730; --rk-color-tabrow: #1B222A; --rk-color-stroke: #2E3843;
+    --rk-color-fg: #E2E7ED; --rk-color-fg-2: #8D9AA8;
+    --rk-color-brand: #6AAEE3; --rk-color-brand-wash: #1B3650; --rk-color-brand-fg: #9CCBF0; --rk-color-title: #143E66; --rk-color-context: #C59BE8;
+    --rk-color-danger: #E8806B; --rk-color-ins: #6FD39C; --rk-color-del: #F28B7D;
+    --rk-color-backdrop: rgba(0, 0, 0, .5);
+    --rk-shadow-8: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .45);
+    --rk-shadow-28: 0 12px 40px rgba(0, 0, 0, .5);
+    --rk-shadow-64: 0 16px 48px rgba(0, 0, 0, .6);
+  }
+}
+:root[data-theme="dark"] {
+  --rk-color-desk: #151A20; --rk-color-desk-2: #0F1318; --rk-color-chrome: #1B222A; --rk-color-panel: #1F2730;
+  --rk-color-ribbon: #1F2730; --rk-color-tabrow: #1B222A; --rk-color-stroke: #2E3843;
+  --rk-color-fg: #E2E7ED; --rk-color-fg-2: #8D9AA8;
+  --rk-color-brand: #6AAEE3; --rk-color-brand-wash: #1B3650; --rk-color-brand-fg: #9CCBF0; --rk-color-title: #143E66; --rk-color-context: #C59BE8;
+  --rk-color-danger: #E8806B; --rk-color-ins: #6FD39C; --rk-color-del: #F28B7D;
+  --rk-color-backdrop: rgba(0, 0, 0, .5);
+  --rk-shadow-8: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .45);
+  --rk-shadow-28: 0 12px 40px rgba(0, 0, 0, .5);
+  --rk-shadow-64: 0 16px 48px rgba(0, 0, 0, .6);
+}

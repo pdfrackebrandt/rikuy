@@ -62,8 +62,16 @@ def check(name, cond, detail=''):
     return bool(cond)
 
 
-def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, touch=False, connect=()):
+# The setting File › Options › Animations keeps (src/motion.js): the tests of features run with it
+# off, so what they measure (a menu's place, a target's size, a screenshot) is never caught half
+# way through a 150 ms entrance; test/motion.py runs with it on (open_page(motion=True)), and
+# RIKUY_MOTION=1 runs any suite with motion on.
+MOTION_OFF = "try { if (!localStorage.getItem('rikuy.motion.v1')) localStorage.setItem('rikuy.motion.v1', JSON.stringify({ anim: false, caret: false })); } catch (e) {}"
+
+
+def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, touch=False, connect=(), motion=None):
     # touch: a phone's page (a touch screen, a mobile viewport: pointer coarse, no hover; tap())
+    # motion: animations on (True) or off (False); None: off unless RIKUY_MOTION=1
     browser = p.chromium.launch(args=[a for a in os.environ.get('CHROME_ARGS', '').split() if a])
     ctx = browser.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=1, has_touch=touch, is_mobile=touch)
     page = ctx.new_page()
@@ -94,6 +102,8 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, tou
         return route.abort()
     # on the context, so a second tab (page.context.new_page()) loads the same page and storage
     ctx.route('**/*', handler)
+    if not (motion if motion is not None else os.environ.get('RIKUY_MOTION') == '1'):
+        page.add_init_script(MOTION_OFF)
     if init:
         page.add_init_script(init)
     page.goto('https://rikuy.test/')
