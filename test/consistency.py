@@ -237,7 +237,8 @@ MEASURE = r"""(arg) => {
       const ph = getComputedStyle(q, '::placeholder');
       // (a phone's search box is its magnifier until pressed: its words drawn in no colour)
       if (parse(ph.color)[3] > 0) out.texts.push({ n: 'search placeholder', kind: 'field-text', size: s.fontSize, weight: s.fontWeight, lh: s.lineHeight, cr: ratio(seen(ph.color, q, inside), inside) });
-      out.search = { line: ratio(parse(s.borderTopColor), outside), lineIn: ratio(parse(s.borderTopColor), inside), width: parseFloat(s.borderTopWidth),
+      // (closed to a phone's 44 px icon it is one of the bar's icons: no field's line to see)
+      if (q.getBoundingClientRect().width > 60) out.search = { line: ratio(parse(s.borderTopColor), outside), lineIn: ratio(parse(s.borderTopColor), inside), width: parseFloat(s.borderTopWidth),
         icon: ratio(parse(getComputedStyle(document.querySelector('.srch > svg')).stroke), inside) };
     }
   }

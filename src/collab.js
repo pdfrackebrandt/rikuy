@@ -444,7 +444,8 @@ export const collab = {
     const ta = mk('textarea', 'cm-body'); ta.rows = 3; ta.placeholder = o.thread ? 'Reply' : 'Your comment';
     const send = () => {
       const who = name.value.trim() || this.myName();
-      if (!who) { name.focus(); name.placeholder = 'Your name first'; return; }
+      // (said, not only a placeholder: a press of Comment that does nothing read as broken)
+      if (!who) { name.setAttribute('aria-invalid', 'true'); name.placeholder = 'Your name first'; hint.hidden = false; name.focus(); return; }
       this.prefs.who = who; this.savePrefs();
       const f = o.thread ? o.thread.f : o.f;
       const at = o.thread ? o.thread.e - 1 : o.p;
@@ -463,10 +464,18 @@ export const collab = {
     const row = mk('div', 'pop-row');
     if (o.thread) row.append(btn('Resolve', () => { this.closePop(true); this.resolveComment(o.thread); }));
     row.append(mk('span', 'grow'), btn(o.thread ? 'Reply' : 'Comment', send, 'btn sm'));
-    if (!this.myName()) p.append(name);
+    // the first comment from this browser asks for a name (a browser has no account name, as
+    // Word has): the name box first, Enter there goes on to the comment
+    const hint = mk('div', 'cm-hint', 'Type your name: it is shown with your comment.');
+    hint.hidden = true;
+    hint.setAttribute('role', 'status');
+    name.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ta.focus(); } });
+    name.addEventListener('input', () => { if (name.value.trim()) { name.removeAttribute('aria-invalid'); hint.hidden = true; } });
+    const ask = !this.myName();
+    if (ask) p.append(name, hint);
     p.append(ta, row);
     this.positionPop();
-    ta.focus();
+    (ask ? name : ta).focus();
   },
 
   resolveComment(t) {
