@@ -62,7 +62,7 @@ hosted = pol(H('/')['content-security-policy'])
 ok('the hosted policy: scripts are the site\'s files, the page\'s one inline script by its hash, WebAssembly and blob: (Pyodide), nothing else',
    hosted == {'default-src': ["'self'"], 'script-src': ["'self'", "'sha256-" + HASH + "'", "'wasm-unsafe-eval'", 'blob:'], 'style-src': ["'self'", "'unsafe-inline'"],
               'img-src': ["'self'", 'data:', 'blob:'], 'font-src': ["'self'", 'data:', 'blob:'], 'media-src': ["'self'", 'data:', 'blob:'], 'connect-src': ["'self'", 'blob:'],
-              'worker-src': ["'self'", 'blob:'], 'manifest-src': ["'self'"], 'form-action': ["'self'"], 'frame-src': ["'self'", 'blob:', 'data:'],
+              'worker-src': ["'self'", 'blob:'], 'manifest-src': ["'self'"], 'form-action': ["'self'"], 'frame-src': ["'self'"],
               'frame-ancestors': ["'none'"], 'object-src': ["'none'"], 'base-uri': ["'self'"]}, hosted)
 ok('no inline script but the hashed one, no eval: neither \'unsafe-inline\' nor \'unsafe-eval\' nor \'unsafe-hashes\'', not ({"'unsafe-inline'", "'unsafe-eval'", "'unsafe-hashes'"} & set(hosted['script-src'])), hosted['script-src'])
 ok('it allows no outside source at all', not any(v.startswith(('http', '*')) for vs in hosted.values() for v in vs), hosted)

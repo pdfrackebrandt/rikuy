@@ -229,7 +229,9 @@ export function findComments(text, f) {
   return out;
 }
 
-const clean = (t) => String(t || '').replace(/\s+/g, ' ').trim();
+// (control characters and the marks that turn text's direction go: a name or a text from someone
+// else could otherwise hide or reorder what the panes show, e.g. U+202E reversing a name)
+const clean = (t) => String(t || '').replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim();
 const quoteOf = (t) => { t = clean(t).replace(/"/g, "'"); return t.length > 60 ? t.slice(0, 57).trimEnd() + '…' : t; };
 const whoOf = (t) => clean(t).replace(/[()]/g, '') || 'Anonymous';
 
@@ -322,20 +324,21 @@ export function mergeProjects(base, mine, theirs) {
 
 // a tracked change that only adds or removes comment lines: the Review tab shows those as
 // comments, not as changes to the text
-const COMMENT_LINES = /(^|\n)[ \t]*%[ \t]*(?:comment|reply)(?:[ \t]*\([^)\n\r]*\)|32[ \t])[^\n\r]*/gi;
-const bare = (t) => String(t).replace(COMMENT_LINES, '$1').replace(/\s+/g, ' ').trim();
+// (a line is a comment only as parseCommentLine reads it: one that looks like one and is not,
+// "% comment32 AB \\input{x}", is text, and a change that adds it is a change to the text)
+const withoutComments = (t) => String(t).split('\n').filter((l) => !isComment(l)).join('\n');
+const bare = (t) => withoutComments(t).replace(/\s+/g, ' ').trim();
 const HAS = /%[ \t]*(?:comment|reply)(?:[ \t]*\(|32[ \t])/i;
 export const commentOnly = (c) => (HAS.test(c.a) || HAS.test(c.b)) && bare(c.a) === bare(c.b);
 
 // whether after differs from before only in its comment lines (added, removed, changed): what a
 // comments only link lets through (src/collab.js); bounded, one pass over each text
-const WHOLE = /^[ \t]*%[ \t]*(?:comment|reply)(?:[ \t]*\([^)\n\r]*\)|32[ \t])[^\n\r]*(?:\r?\n|$)/gim;
 const isComment = (line) => !!parseCommentLine(line.replace(/\r?\n$/, ''));
 // a comment line as what it says (its base32 form), so the same comment in either form is one line
 const said = (line) => { const c = parseCommentLine(line.replace(/\r?\n$/, '')); return c ? safeCommentLine(c) : null; };
 export function onlyComments(before, after) {
   // (a line end added at the very end, as a comment under the last line brings, is no change)
-  const strip = (t) => String(t).replace(WHOLE, '').replace(/\n$/, '');
+  const strip = (t) => withoutComments(t).replace(/\n$/, '');
   return strip(before) === strip(after);
 }
 
