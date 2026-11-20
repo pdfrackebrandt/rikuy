@@ -7,7 +7,12 @@ pushurl or http.corsProxy) never receives a token. A remote is requested as the 
 it, so dot segments cannot take a token through the CORS proxy to another host; the old token is
 filled in only for the host its prefix names, otherwise picked with a button that names the host;
 a push goes to the branch of the same name, not one an opened .git/config names. The test's git
-server lets only the test page's origin read its answers."""
+server lets only the test page's origin read its answers. The page runs under the hosted policy,
+whose connect-src is 'self': the test's servers on 127.0.0.1 are added to it, standing in for
+the hosts the site's own proxy (/git) reaches; then, under the policy exactly as it ships, the
+Git panel's proxy is /git, a clone through it (src/gitproxy.js behind a local server, github.com
+standing for the test's git server) works, one straight to a host is refused with a message that
+names the proxy, and the proxy refuses an IP address."""
 import os, sys, subprocess, tempfile, shutil, time, json, zipfile, io, traceback, re, http.server, threading, urllib.request, urllib.error
 sys.path.insert(0, os.path.dirname(__file__))
 # the test page (https://rikuy.test) talks to a git server on 127.0.0.1, which Chrome's local
@@ -27,6 +32,9 @@ URL = 'http://127.0.0.1:%d/paper.git' % PORT
 git_server.start(ROOT, 8812, auth='x-access-token:DUMMY-OLD-TOKEN')
 PRIVATE = 'http://127.0.0.1:8812/paper.git'
 PREFS = "JSON.parse(localStorage.getItem('galley.prefs.v1'))"
+# the hosted policy's connect-src is 'self': the page reaches git hosts through the site's own
+# proxy (/git); the test's servers, reached directly, stand in for that path to a host
+STANDINS = ['http://127.0.0.1:8811', 'http://127.0.0.1:8812', 'http://127.0.0.1:8813', 'http://127.0.0.1:8814']
 GITSTAT = "document.getElementById('nt-gcount').textContent"
 
 # a stranger's git server: every request is logged with its Authorization header and refused
@@ -129,7 +137,7 @@ def commits(page):
 
 try:
     with sync_playwright() as p:
-        browser, page, errors = open_page(p, width=1440, height=900)
+        browser, page, errors = open_page(p, width=1440, height=900, connect=STANDINS)
         # a user of an earlier version: one token for every remote
         page.evaluate("window.rikuy.prefs.gitToken = 'DUMMY-OLD-TOKEN'")
         base = src(page)
@@ -242,7 +250,7 @@ try:
             for n in names: z2.writestr('paper/' + n, zf.read(n))
         browser.close()
 
-        browser, page, errors2 = open_page(p, width=1440, height=900)
+        browser, page, errors2 = open_page(p, width=1440, height=900, connect=STANDINS)
         page.evaluate("indexedDB.deleteDatabase('galley-git')")
         page.set_input_files('#fileinput', zpath)
         page.wait_for_timeout(3000)
@@ -366,6 +374,49 @@ try:
               (page.input_value(TOKEN), page.locator('.git-unknown, .git-foreign').count()))
         errs = [e for e in errors + errors2 if 'favicon' not in e]
         check('no page errors', not errs, errs[:5])
+        browser.close()
+
+        # the policy exactly as it ships (connect-src 'self'): git goes through the site's own proxy,
+        # /git (functions/git/[[path]].js), here src/gitproxy.js itself behind a local server with
+        # github.com standing for the test's git server; straight to a host it is refused
+        stand = subprocess.Popen(['node', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gitproxy_server.mjs'), '8815', 'https://rikuy.test', 'github.com=http://127.0.0.1:%d' % PORT])
+        import atexit; atexit.register(stand.kill)  # (a run that stops part way leaves no server on the port)
+        time.sleep(0.8)
+        browser, page, errors3 = open_page(p, width=1440, height=900)
+        via = []
+        def own(route):
+            r = route.request
+            via.append(r.method + ' ' + r.url.split('?')[0])
+            route.fulfill(response=route.fetch(url='http://127.0.0.1:8815' + r.url[len('https://rikuy.test'):]))
+        page.context.route('https://rikuy.test/git/**', own)
+        page.click('#b-nav'); page.wait_for_timeout(200)
+        page.click('#nt-git'); page.wait_for_timeout(1200)
+        page.click('#nav-body button:has-text("Start a repository")'); page.wait_for_timeout(1500)
+        open_remote(page)
+        check('the Git panel\'s CORS proxy is the site\'s own, /git', page.input_value('.git-remote input[aria-label="CORS proxy"]') == 'https://rikuy.test/git', page.input_value('.git-remote input[aria-label="CORS proxy"]'))
+        got = page.evaluate('''async (url) => { const g = window.rikuy, G = await g.loadGit(), out = {};
+          try { out.files = [...(await G.clone(G.dirFor('viaproxy'), url, { corsProxy: new URL('git', location.href).href, remote: url })).keys()]; } catch (e) { out.proxied = String(e); }
+          const seen = []; const on = (e) => seen.push(e.effectiveDirective + ' ' + e.blockedURI); document.addEventListener('securitypolicyviolation', on);
+          try { await G.clone(G.dirFor('direct'), url, { corsProxy: '', remote: url }); out.direct = 'cloned'; } catch (e) { out.direct = g.gitError(e); }
+          try { out.refused = (await fetch('git/127.0.0.1:%d/paper.git/info/refs?service=git-upload-pack')).status; } catch (e) { out.refused = String(e); }
+          await new Promise((r) => setTimeout(r, 300)); document.removeEventListener('securitypolicyviolation', on); out.seen = seen; return out; }''' % PORT, 'https://github.com/paper.git')
+        check('under the policy as it ships, a clone through the site\'s own proxy reaches the host', 'main.tex' in (got.get('files') or []) and any('/git/github.com/paper.git/' in v for v in via), (got, via[:3]))
+        check('and one straight to a host is refused by the policy, and the message names the proxy that works',
+              'https://rikuy.test/git' in got.get('direct', '') and 'CORS proxy' in got.get('direct', '') and any(s.startswith('connect-src https://github.com') for s in got.get('seen', [])), got)
+        check('the proxy takes git to public hosts by name only', got.get('refused') == 403, got.get('refused'))
+        # (review H1) a link to /git, clicked: a navigation, which the proxy refuses (inert text)
+        nav = page.context.new_page()
+        answers = []
+        nav.on('response', lambda r: answers.append(r))
+        try:
+            nav.goto('https://rikuy.test/git/github.com/paper.git/info/refs?service=git-upload-pack'); shown = True
+        except Exception as e:
+            shown = 'Download is starting' not in str(e)
+        resp = answers[0] if answers else None
+        check('a link to /git opens no page: refused, as an attachment of text that runs nothing', not shown and resp and resp.status == 403 and resp.headers.get('content-type', '').startswith('text/plain')
+              and resp.headers.get('content-security-policy') == "default-src 'none'; sandbox" and resp.headers.get('content-disposition') == 'attachment', (shown, resp and resp.status, resp and resp.headers))
+        nav.close()
+        stand.kill()
         browser.close()
 except Exception as e:
     # a run that stops part way has failed, whatever the checks before it said

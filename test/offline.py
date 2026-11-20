@@ -1,11 +1,12 @@
 """The installed app offline (src/sw.js, src/pwa.js, build/app.mjs), served as Cloudflare Pages
 serves it (pages.py): the first visit installs the service worker, which keeps the page and the
 scripts of the page and of the TeX worker; with the network gone (the browser offline and the
-server stopped) the page reloads, renders, takes typing and keeps the project; the TeX worker's
+server stopped) the page reloads, renders, takes typing and keeps the project, and a live figure
+runs (its own document, widget-<hash>.html, from the HTTP cache); the TeX worker's
 scripts and a kept TeX pack reach a worker started as the PDF pane starts it. A new build on the
 server is taken only after "Update ready" or at the next open, and the page and its worker's
 scripts are always of one version, in a second tab left on the old one too. The copy built for
-claude.ai (RIKUY_SHARE set) registers no service worker. Where dist/tex holds a TeX tree (CI's
+claude.ai (RIKUY_SHARE set) registers no service worker, and runs live figures in srcdoc frames. Where dist/tex holds a TeX tree (CI's
 TeX job), "Make available offline" keeps a typical paper's packs and a PDF compiles offline;
 elsewhere that part says why it is skipped.
 
@@ -226,6 +227,27 @@ def main():
               return out; }''')
             check('the service worker does not keep pandoc\'s parts a second time (the Word worker keeps pandoc)', kept == [], kept)
 
+        # (review L1) Pages answers widget-<hash>.html with a redirect to widget-<hash>, which the
+        # service worker's install would refuse: the page and the worker name the address without
+        # .html, which answers 200 (pages.py does as Pages does)
+        import urllib.request, urllib.error
+        class _NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *a, **k): return None
+        op = urllib.request.build_opener(_NoRedirect, urllib.request.ProxyHandler({}))
+        shell = [f for f in os.listdir(DIST) if re.match(r'^widget-[0-9a-f]{16}\.html$', f)][0]
+        try: op.open(URL + shell, timeout=10); st = 'no redirect'
+        except urllib.error.HTTPError as e: st = (e.code, e.headers.get('Location'))
+        sw_text = open(os.path.join(DIST, 'sw.js'), encoding='utf8').read()
+        # (review H1) a link to the git proxy, clicked in the installed app: the service worker
+        # answers it with a refusal and lets nothing of it reach the network as a page
+        nav = ctx.new_page()
+        r = nav.goto(URL + 'git/github.com/x/info/refs?service=git-upload-pack')
+        check('a link to /git in the installed app is refused by the service worker, as inert text', r.status == 403 and 'git client only' in nav.content()
+              and r.headers.get('content-security-policy') == "default-src 'none'; sandbox", (r.status, r.headers))
+        nav.close()
+        check('the widget document is listed and asked for at its address without .html, which Pages redirects to',
+              st == (308, '/' + shell[:-5]) and op.open(URL + shell[:-5], timeout=10).status == 200 and '"' + shell[:-5] + '":[' in sw_text and '"' + shell + '"' not in sw_text, st)
+
         # ---- no network at all --------------------------------------------------------
         ctx.set_offline(True)
         srv.shutdown(); srv.server_close()
@@ -258,6 +280,22 @@ def main():
           try { r.pdfjs = !!(await import(window.rikuy.texEngine().scripts + 'pdf.min.mjs')).getDocument; } catch (e) { r.pdfjs = String(e); }
           return r; }''')
         check('offline, git.js and pdf.js load as modules from the kept copy', mods == {'git': True, 'pdfjs': True}, mods)
+        # a live figure: the page's policy runs no widget's script, so it runs in its own document,
+        # widget-<hash>.html (src/widget.js), which a sandboxed frame asks the network for, never
+        # the service worker; offline it comes from the HTTP cache, where install's fetch put it
+        keep = page.evaluate('() => [[...window.rikuy.files], window.rikuy.main]')
+        W = os.path.join(ROOT, 'sample', 'widget')
+        page.evaluate('''([m, s, c]) => { const g = window.rikuy; g.files = new Map([['main.tex', m], ['rikuy.sty', s], ['widgets/clt.html', c]]); g.main = 'main.tex'; g.rebuild(); }''',
+                      [open(os.path.join(W, n), encoding='utf8').read() for n in ('main.tex', 'rikuy.sty', 'widgets/clt.html')])
+        try:
+            page.wait_for_function('() => window.rikuy.widgets && window.rikuy.widgets.frames.size === 1 && [...window.rikuy.widgets.frames.values()].every((F) => window.rikuy.widgets.heights.has(F.key))', timeout=15000)
+            ran = True
+        except Exception:
+            ran = False
+        check('offline, a live figure runs, its document from the HTTP cache', ran and page.evaluate("() => /\\/widget-[0-9a-f]{16}$/.test(document.querySelector('#wlayer iframe').src)"),
+              page.evaluate("() => [...document.querySelectorAll('#wlayer iframe')].map((f) => f.src)"))
+        page.evaluate('([fs, main]) => { const g = window.rikuy; g.files = new Map(fs); g.main = main; g.rebuild(); }', keep)
+        page.wait_for_timeout(300)
         page.evaluate('window.rikuy.runCommand("create-style")')
         page.wait_for_function('window.rikuy.texNamesState() !== "loading"', timeout=10000)
         check('offline, Create a Style gets LaTeX\'s names from the kept copy', page.evaluate('window.rikuy.texNamesState()') == 'ready' and page.get_by_role('dialog', name='Create a Style').count() == 1, page.evaluate('window.rikuy.texNamesState()'))
@@ -354,6 +392,18 @@ def main():
         page.wait_for_function('window.rikuy.texNamesState() !== "loading"', timeout=10000)
         check('the artifact build ships the names beside the page, one file named by its hash, and Create a Style fetches them from there',
               [f for f in os.listdir(art) if f.startswith('texnames-')] == tnames and page.evaluate('window.rikuy.texNamesState()') == 'ready', ([f for f in os.listdir(art) if f.startswith('texnames-')], page.evaluate('window.rikuy.texNamesState()')))
+        # live figures there run in srcdoc frames, which take the host's policy, and it allows
+        # inline scripts (here pages.py's stand in for it, serve.ARTIFACT_CSP); no widget document
+        page.evaluate('''([m, s, c]) => { const g = window.rikuy; g.files = new Map([['main.tex', m], ['rikuy.sty', s], ['widgets/clt.html', c]]); g.main = 'main.tex'; g.rebuild(); }''',
+                      [open(os.path.join(ROOT, 'sample', 'widget', n), encoding='utf8').read() for n in ('main.tex', 'rikuy.sty', 'widgets/clt.html')])
+        try:
+            page.wait_for_function('() => window.rikuy.widgets && window.rikuy.widgets.frames.size === 1 && [...window.rikuy.widgets.frames.values()].every((F) => window.rikuy.widgets.heights.has(F.key))', timeout=15000)
+            ran = True
+        except Exception:
+            ran = False
+        check('the artifact build runs a live figure in a srcdoc frame, its policy first, and ships no widget document',
+              ran and page.evaluate("() => { const f = document.querySelector('#wlayer iframe'); return !f.hasAttribute('src') && f.srcdoc.indexOf('Content-Security-Policy') >= 0 && f.srcdoc.indexOf('Content-Security-Policy') < f.srcdoc.indexOf('<canvas'); }")
+              and not [f for f in os.listdir(art) if f.startswith('widget-')], [f for f in os.listdir(art) if f.startswith('widget-')])
         ctx.close()
         srv.shutdown(); srv.server_close()
 

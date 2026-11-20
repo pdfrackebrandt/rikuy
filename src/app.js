@@ -67,7 +67,7 @@ const CDN = {
   cmTex: 'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/stex/stex.js',
   zip: 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
   ml: 'https://cdn.jsdelivr.net/npm/mathlive@0.110.0/mathlive.min.js',
-  chem: 'https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/mhchem.min.js'
+  chem: 'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/mhchem.min.js'
 };
 // The hash of each file as published on npm, which jsDelivr serves unchanged: a CDN that
 // served anything else would get no script run in this page. (CodeMirror's .min.js names
@@ -78,7 +78,7 @@ const SRI = {
   [CDN.cmTex]: 'sha384-tab09zZeKEC2HRX/8GcAyeUuP7KBvb9DKKK4wegfZ/qW7tMcwh14TRJ0o6woQ9M0',
   [CDN.zip]: 'sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG',
   [CDN.ml]: 'sha384-5IN6K0kiaz8MufrTGBvPCP3oDeMjmwe+DDTvuyQLNv6gc634FpKbQfllonjHJPmy',
-  [CDN.chem]: 'sha384-F2ptQFZqNJuqfGGl28mIXyQ5kXH48spn7rcoS0Y9psqIKAcZPLd1NzwFlm/bl1mH'
+  [CDN.chem]: 'sha384-fB8BH//9nBzROkMUsu/Dr35jWHIbnKesUo9rW0hfEgw8mZGnkAyBAjKX9F98OVuo'
 };
 // what an opened .zip may unpack to; past it the tab would run out of memory
 const MAX_ZIP = 1.5e9;
@@ -92,6 +92,17 @@ const ZOOM_MIN = 0.25, ZOOM_MAX = 4;
 // One of the build's own files (git.js, tex/...): in the installed app, the copy of this page's
 // version (src/pwa.js); elsewhere simply the file next to the page.
 const asset = (p) => (__RIKUY_APP__ ? appAsset(p) : new URL(p, location.href).href);
+// The proxy git's push, pull and clone go through by default: GitHub and GitLab send no CORS
+// headers for git, so a browser cannot reach them directly. It is Rikuy's own, on the page's own
+// site (/git, functions/git/[[path]].js on Cloudflare Pages, src/gitproxy.js), so the hosted
+// policy keeps connect-src 'self' and no third party sees a token. The third party's address
+// earlier versions filled in, and kept once used, counts as no choice; a proxy the user typed
+// elsewhere is theirs (a copy of Rikuy served without the hosted policy can use it).
+const gitProxyHere = () => new URL('git', location.href).href;
+const OLD_GIT_PROXY = 'https://cors.isomorphic-git.org';
+const gitProxyOf = (prefs) => (prefs.gitProxy == null || prefs.gitProxy === OLD_GIT_PROXY ? gitProxyHere() : prefs.gitProxy);
+// what the CORS proxy field keeps: nothing when it holds this site's own (the page may move)
+const keepGitProxy = (prefs, v) => { prefs.gitProxy = v === gitProxyHere() ? null : v; return v; };
 // the full Rikuy's address, which the copy on claude.ai names for what it has no room for
 const SCRIPT_HOST = typeof __RIKUY_WORD_HOST__ === 'undefined' ? '' : __RIKUY_WORD_HOST__;
 function loadScript(src) {
@@ -104,6 +115,11 @@ function loadScript(src) {
     s.onload = () => res(); s.onerror = () => rej(new Error('Could not load ' + src));
     document.head.appendChild(s);
   });
+}
+// Whether this page may not compile WebAssembly (an empty module): Safari 15 refuses it under the
+// hosted policy, which allows it by 'wasm-unsafe-eval' alone (build/app.mjs policy)
+function wasmRefused() {
+  try { new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])); return false; } catch (e) { return true; }
 }
 // A link in a document opens only as a web or mail address: the document may be a
 // stranger's, and a javascript: or data: address would run as, or pretend to be, this page.
@@ -393,7 +409,13 @@ class App {
       allow: () => this.allowWidgets(),
       // an interactive graph's Edit graph button and its menu (src/cmd/insert.js)
       decorate: (F) => this.graphDecorate && this.graphDecorate(F),
-      menu: (F, x, y) => this.graphMenu && this.graphMenu(F, x, y)
+      menu: (F, x, y) => this.graphMenu && this.graphMenu(F, x, y),
+      // (once a session: a live figure's frame did not load)
+      stalled: () => {
+        if (this.widgetStallNoted) return;
+        this.widgetStallNoted = true;
+        this.toast('A live figure could not start: its frame did not load (offline, and this browser no longer has the copy it kept). It shows its picture instead; with a connection it runs again.', 10000);
+      }
     });
     this.relayoutSoon = debounce(() => this.relayout(), 40);
     // a figure, or a live figure's fallback, measured before its picture loaded: measured again
@@ -3823,7 +3845,7 @@ class App {
     rem.append(sum);
     const url = mk('input'); url.type = 'url'; url.placeholder = 'https://github.com/you/paper.git'; url.value = remote || ''; url.setAttribute('aria-label', 'Remote URL');
     const tok = mk('input'); tok.type = 'password'; tok.placeholder = 'Access token (kept in this browser for this host)'; tok.setAttribute('aria-label', 'Access token');
-    const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy, e.g. https://cors.isomorphic-git.org'; prox.value = this.prefs.gitProxy ?? 'https://cors.isomorphic-git.org'; prox.setAttribute('aria-label', 'CORS proxy');
+    const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy, e.g. ' + gitProxyHere(); prox.value = gitProxyOf(this.prefs); prox.setAttribute('aria-label', 'CORS proxy');
     // the token kept for the remote's host, not filled in for a remote that came with an opened
     // project; a URL typed here is the user's own, and the field follows it until a token is typed
     const from = await this.gitRemoteFrom(dir, remote);
@@ -3842,8 +3864,8 @@ class App {
     const opts = () => {
       const t = tok.value.trim();
       dropReplaced(this.prefs, t, shown);
-      this.prefs.gitProxy = prox.value.trim(); store(PREFS, this.prefs);
-      const o = { token: t, remote: url.value.trim(), corsProxy: this.prefs.gitProxy, accepted: legacy.chosen() };
+      const proxy = keepGitProxy(this.prefs, prox.value.trim()); store(PREFS, this.prefs);
+      const o = { token: t, remote: url.value.trim(), corsProxy: proxy, accepted: legacy.chosen() };
       o.onAccepted = () => { o.accepted = true; };
       return o;
     };
@@ -3895,7 +3917,7 @@ class App {
     const host = remoteHost(remote);
     if (from === 'theirs') rem.append(mk('div', 'git-note git-foreign', 'This remote came in the .git folder of the project you opened, so no token is filled in for it. Give one only if ' + host + ' is yours.'));
     else if (from === 'unknown' && tok.value) rem.append(mk('div', 'git-note git-unknown', 'This repository is older than Rikuy\'s record of where remotes come from, so your token is filled in as before. Check that ' + host + ' is yours before you pull or push.'));
-    rem.append(url, tok, legacy.el, prox, rrow, mk('div', 'git-note', 'GitHub and GitLab need a token with write access and, from a browser, a CORS proxy. Inside claude.ai the page can only reach its own server, so pushing works from Rikuy on its own site; here, Download LaTeX gives a clone to push from your computer.'));
+    rem.append(url, tok, legacy.el, prox, rrow, mk('div', 'git-note', 'GitHub and GitLab need a token with write access. A browser cannot speak git to them itself, so Rikuy passes git\'s requests through its own proxy on this site (CORS proxy), which keeps nothing of them. Inside claude.ai the page can only reach its own server, so pushing works from Rikuy on its own site; here, Download LaTeX gives a clone to push from your computer.'));
     out.append(rem);
 
     // history
@@ -3943,7 +3965,7 @@ class App {
     det.append(mk('summary', '', 'Clone from a URL'));
     const url = mk('input'); url.type = 'url'; url.placeholder = 'https://github.com/you/paper.git, or an Overleaf project'; url.setAttribute('aria-label', 'Repository URL, or the address of an Overleaf project');
     const tok = mk('input'); tok.type = 'password'; tok.placeholder = 'Access token (private repositories; for Overleaf, its Git token)'; tok.setAttribute('aria-label', 'Access token');
-    const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy'; prox.value = this.prefs.gitProxy ?? 'https://cors.isomorphic-git.org';
+    const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy'; prox.value = gitProxyOf(this.prefs);
     // the token kept for the host of the address typed, until a token is typed
     let shown = '', typed = false;
     const legacy = this.gitLegacyButton({ get value() { return G.gitUrlOf(url.value); } }, tok, () => { typed = true; shown = tok.value; });
@@ -3955,8 +3977,8 @@ class App {
       if (!u) { if (url.value.trim()) this.toast(G.BAD_REMOTE, 7000); url.focus(); return; }
       const t = tok.value.trim();
       dropReplaced(this.prefs, t, shown);
-      this.prefs.gitProxy = prox.value.trim(); store(PREFS, this.prefs);
-      const o = { token: t, remote: u, corsProxy: this.prefs.gitProxy, depth: 200, accepted: legacy.chosen() };
+      const proxy = keepGitProxy(this.prefs, prox.value.trim()); store(PREFS, this.prefs);
+      const o = { token: t, remote: u, corsProxy: proxy, depth: 200, accepted: legacy.chosen() };
       o.onAccepted = () => { o.accepted = true; };
       const name = /git\.overleaf\.com/.test(u) ? 'overleaf-' + u.split('/').pop().slice(0, 6) : u.replace(/\.git$/, '').split('/').pop() || 'paper';
       b.disabled = true; b.textContent = 'Cloning…';
@@ -3999,7 +4021,11 @@ class App {
 
   gitError(e) {
     const m = String((e && (e.message || e.code)) || e);
-    if (/Failed to fetch|NetworkError|Load failed|Content Security Policy|CORS/i.test(m)) return 'Could not reach the remote. From inside claude.ai the page may only talk to its own server; run Rikuy on its own site, or Download LaTeX and push from your computer. (' + m + ')';
+    if (/Failed to fetch|NetworkError|Load failed|Content Security Policy|CORS/i.test(m)) {
+      // (the hosted copy reaches git hosts through its own proxy alone: its policy refuses any other address)
+      if (__RIKUY_APP__) return 'Could not reach the remote. Rikuy reaches git hosts only through its own proxy, ' + gitProxyHere() + ': put that address in CORS proxy, or Download LaTeX and push from your computer. (' + m + ')';
+      return 'Could not reach the remote. From inside claude.ai the page may only talk to its own server; run Rikuy on its own site, or Download LaTeX and push from your computer. (' + m + ')';
+    }
     if (/401|403|auth/i.test(m)) return 'The remote refused the credentials. Check the token and that it can write to this repository. (' + m + ')';
     if (/MergeConflict|conflict/i.test(m)) return 'Pull found conflicting edits to the same lines. Commit, then merge on your computer, or restore one side. (' + m + ')';
     return m;
@@ -5329,6 +5355,10 @@ class App {
   // error) read the same build instructions: they get what to do instead.
   texFailText(e, off, need) {
     const m = (e && e.message) || '';
+    // TeX is WebAssembly, which the hosted page's policy lets run through 'wasm-unsafe-eval':
+    // Safari 15 and older do not know it and refuse every module. Asked of the page only when TeX
+    // failed, so no other browser meets the refusal it would report.
+    if (wasmRefused()) return 'This browser does not let the page run WebAssembly, which TeX is made of: Safari 15 and older lack the permission the page gives it. The editor works here; Safari 16 or later, Chrome, Edge or Firefox make the PDF. ';
     // a 404 is a page built without its TeX tree: the worker's words name the build step.
     // "Failed to fetch", a dropped connection, or that same sentence with no HTTP status is
     // what a visitor's browser says. They get plain words and the button that tries again.
