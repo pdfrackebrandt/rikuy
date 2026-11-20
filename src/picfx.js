@@ -73,7 +73,10 @@ export function hash8(s) {
   return h.toString(16).padStart(8, '0');
 }
 // the new file's name: beside the first, its kind the one it is written as
+// (orig: the project's own name of the file, never a document's text: no "..", no leading "/",
+// so a project downloaded as a zip holds no name that climbs out of its folder)
 export function editedName(orig, o, ext) {
+  orig = String(orig).split('/').filter((x) => x && x !== '..' && x !== '.').join('/') || 'picture';
   const dot = orig.lastIndexOf('.'), base = dot > orig.lastIndexOf('/') ? orig.slice(0, dot) : orig;
   return base + '-edited-' + hash8(noteText(orig, o) + '|' + ext) + '.' + ext;
 }
@@ -116,12 +119,18 @@ export function fxEdits(src, P, current, orig, settings, newName) {
 // { error }. widthPx: the width a compressed picture keeps (none: as it is).
 export function render(bytes, settings, o = {}) {
   if (!X) return { error: 'The picture tools did not load.' };
+  // (a trap in the module, a picture that broke it: the module is loaded afresh next time)
+  try { return renderIn(bytes, settings, o); } catch (e) { X = null; return { error: 'The picture tools stopped on this file: it is no PNG or JPEG they can read.' }; }
+}
+function renderIn(bytes, settings, o) {
   const s = clean(settings);
   const n = bytes.length;
   const p = X.pic_in(n);
   if (!p) return { error: 'The picture is too large to work on here.' };
   new Uint8Array(X.memory.buffer, p, n).set(bytes);
-  if (!X.pic_decode(n)) { X.pic_done(); return { error: 'This file is no PNG or JPEG the picture tools read (a CMYK JPEG, a 16 bit PNG with odd chunks, or a broken file).' }; }
+  const dec = X.pic_decode(n);
+  if (dec === -1) { X.pic_done(); return { error: 'The picture has more than 40 million pixels: too large to work on in a browser tab.' }; }
+  if (!dec) { X.pic_done(); return { error: 'This file is no PNG or JPEG the picture tools read (a CMYK JPEG, a 16 bit PNG with odd chunks, or a broken file).' }; }
   const w0 = X.pic_width(), h0 = X.pic_height();
   const rc = s.recolor ? RECOLORS[s.recolor] : 0, tint = s.tint ? [0, 2, 4].map((i) => parseInt(s.tint.slice(i, i + 2), 16)) : [0, 0, 0];
   X.pic_adjust(s.sharpen || 0, s.brightness || 0, s.contrast || 0, s.saturation ?? 1, s.tone || 0, rc, tint[0], tint[1], tint[2], s.transparency || 0);

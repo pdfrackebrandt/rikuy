@@ -43,12 +43,16 @@ EMSCRIPTEN_KEEPALIVE unsigned char *pic_in(int n) {
   if (n > in_cap) { free(in_buf); in_buf = (unsigned char *)malloc(n); in_cap = in_buf ? n : 0; }
   return in_buf;
 }
-// reads the n bytes of pic_in as a PNG or JPEG; 1 when it could
+// reads the n bytes of pic_in as a PNG or JPEG; 1 when it could, -1 for one too large
 EMSCRIPTEN_KEEPALIVE int pic_decode(int n) {
   if (img) { stbi_image_free(img); img = 0; }
   W = H = CH = 0;
   if (!in_buf || n <= 0 || n > in_cap) return 0;
   int w, h, ch;
+  // (a stranger's picture of more than 40 million pixels is refused before it is decoded: its
+  // RGBA would take more than 160 MB, a decompression bomb's way to stop the tab)
+  if (!stbi_info_from_memory(in_buf, n, &w, &h, &ch)) return 0;
+  if ((long long)w * h > 40000000LL) return -1;
   img = stbi_load_from_memory(in_buf, n, &w, &h, &ch, 4);
   if (!img) return 0;
   W = w; H = h; CH = ch;

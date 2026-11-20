@@ -98,6 +98,8 @@ await ok('Compress: down to the width asked, each pixel the mean of those it cov
   assert.ok(at(o, 1, 0)[0] > 100 && at(o, 1, 0)[0] < 160, String(at(o, 1, 0)));
   // never up
   assert.equal(F.render(P, {}, { widthPx: 400 }).w, 40);
+  // a picture of more than 40 million pixels is refused before it is decoded (its header alone)
+  assert.match(F.render(png(10000, 4001, [0, 0, 0, 255], [0, 0, 0, 255]), {}).error, /40 million/);
   assert.ok(F.render(new Uint8Array([1, 2, 3, 4]), {}).error);
 });
 
@@ -111,6 +113,9 @@ await ok('the comment: written, read back; settings cleaned; a name from the fir
   assert.equal(F.editedName('figs/a.png', s, 'png'), nm);
   assert.notEqual(F.editedName('figs/a.png', { brightness: 0.4 }, 'png'), nm);
   assert.equal(F.clean({ brightness: 9 }).brightness, 1);
+  // (no name that climbs out of the project's folder)
+  assert.match(F.editedName('../../x/./a.png', s, 'png'), /^x\/a-edited-[0-9a-f]{8}\.png$/);
+  assert.match(F.editedName('/etc/a.png', s, 'png'), /^etc\/a-edited-[0-9a-f]{8}\.png$/);
   assert.equal(F.readNote('% rikuy: from a.png, brightness 0.2 trailing words'), null);
 });
 

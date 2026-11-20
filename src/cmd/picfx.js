@@ -95,7 +95,8 @@ export const methods = {
     if (r.error) { this.toast(r.error, 7000); return false; }
     const s = { ...settings };
     if (o.widthPx && r.w < r.w0) s.compress = o.ppi;
-    const name = F.editedName(st.orig, s, r.ext);
+    // (named after the project's file, not the document's words for it: src/picfx.js editedName)
+    const name = F.editedName(key, s, r.ext);
     // (the picture may have moved while the pixels were worked on: read it again)
     const h2 = this.picHere();
     if (!h2 || h2.f !== h.f || h2.src !== h.src) { this.toast('The picture changed meanwhile: try again.'); return false; }
