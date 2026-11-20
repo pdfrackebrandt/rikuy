@@ -6,51 +6,47 @@ from the repository alone. This file is how. Read AGENTS.md first, then this, th
 requests. When this file and a pull request's own Handoff section disagree, the pull request is
 newer.
 
-## Start here (state on 2026-11-17, 12:10 UTC, when Claude stopped)
+## Start here (state on 2026-11-20, 10:35 UK, when Grok Bot (Rikuy) stopped at Pedro's request)
 
-Everything is pushed: no work exists only on Claude's machine. Do these in order; each step
-says how to know it is done.
+Everything is pushed and merged. No pull request is open, no branch holds unmerged work, and no
+agent is running. `main` is at 395faad (merge of PR 75), and its deploy succeeded.
 
-1. **Merge the pull request that brought this file** ("Handoff: state at stop"), once its checks
-   are green. It changes only this file and `docs/reviews/`.
-2. **PR 62, R2 (styles, lists, Clear All, title parts, Code, Rename Style, link colours).**
-   Reviewed three times, every finding fixed, main merged in. Merge when its checks are green.
-3. **PR 63, R3 (drag to move, cover pages, Quick Parts, fields, form fields, wrapped figures).**
-   Verified "merge", main merged in. Merge when green. Then one small fix in a new branch, M7 of
-   `docs/reviews/R3.md` ("Check of the merge 7f3f269"): in `fillLines`, `src/layout.js` around
-   line 1184, test the line's height against the wrapped figure's margin box, not its border box
-   (a line starting just under a right hand figure is split in two; TeX sets it as one). Add the
-   case to `test/picture.py`'s `r3_review`.
-4. **PR 66, R4 (thesaurus, grammar, comments only share links, Original, changes by author,
-   References).** The review's findings are fixed (`docs/reviews/R4.md`, with its verification
-   of 1df9c63). The last four (V1 to V4: catcode words, links with no sender, `\verb` and listed
-   files in `bodyAt`, `%20` in `\href`) were fixed after that verification (commits a3925f7,
-   19ac237, cfb9711). Check those four against their repro text in `docs/reviews/R4.md` (each is
-   now a test in `test/review.test.mjs` and `test/share.py`'s `attacks`), merge main into the
-   branch (it is two commits behind), wait for green, merge.
-5. **PR 68, R5 (collapse headings, ^p, find by environment, the ruler, Web Layout, rename a
-   document).** Its review (`docs/reviews/R5.md`) found three Highs and five Mediums; all are fixed
-   in 66a4c81 to 0f62250 (PLAN.md task 65 lists each), main merged in. Still needed: a fresh
-   hostile verification of those fixes, appended to `docs/reviews/R5.md` (rerun each finding's
-   case; compile the Replace results in the page), plus one unchecked point the author raised:
-   the ruler on R1's landscape pages (`pg.land`). Then merge main, green, merge.
-6. **After each merge, the next branch merges main** (`git merge origin/main`, never rebase or
-   force push). Conflicts so far were only in PLAN.md and AGENTS.md (keep both sides) and in
-   `src/app.css` (keep both sections).
-7. **R6, the arXiv corpus (PLAN.md task 16).** Run 44077385415 of Actions › arXiv corpus started
-   at 11:49 UTC on main cb4d5a8 (with the `.bbl` fix and the 22 packages); about two hours. When
-   it is done, its results are on the branch `arxiv-results` (`dev/arxiv-results.jsonl`,
-   `dev/arxiv-pdfcompare.jsonl`). If the collect job dropped rows, rerun only the merge with
-   Run workflow and `from_run` set to that run's id. Then:
-   - count: Rikuy compiles, desktop compiles, both, matches (the first run: 932 and 964 of 998,
-     623 of 932 matching; PLAN.md task 16 has its causes);
-   - classify every failure and every mismatch as task 2 did for the first corpus
-     (`dev/pdfcompare_report.py`, `dev/pdfcompare-classes.json`): the rows now carry
-     `fonts_only` (fonts on one side only) for mismatches and `trail` (the worker's last steps)
-     for compiles that ran out of time, because the workflow keeps no PDFs;
-   - fix what is Rikuy's and cheap, as PR 67 (a paper's own `.bbl`) and PR 70 (packages) did;
-   - write the compile and match rates into PLAN.md's table, README.md and tex/README.md (their
-     numbers must agree, AGENTS.md says).
+Done since the 2026-11-17 list (all merged with a merge commit, checks green):
+
+| PR | What | Merge |
+|---|---|---|
+| 72 | Handoff docs | 9882f24 |
+| 62 | R2 styles and lists | 2adb064 |
+| 63 | R3 objects (form fields excluded from the 5% fast-edit share only, d3e9a89) | 1feca3f |
+| 73 | M7: wrapped figure margin box in `fillLines` | b2bfccd |
+| 66 | R4 | a0b42ab |
+| 68 | R5 | 279232d |
+| 74 | Security review, `docs/reviews/SECURITY.md`; fflate 0.8.3 + ZIP64 guard (S1) | ddcdc2d |
+| 75 | UI/UX pass: Word-style title band, File backstage, labelled ribbon groups, dialog launchers, KeyTips (Alt/F10), Word shortcuts, Ask Grok in Help | 395faad |
+
+What is left, in order. None is started; each needs Pedro's go-ahead except where noted.
+
+1. **Security follow-ups from `docs/reviews/SECURITY.md`** (all Low, Pedro has not decided yet):
+   - S4 HSTS: either Pedro turns it on in Cloudflare, or a small PR adds the header.
+   - S3 CSP: replace `'unsafe-inline'` / `'unsafe-eval'` for scripts with hashes; touches the build.
+   - S2 KaTeX: the advisory needs the 0.19 major bump; the affected features are off in Rikuy.
+   - S5: the comments-only share filter can be bypassed with TeX tricks; documented, not fixed.
+2. **Word shortcuts, finishing** (PR 75 commit 0efad53 added the ones that map to an existing
+   command; Ctrl+B/I/U, alignment, lists, headings etc. were already there). Not yet verified
+   end to end: a full audit of Word's Home/Insert/Review shortcuts against `src/` (keys test:
+   `test/keys.test.mjs`, `test/commands.test.mjs`), and the Help list of keys the browser keeps
+   (Ctrl+N, Ctrl+W, Ctrl+T). Add any that are missing and still map to a real command.
+3. **UI polish leftovers**: the other ribbon tabs (Insert, Design, Layout, References, Review, View)
+   hold the real commands but are not yet laid out as closely to Word as Home is (large buttons,
+   dialog launchers). Phone keeps one toolbar row by design.
+   No Microsoft icons, fonts or assets (clean-room, like WordCraft).
+4. **R6, the arXiv corpus (PLAN.md task 16)**, optional, not done: classify run 44077385415's results
+   on branch `arxiv-results` as described in the previous version of this file (git log -p HANDOFF.md),
+   then write the compile and match rates into PLAN.md, README.md and tex/README.md.
+
+Pedro's taste for this repo: Word look-alike (WordCraft is the reference, clean-room), Ask Grok
+stays subtle (Help tab and search only, tooltip says Rikuy is not part of xAI), plain-words
+messages, merge only when all five checks (test, editor, workflows, editor-more, tex) are green.
 
 ## The rule
 
