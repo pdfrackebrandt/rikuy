@@ -288,7 +288,7 @@ export const tabs = {
   // the items of a command's own menu (a split button's arrow, a menu button)
   commandMenu(c) {
     const at = this.ribbonAt();
-    return this.atRestDo(at, () => (c.menuItems ? c.menuItems(this, at) : []).map((it) => it && { ...it, run: it.run || (it.command ? () => this.runCommand(it.command, it.args) : null) }));
+    return (c.menuItems ? c.menuItems(this, at) : []).map((it) => it && { ...it, run: it.run || (it.command ? () => this.runCommand(it.command, it.args) : null) });
   },
 
   // A folded group's menu: its commands by their names, each as its button would act
@@ -297,8 +297,8 @@ export const tabs = {
     if (at) at.memo = {};
     const items = [];
     for (const { c, p } of laidOut(tab, g.id).filter(({ c }) => c.run && c.searchable !== false)) {
-      const on = this.atRestDo(at, () => pressed(this, c, at));
-      items.push({ name: p.name, title: c.title, keys: firstKey(c, macUA()), checked: on === null ? undefined : on, radio: !!c.static, disabled: !this.atRestDo(at, () => enabled(this, c, at)), run: () => { this.ribbonBack(); this.runCommand(c.id); } });
+      const on = pressed(this, c, at);
+      items.push({ name: p.name, title: c.title, keys: firstKey(c, macUA()), checked: on === null ? undefined : on, radio: !!c.static, disabled: !enabled(this, c, at), run: () => { this.ribbonBack(); this.runCommand(c.id); } });
       // (a split button's other choices too, as Word's folded group lists them: Find's Advanced
       // Find and Go To)
       if (c.kind === 'split') for (const it of this.commandMenu(c)) if (it && it.name !== p.name && it.command !== c.id) items.push({ ...it, run: () => { this.ribbonBack(); if (it.run) it.run(); } });
@@ -316,10 +316,18 @@ export const tabs = {
     if (!c || !c.run) return false;
     if (at === undefined) at = this.ribbonAt();
     if (at) at.memo = {};
-    // (with no caret on the page a command acts where the caret last was, as Word's: the selection
-    // goes there now, and stays)
-    this.atRestDo(at, () => {}, true);
     if (!enabled(this, c, at)) return false;
+    if (at && at.c && at.c.rest) {
+      // (no caret on the page and no words kept selected: a character format at a place between
+      // words has nothing to take, where Word would set the format of typing that does not come)
+      if (at.c.collapsed && c.group === 'font' && !c.static) {
+        const t = this.src(at.c.f), w = /[\p{L}\p{N}]/u;
+        if (!(w.test(t[at.c.a - 1] || '') && w.test(t[at.c.a] || ''))) return false;
+      }
+      // (with no caret on the page a command acts at the document's last selection, as Word's: the
+      // selection goes there now, and stays)
+      this.atRestDo(at, () => {});
+    }
     const r = c.run(this, args, at);
     if (c.resync !== false) { if (r && typeof r.then === 'function') r.then(() => this.ribbonSync(), () => this.ribbonSync()); else this.ribbonSync(); }
     return r === undefined ? true : r;
@@ -376,19 +384,17 @@ export const tabs = {
     const at = this.ribbonAt();
     if (at) at.memo = {};
     this.ribbonContexts(at);
-    this.atRestDo(at, () => {
-      for (const b of rb.querySelectorAll('.rb-panel button[data-cmd]')) {
-        const c = command(b.dataset.cmd);
-        if (!c || c.static) continue;
-        const off = !enabled(this, c, at);
-        b.disabled = off;
-        const x = b.nextElementSibling && b.nextElementSibling.classList.contains('rb-x') ? b.nextElementSibling : null;
-        if (x) x.disabled = off && !c.menuWhenOff;
-        const on = pressed(this, c, at);
-        if (on !== null) b.setAttribute('aria-pressed', on ? 'true' : 'false');
-      }
-      for (const c of commands()) if (c.sync) { try { c.sync(this, at); } catch (e) { console.error(e); } }
-    });
+    for (const b of rb.querySelectorAll('.rb-panel button[data-cmd]')) {
+      const c = command(b.dataset.cmd);
+      if (!c || c.static) continue;
+      const off = !enabled(this, c, at);
+      b.disabled = off;
+      const x = b.nextElementSibling && b.nextElementSibling.classList.contains('rb-x') ? b.nextElementSibling : null;
+      if (x) x.disabled = off && !c.menuWhenOff;
+      const on = pressed(this, c, at);
+      if (on !== null) b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    for (const c of commands()) if (c.sync) { try { c.sync(this, at); } catch (e) { console.error(e); } }
     // (the title reads every file for a live graph: once for each build of the page, not for each move of the caret)
     if (this.rbModel !== this.model) { this.rbModel = this.model; this.saveTitle(); }
     this.ribbonRove();

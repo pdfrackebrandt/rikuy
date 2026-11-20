@@ -7,6 +7,7 @@
 import { BLOCKS } from './render.js';
 import { NOT_PLAIN, quoteWords } from './styles.js';
 import { posFromDom } from './editor.js';
+import { mapPos, diffEdit } from './wrap.js';
 
 // the node before n in document order, within root (the last of a previous sibling's subtree)
 function prevNode(n, root) {
@@ -19,10 +20,12 @@ export const ribbon = {
   ribbonSoon() {},
   // Where the caret is, for the ribbon: its element, its item on the page and its block. None
   // while the source pane has the focus or the pages are stale: the buttons are then disabled.
-  // With no caret on the page at all (none yet, or a press in the PDF or the side panel) the page
-  // gets one back, as Word's always has one: at the last place it was, or else the document's end
-  // (the selection only: the focus stays where it is). Not while a field, a dialog or the equation
-  // field has the focus, nor over words selected elsewhere: those keep their own place.
+  // With no caret on the page (none yet, or a press in the PDF, the side panel or the status bar)
+  // the ribbon stands for the document's last selection, as Word's document always keeps one: its
+  // both ends, moved with every edit since, or else the document's end. Reading it moves no
+  // caret (UI-PRINCIPLES P5): the selection goes there only when a command runs (atRestDo). Not
+  // while a field, a dialog or the equation field has the focus, nor over words selected
+  // elsewhere: those keep their own place.
   ribbonAt() {
     if (this.stale || !this.model) return null;
     const a = document.activeElement;
@@ -31,7 +34,9 @@ export const ribbon = {
     if (!c) return this.ribbonAtRest(a);
     const n = getSelection().anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement);
     const r = getSelection().getRangeAt(0);
-    if (!c.ghost) this.rbLast = { f: c.f, p: c.b };
+    // (the document's selection, kept for when the page has none: its text, so a change made since
+    // by any way moves it, and its project's files, so another document drops it)
+    if (!c.ghost && !c.crossFile) this.rbLast = { f: c.f, a: c.a, b: c.b, text: this.files.get(c.f), files: this.files };
     return this.atOf(c, el, r);
   },
   atOf(c, el, r) {
@@ -44,49 +49,78 @@ export const ribbon = {
     return { c, el, it, B: it ? BLOCKS.get(+it.dataset.b) : null, ctx: near ? near.dataset.ctx : '', cell: !!(el && el.closest('td')), sty: !!(el && el.closest('[data-y]')),
       multi: !c.ghost && !r.collapsed && !!it && (end && end.closest('.it')) !== it };
   },
-  // the caret given back to the page when it has none (see ribbonAt)
+  // The kept selection moved with the edits of a step (commit): its start after what is put at it,
+  // its end before, as a caret and a selection move (src/cmd/page.js pageEdit)
+  restMove(f, edits, text) {
+    const L = this.rbLast;
+    if (!L || L.f !== f || L.files !== this.files) return;
+    // (a place whose words the edit took away is gone: the document's end stands for it, as a new
+    // document's text put in place of the old has its end)
+    if (edits.some((x) => x.s < L.a && x.e > L.a) || edits.some((x) => x.s < L.b && x.e > L.b)) { this.rbLast = null; return; }
+    const one = L.a === L.b, a = mapPos(edits, L.a, 1), b = one ? a : mapPos(edits, L.b, -1);
+    L.a = a; L.b = Math.max(a, b); L.text = text;
+  },
+  // the kept selection as the text is now: a change that came another way (an undo, the source
+  // pane, a coauthor) taken as its one edit; none for another document or a place now gone
+  restPlace() {
+    const L = this.rbLast;
+    if (!L || L.files !== this.files || !this.files.has(L.f)) return null;
+    const t = this.files.get(L.f);
+    if (t !== L.text) {
+      const d = diffEdit(L.text, t);
+      if (d) this.restMove(L.f, [d], t); else L.text = t;
+    }
+    return this.rbLast && L.b <= t.length ? L : null;
+  },
+  // the place the ribbon stands for with no caret on the page (see ribbonAt): the kept selection's
+  // range, or a caret at the document's end, read as a caret there would be
   ribbonAtRest(a) {
     if (a && a !== document.body && a.closest && a.closest('input, textarea, select, math-field, [contenteditable="true"], .pop, [role=dialog], .CodeMirror')) return null;
     const sel = getSelection();
     if (sel.rangeCount && !sel.getRangeAt(0).collapsed) return null;
-    let at = null;
-    const L = this.rbLast;
-    const x = L && this.files.has(L.f) && this.index ? this.index.find(L.f, L.p, -1) : null;
-    if (x && x.node && this.root.contains(x.node)) at = { node: x.node, offset: x.offset };
-    if (!at) {
+    let rng = null;
+    const L = this.index ? this.restPlace() : null;
+    if (L) {
+      const x = this.index.find(L.f, L.a, 1), y = L.b > L.a ? this.index.find(L.f, L.b, -1) : x;
+      if (x && x.node && y && y.node && this.root.contains(x.node) && this.root.contains(y.node)) {
+        rng = document.createRange();
+        rng.setStart(x.node, x.offset);
+        try { rng.setEnd(y.node, y.offset); } catch (e) { rng.collapse(true); }
+      }
+    }
+    if (!rng) {
       // the document's end: the last words of the last paragraph on the page
       let n = this.root;
       while (n.lastChild) n = n.lastChild;
       for (; n && n !== this.root; n = prevNode(n, this.root)) {
-        if (n.nodeType === 3 && n.nodeValue.trim() && n.parentElement && n.parentElement.closest('.it.p')) { at = { node: n, offset: n.nodeValue.length }; break; }
+        if (n.nodeType === 3 && n.nodeValue.trim() && n.parentElement && n.parentElement.closest('.it.p') && !n.parentElement.closest('[contenteditable="false"]')) {
+          rng = document.createRange(); rng.setStart(n, n.nodeValue.length); rng.collapse(true); break;
+        }
       }
     }
-    if (!at) return null;
-    const A = posFromDom(at.node, at.offset, this.root);
+    if (!rng) return null;
+    const A = posFromDom(rng.startContainer, rng.startOffset, this.root);
     if (!A || A.ghost) return null;
-    // (read as a caret put there would be, without putting it there: reading the ribbon moves no
-    // caret, UI-PRINCIPLES P5; the selection goes there only while the ribbon reads its commands
-    // and when one runs, atRestDo)
-    const rng = document.createRange();
-    rng.setStart(at.node, at.offset); rng.collapse(true);
-    const c = { f: A.f, p: A.p, a: A.p, b: A.p, collapsed: true, range: rng, rest: true };
-    return this.atOf(c, at.node.nodeType === 1 ? at.node : at.node.parentElement, rng);
+    let B = rng.collapsed ? A : posFromDom(rng.endContainer, rng.endOffset, this.root);
+    if (!B || B.ghost || B.f !== A.f) B = A;
+    const lo = Math.min(A.p, B.p), hi = Math.max(A.p, B.p);
+    const c = { f: A.f, p: A.p, a: lo, b: hi, collapsed: lo === hi, range: rng, rest: true };
+    const n = rng.startContainer;
+    return this.atOf(c, n.nodeType === 1 ? n : n.parentElement, rng);
   },
   // fn with the selection at a place read with no caret on the page (ribbonAtRest), as the commands
-  // read a caret: from the selection. The browser gives the page the focus with a selection put in
-  // it: the focus stays where it was (a button of the bar a popover gave it back to, or nowhere).
-  // keep: the selection stays there (a command run); otherwise it is put back as it was.
-  atRestDo(at, fn, keep) {
+  // read a caret: from the selection; it stays there (a command runs there). The browser gives the
+  // page the focus with a selection put in it: the focus stays where it was (a button of the bar a
+  // popover gave it back to, or nowhere).
+  atRestDo(at, fn) {
     if (!at || !at.c || !at.c.rest) return fn();
     const sel = getSelection(), f = document.activeElement;
-    const was = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-    const focusBack = () => {
-      if (document.activeElement === f) return;
+    sel.removeAllRanges(); sel.addRange(at.c.range.cloneRange());
+    if (document.activeElement !== f) {
       if (f && f !== document.body && f.focus) f.focus({ preventScroll: true });
       else if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-    };
-    sel.removeAllRanges(); sel.addRange(at.c.range.cloneRange()); focusBack();
-    try { return fn(); } finally { if (!keep) { sel.removeAllRanges(); if (was) sel.addRange(was); focusBack(); } }
+    }
+    return fn();
   },
 
   // a block that is one plain paragraph of the text: [s, e) of its words, or null

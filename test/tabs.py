@@ -724,6 +724,79 @@ def downloads_group(p):
     browser.close()
 
 
+NOCARET = WRAP('\\section{Opening}\nAlpha beta gamma.\n\n\\begin{tabular}{ll}\ncell & other \\\\\nmore & last \\\\\n\\end{tabular}\n\nThe last paragraph.')
+AFTER = "(([w, k]) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(w)); const r = document.createRange(); r.setStart(s.firstChild, s.textContent.indexOf(w) + k); r.collapse(true); const b = r.getBoundingClientRect(); return [b.left, b.top + b.height / 2]; })"
+
+
+def no_caret(p):
+    """With no caret on the page (a press on the status bar's words, the source pane, an agent), the
+    ribbon stands for the document's last selection, as Word's: both its ends, moved with every edit
+    since (the source pane's typing, setSource), gone with the document (a new one: its end); a
+    selection stays a selection; reading it moves no selection, so an idle page refreshes nothing.
+    (Review of PR 86, H1, H2, M1: each of these failed before.)"""
+    browser, page, errors = open_page(p, width=1366, height=900)
+    out = lambda: page.mouse.click(*page.evaluate("(() => { const b = document.getElementById('st-save').getBoundingClientRect(); return [b.left + 4, b.top + b.height / 2]; })()"))
+    # H1: the caret after "The " in the last paragraph; 29 characters typed in the source pane
+    # before the table; a press outside the page: the table's commands cannot run, Page break goes
+    # after "The"
+    load_doc(page, NOCARET); page.wait_for_timeout(300)
+    page.mouse.click(*page.evaluate(AFTER, ['The last', 4])); page.wait_for_timeout(300)
+    page.click('#b-src'); page.wait_for_timeout(600)
+    page.evaluate("(() => { const cm = rikuy.cm, i = cm.getValue().indexOf('Alpha'); cm.focus(); cm.setCursor(cm.posFromIndex(i)); })()")
+    page.keyboard.type('Twenty nine characters here. '); page.wait_for_timeout(800)
+    out(); page.wait_for_timeout(300)
+    shown = [t for t in page.evaluate('rikuy.rbTabs') if not page.evaluate('(t) => document.getElementById("rt-" + t).hidden', t)]
+    ran = page.evaluate("rikuy.api.run('table-row-below')")
+    before = src(page)
+    page.evaluate("rikuy.selectTab('insert')"); page.wait_for_timeout(200)
+    page.click('#rp-insert [data-cmd=page-break]'); page.wait_for_timeout(300)
+    after = src(page)
+    check('no caret after an edit before the last place: no table tab, a table row refused, Page break at the place moved with the edit (after "The")', 'table-layout' not in shown and ran is False and 'The\n\\newpage\nlast paragraph.' in after and after.count('\\newpage') == 1, (shown, ran, after[after.find('tabular}'):][:80]))
+    page.click('#b-src'); page.wait_for_timeout(300)
+    # M1: words selected, a press outside: Bold bolds them
+    load_doc(page, NOCARET); page.wait_for_timeout(300)
+    select_text(page, 'beta'); page.wait_for_timeout(200)
+    out(); page.wait_for_timeout(300)
+    page.evaluate("rikuy.selectTab('home')"); page.wait_for_timeout(150)
+    page.click('#rp-home [data-cmd=bold]'); page.wait_for_timeout(300)
+    check('words selected, then a press outside the page: Bold bolds those words (the selection kept, both ends)', 'Alpha \\textbf{beta} gamma.' in src(page), src(page)[40:110])
+    # and a caret between words with no caret on the page: Bold writes nothing (no typing to format)
+    load_doc(page, NOCARET); page.wait_for_timeout(300)
+    page.mouse.click(*page.evaluate(AFTER, ['The last', 3])); page.wait_for_timeout(200)
+    out(); page.wait_for_timeout(300)
+    b0 = src(page); r = page.evaluate("rikuy.api.run('bold')")
+    check('a place between words with no caret on the page: Bold writes nothing', r is False and src(page) == b0, (r, src(page)[-60:]))
+    # H1, an agent: setSource with words before the place moves it; a new document's text put in
+    # its place: its end
+    load_doc(page, NOCARET); page.wait_for_timeout(300)
+    page.mouse.click(*page.evaluate(AFTER, ['The last', 4])); page.wait_for_timeout(300)
+    page.evaluate('(t) => rikuy.api.setSource(t)', src(page).replace('Alpha beta gamma.', 'Alpha beta gamma, with forty more characters of new text.')); page.wait_for_timeout(300)
+    page.evaluate('() => { getSelection().removeAllRanges(); document.activeElement && document.activeElement.blur && document.activeElement.blur(); }'); page.wait_for_timeout(200)
+    page.evaluate("rikuy.api.run('page-break')"); page.wait_for_timeout(300)
+    a1 = src(page)
+    page.evaluate('(t) => rikuy.api.setSource(t)', WRAP('A new document with other words in it.')); page.wait_for_timeout(300)
+    page.evaluate('() => { getSelection().removeAllRanges(); document.activeElement && document.activeElement.blur && document.activeElement.blur(); }'); page.wait_for_timeout(200)
+    page.evaluate("rikuy.api.run('page-break')"); page.wait_for_timeout(300)
+    a2 = src(page)
+    check('setSource with words before the place: Page break at the place moved with them; a new document set: at its end', 'The\n\\newpage\nlast paragraph.' in a1 and 'in it.\n\\newpage\n\\end{document}' in a2, (a1[-60:], a2[-60:]))
+    # H2: an idle page with no caret refreshes nothing
+    load_doc(page, NOCARET); page.wait_for_timeout(300)
+    page.mouse.click(*page.evaluate(AFTER, ['The last', 4])); page.wait_for_timeout(200)
+    out(); page.wait_for_timeout(500)
+    page.evaluate("() => { window.__syncs = 0; const app = window.rikuy, f = app.ribbonSync; app.ribbonSync = function () { window.__syncs++; return f.apply(this, arguments); }; }")
+    page.wait_for_timeout(3000)
+    n = page.evaluate('window.__syncs')
+    page.evaluate("() => { delete window.rikuy.ribbonSync; }")
+    check('an idle page with no caret refreshes the ribbon no more: 3 s after a press outside the page, no refresh', n == 0, n)
+    # a new document: the old one's place is gone
+    page.evaluate('rikuy.newDocument()'); page.wait_for_timeout(800)
+    page.evaluate('() => { getSelection().removeAllRanges(); document.activeElement && document.activeElement.blur && document.activeElement.blur(); }'); page.wait_for_timeout(200)
+    r = page.evaluate("rikuy.api.run('page-break')"); page.wait_for_timeout(300)
+    check('a new document keeps no place of the one before: Page break with no caret goes into its body', page.evaluate('!rikuy.rbLast || rikuy.rbLast.files === rikuy.files') and '\\begin{document}' in src(page) and src(page).count('\\newpage') <= 1 and src(page).find('\\newpage') < src(page).find('\\end{document}'), (r, src(page)))
+    check('no page errors (no_caret)', not errors, errors[:3])
+    browser.close()
+
+
 def frontier(p):
     """References › Research › Frontier, where Word has Researcher: a press opens a small popover
     (its title, one line, Coming soon., Close) by mouse, keys and tap; Esc and Close close it, the
@@ -915,7 +988,7 @@ def run():
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
-        for f in (tablet, mac_keytips, downloads_group, frontier):
+        for f in (tablet, mac_keytips, downloads_group, frontier, no_caret):
             if only and f.__name__ not in only: continue
             try: f(p)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
