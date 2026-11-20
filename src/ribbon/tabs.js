@@ -427,11 +427,14 @@ export const tabs = {
     const dlChain = lay.length > 0 || (gal && wide);
     steps.push(...named.filter((g) => g.dataset.rank < 4).map(bare));
     if (gal && wide) for (const n of [5, 4, 3]) steps.push({ do: () => tiles(n), undo: () => tiles(n + 1), chain: 'names' });
+    // (Home: the style list in the gallery's place before its downloads fold and its names go, in the
+    // same chain: given back on its own, after them, it gave back names a wider row then lost, the
+    // gallery's three tiles taking their room)
+    if (gal && wide) steps.push({ ...flag('rb-narrow'), chain: 'names' });
     if (dlChain) steps.push({ ...flag('rb-dl1'), chain: 'names' });
     steps.push(...named.filter((g) => g.dataset.rank >= 4).map(bare));
     steps.push({ ...flag('rb-fold'), chain: 'names' });
     if (!dlChain) steps.push(flag('rb-dl1'));
-    if (gal && wide) steps.push(flag('rb-narrow'));
     const order = foldsGroups() ? [...groups].filter((g) => !g.dataset.spare).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
     for (const g of order) steps.push(fold(g));
     let k = 0;
