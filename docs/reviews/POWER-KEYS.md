@@ -195,3 +195,28 @@ offsets, which corrupts the text on Undo. Fix H1 to H3 and M1, then merge; the r
 Not tested: real phone keyboards (Android Gboard composes, so its typing never enters the queue;
 iOS autocorrect is the M1 risk), and real NVDA or VoiceOver output (findings M4 and M5 are from
 the markup).
+
+## Fixes (author, on power-keys)
+
+Each with checks in `test/power.py` that fail on the commit before it.
+
+| finding | commit | what changed |
+|---|---|---|
+| H1 | 3cd10c8 | Go to Label (F12) wants the reference selected alone (`refHere` reads `atomSelected()`); F12 beside one downloads, as Word's Save As; Shift+F5 comes back to the selection |
+| H2 | a5bb88f | in `\text{` (and the other text arguments) a composition, a dead key or inserted text without a keypress moves `\name{` and what follows to the LaTeX box, where the input method goes on |
+| H3 | 6b0f029 | Enter twice leaves only theorem like environments (THM_STYLES, the document's `\newtheorem`s), proof, quote, quotation and verse; a minipage, a center or a frame keep their paragraphs |
+| M1 | 8dfce2c | `typeFlush()` first in Undo, Redo, paste, drop and every input but a waiting letter; a space ends the run |
+| M3 | 8de6b2f | Go to File lists Print only while its box is empty |
+| M4 | 3e9507b | the page's description, Help's list and llms.txt say Escape, then Tab leaves |
+| M5 | 672d5d3 | the reference and citation pickers and Go to File: a combobox (`aria-controls`, `aria-expanded`, `aria-activedescendant`) over a listbox of options, a polite count |
+| M6, L6 | 88546da | `$$x^2$$` is a display, `\(x\)` and `\[x\]` close on `\)` and `\]`, `\$` and the other signs typed straight, `$` then a space a dollar sign, Esc keeps what the insert list held |
+| M2 | 12c0f4d | a block from the `\` list goes after a heading it was typed in, is refused (said why) in another command's argument; `\begin{itemize}` with its `\item`, tabular with `{ll}` |
+| L1 | 88beb8d | Ctrl+End after a display formula or a table that ends the text |
+| L4 | 965acd5 | Tab over a selection: from a paragraph's start the paragraph indented a step (Shift+Tab out), inside the text the gap in its place; a heading's gap |
+| L5 | 6d8d955 | `\o`, `\O`, `\quad`, `\qquad`, `\dots` are text; a raw command keeps its case; one letter matches names only |
+
+Left: L2 (F2 on a selected formula opens it, kept as the coordinator accepted), L3 (Tab in a list
+item that cannot change level still lets the focus visit the status bar for a moment), L7 (undo by
+word, the same on base). M1 costs some of the queue's gain, since a space now ends each run: on
+`dev/bench/long`, 62 characters 15 ms apart, the page is done 527 ms after the last key with the
+queue and 891 ms without (3147 and 7312 at 4x CPU slowdown), on a machine shared with other runs.

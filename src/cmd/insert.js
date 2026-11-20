@@ -404,9 +404,9 @@ register(
 // ---- the date and the time (I38) ----------------------------------------------------------------
 const pad = (n) => String(n).padStart(2, '0');
 register(
-  // (no control on Insert's row, nor Environment: with them the row folded more at 870 px than at
-  // 860 (test/tabs.py's sweep); Alt+Shift+D and T, the search box and the insert list reach them)
-  { id: 'date-time', name: 'Date & Time', label: 'Date & Time', kind: 'menu', synonyms: ['Date', 'Time', 'Today'],
+  // (on Insert's Text group, small, under Word's Signature Line, as task 66's layout packs them;
+  // Environment has no control: Alt+Shift+D and T, the search box and the insert list reach it)
+  { id: 'date-time', name: 'Date & Time', label: 'Date & Time', kind: 'menu', synonyms: ['Date', 'Time', 'Today'], tab: 'insert', group: 'text', order: 70,
     icon: '<rect x="3.5" y="4.5" width="13" height="12" rx="1.5"/><path d="M3.5 8h13M7 3v3M13 3v3"/>',
     title: 'Today\'s date, as \\today (updated every time TeX runs, in the document\'s language) or as text; the time', when: (app, at) => !!at && !app.armed, whyNot: () => PASTE_WHY,
     menuItems: (app) => {
@@ -423,9 +423,8 @@ register(
 
 // ---- text from a file, a PDF's pages (I39, I40) --------------------------------------------------
 register(
-  // (no control of its own on the row: Insert's row has no room for it at 870 px; the search box,
-  // Help and agents reach it)
-  { id: 'object', name: 'Object', label: 'Object', kind: 'menu', synonyms: ['Insert object', 'Insert file'],
+  // (Object: in Insert's Text group, as Word's, its menu the two kinds a LaTeX project can take)
+  { id: 'object', name: 'Object', label: 'Object', kind: 'menu', synonyms: ['Insert object', 'Insert file'], tab: 'insert', group: 'text', order: 80,
     icon: '<path d="M5 2.5h6.5L15 6v11.5H5z"/><path d="M11.5 2.5V6H15M8 10h4M8 13h4"/>', title: 'Text from a .tex file (\\input) or a PDF\'s pages (\\includepdf)',
     when: (app) => !!app.model && !app.stale, menuItems: () => [{ name: 'Text from file', title: 'A .tex file, read here by \\input', command: 'text-from-file' }, { name: 'PDF pages', title: 'Every page of a PDF (pdfpages)', command: 'insert-pdf' }] },
   { id: 'text-from-file', name: 'Text from file', synonyms: ['Insert file', 'input', 'include', 'Chapter'],

@@ -28,7 +28,7 @@
       <span class="sep"></span>
       <div class="zoom" role="group" aria-label="Zoom">
         <button id="b-zout" class="btn ghost icon" type="button" title="Zoom out" aria-label="Zoom out"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h10"/></svg><span class="sr">Zoom out</span></button>
-        <button id="zoomv" class="btn ghost zv" type="button" title="Fit width" aria-label="Fit width">Fit</button>
+        <button id="zoomv" class="btn ghost zv" type="button" title="Zoom: the page at this percentage of its size; a press fits it to the window&#39;s width" aria-label="Fit width">100%</button>
         <button id="b-zin" class="btn ghost icon" type="button" title="Zoom in" aria-label="Zoom in"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h10M10 5v10"/></svg><span class="sr">Zoom in</span></button>
       </div>
       <span class="sep"></span>
@@ -81,6 +81,7 @@
   <div id="script-note" class="guest-bar note-bar" hidden role="status"><span id="script-msg"></span><button id="script-go" class="btn sm" type="button" aria-label="Set it up">Set it up</button><button id="script-x" class="pop-x" type="button" aria-label="Not now" title="Not now">&times;</button></div>
   <main id="main">
     <aside id="nav" aria-label="Outline, problems, changes and git">
+      <div id="nav-doc" class="nav-doc"><span id="nav-doc-n" class="nav-doc-n"></span><span id="nav-doc-s" class="nav-doc-s"></span></div>
       <div id="nav-acts" class="nav-acts" role="menu" aria-label="Actions"></div>
       <div class="nav-tabs" role="tablist" aria-label="Panel">
         <button id="nt-outline" class="nav-tab on" type="button" role="tab" aria-selected="true" aria-label="Outline">Outline</button>
@@ -125,17 +126,18 @@
     </aside>
   </main>
   <footer id="status" aria-label="Status">
-    <button id="st-pages" class="linkish" type="button" title="Go To a page, a heading, a footnote, an equation or a label (Ctrl+G)"></button><span id="st-words"></span><button id="st-warn" class="linkish" type="button" hidden></button>
+    <button id="st-pages" class="linkish" type="button" title="Go To a page, a heading, a footnote, an equation or a label (Ctrl+G)"></button><button id="st-words" class="linkish" type="button" title="Word Count: the words, characters, paragraphs and lines (Ctrl+Shift+G)"></button><button id="st-warn" class="linkish" type="button" hidden></button>
     <span class="grow"></span>
     <!--APPSTATUS-->
-    <span id="st-save">Kept in this browser</span>
-    <button id="b-new" class="linkish" type="button" aria-label="New document">New document</button>
-    <button id="b-sample" class="linkish" type="button" aria-label="Load the sample">Load the sample</button>
+    <span id="st-save" class="st-quiet" role="status">Kept in this browser</span>
+    <button id="b-new" class="linkish" type="button" aria-label="New document" title="New document: a blank article; this one stays under Review, Versions">New document</button>
+    <button id="b-sample" class="linkish" type="button" aria-label="Load the sample" title="Load the sample: the document Rikuy opens with, in place of this one (it asks first)">Load the sample</button>
     <div id="st-views" class="st-views" role="group" aria-label="Views">
       <button id="sv-page" type="button" aria-pressed="true" aria-label="Page view" title="Page: the typeset page you type on"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 2.5h9v15h-9zM8 6h4M8 9h4M8 12h3"/></svg><span>Page</span></button>
       <button id="sv-latex" type="button" aria-pressed="false" aria-label="LaTeX view" title="LaTeX: the source across the window, at the same place"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 6-4 4 4 4m6-8 4 4-4 4"/></svg><span>LaTeX</span></button>
       <button id="sv-pdf" type="button" aria-pressed="false" aria-label="PDF view" title="PDF: TeX's PDF across the window, at the same place"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h7l3.5 3.5v11.5H5zM12 2.5V6h3.5M7.5 10h5M7.5 13h5"/></svg><span>PDF</span></button>
     </div>
+    <button id="sv-mobile" class="sv-mobile" type="button" aria-pressed="false" aria-label="Mobile View" title="Mobile View: the text at a size to read, its lines as wide as the screen (Web Layout). Off: the pages as TeX sets them (Print Layout)"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6" y="2.5" width="8" height="15" rx="1.5"/><path d="M8.5 6.5h3M8.5 9h3M8.5 11.5h2"/></svg><span>Mobile View</span></button>
     <div class="st-zoom"><input id="st-zoom" type="range" min="25" max="400" step="5" value="100" aria-label="Zoom" title="Zoom: drag, or Ctrl and + or -"><button id="st-zoomv" class="linkish" type="button" aria-label="Zoom level" title="The page at its actual size (Ctrl+0)">100%</button></div>
   </footer>
   <button id="focus-x" class="focus-x" type="button" hidden aria-label="Leave Focus" title="Leave Focus (Esc)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15"/></svg><span>Leave Focus</span></button>
