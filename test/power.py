@@ -375,6 +375,13 @@ def insertlist(page):
         load_doc(page, PLAIN)
         click_text(page, 'gamma.', 6); key(page, 'Enter'); insert_list(page, 'begin{' + env + '}'); typed(page, 'X')
         check('insertlist: begin{' + env + '} writes a ' + env + ' TeX takes', want in src(page), src(page)[60:200])
+    # (review L5) \o, \O and \quad are text, written as typed with their case; \Gamma a formula
+    for q, want in (('o', 'gamma.\\o'), ('O', 'gamma.\\O'), ('quad', 'gamma.\\quad'), ('Gamma', 'gamma.$\\Gamma')):
+        load_doc(page, PLAIN)
+        click_text(page, 'gamma.', 6); insert_list(page, q)
+        if q == 'Gamma': key(page, 'Enter', 400)
+        s = src(page)
+        check('insertlist: \\' + q + ' Enter writes ' + want[6:], want in s and (q == 'Gamma' or '$' not in s) and '\\footnote' not in s, s[60:120])
 
 
 def repeat(page):

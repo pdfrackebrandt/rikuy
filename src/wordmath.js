@@ -278,8 +278,10 @@ export function resolveCommand(name, macros, dialect) {
 
 // Whether \name means something only in a formula (\alpha, \frac, \sum, \mathbb, \sin): typed in
 // the text it opens one (the insert list, src/app.js runPalette), as LaTeX takes it nowhere else
+// (\o and \O are the letters ø and Ø in text, \quad and \qquad its spaces, \dots dots in both:
+// a formula for them was wrong, $\o$ an error; review L5)
 export function mathOnly(name) {
-  if (!name || name === 'ldots' || /^text/.test(name) || name === 'mbox') return false;
+  if (!name || /^(ldots|dots|o|O|quad|qquad|mbox)$/.test(name) || /^text/.test(name)) return false;
   return SAME.includes(name) || FUNCS.includes(name) || (Object.prototype.hasOwnProperty.call(WORD, name) && WORD[name] !== '') || /^math[a-z]+$/.test(name);
 }
 

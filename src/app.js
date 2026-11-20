@@ -3722,9 +3722,11 @@ class App {
     let hi = 0;
     let shown = items;
     const draw = () => {
-      const q = inp.value.replace(/^\\/, '').trim().toLowerCase();
-      shown = items.filter((x) => !q || x.k.startsWith(q) || x.d.toLowerCase().includes(q));
-      if (q && !shown.some((x) => x.k === q)) shown = [...shown, { k: q, d: 'Insert \\' + q + ' as typed', raw: true }];
+      // (a raw command keeps its case, \O and \Gamma; one letter matches names only, as \o Enter
+      // wrote \footnote{} where "Footnote" holds an o; review L5)
+      const typed = inp.value.replace(/^\\/, '').trim(), q = typed.toLowerCase();
+      shown = items.filter((x) => !q || x.k.startsWith(q) || (q.length > 1 && x.d.toLowerCase().includes(q)));
+      if (q && !shown.some((x) => x.k === typed)) shown = [...shown, { k: typed, d: 'Insert \\' + typed + ' as typed', raw: true }];
       hi = Math.min(hi, shown.length - 1);
       list.replaceChildren();
       shown.slice(0, 12).forEach((x, i) => {
