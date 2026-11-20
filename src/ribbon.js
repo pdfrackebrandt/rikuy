@@ -64,17 +64,29 @@ export const ribbon = {
     if (!at) return null;
     const A = posFromDom(at.node, at.offset, this.root);
     if (!A || A.ghost) return null;
-    // (every command reads the place as it reads a caret put there by a press: the selection. The
-    // browser gives the page the focus with a selection put in it: the focus stays where it was, a
-    // button of the bar that a popover gave it back to, or nowhere)
-    const f = document.activeElement;
-    sel.collapse(at.node, at.offset);
-    if (document.activeElement !== f) {
+    // (read as a caret put there would be, without putting it there: reading the ribbon moves no
+    // caret, UI-PRINCIPLES P5; the selection goes there only while the ribbon reads its commands
+    // and when one runs, atRestDo)
+    const rng = document.createRange();
+    rng.setStart(at.node, at.offset); rng.collapse(true);
+    const c = { f: A.f, p: A.p, a: A.p, b: A.p, collapsed: true, range: rng, rest: true };
+    return this.atOf(c, at.node.nodeType === 1 ? at.node : at.node.parentElement, rng);
+  },
+  // fn with the selection at a place read with no caret on the page (ribbonAtRest), as the commands
+  // read a caret: from the selection. The browser gives the page the focus with a selection put in
+  // it: the focus stays where it was (a button of the bar a popover gave it back to, or nowhere).
+  // keep: the selection stays there (a command run); otherwise it is put back as it was.
+  atRestDo(at, fn, keep) {
+    if (!at || !at.c || !at.c.rest) return fn();
+    const sel = getSelection(), f = document.activeElement;
+    const was = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    const focusBack = () => {
+      if (document.activeElement === f) return;
       if (f && f !== document.body && f.focus) f.focus({ preventScroll: true });
       else if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-    }
-    const c = this.caretNow();
-    return c ? this.atOf(c, at.node.nodeType === 1 ? at.node : at.node.parentElement, sel.getRangeAt(0)) : null;
+    };
+    sel.removeAllRanges(); sel.addRange(at.c.range.cloneRange()); focusBack();
+    try { return fn(); } finally { if (!keep) { sel.removeAllRanges(); if (was) sel.addRange(was); focusBack(); } }
   },
 
   // a block that is one plain paragraph of the text: [s, e) of its words, or null
