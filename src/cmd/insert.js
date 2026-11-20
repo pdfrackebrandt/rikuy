@@ -8,7 +8,7 @@
 import { register, command, onInsertText, onInstall } from '../commands.js';
 import { openMenu, openGallery, dialog } from '../ui/kit.js';
 import { mk } from '../ui/dom.js';
-import { chordText } from '../keys.js';
+import { firstKey, macUA } from '../keys.js';
 import { SYMBOLS, openSymbols } from '../ui/symbol.js';
 import { correct, borderLine, DEFAULTS as AC_DEFAULTS, REPLACE } from '../autocorrect.js';
 import { openGraphDialog } from '../ui/graphdialog.js';
@@ -137,7 +137,7 @@ register(
   { id: 'insert-list', name: 'Insert list', title: 'The list of things to insert: footnote, citation, section, environments and more (\\; Ctrl+K is Link)', synonyms: ['Insert a command', 'Command'], run: (app) => app.openPalette() },
   env('proposition', 'Proposition', 140), env('lemma', 'Lemma', 150), env('theorem', 'Theorem', 160), env('definition', 'Definition', 170), env('assumption', 'Assumption', 180), env('proof', 'Proof', 190),
   { id: 'insert-ldots', name: 'Ellipsis', synonyms: ['Dots', 'ldots'], keys: ['Ctrl+Alt+.'], run: (app) => app.insertFromPalette('ldots'), palette: { k: 'ldots', d: 'Ellipsis …', order: 220, t: piece('\\ldots{}', '') } },
-  { id: 'insert-newline', name: 'Line break', synonyms: ['New line'], run: (app) => app.insertFromPalette('newline'), palette: { k: 'newline', d: 'Line break', order: 230, t: piece('\\\\\n', '') } },
+  { id: 'insert-newline', name: 'Line break', title: 'Line break (Shift+Enter): a new line in the same paragraph, \\\\', keysElsewhere: ['Shift+Enter'], synonyms: ['New line', 'Manual line break'], run: (app) => app.insertFromPalette('newline'), palette: { k: 'newline', d: 'Line break', order: 230, t: piece('\\\\\n', '') } },
   // (the page's own copy and cut handlers give the LaTeX: the focus goes back to the page first)
   { id: 'cut', name: 'Cut', title: 'Cut (Ctrl+X)', keysElsewhere: ['Ctrl+X'], menu: { selection: 10 }, when: sel, tab: 'home', group: 'clipboard', order: 20,
     icon: '<circle cx="6" cy="14.5" r="2.2"/><circle cx="14" cy="14.5" r="2.2"/><path d="M7.6 12.9 14 3.5M12.4 12.9 6 3.5"/>', run: (app) => { app.ribbonBack(); document.execCommand('cut'); } },
@@ -363,7 +363,8 @@ register(
     ] },
   { id: 'paste-text', name: 'Keep Text Only', title: 'Paste the words alone (Ctrl+Shift+V)', keysElsewhere: ['Ctrl+Shift+V'], synonyms: ['Paste as plain text', 'Paste unformatted'], whyNot: () => PASTE_WHY, run: (app) => app.pasteFrom('text') },
   { id: 'paste-latex', name: 'Paste as LaTeX source', title: 'Paste the clipboard\'s text as LaTeX, unescaped', synonyms: ['Paste LaTeX', 'Paste source'], whyNot: () => PASTE_WHY, run: (app) => app.pasteFrom('latex') },
-  { id: 'paste-special', name: 'Paste Special', title: 'Paste in the form chosen (Ctrl+Alt+V)', keys: ['Ctrl+Alt+V'], synonyms: ['Paste options'], whyNot: () => PASTE_WHY, run: (app) => app.pasteSpecial() }
+  // (Word for Mac's Cmd+Control+V; Cmd+Option+V is the Mac's own move of a file)
+  { id: 'paste-special', name: 'Paste Special', title: 'Paste in the form chosen (Ctrl+Alt+V)', keys: ['Ctrl+Alt+V'], mac: { 'Ctrl+Alt+V': 'Ctrl+Control+V' }, synonyms: ['Paste options'], whyNot: () => PASTE_WHY, run: (app) => app.pasteSpecial() }
 );
 
 // ---- symbols and special characters (I44, I45) ---------------------------------------------------
@@ -372,14 +373,18 @@ register(
   { id: 'symbol', name: 'Symbol', label: 'Symbol', tab: 'insert', group: 'symbols', order: 30, glyph: '<span class="sym-g">Ω</span>', synonyms: ['Symbols', 'Special characters', 'Character', 'Insert symbol'],
     title: 'Symbols as LaTeX: ©, °, €, §, arrows; the ones used last first. The arrow: the grid and More Symbols', when: (app, at) => !!at && !app.armed, whyNot: () => PASTE_WHY,
     run: (app) => app.symbolGrid(), menuItems: (app) => app.symbolItems() },
-  { id: 'more-symbols', name: 'More Symbols', title: 'Every symbol, with a search, and Word\'s Special Characters', when: (app, at) => !!at && !app.armed, whyNot: () => PASTE_WHY, run: (app) => openSymbols(app, (t) => app.insertTeX(t, t.includes('checkmark') ? ['amssymb'] : t.includes('nobreakdash') ? ['amsmath'] : []), (id) => { const c = command(id); return c && c.keys ? chordText(c.keys[0]) : ''; }) },
-  tex('insert-em-dash', 'Em dash', '---', { keys: ['Ctrl+Alt+-'], synonyms: ['Long dash'] }),
-  tex('insert-en-dash', 'En dash', '--', { synonyms: ['Short dash', 'Range dash'] }),
+  { id: 'more-symbols', name: 'More Symbols', title: 'Every symbol, with a search, and Word\'s Special Characters', when: (app, at) => !!at && !app.armed, whyNot: () => PASTE_WHY, run: (app) => openSymbols(app, (t) => app.insertTeX(t, t.includes('checkmark') ? ['amssymb'] : t.includes('nobreakdash') ? ['amsmath'] : []), (id) => { const c = command(id); return (c && firstKey(c, macUA())) || ''; }) },
+  // (Word's: Ctrl+Alt and the number pad's minus, and Ctrl and that minus for the en dash; Ctrl+Alt
+  // and the main minus too, a keyboard without a pad's way. On a Mac Option and the minus type them)
+  tex('insert-em-dash', 'Em dash', '---', { keys: ['Ctrl+Alt+-', 'Ctrl+Alt+NumpadSubtract'], synonyms: ['Long dash'] }),
+  tex('insert-en-dash', 'En dash', '--', { keys: ['Ctrl+NumpadSubtract'], synonyms: ['Short dash', 'Range dash'] }),
   tex('insert-nbsp', 'Nonbreaking space', '~', { keys: ['Ctrl+Shift+Space'], synonyms: ['No-break space', 'Tie'] }),
   tex('insert-nb-hyphen', 'Nonbreaking hyphen', '\\nobreakdash-', { keys: ['Ctrl+Shift+_'], pkgs: ['amsmath'], synonyms: ['No-break hyphen'] }),
-  tex('insert-copyright', 'Copyright', '\\copyright{}', { keys: ['Ctrl+Alt+C'], synonyms: ['©'] }),
-  tex('insert-registered', 'Registered', '\\textregistered{}', { keys: ['Ctrl+Alt+R'], synonyms: ['®'] }),
-  tex('insert-trademark', 'Trademark', '\\texttrademark{}', { keys: ['Ctrl+Alt+T'], synonyms: ['™', 'TM'] })
+  // (a Mac's keyboard types these with Option itself: Option+G ©, Option+R ®, Option+2 ™; Cmd+Option+R
+  // is Word for Mac's ribbon there)
+  tex('insert-copyright', 'Copyright', '\\copyright{}', { keys: ['Ctrl+Alt+C'], mac: { 'Ctrl+Alt+C': false }, synonyms: ['©'] }),
+  tex('insert-registered', 'Registered', '\\textregistered{}', { keys: ['Ctrl+Alt+R'], mac: { 'Ctrl+Alt+R': false }, synonyms: ['®'] }),
+  tex('insert-trademark', 'Trademark', '\\texttrademark{}', { keys: ['Ctrl+Alt+T'], mac: { 'Ctrl+Alt+T': false }, synonyms: ['™', 'TM'] })
 );
 
 // ---- the date and the time (I38) ----------------------------------------------------------------
@@ -394,7 +399,7 @@ register(
       const d = new Date(), loc = (o) => d.toLocaleDateString('en-GB', o), us = (o) => d.toLocaleDateString('en-US', o);
       const fixed = [loc({ day: 'numeric', month: 'long', year: 'numeric' }), us({ month: 'long', day: 'numeric', year: 'numeric' }), d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()),
         loc({ weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear(), pad(d.getHours()) + ':' + pad(d.getMinutes())];
-      return [{ name: 'Update automatically (\\today)', title: 'The date TeX prints each time it runs, in the document\'s language (Alt+Shift+D)', keys: 'Alt+Shift+D', command: 'insert-date' }, null,
+      return [{ name: 'Update automatically (\\today)', title: 'The date TeX prints each time it runs, in the document\'s language (Alt+Shift+D)', keys: firstKey(command('insert-date'), macUA()), command: 'insert-date' }, null,
         ...fixed.map((t) => ({ name: t, title: 'As text: it stays this date', run: () => app.insertTeX(app.escapeTyped(t)) }))];
     } },
   tex('insert-date', 'Date', '\\today{}', { keys: ['Alt+Shift+D'], mac: { 'Alt+Shift+D': 'Control+Shift+D' }, title: 'Today\'s date, updated each time TeX runs (\\today) (Alt+Shift+D)', synonyms: ['Today', 'Insert date'] }),

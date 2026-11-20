@@ -1016,6 +1016,10 @@ function projectPath(p) {
 }
 const recent = [];
 const bibSigs = new Map(); // project dir -> signature of its .bib files when bibtex/biber last ran
+// project dir -> the text of the project's own .bbl that a .bbl bibtex or biber made has replaced:
+// while the project's file is unchanged it is not written again over the made one, which the
+// next run keeps (KEEP), so a citation added after bibtex ran stays resolved
+const madeBbl = new Map();
 function touchProject(dir) {
   const i = recent.indexOf(dir);
   if (i >= 0) recent.splice(i, 1);
@@ -1024,6 +1028,7 @@ function touchProject(dir) {
     const old = recent.pop();
     try { rmTree(old, null); M.FS.rmdir(old); } catch (e) { /* gone */ }
     bibSigs.delete(old);
+    madeBbl.delete(old);
   }
 }
 
@@ -1031,6 +1036,27 @@ function touchProject(dir) {
 function bibMissing(aux) {
   const names = [...aux.matchAll(/\\bibdata\{([^}]*)\}/g)].flatMap((m) => m[1].split(',')).map((n) => n.trim()).filter(Boolean);
   return names.some((n) => { const f = /\.bib$/i.test(n) ? n : n + '.bib'; return !exists(f) && !treeLookup(f); });
+}
+
+// Of the project's own .bbl and the one bibtex or biber just made, the one that resolves more of
+// the document's citations; on a tie the own one when ownOnTie (a project's first run, where
+// latexmk keeps the .bbl it finds and arXiv never runs bibtex at all), else the made one, so an
+// edit of the .bib shows. arXiv's sources ship the .bbl a paper was built with, often beside a
+// .bib that lacks some of its entries or writes accents as combining characters pdfLaTeX cannot
+// set: in run 44077385415, 31 papers printed [?] and 6 mangled names where latexmk did not.
+// A biblatex .bbl is the own one only when biber writes the same format version: an older one
+// is read as text (the desktop printed "author2hash=..." for 6 papers there; Rikuy, with biber's,
+// printed their references).
+function betterBbl(own, made, aux, ownOnTie) {
+  const version = (t) => (/biblatex bbl format version ([\d.]+)/.exec(t.slice(0, 400)) || [])[1] || '';
+  if (version(own) !== version(made)) return made;
+  const cited = new Set();
+  for (const m of aux.matchAll(/\\citation\{([^}]*)\}|\\abx@aux@cite\{[^}]*\}\{([^}]*)\}/g)) {
+    for (const k of (m[1] ?? m[2]).split(',')) if (k.trim() && k.trim() !== '*') cited.add(k.trim());
+  }
+  const resolved = (bbl) => { let n = 0; for (const k of cited) if (bbl.includes('{' + k + '}')) n++; return n; };
+  const o = resolved(own), m = resolved(made);
+  return o > m || (ownOnTie && o === m) ? own : made;
 }
 
 // Citations recorded by a run: the main .aux and the .aux files it pulls in (\include).
@@ -1765,8 +1791,13 @@ async function compile(job) {
   touchProject(dir);
   // keep last run's intermediates unless a clean build was asked for; drop everything else
   rmTree(dir, job.clean ? null : (p) => KEEP.test(p) || ASY_OUT.test(p));
-  if (job.clean) asySigs.delete(dir);
+  if (job.clean) { asySigs.delete(dir); madeBbl.delete(dir); }
+  const ownBblPath = projectPath(job.main).replace(/\.tex$/i, '') + '.bbl';
   for (const f of job.files) {
+    if (projectPath(f.path) === ownBblPath && madeBbl.has(dir)) {
+      if (madeBbl.get(dir) === (typeof f.data === 'string' ? f.data : new TextDecoder().decode(f.data))) continue;
+      madeBbl.delete(dir); // the project's .bbl itself changed: it is the one to use again
+    }
     const p = dir + '/' + projectPath(f.path);
     mkdirp(p.slice(0, p.lastIndexOf('/')));
     M.FS.writeFile(p, f.data);
@@ -1896,6 +1927,8 @@ async function compile(job) {
   // the document came with: arXiv's sources carry the .bbl and seldom the .bib, and in run
   // 43936586314 183 papers printed [?] where TeX Live's latexmk printed the numbers.
   const ownBbl = job.files.some((f) => projectPath(f.path) === (sub ? sub + '/' : '') + base + '.bbl');
+  // the project's own .bbl as this run wrote it, while no made one stands in for it
+  const ownText = ownBbl && !madeBbl.has(dir) && exists(base + '.bbl') ? readText(base + '.bbl') : null;
   let r = await pass();
   const fatal = (x) => /Emergency stop|Fatal error occurred|==> Fatal error|No pages of output/.test(x.log) && !exists(base + '.' + E.out);
   // A .bbl the document came with that this biblatex cannot read (its macros change between
@@ -1915,12 +1948,22 @@ async function compile(job) {
         status('biber');
         const b = await runBiber(cwd, base, job.files, sub);
         runs.push({ cmd: 'biber', code: b.code, log: b.log });
-        if (b.bbl != null) { M.FS.writeFile(base + '.bbl', b.bbl); bibSigs.set(dir, job.bibSig || ''); r = await pass(); }
+        if (b.bbl != null && ownText != null && exists(base + '.bbl') && betterBbl(ownText, b.bbl, readText(base + '.aux'), false) === ownText) {
+          runs.push({ cmd: 'biber', code: 0, log: 'Kept the project\'s own .bbl: it resolves more of the citations than biber\'s from the .bib files.' });
+        } else if (b.bbl != null) {
+          M.FS.writeFile(base + '.bbl', b.bbl); bibSigs.set(dir, job.bibSig || '');
+          if (ownText != null) madeBbl.set(dir, ownText);
+          r = await pass();
+        }
       }
     } else if (changed && !(ownBbl && bibMissing(aux))) {
       status('bibtex');
       const b = run(['bibtex8', '--8bit', base + '.aux']);
       runs.push({ cmd: 'bibtex', code: b.code, log: readText(base + '.blg') || b.stdout });
+      if (ownText != null && exists(base + '.bbl') && betterBbl(ownText, readText(base + '.bbl'), readText(base + '.aux'), citesBefore === '') === ownText) {
+        M.FS.writeFile(base + '.bbl', ownText);
+        runs.push({ cmd: 'bibtex', code: 0, log: 'Kept the project\'s own .bbl: it resolves more of the citations than bibtex\'s from the .bib files.' });
+      } else if (ownText != null && exists(base + '.bbl')) madeBbl.set(dir, ownText);
       if (exists(base + '.bbl')) bibSigs.set(dir, job.bibSig || '');
       r = await pass();
     }

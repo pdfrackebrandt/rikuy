@@ -608,6 +608,32 @@ function sameRefs(a, b) {
   return true;
 }
 
+// A .bib read once per text: every full build asked for every entry again (a 2 MB .bib took
+// 46 ms on each keystroke in a paragraph with a citation). Builds share the entries, so each is
+// frozen: a writer throws instead of changing every later build. A file is read again when its
+// text is another. Kept: the files the last build asked for (Builder.ensureBib lets the others
+// go: a closed project's .bib held its entries, about five times its text, for good), and of the
+// files no build asks for now, the newest within BIB_BUDGET characters of text. The files the
+// running build asks for are never let go: the model holds their entries anyway, and a project
+// whose .bib passed the budget would read it again on every keystroke.
+const BIB_CACHE = new Map(), BIB_BUDGET = 4e6;
+// (for test/model.test.mjs: the names kept)
+export const bibKept = () => [...BIB_CACHE.keys()];
+function parsedBib(name, text, asked) {
+  let c = BIB_CACHE.get(name);
+  if (!c || c.text !== text) {
+    const ents = parseBib(text, name);
+    for (const e of ents.values()) { Object.freeze(e.fields); Object.freeze(e); }
+    c = { text, ents };
+    BIB_CACHE.delete(name);
+    BIB_CACHE.set(name, c);
+    let size = 0;
+    for (const x of BIB_CACHE.values()) size += x.text.length;
+    for (const [k, x] of BIB_CACHE) { if (size <= BIB_BUDGET) break; if (k === name || asked.has(k)) continue; BIB_CACHE.delete(k); size -= x.text.length; }
+  }
+  return c.ents;
+}
+
 const PARSE_CACHE = new Map();
 // (B2) the parse the model made of a file's text, for the paragraph commands (src/parasrc.js
 // unitOf): read again at every move of the caret, a long text would be parsed each time
@@ -2030,12 +2056,16 @@ class Builder {
       let m;
       while ((m = re.exec(t))) for (const b of m[1].split(',')) names.add(b.trim());
     }
+    const asked = new Set();
     for (const b of names) {
       const f = this.resolveBib(b);
       if (!f) continue;
-      const ents = parseBib(this.files.get(f), f);
+      asked.add(f);
+      const ents = parsedBib(f, this.files.get(f), asked);
       for (const [k, v] of ents) if (!this.bibEntries.has(k)) this.bibEntries.set(k, v);
     }
+    // (a closed project's, or a file the document no longer reads, is let go)
+    for (const k of [...BIB_CACHE.keys()]) if (!asked.has(k)) BIB_CACHE.delete(k);
   }
 
   refList() {
