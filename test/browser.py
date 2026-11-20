@@ -62,10 +62,21 @@ def check(name, cond, detail=''):
     return bool(cond)
 
 
-def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, touch=False, connect=()):
+# A window under 700 px opens in Mobile View (Web Layout) unless Print Layout was chosen on it. The
+# suites written for a phone's Print Layout (its pages, margins, headers, the sheet's zoom) say so
+# with this script, as a person's tap on Mobile View would: it marks Print Layout chosen when
+# nothing is (test/ux.py tests Mobile View itself, with layout='mobile').
+PRINT_LAYOUT = '''(() => { try { const k = 'galley.prefs.v1', p = JSON.parse(localStorage.getItem(k) || 'null') || {};
+  if (p.narrowWeb === undefined) { p.narrowWeb = false; localStorage.setItem(k, JSON.stringify(p)); } } catch (e) {} })()'''
+
+
+def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, touch=False, connect=(), layout='print'):
     # touch: a phone's page (a touch screen, a mobile viewport: pointer coarse, no hover; tap())
+    # layout: 'print', a window under 700 px opens in Print Layout; 'mobile', in its default
     browser = p.chromium.launch(args=[a for a in os.environ.get('CHROME_ARGS', '').split() if a])
     ctx = browser.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=1, has_touch=touch, is_mobile=touch)
+    if layout == 'print' and width < 700:
+        ctx.add_init_script(PRINT_LAYOUT)
     page = ctx.new_page()
     errors = []
     page.on('console', lambda m: errors.append(m.text) if m.type == 'error' and 'Failed to load resource' not in m.text else None)
@@ -277,7 +288,7 @@ def ui_fonts(page):
     cdp.send('CSS.enable')
     root = cdp.send('DOM.getDocument', {'depth': -1})['root']['nodeId']
     drawn = {}
-    for sel in ('#b-open span', '#st-save', '#monoprobe'):
+    for sel in ('#b-open span', '#st-pages', '#monoprobe'):
         nid = cdp.send('DOM.querySelector', {'nodeId': root, 'selector': sel})['nodeId']
         drawn[sel] = [(f['familyName'], f['isCustomFont']) for f in cdp.send('CSS.getPlatformFontsForNode', {'nodeId': nid})['fonts']]
     page.evaluate("document.getElementById('monoprobe').remove()")
@@ -285,7 +296,7 @@ def ui_fonts(page):
     # Chromium names a face with its style ("IBM Plex Sans Medium"); custom means the page's own
     only = lambda sel, fam: drawn[sel] and all(n.startswith(fam) and own for n, own in drawn[sel])
     check('and the interface is drawn in them: a toolbar label and the status line in Plex Sans, mono text in Plex Mono',
-          only('#b-open span', 'IBM Plex Sans') and only('#st-save', 'IBM Plex Sans') and only('#monoprobe', 'IBM Plex Mono'), drawn)
+          only('#b-open span', 'IBM Plex Sans') and only('#st-pages', 'IBM Plex Sans') and only('#monoprobe', 'IBM Plex Mono'), drawn)
 
 
 def latin_ext_fonts(page, where='', check=check):
@@ -665,10 +676,11 @@ def phone_layout(page):
     check('a phone has no Help button in the bar', not page.is_visible('#b-help'))
     page.click('#b-nav')
     page.wait_for_timeout(200)
-    acts = page.evaluate('[...document.querySelectorAll("#nav-acts .nav-act")].map((a) => [a.dataset.for, a.textContent.trim(), a.disabled, a.getBoundingClientRect().height])')
+    # (Make available offline is there too where the installed app shows it; not in this page)
+    acts = page.evaluate('[...document.querySelectorAll("#nav-acts .nav-act:not([hidden])")].map((a) => [a.dataset.for, a.textContent.trim(), a.disabled, a.getBoundingClientRect().height])')
     bar = page.evaluate('[...document.querySelectorAll("#bar .tools button:not(.ai-only), #b-undo, #b-undo-x, #b-redo, #b-share, .rb-dl button:not(#rb-dl-menu), #b-copy")].map((b) => b.id)')
     check('the menu panel lists every action of the bar, the downloads and Copy source by name, each large enough to tap', sorted(a[0] for a in acts) == sorted(bar) and all(a[1] and a[3] >= 36 for a in acts), (acts, bar))
-    check('Undo and Redo are greyed there when there is nothing to undo, and the zoom shows its value', all(a[2] for a in acts if a[0] in ('b-undo', 'b-redo')) and re.match(r'Zoom: (Fit|\d+%)$', [a[1] for a in acts if a[0] == 'zoomv'][0]), acts)
+    check('Undo and Redo are greyed there when there is nothing to undo, and the zoom shows its value', all(a[2] for a in acts if a[0] in ('b-undo', 'b-redo')) and re.match(r'Zoom: \d+%$', [a[1] for a in acts if a[0] == 'zoomv'][0]), acts)
     page.click('#nav-acts [data-for=b-help]')
     page.wait_for_timeout(300)
     r = page.evaluate('(() => { const e = document.querySelector("body > .pop.pop-help"); if (!e) return null; const dd = e.querySelector(".keys dd").getBoundingClientRect(), b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right), Math.round(dd.width), document.documentElement.clientWidth]; })()')
@@ -684,13 +696,14 @@ def phone_layout(page):
     page.evaluate('window.rikuy.toggleNav(true)')
     check('a wide screen, where the buttons carry their names, has no such list', page.is_visible('#b-help') and not page.is_visible('#nav-acts'))
     page.evaluate('window.rikuy.toggleNav(false)')
-    # keyboard alone: a popover opened from a button of the bar gives the focus back to it
+    # keyboard alone: a popover (Share) or a pane (Help, on a wide window) opened from a button of
+    # the bar gives the focus back to it
     back = []
     for b in ('#b-share', '#b-help'):
         page.focus(b); page.keyboard.press('Enter'); page.wait_for_timeout(250)
-        opened = page.evaluate('document.querySelectorAll("body > .pop").length')
+        opened = page.evaluate('document.querySelectorAll("body > .pop, #helppane").length')
         page.keyboard.press('Escape'); page.wait_for_timeout(150)
-        back.append((b, opened, page.evaluate('document.querySelectorAll("body > .pop").length'), page.evaluate('"#" + document.activeElement.id')))
+        back.append((b, opened, page.evaluate('document.querySelectorAll("body > .pop, #helppane").length'), page.evaluate('"#" + document.activeElement.id')))
     check('Escape closes Share and Help and the focus returns to their buttons', all(o == 1 and c == 0 and a == b for b, o, c, a in back), back)
 
 
@@ -738,8 +751,15 @@ def first_visit(p):
         for w in (360, 390, 430):
             ctx = browser.new_context(viewport={'width': w, 'height': 800}, has_touch=True, is_mobile=True); ctx.route('**/*', serve)
             page = visit(ctx)
-            m = page.evaluate('(() => { const d = document.getElementById("desk"), r = document.querySelector("#pages .it.p").getBoundingClientRect(); return { font: parseFloat(getComputedStyle(document.querySelector("#pages .it.p")).fontSize), left: r.left, right: r.right, w: d.clientWidth, label: document.getElementById("zoomv").textContent, src: ' + on + ' }; })()')
-            check('a first visit on a %dpx phone opens with the text block across the screen, not the sheet' % w, m['font'] > 7.5 and m['left'] >= 0 and m['right'] <= m['w'] and m['right'] - m['left'] > m['w'] - 30 and not m['src'], m)
+            geo = '(() => { const d = document.getElementById("desk"), r = document.querySelector("#pages .it.p").getBoundingClientRect(); return { font: parseFloat(getComputedStyle(document.querySelector("#pages .it.p")).fontSize), left: r.left, right: r.right, w: d.clientWidth, label: document.getElementById("zoomv").textContent, src: ' + on + ', web: document.body.classList.contains("pg-web") }; })()'
+            m = page.evaluate(geo)
+            # (a phone opens in Mobile View, Word's phone app's: the text at its actual size, its lines as wide as the screen)
+            wide = page.evaluate('Math.max(...[...document.querySelectorAll("#pages .it.p")].map((p) => p.getBoundingClientRect().width))')
+            check('a first visit on a %dpx phone opens in Mobile View: the text at its actual size across the screen' % w, m['web'] and m['font'] >= 13 and m['left'] >= 0 and m['right'] <= m['w'] and wide > 0.8 * m['w'] and not m['src'] and m['label'] == '100%', (m, wide))
+            # Print Layout, a tap on Mobile View away: the text block across the screen, not the sheet
+            page.tap('#sv-mobile'); page.wait_for_timeout(400)
+            m = page.evaluate(geo)
+            check('with Mobile View off a %dpx phone shows the text block across the screen, not the sheet' % w, not m['web'] and m['font'] > 7.5 and m['left'] >= 0 and m['right'] <= m['w'] and m['right'] - m['left'] > m['w'] - 30 and not m['src'], m)
             # what is stored must be a zoom the version before this one can read (it multiplies
             # anything but 'fit'): after a rollback its page would have no size
             z = page.evaluate('JSON.parse(localStorage.getItem("galley.prefs.v1")).zoom')
@@ -748,11 +768,12 @@ def first_visit(p):
                 seen = []
                 for _ in range(3):
                     page.tap('#zoomv'); page.wait_for_timeout(300); seen.append(page.inner_text('#zoomv'))
-                check('the zoom button there goes to actual size, the whole sheet, and back', seen[0] == '100%' and seen[1] == 'Fit' and seen[2] == m['label'], seen)
+                # (the button says the zoom as a percentage, as the status bar does: the sheet's is smaller)
+                check('the zoom button there goes to actual size, the whole sheet, and back', seen[0] == '100%' and seen[1].endswith('%') and int(seen[1][:-1]) < int(m['label'][:-1]) and seen[2] == m['label'], seen)
                 page.tap('#zoomv'); page.tap('#zoomv'); page.wait_for_timeout(300)
                 z = page.evaluate('JSON.parse(localStorage.getItem("galley.prefs.v1")).zoom')
                 page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(300)
-                check('the whole sheet, once chosen, is kept too, under a zoom the previous version reads', page.inner_text('#zoomv') == 'Fit' and z == 'fit', (page.inner_text('#zoomv'), z))
+                check('the whole sheet, once chosen, is kept too, under a zoom the previous version reads', page.inner_text('#zoomv') == seen[1] and z == 'fit', (page.inner_text('#zoomv'), z))
                 page.tap('#zoomv'); page.wait_for_timeout(300)
                 page.tap('#zoomv'); page.wait_for_timeout(300)
                 page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(300)

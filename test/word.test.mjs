@@ -570,6 +570,31 @@ await ok('to Word (R3): a cell\'s shading (\\cellcolor, \\rowcolor, \\rowcolors)
   assert.equal(importInto(E.docx, files).files.size, 0);
 });
 
+// (the review of PR 84, M6: a "% formula" line was a dead number in Word and gone when opened again)
+await ok('to Word: a table\'s formula line as Word\'s own field round the value; a stranger\'s .docx with one gives the line back; nothing changed comes back changed', async () => {
+  const src = doc('Before.\n\n% formula B4 [3.00]: =SUM(ABOVE) \\# "0.00"\n\\begin{tabular}{lr}\nItem & Price \\\\\na & 1 \\\\\nb & 2 \\\\\nTotal & 3.00 \\\\\n\\end{tabular}\n\nAfter.\n', '');
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const d = text(unzip(E.docx).get('word/document.xml'));
+  assert.match(d, /<w:fldSimple w:instr=" =SUM\(ABOVE\) \\# &quot;0\.00&quot; "><w:r>(?:(?!<\/w:fldSimple>)[\s\S])*>3\.00<\/w:t><\/w:r><\/w:fldSimple>/);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+  const t = open(E.docx).tex;
+  assert.ok(/% formula B4 \[3\.00\]: =SUM\(ABOVE\) \\# "0\.00"\n\\begin\{tabular\}/.test(t), t);
+  // (the result Word showed, not yet updated, is the line's last value: Update Formulas then computes
+  // the cell again, as Word's F9)
+  const odd = unzip(E.docx);
+  odd.set('word/document.xml', new TextEncoder().encode(d.replace('>3.00<', '>4.00<')));
+  const t2 = open(zip(odd)).tex;
+  assert.ok(t2.includes('Total & 4.00') && t2.includes('% formula B4 [4.00]: =SUM(ABOVE)'), t2);
+  // (the verification of 3d3bfc4: two fields in one table, both lines back; the second was parsed at
+  // the table's old place, inside the first line, and lost)
+  const k = d.indexOf('>2</w:t>'), run2 = d.slice(d.lastIndexOf('<w:r>', k), d.indexOf('</w:r>', k) + 6);
+  const two = unzip(E.docx);
+  two.set('word/document.xml', new TextEncoder().encode(d.replace(run2, '<w:fldSimple w:instr=" =B2*2 ">' + run2 + '</w:fldSimple>')));
+  const t3 = open(zip(two)).tex;
+  assert.ok(/% formula B3 \[2\]: =B2\*2\n% formula B4 \[3\.00\]: =SUM\(ABOVE\) \\# "0\.00"\n\\begin\{tabular\}/.test(t3), t3);
+});
+
 await ok('to Word (R3): \\thepage, \\pageref{LastPage}, \\thetitle and \\theauthor as Word\'s fields; hyperref\'s form fields as content controls; nothing changed comes back changed', async () => {
   const src = doc('\\begin{Form}\nPage \\thepage{} of \\pageref{LastPage} in \\thetitle{} by \\theauthor{}.\n\nName \\TextField[name=t, width=4cm]{Who} on \\TextField[name=d, format={AFDate_FormatEx("dd/mm/yyyy");}]{} picks \\ChoiceMenu[name=l]{}{One,Two} or \\ChoiceMenu[combo,name=c]{}{A & B,C} and \\CheckBox[name=k,checked]{Agree}.\n\\end{Form}', '\\usepackage{titling,lastpage,hyperref}\n\\title{Fields}\n\\author{Ann}\n');
   const files = new Map([['main.tex', src]]);

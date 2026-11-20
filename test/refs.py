@@ -22,7 +22,7 @@ with biber) and read back from TeX's PDF.
     cd test && python3 refs.py [section ...]"""
 import os, re, sys, base64, tempfile, subprocess, unicodedata
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import open_page, load_doc, src, click_text, select_text, check, results, roundtrip, ROOT
+from browser import open_page, load_doc, src, click_text, select_text, check, results, roundtrip, ROOT, PRINT_LAYOUT
 from playwright.sync_api import sync_playwright
 
 DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
@@ -423,6 +423,8 @@ def open_phone(p, width, height, dark=False):
     import browser as B
     br = p.chromium.launch(args=[a for a in os.environ.get('CHROME_ARGS', '').split() if a])
     ctx = br.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=2, has_touch=True, is_mobile=True)
+    # (a phone's Print Layout, which this suite was written for: browser.py, PRINT_LAYOUT)
+    ctx.add_init_script(PRINT_LAYOUT)
     page = ctx.new_page()
     errors = []
     page.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
