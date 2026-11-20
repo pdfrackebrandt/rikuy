@@ -178,6 +178,21 @@ def tab(page):
     click_text(page, 'beta', 4); key(page, 'Escape'); key(page, 'Tab')
     check('tab: Esc, then Tab, leaves the page and writes nothing', active(page) != 'pages' and src(page) == TAB, active(page))
     check('tab: the page says how to leave it (review M4)', 'Escape, then Tab, leaves' in page.evaluate("document.getElementById('pages-how').textContent"), None)
+    # (review L4) over a selection as Word's: inside the text the gap takes its place; from a
+    # paragraph's start the paragraph's left indent a step in, Shift+Tab out again; a heading's gap
+    load_doc(page, TAB)
+    select_text(page, 'beta'); key(page, 'Tab')
+    check('tab: Tab over words inside the text puts the gap in their place', 'Alpha \\quad gamma.' in src(page) and active(page) == 'pages', src(page)[40:80])
+    load_doc(page, TAB)
+    select_text(page, 'Third one'); key(page, 'Tab', 400)
+    s = src(page)
+    check('tab: Tab over words from a paragraph\'s start indents the paragraph', 'adjustwidth' in s and 'Third one here.' in s, s[60:220])
+    select_text(page, 'Third one'); key(page, 'Shift+Tab', 400)
+    s = src(page)
+    check('tab: Shift+Tab takes it out again', '\\begin{adjustwidth}' not in s and '\n\nThird one here.\n\n' in s, s[60:220])
+    load_doc(page, TAB.replace('Alpha beta', '\\section{Intro words}\n\nAlpha beta'))
+    click_text(page, 'Intro words', 5); key(page, 'Tab')
+    check('tab: Tab in a heading leaves its gap', '\\section{Intro\\quad words}' in src(page), src(page)[40:90])
 
 
 REFS = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\usepackage{natbib}\n\\begin{document}\n\n\\section{Intro}\\label{sec:intro}\n\nAlpha beta gamma.\n\n'
