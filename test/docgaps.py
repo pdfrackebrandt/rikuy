@@ -5,7 +5,8 @@ Formulas; View Gridlines; Draw Table and Eraser), each drawn on the page as TeX 
 dist/tex holds a TeX tree, what they write compiled in the page with pdfLaTeX, XeLaTeX and LuaLaTeX;
 phones at 390 and 360 px with touch; screenshots in $RIKUY_SHOTS (default /tmp/g2-shots).
 
-python3 docgaps.py [section ...]: tables, tables_compiled, tables_phones, shots."""
+python3 docgaps.py [section ...]: tables, tables_compiled, tables_phones, shots, headfoot, headfoot_compiled,
+headfoot_phones, headfoot_shots."""
 import os, sys, base64, io
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from browser import open_page, check, results, src, load_doc, roundtrip, pressed
@@ -305,18 +306,169 @@ def shots(p):
         br.close()
 
 
+# ---- the Header & Footer tab -------------------------------------------------------------------------------
+HF_PRE = '\\usepackage[margin=2.5cm]{geometry}\n\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n\\fancyhf{}\n\\fancyhead[C]{Head}\n\\fancyfoot[C]{\\thepage}\n'
+HF_DOC = WRAP('First words.\n\n' + ('Words fill the page. ' * 400) + '\n\nLast words.', HF_PRE)
+
+
+def named(page, name, tap=False):
+    """A ribbon button by its name, or the item of that name in its folded group's menu."""
+    b = page.get_by_role('button', name=name, exact=True)
+    if b.count() == 1 and b.is_visible():
+        return b.tap() if tap else b.click()
+    gb = page.evaluate("""(name) => { for (const e of document.querySelectorAll('.rb-panel:not([hidden]) .rb-grp [aria-label]')) { const g = e.closest('.rb-grp').querySelector('.rb-gbtn'); if (e.getAttribute('aria-label') === name && !e.offsetParent && g && g.offsetParent) return g.id; } return null; }""", name)
+    page.click('#' + gb); page.wait_for_timeout(150)
+    it = page.locator('.pop [role^=menuitem][aria-label="%s"]' % name)
+    return it.tap() if tap else it.click()
+
+
+def png(page, name='logo.png'):
+    """A small PNG made in the page and kept as window.__logo (Pictures' file)."""
+    page.evaluate("""async (n) => { const c = document.createElement('canvas'); c.width = 60; c.height = 30; const x = c.getContext('2d'); x.fillStyle = '#2B74B0'; x.fillRect(0, 0, 60, 30);
+      const b = await new Promise((r) => c.toBlob(r, 'image/png')); window.__logo = new File([b], n, { type: 'image/png' }); }""", name)
+
+
+def headfoot(page):
+    import re as _re
+    load_doc(page, HF_DOC); page.wait_for_timeout(400)
+    page.evaluate("window.rikuy.pageHFOpen('head', { page: 0 })"); page.wait_for_timeout(300)
+    tabs = page.evaluate("[...document.querySelectorAll('#rb-tabs [role=tab]')].filter((t) => !t.hidden).map((t) => t.textContent)")
+    check('the header open: the Header & Footer tab shows', 'Header & Footer' in tabs, tabs)
+    page.get_by_role('tab', name='Header & Footer', exact=True).click(); page.wait_for_timeout(200)
+    groups = page.evaluate("[...document.querySelectorAll('.rb-panel:not([hidden]) .rb-grp')].map((g) => g.dataset.group)")
+    check('its groups in Word\'s order: Header & Footer, Insert, Navigation, Options, Position, Close', groups == ['headfoot', 'insert', 'navigation', 'options', 'position', 'close'], groups)
+    check('Go to Header is off in the header, Go to Footer on', page.get_by_role('button', name='Go to Header', exact=True).is_disabled() and not page.get_by_role('button', name='Go to Footer', exact=True).is_disabled())
+    named(page, 'Go to Footer'); page.wait_for_timeout(300)
+    w = page.evaluate('window.rikuy.hf && [window.rikuy.hf.where, window.rikuy.hf.k]')
+    check('Go to Footer: the same page\'s footer open, its fields there', w == ['foot', 0] and page.get_by_role('textbox', name='Footer center', exact=True).count() == 1, w)
+    named(page, 'Go to Header'); page.wait_for_timeout(300)
+    check('Go to Header: back to the header', page.evaluate('window.rikuy.hf && window.rikuy.hf.where') == 'head')
+    check('Previous and Next are off where every page has the one header (one sided)', page.get_by_role('button', name='Next Header or Footer', exact=True).is_disabled())
+    # Header from Top: the box reads Word's distance, Enter writes geometry's headsep, the text stays
+    v = page.get_by_role('spinbutton', name='Header from Top', exact=True).input_value()
+    want = round((2.5 * 72.27 / 2.54 - 25 - 12) / (72.27 / 2.54), 2)
+    check('Header from Top reads the top margin less headsep and headheight: %s cm' % want, v == '%s cm' % want, v)
+    h0 = hist(page)
+    page.get_by_role('spinbutton', name='Header from Top', exact=True).fill('1')
+    page.keyboard.press('Enter'); page.wait_for_timeout(400)
+    s = src(page)
+    m = _re.search(r'\\usepackage\[margin=2\.5cm,headsep=([\d.]+)pt\]\{geometry\}', s)
+    hs = 2.5 * 72.27 / 2.54 - 12 - 72.27 / 2.54
+    check('Enter: geometry\'s headsep = the top margin less headheight less 1 cm (%.2f pt), one step' % hs, bool(m) and abs(float(m.group(1)) - hs) < 0.02 and hist(page) == h0 + 1, s[:200])
+    page.wait_for_timeout(200)
+    sp = page.get_by_role('spinbutton', name='Header from Top', exact=True)
+    v = sp.input_value() if sp.count() else None
+    check('the box reads it back: 1 cm', v == '1 cm', v)
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('one undo: the bytes of before', src(page) == HF_DOC)
+    page.evaluate("window.rikuy.runCommand('hf-footer-bottom', { cm: 1.2 })"); page.wait_for_timeout(300)
+    s = src(page)
+    g = page.evaluate('(() => { const g = window.rikuy.layout.g; return { ph: g.paperH || g.ph, mt: g.mt, th: g.th, fs: g.footskip }; })()')
+    check('Footer from Bottom 1.2 cm: geometry\'s footskip set so the footer stands 1.2 cm above the sheet\'s foot', 'footskip=' in s and abs(g['ph'] - g['mt'] - g['th'] - g['fs'] - 1.2 * 72.27 / 2.54) < 0.05, (s[:200], g))
+    page.evaluate("window.rikuy.runCommand('hf-header-top', { cm: 3 })"); page.wait_for_timeout(300)
+    toast = page.evaluate("() => (document.querySelector('.toast') || {}).textContent || ''")
+    check('Header from Top past the top margin: refused, and the toast says how far it may go', 'run into the text' in toast, toast)
+    # Pictures: a logo in the header, a line high, graphicx with it, drawn on the page
+    load_doc(page, HF_DOC); page.wait_for_timeout(300)
+    page.evaluate("window.rikuy.pageHFOpen('head', { page: 0, slot: 'L' })"); page.wait_for_timeout(300)
+    png(page)
+    h0 = hist(page)
+    page.evaluate("window.rikuy.runCommand('hf-picture', { file: 'logo.png', blob: window.__logo })"); page.wait_for_timeout(500)
+    s = src(page)
+    check('Pictures: \\includegraphics[height=\\baselineskip]{logo.png} in the header\'s left place, \\usepackage{graphicx} with it, one step',
+          '\\fancyhead[L]{\\includegraphics[height=\\baselineskip]{logo.png}}' in s and '\\usepackage{graphicx}' in s and hist(page) == h0 + 1, s[:400])
+    page.keyboard.press('Escape'); page.wait_for_timeout(400)
+    img = page.evaluate("(() => { const i = document.querySelector('#pages .page .hd img.hf-pic'); return i ? { h: i.getBoundingClientRect().height, ok: i.complete && i.naturalWidth > 0 } : null; })()")
+    check('the page draws the logo in the header, a line high (12 pt)', img and img['ok'] and abs(img['h'] - 12 * page.evaluate('window.rikuy.px')) < 2, img)
+    # Quick Parts: Page X of Y's NumPages
+    page.evaluate("window.rikuy.pageHFOpen('foot', { page: 0, slot: 'R' })"); page.wait_for_timeout(300)
+    page.evaluate("window.rikuy.runCommand('hf-quick-parts', { tex: '\\\\pageref{LastPage}', pk: 'lastpage' })"); page.wait_for_timeout(400)
+    s = src(page)
+    check('Quick Parts › NumPages in the footer\'s right place: \\pageref{LastPage}, lastpage loaded', '\\fancyfoot[R]{\\pageref{LastPage}}' in s and '\\usepackage{lastpage}' in s, s[:400])
+    items = page.evaluate("window.rikuy.hfPartItems().filter(Boolean).map((x) => x.name)")
+    check('the header\'s Quick Parts: Page, NumPages, Date, FileName', items[:4] == ['Page', 'NumPages', 'Date', 'FileName'], items)
+    # Show Document Text
+    page.evaluate("window.rikuy.runCommand('hf-show-text')"); page.wait_for_timeout(150)
+    vis = page.evaluate("getComputedStyle(document.querySelector('#pages .page .pb')).visibility")
+    check('Show Document Text off: the page\'s text hidden, the header and footer left', vis == 'hidden' and pressed(page, 'hf-show-text') is False, vis)
+    page.evaluate("window.rikuy.runCommand('hf-show-text')"); page.wait_for_timeout(150)
+    vis = page.evaluate("getComputedStyle(document.querySelector('#pages .page .pb')).visibility")
+    check('and on again', vis == 'visible' and pressed(page, 'hf-show-text') is True, vis)
+    page.keyboard.press('Escape')
+    # two sided: Next goes to an even page's header, Previous back
+    two = HF_DOC.replace('\\documentclass{article}', '\\documentclass[twoside]{article}').replace('\\fancyhead[C]{Head}', '\\fancyhead[LE]{Even}\\fancyhead[RO]{Odd}')
+    load_doc(page, two); page.wait_for_timeout(500)
+    page.evaluate("window.rikuy.pageHFOpen('head', { page: 0 })"); page.wait_for_timeout(300)
+    page.evaluate("window.rikuy.runCommand('hf-next')"); page.wait_for_timeout(300)
+    w = page.evaluate('window.rikuy.hf && [window.rikuy.hf.k, window.rikuy.hf.side, window.rikuy.hf.el.getAttribute("aria-label")]')
+    check('two sided: Next opens the even page\'s header (page 2), its fields named so', w and w[0] == 1 and w[1] == 'E' and 'even' in w[2], w)
+    v = page.get_by_role('textbox', name='Header left', exact=True).input_value()
+    check('with the even pages\' text in it', v == 'Even', v)
+    page.evaluate("window.rikuy.runCommand('hf-prev')"); page.wait_for_timeout(300)
+    check('Previous: the odd page\'s again', page.evaluate('window.rikuy.hf && window.rikuy.hf.side') == 'O')
+    page.keyboard.press('Escape')
+
+
+def headfoot_compiled(page):
+    if not HAS_TEX:
+        print('SKIP the header and footer compiled: no TeX tree in %s' % DIST)
+        return
+    png(page)
+    for eng, magic in (('pdflatex', ''), ('xelatex', '% !TEX program = xelatex\n'), ('lualatex', '% !TEX program = lualatex\n')):
+        doc = magic + WRAP('First words.\n\nLast words.', HF_PRE.replace('margin=2.5cm', 'margin=2.5cm,headsep=30.68pt,footskip=36pt') + '\\usepackage{graphicx}\n\\usepackage{lastpage}\n\\fancyhead[L]{\\includegraphics[height=\\baselineskip]{logo.png}}\n\\fancyfoot[R]{Page \\thepage\\ of \\pageref{LastPage}}\n')
+        page.evaluate("window.rikuy.pageAssetName('logo.png', window.__logo)")
+        r = pdf_of(page, doc)
+        check('the header\'s logo, NumPages and geometry\'s headsep and footskip compile with %s, the words in the PDF' % eng,
+              r['ok'] and not r['problems'] and r['engine'] == eng and 'Page 1 of 1' in r['text'] and 'Head' in r['text'], {'ok': r['ok'], 'engine': r['engine'], 'problems': r['problems'], 'text': r['text'][:120]})
+
+
+def headfoot_phones(p):
+    for w, h in ((390, 844), (360, 740)):
+        br, page, errs = open_page(p, w, h, touch=True)
+        tag = ' (%d px, touch)' % w
+        try:
+            load_doc(page, HF_DOC); page.wait_for_timeout(400)
+            page.evaluate("window.rikuy.pageHFOpen('head', { page: 0 })"); page.wait_for_timeout(300)
+            page.get_by_role('tab', name='Header & Footer', exact=True).tap(); page.wait_for_timeout(200)
+            named(page, 'Go to Footer', tap=True); page.wait_for_timeout(300)
+            check('Go to Footer by a tap' + tag, page.evaluate('window.rikuy.hf && window.rikuy.hf.where') == 'foot')
+            small = page.evaluate("[...document.querySelectorAll('.rb-panel:not([hidden]) button')].filter((b) => b.offsetParent && b.getBoundingClientRect().height < 43.5).map((b) => b.getAttribute('aria-label')).slice(0, 5)")
+            check('the Header & Footer tab\'s buttons 44 px for a finger' + tag, not small, small)
+            os.makedirs(SHOTS, exist_ok=True)
+            page.screenshot(path=os.path.join(SHOTS, 'headfoot-%d.png' % w))
+        except Exception as ex:
+            check('headfoot_phones runs to its end' + tag, False, repr(ex)[:300])
+        br.close()
+
+
+def headfoot_shots(p):
+    os.makedirs(SHOTS, exist_ok=True)
+    for w, h, dark in ((1920, 1080, False), (1366, 768, False), (1366, 768, True)):
+        br, page, errs = open_page(p, w, h, dark=dark)
+        tag = '%d%s' % (w, '-dark' if dark else '')
+        try:
+            load_doc(page, HF_DOC.replace('\\fancyhead[C]{Head}', '\\fancyhead[C]{Head}\\fancyhead[L]{\\includegraphics[height=\\baselineskip]{logo.png}}')); png(page)
+            page.evaluate("window.rikuy.pageAssetName('logo.png', window.__logo); window.rikuy.forceRender = true; window.rikuy.rebuild()"); page.wait_for_timeout(500)
+            page.evaluate("window.rikuy.pageHFOpen('head', { page: 0 })"); page.wait_for_timeout(300)
+            page.get_by_role('tab', name='Header & Footer', exact=True).click(); page.wait_for_timeout(300)
+            page.screenshot(path=os.path.join(SHOTS, 'headfoot-%s.png' % tag))
+        except Exception as ex:
+            check('headfoot shots ' + tag, False, repr(ex)[:300])
+        br.close()
+
+
 def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (tables, tables_compiled):
+        for f in (tables, tables_compiled, headfoot, headfoot_compiled):
             if names and f.__name__ not in names:
                 continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
-        for f in (tables_phones, shots):
+        for f in (tables_phones, shots, headfoot_phones, headfoot_shots):
             if names and f.__name__ not in names:
                 continue
             f(p)

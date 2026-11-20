@@ -27,7 +27,7 @@ export const TABS = [
   // fields are wide and its buttons few, so folding it last showed fewer controls in a wider window)
   { id: 'picture-format', name: 'Picture Format', ctx: 'picture', groups: [['adjust', 'Adjust', 2], ['styles', 'Picture Styles', 3], ['accessibility', 'Accessibility', 4], ['arrange', 'Arrange', 5], ['size', 'Size', 1]] },
   { id: 'equation', name: 'Equation', ctx: 'equation', groups: [['tools', 'Tools', 4], ['conversions', 'Conversions', 3], ['symbols', 'Symbols', 1], ['structures', 'Structures', 2]] },
-  { id: 'headfoot', name: 'Header & Footer', ctx: 'headfoot', groups: [['headfoot', 'Header & Footer', 3], ['insert', 'Insert', 2], ['options', 'Options', 1], ['close', 'Close', 4]] }
+  { id: 'headfoot', name: 'Header & Footer', ctx: 'headfoot', groups: [['headfoot', 'Header & Footer', 3], ['insert', 'Insert', 2], ['navigation', 'Navigation', 5], ['options', 'Options', 1], ['position', 'Position', 6], ['close', 'Close', 7]] }
 ].map((t) => ({ ...t, groups: t.groups.map(([id, name, rank = 1, more = {}]) => ({ id, name, rank, spare: !!more.spare })) }));
 
 // Word's KeyTips for the tabs (Alt, or F10, then the letter). Help is Y then 2, as in Microsoft 365.

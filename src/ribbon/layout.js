@@ -101,8 +101,10 @@ export const LAYOUT = {
   },
   headfoot: {
     headfoot: ['header L H', 'footer L O', 'page-number L NU'],
-    insert: ['hf-date L D', 'hf-docinfo L I', 'hf-pagenum L NH'],
-    options: ['hf-first S A', 'hf-oddeven S V', 'hf-position S P'],
+    insert: ['hf-date L D', 'hf-docinfo L I', 'hf-quick-parts L Q Quick Parts', 'hf-picture L L Pictures', 'hf-pagenum L NH'],
+    navigation: ['hf-goto-header L GH Go to Header', 'hf-goto-footer L GF Go to Footer', 'hf-prev S R Previous', 'hf-next S X Next'],
+    options: ['hf-first S A', 'hf-oddeven S V', 'hf-show-text S T Show Document Text', 'hf-position S P'],
+    position: ['hf-header-top S W', 'hf-footer-bottom S FB'],
     close: ['hf-close L C Close Header and Footer']
   }
 };

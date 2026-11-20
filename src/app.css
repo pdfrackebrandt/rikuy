@@ -1425,6 +1425,9 @@ body.nav-on.nav-outline #nav { width: 460px; }
 /* the header and footer typed on the page (src/ui/headerfooter.js): three fields where it is
    drawn, a tag naming it, the text under them dimmed as in Word */
 #pages.hf-on .page .pb { opacity: .45; }
+/* (G2) Show Document Text off: only the header and footer; a picture in them, a line high */
+#pages.hf-on.hf-hide-text .page .pb { visibility: hidden; }
+.hd .hf-pic, .ft .hf-pic { display: inline-block; vertical-align: baseline; width: auto; max-width: 100%; }
 .page.hf-head .hd, .page.hf-foot .ft { visibility: hidden; }
 .hfedit { position: fixed; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; z-index: 30; }
 .hfedit.head { border-bottom: 1px dashed #2B74B0; padding-bottom: 4px; }
