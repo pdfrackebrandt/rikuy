@@ -17,7 +17,9 @@ the KeyTips and never typed into the document (5). palette: Alt+Q finds by lette
 initials ("tbl", "hed 2", "heading2", "eqn", "toc"), lists the commands run last when empty, and
 puts them first among matches as good (9). insertlist: the \\ insert list writes valid LaTeX: a math
 command opens a formula holding it, \\begin{name} the environment, figure, align and cases their
-own; a theorem brings its \\newtheorem; Enter twice leaves a theorem (10).
+own; a theorem brings its \\newtheorem; Enter twice leaves a theorem (10). repeat: F4 types the last
+run of typing again, as Word's, and repeats a command as before (14); the search box throws
+nothing while its place is a blank paragraph gone since (18).
 Each part is a function; `python3 power.py
 footnote` runs one."""
 import os, sys
@@ -282,7 +284,26 @@ def insertlist(page):
     check('insertlist: a proof brings amsthm', '\\usepackage{amsmath,amsthm}' in src(page) or '\\usepackage{amsthm}' in src(page), src(page)[:120])
 
 
-PARTS = [footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips, palette, insertlist]
+def repeat(page):
+    load_doc(page, PLAIN)
+    click_text(page, 'gamma.', 6); typed(page, ' and so on')
+    click_text(page, 'one.', 4); key(page, 'F4', 300)
+    check('repeat: F4 types the last run of typing again', 'Last one. and so on' in src(page), src(page)[60:130])
+    key(page, 'F4', 300)
+    check('repeat: and again', 'Last one. and so on and so on' in src(page), src(page)[60:150])
+    select_text(page, 'Alpha'); key(page, 'Control+b'); select_text(page, 'Last'); key(page, 'F4', 300)
+    check('repeat: F4 after Bold makes the next selection bold, as before', '\\textbf{Last}' in src(page), src(page)[60:150])
+    # the search box's place, a blank paragraph that went when the box took the focus
+    load_doc(page, PLAIN)
+    n0 = page.evaluate('window.__errs = 0; 0')
+    page.evaluate("window.addEventListener('error', () => { window.__errs++; })")
+    click_text(page, 'gamma.', 6); key(page, 'Enter'); key(page, 'Alt+q', 300)
+    page.keyboard.type('theorem', delay=30); page.wait_for_timeout(300)
+    check('repeat: the search box throws nothing for a blank paragraph gone since', page.evaluate('window.__errs') == 0 and page.evaluate("document.querySelectorAll('#rk-search-list .srch-opt').length") > 0)
+    key(page, 'Escape'); key(page, 'Escape')
+
+
+PARTS = [footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips, palette, insertlist, repeat]
 
 
 def run():

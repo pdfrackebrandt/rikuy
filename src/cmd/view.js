@@ -530,6 +530,7 @@ export const methods = {
   repeatLast() {
     const L = this.lastAct;
     if (!L || document.activeElement !== this.root) return false;
+    if (L.text != null) { this.insertText(L.text, null); return true; }
     return this.runCommand(L.id, L.args) !== false;
   },
   undoMenu() {
