@@ -362,6 +362,13 @@ function fromField(v, st) {
   return lines.join(' \\\\\n');
 }
 
+// A $ typed in a formula's LaTeX box ends the formula, as the closing $ does in the source; not
+// in an empty box (a dollar sign: newMath's own rule) nor after a backslash (\$, a dollar)
+function dollarEnds(ta) {
+  const before = ta.value.slice(0, ta.selectionStart);
+  return !!ta.value.trim() && ta.selectionStart === ta.selectionEnd && !/(^|[^\\])(\\\\)*\\$/.test(before);
+}
+
 class App {
   constructor() {
     this.files = new Map();
@@ -2707,7 +2714,17 @@ class App {
       onNewRowOutside: opts.onNewRowOutside,
       renderTex: (t) => this.renderer.katex(t, false).html,
       decimalComma,
-      baseDepth: () => (st.multi ? 1 : 0)
+      baseDepth: () => (st.multi ? 1 : 0),
+      onDollar: opts.onDollar,
+      // what the field cannot hold, typed as LaTeX (\begin{aligned}): it goes on in the LaTeX
+      // box above, at the caret's place, the field showing what it makes
+      toLatex: (more) => {
+        let at = ta.value.length;
+        try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (ta.value.startsWith(pre)) at = pre.length; } catch (e) { /* at the end */ }
+        ta.focus();
+        ta.setRangeText(more, at, at, 'end');
+        ta.dispatchEvent(new Event('input'));
+      }
     });
     mf.addEventListener('keydown', (e) => {
       if (wt.active() || mf.mode === 'latex') return;
@@ -2772,7 +2789,7 @@ class App {
     }
     const hint = document.createElement('span');
     hint.className = 'hint';
-    hint.textContent = display ? '\\name + Space, x^(n+1), a/b, Space steps out, Ctrl+Enter new row, Enter done' : '\\name + Space, x^(n+1), a/b, Space steps out, Enter done';
+    hint.textContent = display ? '\\name + Space or \\frac{a}{b}, x^(n+1), a/b, Space steps out, Ctrl+Enter new row, Enter done' : '\\name + Space or \\frac{a}{b}, x^(n+1), a/b, Space steps out, Enter or $ done';
     row.appendChild(hint);
     if (this.caps.sample) {
       const ai = document.createElement('button');
@@ -2833,6 +2850,8 @@ class App {
     ta.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && (!display || e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
+      // (the closing $ of a formula in the line, as typed in the source; \$ stays a dollar sign)
+      if (e.key === '$' && !display && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
     });
     // However the box closes, what was typed is kept: text held back is written made whole
     // (mathMadeWhole), in the box's undo step.
@@ -2879,6 +2898,8 @@ class App {
         P.wordTyping.newRow();
       } : null,
       onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
+      // ($ closes a formula in the line as it does in the source: $x^2$ typed as in Overleaf)
+      onDollar: display ? null : () => { if (stay()) return; push.flush(); this.closePop(); },
       onEscape: () => { push.flush(); this.closePop(); }
     });
   }
@@ -2934,7 +2955,7 @@ class App {
     const prev = document.createElement('div'); prev.className = 'pv';
     const err = document.createElement('div'); err.className = 'pv-err'; err.hidden = true;
     const row = document.createElement('div'); row.className = 'pop-row';
-    const hint = document.createElement('span'); hint.className = 'hint'; hint.textContent = 'Enter to insert. Type $ again for a dollar sign.';
+    const hint = document.createElement('span'); hint.className = 'hint'; hint.textContent = 'Enter or $ to insert; $ at once for a dollar sign.';
     row.appendChild(hint);
     if (this.caps.sample) {
       const ai = document.createElement('button');
@@ -2996,6 +3017,7 @@ class App {
     ta.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
+      if (e.key === '$' && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
     });
     const whole = () => mathMadeWhole(ta.value, kerr(ta.value));
     this.pop.onClose = () => { push.cancel(); if (!this.pop) return; const v = held(ta.value) ? whole() : ta.value; insert(v); this.eqClosed(this.pop, v); };
@@ -3021,6 +3043,9 @@ class App {
       display: false, initial: '', keepFocus: true,
       env: () => '$',
       onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
+      // the closing $ of $x^2$ typed as in Overleaf ends the formula; in an empty one it stays a
+      // dollar sign (onKey, below)
+      onDollar: () => { if (!ta.value && !ins) return; if (stay()) return; push.flush(); this.closePop(); },
       onEscape: () => { push.flush(); this.closePop(); },
       onKey: (e) => {
         if (e.key === '$' && !ta.value && !ins) {
