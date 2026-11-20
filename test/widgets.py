@@ -233,11 +233,20 @@ try:
         page.wait_for_timeout(200)
         ran = run_widgets(page, 1)
         check('one click runs it, and it posts its height', ran, page.evaluate("[...window.rikuy.widgets.heights]"))
-        info = page.evaluate("""() => { const f = document.querySelector('#wlayer iframe'); return f && { sandbox: f.getAttribute('sandbox'), inPages: !!f.closest('#pages'), csp: f.srcdoc.indexOf('Content-Security-Policy'), body: f.srcdoc.indexOf('<canvas'),
-          h: window.rikuy.widgets.heights.get(document.querySelector('.w-live').dataset.w) }; }""")
+        info = page.evaluate("""async () => { const f = document.querySelector('#wlayer iframe'); if (!f) return null;
+          const shell = /\\/widget-[0-9a-f]{16}\\.html$/.test(f.src);
+          return { sandbox: f.getAttribute('sandbox'), inPages: !!f.closest('#pages'), srcdoc: f.hasAttribute('srcdoc'), src: f.src, shell,
+            policy: shell ? (await fetch(f.src)).headers.get('content-security-policy') : null,
+            h: window.rikuy.widgets.heights.get(document.querySelector('.w-live').dataset.w) }; }""")
         check('the frame is sandboxed to scripts alone, without allow-same-origin', info and info['sandbox'] == 'allow-scripts', info)
         check('the frame lives outside the editable pages', info and not info['inPages'], info)
-        check('its policy comes before any of the widget', info and 0 <= info['csp'] < info['body'], info)
+        # the page's policy runs no inline script a widget brings (build/app.mjs policy), so on the
+        # hosted page the widget runs in a document of its own, with its own policy
+        check('the widget runs in the page\'s widget document (widget-<hash>.html), not srcdoc, which would take the page\'s policy', info and info['shell'] and not info['srcdoc'], info)
+        check('that document comes with the widgets\' policy alone, framed by the page only',
+              info and info['policy'] == "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; worker-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'", info)
+        doc = frame(page).evaluate('() => document.documentElement.outerHTML')
+        check('its policy comes before any of the widget, then the guard', 0 <= doc.find('Content-Security-Policy') < doc.find('(webkit|moz)?RTC') < doc.find('<canvas'), doc[:300])
         check('the height it asked for is taken', info and 150 < (info['h'] or 0) < 700, info)
         check('the box in the text took that height and the frame lies over it', page.evaluate("document.querySelector('.w-live').classList.contains('sized')") and aligned(page))
         page.screenshot(path=os.path.join(TMP, 'widget.png'))
@@ -359,7 +368,7 @@ try:
         page.wait_for_function('window.__probe', timeout=10000)
         pr = page.evaluate('window.__probe')
         page.wait_for_timeout(300)
-        check('inside the frame inline script runs under the page\'s policy, and eval', pr.get('evalOk') is True, pr)
+        check('inside the frame inline script runs, and eval (the widget\'s own policy)', pr.get('evalOk') is True, pr)
         check('its origin is opaque and it reaches no storage and not the page', pr.get('origin') == 'null' and pr.get('storage') == 'blocked' and pr.get('parent') == 'blocked', pr)
         check('no connection and no picture from the network (refused by the frame\'s policy); data pictures load', pr.get('fetch') == 'blocked' and pr.get('img') == 'blocked' and pr.get('dataImg') == 'open' and 'connect-src' in pr.get('violations', []) and 'img-src' in pr.get('violations', []), pr)
         check('no popups and no navigating the page', pr.get('popup') == 'blocked' and pr.get('top') == 'blocked', pr)

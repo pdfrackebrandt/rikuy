@@ -3237,7 +3237,20 @@ Tests:
     code (branch `sec-followups`), one commit each. *S4:* the hosted copy sends
     `Strict-Transport-Security: max-age=31536000` on every file, for its own host only (no
     `includeSubDomains`, no preload: those would bind rackebrandt.pe's other names for a year);
-    `test/deploy_check.py` checks it (53 checks).
+    `test/deploy_check.py` checks it (53 checks). *S3:* the hosted page's `script-src` is `'self'`,
+    the SHA-256 of its one inline script (the app's bundle; the build takes it from `index.html`),
+    `'wasm-unsafe-eval'` and `blob:` (Pyodide's runtime): no `'unsafe-inline'`, no `'unsafe-eval'`.
+    Nothing in the page or its workers needs eval (`build/app.mjs` `policy` lists what was
+    checked). Live figures run in a document of their own, `widget-<hash>.html`, with the
+    widgets' policy (a srcdoc frame takes the page's), from the HTTP cache when offline; the
+    claude.ai copy keeps srcdoc. The browser tests that open the page through `serve.py` or
+    `open_page` now run under the hosted policy, read from `dist/_headers` (`browser.py` hands
+    Playwright's polled expressions over as functions, which it would otherwise eval in the page).
+    New `test/csp.py`: a whole session with every refusal reported to the server, none (21
+    checks, in `tex.yml`). Safari 15 cannot compile on the hosted copy (no `'wasm-unsafe-eval'`).
+    Under the new policy: `browser.py` 199, `agent.py` 143, `offline.py` 60, `launch.py` 18,
+    `engines.py` 44, `word.py` 111, `spell.py` 124, `widgets.py` 62, `insert.py` 224,
+    `mathfield.py` 19, `pdf.py` 23, `deploy_check.py` 61.
 
 ## Open tasks
 

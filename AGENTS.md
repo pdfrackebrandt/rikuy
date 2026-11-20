@@ -73,6 +73,7 @@ a command fails, trust the code and fix this file.
 | Review: Track Changes (Ctrl+Shift+E, off as Word's: no change, the waiting ones stay), Display for Review, Show Markup, Accept and Reject (this and move, all, all and stop tracking), Previous and Next change, comments (Previous, Next, Delete, Delete All, Edit, Show Comments), Inspect Document, Word Count (Ctrl+Shift+G), Compare with a file, Download with Markup (compiled in the page where `dist/tex` exists), Read Aloud, phones; changes by author, Specific People, Accept and Reject by author, the Original (`review.py r4` alone); screenshots in `$SHOTS/review-*` | `cd test && python3 review.py` (105 checks with `dist/tex`; Track Changes' base and the language's edits on strings: `test/review.test.mjs`, in `npm test`) | 3 min |
 | References (B9): the table of contents and its levels, Add Text, endnotes, Next Footnote, Show Notes, the Footnote and Endnote dialog, Add New Source, Edit Source on a hand written entry (every other byte kept), the Source Manager (delete, paste BibTeX), the citation style per system, the bibliography and its title, captions (a picture or a table becoming a float), the lists of figures and tables, cross references, Mark Entry, Mark All, Insert Index (Right align page numbers), endnote number formats, New Label and Exclude label, Mark Citation and the Table of Authorities (`refs.py r4`, `r4compiled`), links (Ctrl+K) and bookmarks, each by the round trip rule and drawn on the page as TeX prints it; phones at 390 and 360 px with touch; with `dist/tex`, all of it compiled with pdfLaTeX, XeLaTeX and LuaLaTeX and biblatex with biber (`python3 refs.py compiled` alone; `refs.py screenshots` into `$RIKUY_SHOTS`). Its edits on strings: `test/bib.test.mjs` (in `npm test`) | `cd test && python3 refs.py` (289 checks with `dist/tex`) | 6 min |
 | the installed app: offline, updates, one version at a time, none in the artifact build (and a compile offline where `dist/tex` exists) | `npm run test:offline` | 1 min |
+| the hosted policy over a whole session: typing, the source pane, the math field, git.js, pdfLaTeX, XeLaTeX and LuaLaTeX, the PDF pane, Asymptote, minted, biber, Word out and back, spelling, grammar, a live figure, with every refusal of the page, a frame or a worker reported to the server and none allowed (needs `dist/tex` and `dist/word`) | `cd test && python3 csp.py` (21 checks) | 5 min |
 | opening `.tex`, `.bib` and `.zip` with the installed app (`launchQueue`), and files shared to it | `cd test && python3 launch.py` | 20 s |
 | serve `dist/` as Cloudflare Pages serves the hosted app (`index.html` as the page, `_headers`) | `npm run serve:app` (port 8791) | |
 | check a built `dist/` against Cloudflare Pages' limits (deploy.yml runs it) | `python3 dev/pages_check.py dist` | 1 s |
@@ -163,7 +164,14 @@ Pick the checks by what you touched, and run them before you call it done:
   app: it starts only in a document with `<meta name="rikuy-app">`, which only `index.html` has.
   `test/offline.py` and `test/pages.py` test it. A service worker answers the requests of the pages
   it controls; a test that changes what a server returns must go through it (or a new context).
-- The page runs under a strict Content Security Policy (`connect-src 'self'`, see `test/serve.py`): the worker can fetch only files next to the page.
+- The page runs under a strict Content Security Policy (`build/app.mjs` `policy`; `test/serve.py`
+  and `browser.py`'s `open_page` serve it, read from `dist/_headers`): scripts only from the page's own
+  site and the page's one inline script by its hash, WebAssembly but no eval, `connect-src 'self'`
+  (the worker can fetch only files next to the page). Code that needs `eval`, `Function`, an
+  inline script or an `on*` attribute fails there. Playwright's `wait_for_function` with an
+  expression evals it in the page each time it polls; `browser.py` hands every one over as a
+  function, so import it before Playwright starts. A live figure runs in its own document
+  (`widget-<hash>.html`, `src/widget.js` `runWidget`).
 - This machine's Python may be linked with zlib-ng, whose gzip bytes differ from stock zlib's: packs
   built with it get other names than `dev/dist-manifest.txt` has. To make the manifest here, run
   `build_tree.py` with Ubuntu 24.04's `libz.so.1.3` in `LD_PRELOAD` (CI's Python uses that one).
