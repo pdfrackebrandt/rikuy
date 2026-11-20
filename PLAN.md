@@ -3497,21 +3497,82 @@ Tests:
     reads their layout first); a `\setlength{\footskip}` after `\geometry{…}` is not read (the
     model takes geometry's); Preferred width Off gives `*{3}{c}` back as `ccc`.
 
+69. **Objects formatted after they are in, as Word does** (branch `word-gaps-objects`). A drawing,
+    a chart or a SmartArt pressed on the page is selected (a frame; a drawing's points keep their
+    handles) and its contextual tabs show and open: **Shape Format** (Insert Shape into the same
+    drawing, Theme Styles, Shape Fill and Shape Outline from Word's colour grid as xcolor's names
+    and tints, Weight, Dashes, Arrows, Edit Text as a `\node` at its middle, Height and Width as
+    `scale=` or `xscale=`/`yscale=`, Bring Forward and Send Backward of one shape a second press
+    selects, Position, Align, Selection Pane), **Chart Design** (Add Chart Element: title, axis
+    titles, legend corner, gridlines, data labels; Change Colors as a `cycle list`; Switch
+    Row/Column; Edit Data; Change Chart Type, each keeping the others) and **Format** (Height,
+    Width, Position, Align), **SmartArt Design** (Add Shape, Text Pane, Right to Left, Change
+    Layout, Change Colors, Reset Graphic) and **Format** (Shape Fill, Shape Outline). Each is a
+    small edit of the object's LaTeX (`src/objfmt.js`), read back by the page's drawing
+    (`src/drawing.js` now draws nodes' words, scales, `draw=none`, dash dot, a chart's title, axis
+    titles, gridlines, data labels, legend corner and colours, a SmartArt's colours and border);
+    smartdiagram's colour lists are global, so a diagram with colours of its own is followed by a
+    line giving the package's back. A double click opens a chart's grid or a SmartArt's Text Pane,
+    Enter too, Delete takes the object off with its center; each has its right click menu and a
+    long press on a phone. **Picture Format's Corrections, Color, Transparency and Compress
+    Pictures** in C: `tex/native/pic/pic.c` over stb_image and stb_image_write (pinned by hash),
+    `sh tex/build_tools.sh pic` into `tex/vendor/pic/rikuy-pic.wasm` (82 KB, standalone, one
+    import, the same bytes from two empty source folders; a `vendor.yml` job), fetched on first
+    use beside the page and checked by SHA-256; a new file beside the picture (its own kept),
+    `\includegraphics` pointed at it and a comment naming the first file and the settings, so every
+    change starts from the first file and Reset Picture goes back; Compress keeps the printed size
+    (pHYs, JFIF density) and says the bytes saved; where the module cannot load, a plain message
+    and nothing changed. **Selection Pane** (Layout, Picture Format and every object's Arrange):
+    every figure, table, picture, drawing, chart, SmartArt and display equation with its caption;
+    go to it, rename its `\label` with every reference in every file, give one a name, hide it on
+    the page alone. **Arrange**: Position (in line, a figure at `[htbp]`/`[t]`/`[b]`/`[p]`/`[h]`/`[H]`,
+    wrapfig at its own width `{0pt}` left or right) and Align (center, flushleft, flushright; in a
+    figure `\centering`, `\raggedleft`) for drawings, charts, SmartArt and pictures; Bring Forward
+    and Send Backward between the shapes of one drawing (Insert Shape puts a shape in it: Word's
+    Group). A TikZ picture in a figure was not drawn on the page: it is now, and selected there.
+    Left out, with no meaning in LaTeX: shape effects, WordArt styles, a SmartArt shape's own
+    colour or size, Quick Layout, 3-D charts, Remove Background, Artistic Effects, Ungroup (a
+    TikZ picture's shapes keep no place of their own outside it), Rotate of a drawing.
+    The hostile review (`docs/reviews/WORD-GAPS-OBJECTS.md`, six High, eight Medium) is answered
+    in its "Fixes for the review": option lists edited in place with their comments and lines,
+    no float in a float, a picture's note its own, names in braces, Compress at the printed size
+    graphicx gives, the work in a worker, one edited file a picture, labels renamed on the
+    parser's tree, hiding kept by label, typed characters escaped, 44 px on phones. Its
+    verification of ff46de0 (N1 to N9) is answered too: Position reads picture.js's one list of
+    floats and boxes (no float in multicols, a tcolorbox or a wraptable; the Position menu greys
+    what cannot apply), Wrap writes `\centering` and keeps a table a table, no wrap in a list, a
+    removed key keeps its neighbour's comment, a rename follows tikzpicture, any `\input` file and
+    the document's own `\figref`, hiding survives the hidden object's own edits, a legend keeps
+    `& % _`, Align's look parses nothing. And its second (U1 to U4): a new float only where every
+    environment round it is known safe (the preamble's own environments read: a `\newtcolorbox`
+    refused, a `\newenvironment` of a quote allowed), language environments wrap, greyed places
+    reached by the arrows with their reason, one `\centering`. And its third (V1): the files the
+    preamble reads are read too, and a theorem's usual name is trusted only where a `\newtheorem`
+    declares it.
+    Evidence: `npm test` green (`objfmt` 24 groups, `picfx` 12, `objlist` 5, `drawing`,
+    `objects`, `commands` 15); `test/objects.py` 292 (with `dist/tex`: everything compiled with
+    pdfLaTeX, XeLaTeX and LuaLaTeX, the shapes' words, chart titles and SmartArt items found in each
+    PDF; edited pictures, one seen through, on the three engines; phones at 390 and 360 px with
+    touch); `tabs.py` 127 (the fold sweep on all 19 tabs, the five new ones among them), `agent.py` 143, `picture.py` 228, `ribbon.py` 195, `test:browser` 199, the corpus model run 716 of 716; screenshots
+    in `/tmp/g1-shots`.
+
 ## Open tasks
 
 67. **Word's ribbon buttons Rikuy has no command for** (task 66 left them out; task 68 built the
     document's side: what it names is not repeated here). Insert: 3D
     Models, Online Videos, Get Add-ins, WordArt. Draw: the whole tab.
     Design: Effects, Set as Default (File has `set-default`). Insert › Tables: Draw Table, Excel
-    Spreadsheet, Quick Tables in Table's menu. Layout › Arrange: Bring Forward, Send
-    Backward, Selection Pane, Align, Group. References: Research (Search, Researcher). Mailings: the whole tab. Review:
+    Spreadsheet, Quick Tables in Table's menu. Layout › Arrange: Bring Forward and Send Backward
+    of a picture (no meaning: a picture is in the text, not over it; task 69 has them for the
+    shapes of a drawing), Group (task 69: Insert Shape puts a shape in the drawing). References:
+    Research (Search, Researcher). Mailings: the whole tab. Review:
     Translate, Protect (Block Authors, Restrict Editing), Hide Ink, the Tracking group's corner
     arrow (Track Changes Options). View: Immersive Reader, New Window, Macros. Table Layout: the
-    Rows & Columns corner arrow. Picture Format: Remove Background,
-    Corrections, Color, Artistic Effects, Transparency, Compress Pictures, Picture Effects, Picture
-    Layout, the Picture Styles gallery and its corner arrow, Bring Forward, Send Backward, Selection
-    Pane, Align, Group. Equation: Ink Equation. Header & Footer: Link to Previous. Contextual tabs
-    Word has and Rikuy has not: Shape Format, Chart Design and Format, SmartArt Design and Format.
+    Rows & Columns corner arrow. Picture Format: Remove Background, Artistic Effects, Picture
+    Effects, Picture Layout, the Picture Styles gallery and its corner arrow, Bring Forward, Send
+    Backward, Group (Corrections, Color, Transparency, Compress Pictures, Selection Pane and Align:
+    task 69). Equation: Ink Equation. Header & Footer: Link to Previous. (Shape Format, Chart
+    Design and Format, SmartArt Design and Format: task 69.)
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
     papers, every failure classified as in task 2. Needs arxiv.org (see task 3). The owner runs
