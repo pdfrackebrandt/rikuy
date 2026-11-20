@@ -110,6 +110,11 @@ ok('formula lines follow rows and columns inserted, deleted, sorted, merged and 
   assert.deepEqual(sorted.lines, ['B2 =SUM(ABOVE)', 'C5 =B5*2+SUM(B3:B5)']);
   // (Sort moves a row ending in an empty cell with its &: three cells a row still)
   assert.ok(sorted.out.includes('Total & 10 & \\\\\nplums & 5 & \\\\\npears & 3 & \\\\\napples & 2 & 4 \\\\'), sorted.out);
+  // (the verification of 3d3bfc4: Move Row Up and Down took the lines of the rows they moved)
+  const up = follow(X.moveRow(FX_TAB, T, rows[2], -1));
+  assert.deepEqual([up.lines, up.dropped], [['B5 =SUM(ABOVE)', 'C3 =B3*2+SUM(B2:B4)'], []]);
+  const down = follow(X.moveRow(FX_TAB, T, rows[1], 1));
+  assert.deepEqual([down.lines, down.dropped], [['B5 =SUM(ABOVE)', 'C3 =B3*2+SUM(B2:B4)'], []]);
   const merged = follow(X.mergeCells(FX_TAB, T, X.grow(T, { r0: rows[4], r1: rows[4], c0: 0, c1: 1 })));
   assert.deepEqual([merged.lines, merged.dropped], [['C2 =B2*2+SUM(B2:B4)'], ['B5']]);
   assert.deepEqual(follow(X.deleteCells(FX_TAB, T, { r0: rows[2], r1: rows[2], c0: 1, c1: 1 }, 'up')).lines, ['B4 =SUM(ABOVE)', 'C2 =B2*2+SUM(B2:B4)']);

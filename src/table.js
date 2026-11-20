@@ -1299,7 +1299,8 @@ export function moveRow(src, T, r, dir, at) {
   const ta = src.slice(A.cs, ae), tb = src.slice(B.cs, be);
   const start = dir < 0 ? B.cs : B.cs + tb.length - ta.length;
   const off = at != null && at >= A.cs && at <= ae ? at - A.cs : 0;
-  return { edits: [{ s: A.cs, e: ae, t: tb }, { s: B.cs, e: be, t: ta }], p: start + off };
+  // (the two rows' words change places: the formula lines follow them, formulasAfter)
+  return { edits: [{ s: A.cs, e: ae, t: tb }, { s: B.cs, e: be, t: ta }], p: start + off, moved: (q, col) => (q === r ? { k, col } : q === k ? { k: r, col } : undefined) };
 }
 
 // ---- converting -----------------------------------------------------------------------------------
