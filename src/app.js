@@ -388,6 +388,9 @@ function dollarEnds(ta) {
 
 class App {
   constructor() {
+    // (the project's texts; read while letters wait in the typing queue, typeQueue, they go in
+    // first: whatever reads the text, a timer, a command, a script, sees what was typed)
+    Object.defineProperty(this, 'files', { get() { if (this.typeQ) this.typeFlush(); return this.filesNow; }, set(v) { this.filesNow = v; }, configurable: true, enumerable: true });
     this.files = new Map();
     this.main = 'main.tex';
     this.name = 'Editing in Print';
