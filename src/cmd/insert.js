@@ -139,7 +139,7 @@ register(
   { id: 'insert-ldots', name: 'Ellipsis', synonyms: ['Dots', 'ldots'], keys: ['Ctrl+Alt+.'], run: (app) => app.insertFromPalette('ldots'), palette: { k: 'ldots', d: 'Ellipsis …', order: 220, t: piece('\\ldots{}', '') } },
   { id: 'insert-newline', name: 'Line break', title: 'Line break (Shift+Enter): a new line in the same paragraph, \\\\', keysElsewhere: ['Shift+Enter'], synonyms: ['New line', 'Manual line break'], run: (app) => app.insertFromPalette('newline'), palette: { k: 'newline', d: 'Line break', order: 230, t: piece('\\\\\n', '') } },
   // (the page's own copy and cut handlers give the LaTeX: the focus goes back to the page first)
-  { id: 'cut', name: 'Cut', title: 'Cut (Ctrl+X)', keysElsewhere: ['Ctrl+X'], menu: { selection: 10 }, when: sel, tab: 'home', group: 'clipboard', order: 20,
+  { id: 'cut', name: 'Cut', title: 'Cut (Ctrl+X): take the selection out, onto the clipboard', keysElsewhere: ['Ctrl+X'], menu: { selection: 10 }, when: sel, tab: 'home', group: 'clipboard', order: 20,
     icon: '<circle cx="6" cy="14.5" r="2.2"/><circle cx="14" cy="14.5" r="2.2"/><path d="M7.6 12.9 14 3.5M12.4 12.9 6 3.5"/>', run: (app) => { app.ribbonBack(); document.execCommand('cut'); } },
   { id: 'copy', name: 'Copy', title: 'Copy, as LaTeX and as text (Ctrl+C)', keysElsewhere: ['Ctrl+C'], menu: { selection: 11 }, when: sel, tab: 'home', group: 'clipboard', order: 30,
     icon: '<rect x="7" y="6.5" width="9" height="10.5" rx="1.2"/><path d="M4.5 13.5V4.2c0-.7.5-1.2 1.2-1.2h7"/>', run: (app) => { app.ribbonBack(); document.execCommand('copy'); } },

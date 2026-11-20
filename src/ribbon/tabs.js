@@ -165,7 +165,7 @@ export const tabs = {
         // the button the group folds into: its name, and a menu of its commands
         const gb = mk('button', 'btn ghost rb-gbtn');
         gb.type = 'button'; gb.id = 'rg-' + T.id + '-' + g.id;
-        gb.setAttribute('aria-label', g.name); gb.title = g.name; gb.setAttribute('aria-haspopup', 'menu'); gb.setAttribute('aria-expanded', 'false');
+        gb.setAttribute('aria-label', g.name); gb.title = g.name + ': show the group\'s commands in a menu'; gb.setAttribute('aria-haspopup', 'menu'); gb.setAttribute('aria-expanded', 'false');
         // (its first command's icon, which it shows folded: see ribbonFit)
         const first = items.find(({ c }) => c.icon);
         if (first) gb.insertAdjacentHTML('beforeend', SVG(first.c.icon).replace('<svg ', '<svg class="rb-gico" '));
@@ -427,7 +427,10 @@ export const tabs = {
     // (a spare group first, as one step each: its commands have a tab of their own)
     const fold = (g) => ({ do: () => g.classList.add('folded', ...(g.querySelector('.rb-gico') ? ['ico'] : [])), undo: () => g.classList.remove('folded', 'ico') });
     const spare = foldsGroups() ? groups.filter((g) => g.dataset.spare).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
-    const steps = [...spare.map(fold), flag('rb-nolab')];
+    // (on Home the spare is the names chain's first step: given back only once the tiles and the
+    // gallery have come back, or a row a little narrower, with the style list for the gallery, would
+    // open Insert and show more controls than a wider one with the gallery and Insert folded)
+    const steps = [...spare.map((g) => ({ ...fold(g), chain: gal ? 'names' : undefined })), flag('rb-nolab')];
     // (a laid out group, from 900 px with a mouse, gives way as Word's do: its large buttons small,
     // the least needed group first; then its names, the same way. Neither takes a control, so all
     // of it goes before any group folds. src/ribbon/layout.js)

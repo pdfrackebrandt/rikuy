@@ -67,7 +67,7 @@ export const LAYOUT = {
     immersive: ['focus L O'],
     movement: ['side-to-side L 7'],
     mode: ['dark-page L D'],
-    show: ['ruler S R', 'navigation-pane S K', 'show-latex S SL', 'show-marks S SM Formatting marks'],
+    show: ['ruler S R', 'navigation-pane S K', 'show-latex S SL', 'show-marks S SM'],
     zoom: ['zoom-100 L J', 'one-page S 1', 'multiple-pages S M', 'page-width S I']
   },
   help: {
