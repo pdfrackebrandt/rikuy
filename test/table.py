@@ -646,6 +646,7 @@ def r3_tables(page):
     roundtrip(page, DOC, sel('one'), cmd_fn('table-alt-text', {'text': 'Two fruits and their counts'}), alt, label='Table Alt Text', off_command=cmd_fn('table-alt-text', {'text': ''}))
     load_doc(page, alt); at_src(page, 'one')
     run_cmd(page, 'table-properties'); page.wait_for_timeout(200)
+    page.get_by_role('tab', name='Alt Text', exact=True).click()
     v = page.get_by_role('textbox', name='Description', exact=True).input_value()
     check('Table Properties shows the alt text read back', v == 'Two fruits and their counts', v)
     page.get_by_role('textbox', name='Description', exact=True).fill('Fruit: 100% & more')

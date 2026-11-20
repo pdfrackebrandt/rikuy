@@ -22,7 +22,8 @@ import * as help from './help.js';
 import * as equation from './equation.js';  // B13 equations
 import * as parts from './parts.js';        // R3 cover pages, Quick Parts and fields, form fields
 import * as move from './move.js';          // R3 drag to move
+import * as wordgaps from './wordgaps.js';  // task 67: Word's buttons Rikuy lacked (the document's)
 
 
 // (a method name two modules both add throws here: test/commands.test.mjs imports this file)
-export const methods = joinMethods({}, Object.fromEntries(Object.entries({ frame, font, para, lists, styles, find, page, table, picture, refs, review, proofing, insert, file, view, help, equation, parts, move }).map(([k, m]) => ['src/cmd/' + k + '.js', m.methods || {}])));
+export const methods = joinMethods({}, Object.fromEntries(Object.entries({ frame, font, para, lists, styles, find, page, table, picture, refs, review, proofing, insert, file, view, help, equation, parts, move, wordgaps }).map(([k, m]) => ['src/cmd/' + k + '.js', m.methods || {}])));

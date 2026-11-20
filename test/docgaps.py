@@ -5,7 +5,9 @@ Formulas; View Gridlines; Draw Table and Eraser), each drawn on the page as TeX 
 dist/tex holds a TeX tree, what they write compiled in the page with pdfLaTeX, XeLaTeX and LuaLaTeX;
 phones at 390 and 360 px with touch; screenshots in $RIKUY_SHOTS (default /tmp/g2-shots).
 
-python3 docgaps.py [section ...]: tables, tables_compiled, tables_phones, shots."""
+python3 docgaps.py [section ...]: tables, tables_compiled, tables_phones, shots, headfoot, headfoot_compiled,
+headfoot_phones, headfoot_shots, view, refs_update, equation, insert_text, rest_compiled, rest_phones,
+rest_shots."""
 import os, sys, base64, io
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from browser import open_page, check, results, src, load_doc, roundtrip, pressed
@@ -305,18 +307,381 @@ def shots(p):
         br.close()
 
 
+# ---- the Header & Footer tab -------------------------------------------------------------------------------
+HF_PRE = '\\usepackage[margin=2.5cm]{geometry}\n\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n\\fancyhf{}\n\\fancyhead[C]{Head}\n\\fancyfoot[C]{\\thepage}\n'
+HF_DOC = WRAP('First words.\n\n' + ('Words fill the page. ' * 400) + '\n\nLast words.', HF_PRE)
+
+
+def named(page, name, tap=False):
+    """A ribbon button by its name, or the item of that name in its folded group's menu."""
+    b = page.get_by_role('button', name=name, exact=True)
+    if b.count() == 1 and b.is_visible():
+        return b.tap() if tap else b.click()
+    gb = page.evaluate("""(name) => { for (const e of document.querySelectorAll('.rb-panel:not([hidden]) .rb-grp [aria-label]')) { const g = e.closest('.rb-grp').querySelector('.rb-gbtn'); if (e.getAttribute('aria-label') === name && !e.offsetParent && g && g.offsetParent) return g.id; } return null; }""", name)
+    page.click('#' + gb); page.wait_for_timeout(150)
+    it = page.locator('.pop [role^=menuitem][aria-label="%s"]' % name)
+    return it.tap() if tap else it.click()
+
+
+def png(page, name='logo.png'):
+    """A small PNG made in the page and kept as window.__logo (Pictures' file)."""
+    page.evaluate("""async (n) => { const c = document.createElement('canvas'); c.width = 60; c.height = 30; const x = c.getContext('2d'); x.fillStyle = '#2B74B0'; x.fillRect(0, 0, 60, 30);
+      const b = await new Promise((r) => c.toBlob(r, 'image/png')); window.__logo = new File([b], n, { type: 'image/png' }); }""", name)
+
+
+def headfoot(page):
+    import re as _re
+    load_doc(page, HF_DOC); page.wait_for_timeout(400)
+    page.evaluate("window.rikuy.pageHFOpen('head', { page: 0 })"); page.wait_for_timeout(300)
+    tabs = page.evaluate("[...document.querySelectorAll('#rb-tabs [role=tab]')].filter((t) => !t.hidden).map((t) => t.textContent)")
+    check('the header open: the Header & Footer tab shows', 'Header & Footer' in tabs, tabs)
+    page.get_by_role('tab', name='Header & Footer', exact=True).click(); page.wait_for_timeout(200)
+    groups = page.evaluate("[...document.querySelectorAll('.rb-panel:not([hidden]) .rb-grp')].map((g) => g.dataset.group)")
+    check('its groups in Word\'s order: Header & Footer, Insert, Navigation, Options, Position, Close', groups == ['headfoot', 'insert', 'navigation', 'options', 'position', 'close'], groups)
+    check('Go to Header is off in the header, Go to Footer on', page.get_by_role('button', name='Go to Header', exact=True).is_disabled() and not page.get_by_role('button', name='Go to Footer', exact=True).is_disabled())
+    named(page, 'Go to Footer'); page.wait_for_timeout(300)
+    w = page.evaluate('window.rikuy.hf && [window.rikuy.hf.where, window.rikuy.hf.k]')
+    check('Go to Footer: the same page\'s footer open, its fields there', w == ['foot', 0] and page.get_by_role('textbox', name='Footer center', exact=True).count() == 1, w)
+    named(page, 'Go to Header'); page.wait_for_timeout(300)
+    check('Go to Header: back to the header', page.evaluate('window.rikuy.hf && window.rikuy.hf.where') == 'head')
+    check('Previous and Next are off where every page has the one header (one sided)', page.get_by_role('button', name='Next Header or Footer', exact=True).is_disabled())
+    # Header from Top: the box reads Word's distance, Enter writes geometry's headsep, the text stays
+    v = page.get_by_role('spinbutton', name='Header from Top', exact=True).input_value()
+    want = round((2.5 * 72.27 / 2.54 - 25 - 12) / (72.27 / 2.54), 2)
+    check('Header from Top reads the top margin less headsep and headheight: %s cm' % want, v == '%s cm' % want, v)
+    h0 = hist(page)
+    page.get_by_role('spinbutton', name='Header from Top', exact=True).fill('1')
+    page.keyboard.press('Enter'); page.wait_for_timeout(400)
+    s = src(page)
+    m = _re.search(r'\\usepackage\[margin=2\.5cm,headsep=([\d.]+)pt\]\{geometry\}', s)
+    hs = 2.5 * 72.27 / 2.54 - 12 - 72.27 / 2.54
+    check('Enter: geometry\'s headsep = the top margin less headheight less 1 cm (%.2f pt), one step' % hs, bool(m) and abs(float(m.group(1)) - hs) < 0.02 and hist(page) == h0 + 1, s[:200])
+    page.wait_for_timeout(200)
+    sp = page.get_by_role('spinbutton', name='Header from Top', exact=True)
+    v = sp.input_value() if sp.count() else None
+    check('the box reads it back: 1 cm', v == '1 cm', v)
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('one undo: the bytes of before', src(page) == HF_DOC)
+    page.evaluate("window.rikuy.runCommand('hf-footer-bottom', { cm: 1.2 })"); page.wait_for_timeout(300)
+    s = src(page)
+    g = page.evaluate('(() => { const g = window.rikuy.layout.g; return { ph: g.paperH || g.ph, mt: g.mt, th: g.th, fs: g.footskip }; })()')
+    check('Footer from Bottom 1.2 cm: geometry\'s footskip set so the footer stands 1.2 cm above the sheet\'s foot', 'footskip=' in s and abs(g['ph'] - g['mt'] - g['th'] - g['fs'] - 1.2 * 72.27 / 2.54) < 0.05, (s[:200], g))
+    page.evaluate("window.rikuy.runCommand('hf-header-top', { cm: 3 })"); page.wait_for_timeout(300)
+    toast = page.evaluate("() => (document.querySelector('.toast') || {}).textContent || ''")
+    check('Header from Top past the top margin: refused, and the toast says how far it may go', 'run into the text' in toast, toast)
+    # Pictures: a logo in the header, a line high, graphicx with it, drawn on the page
+    load_doc(page, HF_DOC); page.wait_for_timeout(300)
+    page.evaluate("window.rikuy.pageHFOpen('head', { page: 0, slot: 'L' })"); page.wait_for_timeout(300)
+    png(page)
+    h0 = hist(page)
+    page.evaluate("window.rikuy.runCommand('hf-picture', { file: 'logo.png', blob: window.__logo })"); page.wait_for_timeout(500)
+    s = src(page)
+    check('Pictures: \\includegraphics[height=\\baselineskip]{logo.png} in the header\'s left place, \\usepackage{graphicx} with it, one step',
+          '\\fancyhead[L]{\\includegraphics[height=\\baselineskip]{logo.png}}' in s and '\\usepackage{graphicx}' in s and hist(page) == h0 + 1, s[:400])
+    page.keyboard.press('Escape'); page.wait_for_timeout(400)
+    img = page.evaluate("(() => { const i = document.querySelector('#pages .page .hd img.hf-pic'); return i ? { h: i.getBoundingClientRect().height, ok: i.complete && i.naturalWidth > 0 } : null; })()")
+    check('the page draws the logo in the header, a line high (12 pt)', img and img['ok'] and abs(img['h'] - 12 * page.evaluate('window.rikuy.px')) < 2, img)
+    # Quick Parts: Page X of Y's NumPages
+    page.evaluate("window.rikuy.pageHFOpen('foot', { page: 0, slot: 'R' })"); page.wait_for_timeout(300)
+    page.evaluate("window.rikuy.runCommand('hf-quick-parts', { tex: '\\\\pageref{LastPage}', pk: 'lastpage' })"); page.wait_for_timeout(400)
+    s = src(page)
+    check('Quick Parts › NumPages in the footer\'s right place: \\pageref{LastPage}, lastpage loaded', '\\fancyfoot[R]{\\pageref{LastPage}}' in s and '\\usepackage{lastpage}' in s, s[:400])
+    items = page.evaluate("window.rikuy.hfPartItems().filter(Boolean).map((x) => x.name)")
+    check('the header\'s Quick Parts: Page, NumPages, Date, FileName', items[:4] == ['Page', 'NumPages', 'Date', 'FileName'], items)
+    # Show Document Text
+    page.evaluate("window.rikuy.runCommand('hf-show-text')"); page.wait_for_timeout(150)
+    vis = page.evaluate("getComputedStyle(document.querySelector('#pages .page .pb')).visibility")
+    check('Show Document Text off: the page\'s text hidden, the header and footer left', vis == 'hidden' and pressed(page, 'hf-show-text') is False, vis)
+    page.evaluate("window.rikuy.runCommand('hf-show-text')"); page.wait_for_timeout(150)
+    vis = page.evaluate("getComputedStyle(document.querySelector('#pages .page .pb')).visibility")
+    check('and on again', vis == 'visible' and pressed(page, 'hf-show-text') is True, vis)
+    page.keyboard.press('Escape')
+    # two sided: Next goes to an even page's header, Previous back
+    two = HF_DOC.replace('\\documentclass{article}', '\\documentclass[twoside]{article}').replace('\\fancyhead[C]{Head}', '\\fancyhead[LE]{Even}\\fancyhead[RO]{Odd}')
+    load_doc(page, two); page.wait_for_timeout(500)
+    page.evaluate("window.rikuy.pageHFOpen('head', { page: 0 })"); page.wait_for_timeout(300)
+    page.evaluate("window.rikuy.runCommand('hf-next')"); page.wait_for_timeout(300)
+    w = page.evaluate('window.rikuy.hf && [window.rikuy.hf.k, window.rikuy.hf.side, window.rikuy.hf.el.getAttribute("aria-label")]')
+    check('two sided: Next opens the even page\'s header (page 2), its fields named so', w and w[0] == 1 and w[1] == 'E' and 'even' in w[2], w)
+    v = page.get_by_role('textbox', name='Header left', exact=True).input_value()
+    check('with the even pages\' text in it', v == 'Even', v)
+    page.evaluate("window.rikuy.runCommand('hf-prev')"); page.wait_for_timeout(300)
+    check('Previous: the odd page\'s again', page.evaluate('window.rikuy.hf && window.rikuy.hf.side') == 'O')
+    page.keyboard.press('Escape')
+
+
+def headfoot_compiled(page):
+    if not HAS_TEX:
+        print('SKIP the header and footer compiled: no TeX tree in %s' % DIST)
+        return
+    png(page)
+    for eng, magic in (('pdflatex', ''), ('xelatex', '% !TEX program = xelatex\n'), ('lualatex', '% !TEX program = lualatex\n')):
+        doc = magic + WRAP('First words.\n\nLast words.', HF_PRE.replace('margin=2.5cm', 'margin=2.5cm,headsep=30.68pt,footskip=36pt') + '\\usepackage{graphicx}\n\\usepackage{lastpage}\n\\fancyhead[L]{\\includegraphics[height=\\baselineskip]{logo.png}}\n\\fancyfoot[R]{Page \\thepage\\ of \\pageref{LastPage}}\n')
+        page.evaluate("window.rikuy.pageAssetName('logo.png', window.__logo)")
+        r = pdf_of(page, doc)
+        check('the header\'s logo, NumPages and geometry\'s headsep and footskip compile with %s, the words in the PDF' % eng,
+              r['ok'] and not r['problems'] and r['engine'] == eng and 'Page 1 of 1' in r['text'] and 'Head' in r['text'], {'ok': r['ok'], 'engine': r['engine'], 'problems': r['problems'], 'text': r['text'][:120]})
+
+
+def headfoot_phones(p):
+    for w, h in ((390, 844), (360, 740)):
+        br, page, errs = open_page(p, w, h, touch=True)
+        tag = ' (%d px, touch)' % w
+        try:
+            load_doc(page, HF_DOC); page.wait_for_timeout(400)
+            page.evaluate("window.rikuy.pageHFOpen('head', { page: 0 })"); page.wait_for_timeout(300)
+            page.get_by_role('tab', name='Header & Footer', exact=True).tap(); page.wait_for_timeout(200)
+            named(page, 'Go to Footer', tap=True); page.wait_for_timeout(300)
+            check('Go to Footer by a tap' + tag, page.evaluate('window.rikuy.hf && window.rikuy.hf.where') == 'foot')
+            small = page.evaluate("[...document.querySelectorAll('.rb-panel:not([hidden]) button')].filter((b) => b.offsetParent && b.getBoundingClientRect().height < 43.5).map((b) => b.getAttribute('aria-label')).slice(0, 5)")
+            check('the Header & Footer tab\'s buttons 44 px for a finger' + tag, not small, small)
+            os.makedirs(SHOTS, exist_ok=True)
+            page.screenshot(path=os.path.join(SHOTS, 'headfoot-%d.png' % w))
+        except Exception as ex:
+            check('headfoot_phones runs to its end' + tag, False, repr(ex)[:300])
+        br.close()
+
+
+def headfoot_shots(p):
+    os.makedirs(SHOTS, exist_ok=True)
+    for w, h, dark in ((1920, 1080, False), (1366, 768, False), (1366, 768, True)):
+        br, page, errs = open_page(p, w, h, dark=dark)
+        tag = '%d%s' % (w, '-dark' if dark else '')
+        try:
+            load_doc(page, HF_DOC.replace('\\fancyhead[C]{Head}', '\\fancyhead[C]{Head}\\fancyhead[L]{\\includegraphics[height=\\baselineskip]{logo.png}}')); png(page)
+            page.evaluate("window.rikuy.pageAssetName('logo.png', window.__logo); window.rikuy.forceRender = true; window.rikuy.rebuild()"); page.wait_for_timeout(500)
+            page.evaluate("window.rikuy.pageHFOpen('head', { page: 0 })"); page.wait_for_timeout(300)
+            page.get_by_role('tab', name='Header & Footer', exact=True).click(); page.wait_for_timeout(300)
+            page.screenshot(path=os.path.join(SHOTS, 'headfoot-%s.png' % tag))
+        except Exception as ex:
+            check('headfoot shots ' + tag, False, repr(ex)[:300])
+        br.close()
+
+
+# ---- View: Gridlines, Zoom, Split, Vertical ---------------------------------------------------------------
+LONG = WRAP('\\section{One}\n' + ('Words of the first part run on. ' * 120) + '\n\n\\section{Two}\n' + ('Words of the second part run on. ' * 120) + '\n\nThe end.', '')
+
+
+def view(page):
+    load_doc(page, LONG); page.wait_for_timeout(500)
+    page.get_by_role('tab', name='View', exact=True).click(); page.wait_for_timeout(200)
+    named(page, 'Gridlines'); page.wait_for_timeout(150)
+    bg = page.evaluate("getComputedStyle(document.querySelector('#pages .page .pb')).backgroundImage")
+    check('View › Gridlines: lines over the page\'s text area, the source as it was', 'repeating-linear-gradient' in bg and src(page) == LONG and pressed(page, 'view-gridlines-page') is True, bg[:80])
+    named(page, 'Gridlines'); page.wait_for_timeout(150)
+    check('and off again', page.evaluate("getComputedStyle(document.querySelector('#pages .page .pb')).backgroundImage") == 'none')
+    # Zoom: the dialog, 75 %, Text width, Many pages
+    named(page, 'Zoom dialog'); page.wait_for_timeout(200)
+    dlg = page.get_by_role('dialog', name='Zoom', exact=True)
+    radios = [dlg.get_by_role('radio', name=n, exact=True).count() for n in ('200%', '100%', '75%', 'Page width', 'Text width', 'Whole page', 'Many pages')]
+    check('Zoom…: Word\'s choices, 200 %, 100 %, 75 %, Page width, Text width, Whole page, Many pages, and a percent', radios == [1] * 7 and dlg.get_by_role('spinbutton', name='Percent', exact=True).count() == 1, radios)
+    dlg.get_by_role('radio', name='75%', exact=True).check(); dlg.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(400)
+    z = page.evaluate('Math.round(window.rikuy.px / (96 / 72.27) * 100)')
+    check('75 %: the page at three quarters of its size', z == 75, z)
+    page.evaluate("window.rikuy.runCommand('zoom-dialog', { zoom: 'text' })"); page.wait_for_timeout(400)
+    tw = page.evaluate("(() => { const g = window.rikuy.layout.g, d = document.getElementById('desk'); return (g.tw * window.rikuy.px) / d.clientWidth; })()")
+    check('Text width: the text block across the window', 0.85 < tw <= 1.0, tw)
+    page.evaluate("window.rikuy.runCommand('zoom-dialog', { zoom: 'many', pages: 3 })"); page.wait_for_timeout(400)
+    across = page.evaluate("(() => { const p = [...document.querySelectorAll('#pages > .page')].slice(0, 3).map((x) => x.getBoundingClientRect().top); return p.length === 3 && Math.abs(p[0] - p[2]) < 2; })()")
+    check('Many pages, 3: three pages side by side', across)
+    page.evaluate("window.rikuy.runCommand('zoom-dialog', { zoom: 1 })"); page.wait_for_timeout(300)
+    # Vertical and Side to Side, a pair
+    page.evaluate("window.rikuy.runCommand('side-to-side')"); page.wait_for_timeout(200)
+    check('Side to Side pressed, Vertical not', pressed(page, 'side-to-side') is True and pressed(page, 'page-vertical') is False)
+    page.evaluate("window.rikuy.runCommand('page-vertical')"); page.wait_for_timeout(200)
+    check('Vertical: the pages one under the other again', pressed(page, 'side-to-side') is False and pressed(page, 'page-vertical') is True)
+    # Split: a second view, scrolled on its own, kept current; a press in it takes the caret there
+    page.evaluate("window.rikuy.runCommand('split-view')"); page.wait_for_timeout(500)
+    sv = page.evaluate("(() => { const v = document.getElementById('split-view'), d = document.getElementById('desk'); if (!v) return null; const a = v.getBoundingClientRect(), b = d.getBoundingClientRect(); return { below: a.top >= b.bottom - 1, words: v.textContent.includes('second part'), ids: v.querySelectorAll('[id]').length, edit: v.querySelectorAll('[contenteditable=true]').length }; })()")
+    check('Split: a second view under the first, the same pages, no ids twice, not editable', sv and sv['below'] and sv['words'] and sv['ids'] == 0 and sv['edit'] == 0, sv)
+    page.evaluate("document.getElementById('split-view').scrollTop = 2000"); page.wait_for_timeout(100)
+    tops = page.evaluate("[document.getElementById('desk').scrollTop, document.getElementById('split-view').scrollTop]")
+    check('each view scrolled on its own', tops[0] != tops[1], tops)
+    page.evaluate("() => { const g = window.rikuy, s = g.files.get('main.tex'); g.commit([{ f: 'main.tex', s: s.indexOf('The end.'), e: s.indexOf('The end.') + 8, t: 'The very end.' }], null, 'test'); }"); page.wait_for_timeout(800)
+    check('an edit shows in the second view too', page.evaluate("document.getElementById('split-view').textContent.includes('The very end.')"))
+    ok = page.evaluate("""(() => { const v = document.getElementById('split-view'); const sp = [...v.querySelectorAll('[data-g]')].find((x) => x.textContent.includes('second part')); if (!sp) return false; sp.dispatchEvent(new MouseEvent('click', { bubbles: true })); const c = window.rikuy.caretNow(); return !!c && window.rikuy.files.get('main.tex').slice(c.a - 40, c.a + 40).includes('second part'); })()""")
+    check('a press in the second view puts the caret there in the first', ok)
+    page.evaluate("window.rikuy.runCommand('split-view')"); page.wait_for_timeout(300)
+    check('Split again: one view, the page as it was', page.evaluate("!document.getElementById('split-view') && document.getElementById('desk').parentElement.id === 'main'"))
+
+
+# ---- References: Update Table, Update Index -----------------------------------------------------------------
+def refs_update(page):
+    doc = WRAP('\\tableofcontents\n\n\\section{Alpha}\nText.\n\n\\begin{figure}[h]\\centering\\rule{1cm}{1cm}\\caption{A box}\\end{figure}\n\n\\listoffigures\n\n\\section{Beta}\nMore\\index{word}.\n\n\\printindex', '\\usepackage{makeidx}\n\\makeindex\n')
+    load_doc(page, doc); page.wait_for_timeout(400)
+    page.get_by_role('tab', name='References', exact=True).click(); page.wait_for_timeout(200)
+    names = [n for n in ('Update Table', 'Update Table of Figures', 'Update Index') if page.get_by_role('button', name=n, exact=True).count() == 1 and page.get_by_role('button', name=n, exact=True).is_enabled()]
+    check('References shows Update Table, Update Table (of figures) and Update Index, on where the document has them', len(names) == 3, names)
+    h0 = hist(page)
+    named(page, 'Update Table'); page.wait_for_timeout(100)
+    flash = page.evaluate("document.querySelectorAll('#pages .toc.rk-updated').length")
+    toast = page.evaluate("() => (document.querySelector('.toast') || {}).textContent || ''")
+    check('Update Table: the contents rebuilt and flashed on the page, the source untouched, the toast says when the PDF takes it', flash >= 1 and hist(page) == h0 and 'up to date on the page' in toast, (flash, toast))
+    page.evaluate("() => { const g = window.rikuy, s = g.files.get('main.tex'); g.commit([{ f: 'main.tex', s: s.indexOf('Beta'), e: s.indexOf('Beta') + 4, t: 'Gamma' }], null, 'test'); }"); page.wait_for_timeout(300)
+    named(page, 'Update Table'); page.wait_for_timeout(200)
+    check('after a heading changed: the contents read Gamma', 'Gamma' in page.evaluate("document.querySelector('#pages .toc').textContent"))
+    named(page, 'Update Index'); page.wait_for_timeout(100)
+    check('Update Index flashes the index', page.evaluate("document.querySelectorAll('#pages .rk-updated').length") >= 1)
+    load_doc(page, WRAP('No lists.', '')); page.wait_for_timeout(200); page.evaluate("document.getElementById('pages').focus()")
+    page.get_by_role('tab', name='References', exact=True).click(); page.wait_for_timeout(200)
+    check('in a document with no contents Update Table is off', page.get_by_role('button', name='Update Table', exact=True).is_disabled())
+
+
+# ---- Equation: Convert, Unicode and LaTeX, Normal Text, Equation Options -------------------------------------
+EQ = WRAP('Before.\n\n\\begin{equation}\n  \\frac{a+b}{c} = x^{2}\n\\end{equation}\n\nAfter.', '\\usepackage{amsmath}\n')
+
+
+def open_eq(page):
+    page.evaluate("() => { const el = document.querySelector('#pages .atom[data-m], #pages [data-m]'); el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })); el.click(); }")
+    page.wait_for_timeout(200)
+    page.wait_for_selector('.pop-math math-field', timeout=15000)
+    page.wait_for_timeout(300)
+
+
+def equation(page):
+    load_doc(page, EQ); page.wait_for_timeout(300)
+    open_eq(page)
+    page.get_by_role('tab', name='Equation', exact=True).click(); page.wait_for_timeout(200)
+    names = [n for n in ('Convert', 'Unicode', 'LaTeX format', 'Normal Text') if page.get_by_role('button', name=n, exact=True).count() == 1]
+    check('the Equation tab\'s Conversions: Convert, Unicode, LaTeX, Normal Text', len(names) == 4, names)
+    page.evaluate("window.rikuy.runCommand('eq-unicode')")
+    page.evaluate("window.rikuy.runCommand('eq-convert', { to: 'linear' })"); page.wait_for_timeout(200)
+    v = page.get_by_role('textbox', name='The equation, in Word\'s linear format', exact=True).input_value()
+    check('Convert › Linear (Unicode): the equation as Word types it, (a+b)/c=x^2', v == '(a+b)/c=x^2', v)
+    box = page.get_by_role('textbox', name='The equation, in Word\'s linear format', exact=True)
+    box.fill('(a+b)/c=√(x+1)'); page.wait_for_timeout(400)
+    s = src(page)
+    check('typed in linear: the source reads \\frac{a+b}{c}=\\sqrt{x+1}', '\\frac{a+b}{c}=\\sqrt{x+1}' in s, s[s.find('equation'):][:100])
+    page.evaluate("window.rikuy.runCommand('eq-convert', { to: 'professional' })"); page.wait_for_timeout(300)
+    check('Convert › Professional: the field again, built up', page.evaluate("!document.querySelector('.pop-math math-field').hidden && document.querySelector('#pop-lin').hidden"))
+    page.evaluate("window.rikuy.runCommand('eq-latex-format')"); page.wait_for_timeout(100)
+    page.evaluate("window.rikuy.runCommand('eq-convert', { to: 'linear' })"); page.wait_for_timeout(200)
+    st = page.evaluate("[document.querySelector('.pop-math math-field').hidden, document.activeElement && document.activeElement.id]")
+    check('with LaTeX chosen, Linear is the equation\'s LaTeX to type in', st == [True, 'pop-tex'], st)
+    page.evaluate("window.rikuy.runCommand('eq-convert', { to: 'professional' })"); page.wait_for_timeout(200)
+    page.evaluate("window.rikuy.runCommand('eq-unicode')")
+    # Normal Text: words in the field are \text{}
+    page.evaluate("document.querySelector('.pop-math math-field').focus(); document.querySelector('.pop-math math-field').executeCommand('moveToMathfieldEnd')")
+    page.evaluate("window.rikuy.runCommand('eq-normal-text')"); page.wait_for_timeout(100)
+    check('Normal Text pressed: the field types words', pressed(page, 'eq-normal-text') is True)
+    page.keyboard.type(' if'); page.wait_for_timeout(500)
+    s = src(page)
+    check('typed words come as \\text{…} in the source', '\\text{ if}' in s or '\\text{if}' in s, s[s.find('equation'):][:120])
+    page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    # Equation Options: Alt+= on an empty line makes the kind chosen
+    page.evaluate("window.rikuy.runCommand('eq-options', { newEnv: 'equation*', format: 'unicode' })")
+    check('Equation Options kept', page.evaluate('window.rikuy.prefs.eqNewEnv') == 'equation*')
+    page.evaluate("window.rikuy.runCommand('eq-options')"); page.wait_for_timeout(200)
+    dlg = page.get_by_role('dialog', name='Equation Options', exact=True)
+    check('its dialog reads them back', dlg.get_by_role('radio', name='Unnumbered (equation*)', exact=True).is_checked())
+    dlg.get_by_role('radio', name='Numbered (equation)', exact=True).check(); dlg.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(200)
+    check('and OK sets them again', page.evaluate('window.rikuy.prefs.eqNewEnv') == 'equation')
+
+
+# ---- Insert: Signature Line, Date & Time and Object on the ribbon --------------------------------------------
+def insert_text(page):
+    doc = WRAP('Yours sincerely,\n\nThe end.', '')
+    load_doc(page, doc); page.wait_for_timeout(300)
+    page.evaluate("() => { const sp = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('sincerely')); const r = document.createRange(); r.setStart(sp.firstChild, 3); r.collapse(true); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }")
+    page.wait_for_timeout(100)
+    page.get_by_role('tab', name='Insert', exact=True).click(); page.wait_for_timeout(200)
+    names = [n for n in ('Signature Line', 'Date & Time', 'Object') if page.get_by_role('button', name=n, exact=True).count() == 1]
+    check('Insert › Text holds Signature Line, Date & Time and Object, as Word\'s', len(names) == 3, names)
+    named(page, 'Signature Line'); page.wait_for_timeout(200)
+    dlg = page.get_by_role('dialog', name='Signature Setup', exact=True)
+    dlg.get_by_role('textbox', name='Suggested signer', exact=True).fill('Ada Lovelace')
+    dlg.get_by_role('textbox', name='Suggested signer\'s title', exact=True).fill('Analyst & Co')
+    h0 = hist(page)
+    dlg.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(300)
+    s = src(page)
+    want = '\\par\\bigskip\\bigskip\n\\noindent\\rule{6cm}{0.4pt}\\\\\nAda Lovelace\\\\\nAnalyst \\& Co\\\\\n\\today\\par\n'
+    check('Signature Line: room, a 6 cm line, the name, the title (its & written \\&), the date, after the paragraph, one step', want in s and s.index(want) > s.index('sincerely') and hist(page) == h0 + 1, s[s.find('sincerely'):][:200])
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('one undo: the bytes of before', src(page) == doc)
+
+
+def rest_compiled(page):
+    if not HAS_TEX:
+        print('SKIP the rest compiled: no TeX tree in %s' % DIST)
+        return
+    body_ = ('Yours sincerely,\n\n\\par\\bigskip\\bigskip\n\\noindent\\rule{6cm}{0.4pt}\\\\\nAda Lovelace\\\\\nAnalyst \\& Co\\\\\n\\today\\par\n\n'
+             '\\begin{equation*}\n  \\frac{a+b}{c}=\\sqrt{x+1}\\text{ if }x>0\n\\end{equation*}\n')
+    for eng, magic in (('pdflatex', ''), ('xelatex', '% !TEX program = xelatex\n'), ('lualatex', '% !TEX program = lualatex\n')):
+        r = pdf_of(page, magic + WRAP(body_, '\\usepackage{amsmath}\n'))
+        miss = [w for w in ('Ada Lovelace', 'Analyst & Co', 'sincerely', 'if') if w not in r['text']]
+        check('the signature line and an equation from Linear with Normal Text compile with %s, the words in the PDF' % eng, r['ok'] and not r['problems'] and r['engine'] == eng and not miss, {'ok': r['ok'], 'engine': r['engine'], 'problems': r['problems'], 'missing': miss})
+
+
+def rest_phones(p):
+    for w, h in ((390, 844), (360, 740)):
+        br, page, errs = open_page(p, w, h, touch=True)
+        tag = ' (%d px, touch)' % w
+        try:
+            load_doc(page, LONG); page.wait_for_timeout(400)
+            page.evaluate("window.rikuy.runCommand('zoom-dialog')"); page.wait_for_timeout(300)
+            fit = page.evaluate("(() => { const d = document.querySelector('.pop'); const r = d.getBoundingClientRect(); const small = [...d.querySelectorAll('button, select, label.tb-r')].filter((x) => x.offsetParent && x.getBoundingClientRect().height < 43.5); return { in: r.left >= 0 && r.right <= innerWidth + 1, small: small.length }; })()")
+            check('Zoom… inside the screen, its choices 44 px' + tag, fit['in'] and fit['small'] == 0, fit)
+            page.get_by_role('radio', name='Whole page', exact=True).tap(); page.get_by_role('button', name='OK', exact=True).tap(); page.wait_for_timeout(400)
+            whole = page.evaluate("(() => { const p = document.querySelector('#pages .page').getBoundingClientRect(), d = document.getElementById('desk').getBoundingClientRect(); return p.height <= d.height + 1; })()")
+            check('Whole page by taps: a page in the window' + tag, whole)
+            page.evaluate("window.rikuy.runCommand('split-view')"); page.wait_for_timeout(500)
+            sv = page.evaluate("(() => { const v = document.getElementById('split-view'); return !!v && v.getBoundingClientRect().height > 100 && document.documentElement.scrollWidth <= innerWidth + 1; })()")
+            check('Split on a phone: the second view under the first, nothing wider than the screen' + tag, sv)
+            os.makedirs(SHOTS, exist_ok=True)
+            page.screenshot(path=os.path.join(SHOTS, 'split-%d.png' % w))
+            page.evaluate("window.rikuy.runCommand('split-view')")
+            load_doc(page, WRAP('Yours sincerely,', '')); page.wait_for_timeout(300)
+            page.evaluate("() => { const sp = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('sincerely')); const r = document.createRange(); r.setStart(sp.firstChild, 3); r.collapse(true); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }")
+            page.evaluate("window.rikuy.runCommand('signature-line')"); page.wait_for_timeout(300)
+            page.get_by_role('textbox', name='Suggested signer', exact=True).fill('Ada')
+            page.get_by_role('button', name='OK', exact=True).tap(); page.wait_for_timeout(300)
+            check('Signature Line by a tap on OK' + tag, '\\noindent\\rule{6cm}{0.4pt}\\\\\nAda\\\\' in src(page), src(page)[-160:])
+        except Exception as ex:
+            check('rest_phones runs to its end' + tag, False, repr(ex)[:300])
+        br.close()
+
+
+def rest_shots(p):
+    os.makedirs(SHOTS, exist_ok=True)
+    for w, h, dark in ((1920, 1080, False), (1366, 768, False), (1366, 768, True)):
+        br, page, errs = open_page(p, w, h, dark=dark)
+        tag = '%d%s' % (w, '-dark' if dark else '')
+        try:
+            load_doc(page, LONG); page.wait_for_timeout(400)
+            page.get_by_role('tab', name='View', exact=True).click(); page.wait_for_timeout(200)
+            page.evaluate("window.rikuy.runCommand('view-gridlines-page'); window.rikuy.runCommand('split-view')"); page.wait_for_timeout(600)
+            page.screenshot(path=os.path.join(SHOTS, 'view-split-gridlines-%s.png' % tag))
+            page.evaluate("window.rikuy.runCommand('view-gridlines-page'); window.rikuy.runCommand('split-view')")
+            page.evaluate("window.rikuy.runCommand('zoom-dialog')"); page.wait_for_timeout(300)
+            page.screenshot(path=os.path.join(SHOTS, 'view-zoom-%s.png' % tag))
+            page.keyboard.press('Escape')
+            load_doc(page, EQ); page.wait_for_timeout(300); open_eq(page)
+            page.get_by_role('tab', name='Equation', exact=True).click(); page.wait_for_timeout(200)
+            page.evaluate("window.rikuy.runCommand('eq-convert', { to: 'linear' })"); page.wait_for_timeout(300)
+            page.screenshot(path=os.path.join(SHOTS, 'equation-linear-%s.png' % tag))
+            page.keyboard.press('Escape'); page.wait_for_timeout(200)
+            load_doc(page, WRAP('Yours sincerely,', '')); page.wait_for_timeout(300)
+            page.get_by_role('tab', name='Insert', exact=True).click(); page.wait_for_timeout(200)
+            page.evaluate("() => { const sp = [...document.querySelectorAll('#pages span.t')][0]; const r = document.createRange(); r.setStart(sp.firstChild, 2); r.collapse(true); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }")
+            page.evaluate("window.rikuy.runCommand('signature-line')"); page.wait_for_timeout(300)
+            page.screenshot(path=os.path.join(SHOTS, 'insert-signature-%s.png' % tag))
+        except Exception as ex:
+            check('rest shots ' + tag, False, repr(ex)[:300])
+        br.close()
+
+
 def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (tables, tables_compiled):
+        for f in (tables, tables_compiled, headfoot, headfoot_compiled, view, refs_update, equation, insert_text, rest_compiled):
             if names and f.__name__ not in names:
                 continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
-        for f in (tables_phones, shots):
+        for f in (tables_phones, shots, headfoot_phones, headfoot_shots, rest_phones, rest_shots):
             if names and f.__name__ not in names:
                 continue
             f(p)
