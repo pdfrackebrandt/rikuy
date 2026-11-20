@@ -59,13 +59,8 @@ body.dark-page .rk-caret { background: var(--rk-color-caret-dark-page); }
 @keyframes rk-fade-in { from { opacity: 0; } }
 @media (forced-colors: active) { .rk-agent-ask::backdrop { background: transparent; } }
 
-/* ---- app.css's own transitions, on the tokens (M1: 100 to 300 ms in Fluent's steps) and off
-   where motion is (a triangle's turn, a control fading in on hover) */
-.nv-tog svg, .fold-tg svg { transition-duration: var(--rk-duration-faster); transition-timing-function: var(--rk-curve-standard); }
-.w-src, .w-edit { transition-duration: var(--rk-duration-faster); transition-timing-function: var(--rk-curve-standard); }
-.focus-x { transition-duration: var(--rk-duration-fast); transition-timing-function: var(--rk-curve-standard); }
-/* (the PDF's progress grew by its width, a size: it steps instead; docs/handoff/FUTURE.md) */
-.pdf-prog span { transition: none; }
+/* ---- app.css's own transitions (written with the motion tokens there), off where motion is:
+   a triangle's turn, a control fading in on hover */
 :root[data-motion="off"] .nv-tog svg, :root[data-motion="off"] .fold-tg svg, :root[data-motion="reduced"] .nv-tog svg, :root[data-motion="reduced"] .fold-tg svg { transition: none; }
 :root[data-motion="off"] .w-src, :root[data-motion="off"] .w-edit, :root[data-motion="off"] .focus-x { transition: none; }
 @media (prefers-reduced-motion: reduce) { .pdf-prog.busy span { animation: none; } }

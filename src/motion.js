@@ -65,16 +65,18 @@ export function setMotion(change) {
   try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch (e) { /* private mode: for this visit */ }
   applyMode();
 }
-// 'full', 'reduced' or 'off'
+// 'full', 'reduced' or 'off'; <html data-motion> follows at once where it is behind (the system's
+// setting changed and its change event has not come yet: the style sheet's view transitions read it)
 export function motionMode() {
-  if (!motionSettings().anim) return 'off';
-  return mql && mql.matches ? 'reduced' : 'full';
+  const m = !motionSettings().anim ? 'off' : mql && mql.matches ? 'reduced' : 'full';
+  if (mql && document.documentElement.dataset.motion !== m) applyMode(m);
+  return m;
 }
 // told when the mode or the settings change (the caret listens)
 export function onMotion(fn) { listeners.add(fn); return () => listeners.delete(fn); }
-function applyMode() {
+function applyMode(known) {
   if (typeof document === 'undefined') return;
-  const m = motionMode();
+  const m = typeof known === 'string' ? known : (!motionSettings().anim ? 'off' : mql && mql.matches ? 'reduced' : 'full');
   document.documentElement.dataset.motion = m;
   if (m !== 'full') finishAll();
   for (const fn of listeners) { try { fn(m, motionSettings()); } catch (e) { console.error(e); } }
