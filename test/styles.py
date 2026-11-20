@@ -463,7 +463,8 @@ def keys_and_boxes(page):
       return { n: o.length, cur: (o.find((x) => x.getAttribute('aria-selected') === 'true') || {}).ariaLabel || null, names: o.slice(0, 4).map((x) => x.getAttribute('aria-label')), dis: o.filter((x) => x.getAttribute('aria-disabled') === 'true').map((x) => x.getAttribute('aria-label')).slice(0, 3) }; }""")
     check('Ctrl+Alt+Shift+S opens the Styles pane: every style, the caret\'s marked, the caret staying on the page', pane.count() == 1 and info['n'] >= 20 and info['cur'] == 'Heading 2' and info['names'][:2] == ['Normal', 'Heading 1']
           and page.evaluate('document.activeElement.id') == 'pages', info)
-    page.keyboard.press('Shift+Tab'); page.keyboard.press('Tab'); page.wait_for_timeout(100)
+    # (Tab stays on the page, as Word's, where in a heading it leaves a gap: the list is reached by
+    # its focus, as F6 or a click reaches it)
     page.focus('#stylespane [role=option][tabindex="0"]'); page.keyboard.press('ArrowDown'); page.wait_for_timeout(100)
     kb = page.evaluate('[document.activeElement.getAttribute("aria-label"), (document.querySelector("#stylespane [aria-selected=true]") || {}).ariaLabel, [...document.querySelectorAll("#stylespane [role=option][aria-disabled=true]")].length]')
     check('from the keyboard its list keeps the caret\'s style marked, the arrows move along it', kb[0] == 'Heading 3' and kb[1] == 'Heading 2' and kb[2] < 5, kb)

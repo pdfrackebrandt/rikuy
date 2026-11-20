@@ -472,10 +472,11 @@ def compile_pdf(page):
     # Print: the PDF's pages drawn for the printer at their own size, the browser's dialog asked for
     page.evaluate('''() => { window.__printed = 0; window.print = () => { window.__printed = document.querySelectorAll('#print-pdf img').length; window.dispatchEvent(new Event('beforeprint')); }; window.rikuy.noPrintFallback = true; window.rikuy.printImages = true; }''')
     page.evaluate('document.getElementById("pages").focus()')
-    page.keyboard.press('Control+p')
+    # (Ctrl+P is Go to File, whose first line, while its box is empty, is Print: Ctrl+P, Enter)
+    page.keyboard.press('Control+p'); page.wait_for_timeout(300); page.keyboard.press('Enter')
     page.wait_for_function('window.__printed > 0', timeout=120000)
     page.wait_for_timeout(500)
-    check('Ctrl+P prints TeX\'s PDF: its pages drawn for the printer at the PDF\'s own size, then the browser\'s print dialog', page.evaluate('window.__printed') == c['pages'] and page.evaluate('document.body.classList.contains("pdf-on")')
+    check('Ctrl+P, Enter prints TeX\'s PDF: its pages drawn for the printer at the PDF\'s own size, then the browser\'s print dialog', page.evaluate('window.__printed') == c['pages'] and page.evaluate('document.body.classList.contains("pdf-on")')
           and page.evaluate('window.rikuy.printedSizes') == ['595.28 419.53'], (page.evaluate('window.__printed'), page.evaluate('window.rikuy.printedSizes')))
     # ---- the review's cases, each in TeX's PDF and on the page ----
     # M1: \documentclass{article} alone: TeX Live's PDF is A4; so is the page's sheet
