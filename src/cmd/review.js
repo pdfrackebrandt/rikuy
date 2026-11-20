@@ -32,7 +32,7 @@ import { SpellClient } from '../spell/client.js';
 import { openSpellPane, spellPaneRefresh } from '../ui/spellpane.js';
 import { openWordCount, setLanguageEdits } from '../ui/wordcount.js';
 import { coreCanRun } from '../native.js';
-import { findComments, commentOnly } from '../share.js';
+import { findComments, commentOnly, safeCommentLine } from '../share.js';
 import { spacingOnly } from '../diff.js';
 import { kvGet, kvPut } from '../store.js';
 
@@ -525,8 +525,18 @@ export const methods = {
       const now = findComments(this.src(t.f), t.f).find((x) => x.who === t.who && x.body === t.body && x.quote === t.quote);
       const body = ta.value.replace(/\s+/g, ' ').trim();
       if (!now || !body) { this.closePop(true); return; }
-      // the comment line's own words after its colon, nothing else of it
-      const line = this.src(t.f).slice(now.s, this.src(t.f).indexOf('\n', now.s) < 0 ? now.e : this.src(t.f).indexOf('\n', now.s));
+      // the comment line's own words after its colon, nothing else of it (a CRLF file's \r stays)
+      let line = this.src(t.f).slice(now.s, this.src(t.f).indexOf('\n', now.s) < 0 ? now.e : this.src(t.f).indexOf('\n', now.s));
+      if (line.endsWith('\r')) line = line.slice(0, -1);
+      // a comment in base32 (a reader's of a comments only link, src/share.js) is written again
+      // whole, in that form: its words are not the line's
+      if (now.safe) {
+        this.closePop(true);
+        this.commit([{ f: t.f, s: now.s, e: now.s + line.length, t: safeCommentLine({ kind: 'comment', who: now.who, quote: now.quote, body }) }], null, 'comment');
+        this.closeGroup();
+        this.refreshNav();
+        return;
+      }
       const k = line.indexOf(':', line.indexOf(')'));
       if (k < 0) { this.closePop(true); return; }
       const s = now.s + k + 1 + (line[k + 1] === ' ' ? 1 : 0);

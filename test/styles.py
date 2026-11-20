@@ -20,7 +20,7 @@ with KOMA-Script and memoir; and, where dist/tex holds a TeX tree, all of it com
 Run it alone with names to run some: python3 styles.py gallery design."""
 import os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import ROOT, SKELETON_HEAD, ROUTES, open_page, check, results, src, wait_src, click_text, select_text, load_doc, roundtrip, pressed, place, PRINT_LAYOUT
+from browser import ROOT, SKELETON_HEAD, ROUTES, open_page, check, results, src, wait_src, click_text, select_text, load_doc, roundtrip, pressed, place, PRINT_LAYOUT, policy
 from ribbon import DOC, DIST, state, style, undo_is, TILES, WRAP, body, boxes
 from playwright.sync_api import sync_playwright
 
@@ -671,9 +671,9 @@ def open_phone(p, width, height, dark=False):
             path = url[len('https://rikuy.test/'):].split('?')[0]
             f = os.path.join(DIST, path)
             if path and os.path.isfile(f):
-                ct = 'text/javascript' if path.endswith(('.js', '.mjs')) else 'application/wasm' if path.endswith('.wasm') else 'application/octet-stream'
-                return route.fulfill(status=200, content_type=ct, body=open(f, 'rb').read())
-            return route.fulfill(status=200, content_type='text/html; charset=utf-8', body=doc)
+                ct = 'text/javascript' if path.endswith(('.js', '.mjs')) else 'application/wasm' if path.endswith('.wasm') else 'text/html; charset=utf-8' if path.endswith('.html') else 'application/octet-stream'
+                return route.fulfill(status=200, content_type=ct, headers=policy(DIST, '/' + path), body=open(f, 'rb').read())
+            return route.fulfill(status=200, content_type='text/html; charset=utf-8', headers=policy(DIST, '/'), body=doc)
         if url in ROUTES:
             return route.fulfill(status=200, content_type='application/javascript', headers={'Access-Control-Allow-Origin': '*'}, body=open(ROUTES[url], 'rb').read())
         return route.abort()

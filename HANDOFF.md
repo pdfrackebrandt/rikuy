@@ -6,24 +6,30 @@ from the repository alone. This file is how. Read AGENTS.md first, then this, th
 requests. When this file and a pull request's own Handoff section disagree, the pull request is
 newer.
 
-## Start here (2026-11-20, 11:50 UTC: Claude carrying on after Grok Bot)
+## Start here (2026-11-20, 15:30 UTC: Claude)
 
 Pedro's order of work, given 2026-11-20: **UI and UX first** (Word look-alike, clean room, as
 WordCraft; phones; plain words), maximum speed and quality; **then** move everything possible to
-C or C++ compiled to WebAssembly, even where the speed gain is small. Grok Bot's list of
-2026-11-20 (below, under "Grok Bot's list") is being worked on as follows.
+C or C++ compiled to WebAssembly (`docs/handoff/CPP-PLAN.md`, batches B1 onward). Reviews of the
+work below are in `docs/reviews/` (RIBBON-TABS, UX-2, SHORTCUTS, SECURITY-2, CPP-B0).
 
-| work | branch (worktree on Claude's machine) | state | next step |
+| work | pull request, branch | state | next step |
 |---|---|---|---|
-| Ribbon tabs besides Home laid out like Word's (Grok Bot's item 3) | `ribbon-tabs-word` | an agent is on it; brief: `docs/handoff/BRIEF-1120.md` plus its task in the pull request when opened | finish, hostile review, merge |
-| UX audit and fixes outside the ribbon (first visit, page, panes, dialogs, PDF pane, phones) | `ux-pass-2` | an agent is on it; it writes `docs/handoff/UX-AUDIT.md` as it goes | finish, review, merge |
-| Word's shortcuts, audited and finished (item 2) | `word-shortcuts` | an agent is on it; it writes `docs/handoff/SHORTCUTS.md` | finish, review, merge |
-| Security S2 to S5 (item 1): HSTS for the host only, a script policy without unsafe-inline/unsafe-eval, KaTeX 0.19, comment text that cannot run code | `sec-followups` | an agent is on it (S4 done) | finish, a fresh hostile review, merge |
-| R6, the arXiv corpus (item 4) | `arxiv-bbl-shipped` (pull request) | classified in PLAN.md task 16 (second run: 960 of 962, 872 of 960 equal); the bibliography fix it found is this pull request | merge when green; rerun Actions › arXiv corpus on main; put the rates in PLAN.md's table, README.md, tex/README.md; add `sourcesanspro`, `foekfont` and cbfonts' `grmn` to the tree; look at 1502.01027 printing "begindocument/b..." |
+| Ribbon tabs laid out like Word's | 78, `ribbon-tabs-word` | reviewed (RIBBON-TABS.md: merge); after merging main, CI's tabs.py fold rule fails on Home at 1150 to 1160 px (main's new commands); an agent is fixing it | fix, green, merge |
+| The downloads as a Word group (Pedro: PDF, Word, LaTeX stacked, prettier) | `ribbon-downloads`, no PR yet (based on 78) | built at 943b91c, being finished | PR once 78 merges; a short review |
+| UX outside the ribbon | 79, `ux-pass-2` | review UX-2.md: fix first; an agent is fixing H1, H2, M1 to M6, the lows, File backstage, the phone's reflowed view | finish, merge main, verify against UX-2.md, merge |
+| Security S2 to S5 and the git proxy | 81, `sec-followups` | SECURITY-2.md's last verification: merge | merge when green; then L6 (the proxy's byte cap costs Worker CPU on big clones) |
+| Word's gaps: objects (contextual tabs, picture corrections in C, Selection Pane, Arrange) | 83, `word-gaps-objects` | done; hostile review running | review, fixes, merge main after 78, renumber its PLAN task 68 (84 also has a 68), merge |
+| Word's gaps: document (Table Properties, Formula, Header & Footer tab, Split, UnicodeMath) | 84, `word-gaps-doc` | done; hostile review running | the same |
+| R6, the arXiv corpus | 85, `arxiv-resume` | run 3 (44728716263) stopped on arXiv's 429; this PR waits it out and reruns run 2's sample | merge; dispatch arXiv corpus with `sources_from_run=44077385415`; classify; rates into PLAN.md's table, README.md, tex/README.md; add `sourcesanspro`, `foekfont`, cbfonts' `grmn` to the tree; 1502.01027 printing "begindocument/b..." |
+| C and C++, B0 | 82, merged | B0 done | B1 to B3 after the UI work |
+
+Pedro's to do (needs his accounts): a WAF rate rule on `/git/` (docs/HOSTING.md step 9) before
+or at the deploy of 81; optionally `RIKUY_GIT_HOSTS`. Open in Overleaf cannot post (the page's
+`form-action 'self'`); Safari 15 cannot compile.
 
 If a branch above is not on GitHub yet, its agent's work is in `wip/<branch>` (dev/wip.sh) or
-not started. After the UI and UX work: the C and C++ move, planned in a file of its own when it
-starts.
+not started.
 
 ### Grok Bot's list of 2026-11-20 (for the record)
 
