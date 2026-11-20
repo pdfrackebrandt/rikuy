@@ -2800,6 +2800,8 @@ class Builder {
     });
     // the columns stay in their order; the words in the cells run the way the text around runs
     const t = { type: 'tabular', cols, rows: outRows, f: ctx.f, s: nd.s, e: nd.e, fns, dir: this.dirOf() };
+    // (G2) a tabularx's width, which its X columns fill: a share of the line or a length
+    if ((nd.name === 'tabularx' || nd.name === 'tabular*') && nd.args[0] && nd.args[0] !== specArg) t.width = this.argText(ctx, nd.args[0]).trim().slice(0, 60);
     if (set) Object.assign(t, set);
     return t;
   }

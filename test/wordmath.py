@@ -2,7 +2,7 @@
 suggestion, fractions and scripts left with Space, -> and <= turned into symbols."""
 import os, sys, json, time, traceback
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import ROUTES, SKELETON_HEAD, ROOT, SHOTS, check, results
+from browser import ROUTES, SKELETON_HEAD, ROOT, SHOTS, check, results, PRINT_LAYOUT
 from playwright.sync_api import sync_playwright
 CSP = ("default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; "
        "style-src 'unsafe-inline' https://fonts.googleapis.com; font-src data: https://fonts.gstatic.com; img-src data: blob:; "
@@ -34,6 +34,8 @@ def run(touch=False):
         p = PW
         b = p.chromium.launch()
         ctx = b.new_context(viewport={'width': 1400, 'height': 900} if not touch else {'width': 400, 'height': 860}, has_touch=touch, is_mobile=touch)
+        # (a phone's Print Layout, which this suite was written for: browser.py, PRINT_LAYOUT)
+        ctx.add_init_script(PRINT_LAYOUT)
         page = ctx.new_page()
         logs = []
         page.on('console', lambda m: logs.append(m.type + ': ' + m.text) if m.type == 'error' else None)

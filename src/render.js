@@ -582,6 +582,8 @@ export class Renderer {
       // in a right to left document TeX sets the first column at the right (babel's bidi=basic
       // turns alignments with the paragraph direction), and so does a table with dir="rtl"
       if (p.dir === 'rtl') setDir(t, p.dir);
+      // (G2) a tabularx as wide as its width: a share of the line, or a length that follows the zoom
+      if (p.width) { const cw = cssLength(p.width); if (cw) { t.style.width = cw; t.classList.add('tb-wide'); } }
       const tb = document.createElement('tbody');
       const ncol = p.cols.length;
       // (B7) the settings before the table: rows' height, the cells' side space, the rules' width
@@ -601,6 +603,8 @@ export class Renderer {
       let rowNo = 0;
       p.rows.forEach((r, ri) => {
         const tr = document.createElement('tr');
+        // (two whole rules in one gap, \hline\hline: a double rule)
+        if (r.rules.filter((x) => !x.range && x.kind !== 'space').length > 1) tr.classList.add('r-dbl');
         for (const rule of r.rules) {
           if (rule.range) continue;
           if (rule.kind === 'heavy') tr.classList.add(ri === 0 ? 'r-top' : (r.empty ? 'r-bot' : 'r-heavy'));
@@ -628,8 +632,10 @@ export class Renderer {
           const colInfo = p.cols[col] || {};
           td.className = 'al-' + (c.align === 'p' ? 'l' : c.align);
           if (colInfo.vl) td.classList.add('vl');
+          if (colInfo.vl > 1) td.classList.add('vl2');
           const lastCol = p.cols[col + c.span - 1] || {};
           if (lastCol.vr) td.classList.add('vr');
+          if (lastCol.vr > 1) td.classList.add('vr2');
           if (c.span > 1) td.colSpan = c.span;
           if (colInfo.align === 'p' && colInfo.w) td.classList.add('pcol');
           for (const pr of partial) if (col + 1 >= pr.range[0] && col + 1 <= pr.range[1]) td.classList.add(pr.kind === 'heavy' ? 'cr-heavy' : 'cr-top');
