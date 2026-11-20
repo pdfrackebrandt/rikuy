@@ -18,7 +18,8 @@ import { BLOCKS } from '../render.js';
 import { segOfSpan, boundary } from '../editor.js';
 import { packageOptions, packages as pkgLines, docClass, preambleEnd, stripComments } from '../preamble.js';
 import { openMenu, colorPicker, colorArg, colorNeeds } from '../ui/kit.js';
-import { openTablePicker, insertTableDialog, textToTableDialog, tableToTextDialog, sortDialog, propertiesDialog, marginsDialog, deleteCellsDialog, dataFileDialog } from '../ui/tablepicker.js';
+import { openTablePicker, insertTableDialog, textToTableDialog, tableToTextDialog, sortDialog, propertiesDialog, marginsDialog, deleteCellsDialog, dataFileDialog, bordersDialog, formulaDialog } from '../ui/tablepicker.js';
+import * as FX from '../formula.js';
 
 const WHY = 'Put the caret in a table cell first.';
 // the table's first row of cells (after a caption row of a longtable)
@@ -58,7 +59,16 @@ const ICON = {
   penW: '<path d="M3.5 5h13" stroke-width=".8"/><path d="M3.5 10h13" stroke-width="1.6"/><path d="M3.5 15.5h13" stroke-width="2.8"/>',
   fromText: '<path d="M3 5h6M3 8h5M3 11h6M3 14h4"/><path d="M11.5 4.5h6v11h-6zM11.5 8.5h6M11.5 12h6M14.5 4.5v11"/>',
   data: '<path d="M4 3.5h8l4 4v9H4z"/><path d="M12 3.5v4h4M7 11h6M7 14h6M10 9.5v6"/>',
-  dialog: '<path d="M3.5 4.5h13v11h-13zM3.5 8.5h13M10 4.5v11"/><path d="M13 14.5h4M15 12.5v4"/>'
+  dialog: '<path d="M3.5 4.5h13v11h-13zM3.5 8.5h13M10 4.5v11"/><path d="M13 14.5h4M15 12.5v4"/>',
+  gridlines: '<path d="M3.5 3.5h13v13h-13zM3.5 7.8h13M3.5 12.2h13M7.8 3.5v13M12.2 3.5v13" stroke-dasharray="1.6 1.4"/>',
+  drawTable: '<path d="M3.5 5.5h9v10h-9zM3.5 10.5h9M8 5.5v10" stroke-dasharray="1.6 1.4"/><path d="M11 13l1-3 5-5 2 2-5 5zM16 6l2 2"/>',
+  eraser: '<path d="M3.5 13.5l7-7 5 5-4 4H6.5z"/><path d="M7 10l5 5M3.5 17.5h13"/>',
+  formula: '<path d="M3.5 3.5h13v13h-13zM3.5 8h13M10 3.5v13"/><path d="M12 11.5h3M12 14h3M5 11l2.5 2.5L5 16" />',
+  update: '<path d="M15.5 8A6 6 0 0 0 4.6 7M4.5 12a6 6 0 0 0 10.9 1"/><path d="M4.5 3.5V7H8M15.5 16.5V13H12"/>',
+  borderStyles: '<path d="M3 5h14" stroke-width=".8"/><path d="M3 9h14" stroke-width="2"/><path d="M3 13h14M3 15h14" stroke-width=".8"/><path d="M3 18h3M8 18h3M13 18h3"/>',
+  penStyle: '<path d="M3 6h14M3 8.5h14" stroke-width=".9"/><path d="M3 12.5h3M8 12.5h3M14 12.5h3"/><path d="M3 16.5h1M6 16.5h1M9 16.5h1M12 16.5h1M15 16.5h1"/>',
+  painter: '<path d="M4 4.5h9v4H4zM13 6.5h2v4.5H9.5v2"/><path d="M8.5 13h2v5h-2z"/>',
+  bordersDlg: '<path d="M3.5 3.5h13v13h-13zM3.5 10h13M10 3.5v13"/><path d="M12.5 12.5h4v4h-4z" style="fill:currentColor;stroke:none" opacity=".45"/>'
 };
 // a small drawing of each look, for the gallery's buttons
 const LOOK_ICON = {
@@ -213,7 +223,39 @@ register(
   T('pen-weight', 'Pen Weight', { title: 'Pen Weight: how thick the table\'s rules are (\\arrayrulewidth)', tab: 'table-design', group: 'borders', order: 20, kind: 'menu', icon: ICON.penW, synonyms: ['Line weight', 'Border width', 'arrayrulewidth'],
     run: (app, args) => (args && 'w' in args ? app.tableSetting('arrayrulewidth', args.w) : app.tableMenu('pen-weight')) }),
   T('pen-color', 'Pen Color', { title: 'Pen Color: the colour of the table\'s rules (\\arrayrulecolor, colortbl)', tab: 'table-design', group: 'borders', order: 30, kind: 'menu', icon: ICON.pen, synonyms: ['Border color', 'arrayrulecolor'],
-    run: (app, args) => (args && 'pick' in args ? app.tablePenColor(args.pick) : app.penColorPicker()) })
+    run: (app, args) => (args && 'pick' in args ? app.tablePenColor(args.pick) : app.penColorPicker()) }),
+
+  // ---- (G2) Word's buttons Rikuy lacked (PLAN task 67) --------------------------------------------------
+  // Table Design › Borders: the pen (its style, Border Styles' presets), Border Painter and the
+  // Borders and Shading dialog. LaTeX's rule weight and colour are the table's (\arrayrulewidth,
+  // \arrayrulecolor), so a preset's weight applies to every rule of it; its style, single or
+  // double, to the borders drawn from then on.
+  T('border-styles', 'Border Styles', { title: 'Border Styles: a pen of a style and weight (single or double rules; the weight is the table\'s, \\arrayrulewidth), then Border Painter to draw with it',
+    tab: 'table-design', group: 'borders', order: 5, kind: 'menu', icon: ICON.borderStyles, label: 'Border Styles', synonyms: ['Border style', 'Double border', 'Line style'],
+    run: (app, args) => (args && args.style ? app.tableBorderStyle(args.style) : app.tableMenu('border-styles')) }),
+  T('pen-style', 'Pen Style', { title: 'Pen Style: the borders drawn from now on single (| and \\hline) or double (|| and \\hline\\hline)', tab: 'table-design', group: 'borders', order: 15, kind: 'menu', icon: ICON.penStyle,
+    synonyms: ['Line style', 'Double line', 'Border style'], run: (app, args) => (args && args.style ? app.tablePenStyle(args.style) : app.tableMenu('pen-style')) }),
+  T('border-painter', 'Border Painter', { title: 'Border Painter: press the edges of cells on the page to draw the pen\'s border there (a rule or a bar); press one that has it to take it off; Escape stops',
+    tab: 'table-design', group: 'borders', order: 40, kind: 'toggle', icon: ICON.painter, label: 'Border Painter', synonyms: ['Draw border', 'Paint borders'],
+    when: (app, at) => !!app.tableDraw || inTable(app, at), on: (app) => app.tableDraw === 'paint', run: (app) => app.tableDrawMode('paint') }),
+  T('borders-shading', 'Borders and Shading', { title: 'Borders and Shading…: the borders of the selected cells or the table (a setting, the style, colour and width, each edge on its own) and their shading',
+    synonyms: ['Borders and Shading dialog', 'Border options', 'Table borders dialog'], menu: { table: 65 }, run: (app, args) => (args ? app.tableBordersShading(args) : bordersDialog(app)) }),
+
+  // Table Layout: View Gridlines (the page only), Draw Table and Eraser (cells split, merged, and
+  // their borders drawn or taken off where pressed), Formula and Update Formulas
+  { id: 'view-gridlines', name: 'View Gridlines', title: 'View Gridlines: the edges of every cell drawn dashed on the page where the table has no rule; the PDF is not changed', tab: 'table-layout', group: 'table', order: 15,
+    kind: 'toggle', icon: ICON.gridlines, label: 'View Gridlines', synonyms: ['Gridlines', 'Show gridlines', 'Table gridlines', 'Cell edges'], when: () => true,
+    on: (app) => !!app.tableGrid, run: (app) => app.tableGridlines() },
+  T('draw-table', 'Draw Table', { title: 'Draw Table: press inside a merged cell to split it, on a cell\'s edge to draw a rule or a bar there; Escape stops', tab: 'table-layout', group: 'draw', order: 10,
+    kind: 'toggle', icon: ICON.drawTable, label: 'Draw Table', synonyms: ['Pencil', 'Draw lines', 'Split by drawing'], when: (app, at) => !!app.tableDraw || inTable(app, at), on: (app) => app.tableDraw === 'pen', run: (app) => app.tableDrawMode('pen') }),
+  T('table-eraser', 'Eraser', { title: 'Eraser: press a cell\'s edge to take its rule or bar off, or, where it has none, to merge the two cells it parts; Escape stops', tab: 'table-layout', group: 'draw', order: 20,
+    kind: 'toggle', icon: ICON.eraser, label: 'Eraser', synonyms: ['Erase lines', 'Merge by erasing', 'Remove border'], when: (app, at) => !!app.tableDraw || inTable(app, at), on: (app) => app.tableDraw === 'eraser', run: (app) => app.tableDrawMode('eraser') }),
+  T('table-formula', 'Formula', { title: 'Formula…: Word\'s =SUM(ABOVE), AVERAGE, COUNT, MIN, MAX, PRODUCT, cells such as B2, computed by Rikuy now and written as the value; the formula kept on a "% formula" line before the table for Update Formulas',
+    tab: 'table-layout', group: 'data', order: 40, icon: ICON.formula, label: 'Formula', synonyms: ['Sum', 'SUM(ABOVE)', 'Total', 'Average', 'Calculate', 'fx'], menu: { table: 75 },
+    run: (app, args) => (args && args.text ? app.tableFormula(args) : formulaDialog(app)) }),
+  T('update-formulas', 'Update Formulas', { title: 'Update Formulas: every formula of the table computed again from its cells now (Word\'s Update Field)', tab: 'table-layout', group: 'data', order: 50, icon: ICON.update,
+    synonyms: ['Update field', 'Recalculate', 'Recompute', 'F9'], menu: { table: 76 }, when: (app, at) => { const h = here(app, at); return !!h && X.formulasOf(h.src, h.T).length > 0; },
+    whyNot: () => 'This table has no formula: Table Layout › Formula writes one.', run: (app) => app.tableUpdateFormulas() })
 );
 
 // how a picked colour is written as an argument: {name} or [HTML]{C00000}

@@ -1420,10 +1420,13 @@ export function setBars(src, T, want) {
   const n = cols.length;
   for (let k = 0; k <= n; k++) {
     const i = 2 * k;
-    const had = pieces[i].includes('|');
-    if (had === !!want[k]) continue;
-    if (want[k]) pieces[i] = k === 0 ? '|' + pieces[i] : k === n ? pieces[i] + '|' : '|' + pieces[i];
-    else pieces[i] = pieces[i].replace(/\|/g, '');
+    // (want: true keeps the bars there, one or two; a number asks for that many: 2 is a double
+    // bar, ||, Pen Style's Double)
+    const had = (pieces[i].match(/\|/g) || []).length;
+    const w = want[k] === true ? Math.max(1, had) : Math.max(0, Math.min(2, +want[k] || 0));
+    if (had === w) continue;
+    const bare = pieces[i].replace(/\|/g, ''), bars = '|'.repeat(w);
+    pieces[i] = !w ? bare : k === n ? bare + bars : bars + bare;
   }
   return specEdit(src, T, pieces);
 }
@@ -1483,8 +1486,11 @@ export function bordersOf(src, T, rect) {
 // rules: \hline (booktabs' \toprule, \midrule, \bottomrule) across the whole table, \cline{a-b}
 // (\cmidrule) across some columns; vertical ones are bars in the specification, which run the
 // whole height of the table, as LaTeX draws them. { edits, packages }
-export function setBorders(src, T, rect, parts) {
+export function setBorders(src, T, rect, parts, o = {}) {
   const { r0, r1, c0, c1 } = rect, n = T.rows.length;
+  // (Pen Style's Double: a whole rule twice, \hline\hline, and bars twice, ||; a rule over some
+  // columns stays single, \cline has no double)
+  const twice = (w) => (o.double ? [w, w] : [w]);
   const full = c0 === 0 && c1 >= T.ncols - 1;
   const look = lookOf(src, T), book = look === 'booktabs';
   const edits = [];
@@ -1501,7 +1507,7 @@ export function setBorders(src, T, rect, parts) {
     let want;
     if (on) {
       const whole = book ? (g === 0 ? '\\toprule' : g === n ? '\\bottomrule' : '\\midrule') : '\\hline';
-      if (full) want = [whole];
+      if (full) want = twice(whole);
       else if (partialOthers === null) want = cur; // a whole rule there covers the columns already
       else want = [...keep, (book ? '\\cmidrule{' : '\\cline{') + (c0 + 1) + '-' + (c1 + 1) + '}'];
     } else {
@@ -1523,9 +1529,10 @@ export function setBorders(src, T, rect, parts) {
   if (cols && (parts.left != null || parts.right != null || parts.insideV != null)) {
     const bars = barsOf(src, T).places.slice();
     if (bars.length) {
-      if (parts.left != null) bars[c0] = parts.left;
-      if (parts.right != null) bars[Math.min(c1 + 1, cols)] = parts.right;
-      if (parts.insideV != null) for (let k = c0 + 1; k <= Math.min(c1, cols - 1); k++) bars[k] = parts.insideV;
+      const v = (on) => (on && o.double ? 2 : on && o.double === false ? 1 : on);
+      if (parts.left != null) bars[c0] = v(parts.left);
+      if (parts.right != null) bars[Math.min(c1 + 1, cols)] = v(parts.right);
+      if (parts.insideV != null) for (let k = c0 + 1; k <= Math.min(c1, cols - 1); k++) bars[k] = v(parts.insideV);
       edits.push(...setBars(src, T, bars));
     }
   }
@@ -2172,4 +2179,136 @@ export function setTableAlt(src, T, text) {
   const ls = src.lastIndexOf('\n', T.s - 1) + 1;
   const indent = /^[ \t]*/.exec(src.slice(ls, T.s))[0];
   return { edits: [{ s: ls, e: ls, t: indent + '% alt: ' + t + T.eol }] };
+}
+
+// ---- (G2) Table Properties: the table's width, text wrapping ---------------------------------------
+// One edit from a text to another: the part that differs
+function diffEdit(a, b) {
+  if (a === b) return [];
+  let s = 0;
+  while (s < a.length && s < b.length && a[s] === b[s]) s++;
+  let z = 0;
+  while (z < a.length - s && z < b.length - s && a[a.length - 1 - z] === b[b.length - 1 - z]) z++;
+  return [{ s, e: a.length - z, t: b.slice(s, b.length - z) }];
+}
+// The table's preferred width as written (the width of a tabularx, tabular* or xltabular:
+// 0.8\linewidth, 12cm), or null where it fits its contents
+export const tableWidthOf = (src, T) => (T.width ? T.width.text.trim() : null);
+// Word's Preferred width: w a length (a tabularx that wide, its columns X) or null (the columns
+// fit their contents again). { edits, packages } or { error }
+export function setTableWidth(src, T, w) {
+  if (w == null) return fitOf(src, T) === 'window' ? autofit(src, T, 'contents') : { edits: [] };
+  w = String(w).replace(/[^0-9.a-z\\]/gi, '').slice(0, 40);
+  if (!w) return { error: 'A width is a length, such as 12cm or 0.8\\linewidth.' };
+  if (T.width) return { edits: T.width.text === w ? [] : [{ s: T.width.s, e: T.width.e, t: w }], packages: [] };
+  const r = autofit(src, T, 'window');
+  if (r.error) return r;
+  const s2 = apply(src, r.edits), T2 = parseTable(s2, T.s);
+  if (!T2 || !T2.width) return r;
+  const s3 = s2.slice(0, T2.width.s) + w + s2.slice(T2.width.e);
+  return { edits: diffEdit(src, s3), packages: r.packages };
+}
+// Text wrapping: { around: false } for a table float, or { around: true, side: 'r' | 'l', width }
+// for wrapfig's wraptable; null where the table stands in no float
+export function wrapOf(src, T) {
+  const F = floatOf(src, T);
+  if (!F) return null;
+  if (F.name !== 'wraptable') return { around: false, F };
+  const a = argsAt(src, F.s + '\\begin{wraptable}'.length, 'oomom', T.s);
+  const side = a && a.args[1] ? src.slice(a.args[1].is, a.args[1].ie).trim().toLowerCase() : 'r';
+  return { around: true, side: /^[li]/.test(side) ? 'l' : 'r', width: a && a.args[3] ? src.slice(a.args[3].is, a.args[3].ie).trim() : null, F, a };
+}
+// Text wrapping None (a table float, [htbp]) or Around (a wraptable on side, width wide: the
+// table's share of the line, as the page measures it). wrapfig wraps the paragraph after the table:
+// a list, a heading or the document's end there is refused, as TeX would lose the table.
+export function setWrap(src, T, o) {
+  const W = wrapOf(src, T);
+  if (!W) return { error: 'Text wraps around a table in a float: Insert Caption puts it in one first.' };
+  const F = W.F;
+  if (!o || !o.around) {
+    if (!W.around) return { edits: [] };
+    return { edits: [{ s: F.s, e: F.headE, t: '\\begin{table}[htbp]' }, { s: F.endS, e: F.e, t: '\\end{table}' }], packages: [] };
+  }
+  if (F.name === 'table*') return { error: 'A table across the page\'s columns (table*) cannot have text around it.' };
+  const side = o.side === 'l' ? 'l' : 'r';
+  const width = String(o.width || W.width || '0.5\\linewidth').replace(/[^0-9.a-z\\]/gi, '').slice(0, 40) || '0.5\\linewidth';
+  if (W.around) {
+    const ed = [];
+    if (W.a.args[1] && W.side !== side) ed.push({ s: W.a.args[1].is, e: W.a.args[1].ie, t: side });
+    if (W.a.args[3] && W.width !== width && o.width) ed.push({ s: W.a.args[3].is, e: W.a.args[3].ie, t: width });
+    return { edits: ed, packages: [] };
+  }
+  // (what follows the float: wrapfig needs a paragraph of words)
+  const after = src.slice(F.e, F.e + 400).replace(/^\s*(%[^\n]*\n\s*)*/, '');
+  if (!after || /^\\(end\b|begin\s*\{(itemize|enumerate|description|table|figure|equation|align|center|tabular)|section|subsection|subsubsection|chapter|paragraph|item\b)/.test(after)) {
+    return { error: 'Text wraps around a table only where a paragraph of words follows it (wrapfig wraps the next paragraph): write one after the table first.' };
+  }
+  // (and what holds the float: wrapfig stops in a list)
+  const before = src.slice(Math.max(0, F.s - 200000), F.s);
+  const opened = (n) => (before.match(new RegExp('\\\\begin\\s*\\{' + n + '\\}', 'g')) || []).length - (before.match(new RegExp('\\\\end\\s*\\{' + n + '\\}', 'g')) || []).length;
+  if (['itemize', 'enumerate', 'description', 'multicols'].some((n) => opened(n) > 0)) return { error: 'wrapfig cannot wrap text inside a list or columns: move the table out of it first.' };
+  return { edits: [{ s: F.s, e: F.headE, t: '\\begin{wraptable}{' + side + '}{' + width + '}' }, { s: F.endS, e: F.e, t: '\\end{wraptable}' }], packages: ['wrapfig'] };
+}
+
+// ---- (G2) Formulas: Word's =SUM(ABOVE) in a cell, its value written, the formula kept --------------
+// The table's formulas: comment lines right before it, "% formula D4: =SUM(ABOVE)" (above its
+// "% alt:" line, which stays next to the table). [{ name, r, c, text, s, e }] (r and c count the
+// table's rows of cells and its columns from 0, as A1 names them)
+const FORMULA_LINE = /^[ \t]*%[ \t]*formula[ \t]+([A-Za-z]{1,3})(\d{1,5})[ \t]*:[ \t]*(\S.*?)[ \t]*\r?$/;
+export function formulasOf(src, T) {
+  const out = [];
+  let ls = src.lastIndexOf('\n', T.s - 1) + 1;
+  for (let guard = 0; ls > 0 && guard < 500; guard++) {
+    const ps = src.lastIndexOf('\n', ls - 2) + 1;
+    const line = src.slice(ps, ls - 1);
+    const m = FORMULA_LINE.exec(line);
+    if (m) {
+      let c = 0;
+      for (const ch of m[1].toUpperCase()) c = c * 26 + ch.charCodeAt(0) - 64;
+      out.unshift({ name: m[1].toUpperCase() + m[2], r: +m[2] - 1, c: c - 1, text: m[3], s: ps, e: ls });
+    } else if (!ALT_LINE.exec(line.replace(/\r$/, ''))) break;
+    ls = ps;
+  }
+  return out;
+}
+// The table's rows of cells (its \\ rows, captions left out), for A1's numbers
+export const dataRows = (T) => T.rows.map((x, k) => k).filter((k) => T.rows[k].kind === 'row');
+// A cell's words as a range of the source (inside \multicolumn's and \multirow's text)
+export function cellRange(c) {
+  const s = c.mc ? (c.mr ? c.mr.textS : c.mc.textS) : c.mr ? c.mr.textS : c.ks;
+  const e = c.mc ? (c.mr ? c.mr.textE : c.mc.textE) : c.mr ? c.mr.textE : c.ce;
+  return c.empty ? { s: c.ks, e: c.ks } : { s, e };
+}
+// The grid Word's formulas read: per row of cells, per column, { tex, cell } (a merged cell's in
+// its first column, null in the others)
+export function cellGrid(src, T) {
+  return dataRows(T).map((k) => {
+    const row = T.rows[k], out = Array(T.ncols).fill(null);
+    for (const c of row.cells) if (c.col < T.ncols) out[c.col] = { tex: cellText(src, c), cell: c };
+    return out;
+  });
+}
+// The cell's words set to text, a wrapper they stand in kept (\textbf{17} gives \textbf{18})
+export function setCellValue(src, c, text) {
+  const R = cellRange(c), old = src.slice(R.s, R.e);
+  const m = /^((?:\\[A-Za-z]+\s*\{\s*)+)([^{}]*?)(\s*\}+)$/.exec(old);
+  if (m && (m[1].match(/\{/g) || []).length === m[3].replace(/\s/g, '').length) {
+    const s = R.s + m[1].length;
+    return { edits: m[2] === text ? [] : [{ s, e: s + m[2].length, t: text }] };
+  }
+  return { edits: old === text ? [] : [{ s: R.s, e: R.e, t: text }] };
+}
+// The formula line of cell name set (text) or taken off (null). { edits }
+export function setFormula(src, T, name, text) {
+  const have = formulasOf(src, T).find((x) => x.name === name.toUpperCase());
+  const t = text == null ? null : String(text).replace(/[\r\n]+/g, ' ').trim().slice(0, 500);
+  const nl = T.eol;
+  if (have) return { edits: t ? [{ s: have.s, e: have.e, t: src.slice(have.s, have.e).replace(/:[ \t]*\S.*?([ \t]*\r?\n?)$/, ': ' + t + '$1') }] : [{ s: have.s, e: have.e, t: '' }] };
+  if (!t) return { edits: [] };
+  // (above the alt line, which stays next to the table; indented as the table's line)
+  let ls = src.lastIndexOf('\n', T.s - 1) + 1;
+  const indent = /^[ \t]*/.exec(src.slice(ls, T.s))[0];
+  const A = tableAlt(src, T);
+  if (A) ls = A.s;
+  return { edits: [{ s: ls, e: ls, t: indent + '% formula ' + name.toUpperCase() + ': ' + t + nl }] };
 }
