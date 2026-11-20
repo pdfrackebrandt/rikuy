@@ -77,7 +77,7 @@ function treeVersion(OUT) {
 // instead (the lines are clipped to a pixel, and their links are out of the Tab order); a screen
 // reader reads them as the page's heading; without JavaScript the last line shows.
 const TITLE = 'Rikuy: a LaTeX editor where you type on the typeset page';
-const HOW = 'Open the page and type: the sample document is there to edit. Open takes .tex, .bib, .zip and Word .docx files, the row of buttons formats and inserts, Preview shows the PDF, and Download gives the PDF, a Word file or the LaTeX source.';
+const HOW = 'Open the page and type: the sample document is there to edit. Open takes .tex, .bib, .zip and Word .docx files, the row of buttons formats and inserts, Preview shows the PDF, and Download gives the PDF, a Word file or the LaTeX source. Its figures can be live: Insert, Interactive graph, or right click an equation and choose Graph this; the page runs the graph, the PDF prints the same graph as vector lines, and File, Export as, Web page with live graphs puts the paper on a website with its graphs live.';
 // text into HTML, and JSON into a script element (no "<" left to end the element with)
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 export const jsonScript = (o) => JSON.stringify(o).replace(/</g, '\\' + 'u003c');
@@ -632,14 +632,14 @@ Ctrl is Cmd on a Mac.
   Ctrl+Y in the dialog), and Insert. A formula's mistake is said in words and underlined. It writes
   graphs/<kind>-<4 letters>.html (the graph as JSON, one key a line, and Rikuy's script that
   draws it), graphs/<kind>-<4 letters>.pgf (the picture TeX prints: PGF drawn from the same
-  drawing, the graph at its sliders' starting values), \rikuywidget[width=\linewidth]{…}{…},
-  rikuy.sty (v1.1, which inputs a .pgf) and \usepackage{rikuy}: one undo. On the page the graph
+  drawing, the graph at its sliders' starting values), \\rikuywidget[width=\\linewidth]{…}{…},
+  rikuy.sty (v1.1, which inputs a .pgf) and \\usepackage{rikuy}: one undo. On the page the graph
   runs live; its button "Edit graph" (or command edit-graph with {file}) reopens the dialog,
   whose Update rewrites the file and picture only. Graph this (command graph-this; the right
   click menu of an equation, the Equation tab, the search box): the equation at the caret, or the
   one open or right clicked, drawn as a live graph below it in one undo (y = f(x), f(x), x = g(t)
-  with y = h(t), F(x, y) = c, \dot k = …, k_{t+1} = …, a pair of time derivatives); it says in
-  words what it drew or why it cannot (a \max, a sum, a function defined by itself).
+  with y = h(t), F(x, y) = c, \\dot k = …, k_{t+1} = …, a pair of time derivatives); it says in
+  words what it drew or why it cannot (a \\max, a sum, a function defined by itself).
   File, Export as, "Web page with live graphs (.html)" (command export-web-page): one self
   contained page that reads like the paper, its graphs live in sandboxed frames, Rikuy's scripts
   alone allowed by a Content Security Policy, and an "Open in Rikuy" link with the source
