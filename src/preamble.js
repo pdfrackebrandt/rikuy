@@ -8,31 +8,23 @@
 // pattern that can backtrack over the whole text, every scan is bounded, and comments are read
 // as comments (a % line that names \usepackage loads nothing). test/preamble.test.mjs.
 
+import { commentsBlanked, preambleEnd } from './scan.js';
+
 const MAX = 200000; // the most of a preamble read
 const GROUP = 4000; // the most of one argument read
 
 // The text with each comment's characters (from an unescaped % to the line's end) made spaces,
-// so offsets stay those of the text
+// so offsets stay those of the text (src/scan.js: made once per text)
 export function stripComments(t) {
-  let out = '', i = 0;
   const n = Math.min(t.length, MAX * 2);
-  while (i < n) {
-    const c = t[i];
-    if (c === '\\') { out += t.slice(i, i + 2); i += 2; continue; }
-    if (c === '%') { const j = t.indexOf('\n', i); const e = j < 0 ? n : j; out += ' '.repeat(e - i); i = e; continue; }
-    out += c; i++;
-  }
-  return out + t.slice(n);
+  return commentsBlanked(t, n) + t.slice(n);
 }
 
 // the line end a text is written with: CRLF where its first line ends so, else LF
 export function eolOf(t) { const k = String(t).indexOf('\n'); return k > 0 && t[k - 1] === '\r' ? '\r\n' : '\n'; }
 
-// where the preamble ends: the first \begin{document} that is no comment's, or -1
-export function preambleEnd(src) {
-  const m = /\\begin\s*\{document\}/.exec(stripComments(src.slice(0, MAX)));
-  return m ? m.index : -1;
-}
+// where the preamble ends: the first \begin{document} that is no comment's, or -1 (src/scan.js)
+export { preambleEnd };
 
 // the balanced group that opens at i ({ or [), as [i, end) with end after its closing one, or -1
 export function groupEnd(t, i, limit = 20000) {
