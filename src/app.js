@@ -113,6 +113,11 @@ function loadScript(src) {
     document.head.appendChild(s);
   });
 }
+// Whether this page may not compile WebAssembly (an empty module): Safari 15 refuses it under the
+// hosted policy, which allows it by 'wasm-unsafe-eval' alone (build/app.mjs policy)
+function wasmRefused() {
+  try { new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])); return false; } catch (e) { return true; }
+}
 // A link in a document opens only as a web or mail address: the document may be a
 // stranger's, and a javascript: or data: address would run as, or pretend to be, this page.
 function openLink(u) {
@@ -5216,6 +5221,10 @@ class App {
   // error) read the same build instructions: they get what to do instead.
   texFailText(e, off, need) {
     const m = (e && e.message) || '';
+    // TeX is WebAssembly, which the hosted page's policy lets run through 'wasm-unsafe-eval':
+    // Safari 15 and older do not know it and refuse every module. Asked of the page only when TeX
+    // failed, so no other browser meets the refusal it would report.
+    if (wasmRefused()) return 'This browser does not let the page run WebAssembly, which TeX is made of: Safari 15 and older lack the permission the page gives it. The editor works here; Safari 16 or later, Chrome, Edge or Firefox make the PDF. ';
     // a 404 is a page built without its TeX tree: the worker's words name the build step.
     // "Failed to fetch", a dropped connection, or that same sentence with no HTTP status is
     // what a visitor's browser says. They get plain words and the button that tries again.
