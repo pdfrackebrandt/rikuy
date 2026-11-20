@@ -18,17 +18,10 @@
 // open tab), and the arrows move between them. Ctrl+F1 folds the ribbon to its tabs and back.
 
 import { TABS, tabById, CONTEXTS, KEYTIPS } from './order.js';
-import { chordText } from '../keys.js';
+import { keyTitle, firstKey, macUA } from '../keys.js';
 
-// the shortcut in the tooltip, when the command's own title does not already say it
-function tipTitle(c, p) {
-  const t = c.title || p.name;
-  const k = (c.keys && c.keys[0]) || (c.keysElsewhere && c.keysElsewhere[0]);
-  if (!k) return t;
-  const shown = chordText(k);
-  if (t.includes(shown) || t.includes(k)) return t;
-  return t + ' (' + shown + ')';
-}
+// the shortcut in the tooltip, as this computer has it (src/keys.js keyTitle)
+const tipTitle = (c, p) => keyTitle(c, p.name, macUA());
 
 import { LAUNCH, CHECKS, TIPS, groupLayout } from './layout.js';
 import { commands, command, inGroup, places, enabled, pressed, installers } from '../commands.js';
@@ -277,7 +270,7 @@ export const tabs = {
     const items = [];
     for (const { c, p } of laidOut(tab, g.id).filter(({ c }) => c.run && c.searchable !== false)) {
       const on = pressed(this, c, at);
-      items.push({ name: p.name, title: c.title, keys: chordText((c.keys || [])[0]), checked: on === null ? undefined : on, radio: !!c.static, disabled: !enabled(this, c, at), run: () => { this.ribbonBack(); this.runCommand(c.id); } });
+      items.push({ name: p.name, title: c.title, keys: firstKey(c, macUA()), checked: on === null ? undefined : on, radio: !!c.static, disabled: !enabled(this, c, at), run: () => { this.ribbonBack(); this.runCommand(c.id); } });
       // (a split button's other choices too, as Word's folded group lists them: Find's Advanced
       // Find and Go To)
       if (c.kind === 'split') for (const it of this.commandMenu(c)) if (it && it.name !== p.name && it.command !== c.id) items.push({ ...it, run: () => { this.ribbonBack(); if (it.run) it.run(); } });

@@ -3233,7 +3233,34 @@ Tests:
     `outline.py` 105 and `view.py` 160 with `dist/tex`, `file.py` 100 with `dist/tex` and
     `dist/word`, `tabs.py` 115.
 
-66. **The ribbon's other tabs laid out as Word's.** Done in the code (branch `ribbon-tabs-word`).
+66. **Word's keyboard shortcuts** (branch word-shortcuts, draft PR 80). Every shortcut on
+    Microsoft's Keyboard shortcuts in Word page, Windows and macOS, and the equation keys,
+    against Rikuy's registry: `docs/handoff/SHORTCUTS.md`, one table, each row works, added,
+    kept by the browser (with what to press instead) or without an equivalent in a LaTeX document
+    and why. Added: Ctrl+1, 2, 5 (line spacing), Alt+Shift+> and < (footnotes), F5 (Go To),
+    Shift+F4 and Ctrl+Alt+Y (Find Next), Shift+F5 and Ctrl+Alt+Z (Go Back), F8 and Shift+F8
+    (Extend and Shrink Selection), Alt+Shift+A and Alt+Shift+1 to 9 (outline levels),
+    Ctrl+Alt+P, Ctrl+Alt+N, Alt+F9, Ctrl+F2, Shift+F1, F1, Ctrl+F6 and Ctrl+Shift+F6 (panes),
+    Alt+X, the accent keys (Ctrl+' then e is é, and the rest), ¿ and ¡, Ctrl+F3 and
+    Ctrl+Shift+F3 (the Spike), F2 and Shift+F2 (move and copy, then Enter), Alt+F3, Ctrl+F9,
+    Alt+Shift+P, Ctrl+Shift+P, Alt+Shift+O, Ctrl+Shift+F5, Alt+F7, the number pad's dashes,
+    Alt+Home, End, Page Up, Page Down and Alt+Shift+Up and Down in a table, Alt and the pad's 5,
+    Shift+F12, Alt+Shift+F2, Ctrl+F12, Ctrl+Alt+F2, Ctrl+Shift+F12; Hanging Indent as a command
+    (Word's Ctrl+T is the browser's). Word for Mac's own chords (Cmd+Option+L, R, A, E,
+    Cmd+Control+V, Control+Space, Control+Shift+M, Cmd+8, Cmd+G). Tooltips, menus, the search
+    box and Help write a Mac's chords with ⌘ ⌥ ⌃ ⇧; Help ends with Word's keys the browser keeps.
+    Function keys reach their commands from fields and the source, Ctrl+Alt chords from the
+    source. Save, as Word's keys mean it: Ctrl+S (and Shift+F12, Alt+Shift+F2, the bar's Save)
+    writes the project to this browser now and says "Saved in this browser", downloading nothing
+    (it downloaded a file at every press); Save As (F12 on the page) and Download LaTeX download.
+    The hostile review (`/tmp/review-keys.md`, changes requested) is answered in the commits named
+    after it: Move Row keeps each row's cells (H1), F2's wait ends at a click, a key or an edit
+    (H2), the Spike keeps a heading whole (M1), no Option and character key is taken on a Mac
+    (M2), a French keyboard's Ctrl+1 is Ctrl+1 (M3), Hanging Indent round trips (M4), Alt+X reads
+    LaTeX's accents (M5), and the lows. Evidence: `npm test` green (`keys` 19 groups, `typing` 6, `commands` 13 with the
+    `WORD` table on both systems, `table` 47), `test/shortcuts.py` 82 checks (screenshots in `/tmp/keys-shots`).
+
+66a. **The ribbon's other tabs laid out as Word's.** Done in the code (branch `ribbon-tabs-word`).
     Home was done in PR 75; `src/ribbon/layout.js` now says, for Insert, Design, Layout,
     References, Review, View, Help and the contextual tabs (Table Design, Table Layout, Picture
     Format, Equation, Header & Footer), each group's commands in Word's order with Word's size:
@@ -3345,6 +3372,31 @@ Tests:
     - 4 ran past the 240 s limit; corpus_full.py now records the worker's last steps for such a
       row, and pdfcompare.py the fonts on one side only for a mismatch (the run keeps no PDFs).
 
+    Second run, 44077385415 (2026-11-17, main cb4d5a8: the .bbl rule above and the packages):
+    998 papers, Rikuy compiled 960 (96.2 %), the desktop 962; of the desktop's 962 Rikuy compiled
+    960 (99.8 %); 872 of the 960 both compiled matched (90.8 %). Median compile 2.3 s, 90th
+    percentile 8.0 s. What is left, classified:
+    - 2 fail in Rikuy alone: `sourcesanspro.sty` and `foekfont.sty`, not in the tree yet (the
+      fbb and brushscr papers load them too).
+    - 31 fail on both, as in the first run (classes arXiv supplies beyond TeX Live, files missing
+      from the source, errors under TeX Live 2026); 5 ran past 240 s, their trails showing TeX run
+      again and again through shell escape (figures made by TeX) or a long biber run.
+    - About 43 of the 88 mismatches are the bibliography's: 31 papers ship a .bib lacking entries
+      their .bbl has, so Rikuy's bibtex run printed [?] where latexmk, which keeps a .bbl it finds
+      on a first run, printed numbers; 6 more print accents as combining characters pdfLaTeX
+      cannot set (bibtex rebuilt the .bbl from such a .bib), and several superscript or author
+      year citations print ? the same way. Fixed now: of the project's own .bbl and the one bibtex
+      or biber makes, the worker keeps the one that resolves more of the citations, the own one
+      on a tie in a project's first run (biber's only when its format version is the own one's);
+      and once bibtex's .bbl is taken, later runs no longer write the project's file over it (a
+      citation added after bibtex ran had gone back to [?] on the next run).
+    - 9 are the desktop's: it printed an older biblatex's .bbl as text ("author2hash=...") or
+      [?] where Rikuy, with biber's .bbl, printed the references.
+    - About 15 break lines at other places (pixels within 1 to 9 %; "cano-nique" against
+      "canon-ique", "Arbit-rum" against "Arbi-trum"); 4 differ in pixels only (text equal);
+      1502.01027 prints the hook name "begindocument/b..." on its first page; 2202.05036 lacks
+      cbfonts' `grmn` (the archaic koppa); the rest follow from a float or a page placed
+      elsewhere. Not classified further without the PDFs (the workflow keeps none).
 ## Rules
 
 - No status commits ("Note ...", "Record ...") and no log in this file. One commit per

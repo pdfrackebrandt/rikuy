@@ -11,6 +11,7 @@
 // commit for each action, the preamble's lines (ulem, xcolor, the highlighter's definition) in it.
 
 import { register, command, onInstall, onInsertText } from '../commands.js';
+import { firstKey, macUA } from '../keys.js';
 import { groupNames, mapPos } from '../wrap.js';
 import * as F from '../charfmt.js';
 import { openMenu, colorPicker, BASE_COLORS, CARET } from '../ui/kit.js';
@@ -75,8 +76,8 @@ register(
     title: 'Font (Ctrl+Shift+F): the document\'s font, or with text selected the font of that text',
     synonyms: ['Font family', 'Typeface', 'Document font', 'Serif', 'Sans serif', 'Monospace', 'Times', 'Palatino', 'Helvetica'],
     render: (app) => app.fontBox('font'), sync: (app, at) => app.fontBoxSync('font', at), when: can, whyNot: () => WHY, run: (app) => app.fontBoxOpen('font') },
-  { id: 'font-size', name: 'Font Size', el: 'rb-size', role: 'combobox', kind: 'custom', tab: 'home', group: 'font', order: 2,
-    title: 'Font Size: the document\'s base size, or with text selected the size of that text (a number of points, or a size of LaTeX)',
+  { id: 'font-size', name: 'Font Size', el: 'rb-size', role: 'combobox', kind: 'custom', tab: 'home', group: 'font', order: 2, keys: ['Ctrl+Shift+P'],
+    title: 'Font Size (Ctrl+Shift+P): the document\'s base size, or with text selected the size of that text (a number of points, or a size of LaTeX)',
     synonyms: ['Size', 'Point size', 'Document size', 'Base size', 'large', 'small'],
     render: (app) => app.fontBox('size'), sync: (app, at) => app.fontBoxSync('size', at), when: can, whyNot: () => WHY, run: (app) => app.fontBoxOpen('size') },
   { id: 'grow-font', name: 'Increase Font Size', order: 3, tab: 'home', group: 'font', glyph: ICON.grow, keys: ['Ctrl+Shift+>', 'Ctrl+]'], mac: { 'Ctrl+]': false },
@@ -91,7 +92,7 @@ register(
   { id: 'clear-formatting', name: 'Clear All Formatting', order: 6, tab: 'home', group: 'font', icon: '<path d="M5 15.5L8.6 5h1.8l2.3 6.6M6.4 11.6h4.4"/><path d="M12.6 13.2l3.8 3.8M16.4 13.2l-3.8 3.8"/>',
     title: 'Clear All Formatting: takes bold, italic, colours, sizes and fonts off the selection, and an alignment off its paragraph', synonyms: ['Clear Formatting', 'Remove formatting', 'Plain text'],
     when: can, whyNot: () => WHY, run: (app) => app.clearFormatting(true) },
-  { id: 'clear-char-formatting', name: 'Clear Character Formatting', keys: ['Ctrl+Space'], mac: { 'Ctrl+Space': false },
+  { id: 'clear-char-formatting', name: 'Clear Character Formatting', keys: ['Ctrl+Space'], mac: { 'Ctrl+Space': 'Control+Space' },
     title: 'Clear Character Formatting (Ctrl+Space): bold, italic, colours, sizes and fonts off the selection', synonyms: ['Reset character', 'Plain text'],
     when: can, whyNot: () => WHY, run: (app) => app.clearFormatting(false) },
 
@@ -456,11 +457,11 @@ export const methods = {
       const id = show.fontSel && show.family ? show.family : show.docFont.id;
       const name = (F.GENERIC.find((g) => g.id === id) || F.FONTS.find((f) => f.id === id) || show.docFont).name;
       inp.value = inp.dataset.shown = name;
-      inp.title = 'Font: ' + name + (show.familyW ? '' : ' (the document\'s)') + ' (Ctrl+Shift+F)';
+      inp.title = 'Font: ' + name + (show.familyW ? '' : ' (the document\'s)') + ' (' + firstKey(command('font-name'), macUA()) + ')';
     } else {
       const v = Math.round(show.size * 100) / 100;
       inp.value = inp.dataset.shown = Number.isFinite(v) ? String(v) : '';
-      inp.title = 'Font Size: ' + v + 'pt' + (show.sizeW && show.sizeW.cmd !== 'fontsize' ? ' (\\' + show.sizeW.cmd + ')' : show.sizeW ? '' : ' (the document\'s)');
+      inp.title = 'Font Size: ' + v + 'pt' + (show.sizeW && show.sizeW.cmd !== 'fontsize' ? ' (\\' + show.sizeW.cmd + ')' : show.sizeW ? '' : ' (the document\'s)') + ' (' + firstKey(command('font-size'), macUA()) + ')';
     }
   },
   // back to the page from a box: the selection it had (a box's text took the document's selection)
@@ -502,6 +503,8 @@ export const methods = {
     if (!st) return false;
     const inp = $(kind === 'font' ? '#rb-font' : '#rb-size');
     const visible = inp && inp.offsetParent;
+    // (a key pressed before the ribbon has followed the caret finds the box still off: on it is)
+    if (!fromBox && visible && inp.disabled) this.fontBoxSync(kind, at, true);
     if (!fromBox && visible) { const s = getSelection(); if (s.rangeCount && this.root.contains(s.anchorNode)) { this.rbRange = s.getRangeAt(0).cloneRange(); this.fbxAt = at; } inp.focus(); return true; }
     const back = (fn) => () => { this.fbxAt = null; if (fromBox) this.fbxBack(); else this.ribbonBack(); fn(); this.ribbonSync(); };
     let items;

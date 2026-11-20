@@ -1992,6 +1992,9 @@ body.focus #desk { display: block !important; }
 /* Read Mode's PDF: a column to read, not a poster */
 body.view-pdf #pdf-host { width: 100%; max-width: 1040px; margin: 0 auto; }
 .pop-guide .keys { grid-template-columns: 12.5em minmax(0, 1fr); }
+/* Help's keys on a phone: each key over what it does, the text the whole width (two columns left
+   the words 55 % of a 390px screen) */
+@media (max-width: 520px) { .pop-guide .keys { grid-template-columns: minmax(0, 1fr); gap: 0; } .pop-guide .keys dd { margin-bottom: 7px; } }
 .pop-props label.props-row { display: flex; flex-direction: column; gap: 3px; }
 .pop-props label.props-row > span { font-weight: 500; font-size: 12.5px; }
 .pop-props label.props-row small { color: var(--mute); font-size: 11.5px; }
