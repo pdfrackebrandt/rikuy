@@ -395,3 +395,24 @@ Lows, not blocking:
 - **V1** (this commit): Position reads the files the main file's preamble pulls in (`App.preambleOthers`: an `\input{preamble}`, the project's own `.sty`) as it reads the main preamble. A box defined in any of them (`\newtcolorbox{example}`, a `\newenvironment{note}` around a minipage) is a box. The names theorems often have (example, note, problem, solution, exercise, remark, claim, definition and their like) are no longer on the allow list. They are trusted only where a `\newtheorem` or `\declaretheorem` declares them, in the main preamble or one of its files, or where the class makes them theorems itself (llncs, svjour). That also ends the false refusal of a theorem declared in an `\input` preamble file. Code that an `\AtBeginEnvironment` or `\BeforeBeginEnvironment` puts at an environment's start, and that opens a box, makes that environment a box. Tests: `objfmt.test.mjs` (V1 group, failing before), `objects.py review_arrange` (in a project with `preamble.tex`, Top of Page is greyed and writes nothing in a tcolorbox `example`; in a `\newtheorem` `example` it writes the figure, which compiles with pdfLaTeX, XeLaTeX and LuaLaTeX).
 
 Checks with `dist/tex`: `npm test` green (`objfmt` 24 groups); `objects.py` 292 passed, 0 failed.
+
+---
+
+# Verification of b6c064b
+
+**Verdict: merge.**
+
+I tested on dist/ built at 20:13, which no source file is newer than. Repro script: `w4.py` in `/tmp/review-g1-out/`, each case compiled in the page.
+
+**V1 is fixed.** Top of Page is refused, with the environment named, for every box defined outside the main file:
+- a `\newtcolorbox{example}` in an `\input{preamble}` file;
+- a minipage `note` in an `\input{preamble}` file;
+- `\newtcolorbox{example}` in a local `mystyle.sty` loaded by `\usepackage{mystyle}`;
+- the same definition two `\input` files deep (`preamble.tex` → `boxes.tex`);
+- the `\AtBeginEnvironment{quote}{\begin{minipage}…}` trick.
+
+Theorems declared outside the main file are now allowed, and both compile with the drawing in the PDF:
+- `\newtheorem{thm}` in an `\input` file;
+- `\newtheorem{example}` in an `\input` file.
+
+No regressions: `objects.py arrange review_arrange selpane` gave 73 passed, 0 failed.
