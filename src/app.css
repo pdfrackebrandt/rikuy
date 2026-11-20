@@ -2786,5 +2786,11 @@ body.file-open #rp-file .rb-tb .btn { height: 32px; min-height: 32px; border-rad
 @media (pointer: coarse) {
   .st-views, .pd-tabs, .fr-tabs, .fd-tabs { gap: 8px; }
   .pd-grid, .ps-grid, .ps-sec { row-gap: 8px; }
+  /* (and the rest the review of PR 90 measured: Font's effects and buttons, Insert Table's rows
+     and radios, AutoCorrect's rows, Symbols' grid, Find and Replace's options, rows and buttons,
+     Bookmark's buttons, any dialog's row of buttons) */
+  :is(.pop-dlg, .pop-share, .pop-comment, .fr) :is(.pop-row, .fd-btns, .tb-sec, .tb-radios, .gd-sec, .fr-row, .fr-btns) { gap: 8px; }
+  :is(.pop-dlg, .pop-share, .pop-comment, .fr) :is(.fd-eff, .fr-opts) { row-gap: 8px; }
+  .sym-grid { gap: 8px; }
   .pd-tabs { margin-top: 4px; }
 }

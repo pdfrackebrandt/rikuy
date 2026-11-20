@@ -81,11 +81,21 @@ export function rulerInstall(app) {
     // a double press on a marker opens what sets it by number, as Word's ruler does: the
     // Paragraph dialog for an indent, Page setup for a margin (a press of one pointer for every
     // drag, UI-PRINCIPLES.md T5, WCAG 2.5.7)
+    // (anywhere on a margin's grey part too, as Word's: more than 3 px out of the text's column is
+    // the margin, whatever marker the press falls on; the vertical ruler is all margins)
     el.addEventListener('dblclick', (e) => {
-      const m = e.target.closest('.ru-mk');
-      if (!m || m.classList.contains('off')) return;
+      const m = e.target.closest('.ru-mk'), R = app.ru, S = R.S;
+      if (m && m.classList.contains('off')) return;
+      let cmd = null;
+      if (el === R.vr) cmd = 'page-setup';
+      else if (S) {
+        const x = e.clientX - R.track.getBoundingClientRect().left, l = S.ml * S.px, r = (S.pw - S.mr) * S.px;
+        if (x < l - 3 || x > r + 3) cmd = 'page-setup';
+        else if (m) cmd = /^m[lrtb]$/.test(m.dataset.k) ? 'page-setup' : 'paragraph-settings';
+      }
+      if (!cmd) return;
       e.preventDefault();
-      app.runCommand(/^m[lrtb]$/.test(m.dataset.k) ? 'page-setup' : 'paragraph-settings');
+      app.runCommand(cmd);
     });
     el.addEventListener('keydown', (e) => {
       const m = e.target.closest('.ru-mk');

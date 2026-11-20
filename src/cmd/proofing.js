@@ -38,7 +38,7 @@ register(
     title: 'Thesaurus (Shift+F7): words of like meaning for the word at the cursor, each put in its place with one press',
     synonyms: ['Synonyms', 'Words of similar meaning', 'Antonyms', 'Other words for', 'Research word'],
     when: (app) => app.thesAvailable(), whyNot: (app) => app.thesWhyNot(), run: (app) => app.openThesaurus() },
-  { id: 'synonyms', name: 'Synonyms', menu: { text: 85 }, title: 'Words of like meaning for this word, from the thesaurus: one press puts it in; Thesaurus… for more',
+  { id: 'synonyms', name: 'Synonyms', submenu: true, menu: { text: 85 }, title: 'Words of like meaning for this word, from the thesaurus: one press puts it in; Thesaurus… for more',
     synonyms: ['Thesaurus', 'Other words'], when: (app, at) => app.thesAvailable() && !!app.thesAt(at && at.c), whyNot: (app) => (app.thesAvailable() ? 'Put the cursor in a word' : app.thesWhyNot()),
     run: (app, args, at) => { const x = app.thesAt(at && at.c); if (x) app.synonymsMenu(x); else app.openThesaurus(); } },
   { id: 'grammar-as-you-type', name: 'Check Grammar as You Type', kind: 'toggle',
