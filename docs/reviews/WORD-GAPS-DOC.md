@@ -194,3 +194,20 @@ Each finding, what was done and the commit (branch `word-gaps-doc`, on a286911).
 - **L7** (LaTeX words in dialogs, 43 px Cell tab): `0cc12c2` and `00ade6c`. Left and right, Top, Row height, times the usual, Display, no number; Table Properties' tabs 44 px wide on a touch screen.
 
 Checks after the fixes: `npm test` passed; `test/docgaps.test.mjs` 20 groups; `test/docgaps.py` 166 passed; `table.py` 175; `view.py` 163; `page.py` header_footer, long_document and compile_pdf 44; `word.py` 111; `word.test.mjs` 78 groups; `eqtab.py` 159; `tabs.py` 127; `agent.py` 143.
+
+## Fixes for the verification of 3d3bfc4
+
+- **Blocker 1** (KOMA, typearea, memoir): `4c8b415`. Header from Top and Footer from Bottom are greyed there, unless geometry lays the page out; the tooltip says why and what to do, and a run by name writes nothing. Reading their layout is left (PLAN task 68).
+- **Blocker 2** (Footer from Bottom to letter height): `c2445a5`, measured to the sheet (`g.ph`); `docgaps.py footer_sheet` checks A4 and letter in TeX's PDF.
+- **Blocker 3** (Move Row Up and Down dropped formulas): `03d1d3b`, `moveRow` gives `moved` as Sort does; the plural toast fixed.
+- **Blocker 4** (one formula per table from Word): `7bd537d`, the table's start moves by each line written; the fields come back in order.
+- **M5** (2.2 s typing with Split): `3e4712b`. The copy waits for 400 ms of quiet and an idle time, a page at a time, and a class or style change of the first view copies those two attributes instead of rebuilding the frame. On the 125 page document, ten letters: 0.8 s of long tasks, up to 100 ms, against 0.6 s and 70 ms with Split off. The document costs about 60 ms a keystroke by itself (its contents' page numbers, the caret): the verification's baseline typed with no caret in the page, so "no long task over 50 ms" cannot hold for this document with Split on or off. `split_long` checks Split's long tasks against those without it.
+- **Phone** (tap, 7 px bar): `62da7dd`, the bar 44 px with touch; on this build a tap in the second view puts the caret in the top view and typing lands there.
+- **Split Table**: `dbaaf06`, the moved rows' lines go before the new table, renamed.
+- **Enter and a `%` comment**: `2711c73`, a comment stays a comment with its line's end.
+- **Ten decimals**: `d7eb98b`, two places at most with no format.
+- **`\addtolength{\headsep}`**: `314a2a5`, read in order (also `\addtolength{\footskip}`).
+- **Pen Style Double on `\hhline{|=|=|}`**: `7e7777b`, kept.
+- **References' Update buttons at 32 px**: `3442fc8`, 44 px with touch (`refs.py phone` 30 passed).
+- Left, in PLAN: `\setlength{\footskip}` after `\geometry{…}`; `*{3}{c}` back as `ccc` after Preferred width Off.
+

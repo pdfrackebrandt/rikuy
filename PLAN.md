@@ -3451,9 +3451,24 @@ Tests:
     passed; of 17169 equations
     of the corpus, sample and dev/bench all but 334 (text between dollars, babel's quotes,
     `\frac{1}m`) live in the Linear box and byte for byte after a space typed.
+    Fixes for the verification of 3d3bfc4 (`docs/reviews/WORD-GAPS-DOC.md`): Header from Top and
+    Footer from Bottom greyed, saying why, where KOMA-Script, typearea or memoir lay the page out
+    (the page model reads article's layout and geometry's); Footer from Bottom measured to the
+    sheet, not to `\paperheight` (letter's where the sheet is A4); Move Row Up and Down and Split
+    Table keep their rows' formula lines; every formula of a Word table back, in order; Split's
+    copy waits for a pause and an idle time (ten letters on a 125 page document: 0.8 s of long
+    tasks, 0.6 s without Split, 3.0 s before), its bar 44 px with touch; a comment stays a comment
+    through the Linear box; a value with no number format to two places; `\addtolength` of
+    `\headsep` and `\footskip` read; Pen Style Double keeps a double `\hhline`; References'
+    Update buttons 44 px with touch. Evidence: `test/docgaps.test.mjs` 20 groups;
+    `test/docgaps.py` headfoot_forms 12, footer_sheet 5, headfoot_refused 8, split_long 6,
+    rest_phones 11; `word.test.mjs` 78 groups; `refs.py phone` 30.
     Left: the ribbon's buttons are 32 by 30 px on a phone on every tab (the ribbon's own rule);
     Link to Previous; the second view of Split does not take typing (a press there puts the caret
-    in the top view); a formula line in a table that holds a table does not come back from Word.
+    in the top view); a formula line in a table that holds a table does not come back from Word;
+    Header from Top and Footer from Bottom on KOMA-Script, typearea and memoir (the page model
+    reads their layout first); a `\setlength{\footskip}` after `\geometry{…}` is not read (the
+    model takes geometry's); Preferred width Off gives `*{3}{c}` back as `ccc`.
 
 ## Open tasks
 
