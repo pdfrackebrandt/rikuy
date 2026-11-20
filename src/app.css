@@ -474,6 +474,24 @@ body.file-open #rp-file .rb-dl::before { display: none; }
 @keyframes rb-busy { from { opacity: 1; } to { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { #rb-pdf[aria-busy="true"] svg { animation: none; opacity: .5; } }
 /* the LaTeX download keeps live graphs live: a mark says so when the document has some */
+/* The downloads as a group of Word's, with a mouse from 900 px: PDF, Word and LaTeX as small
+   buttons one under another in the three rows the laid out groups have, each its own page (the
+   PDF's as the Preview button's, a page with a paragraph mark, a page of source), and the group's
+   name under them, as every group's. A line before them, as between groups. Folded (rb-dl1) they
+   are one Download button, its icon alone, as a folded group is. A touch screen and a narrower row
+   keep their row. */
+@media (min-width: 900px) and (pointer: fine) {
+  body:not(.file-open) .rb-dl { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, 22px) minmax(0, 1fr); align-items: center; justify-items: stretch; gap: 0;
+    padding: 4px 12px 3px 9px; background: linear-gradient(var(--line), var(--line)) 0 8px / 1px calc(100% - 26px) no-repeat, var(--ribbon); }
+  body:not(.file-open) .rb-dl > .btn { height: 22px; padding: 0 8px 0 4px; gap: 5px; justify-content: flex-start; border-radius: 4px; font-size: 12px; font-weight: 400; }
+  body:not(.file-open) .rb-dl > .btn svg { width: 16px; height: 16px; }
+  body:not(.file-open) .rb-dl > .rb-lab, body:not(.file-open) .rb.rb-nolab .rb-dl > .rb-lab { display: block; grid-row: 4; grid-column: 1; align-self: end; justify-self: center; margin: 0; font: 11px/1 var(--font-ui); color: var(--mute); }
+  body:not(.file-open) .rb.rb-dl1 .rb-dl > .rb-lab { display: none; }
+  body:not(.file-open) .rb.rb-dl1 .rb-dl > #rb-dl-menu { grid-row: 1 / span 3; align-self: center; width: 26px; padding: 0; justify-content: center; }
+  body:not(.file-open) .rb.rb-dl1 .rb-dl > #rb-dl-menu > span:not(.sr) { display: none; }
+  /* (the source kept live: its green mark before the icon, as in the row) */
+  body:not(.file-open) .rb-dl > #b-save.live { padding-left: 13px; }
+}
 #b-save.live { padding-left: 13px; }
 #b-save.live::before { content: ""; position: absolute; top: 50%; left: 4px; width: 4px; height: 16px; margin-top: -8px; border-radius: 2px; background: #2E9E6B; }
 .src-head { display: flex; align-items: flex-end; border-bottom: 1px solid var(--line); background: var(--chrome); flex: none; }

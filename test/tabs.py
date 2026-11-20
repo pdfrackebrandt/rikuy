@@ -182,7 +182,9 @@ def widths(page):
     check('at 860 and 390 px the tabs are the combobox "Ribbon tab" at the row\'s start, in one row that scrolls sideways on a phone', all(not seen[w]['tabs'] and seen[w]['sel'] and seen[w]['h'] <= 44 and seen[w]['page'] <= 0 for w in (860, 390)) and seen[390]['over'], seen)
     # (the three go before any group folds: they take two controls, Editing three; at 860 px the
     # folded Paragraph group leaves room for them)
-    check('the downloads: three at 1400 px; one Download menu where the row has no room for three (1024 and 860 px, and on a phone)', all(seen[w]['dl'] == ['rb-pdf', 'rb-word', 'b-save'] for w in (1400,)) and all(seen[w]['dl'] == ['rb-dl-menu'] for w in (1024, 860, 390)) and not seen[860]['over'], {w: seen[w]['dl'] for w in seen})
+    # (from 900 px with a mouse the three stand one under another, a group as narrow as its longest
+    # name: Home has room for them at 1024 px)
+    check('the downloads: three at 1400 and 1024 px; one Download menu where the row has no room for three (860 px, and on a phone)', all(seen[w]['dl'] == ['rb-pdf', 'rb-word', 'b-save'] for w in (1400, 1024)) and all(seen[w]['dl'] == ['rb-dl-menu'] for w in (860, 390)) and not seen[860]['over'], {w: seen[w]['dl'] for w in seen})
     page.set_viewport_size({'width': 390, 'height': 900}); page.wait_for_timeout(300)
     page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label='Insert'); page.wait_for_timeout(200)
     check('on a phone the combobox opens a tab: Insert\'s Picture is there by its name', page.get_by_role('tabpanel', name='Insert', exact=True).get_by_role('button', name='Picture', exact=True).is_visible())
@@ -682,6 +684,37 @@ def word_layout(page):
     open_tab(page, 'Home')
 
 
+# The three downloads where they show: their boxes and the group's name
+DL = """() => { const r = (e) => { const b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; };
+  const bs = ['rb-pdf', 'rb-word', 'b-save'].map((id) => document.getElementById(id)).filter((b) => b.offsetParent);
+  const lab = document.querySelector('.rb-dl > .rb-lab'), rb = document.getElementById('ribbon').getBoundingClientRect();
+  return { b: bs.map(r), lab: lab.offsetParent ? [r(lab), lab.textContent] : null, top: Math.round(rb.top), icons: bs.map((b) => b.querySelector('svg').innerHTML) }; }"""
+
+
+def downloads_group(p):
+    """From 900 px with a mouse the downloads are a group as Word draws one: PDF, Word and LaTeX one
+    under another in the three rows of the laid out groups, each its own icon, the group's name
+    Download under them, on Home and every other tab; a touch screen keeps its row."""
+    browser, page, errors = open_page(p, width=1920, height=900)
+    load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
+    bad = {}
+    for w in (1920, 1366):
+        page.set_viewport_size({'width': w, 'height': 900}); page.wait_for_timeout(300)
+        for t in ('home', 'insert', 'review', 'view', 'help'):
+            page.evaluate('(t) => rikuy.selectTab(t)', t); page.wait_for_timeout(150)
+            d = page.evaluate(DL)
+            b = d['b']
+            ok = len(b) == 3 and len({x[0] for x in b}) == 1 and [x[1] - d['top'] for x in b] == [4, 26, 48] and all(x[3] == 22 for x in b) \
+                and d['lab'] and d['lab'][1] == 'Download' and d['lab'][0][1] > b[2][1] + 22 and len(set(d['icons'])) == 3
+            if not ok: bad[(w, t)] = d
+    check('from 900 px with a mouse, on Home and the laid out tabs at 1920 and 1366 px: PDF, Word and LaTeX one under another in the grid\'s three rows, each its own icon, the group\'s name Download under them', not bad, str(bad)[:400])
+    browser.close()
+    browser, page, errors = open_page(p, width=1180, height=800, touch=True)
+    d = page.evaluate(DL)
+    check('a touch screen at 1180 px keeps the downloads in a row', len(d['b']) in (0, 3) and (not d['b'] or len({x[1] for x in d['b']}) == 1), d)
+    browser.close()
+
+
 def mac_keytips(p):
     """On a Mac, Option alone types nothing and shows no letters (it is how a Mac types é and ©, and
     Word for Mac has no KeyTips); F10 shows them."""
@@ -830,7 +863,7 @@ def run():
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
-        for f in (tablet, mac_keytips):
+        for f in (tablet, mac_keytips, downloads_group):
             try: f(p)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
     bad = [r for r in results if not r[1]]
