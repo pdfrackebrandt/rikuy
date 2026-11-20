@@ -10,9 +10,11 @@
 // neither exists nothing is built or registered.
 //
 // Tools are registered for this page's own origin alone (no exposedTo): a live figure's frame,
-// whose origin is opaque, sees none. Results are JSON text; an error is { error } in plain words.
+// whose origin is opaque, sees none. Results are JSON text. An error, a refusal included, is thrown
+// on document.modelContext (an Error with the words of { error }), so the browser reports the call
+// as failed; on navigator.modelContext it is MCP's isError with { error } as the text.
 
-import { TOOLS, agentTools, callTool, askPerson, runnable } from './agent.js';
+import { TOOLS, agentTools, callTool, askPerson } from './agent.js';
 
 // The browser's model context: document.modelContext (the draft, Chrome now) or
 // navigator.modelContext (earlier drafts); null where neither is
@@ -31,20 +33,21 @@ export function installWebMcp(app) {
   const ctl = new AbortController();
   const gone = [];
   const tools = agentTools(app);
-  const ids = runnable().map((c) => c.id);
+  // (no list of the command ids in run_command's schema: 600 of them cost an agent thousands of
+  // tokens on every turn; list_commands finds one by its name)
   const descriptors = TOOLS.map((t) => {
-    // (run_command's ids as an enum: the agent sees every command it may name)
-    const inputSchema = t.name === 'run_command' ? { ...t.inputSchema, properties: { ...t.inputSchema.properties, id: { ...t.inputSchema.properties.id, enum: ids } } } : t.inputSchema;
     return {
-      name: t.name, title: t.title, description: t.description, inputSchema, annotations: t.annotations,
+      name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations,
       async execute(input, opts) {
         const signal = opts && typeof AbortSignal !== 'undefined' && opts.signal instanceof AbortSignal ? opts.signal : undefined;
         // (the earlier drafts' second argument: a client through which the page asks its person)
         const client = opts && typeof opts.requestUserInteraction === 'function' ? opts : null;
-        const ask = client ? (what) => client.requestUserInteraction(() => askPerson(what, signal)) : (what) => askPerson(what, signal);
+        const ask = client ? (what, q) => client.requestUserInteraction(() => askPerson(what, signal, q)) : (what, q) => askPerson(what, signal, q);
         const r = await callTool(app, tools, t.name, input, { signal, ask });
         const text = JSON.stringify(r);
-        return kind === 'navigator' ? { content: [{ type: 'text', text }], ...(r && r.error ? { isError: true } : {}) } : text;
+        if (kind === 'navigator') return { content: [{ type: 'text', text }], ...(r && r.error ? { isError: true } : {}) };
+        if (r && r.error) throw new Error(r.error);
+        return text;
       }
     };
   });
