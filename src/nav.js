@@ -29,6 +29,9 @@ export const nav = {
   // the list of actions in the menu panel shows what the bar shows now: Undo and Redo greyed
   // when there is nothing to undo, the zoom by its value
   navActs() {
+    // (the document's name and whether it is saved, at the panel's top: a phone's bar has no
+    // room for them, and Word's phone app names the open document)
+    if ($('#nav-doc-n')) { $('#nav-doc-n').textContent = this.name || ''; $('#nav-doc-s').textContent = $('#savestate').textContent || ''; }
     for (const a of $('#nav-acts').children) {
       const b = $('#' + a.dataset.for);
       a.disabled = b.disabled;
