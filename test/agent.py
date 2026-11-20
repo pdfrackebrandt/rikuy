@@ -635,6 +635,9 @@ def reach(page, width):
     for (tab, name, ctx), xs in by_tab.items():
         if ctx and not tab.startswith('table') and tab not in ('headfoot', 'equation', 'picture-format') and tab not in OBJ_TABS:
             continue  # (no command lives there yet: test/tabs.py brings one in for each)
+        # (File covers the page as Word's view does: its Back button gives the page back)
+        if page.evaluate("document.body.classList.contains('file-open')"):
+            page.get_by_role('button', name='Back to the document', exact=True).click(); page.wait_for_timeout(150)
         if ctx and tab == 'headfoot':
             # (the header open on the page, as a double click in its margin opens it)
             load_doc(page, DOC); page.evaluate('rikuy.pageHFOpen("head")'); page.wait_for_timeout(250)
