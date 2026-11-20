@@ -3277,9 +3277,8 @@ Tests:
       (style and weight, then Border Painter), Border Painter. Formula: Word's =SUM(ABOVE),
       AVERAGE, COUNT, MIN, MAX, PRODUCT, ROUND, IF, cells and ranges, its number formats
       (`src/formula.js`), computed by Rikuy and written as the value, the formula kept on a
-      `% formula B5: =SUM(ABOVE) \# "0.00"` line before the table; Update Formulas computes them
-      again (Word updates a field on F9 or printing; Rikuy's lines name a cell, so a row added
-      above moves no formula). View Gridlines (the page only). Draw Table and Eraser: a press on a
+      `% formula B5 [10]: =SUM(ABOVE) \# "0.00"` line before the table; Update Formulas computes
+      them again (Word updates a field on F9 or printing). View Gridlines (the page only). Draw Table and Eraser: a press on a
       cell's edge draws or takes off its rule or bar; the Eraser on an edge with none merges the
       two cells; Draw Table inside a merged cell splits it.
     - Header & Footer: Go to Header, Go to Footer, Previous and Next (odd and even pages of a two
@@ -3306,8 +3305,34 @@ Tests:
     compiled on the three engines 12, phones at 390 and 360 px 18); `tabs.py` 127, `agent.py`
     143, `table.py` 169, `eqtab.py` 159, `view.py` 163, `page.py` 177 (the right click menu in a
     cell kept in Word's order). Screenshots in `/tmp/g2-shots`.
+    Fixes for the hostile review (`docs/reviews/WORD-GAPS-DOC.md`): the Linear box writes only
+    where the equation reads into it and back unchanged, and then only the tokens typed (commands
+    it has no form for kept as written, `\left` and `\right` only whole, a fraction under a script
+    in 〖 〗), else on Enter; UnicodeMath read as Word reads it (ab/cd, 1/2/3, x^2^3, a^-1, ▒ 〖〗 ┬
+    ┴, ℝ), brackets deeper than 100 refused in words. Formula lines follow their cells through
+    Insert and Delete of rows and columns, Sort, Merge, Split and Delete Cells (references too,
+    #REF! for a deleted cell), go with Delete Table, keep the value they wrote last, and Update
+    Formulas leaves a cell holding something else and says so; a range is clamped to the grid
+    (13 s to under 1 ms), a formula over 500 characters refused, ROUND and the formats round as
+    Word (-2.5 to -3, 2.675 to 2.68, no exponent); the Number format box takes a format of your
+    own; Word export writes the formula as Word's field round its value and import brings the
+    line back. Header from Top and Footer from Bottom right under includehead and includefoot
+    and with a hand set `\headsep` (the PDF's header 1 cm down, the text where it was). Preferred
+    width stretches only l, c and r columns and Off gives the bytes back. Split copies only the
+    pages near its window at idle time (3 of 19 pages, not 19), is read only and says so, follows
+    a resize, and its bar drags by mouse, finger and keys. `\hhline` is read as a border; a
+    booktabs table gets no bars or double rules (its Left, Right and Inside Vertical off, saying
+    why); Signature Line's lines joined by `\\*`; the dialogs say Left and right, Top, Row
+    height, times the usual, Display, no number; Table Properties' tabs 44 px wide.
+    Evidence for the fixes: `test/docgaps.test.mjs` 20 groups; `test/docgaps.py` 166 checks with
+    `dist/tex`; `table.py` 175, `view.py` 163, `page.py` (header_footer, long_document, compile_pdf)
+    44, `word.py` 111, `word.test.mjs` 78 groups (the formula field), `eqtab.py` 159, `tabs.py`
+    127, `agent.py` 143, `npm test` passed; of 17169 equations
+    of the corpus, sample and dev/bench all but 334 (text between dollars, babel's quotes,
+    `\frac{1}m`) live in the Linear box and byte for byte after a space typed.
     Left: the ribbon's buttons are 32 by 30 px on a phone on every tab (the ribbon's own rule);
-    Link to Previous; Formula's cell names do not follow rows added above.
+    Link to Previous; the second view of Split does not take typing (a press there puts the caret
+    in the top view); a formula line in a table that holds a table does not come back from Word.
 
 ## Open tasks
 
