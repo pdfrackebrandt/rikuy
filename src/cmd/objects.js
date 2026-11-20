@@ -69,14 +69,16 @@ register(
     run: (app, args) => (args && args.arrow ? app.shapeSet('arrow', args.arrow) : app.shapeLineMenu('arrow')) }),
   S('shape-text', 'Edit Text', { title: 'Edit Text: words in the shape, at its middle (\\node at (x,y) {…}); empty takes them off', tab: 'shape-format', group: 'text', order: 10, icon: ICON.text, label: 'Edit Text',
     synonyms: ['Add text', 'Text in shape', 'Label shape'], menu: { shape: 10 }, run: (app, args) => (args && 'text' in args ? app.shapeText(args.text) : app.shapeTextDialog()) }),
-  S('shape-forward', 'Bring Forward', { title: 'Bring Forward: the shape selected in the drawing over the one above it (drawn later); the arrow for Bring to Front', tab: 'shape-format', group: 'arrange', order: 30, kind: 'split', icon: ICON.forward, label: 'Bring Forward',
+  S('shape-forward', 'Bring Forward', { title: 'Bring Forward: the shape selected in the drawing over the one above it (drawn later)', tab: 'shape-format', group: 'arrange', order: 30, icon: ICON.forward, label: 'Bring Forward',
     synonyms: ['Move forward', 'Order', 'Z order'], when: (app) => app.shapeCanOrder('forward'), whyNot: (app) => app.shapeOrderWhy(), menu: { shape: 60 },
-    run: (app) => app.shapeOrder('forward'), menuItems: () => [{ name: 'Bring Forward', command: 'shape-forward' }, { name: 'Bring to Front', command: 'shape-front' }] }),
-  S('shape-backward', 'Send Backward', { title: 'Send Backward: the shape selected in the drawing under the one below it (drawn earlier); the arrow for Send to Back', tab: 'shape-format', group: 'arrange', order: 40, kind: 'split', icon: ICON.backward, label: 'Send Backward',
+    run: (app) => app.shapeOrder('forward') }),
+  S('shape-backward', 'Send Backward', { title: 'Send Backward: the shape selected in the drawing under the one below it (drawn earlier)', tab: 'shape-format', group: 'arrange', order: 40, icon: ICON.backward, label: 'Send Backward',
     synonyms: ['Move backward', 'Order'], when: (app) => app.shapeCanOrder('backward'), whyNot: (app) => app.shapeOrderWhy(), menu: { shape: 61 },
-    run: (app) => app.shapeOrder('backward'), menuItems: () => [{ name: 'Send Backward', command: 'shape-backward' }, { name: 'Send to Back', command: 'shape-back' }] }),
-  S('shape-front', 'Bring to Front', { title: 'Bring to Front: the shape selected drawn last, over every other', when: (app) => app.shapeCanOrder('front'), whyNot: (app) => app.shapeOrderWhy(), run: (app) => app.shapeOrder('front') }),
-  S('shape-back', 'Send to Back', { title: 'Send to Back: the shape selected drawn first, under every other', when: (app) => app.shapeCanOrder('back'), whyNot: (app) => app.shapeOrderWhy(), run: (app) => app.shapeOrder('back') }),
+    run: (app) => app.shapeOrder('backward') }),
+  // (Word's split buttons' second halves: in the right click menu and the search box; split buttons
+  // in a column of three made the group wider at 870 px than at 860, test/tabs.py's fold sweep)
+  S('shape-front', 'Bring to Front', { menu: { shape: 62 }, title: 'Bring to Front: the shape selected drawn last, over every other', when: (app) => app.shapeCanOrder('front'), whyNot: (app) => app.shapeOrderWhy(), run: (app) => app.shapeOrder('front') }),
+  S('shape-back', 'Send to Back', { menu: { shape: 63 }, title: 'Send to Back: the shape selected drawn first, under every other', when: (app) => app.shapeCanOrder('back'), whyNot: (app) => app.shapeOrderWhy(), run: (app) => app.shapeOrder('back') }),
   S('shape-height', 'Shape Height', { title: 'Shape Height in cm: Enter sets it, the drawing scaled to it (scale=, or xscale= and yscale= when only one changes)', tab: 'shape-format', group: 'size', order: 10, kind: 'custom', role: 'spinbutton', el: 'rc-shape-height',
     synonyms: ['Drawing height'], render: (app) => app.objField('shape', 'height'), sync: (app) => app.objFieldSync('shape', 'height'), run: (app, args) => (args && args.cm ? app.shapeResize('height', args.cm) : app.objFieldFocus('rc-shape-height')) }),
   S('shape-width', 'Shape Width', { title: 'Shape Width in cm: Enter sets it, the drawing scaled to it', tab: 'shape-format', group: 'size', order: 20, kind: 'custom', role: 'spinbutton', el: 'rc-shape-width',
@@ -132,6 +134,27 @@ register(
     synonyms: ['Border color', 'Outline colour'], run: (app, args) => (args && 'color' in args ? app.objApply(O.smartBorder(sel(app, 'smart').text, args.color || null, app.objEol())) : app.objColorMenu('smart-outline')) }),
   SM('smart-source', 'Show SmartArt Source', { title: 'The diagram\'s smartdiagram, to edit as LaTeX', menu: { smart: 90 }, synonyms: ['Edit smartdiagram'], run: (app) => app.objSource() })
 );
+// ---- Arrange: Position and Align (a drawing, a chart, a SmartArt; Align a picture too) ---------------
+const PLACES = [['In Line with Text', { mode: 'inline' }, 'In a center of its own, where it is written (no float)'], ['Best Place', { mode: 'float', place: 'htbp' }, 'A figure LaTeX places where it fits best ([htbp])'],
+  ['Top of Page', { mode: 'float', place: 't' }, '[t]'], ['Bottom of Page', { mode: 'float', place: 'b' }, '[b]'], ['Page of Floats', { mode: 'float', place: 'p' }, '[p]'], ['Here If It Fits', { mode: 'float', place: 'h' }, '[h]'],
+  ['Exactly Here', { mode: 'float', place: 'H' }, '[H], the float package'], ['Left with Text Wrapping', { mode: 'wrap', side: 'l' }, 'wrapfig, {l}, at its own width'], ['Right with Text Wrapping', { mode: 'wrap', side: 'r' }, 'wrapfig, {r}, at its own width']];
+const ARR = '<path d="M3.5 3.5h13v13h-13z"/><path d="M6 6h4v4H6z" style="fill:currentColor;stroke:none" opacity=".45"/><path d="M12 7h2.5M12 9.5h2.5M6 13h8.5"/>';
+const ALIGN = '<path d="M3 3v14M6 5.5h8v3H6zM6 11.5h11v3H6z"/>';
+// what Align and Position act on: the object selected, or the picture
+const target = (app) => { const o = app.objHere ? app.objHere() : null; if (o) return { f: o.f, s: o.s, e: o.e, obj: true }; const h = app.picHere ? app.picHere() : null; return h ? { f: h.f, s: h.P.s, e: h.P.e, h } : null; };
+const alignNow = (app) => { const t = target(app); return t ? O.alignOf(app.src(t.f), t.s, t.e) : null; };
+register(
+  { id: 'object-position', name: 'Position', title: 'Position: in line with the text (a center), a figure placed at the top or bottom of a page or here, or at a side with the text wrapping round it (wrapfig)', tab: 'shape-format', group: 'arrange', order: 10, kind: 'menu', icon: ARR, label: 'Position',
+    also: [{ tab: 'chart-format', group: 'arrange', el: 'rc-object-position-chart', order: 10 }, { tab: 'smart-format', group: 'arrange', el: 'rc-object-position-smart', order: 10 }],
+    synonyms: ['Float', 'Wrap text', 'Placement', 'figure', 'wrapfigure'], menu: { shape: 70, chart: 70, smart: 70 }, when: (app) => !!sel(app), whyNot: () => 'Select a drawing, chart or SmartArt first.',
+    run: (app, args) => (args && args.mode ? app.objPosition(args) : app.objPositionMenu()) },
+  { id: 'object-align', name: 'Align', title: 'Align: the object or picture at the left, the middle or the right of the line (flushleft, center, flushright; in a figure \\raggedright, \\centering, \\raggedleft)', tab: 'layout', group: 'arrange', order: 40, kind: 'menu', icon: ALIGN, label: 'Align',
+    also: [{ tab: 'picture-format', group: 'arrange', el: 'rc-object-align-pic', order: 40 }, { tab: 'shape-format', group: 'arrange', el: 'rc-object-align-shape', order: 20 }, { tab: 'chart-format', group: 'arrange', el: 'rc-object-align-chart', order: 20 }, { tab: 'smart-format', group: 'arrange', el: 'rc-object-align-smart', order: 20 }],
+    synonyms: ['Align objects', 'Align left', 'Align center', 'Align right', 'flushleft', 'flushright'], menu: { shape: 71, chart: 71, smart: 71, picture: 45 }, when: (app) => !!alignNow(app),
+    whyNot: (app) => (target(app) ? 'It stands in a paragraph of words: put it in a paragraph of its own first.' : 'Select a picture, drawing, chart or SmartArt first.'),
+    run: (app, args) => (args && args.align ? app.objAlign(args.align) : app.objAlignMenu()) }
+);
+
 // Word's Selection Pane, on Layout's Arrange and every object's (src/ui/selpane.js)
 const SELPANE = '<path d="M3.5 4h13v12h-13z"/><path d="M6 7h5M6 10h5M6 13h5"/><path d="M13.5 7h.01M13.5 10h.01M13.5 13h.01" stroke-width="2"/>';
 register({ id: 'selection-pane', name: 'Selection Pane', title: 'Selection Pane: every figure, table, picture, drawing, chart, SmartArt and equation, to go to, rename (its \\label and every reference to it) or hide on the page', tab: 'layout', group: 'arrange', order: 50, icon: SELPANE, label: 'Selection Pane',
@@ -228,7 +251,7 @@ export const methods = {
     return true;
   },
   // a menu's place: its button on the ribbon, or the object
-  objAnchor(id) { const b = document.getElementById('rc-' + id); const o = this.objHere(); return b && b.offsetParent ? b : o ? o.el : this.root; },
+  objAnchor(id) { const b = [...document.querySelectorAll('[data-cmd="' + id + '"]')].find((x) => x.offsetParent) || document.getElementById('rc-' + id); const o = this.objHere(); const h = !o && this.picHere ? this.picHere() : null; return b && b.offsetParent ? b : o ? o.el : h ? h.el : this.root; },
   // Word's colour grid: the theme's colours and their tints and shades, as xcolor names
   objColorMenu(what) {
     const o = this.objHere();
@@ -423,6 +446,53 @@ export const methods = {
     const def = ['red!40', 'cyan!40', 'blue!40', 'green!40', 'orange!40'];
     const tile = (cols) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + cols.slice(0, 3).map((c, i) => '<rect x="' + (1.5 + i * 6) + '" y="7" width="5" height="6" rx="1" style="fill:#' + SWATCH(c) + ';stroke:#5a5a5a;stroke-width:.5"/>').join('') + '</svg>';
     openGallery(this, this.objAnchor('smart-colors'), O.SMART_PALETTES.map(([id, name, cols]) => ({ name, checked: I.palette === id, html: tile(cols || def), run: () => this.smartColors(id) })), { label: 'Change Colors', columns: 4 });
+    return true;
+  },
+
+  // ---- Arrange ---------------------------------------------------------------------------------------------
+  // absolute edits round the object (its block's head and end), its packages, and the object found
+  // again where it now starts
+  objArrange(edits, packages) {
+    const t = target(this);
+    if (!t || !edits) return false;
+    if (edits.error) { this.toast(edits.error, 6000); return false; }
+    if (!edits.length) return false;
+    const E = edits.map((x) => ({ f: t.f, ...x }));
+    if (t.h) return this.picApply(t.h, { edits, packages });
+    const pk = this.picPackages(packages || []);
+    const shift = (p, inclusive) => p + [...E, ...pk].filter((x) => x.f === t.f && (inclusive ? x.e <= p : x.e < p)).reduce((a, x) => a + x.t.length - (x.e - x.s), 0);
+    const s = shift(t.s, true), e = shift(t.e, true);
+    this.closeGroup();
+    this.commit([...E, ...pk], { f: t.f, p: s, bias: 1 }, 'objfmt');
+    this.closeGroup();
+    this.shapeSel.info = { f: t.f, s, e };
+    this.ribbonSync();
+    return true;
+  },
+  objPosition(to) {
+    const t = target(this);
+    if (!t) return false;
+    const r = O.positionEdits(this.src(t.f), t.s, t.e, to);
+    return r.error ? (this.toast(r.error, 6000), false) : this.objArrange(r.edits, r.packages);
+  },
+  objPositionMenu() {
+    const t = target(this);
+    if (!t) return false;
+    const P = O.positionOf(this.src(t.f), t.s, t.e);
+    const on = (to) => to.mode === P.mode && (to.mode === 'inline' || (to.mode === 'float' ? (P.place || 'tbp').replace(/!/g, '') === to.place : P.side === to.side));
+    openMenu(this, this.objAnchor('object-position'), PLACES.map(([n, to, title]) => ({ name: n, title, radio: true, checked: on(to), run: () => this.objPosition(to) })), { label: 'Position' });
+    return true;
+  },
+  objAlign(how) {
+    const t = target(this);
+    if (!t) return false;
+    return this.objArrange(O.alignEdits(this.src(t.f), t.s, t.e, how), []);
+  },
+  objAlignMenu() {
+    const A = alignNow(this);
+    if (!A) return false;
+    const b = document.getElementById('rc-object-align');
+    openMenu(this, b && b.offsetParent ? b : this.objAnchor('object-align'), [['left', 'Align Left'], ['center', 'Align Center'], ['right', 'Align Right']].map(([v, n]) => ({ name: n, radio: true, checked: A.align === v, run: () => this.objAlign(v) })), { label: 'Align' });
     return true;
   },
 
