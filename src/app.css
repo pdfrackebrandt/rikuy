@@ -1545,7 +1545,7 @@ body.nav-on.nav-outline #nav { width: 460px; }
    the Styles gallery keeps its place beside it. A phone's row, which scrolls, keeps one row of
    buttons a finger can press. */
 @media (min-width: 861px) {
-  .rb-grp[data-group="font"]:not(.folded) { flex-wrap: wrap; width: 276px; gap: 1px; align-content: center; align-self: stretch; }
+  .rb-grp[data-group="font"]:not(.folded) { flex-wrap: wrap; width: 276px; gap: 2px 0; align-content: center; align-self: stretch; }
   .rb-grp[data-group="font"] > .btn.icon, .rb-grp[data-group="font"] .rb-split > .btn.icon:not(.rb-x) { width: 24px; height: 21px; border-radius: 4px; }
   .rb-grp[data-group="font"] .rb-split > .btn.icon:not(.rb-x) { border-radius: 4px 0 0 4px; }
   .rb-grp[data-group="font"] .rb-split > .rb-x { width: 12px; height: 21px; border-radius: 0 4px 4px 0; }
@@ -1562,7 +1562,7 @@ body.nav-on.nav-outline #nav { width: 460px; }
 }
 @media (max-width: 860px) {
   /* (a little narrower than the row's other buttons: Home fits from 521 px with them) */
-  .rb-grp[data-group="font"] { gap: 1px; }
+  .rb-grp[data-group="font"] { gap: 0; }
   .rb-grp[data-group="font"] > .btn.icon, .rb-grp[data-group="font"] .rb-split > .btn.icon:not(.rb-x) { width: 28px; }
   .rb-grp[data-group="font"] .rb-split > .rb-x { width: 12px; }
   /* Bold, Italic and Underline first in the row, then the rest of the Font group, then the
@@ -1931,7 +1931,7 @@ body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outli
    is short (a wider window never shows fewer controls: tabs.py); a phone's row, which scrolls,
    keeps one row of buttons a finger can press. */
 @media (min-width: 861px) {
-  .rb-grp[data-group="paragraph"]:not(.lay):not(.folded) { flex-wrap: wrap; width: 224px; gap: 1px; align-content: center; align-self: stretch; }
+  .rb-grp[data-group="paragraph"]:not(.lay):not(.folded) { flex-wrap: wrap; width: 224px; gap: 2px 0; align-content: center; align-self: stretch; }
   .rb-grp[data-group="paragraph"]:not(.lay):not(.folded)::after { content: ""; order: 1; flex-basis: 100%; height: 0; }
   .rb-grp[data-group="paragraph"]:not(.lay) > [data-cmd^="align-"], .rb-grp[data-group="paragraph"]:not(.lay) > [data-cmd="justify"], .rb-grp[data-group="paragraph"]:not(.lay) > [data-cmd="line-spacing"],
   .rb-grp[data-group="paragraph"]:not(.lay) > .rb-split:has([data-cmd="shading"]), .rb-grp[data-group="paragraph"]:not(.lay) > .rb-split:has([data-cmd="borders"]) { order: 2; }
@@ -2624,6 +2624,17 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
   #rp-home .rb-grp[data-group="styles"] > .rb-glab { display: block; }
   .rb-tab, .rb-coll { min-height: 44px; }
   .rb-coll { width: 44px; }
-  #bar .btn, #bar .btn.icon, #bar .btn.undo-x { min-width: 44px; min-height: 44px; }
   .srch input { height: 44px; }
+}
+/* the bar's buttons and the search box a finger's 44 px, a phone's too (its row of them scrolls) */
+@media (pointer: coarse) {
+  #bar .btn, #bar .btn.icon, #bar .btn.undo-x { min-width: 44px; min-height: 44px; }
+  .rb .rb-grp .fbx-size .fbx-v { min-width: 44px; }
+}
+@media (pointer: coarse) and (max-width: 860px) {
+  .srch { width: 44px; min-width: 44px; }
+  .srch input { height: 44px; }
+  /* (the title row's end gives way first: its tools scroll, the search box keeps its 44 px) */
+  #bar { grid-template-columns: auto auto minmax(0, 1fr); }
+  .title-end { min-width: 0; flex: 1 1 auto; justify-content: flex-end; }
 }

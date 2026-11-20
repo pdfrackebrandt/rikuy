@@ -219,7 +219,8 @@ MEASURE = r"""(arg) => {
     if (vis(q)) {
       const s = getComputedStyle(q), inside = bgOf(q), outside = bgOf(document.getElementById('bar'));
       const ph = getComputedStyle(q, '::placeholder');
-      out.texts.push({ n: 'search placeholder', kind: 'field-text', size: s.fontSize, weight: s.fontWeight, lh: s.lineHeight, cr: ratio(seen(ph.color, q, inside), inside) });
+      // (a phone's search box is its magnifier until pressed: its words drawn in no colour)
+      if (parse(ph.color)[3] > 0) out.texts.push({ n: 'search placeholder', kind: 'field-text', size: s.fontSize, weight: s.fontWeight, lh: s.lineHeight, cr: ratio(seen(ph.color, q, inside), inside) });
       out.search = { line: ratio(parse(s.borderTopColor), outside), lineIn: ratio(parse(s.borderTopColor), inside), width: parseFloat(s.borderTopWidth),
         icon: ratio(parse(getComputedStyle(document.querySelector('.srch > svg')).stroke), inside) };
     }
@@ -309,6 +310,7 @@ def tab_states(page, tabs):
 def judge(S, where, m, touch, scope, scheme):
     """The rules on one scope's measures (those that hold within it)."""
     lo = 44 if touch else 24
+    phone = m['box']['w'] <= 860
     small = [c for c in m['controls'] if c['w'] < lo - 0.5 or c['h'] < lo - 0.5]
     for n in m['untagged']:
         S.bad('kind', where, n, 'no data-kind')
@@ -364,6 +366,9 @@ def judge(S, where, m, touch, scope, scheme):
         for j in range(i + 1, len(cs)):
             a, b = cs[i], cs[j]
             w = min(a['r'], b['r']) - max(a['l'], b['l']); h = min(a['b'], b['b']) - max(a['t'], b['t'])
+            # (a phone's row scrolls under its downloads, which stand at its end)
+            if phone and scope == 'ribbon' and (a['group'] == 'rb-dl') != (b['group'] == 'rb-dl'):
+                continue
             if w > 1.5 and h > 1.5:
                 S.bad('overlap', where, a['n'] + ' / ' + b['n'], '%.0fx%.0f' % (w, h))
     for c in m['clip']:
@@ -374,7 +379,9 @@ def judge(S, where, m, touch, scope, scheme):
     for x in m['motion']:
         if [d for d in x['t'] + x['a'] if d % 50 or d > 300]:
             S.bad('motion', where, x['n'], 'durations %s ms (%s)' % (x['t'] + x['a'], x['props']))
-    if scope != 'ribbon':
+    # (a phone's ribbon is one row of controls that scrolls, as Word's on a phone: no group names
+    # under it, its groups side by side as the row runs)
+    if scope != 'ribbon' or phone:
         return
     for g in m['groups']:
         if g['folded']:
