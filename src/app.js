@@ -1084,10 +1084,33 @@ class App {
       return;
     }
     if (document.activeElement !== this.root) this.root.focus({ preventScroll: true });
+    // (right after a formula, a citation or a reference that ends its line, with no text after it
+    // to hold the caret: after it in that line, where the page put it at the next paragraph's
+    // start, and End, Enter there split that paragraph; the live report of a heading's formula)
+    if (r.inexact) {
+      const A = [...this.root.querySelectorAll('.atom')].find((x) => { const i = atomOfEl(x); return i && i.f === c.f && i.e === c.p && !i.a.display; });
+      if (A && A.parentNode) {
+        const i = [...A.parentNode.childNodes].indexOf(A) + 1;
+        sel.collapse(A.parentNode, i);
+        this.pending = { f: c.f, p: c.p, node: A.parentNode, offset: i };
+        if (!quiet) this.scrollToCaret();
+        return;
+      }
+    }
     sel.collapse(r.node, r.offset);
     const back = posFromDom(r.node, r.offset, this.root);
     this.pending = back && back.p !== c.p ? { f: c.f, p: c.p, node: r.node, offset: r.offset } : null;
     if (!quiet) this.scrollToCaret();
+  }
+
+  // After a display closes (Enter, Esc, a click away), the caret where Word's would be: at the start
+  // of the words that go on after it in its paragraph, or else in a blank paragraph after it. What
+  // was typed next joined the equation's last line (\end{equation}After.). Closed by $$, as typed
+  // in the source, the paragraph goes on after it instead (dollarClosed).
+  caretAfterDisplay(rc) {
+    const src = this.src(rc.f), m = /^[ \t]*(\r?\n)?[ \t]*/.exec(src.slice(rc.p)), q = rc.p + m[0].length;
+    if (q < src.length && !/^(\r?\n|\\(begin|end|\[|item)\b|\\\[|%)/.test(src.slice(q))) { this.restoreCaret({ f: rc.f, p: q, bias: 1 }); return; }
+    this.ghostAt(rc.f, rc.p);
   }
 
   scrollToCaret() {
@@ -2812,6 +2835,7 @@ class App {
     P.el.remove();
     this.closeGroup();
     if (!silent && P.returnCaret) this.restoreCaret(P.returnCaret);
+    if (!silent && P.display && P.returnCaret && !P.removed && !P.dollarClosed) this.caretAfterDisplay(P.returnCaret);
     // Opened from a blank paragraph and closed with nothing made, or a document that so far
     // holds only what the popover made (a first formula) and has no text to put the caret in:
     // the caret goes to the blank paragraph, so typing goes on
@@ -3177,6 +3201,13 @@ class App {
     preview();
     const push = debounce(() => { if (this.pop && !held()) this.pop.applyInner(ta.value); }, 140);
     ta.addEventListener('input', () => { preview(); push(); ta.rows = Math.min(10, Math.max(display ? 3 : 1, ta.value.split('\n').length)); });
+    // (the closing $ with no key, from dictation, an on-screen keyboard or a script, as its key)
+    ta.addEventListener('beforeinput', (e) => {
+      if (e.data !== '$' || !(!display || (this.pop && this.pop.dollarClose)) || !dollarEnds(ta)) return;
+      e.preventDefault(); if (stay()) return; push.flush();
+      if (display) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; }
+      this.closePop();
+    });
     // a one line display made one of rows (Ctrl+Enter), as Word's: false, said why, where it cannot
     const toRows = () => {
       const P = this.pop;
@@ -3204,7 +3235,7 @@ class App {
       if (e.key === 'Enter' && (!display || fieldKeys || e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
       // (the closing $ of a formula in the line, as typed in the source; \$ stays a dollar sign)
-      if (e.key === '$' && (!display || (this.pop && this.pop.dollarClose)) && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); if (display) this.swallowDollar = performance.now(); this.closePop(); }
+      if (e.key === '$' && (!display || (this.pop && this.pop.dollarClose)) && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); if (display) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; } this.closePop(); }
       // \) or \] typed in the box ends a formula opened by \( or \[
       if (this.pop && this.pop.closer && e.key === this.pop.closer && /(^|[^\\])\\$/.test(ta.value.slice(0, ta.selectionStart))) {
         e.preventDefault(); ta.setRangeText('', ta.selectionStart - 1, ta.selectionStart, 'end'); ta.dispatchEvent(new Event('input'));
@@ -3256,7 +3287,7 @@ class App {
         if (check || !ok) return ok;
         if (stay()) return;
         push.flush();
-        if (display) this.swallowDollar = performance.now();
+        if (display) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; }
         this.closePop();
       },
       onEscape: () => { push.flush(); this.closePop(); }
@@ -3408,6 +3439,9 @@ class App {
     };
     ta.addEventListener('beforeinput', (e) => {
       if (emptyKey(e.data) || priceKey(e.data)) { e.preventDefault(); return; }
+      // (the closing $ that comes with no key, from dictation, an on-screen keyboard or a script:
+      // it went into the formula, and what followed with it)
+      if (e.data === '$' && !o.closer && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); return; }
       keys++;
     });
     ta.addEventListener('input', () => { preview(); push(); });
@@ -3490,6 +3524,14 @@ class App {
     if (c.ghost ? this.ghostRaw() : this.texHere()) return;
     // in the blank paragraph of a new document too (the ribbon's Equation is pressed there)
     if (c.ghost) { c = { f: this.ghost.f, a: this.ghost.pos }; this.removeGhost(); }
+    else {
+      // never inside a command's argument (a document got \section{The exact PDF\n\begin{equation}…}):
+      // a heading's goes after the heading and its label; in a caption, a footnote or another
+      // command's braces a formula in the line is made instead
+      const B = this.blockBase({ f: c.f, a: c.a, b: c.a }, true);
+      if (B === false) { this.newMath(); return; }
+      if (B && B.a !== c.a) { c = { f: c.f, a: B.a }; this.restoreCaret({ f: c.f, p: c.a }, true); }
+    }
     // (a file written with CRLF keeps them; a kind of amsmath's brings it, in the same step)
     const nl = eolAt(this.src(c.f), c.a);
     const t = (env === '\\[' ? nl + '\\[' + nl + '  ' + nl + '\\]' : nl + '\\begin{' + env + '}' + nl + '  ' + nl + '\\end{' + env + '}') + nl;
@@ -3521,6 +3563,7 @@ class App {
         this.pushToSource(); this.saveSoon(); this.updateUndoUI();
       } else this.commit([{ f: c.f, s: c.a, e: c.a + t.length, t: '' }], null, P.session);
       P.returnCaret = { f: c.f, p: c.a };
+      P.removed = true;
     };
   }
 
@@ -3794,7 +3837,7 @@ class App {
   // base as it is; after the heading it was typed in, and the heading's \label; inside another
   // command's argument (a caption, the title, a footnote), where it broke the command, nowhere
   // (false), said why. A bare group, {\bf ...}, takes it as the paragraph would.
-  blockBase(base) {
+  blockBase(base, quiet) {
     if (!base) return base;
     const src = this.src(base.f), B = this.renderer && this.renderer.blocks.find((x) => x.f === base.f && x.s <= base.a && base.a <= x.e);
     if (!B) return base;
@@ -3815,7 +3858,7 @@ class App {
       const p = B.e + (lab ? lab[0].length : 0);
       return { f: base.f, a: p, b: p };
     }
-    this.toast('Not inside \\' + name + '{…}: put the caret after it, then the block.', 5000);
+    if (!quiet) this.toast('Not inside \\' + name + '{…}: put the caret after it, then the block.', 5000);
     return false;
   }
   // What was typed in the insert list as a command of its own (POWER-USER.md 10): it was written
@@ -3912,7 +3955,10 @@ class App {
       // (a raw command keeps its case, \O and \Gamma; one letter matches names only, as \o Enter
       // wrote \footnote{} where "Footnote" holds an o; review L5)
       const typed = inp.value.replace(/^\\/, '').trim(), q = typed.toLowerCase();
-      shown = items.filter((x) => !q || x.k.startsWith(q) || (q.length > 1 && x.d.toLowerCase().includes(q)));
+      // (a name typed whole first, then names it starts, then descriptions: "equation" Enter took
+      // \eqref, whose description, Equation reference, comes earlier in the list)
+      const rank = (x) => (!q ? 1 : x.k === q ? 0 : x.k.startsWith(q) ? 1 : 2);
+      shown = items.filter((x) => !q || x.k.startsWith(q) || (q.length > 1 && x.d.toLowerCase().includes(q))).sort((a, b) => rank(a) - rank(b));
       if (q && !shown.some((x) => x.k === typed)) shown = [...shown, { k: typed, d: 'Insert \\' + typed + ' as typed', raw: true }];
       hi = Math.min(hi, shown.length - 1);
       list.replaceChildren();

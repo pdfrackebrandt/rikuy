@@ -884,10 +884,31 @@ export function installWordTyping(mf, opts) {
   };
   mf.addEventListener('compositionstart', () => { if (arg) toBox(''); }, true);
   // (the person's input only: the field's own, Ctrl+Enter's row, comes untrusted; review N1)
+  // Characters that come with no key of their own (an on-screen keyboard that sends none, dictation,
+  // a script typing at full speed) go through the same rules as typed keys, one by one: \frac{,
+  // $ and the rest went into the field as they stood (\backslash frac\lbrace…). A key the page
+  // saw (sawKey) is the field's as before.
+  let sawKey = null;
+  mf.addEventListener('keydown', (e) => { sawKey = e.isTrusted && e.key.length === 1 ? e.key : null; }, true);
+  mf.addEventListener('keyup', () => { sawKey = null; }, true);
   mf.addEventListener('beforeinput', (e) => {
-    if (!arg || !e.isTrusted || e.isComposing || !/^insert/.test(e.inputType || '')) return;
+    if (!e.isTrusted || e.isComposing || !/^insert/.test(e.inputType || '')) return;
+    if (arg) { e.preventDefault(); e.stopImmediatePropagation(); toBox(e.data || ''); return; }
+    const data = e.inputType === 'insertText' ? e.data || '' : '';
+    if (!data || (data.length === 1 && data === sawKey)) { sawKey = null; return; }
+    sawKey = null;
+    const keyOf = (ch) => {
+      const k = new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true, composed: true });
+      mf.dispatchEvent(k);
+      return k.defaultPrevented;
+    };
+    // one character the rules leave alone goes in as the field takes it; more, one by one
+    if (data.length === 1) { if (keyOf(data)) { e.preventDefault(); e.stopImmediatePropagation(); } return; }
     e.preventDefault(); e.stopImmediatePropagation();
-    toBox(e.data || '');
+    for (const ch of data) {
+      if (arg) { toBox(ch); continue; }
+      if (!keyOf(ch)) { try { mf.executeCommand(['typedText', ch]); } catch (err) { put(ch); } }
+    }
   }, true);
   mf.addEventListener('pointerdown', () => { groups = []; }, true);
   mf.addEventListener('blur', () => { if (buf != null) cancel(); if (arg) argDone(); });
