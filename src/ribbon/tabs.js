@@ -332,9 +332,10 @@ export const tabs = {
 
   // The open tab's room (see the top of this file), one rule for every tab and width: everything
   // open first, then while the row is longer than the window one step at a time, the cheapest loss
-  // first, counted in controls: what takes none (the Download caption, the buttons' names, which
-  // stay their accessible names); then a tile of the Styles gallery at a time, down to three; the
-  // three downloads as one Download button; the style list in the gallery's place; then the
+  // first, counted in controls: what takes none (the Download caption; a laid out group's large
+  // buttons made small, then its names, see below), then a tile of the Styles gallery at a time,
+  // down to three; the three downloads as one Download button; the buttons' names, which stay
+  // their accessible names; the style list in the gallery's place; then the
   // groups, the least needed (rank 1, Editing on Home) and then the lowest rank first, of equal
   // ranks the rightmost. A folded group is one button, its first command's icon (or its name where
   // none has one), named after the group, that opens a menu of its commands. Below 861 px the
@@ -367,33 +368,45 @@ export const tabs = {
     const fold = (g) => ({ do: () => g.classList.add('folded', ...(g.querySelector('.rb-gico') ? ['ico'] : [])), undo: () => g.classList.remove('folded', 'ico') });
     const spare = foldsGroups() ? groups.filter((g) => g.dataset.spare).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
     const steps = [...spare.map(fold), flag('rb-nolab')];
-    // (a laid out group, from 900 px, gives way as Word's do: its large buttons small, the least
-    // needed group first, every group; then its names, the same way. Neither takes a control, so
-    // all of it goes before any group folds. src/ribbon/layout.js)
+    // (a laid out group, from 900 px with a mouse, gives way as Word's do: its large buttons small,
+    // the least needed group first; then its names, the same way. Neither takes a control, so all
+    // of it goes before any group folds. src/ribbon/layout.js)
     const lay = wideLay() ? groups.filter((g) => g.classList.contains('lay')).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
     // (a group's large buttons made small only where that is narrower: one large button with a
     // name over two lines is narrower than the same as a small one, and every step must take room)
-    const small = (g) => ({ do: () => { const w = g.offsetWidth; g.classList.add('sm'); if (g.offsetWidth >= w) g.classList.remove('sm'); }, undo: () => g.classList.remove('sm') });
-    const bare = (g) => ({ do: () => g.classList.add('nm'), undo: () => g.classList.remove('nm') });
+    const small = (g) => ({ chain: 'small', do: () => { const w = g.offsetWidth; g.classList.add('sm'); if (g.offsetWidth >= w) g.classList.remove('sm'); }, undo: () => g.classList.remove('sm') });
+    const bare = (g) => ({ chain: 'names', do: () => g.classList.add('nm'), undo: () => g.classList.remove('nm') });
     // (and a group of one large button keeps its name: it would save next to nothing, and Word
     // keeps such a group large until it folds)
-    steps.push(...lay.map(small), ...lay.filter((g) => g.querySelectorAll(':scope > [data-size]').length > 1).map(bare));
-    // (the tiles one at a time: each undone only after the one after it, chain; down to three
-    // before the buttons' names go, so a desktop keeps them; and the names in the chain too: a
-    // tile given back for names lost showed more controls than a wider window)
-    if (gal && wide) for (const n of [5, 4, 3]) steps.push({ do: () => tiles(n), undo: () => tiles(n + 1), chain: true });
-    steps.push({ ...flag('rb-fold'), chain: true }, flag('rb-dl1'));
+    const named = lay.filter((g) => g.querySelectorAll(':scope > [data-size]').length > 1);
+    steps.push(...lay.map(small));
+    // Two chains, each given back from its last step only (ribbonFit's pass back): a step comes
+    // back only once every later step of its chain has, so a group of higher rank is never smaller
+    // than one of lower rank and a wider window never shows fewer names. The large buttons made
+    // small are one chain. The names are the other: the less needed groups' names (below rank 4),
+    // then the gallery's tiles one at a time down to three (Home), then the three downloads as one
+    // Download button (Word spends no room on them), then the names of the groups that matter
+    // most, then every button's name (rb-fold).
+    // (Where no group is laid out, Home and any narrower row, the downloads go after the names, on
+    // their own: below 861 px the style sheet takes the names for nothing, and a row a little
+    // wider that gave two downloads for the names would show fewer controls)
+    steps.push(...named.filter((g) => g.dataset.rank < 4).map(bare));
+    if (gal && wide) for (const n of [5, 4, 3]) steps.push({ do: () => tiles(n), undo: () => tiles(n + 1), chain: 'names' });
+    if (lay.length) steps.push({ ...flag('rb-dl1'), chain: 'names' });
+    steps.push(...named.filter((g) => g.dataset.rank >= 4).map(bare));
+    steps.push({ ...flag('rb-fold'), chain: 'names' });
+    if (!lay.length) steps.push(flag('rb-dl1'));
     if (gal && wide) steps.push(flag('rb-narrow'));
     const order = foldsGroups() ? [...groups].filter((g) => !g.dataset.spare).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
     for (const g of order) steps.push(fold(g));
     let k = 0;
     while (k < steps.length && !fits()) steps[k++].do();
-    let chain = true;
+    const held = new Set();
     for (let i = k - 1; i >= 0; i--) {
       const st = steps[i];
-      if (st.chain && !chain) continue;
+      if (st.chain && held.has(st.chain)) continue;
       st.undo();
-      if (!fits()) { st.do(); if (st.chain) chain = false; }
+      if (!fits()) { st.do(); if (st.chain) held.add(st.chain); }
     }
     this.rbFitting = false;
     this.ribbonRove();
