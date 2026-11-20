@@ -1343,12 +1343,18 @@ class App {
       const F = this.footnoteHere(), c = F && this.caretNow();
       if (F && (e.key === 'Escape' || (c && c.collapsed && c.a >= (F.ie != null ? F.ie : F.e - 1)))) { e.preventDefault(); this.leaveFootnote(F); return; }
     }
+    // (Esc, then Tab, leaves the page, as it leaves the source pane: the keyboard's way out)
+    const tabOut = this.tabOut;
+    if (e.key !== 'Shift') this.tabOut = false;
     if (e.key === 'Tab') {
       const n = getSelection().anchorNode;
       const el = n && (n.nodeType === 1 ? n : n.parentElement);
       if (el && el.closest('td')) { e.preventDefault(); this.tabCell(e.shiftKey); return; }
+      // Tab keeps the keyboard on the page, as Word's: it went to the status bar or the PDF's
+      // engine list, where the next letters picked an engine (POWER-USER.md 6)
+      if (!mod && !e.altKey && !tabOut && !e.defaultPrevented) { e.preventDefault(); this.tabOnPage(e.shiftKey); return; }
     }
-    if (e.key === 'Escape') { this.disarm(); }
+    if (e.key === 'Escape') { this.disarm(); this.tabOut = true; }
     // Word's Shift+Enter: a line break inside the paragraph (\\), not a new paragraph
     if (e.key === 'Enter' && e.shiftKey && !mod && !e.altKey && !this.armed) { e.preventDefault(); this.enter(true); return; }
     // Enter on an equation, citation or block that Backspace selected opens it, as a click does:
@@ -2378,6 +2384,25 @@ class App {
     this.scrollToCaret();
     return true;
   }
+  // Tab on the page outside a table, a list or tab stops (those have their own): at a paragraph's
+  // start Word's first line indent (Shift+Tab: none, \noindent), elsewhere a gap as a tab
+  // leaves one (\quad); nothing in a heading, a caption, the title or a LaTeX paragraph
+  tabOnPage(back) {
+    const at = this.ribbonAt(), c = at && at.c;
+    if (!c || c.ghost || !c.collapsed || at.cell || (at.it && at.it.dataset.li) || /^(h|cap|ttl|tex|li)$/.test(at.ctx || '') || this.texAt(c.f, c.a)) return false;
+    const sel = getSelection();
+    let start = false;
+    if (at.it && sel.rangeCount) {
+      const r = document.createRange();
+      try { r.setStart(at.it, 0); r.setEnd(sel.anchorNode, sel.anchorOffset); start = !r.toString().replace(/[\u200B\s]/g, ''); } catch (e) { start = false; }
+    }
+    if (start) return this.paraFirstLineKey(back, at);
+    if (back) return false;
+    const t = '\\quad' + (/[A-Za-z]/.test(this.src(c.f)[c.a] || '') ? ' ' : '');
+    this.commit([{ f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a + t.length, bias: 1 }, 'type');
+    return true;
+  }
+
   // Ctrl+End, as Word's: the end of the text, never the footnotes under the last page's lines
   textEnd(extend) {
     const spans = this.root.querySelectorAll('.flow span.t');
