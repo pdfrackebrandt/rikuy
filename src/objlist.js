@@ -37,6 +37,9 @@ export function objectList(files, order) {
     const begin = src.indexOf('\\begin{document}');
     let nodes;
     try { nodes = parse(src); } catch (e) { continue; }
+    // (a \label in a comment is none: the labels read as the renaming reads them)
+    const labs = scanRefs(src).labels;
+    const labelIn = (src2, a, z) => { const l = labs.find((x) => x.s > a && x.e < z); return l ? { key: l.key, s: l.s, e: l.e } : null; };
     const add = (kind, n, caption, label, inside) => out.push({ kind, f, s: n.s, e: n.e, caption, label, inside });
     const walk = (list, inFloat, depth) => {
       if (depth > 60) return;
@@ -86,8 +89,58 @@ function findCmd(list, name, depth = 0) {
   return null;
 }
 
-// the commands whose argument names labels (cleveref's take several, comma separated)
-const REFS = /\\(ref|eqref|pageref|autoref|nameref|vref|cref|Cref|cpageref|Cpageref|crefrange|Crefrange|labelcref|namecref|nameCref|hyperref)\*?\s*(\[[^\]]{0,200}\])?\{([^{}]{0,400})\}/g;
+// the commands whose arguments name labels (cleveref's take several, comma separated; the range
+// commands two; hyperref's \hyperref its optional argument; subcaption's \subref; fancyref's)
+const REF_CMDS = new Set(['ref', 'eqref', 'pageref', 'autoref', 'autopageref', 'nameref', 'vref', 'Vref', 'vpageref', 'cref', 'Cref', 'cpageref', 'Cpageref', 'crefrange', 'Crefrange',
+  'cpagerefrange', 'Cpagerefrange', 'labelcref', 'namecref', 'nameCref', 'namecrefs', 'nameCrefs', 'lcnamecref', 'lcnamecrefs', 'subref', 'fref', 'Fref', 'hyperref', 'zref', 'zcref', 'zpageref']);
+const MATH_RAW = /^(equation|align|gather|multline|flalign|eqnarray|alignat|split|aligned|gathered)\*?$/;
+// Every \label and every reference to one in a file, with where its key is: { labels, refs }, each
+// [{ key, s, e }]. Read on the parser's tree: nothing in a comment, nothing in verbatim, listings or
+// minted; in a display's raw text (an equation's \label, an \eqref in an align) by its own scan.
+export function scanRefs(src) {
+  const labels = [], refs = [];
+  const keys = (is, ie, into) => {
+    const t = src.slice(is, ie);
+    let k = is;
+    for (const part of t.split(',')) { const lead = part.length - part.trimStart().length, key = part.trim(); if (key) into.push({ key, s: k + lead, e: k + lead + key.length }); k += part.length + 1; }
+  };
+  // (an equation's text as the parser keeps it, raw: its own \label and references, comments out)
+  const scanRaw = (s, e) => {
+    const re = /%[^\n]*|\\(label|[a-zA-Z]+)\*?\s*(\[[^\]{}]{0,200}\])?\{([^{}]{0,400})\}/g;
+    re.lastIndex = s;
+    let m;
+    while ((m = re.exec(src)) && m.index < e) {
+      if (m[0][0] === '%') continue;
+      const ks = m.index + m[0].lastIndexOf('{') + 1;
+      if (m[1] === 'label') labels.push({ key: m[3], s: ks, e: ks + m[3].length });
+      else if (REF_CMDS.has(m[1])) keys(ks, ks + m[3].length, refs);
+    }
+  };
+  const walk = (list, depth) => {
+    if (!list || depth > 80) return;
+    for (const n of list) {
+      if (n.t === 'comment') continue;
+      if (n.t === 'math') { scanRaw(n.s, n.e); continue; }
+      if (n.t === 'env' && n.raw) { if (MATH_RAW.test(n.name)) scanRaw(n.s, n.e); continue; }
+      if (n.t === 'cmd') {
+        if (n.name === 'label') { const a = (n.args || []).find((x) => x && !x.o); if (a) labels.push({ key: src.slice(a.is, a.ie), s: a.is, e: a.ie }); continue; }
+        if (REF_CMDS.has(n.name)) {
+          const args = (n.args || []).filter(Boolean);
+          // (\hyperref[key]{words}: the optional one names it; the others: every mandatory one)
+          const named = n.name === 'hyperref' ? args.filter((x) => x.o) : args.filter((x) => !x.o);
+          for (const a of named) keys(a.is, a.ie, refs);
+          if (n.name === 'hyperref') for (const a of args.filter((x) => !x.o)) walk(a.nodes, depth + 1);
+          continue;
+        }
+        for (const a of n.args || []) if (a && a.nodes) walk(a.nodes, depth + 1);
+        continue;
+      }
+      if (n.nodes) walk(n.nodes, depth + 1);
+    }
+  };
+  walk(parse(src), 0);
+  return { labels, refs };
+}
 // A label renamed: its \label and every reference to it, in every file: [{ f, s, e, t }], or
 // { error } where the new name is taken or no name
 export function renameLabel(files, from, to) {
@@ -97,22 +150,12 @@ export function renameLabel(files, from, to) {
   const edits = [];
   for (const [f, src] of files) {
     if (typeof src !== 'string' || !/\.tex$/i.test(f)) continue;
-    const lab = /\\label\s*\{([^{}]{0,200})\}/g;
-    let m;
-    while ((m = lab.exec(src))) {
-      if (m[1] === to) return { error: 'The name ' + to + ' is taken already (' + f + ').' };
-      if (m[1] === from) { const s = m.index + m[0].indexOf('{') + 1; edits.push({ f, s, e: s + from.length, t: to }); }
+    const R = scanRefs(src);
+    for (const l of R.labels) {
+      if (l.key === to) return { error: 'The name ' + to + ' is taken already (' + f + ').' };
+      if (l.key === from) edits.push({ f, s: l.s, e: l.e, t: to });
     }
-    REFS.lastIndex = 0;
-    while ((m = REFS.exec(src))) {
-      const s0 = m.index + m[0].lastIndexOf('{') + 1;
-      let k = s0;
-      for (const part of m[3].split(',')) {
-        const lead = part.length - part.trimStart().length, key = part.trim();
-        if (key === from) edits.push({ f, s: k + lead, e: k + lead + key.length, t: to });
-        k += part.length + 1;
-      }
-    }
+    for (const r of R.refs) if (r.key === from) edits.push({ f, s: r.s, e: r.e, t: to });
   }
   return edits;
 }

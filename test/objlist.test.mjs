@@ -50,4 +50,19 @@ ok('where a name goes: after a float\'s caption, before an equation\'s end; none
   assert.equal(L.plainText('A \\emph{very} $x^2$ \\cite{k} test~one'), 'A very x^2 test one');
 });
 
+ok('review M6: \\crefrange\'s second key, \\hyperref[..], \\subref, fancyref; nothing in verbatim or a comment', () => {
+  const T = 'A \\crefrange{fig:x}{fig:a} and \\hyperref[fig:a]{the figure}, \\subref{fig:a}, \\fref{fig:a}, \\Cpageref{fig:a}.\n'
+    + '\\begin{verbatim}\\ref{fig:a}\\end{verbatim}\n% \\label{fig:b} in a comment\n\\begin{align}x \\label{eq:z} % \\ref{fig:a}\n\\end{align} $\\eqref{eq:z}$\n\\label{fig:a}';
+  const f = new Map([['m.tex', T]]);
+  const E = L.renameLabel(f, 'fig:a', 'fig:sun');
+  const after = apply(f, E).get('m.tex');
+  assert.equal(after, T.replace(/fig:a\}\{fig:a\}/, 'fig:a}{fig:sun}').replace('hyperref[fig:a]', 'hyperref[fig:sun]').replace('subref{fig:a}', 'subref{fig:sun}').replace('fref{fig:a}', 'fref{fig:sun}')
+    .replace('Cpageref{fig:a}', 'Cpageref{fig:sun}').replace('\\label{fig:a}', '\\label{fig:sun}').replace('\\crefrange{fig:x}{fig:a}', '\\crefrange{fig:x}{fig:sun}'));
+  assert.ok(after.includes('\\begin{verbatim}\\ref{fig:a}\\end{verbatim}') && after.includes('% \\ref{fig:a}'));
+  // a label in a comment is no name taken; one in an equation is
+  assert.deepEqual(L.renameLabel(f, 'fig:a', 'fig:b').length, 6);
+  assert.ok(L.renameLabel(f, 'fig:a', 'eq:z').error);
+  assert.equal(apply(f, L.renameLabel(f, 'eq:z', 'eq:w')).get('m.tex'), T.replace(/eq:z/g, 'eq:w'));
+});
+
 console.log('objlist: ' + n + ' groups passed');
