@@ -14,7 +14,7 @@ not needed are marked SPARE. The list is the same every time it is made from the
 Sources are never committed: dev/arxiv-ids.txt holds the identifiers and the main file of each,
 and corpus_full.py (CORPUS_LIST) compiles the papers with a main file.
 """
-import gzip, io, json, os, random, re, shutil, sys, tarfile, time, urllib.request
+import gzip, io, json, os, random, re, shutil, sys, tarfile, time, urllib.error, urllib.request
 
 API = 'https://export.arxiv.org/api/query?id_list=%s&max_results=100'
 EPRINT = 'https://arxiv.org/e-print/%s'
@@ -32,8 +32,18 @@ def get(url):
         time.sleep(wait)
     _last[0] = time.time()
     req = urllib.request.Request(url, headers={'User-Agent': UA})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        return r.read(), r.headers.get('Content-Type', '')
+    # arXiv answers 429 or 503 when it wants fewer requests (run 44728716263 stopped on one in
+    # the sample): wait as long as it says, at most 10 minutes, and try again, five times
+    for attempt in range(6):
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                return r.read(), r.headers.get('Content-Type', '')
+        except urllib.error.HTTPError as e:
+            if e.code not in (429, 503) or attempt == 5:
+                raise
+            after = e.headers.get('Retry-After', '')
+            time.sleep(min(600, int(after)) if after.isdigit() else 60 * (attempt + 1))
+            _last[0] = time.time()
 
 
 def months(year):
@@ -169,6 +179,10 @@ def fetch(ids_path, root):
         if not re.fullmatch(r'\d{4}\.\d{4,5}', pid):
             raise SystemExit('arxiv_corpus.py: %r in %s is not an arXiv identifier' % (pid, ids_path))
         year = 2000 + int(pid[:2])
+        # a paper chosen in an earlier run whose folder is not here (that run's cache gone) is
+        # fetched again, so a run started from an earlier run's sample needs no cache
+        if main not in ('-', 'SPARE', 'PDF-ONLY', 'NO-MAIN') and not os.path.isdir(os.path.join(root, pid)):
+            main = '-'
         if main in ('-', 'SPARE'):
             if have.get(year, 0) >= quota(year):
                 main = 'SPARE'

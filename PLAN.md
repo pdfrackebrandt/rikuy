@@ -3398,6 +3398,11 @@ Tests:
       cbfonts' `grmn` (the archaic koppa); the rest follow from a float or a page placed
       elsewhere. Not classified further without the PDFs (the workflow keeps none).
 
+    Third run, 44728716263 (2026-11-20, main 4063ad1, to measure the .bbl fix): stopped in its
+    first minutes, arXiv's listing answering 429 while the sample was drawn; nothing compiled.
+    Now `get` waits as arXiv asks and tries again, and `sources_from_run` compiles an earlier
+    run's sample again (its sources from that run's cache, or fetched again where gone), so a
+    third run measures the fix on the second run's 998 papers.
 66. **Everything that computes, in C or C++ for WebAssembly.** Planned, not started: asked for by
     the owner on 2026-11-20 ("even where the gain is small", after the UI and UX work).
     `docs/handoff/CPP-PLAN.md` has the inventory of `src/` and `tex/` by module, the batches B0 to
