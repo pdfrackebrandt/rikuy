@@ -575,7 +575,7 @@ body.pdf-on #pdfpane { display: flex; }
 .pdf-shell input { margin: 0; }
 @media (max-width: 1280px) { .pdf-shell { font-size: 0; gap: 0; } .pdf-shell::after { content: 'Shell'; font-size: 11.5px; margin-left: 3px; } }
 .pdf-prog { height: 3px; background: color-mix(in srgb, var(--blue) 18%, transparent); flex: none; overflow: hidden; }
-.pdf-prog span { display: block; height: 100%; width: 0; background: var(--blue); transition: width .2s; }
+.pdf-prog span { display: block; height: 100%; width: 0; background: var(--blue); }
 .pdf-prog.busy span { width: 35% !important; animation: pdfbusy 1.1s ease-in-out infinite; }
 @keyframes pdfbusy { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
 .pdf-msg { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); padding: 8px 12px; font: 12.5px/1.45 var(--font-ui); background: color-mix(in srgb, var(--warn) 10%, var(--panel)); color: var(--ink-ui); cursor: pointer; flex: none; }
@@ -585,8 +585,8 @@ body.pdf-on #pdfpane { display: flex; }
 .pdf-pages { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .pdf-page { position: relative; background: #fff; box-shadow: var(--shadow); flex: none; cursor: pointer; }
 .pdf-page canvas { display: block; }
-.pdf-mark { position: absolute; left: 0; right: 0; background: color-mix(in srgb, var(--blue) 22%, transparent); border-left: 3px solid var(--blue); pointer-events: none; animation: pdfmark 1.6s ease-out forwards; }
-@keyframes pdfmark { 0%, 60% { opacity: 1; } 100% { opacity: 0; } }
+.pdf-mark { position: absolute; left: 0; right: 0; background: color-mix(in srgb, var(--blue) 22%, transparent); border-left: 3px solid var(--blue); pointer-events: none; animation: pdfmark .3s ease-out 1.3s forwards; }
+@keyframes pdfmark { from { opacity: 1; } to { opacity: 0; } }
 .pdf-empty { padding: 28px 16px; font: 13.5px/1.5 var(--font-ui); color: var(--ink-ui); max-width: 440px; margin: 0 auto; }
 .pdf-empty p { margin: 0; }
 .pdf-empty b { color: var(--ink-ui); font-weight: 600; }
@@ -874,7 +874,7 @@ body.pdf-on #pdfpane { display: flex; }
 .wgate:hover { box-shadow: none; }
 .w-run { pointer-events: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink-ui); font: 500 12px/1.4 var(--font-ui); padding: 4px 10px; cursor: pointer; box-shadow: 0 2px 8px rgba(10, 20, 30, .15); }
 .w-run:hover { border-color: var(--blue); }
-.w-src { position: absolute; top: 4px; right: 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 500 11px/1.4 var(--font-mono); padding: 1px 6px; cursor: pointer; opacity: 0; transition: opacity .12s; }
+.w-src { position: absolute; top: 4px; right: 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 500 11px/1.4 var(--font-mono); padding: 1px 6px; cursor: pointer; opacity: 0; transition: opacity .1s; }
 .wbox:hover .w-src, .w-src:focus-visible { opacity: 1; }
 @media (hover: none) { .w-src { opacity: .85; } }
 .a-logo { white-space: nowrap; }
@@ -883,8 +883,9 @@ body.pdf-on #pdfpane { display: flex; }
 .lg-sc { font-variant: small-caps; text-transform: lowercase; }
 .lg-rev { display: inline-block; transform: scaleX(-1); vertical-align: -.22em; margin: 0 -.06em; }
 .mac { }
-.flash { animation: flash 1.2s ease-out; }
-@keyframes flash { 0% { background: rgba(43, 116, 176, .28); } 100% { background: transparent; } }
+/* (the place a jump landed on, marked for as long as the class stays: a still mark, no fade of its
+   background, since only opacity and transform are animated, UI-PRINCIPLES.md M3) */
+.flash { background-color: rgba(43, 116, 176, .22); }
 .ghostp { outline: 1px dashed rgba(43, 116, 176, .45); outline-offset: 2px; min-height: var(--lh); }
 #pages.stale { opacity: .45; }
 /* the caret's hint, on the white page (dark page below). #3E4C59 on white is past 7:1;
@@ -1109,9 +1110,6 @@ body.dropping .dropzone { display: grid; }
 }
 /* (the name is back on a phone: with Save and Copy source gone from the bar, it fits at 360px) */
 @container (max-width: 119px) { .title-name { display: none; } }
-@media (prefers-reduced-motion: reduce) {
-  .flash { animation: none; }
-}
 
 /* unsaved-zip marker on the Save button */
 #b-save { position: relative; }
@@ -1250,7 +1248,7 @@ body.nav-on.nav-wide #nav { width: 340px; }
   .page { box-shadow: none !important; margin: 0 !important; break-after: page; break-inside: avoid; content-visibility: visible !important; contain: none !important; }
   .page:last-child { break-after: auto; }
   .has-err, .ghostp { outline: none !important; }
-  .flash { animation: none !important; }
+  .flash { background-color: transparent !important; }
 }
 
 /* sharing and comments (src/collab.js) */
@@ -1414,7 +1412,7 @@ body.guest #b-new, body.guest #b-sample { display: none; }
 .nv-row .nav-item[draggable="true"], .nv-txt[draggable="true"] { cursor: pointer; }
 .nv-tog { flex: none; width: 20px; height: 26px; padding: 0; border: 0; background: transparent; color: var(--mute); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .nv-tog.none { cursor: default; }
-.nv-tog svg { width: 11px; height: 11px; fill: currentColor; stroke: none; transform: rotate(90deg); transition: transform .12s; }
+.nv-tog svg { width: 11px; height: 11px; fill: currentColor; stroke: none; transform: rotate(90deg); transition: transform .1s; }
 .nv-tog[aria-expanded="false"] svg { transform: none; }
 .nv-tog:hover { color: var(--ink-ui); }
 .nv-txt { flex: 1 1 auto; min-width: 0; text-align: left; border: 0; background: transparent; color: var(--mute); padding: 4px 10px 4px 2px; font: 12.5px/1.4 var(--font-doc, Georgia, serif); cursor: pointer; }
@@ -2207,7 +2205,7 @@ textarea.gd-in { resize: vertical; line-height: 1.4; }
 }
 /* a graph on the page: Edit graph beside the LaTeX tab, shown as the LaTeX tab is (on a touch
    screen always), at its own size whatever the page's zoom (--ws: the box's scale) */
-.w-edit { position: absolute; top: 4px; right: 54px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 500 11px/1.4 var(--font-ui); padding: 1px 7px; cursor: pointer; opacity: 0; transition: opacity .12s; transform: scale(calc(1 / var(--ws, 1))); transform-origin: top right; }
+.w-edit { position: absolute; top: 4px; right: 54px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 500 11px/1.4 var(--font-ui); padding: 1px 7px; cursor: pointer; opacity: 0; transition: opacity .1s; transform: scale(calc(1 / var(--ws, 1))); transform-origin: top right; }
 .wbox:hover .w-edit, .wbox.sel .w-edit, .w-edit:focus-visible { opacity: 1; }
 .wbox .w-src { transform: scale(calc(1 / var(--ws, 1))); transform-origin: top right; }
 .w-hint { position: absolute; left: 0; top: calc(100% + 6px); z-index: 2; display: flex; align-items: center; gap: 10px; max-width: 520px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink-ui); font: 13px/1.4 var(--font-ui); box-shadow: 0 6px 20px rgba(10, 20, 30, .16); transform: scale(calc(1 / var(--ws, 1))); transform-origin: top left; }
@@ -2537,7 +2535,7 @@ html.pic-moving, html.pic-moving * { cursor: grabbing !important; }
 /* the triangles beside the headings: over the page, never in it (src/cmd/find.js foldPaint) */
 .fold-layer { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 2; }
 .fold-tg { position: absolute; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #7A8794; display: grid; place-items: center; cursor: pointer; }
-.fold-tg svg { width: 14px; height: 14px; fill: currentColor; stroke: none; transition: transform .12s; }
+.fold-tg svg { width: 14px; height: 14px; fill: currentColor; stroke: none; transition: transform .1s; }
 .fold-tg.shut svg { transform: rotate(-90deg); }
 .fold-tg.shut { color: var(--blue); }
 @media (hover: hover) { .fold-tg:hover { background: var(--blue-wash); color: var(--blue-ink); } body.dark-page .fold-tg:hover { background: #2A3440; } }
@@ -2684,3 +2682,9 @@ body.file-open #rp-file .rb-tb .btn { height: 32px; min-height: 32px; border-rad
    result on a phone was white on pale blue, 1.3:1) */
 .toast .btn { color: var(--on-blue, #fff); }
 .srch-list { color: var(--ink-ui); }
+/* reduced motion: nothing moves; fades only (UI-PRINCIPLES.md M2); last, over the rules
+   above */
+@media (prefers-reduced-motion: reduce) {
+  .pdf-prog.busy span { animation: none; opacity: .6; }
+  .nv-tog svg, .fold-tg svg { transition: none; }
+}
