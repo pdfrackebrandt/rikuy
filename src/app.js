@@ -5505,7 +5505,7 @@ function agentApi(app) {
     // one tool by its name: its result, or { error } in plain words (never throws)
     callTool(name, input) { return callAgentTool(app, T(), name, input); },
     // the document as data: sections, formulas, figures, graphs, citations, labels, problems...
-    getDocument(include) { return call('get_document', include ? { include } : {}); },
+    getDocument(include) { return call('get_document', Array.isArray(include) ? { include } : include && typeof include === 'object' ? include : {}); },
     // the caret (start) or a selection (start to end) at a place of a file's source
     select(file, start, end) { return call('select', { file, start, end }); },
     // a command, as run() does, saying what it changed: { ran, changed, undoSteps, selection }
@@ -5514,8 +5514,8 @@ function agentApi(app) {
     editSource(edit) { return call('edit_source', edit); },
     // an interactive graph after the caret's paragraph
     insertGraph(spec, caption) { return call('insert_graph', { spec, caption }); },
-    // the last steps of the history back
-    undo(steps) { return call('undo', steps ? { steps } : {}); }
+    // the agent's own last edit back: a number of steps, or the step an edit returned
+    undo(steps) { return call('undo', typeof steps === 'string' ? { step: steps } : steps && typeof steps === 'object' ? steps : steps ? { steps } : {}); }
   });
 }
 
@@ -5528,7 +5528,8 @@ App.prototype.insertFromPalette = function (k) {
   if (c && x) this.runPalette(x, c.ghost ? null : { f: c.f, a: c.a, b: c.b }, c.ghost ? this.ghost : null);
 };
 // a link opened from a command (Help's) as one in a document is: web and mail addresses only
-App.prototype.openLink = openLink;
+// (an agent's tool never opens one: src/agent.js PERSON, and this for what that list misses)
+App.prototype.openLink = function (u) { if (this.agentDepth) { this.toast('An AI agent asked to open a link; only you open links.'); return false; } return openLink(u); };
 App.prototype.textSigNow = function () { return textSig(this.main, [...this.files.entries()]); };
 // the Word worker's files, asked for as the page asks for its other files (src/word.js)
 App.prototype.assetUrl = asset;

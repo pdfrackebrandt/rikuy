@@ -6,7 +6,7 @@
 // llms-full.txt saying each tool and each command (one description each, the registry's).
 import assert from 'node:assert/strict';
 import fs from 'fs';
-import { TOOLS, ARGS, asks, documentModel, changesBetween, runnable, argsOf } from '../src/agent.js';
+import { TOOLS, ARGS, asks, personOnly, documentModel, changesBetween, runnable, argsOf, validate, lostChars, EXAMPLES, BIG, pressWhere } from '../src/agent.js';
 import { command } from '../src/commands.js';
 import '../src/cmd/index.js';
 import { buildModel } from '../src/model.js';
@@ -32,6 +32,10 @@ ok('ten tools, each named, titled, described, with an object schema and the four
   // (what returns a document's text says it is its author's)
   for (const t of TOOLS) assert.equal(t.annotations.untrustedContentHint, t.name !== 'list_commands', t.name);
   for (const t of ['run_command', 'edit_source', 'set_source', 'undo']) assert.equal(TOOLS.find((x) => x.name === t).annotations.destructiveHint, true, t);
+  // (consequentialHint is what a browser makes the person confirm: nothing a tool does leaves the
+  // page or outlasts one Undo, so it is on none; review M10)
+  for (const t of TOOLS) assert.equal(t.annotations.consequentialHint, false, t.name);
+  assert.equal(TOOLS.find((x) => x.name === 'select').annotations.destructiveHint, false);
 });
 
 ok('every argument schema is a runnable command\'s, an object schema', () => {
@@ -43,13 +47,63 @@ ok('every argument schema is a runnable command\'s, an object schema', () => {
   }
 });
 
-ok('what asks the person first: deleting, replacing all, sharing, downloading, opening a link; not formatting or inserting', () => {
-  for (const id of ['delete-table', 'delete-rows', 'comment-delete-all', 'change-reject', 'clear-formatting', 'share', 'download-pdf', 'download-latex', 'export-as', 'link-open', 'new-document', 'load-sample', 'replace', 'toc-remove'])
+ok('what asks the person first: deleting, replacing all, pasting the clipboard; not formatting or inserting', () => {
+  for (const id of ['delete-table', 'delete-rows', 'comment-delete-all', 'change-reject', 'clear-formatting', 'replace', 'toc-remove', 'paste', 'paste-text', 'paste-latex', 'paste-special'])
     assert.equal(asks(id), true, id);
-  for (const id of ['bold', 'italic', 'insert-table', 'table', 'footnote', 'view-latex', 'animations', 'help-how', 'link', 'comment-new'])
+  for (const id of ['bold', 'italic', 'insert-table', 'table', 'footnote', 'view-latex', 'animations', 'help-how', 'link', 'comment-new', 'copy', 'cut'])
     assert.equal(asks(id), false, id);
   const ids = runnable().map((c) => c.id), n = ids.filter(asks).length;
   assert.ok(n > 15 && n < ids.length / 4, n + ' of ' + ids.length);
+});
+
+ok('what only the person does (no tool runs it): sending the document out, opening another site, another document (review H1, L1)', () => {
+  const P = ['share', 'download-pdf', 'download-word', 'download-latex', 'download-menu', 'export-as', 'save-as', 'print', 'markup-copy', 'link-open', 'help-report', 'help-agents', 'ask-grok', 'open', 'recent', 'new-document', 'new-blank', 'new-template', 'load-sample'];
+  for (const id of P) { assert.equal(personOnly(id), true, id); assert.equal(asks(id), false, id); assert.ok(command(id), id); }
+  for (const id of ['print-layout', 'bold', 'link', 'link-edit', 'copy', 'paste', 'view-pdf', 'versions', 'version-save', 'compare', 'save'])
+    assert.equal(personOnly(id), false, id);
+  // (and each says where the person presses it)
+  assert.equal(pressWhere(command('download-pdf')), '"Download PDF" (the PDF pane\'s Download menu), or its name in the search box (Alt+Q)');
+  assert.match(pressWhere(command('save-as')), /^"Save As", or F12,/);
+  assert.match(pressWhere(command('link-open')), /the right click menu/);
+});
+
+ok("run_command's examples are commands an agent may run, from the registry; llms.txt's too (review M5)", () => {
+  const ids = new Set(runnable().map((c) => c.id));
+  for (const id of EXAMPLES) assert.ok(ids.has(id), id);
+  const rc = TOOLS.find((t) => t.name === 'run_command');
+  for (const id of EXAMPLES) assert.ok(rc.description.includes('"' + id + '" (' + command(id).name + ')'), id);
+  // every id the tools and the guides quote as one to run: "x" (Name), run("x", run_command "x", {"id": "x"
+  const quoted = (t) => [...t.matchAll(/\brun\("([a-z][a-z0-9-]*)"|run_command ((?:"[a-z][a-z0-9-]*"(?:, | or )?)+)|\{"id": "([a-z][a-z0-9-]*)"/g)]
+    .flatMap((m) => (m[2] ? [...m[2].matchAll(/"([^"]+)"/g)].map((x) => x[1]) : [m[1] || m[3]]));
+  const all = [...[...rc.description.matchAll(/"([a-z][a-z0-9-]*)" \(/g)].map((m) => m[1]), ...TOOLS.flatMap((t) => quoted(t.description)), ...quoted(llms()), ...quoted(llmsFull())];
+  assert.ok(all.length > 40, all.length);
+  for (const id of all) assert.ok(ids.has(id), 'quoted as a command to run, and no command an agent may run: ' + id);
+  // (no list of ids in the schema: list_commands is the catalogue, review M9)
+  assert.equal(rc.inputSchema.properties.id.enum, undefined);
+});
+
+ok('inputs checked against their schemas, in words (review L2)', () => {
+  assert.equal(validate(ARGS.table, { rows: 'many', cols: -4 }, 'args'), 'args.rows must be a whole number.');
+  assert.equal(validate(ARGS.table, { rows: 2, cols: -4 }, 'args'), 'args.cols must be at least 1 and at most 30.');
+  assert.equal(validate(ARGS.table, { rows: 2000, cols: 300 }, 'args'), 'args.rows must be at most 60.');
+  assert.equal(validate(ARGS.table, { cols: 3 }, 'args'), 'args.rows is missing.');
+  assert.equal(validate(ARGS.table, { rows: 2, cols: 3, colour: 'red' }, 'args'), 'args has no "colour": it takes rows, cols, fit, width.');
+  assert.equal(validate(ARGS.table, { rows: 2, cols: 3, fit: 'window' }, 'args'), null);
+  const T = (n) => TOOLS.find((t) => t.name === n).inputSchema;
+  assert.match(validate(T('get_document'), { include: ['nonsense'] }), /^input\.include\[0\] must be one of "title"/);
+  assert.equal(validate(T('edit_source'), { start: -1, text: '' }), 'input.start must be at least 0.');
+  assert.equal(validate(T('edit_source'), { start: 1.5, text: '' }), 'input.start must be a whole number.');
+  assert.equal(validate(T('undo'), { steps: 2, extra: 1 }), 'input has no "extra": it takes steps, step.');
+  assert.equal(validate(T('compile'), { x: 1 }), 'input has no "x": it takes nothing.');
+  assert.equal(validate(T('insert_graph'), { spec: { kind: 'pie' } }), 'input.spec.kind must be one of "function", "data", "curve", "dist".');
+});
+
+ok('what an edit takes out: the words that go, not those kept inside new markup', () => {
+  assert.equal(lostChars('two words', '\\textbf{two words}'), 0);
+  assert.equal(lostChars('\\textbf{two}', 'two'), 9);
+  assert.equal(lostChars('x'.repeat(300), ''), 300);
+  assert.equal(lostChars('the cat sat', 'the dog sat'), 3);
+  assert.ok(BIG === 200);
 });
 
 const sample = new Map([['main.tex', fs.readFileSync(R('sample/main.tex'), 'utf8')], ['refs.bib', fs.readFileSync(R('sample/refs.bib'), 'utf8')]]);
@@ -97,9 +151,29 @@ ok('citations with keys and command, the bibliography, labels, cross references,
   assert.deepEqual(D.warnings, []);
 });
 
-ok('include picks parts', () => {
-  const d = documentModel(buildModel({ files: sample, main: 'main.tex' }), sample, 'main.tex', ['sections']);
-  assert.deepEqual(Object.keys(d).sort(), ['main', 'sections', 'words']);
+ok('include picks parts; an empty include gives none (review M7)', () => {
+  const m = buildModel({ files: sample, main: 'main.tex' });
+  assert.deepEqual(Object.keys(documentModel(m, sample, 'main.tex', ['sections'])).sort(), ['main', 'sections', 'words']);
+  assert.deepEqual(Object.keys(documentModel(m, sample, 'main.tex', [])).sort(), ['main', 'words']);
+});
+
+ok("a bibliography written in the text: thebibliography's \\bibitem, its key, label and text (review M6)", () => {
+  const doc = '\\documentclass{article}\n\\begin{document}\nSee \\cite{solow} and \\cite{swan}.\n\\begin{thebibliography}{9}\n\\bibitem{solow} R. Solow. Growth. 1956.\n\\bibitem[Swan(1956)]{swan} T. Swan. Accumulation. 1956.\n\\end{thebibliography}\n\\end{document}\n';
+  const files = new Map([['main.tex', doc]]);
+  const d = documentModel(buildModel({ files, main: 'main.tex' }), files, 'main.tex', ['references']);
+  assert.deepEqual(d.references.map((r) => [r.key, r.text]), [['solow', 'R. Solow. Growth. 1956.'], ['swan', 'T. Swan. Accumulation. 1956.']]);
+  assert.equal(d.references[0].label, '[1]');
+  assert.ok(doc.slice(d.references[1].start).startsWith('\\bibitem[Swan(1956)]{swan}'));
+  assert.deepEqual([...d.cited].sort(), ['solow', 'swan']);
+});
+
+ok('a numbered alignment as written: align, not the starred form the page draws it with (review L3)', () => {
+  const doc = '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\\begin{align}\na &= b \\label{e1}\\\\\nc &= d\n\\end{align}\n\\begin{align*} x \\end{align*}\n\\end{document}\n';
+  const files = new Map([['main.tex', doc]]);
+  const d = documentModel(buildModel({ files, main: 'main.tex' }), files, 'main.tex', ['equations']);
+  assert.equal(d.equations[0].latex, '\\begin{align} a &= b \\\\ c &= d \\end{align}');
+  assert.deepEqual(d.equations[0].numbers, ['1', '2']);
+  assert.equal(d.equations[1].latex, '\\begin{align*} x \\end{align*}');
 });
 
 ok('an interactive graph: its widget, picture, kind, formulas and sliders', () => {
@@ -126,6 +200,12 @@ ok('what changed: one range a file, text out and in, files made and gone', () =>
 
 ok('llms.txt lists the ten tools with their descriptions; llms-full.txt every command once, with the registry\'s description', () => {
   const L = llms(), F = llmsFull();
+  // (honest about the question: for the person, a speed bump, not a lock; and about hidden text: review H1, L7)
+  assert.ok(!/only their\s+own press allows/.test(L));
+  assert.match(L, /an agent must never answer it/);
+  assert.match(L, /not a lock: an agent that\s+drives the browser's input/);
+  assert.match(L, /\\phantom/);
+  assert.match(L, /run_command does not run a download, a share,/);
   for (const t of TOOLS) assert.ok(L.includes('- ' + t.name + '(') && L.includes(t.description), t.name);
   for (const k of ['callTool', 'getDocument', 'editSource', 'runCommand']) assert.ok(L.includes(k), k);
   const lines = F.split('\n').filter((l) => /^- [a-z0-9-]+: "/.test(l));
