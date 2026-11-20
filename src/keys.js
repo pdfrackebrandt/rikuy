@@ -70,13 +70,19 @@ export function matches(k, e, mac) {
   if (/^[a-z]$/.test(want)) return (key.toLowerCase() === want || (macAlt && e.code === 'Key' + want.toUpperCase())) && !!e.shiftKey === k.shift;
   if (/^[0-9]$/.test(want)) {
     if (key === want || (macAlt && e.code === 'Digit' + want)) return !!e.shiftKey === k.shift;
+    // the digit key itself where it types a sign without Shift, as on a French keyboard (Ctrl and
+    // the 1 key, & there, is Ctrl+1: Word reads the key, not its character)
+    if (!k.shift && !e.shiftKey && !k.alt && e.code === 'Digit' + want) return true;
     // Shift with a digit types a sign on most keyboards: the key's place says which digit (not
     // with Ctrl+Alt or AltGr, where the sign may be AltGr's; Alt+Shift+1, Word's outline level,
     // is Alt alone)
     const altgr = k.alt && (k.mod || (e.getModifierState && e.getModifierState('AltGraph')));
     return k.shift && !!e.shiftKey && !altgr && e.code === 'Digit' + want;
   }
-  // a sign: as typed, Shift or not (Ctrl+Shift+> is Shift and . on a US keyboard, a key of its own elsewhere)
+  // a sign: as typed, Shift or not (Ctrl+Shift+> is Shift and . on a US keyboard, a key of its own
+  // elsewhere); never a digit key without Shift, which is that digit's chord (& and ' are the 1 and
+  // 4 keys on a French keyboard: Ctrl and them is Ctrl+1 and Ctrl+4, no accent key)
+  if (/^Digit/.test(e.code || '') && !e.shiftKey) return false;
   return key === k.key && (k.shift || !e.shiftKey || !/^[a-z0-9]$/i.test(key));
 }
 

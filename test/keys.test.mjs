@@ -187,6 +187,24 @@ ok('the keys the browser keeps: each a chord, its Word name and what to use, for
   for (const k of ['Ctrl+N', 'Ctrl+W', 'Ctrl+T', 'F6', 'F12', 'Ctrl+=']) assert.ok(KEPT.some((x) => x.keys === k), k);
 });
 
+ok('a French keyboard: Ctrl and the 1 key (&) is Ctrl+1, the 4 key (\') no accent key; Ctrl+Shift and 1 there is no Ctrl+Shift+&', () => {
+  assert.equal(matches('Ctrl+1', ev('&', { ctrl: true, code: 'Digit1' }), false), true);
+  assert.equal(matches('Ctrl+Shift+&', ev('&', { ctrl: true, code: 'Digit1' }), false), false);
+  assert.equal(matches('Ctrl+\'', ev('\'', { ctrl: true, code: 'Digit4' }), false), false);
+  assert.equal(matches('Ctrl+5', ev('(', { ctrl: true, code: 'Digit5' }), false), true);
+  // a US keyboard as before: Ctrl+Shift+7 is &, Ctrl+' the quote key
+  assert.equal(matches('Ctrl+Shift+&', ev('&', { ctrl: true, shift: true, code: 'Digit7' }), false), true);
+  assert.equal(matches('Ctrl+\'', ev('\'', { ctrl: true, code: 'Quote' }), false), true);
+  // and no layout's Ctrl and a digit key runs two commands, or an accent key (the review's layouts)
+  const L = { US: '1234567890', FR: '&\u00e9"\'(-\u00e8_\u00e7\u00e0', DE: '1234567890', ES: '1234567890' };
+  for (const [name, keys] of Object.entries(L)) [...keys].forEach((ch, i) => {
+    const d = String((i + 1) % 10), e = ev(ch, { ctrl: true, code: 'Digit' + d });
+    const hit = [...new Set(bindings(false).filter((b) => matches(b.k, e, false)).map((b) => b.id))];
+    assert.ok(hit.length <= 1 && !hit.some((h) => /^accent-/.test(h)), name + ' Ctrl+' + d + ': ' + hit);
+    if (['1', '2', '5'].includes(d)) assert.deepEqual(hit, ['line-spacing-' + (d === '5' ? '15' : d)], name + ' Ctrl+' + d);
+  });
+});
+
 ok('on a Mac no key is Option (with or without Shift) and a character key alone: that types a character there (Ø, ¡, ≈)', () => {
   const bad = bindings(true).filter((b) => b.k.alt && !b.k.mod && !b.k.control && !b.k.named).map((b) => b.id + ' ' + b.chord);
   assert.deepEqual(bad, []);
