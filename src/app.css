@@ -765,6 +765,16 @@ body.pdf-on #pdfpane { display: flex; }
 .tab tr.r-space > td { padding-top: .5em; }
 .tab td.rule-cell { padding: 0; height: 0; line-height: 0; }
 .tab tr.r-empty + tr { }
+/* (G2) double rules (\hline\hline, ||), View Gridlines (every cell's edge dashed, the page only),
+   and the pen and eraser of Draw Table, Eraser and Border Painter */
+.tab tr.r-dbl, .tab.tb-set tr.r-dbl { border-top: calc(var(--pt) * 2.8px) double #111; }
+.tab td.vl.vl2, .tab.tb-set td.vl.vl2 { border-left: calc(var(--pt) * 2.8px) double #111; }
+.tab td.vr.vr2, .tab.tb-set td.vr.vr2 { border-right: calc(var(--pt) * 2.8px) double #111; }
+#pages.tb-grid .tab td { outline: 1px dashed rgba(43, 116, 176, .55); outline-offset: -1px; }
+#pages.tb-draw-pen .tab td, #pages.tb-draw-paint .tab td { cursor: crosshair; }
+#pages.tb-draw-eraser .tab td { cursor: cell; }
+#pages.tb-draw-pen .tab td:hover, #pages.tb-draw-paint .tab td:hover, #pages.tb-draw-eraser .tab td:hover { outline: 1px dashed #2B74B0; outline-offset: -1px; }
+@media print { #pages.tb-grid .tab td { outline: 0; } }
 
 /* raw blocks */
 .it.raw { background: #F4F6F8; border-radius: 3px; padding: .5em .7em; font-family: var(--font-doc-tt); font-size: .82em; line-height: 1.35; text-align: left; text-indent: 0; overflow: hidden; }
@@ -1498,6 +1508,41 @@ body.nav-on.nav-outline #nav { width: 460px; }
 .pop-tb .nf .nf-u { width: auto; padding: 0 4px; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: var(--chrome); line-height: normal; }
 .pop-tb select.tb-sel { width: auto; padding: 0 6px; line-height: normal; }
 .pop-tb .tb-f.off, .pop-tb .tb-r.off { opacity: .5; }
+/* (G2) Table Properties' and Borders and Shading's tabs, the preview whose edges are buttons */
+.pop.pop-tb.tb-bs, .pop.pop-tb.tb-formula { width: min(420px, calc(100vw - 16px)); }
+.pop-tb .fd-panel { gap: 8px; }
+.bs-cols { flex-direction: row; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.bs-preview { position: relative; width: 132px; height: 112px; flex: none; background: #fff; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--line); }
+.bs-edge { position: absolute; border: 0; padding: 0; background: transparent; cursor: pointer; }
+.bs-edge::after { content: ''; position: absolute; border-color: #111; border-style: solid; border-width: 0; opacity: .14; }
+.bs-edge[aria-pressed="true"]::after { opacity: 1; }
+.bs-edge:disabled { cursor: default; }
+.bs-edge:disabled::after { opacity: 0; }
+.bs-edge:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: 3px; }
+.bs-top, .bs-bottom, .bs-insideH { left: 10px; right: 10px; height: 16px; }
+.bs-top { top: 10px; } .bs-bottom { bottom: 10px; } .bs-insideH { top: 48px; }
+.bs-left, .bs-right, .bs-insideV { top: 10px; bottom: 10px; width: 16px; }
+.bs-left { left: 10px; } .bs-right { right: 10px; }
+/* (the inside lines cross off their centres, so each button's middle is its own) */
+.bs-insideV { left: 40px; }
+.bs-top::after, .bs-bottom::after, .bs-insideH::after { left: 0; right: 0; top: 7px; border-top-width: 2px; }
+.bs-left::after, .bs-right::after, .bs-insideV::after { top: 0; bottom: 0; left: 7px; border-left-width: 2px; }
+.bs-preview.dbl .bs-top::after, .bs-preview.dbl .bs-bottom::after, .bs-preview.dbl .bs-insideH::after { border-top-width: 4px; border-top-style: double; top: 6px; }
+.bs-preview.dbl .bs-left::after, .bs-preview.dbl .bs-right::after, .bs-preview.dbl .bs-insideV::after { border-left-width: 4px; border-left-style: double; left: 6px; }
+.tb-ftext { height: 28px; box-sizing: border-box; flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink-ui); font: 13px var(--font-mono, ui-monospace, monospace); padding: 0 8px; }
+.tb-fout { color: var(--ink-ui); }
+.tb-fout.bad { color: #B3261E; }
+@media (pointer: coarse) {
+  .pop-zoom .tb-r, .pop-zoom .tb-sel, .pop-zoom .btn, .pop-zoom .pop-x, .pop-zoom .nf, .pop-eqopt .tb-r, .pop-eqopt .btn, .pop-eqopt .pop-x, .pop-sign .tb-ftext, .pop-sign .tb-ck, .pop-sign .btn, .pop-sign .pop-x { min-height: 44px; }
+  .pop-zoom .btn, .pop-eqopt .btn, .pop-sign .btn, .pop-zoom .pop-x, .pop-eqopt .pop-x, .pop-sign .pop-x { min-width: 44px; }
+  .pop-tb .fd-tab { min-width: 44px; }
+  .pop-tb .fd-tab, .pop-tb .tb-sel, .pop-tb .tb-ftext, .pop-tb .btn, .pop-tb .pop-x, .pop-tb .tb-r, .pop-tb .tb-ck, .pop-tb .nf { min-height: 44px; }
+  .pop-tb .btn, .pop-tb .pop-x { min-width: 44px; }
+  .bs-preview { width: 176px; height: 152px; }
+  .bs-top, .bs-bottom, .bs-insideH { height: 44px; } .bs-left, .bs-right, .bs-insideV { width: 44px; }
+  .bs-top { top: 0; } .bs-bottom { bottom: 0; } .bs-insideH { top: 54px; } .bs-left { left: 0; } .bs-right { right: 0; } .bs-insideV { left: 40px; }
+  .bs-top::after, .bs-bottom::after, .bs-insideH::after { top: 21px; } .bs-left::after, .bs-right::after, .bs-insideV::after { left: 21px; }
+}
 /* ---- the page's set up (src/layout.js, src/cmd/page.js): headers and footers, two sided
    pages, columns, line numbers, the watermark and the page's border ---- */
 .page.even .pb, .page.even .hd, .page.even .ft { left: var(--mle); }
@@ -1527,6 +1572,37 @@ body.nav-on.nav-outline #nav { width: 460px; }
 /* the header and footer typed on the page (src/ui/headerfooter.js): three fields where it is
    drawn, a tag naming it, the text under them dimmed as in Word */
 #pages.hf-on .page .pb { opacity: .45; }
+/* (G2) Show Document Text off: only the header and footer; a picture in them, a line high */
+#pages.hf-on.hf-hide-text .page .pb { visibility: hidden; }
+/* (G2) View › Gridlines: the text's baselines and every centimetre across, on the screen only */
+#pages.pg-grid-lines .page .pb { background-image: repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--pt) * var(--grid-bs, 12) * 1px - 1px), rgba(43, 116, 176, .3) calc(var(--pt) * var(--grid-bs, 12) * 1px - 1px), rgba(43, 116, 176, .3) calc(var(--pt) * var(--grid-bs, 12) * 1px)), repeating-linear-gradient(to right, rgba(43, 116, 176, .18) 0, rgba(43, 116, 176, .18) 1px, transparent 1px, transparent calc(var(--pt) * 28.4528px));
+  background-position: 0 calc(var(--pt) * (var(--grid-top, 10) - var(--grid-bs, 12)) * 1px), 0 0; }
+@media print { #pages.pg-grid-lines .page .pb { background-image: none; } }
+/* (G2) View › Split: the first view over a second one, each scrolled on its own */
+.desk-col { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.desk-col > #desk { flex: 1 1 50%; min-height: 0; }
+.split-bar { flex: none; height: 6px; background: var(--line); border-top: 1px solid var(--chrome); position: relative; cursor: row-resize; touch-action: none; z-index: 2; }
+/* (a finger's 44 px to take hold of it, the bar itself 6 px) */
+.split-bar::before { content: ''; position: absolute; left: 0; right: 0; top: -19px; bottom: -19px; }
+.split-bar:focus-visible, .split-bar.dragging { background: var(--blue); outline: none; }
+/* (a finger's 44 px with touch: the band itself, its line in the middle) */
+@media (pointer: coarse) {
+  .split-bar { height: 44px; background: linear-gradient(var(--chrome), var(--chrome)) top / 100% 19px no-repeat, linear-gradient(var(--chrome), var(--chrome)) bottom / 100% 19px no-repeat, var(--line); border-top: 0; }
+  .split-bar::before { top: 0; bottom: 0; }
+  .split-bar:focus-visible, .split-bar.dragging { background: linear-gradient(var(--chrome), var(--chrome)) top / 100% 19px no-repeat, linear-gradient(var(--chrome), var(--chrome)) bottom / 100% 19px no-repeat, var(--blue); }
+}
+.split-note { position: sticky; top: 0; z-index: 1; font: 12px var(--font-ui); color: var(--mute); background: var(--chrome); border-bottom: 1px solid var(--line); padding: 3px 10px; }
+.split-view { flex: 1 1 50%; min-height: 0; overflow: auto; position: relative; background: inherit; outline: none; }
+.split-view .split-pages { display: flex; flex-direction: column; align-items: flex-start; gap: 22px; cursor: text; }
+.split-view:focus-visible { box-shadow: inset 0 0 0 2px var(--blue); }
+/* (G2) Update Table and Update Index: the list flashes where it stands, rebuilt */
+@keyframes rk-updated { from { background-color: rgba(43, 116, 176, .22); } to { background-color: transparent; } }
+#pages .rk-updated { animation: rk-updated 1.3s ease-out; }
+@media (prefers-reduced-motion: reduce) { #pages .rk-updated { animation: none; outline: 2px solid rgba(43, 116, 176, .5); } }
+/* (G2) the equation in Word's linear format, a text to type in */
+.pop textarea.pop-lin { font: 15px/1.5 var(--font-doc, serif); }
+.pop .pop-lin-note { font-size: 12px; color: var(--mute); margin: 2px 0 4px; }
+.hd .hf-pic, .ft .hf-pic { display: inline-block; vertical-align: baseline; width: auto; max-width: 100%; }
 .page.hf-head .hd, .page.hf-foot .ft { visibility: hidden; }
 .hfedit { position: fixed; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; z-index: 30; }
 .hfedit.head { border-bottom: 1px dashed #2B74B0; padding-bottom: 4px; }
@@ -2528,6 +2604,8 @@ html.pic-moving, html.pic-moving * { cursor: grabbing !important; }
 .it.idx-right.idx-dots .idx-lead { border-bottom: 1px dotted currentColor; transform: translateY(-.25em); }
 .it.idx-right .idx-p { white-space: nowrap; }
 @media (pointer: coarse) { .rb .btn:is([data-cmd="mark-citation"], [data-cmd="insert-toa"], [data-cmd="thesaurus"]) { min-width: 44px; min-height: 44px; } }
+/* (task 68: Update Table, Update Index and the authorities' Update Table, a finger's 44 px as the tab's other buttons) */
+@media (pointer: coarse) { .rb .btn:is([data-cmd="update-toc"], [data-cmd="update-tof"], [data-cmd="update-index"], [data-cmd="update-toa"]) { min-width: 44px; min-height: 44px; } }
 /* (the Spelling and Grammar pane's sentence: the interface's ink in the dark, as the pane is dark) */
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sp-ctx { color: var(--ink-ui); } :root:not([data-theme="light"]) .sp-ctx .sp-g { color: #8ab4ff; } }
 :root[data-theme="dark"] .sp-ctx { color: var(--ink-ui); }
