@@ -54,7 +54,23 @@ def frame_of(page, k=0):
     return els[k].content_frame() if k < len(els) else None
 
 
-SAMPLE_FIRST = 'The graph below is live'
+SAMPLE_FIRST = 'The graph above is live'
+
+
+def press_slider(page, fr, k):
+    """A person's press on slider k at its thumb: the mouse comes in over the frame's edge, as a
+    hand moves it (the page lets a frame keep the focus only after such a press, src/cmd/insert.js),
+    and the keys that follow go to the slider."""
+    el = page.query_selector_all('#wlayer iframe.rk-widget')[0]
+    el.scroll_into_view_if_needed()
+    fb = el.bounding_box()
+    r = fr.eval_on_selector('#rk-%d' % k, 'e => { const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height, (+e.value - +e.min) / (+e.max - +e.min)]; }')
+    s = fb['width'] / fr.evaluate('document.documentElement.clientWidth')
+    x, y = fb['x'] + (r[0] + 8 + (r[2] - 16) * r[4]) * s, fb['y'] + (r[1] + r[3] / 2) * s
+    page.wait_for_timeout(350)
+    page.mouse.move(fb['x'] - 20, y); page.mouse.move(x, y, steps=8)
+    page.mouse.down(); page.mouse.up()
+    page.wait_for_timeout(150)
 
 
 def opening(p):
@@ -65,12 +81,15 @@ def opening(p):
         page.wait_for_timeout(1200)
         r = page.evaluate('''() => { const f = document.querySelector('#wlayer iframe.rk-widget').getBoundingClientRect(); const pages = document.getElementById('pages').getBoundingClientRect();
           return { top: f.top, bottom: f.bottom, h: innerHeight, w: f.width }; }''')
-        check('opening %d: its live graph is in the first screen, no scrolling' % w, r['top'] > 0 and r['top'] + 0.5 * (r['bottom'] - r['top']) < r['h'], r)
+        check('opening %d: its live graph, sliders and all, is in the first screen, no scrolling' % w, r['top'] > 0 and r['bottom'] < r['h'] - 28, r)
+        probs = page.evaluate('(window.rikuy.problems || []).map((p) => p.sev + ": " + p.msg)')
+        check('opening %d: the sample has no problem to report' % w, not [x for x in probs if 'pell' not in x], probs)
         check('opening %d: one plain sentence says it is live and what it is' % w, SAMPLE_FIRST in page.inner_text('#pages') and 'Bellman equation' in page.inner_text('#pages'))
         fr = frame_of(page)
-        v0 = fr.eval_on_selector('#rk-0', 'e => e.value')
-        fr.focus('#rk-0'); page.keyboard.press('ArrowRight'); page.wait_for_timeout(150)
-        check('opening %d: its slider moves by keyboard and the curve with it' % w, fr.eval_on_selector('#rk-0', 'e => e.value') != v0 and fr.evaluate('self.rkTimes.length') >= 2)
+        press_slider(page, fr, 0)
+        v0, t0 = fr.eval_on_selector('#rk-0', 'e => e.value'), fr.evaluate('self.rkTimes.length')
+        page.keyboard.press('ArrowRight'); page.wait_for_timeout(150)
+        check('opening %d: its slider moves by keyboard and the curve with it' % w, fr.eval_on_selector('#rk-0', 'e => e.value') != v0 and fr.evaluate('self.rkTimes.length') > t0)
         page.wait_for_timeout(900)
         pgf = asset_text(page, 'graphs/saving.pgf')
         check('opening %d: its PDF picture is PGF, drawn as the graph is first shown' % w, bool(pgf) and pgf.startswith('% rikuy-graph: graphs/saving.html') and '\\begin{pgfpicture}' in pgf, (pgf or '')[:80])
@@ -98,8 +117,8 @@ def graph_this(page):
     h0 = page.evaluate('window.rikuy.hist.length')
     el = math_el(page, 'n + \\delta')
     el.as_element().click(button='right')
-    page.wait_for_selector('[role=menu]', timeout=4000)
     item = page.get_by_role('menuitem', name='Graph this')
+    item.wait_for(timeout=4000)
     check('Graph this: the right click menu of an equation has it', item.count() == 1)
     item.click()
     page.wait_for_function('window.rikuy.hist.length > %d' % h0, timeout=15000)
@@ -144,7 +163,7 @@ def graph_this(page):
     # what cannot be drawn is said in plain words, and nothing is written
     load_doc(page, EQ_DOC); page.wait_for_timeout(200)
     el = math_el(page, '\\max_{c}')
-    el.as_element().click(button='right'); page.wait_for_selector('[role=menu]', timeout=4000)
+    el.as_element().click(button='right'); page.get_by_role('menuitem', name='Graph this').wait_for(timeout=4000)
     page.get_by_role('menuitem', name='Graph this').click(); page.wait_for_timeout(600)
     check('Graph this: the Bellman equation (a max over c) is not drawn, and why is said', src(page) == EQ_DOC and '\\max' in page.inner_text('#toast'), page.inner_text('#toast'))
 
@@ -168,6 +187,7 @@ def dialog(page):
     eq.fill('x^2 + y^2 = r^2\nx y = c +'); page.wait_for_timeout(400)
     wave = page.evaluate('''() => { const w = document.querySelector('.gd-wave'); return w ? [w.textContent, w.parentElement.textContent.indexOf(w.textContent)] : null; }''')
     check('dialog: a mistake is said in plain words and underlined where it is', 'ends too soon' in page.inner_text('.gd-err') and wave is not None and page.evaluate('document.getElementById("gd-ok").disabled'), (page.inner_text('.gd-err'), wave))
+    page.wait_for_timeout(1100)  # (typing in one field within a second is one step of the dialog's history)
     eq.fill('x^2 + y^2 = r^2\nx y = c + d'); page.wait_for_timeout(400)
     check('dialog: fixed, the underline goes and a new letter gets its slider', page.evaluate('!document.querySelector(".gd-wave")') and page.get_by_role('textbox', name='Slider 3 name').input_value() == 'd')
     page.keyboard.press('Control+z'); page.wait_for_timeout(300)
@@ -256,18 +276,21 @@ def keyboard(page):
     fr = frame_of(page)
     val = lambda: float(fr.eval_on_selector('#rk-0', 'e => e.value'))
     lo, hi, st = [float(fr.eval_on_selector('#rk-0', 'e => e.' + k)) for k in ('min', 'max', 'step')]
-    fr.focus('#rk-0')
+    press_slider(page, fr, 0)
     v0 = val(); page.keyboard.press('ArrowRight'); page.wait_for_timeout(80)
     check('keyboard: an arrow moves a slider one step', abs(val() - (v0 + st)) < 1e-9, (v0, val(), st))
     page.keyboard.press('PageUp'); page.wait_for_timeout(80)
-    check('keyboard: Page Up moves it a long step', val() - (v0 + st) >= 5 * st - 1e-9, val())
+    check('keyboard: Page Up moves it a long step (a tenth of its range)', val() - (v0 + st) >= 0.1 * (hi - lo) - st - 1e-9, (v0, val()))
+    w0 = val(); page.keyboard.press('PageDown'); page.wait_for_timeout(80)
+    check('keyboard: Page Down back', abs(val() - (v0 + st)) < 1e-9, (w0, val()))
     page.keyboard.press('Home'); page.wait_for_timeout(80); a = val()
     page.keyboard.press('End'); page.wait_for_timeout(80); b = val()
     check('keyboard: Home and End to its ends', a == lo and b == hi, (a, b, lo, hi))
     page.keyboard.press('Tab'); page.wait_for_timeout(80)
     check('keyboard: Tab goes on to the next slider', fr.evaluate('document.activeElement.id') == 'rk-1')
-    # the start point: focus the graph, the arrow keys move it, the path follows
-    fr.focus('#rk-c')
+    # the start point: Shift+Tab back to the graph, the arrow keys move it, the path follows
+    page.keyboard.press('Shift+Tab'); page.keyboard.press('Shift+Tab'); page.wait_for_timeout(80)
+    check('keyboard: the phase portrait itself takes the focus by Tab', fr.evaluate('document.activeElement.id') == 'rk-c', fr.evaluate('document.activeElement.id'))
     t0 = fr.evaluate('self.rkTimes.length')
     page.keyboard.press('ArrowRight'); page.keyboard.press('Shift+ArrowUp'); page.wait_for_timeout(300)
     check('keyboard: on a phase portrait the arrow keys move where its path starts', fr.evaluate('self.rkTimes.length') > t0 and 'arrow keys' in (fr.eval_on_selector('#rk-c', 'e => e.getAttribute("aria-label")') or ''))
