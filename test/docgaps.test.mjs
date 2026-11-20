@@ -136,6 +136,24 @@ ok('a formula reads its range clamped to the table, any length it stores, and ro
   assert.equal(F.formatNumber(1e21, '#,##0'), '1,000,000,000,000,000,000,000');
 });
 
+// (the review of PR 84, L3 and L4: \hhline was no border, and a booktabs table got || and \toprule\toprule)
+ok('an \\hhline is read as the border it draws and kept; a booktabs table gets no bars and no double rules', () => {
+  const hh = 'x\n\\begin{tabular}{|l|l|}\n\\hhline{|=|=|}\na & b \\\\\n\\hhline{|-|~|}\nc & d \\\\\n\\end{tabular}\ny';
+  let T = at(hh);
+  const rows = X.dataRows(T);
+  const all = X.grow(T, { r0: rows[0], r1: rows[1], c0: 0, c1: 1 });
+  assert.equal(X.bordersOf(hh, T, all).top, true);
+  assert.equal(X.bordersOf(hh, T, X.grow(T, { r0: rows[1], r1: rows[1], c0: 0, c1: 0 })).top, true);
+  assert.equal(X.bordersOf(hh, T, X.grow(T, { r0: rows[1], r1: rows[1], c0: 1, c1: 1 })).top, false);
+  // (Top Border on where the \hhline draws it: nothing written, its crossings kept)
+  assert.deepEqual(X.setBorders(hh, T, all, { top: true }).edits, []);
+  const book = 'x\n\\begin{tabular}{ll}\n\\toprule\na & b \\\\\n\\midrule\nc & d \\\\\n\\bottomrule\n\\end{tabular}\ny';
+  T = at(book);
+  const r = X.setBorders(book, T, X.grow(T, { r0: X.dataRows(T)[0], r1: X.dataRows(T)[1], c0: 0, c1: 1 }), { top: true, bottom: true, left: true, right: true, insideH: true, insideV: true }, { double: true });
+  const out = run(book, r);
+  assert.ok(!out.includes('|') && !/\\toprule\s*\\toprule/.test(out) && /booktabs table/.test(r.note), out + r.note);
+});
+
 // ---- width, wrapping ----------------------------------------------------------------------------------------
 // (the review of PR 84, M4: p{3cm} and siunitx's S became X, and Off gave l and c back)
 ok('Preferred width stretches only l, c and r columns; p, m, b and S keep theirs; Off gives the bytes back', () => {

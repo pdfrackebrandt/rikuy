@@ -1475,6 +1475,17 @@ export function applyLook(src, T, look) {
 // ---- borders -----------------------------------------------------------------------------------------
 // Which borders a selection has: { top, bottom, left, right, insideH, insideV } as true, false or
 // null (no such border: one row has no inside horizontal one)
+// the columns an \hhline rules: its - and = (one rule and two) each a column, ~ a column without
+// one, | : # t b the crossings between; *{n}{…} written out
+function hhlineCols(src, x) {
+  const arg = x.args.filter(Boolean).find((y) => y.kind === 'm');
+  let t = arg ? src.slice(arg.is, arg.ie) : '';
+  for (let k = 0; k < 5 && /\*\{\d+\}/.test(t); k++) t = t.replace(/\*\{(\d+)\}\{([^{}]*)\}/g, (m, n, b) => b.repeat(Math.min(+n, 200)));
+  const out = [];
+  let col = 0;
+  for (const ch of t) { if (ch === '-' || ch === '=') out.push(col++); else if (ch === '~') col++; }
+  return out;
+}
 function gapCovers(src, T, g, c0, c1) {
   const lead = gapLead(T, g), have = new Set();
   for (const x of lead) {
@@ -1483,7 +1494,8 @@ function gapCovers(src, T, g, c0, c1) {
       const arg = x.args.filter(Boolean).find((y) => y.kind === 'm');
       const m = arg && /(\d+)\s*-\s*(\d+)/.exec(src.slice(arg.is, arg.ie));
       if (m) for (let q = +m[1]; q <= +m[2]; q++) have.add(q - 1);
-    } else if (x.name !== 'hhline') for (let q = 0; q < T.ncols; q++) have.add(q);
+    } else if (x.name === 'hhline') for (const q of hhlineCols(src, x)) have.add(q);
+    else for (let q = 0; q < T.ncols; q++) have.add(q);
   }
   for (let q = c0; q <= c1; q++) if (!have.has(q)) return false;
   return true;
@@ -1509,7 +1521,18 @@ export function setBorders(src, T, rect, parts, o = {}) {
   const full = c0 === 0 && c1 >= T.ncols - 1;
   const look = lookOf(src, T), book = look === 'booktabs';
   const edits = [];
+  // (booktabs' rules leave a gap where a bar meets them, and booktabs has no double rule: on a
+  // booktabs table the bars are not written and the rules stay single, and the note says why)
+  let note = null;
+  if (book && (parts.left || parts.right || parts.insideV || o.double)) {
+    note = 'A booktabs table (\\toprule, \\midrule) has no vertical lines or double rules: its rules leave a gap where they meet one. The Grid Table style draws them.';
+    parts = { ...parts };
+    for (const k of ['left', 'right', 'insideV']) if (parts[k]) delete parts[k];
+    o = { ...o, double: undefined };
+  }
   const gapWant = (g, on) => {
+    // (on where it is on already, with no pen style asked: nothing to write, an \hhline kept as written)
+    if (on && o.double == null && gapCovers(src, T, g, c0, c1)) return;
     const lead = gapLead(T, g);
     const cur = lead.filter((x) => RULES.has(x.name)).map((x) => src.slice(x.s, x.e));
     // the rules of this gap over the columns of the selection go; the others stay
@@ -1551,7 +1574,7 @@ export function setBorders(src, T, rect, parts, o = {}) {
       edits.push(...setBars(src, T, bars));
     }
   }
-  return { edits: dedupe(edits), packages: book ? ['booktabs'] : [] };
+  return { edits: dedupe(edits), packages: book ? ['booktabs'] : [], note };
 }
 
 // ---- shading -------------------------------------------------------------------------------------------

@@ -221,7 +221,8 @@ register(
   // ---- Table Design: borders, pen ------------------------------------------------------------------------------------
   T('table-borders', 'Table Borders', { title: 'Borders: the border picked last (Bottom Border to begin with) on the selected cells, or the whole table with the caret alone; the arrow for every border', tab: 'table-design', group: 'borders', order: 10, kind: 'split', icon: ICON.borders,
     synonyms: ['Borders', 'Border', 'Lines', 'Rules', 'hline', 'cline'], run: (app, args) => app.tableBorder(args && args.id ? args.id : app.lastBorder || 'border-bottom'), menuItems: (app, at) => app.borderItems(at) }),
-  ...BORDERS.map(([id, name, parts, icon]) => T(id, name, { title: name + ': ' + (parts.left != null || parts.right != null || parts.insideV != null ? 'bars in the specification, the whole height of the table' : 'rules: \\hline over all the columns, \\cline over some'), icon, synonyms: ['Border'], kind: 'toggle',
+  ...BORDERS.map(([id, name, parts, icon]) => T(id, name, { title: name + ': ' + (parts.left != null || parts.right != null || parts.insideV != null ? 'bars in the specification, the whole height of the table (none on a booktabs table: its rules leave a gap where a bar meets them)' : 'rules: \\hline over all the columns, \\cline over some'), icon, synonyms: ['Border'], kind: 'toggle',
+    ...(Object.keys(parts).every((k) => /^(left|right|insideV)$/.test(k)) ? { when: (app, at) => { const h = here(app, at); return !!h && X.lookOf(h.src, h.T) !== 'booktabs'; }, whyNot: (app, at) => (here(app, at) ? 'A booktabs table (\\toprule, \\midrule) has no vertical lines: its rules leave a gap where they meet one. The Grid Table style draws them.' : WHY) } : {}),
     on: (app, at) => { const h = here(app, at); return !!h && app.borderOn(h, parts); }, run: (app) => app.tableBorder(id) })),
   T('pen-weight', 'Pen Weight', { title: 'Pen Weight: how thick the table\'s rules are (\\arrayrulewidth)', tab: 'table-design', group: 'borders', order: 20, kind: 'menu', icon: ICON.penW, synonyms: ['Line weight', 'Border width', 'arrayrulewidth'],
     run: (app, args) => (args && 'w' in args ? app.tableSetting('arrayrulewidth', args.w) : app.tableMenu('pen-weight')) }),
@@ -300,6 +301,7 @@ export const methods = {
     const fx = r.edits && r.edits.length ? X.formulasAfter(h.src, h.T, r.edits, r.moved) : { edits: [], dropped: [] };
     const edits = [...(r.edits || []), ...fx.edits].map((x) => ({ f, s: x.s, e: x.e, t: x.t }));
     if (fx.dropped.length) setTimeout(() => this.toast((fx.dropped.length === 1 ? 'The formula of ' + fx.dropped[0] + ' went' : 'The formulas of ' + fx.dropped.join(', ') + ' went') + ' with its cell.', 6000), 0);
+    else if (r.note) setTimeout(() => this.toast(r.note, 7000), 0);
     const pk = this.tablePackages(r.packages || []);
     if (!edits.length && !pk.length) return false;
     const mine = [...edits, ...pk.filter((x) => x.f === f)];
@@ -1082,7 +1084,9 @@ export const methods = {
   },
   borderOn(h, parts) {
     const now = X.bordersOf(h.src, h.T, this.borderRect(h));
-    const keys = Object.keys(parts);
+    // (a booktabs table has no bars: All Borders there is on with its rules)
+    const book = X.lookOf(h.src, h.T) === 'booktabs';
+    const keys = Object.keys(parts).filter((k) => !(book && /^(left|right|insideV)$/.test(k) && Object.keys(parts).some((j) => !/^(left|right|insideV)$/.test(j))));
     if (keys.every((k) => parts[k] === 0)) return keys.every((k) => !now[k]);
     return keys.filter((k) => parts[k]).every((k) => now[k] !== false);
   },
@@ -1104,7 +1108,10 @@ export const methods = {
   },
   borderItems(at) {
     const h = at && here(this, at);
-    return BORDERS.map(([id, name, parts, icon], k) => [k === 4 ? null : undefined, { name, icon, checked: h ? this.borderOn(h, parts) : false, run: () => this.runCommand('table-borders', { id }) }]).flat().filter((x) => x !== undefined);
+    const book = !!h && X.lookOf(h.src, h.T) === 'booktabs';
+    const bars = (parts) => Object.keys(parts).every((k) => /^(left|right|insideV)$/.test(k));
+    return BORDERS.map(([id, name, parts, icon], k) => [k === 4 ? null : undefined, { name, icon, checked: h ? this.borderOn(h, parts) : false, run: () => this.runCommand('table-borders', { id }),
+      ...(book && bars(parts) ? { disabled: true, title: 'A booktabs table (\\toprule, \\midrule) has no vertical lines: its rules leave a gap where they meet one. The Grid Table style draws them.' } : {}) }]).flat().filter((x) => x !== undefined);
   },
   // the table's settings: \arrayrulewidth (Pen Weight), \tabcolsep, \extrarowheight, \arraystretch
   tableSetting(key, value, packages) {
@@ -1157,19 +1164,20 @@ export const methods = {
 // it moved to), the whole as one edit of the part that differs
 function composeOps(src0, T0, steps) {
   let src = src0, s = T0.s;
-  const pk = new Set(), errors = [];
+  const pk = new Set(), errors = [], notes = [];
   for (const step of steps) {
     const T = X.parseTable(src, s);
     if (!T) break;
     const r = step(src, T);
     if (r && r.error) errors.push(r.error);
+    if (r && r.note) notes.push(r.note);
     if (!r || r.error || !r.edits) continue;
     src = X.apply(src, r.edits);
     s = mapPos(r.edits, s, 1);
     for (const x of r.packages || []) pk.add(x);
   }
   const d = diffOne(src0, src);
-  return { edits: d ? [d] : [], packages: [...pk], errors };
+  return { edits: d ? [d] : [], packages: [...pk], errors, note: notes[0] || null };
 }
 // The cell of a table's row of cells r (A1's row, from 0) that starts at column c
 function cellAtRC(T, r, c) {

@@ -10,7 +10,7 @@ headfoot_phones, headfoot_shots, view, refs_update, equation, equation_linear, i
 rest_shots."""
 import os, sys, base64, io, re as _re
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import open_page, check, results, src, load_doc, roundtrip, pressed
+from browser import open_page, check, results, src, load_doc, roundtrip, pressed, click_text
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -123,6 +123,15 @@ def tables(page):
     load_doc(page, PLAIN); all_double(page); page.wait_for_timeout(250)
     st = page.evaluate("() => { const tr = document.querySelector('#pages table.tab tr.r-dbl'), td = document.querySelector('#pages table.tab td.vl2'); return { tr: tr && getComputedStyle(tr).borderTopStyle, td: td && getComputedStyle(td).borderLeftStyle }; }")
     check('the page draws them double (\\hline\\hline and ||)', st == {'tr': 'double', 'td': 'double'}, st)
+    # (the review of PR 84, L4: on a booktabs table, no bars and no double rules, and why)
+    load_doc(page, DOC); at_src(page, 'apples'); page.wait_for_timeout(150)
+    page.get_by_role('tab', name='Table Design', exact=True).click(); page.wait_for_timeout(150)
+    it = page.evaluate("(() => { const g = window.rikuy, x = g.borderItems(g.ribbonAt()).find((i) => i && i.name === 'Left Border'); return x && [!!x.disabled, x.title || '']; })()")
+    check('Borders › Left Border is off on a booktabs table, its tooltip says why', it and it[0] and 'gap where they meet' in it[1], it)
+    run_cmd(page, 'borders-shading', {'scope': 'table', 'parts': {'top': True, 'bottom': True, 'left': True, 'right': True, 'insideH': True, 'insideV': True}, 'double': True}); page.wait_for_timeout(300)
+    s = src(page)
+    toast = page.evaluate("() => (document.querySelector('.toast') || {}).textContent || ''")
+    check('All Borders, double, on a booktabs table: no bars, no doubled rules, and a toast that says why', '|' not in body(s).split('\\end{tabular}')[0] and '\\toprule\\toprule' not in s and 'booktabs table' in toast, (body(s)[:300], toast))
     # the dialog: Box by its setting, the preview's edges, the fill
     load_doc(page, PLAIN); at_src(page, 'one'); run_cmd(page, 'borders-shading'); page.wait_for_timeout(250)
     dlg = page.get_by_role('dialog', name='Borders and Shading', exact=True)
@@ -294,8 +303,8 @@ def tables_phones(p):
         try:
             load_doc(page, DOC); at_src(page, 'Item')
             run_cmd(page, 'table-properties'); page.wait_for_timeout(300)
-            fit = page.evaluate("(() => { const d = document.querySelector('.pop'); const r = d.getBoundingClientRect(); const small = [...d.querySelectorAll('[role=tab], button, select, input[type=text]')].filter((x) => x.offsetParent && (x.getBoundingClientRect().height < 43.5)); return { in: r.left >= 0 && r.right <= innerWidth + 1, small: small.map((x) => x.textContent || x.getAttribute('aria-label')).slice(0, 4), scroll: document.documentElement.scrollWidth <= innerWidth + 1 }; })()")
-            check('Table Properties inside the screen, its tabs and buttons 44 px' + tag, fit['in'] and not fit['small'] and fit['scroll'], fit)
+            fit = page.evaluate("(() => { const d = document.querySelector('.pop'); const r = d.getBoundingClientRect(); const small = [...d.querySelectorAll('[role=tab], button, select, input[type=text]')].filter((x) => x.offsetParent && (x.getBoundingClientRect().height < 43.5 || x.getBoundingClientRect().width < 43.5)); return { in: r.left >= 0 && r.right <= innerWidth + 1, small: small.map((x) => x.textContent || x.getAttribute('aria-label')).slice(0, 4), scroll: document.documentElement.scrollWidth <= innerWidth + 1 }; })()")
+            check('Table Properties inside the screen, its tabs and buttons 44 px high and wide (the Cell tab was 43 wide)' + tag, fit['in'] and not fit['small'] and fit['scroll'], fit)
             page.get_by_role('tab', name='Row', exact=True).tap()
             page.get_by_role('checkbox', name='Repeat as header row at the top of each page', exact=True).tap()
             page.get_by_role('button', name='OK', exact=True).tap(); page.wait_for_timeout(300)
@@ -735,17 +744,34 @@ def insert_text(page):
     h0 = hist(page)
     dlg.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(300)
     s = src(page)
-    want = '\\par\\bigskip\\bigskip\n\\noindent\\rule{6cm}{0.4pt}\\\\\nAda Lovelace\\\\\nAnalyst \\& Co\\\\\n\\today\\par\n'
+    want = '\\par\\bigskip\\bigskip\n\\noindent\\rule{6cm}{0.4pt}\\\\*\nAda Lovelace\\\\*\nAnalyst \\& Co\\\\*\n\\today\\par\n'
     check('Signature Line: room, a 6 cm line, the name, the title (its & written \\&), the date, after the paragraph, one step', want in s and s.index(want) > s.index('sincerely') and hist(page) == h0 + 1, s[s.find('sincerely'):][:200])
     page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
     check('one undo: the bytes of before', src(page) == doc)
+    # (the review of PR 84, L5: in a list item it goes right after the list, and in a cell right after
+    # the table, where a paragraph of its own can stand (an l cell holds none); its lines
+    # joined by \\*, so the line and the name never part at a page's end)
+    ldoc = WRAP('Intro.\n\n\\begin{itemize}\n\\item first item\n\\item second\n\\end{itemize}\n\nAfter.', '')
+    load_doc(page, ldoc); page.wait_for_timeout(300); click_text(page, 'first', 2); page.wait_for_timeout(150)
+    run_cmd(page, 'signature-line', {'name': 'Ana', 'title': '', 'email': '', 'date': False}); page.wait_for_timeout(300)
+    s = src(page)
+    i = s.find('\\rule{6cm}')
+    check('Signature Line with the caret in a list item: right after the list, before the next paragraph', s.find('\\end{itemize}') < i < s.find('After.'), body(s))
+    tdoc = WRAP('Intro.\n\n\\begin{tabular}{ll}\napples & 2 \\\\\npears & 3 \\\\\n\\end{tabular}\n\nAfter.', '')
+    load_doc(page, tdoc); page.wait_for_timeout(300); at_src(page, 'apples', 2)
+    run_cmd(page, 'signature-line', {'name': 'Ana', 'title': '', 'email': '', 'date': False}); page.wait_for_timeout(300)
+    s = src(page)
+    i = s.find('\\rule{6cm}')
+    check('in a table cell: right after the table, before the next paragraph', s.find('\\end{tabular}') < i < s.find('After.'), body(s))
+    lines = page.evaluate("[...document.querySelectorAll('#pages .it')].map((x) => x.textContent.trim()).filter((t) => t.includes('Ana'))")
+    check('the page draws the name on a line of its own under the rule', lines and lines[0].strip() == 'Ana', lines)
 
 
 def rest_compiled(page):
     if not HAS_TEX:
         print('SKIP the rest compiled: no TeX tree in %s' % DIST)
         return
-    body_ = ('Yours sincerely,\n\n\\par\\bigskip\\bigskip\n\\noindent\\rule{6cm}{0.4pt}\\\\\nAda Lovelace\\\\\nAnalyst \\& Co\\\\\n\\today\\par\n\n'
+    body_ = ('Yours sincerely,\n\n\\par\\bigskip\\bigskip\n\\noindent\\rule{6cm}{0.4pt}\\\\*\nAda Lovelace\\\\*\nAnalyst \\& Co\\\\*\n\\today\\par\n\n'
              '\\begin{equation*}\n  \\frac{a+b}{c}=\\sqrt{x+1}\\text{ if }x>0\n\\end{equation*}\n'
              '\\begin{equation}\ny=' + LIN_EQ + '+1\n\\end{equation}\n')
     for eng, magic in (('pdflatex', ''), ('xelatex', '% !TEX program = xelatex\n'), ('lualatex', '% !TEX program = lualatex\n')):

@@ -416,7 +416,8 @@ export function signatureTex(o = {}) {
   const lines = [esc(o.name), esc(o.title), esc(o.email)].filter(Boolean);
   if (o.date) lines.push('\\today');
   const w = /^\d+(\.\d+)?(cm|mm|in|pt)$/.test(String(o.width || '')) ? o.width : '6cm';
-  return '\\par\\bigskip\\bigskip\n\\noindent\\rule{' + w + '}{0.4pt}' + (lines.length ? '\\\\\n' + lines.join('\\\\\n') : '') + '\\par\n';
+  // (\\* between the lines: no page break between the line and the words under it)
+  return '\\par\\bigskip\\bigskip\n\\noindent\\rule{' + w + '}{0.4pt}' + (lines.length ? '\\\\*\n' + lines.join('\\\\*\n') : '') + '\\par\n';
 }
 register(
   { id: 'signature-line', name: 'Signature Line', label: 'Signature Line', title: 'Signature Line…: room to sign, a line, the signer\'s name, title and e-mail, and the date if you like, after the paragraph the caret is in', icon: I.sign, tab: 'insert', group: 'text', order: 60,
