@@ -40,11 +40,14 @@ const has = (app, at) => !!pic(app, at);
 // a picture Corrections, Color, Transparency or Compress made (src/picfx.js): its comment names the
 // first file, which Reset Picture puts back, the comment going with it
 const noted = (app, at) => { const h = pic(app, at); return !!h && !!lineOf(h.src, h.P.e).note; };
-function withFirstFile(src, Q, r) {
+function withFirstFile(src, Q, r, app) {
   const L = lineOf(src, Q.e);
   if (!L.note || !r || r.error) return r;
   const more = fxEdits(src, Q, Q.file.name, L.note.orig, {}, null);
-  return { ...r, edits: [...(r.edits || []), ...more].sort((a, b) => a.s - b.s || a.e - b.e) };
+  if (more.error) return r;
+  // (the edited file goes with the step, undo bringing it back: src/cmd/picfx.js)
+  const blobs = app && app.picFxDropBlobs ? app.picFxDropBlobs(Q.file.name, app.picAssetName(L.note.orig)) : [];
+  return { ...r, edits: [...(r.edits || []), ...more].sort((a, b) => a.s - b.s || a.e - b.e), blobs };
 }
 const keyed = (app, at) => { const h = pic(app, at); return !!h && h.P.keyval; };
 // (a picture turned by a macro's angle: Rotate cannot add to it)
@@ -97,8 +100,8 @@ register(
   P('picture-change', 'Change Picture', { title: 'Change Picture: another file in its place, its size, crop, turn and alt text kept', tab: 'picture-format', group: 'adjust', order: 10, icon: ICON.change, label: 'Change Picture',
     synonyms: ['Replace picture', 'Replace image', 'Swap picture'], menu: { picture: 10 }, run: (app, args) => (args && args.file ? app.picChange(args.file, args.blob) : app.picChoose()) }),
   P('picture-reset', 'Reset Picture', { title: 'Reset Picture: its crop, turn, flips and border go (size and alt text stay); the arrow for Reset Picture & Size', tab: 'picture-format', group: 'adjust', order: 20, icon: ICON.reset, kind: 'split',
-    synonyms: ['Discard formatting'], when: (app, at) => keyed(app, at) || noted(app, at), run: (app) => app.picOp((src, Q) => withFirstFile(src, Q, X.reset(src, Q, false))), menuItems: () => [{ name: 'Reset Picture', command: 'picture-reset' }, { name: 'Reset Picture & Size', command: 'picture-reset-size' }] }),
-  P('picture-reset-size', 'Reset Picture & Size', { title: 'Reset Picture & Size: the picture as its file is, at its natural size', when: (app, at) => keyed(app, at) || noted(app, at), run: (app) => app.picOp((src, Q) => withFirstFile(src, Q, X.reset(src, Q, true))) }),
+    synonyms: ['Discard formatting'], when: (app, at) => keyed(app, at) || noted(app, at), run: (app) => app.picOp((src, Q) => withFirstFile(src, Q, X.reset(src, Q, false), app)), menuItems: () => [{ name: 'Reset Picture', command: 'picture-reset' }, { name: 'Reset Picture & Size', command: 'picture-reset-size' }] }),
+  P('picture-reset-size', 'Reset Picture & Size', { title: 'Reset Picture & Size: the picture as its file is, at its natural size', when: (app, at) => keyed(app, at) || noted(app, at), run: (app) => app.picOp((src, Q) => withFirstFile(src, Q, X.reset(src, Q, true), app)) }),
 
   // ---- Picture Styles ---------------------------------------------------------------------------
   P('picture-border', 'Picture Border', { title: 'Picture Border: a frame tight round the picture ({\\setlength{\\fboxsep}{0pt}\\fbox{…}}); again takes it off; Border Weight and Border Color in the right click menu', tab: 'picture-format', group: 'styles', order: 10, kind: 'toggle', icon: ICON.border, label: 'Picture Border',
@@ -343,7 +346,7 @@ export const methods = {
     // (keys need graphicx: graphics alone reads a bounding box there)
     const keys = edits.some((x) => x.s >= h.P.s && x.e <= h.P.e) && h.P.keyval;
     const pk = this.picPackages([...(r.packages || []), ...(keys ? ['graphicx'] : [])]);
-    if (!edits.length) return false;
+    if (!edits.length && !(r.blobs && r.blobs.length)) return false;
     const mine = [...edits, ...pk.filter((x) => x.f === f)];
     const ns = mapPos(mine, h.P.s, 1);
     let caret;
@@ -351,7 +354,8 @@ export const methods = {
     else caret = { f, p: ns, bias: 1 };
     this.closeGroup();
     this.removeGhost();
-    this.commit([...edits, ...pk], caret, 'picture');
+    // (blobs: picture files the same step puts in or takes out, src/cmd/picfx.js)
+    this.commit([...edits, ...pk], caret, 'picture', r.blobs);
     this.closeGroup();
     if (r.p == null) this.picSelect({ f, s: ns });
     else this.ribbonSync();

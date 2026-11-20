@@ -61,7 +61,10 @@ const CORE = { file: 'core/rikuy-core-' + coreSha.slice(0, 16) + '.wasm', sha256
 const picWasm = fs.readFileSync(R('tex/vendor/pic/rikuy-pic.wasm'));
 if (picWasm.subarray(0, 4).toString('hex') !== '0061736d') throw new Error('tex/vendor/pic/rikuy-pic.wasm is no WebAssembly module');
 const picSha = crypto.createHash('sha256').update(picWasm).digest('hex');
-const PIC = { file: 'core/rikuy-pic-' + picSha.slice(0, 16) + '.wasm', sha256: picSha };
+// and its worker (src/picworker.js, bundled alone), beside it as core/rikuy-pic-worker-<hash>.js
+const picWorker = Buffer.from((await build({ entryPoints: [R('src/picworker.js')], bundle: true, format: 'iife', minify: !process.argv.includes('--dev'), write: false, target: ['chrome100', 'firefox100', 'safari15'], legalComments: 'none', charset: 'utf8' })).outputFiles[0].contents);
+const picWorkerSha = crypto.createHash('sha256').update(picWorker).digest('hex');
+const PIC = { file: 'core/rikuy-pic-' + picSha.slice(0, 16) + '.wasm', sha256: picSha, worker: 'core/rikuy-pic-worker-' + picWorkerSha.slice(0, 16) + '.js' };
 // Spelling (src/spell/): Hunspell (tex/vendor/hunspell/, built by tex/build_tools.sh hunspell) and
 // its dictionaries go beside the page in spell/, each named by the first 16 hex digits of its
 // SHA-256, with the spell worker (Emscripten's glue, then src/spell/worker.js, one classic
@@ -218,6 +221,7 @@ fs.rmSync(O('core'), { recursive: true, force: true });
 fs.mkdirSync(O('core'), { recursive: true });
 fs.writeFileSync(O(CORE.file), coreWasm);
 fs.writeFileSync(O(PIC.file), picWasm);
+fs.writeFileSync(O(PIC.worker), picWorker);
 fs.rmSync(O('spell'), { recursive: true, force: true });
 if (SPELL) { fs.mkdirSync(O('spell'), { recursive: true }); for (const [n, b] of SPELL_FILES) fs.writeFileSync(O(n), b); }
 // (in every build, the artifact's too; a list an earlier build left in dist/ goes)

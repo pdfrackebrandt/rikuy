@@ -9,15 +9,24 @@
 // file of before still there), \includegraphics points at it, and a comment at the end of its line
 // says where it came from and how:
 //
-//   \includegraphics[width=0.5\linewidth]{a-edited-3f2a9c1b.png} % rikuy: from a.png, brightness 0.2, contrast -0.2
+//   \includegraphics[width=0.5\linewidth]{a-edited-3f2a9c1b.png} % rikuy: from {a.png}, brightness 0.2, contrast -0.2
 //
 // Every change starts again from the first file with all the settings, so corrections never wear
-// a picture down; Reset Picture puts the first file back and takes the comment off. The comment is
+// a picture down; Reset Picture puts the first file back and takes the comment off. A comment
+// belongs to the last picture on its line: a picture with another after it on its line is left
+// alone (the comment could not say which). The new file's name holds a hash of the first file's
+// bytes, so a first file replaced makes a new one; each picture keeps one edited file at a time
+// (the last one goes in the same step as the new one comes, src/cmd/picfx.js). The pixels are
+// worked on in a worker (src/picworker.js), the module let go after a run that grew it past 64 MB. The comment is
 // plain LaTeX that TeX skips, and the document compiles anywhere with the files it has.
 
 let X = null;
 
 export function picFxReady() { return !!X; }
+// the module's memory now, and the module let go (WebAssembly memory never shrinks: a fresh
+// instance is the way to give it back)
+export function picFxMemory() { return X ? X.memory.buffer.byteLength : 0; }
+export function dropPicFx() { X = null; }
 // bytes: the module. Resolves to true when it runs (under node too: test/picfx.test.mjs)
 export async function loadPicFx(bytes) {
   try {
@@ -54,17 +63,19 @@ export function clean(o) {
 }
 export const isPlain = (o) => Object.keys(clean(o)).length === 0;
 // the comment's words: "from a.png, brightness 0.2, recolor tint, tint 2E75B6"
+// (the name in braces: a file's name may hold spaces and commas, as \includegraphics takes them)
 export function noteText(orig, o) {
   const c = clean(o);
-  return 'from ' + orig + Object.entries(c).map(([k, v]) => ', ' + k + ' ' + v).join('');
+  return 'from {' + orig + '}' + Object.entries(c).map(([k, v]) => ', ' + k + ' ' + v).join('');
 }
-// the comment at the end of a line, read: { orig, settings } or null
+// the comment at the end of a line, read: { orig, settings } or null (a name without braces, as the
+// first comments were written, is read too)
 export function readNote(line) {
-  const m = /(?:^|\s)rikuy: from ([^,\s%{}\\]{1,240})((?:, [a-z]+ [-\w.]{1,12}){0,12})\s*$/.exec(String(line || ''));
+  const m = /(?:^|\s)rikuy: from (?:\{([^{}\r\n%\\]{1,240})\}|([^,\s%{}\\]{1,240}))((?:, [a-z]+ [-\w.]{1,12}){0,12})\s*$/.exec(String(line || ''));
   if (!m) return null;
   const o = {};
-  for (const x of m[2].split(', ').filter(Boolean)) { const [k, v] = x.split(' '); o[k] = k === 'recolor' || k === 'tint' ? v : parseFloat(v); }
-  return { orig: m[1], settings: clean(o) };
+  for (const x of m[3].split(', ').filter(Boolean)) { const [k, v] = x.split(' '); o[k] = k === 'recolor' || k === 'tint' ? v : parseFloat(v); }
+  return { orig: m[1] ?? m[2], settings: clean(o) };
 }
 // FNV-1a of a string, as eight hex digits: the new file's name from its first file and settings
 export function hash8(s) {
@@ -72,14 +83,22 @@ export function hash8(s) {
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
   return h.toString(16).padStart(8, '0');
 }
-// the new file's name: beside the first, its kind the one it is written as
-// (orig: the project's own name of the file, never a document's text: no "..", no leading "/",
-// so a project downloaded as a zip holds no name that climbs out of its folder)
-export function editedName(orig, o, ext) {
+// a hash of a file's bytes (FNV-1a over them all), eight hex digits
+export function bytesHash(b) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < b.length; i++) { h ^= b[i]; h = Math.imul(h, 0x01000193) >>> 0; }
+  return h.toString(16).padStart(8, '0');
+}
+// the new file's name: beside the first, its kind the one it is written as, and a hash of the
+// settings and of the first file's bytes (a first file replaced by another of its name makes a new
+// one). orig: the project's own name of the file, never a document's text: no "..", no leading "/",
+// so a project downloaded as a zip holds no name that climbs out of its folder.
+export function editedName(orig, o, ext, origHash = '') {
   orig = String(orig).split('/').filter((x) => x && x !== '..' && x !== '.').join('/') || 'picture';
   const dot = orig.lastIndexOf('.'), base = dot > orig.lastIndexOf('/') ? orig.slice(0, dot) : orig;
-  return base + '-edited-' + hash8(noteText(orig, o) + '|' + ext) + '.' + ext;
+  return base + '-edited-' + hash8(noteText(orig, o) + '|' + ext + '|' + origHash) + '.' + ext;
 }
+export const isEdited = (name) => /-edited-[0-9a-f]{8}\.(png|jpg)$/.test(String(name || ''));
 
 // ---- where the comment goes ----------------------------------------------------------------------
 // The line of a picture: from the end of its \includegraphics (e) to the line's end, and the note on
@@ -94,7 +113,8 @@ export function lineOf(src, e) {
   const pc = /(^|[^\\])%/.exec(rest);
   const out = { at: z, note: null, comment: !!pc, other: /\\includegraphics/.test(pc ? rest.slice(0, pc.index + 1) : rest) };
   const m = /( ?%)? rikuy: from [^\r\n]*$/.exec(rest);
-  if (m) {
+  // (a comment belongs to the line's last picture: one before another on its line has none)
+  if (m && !out.other) {
     const R = readNote(rest.slice(m.index));
     if (R) out.note = { s: e + m.index, e: z, ...R, own: !!m[1] };
   }
@@ -104,6 +124,7 @@ export function lineOf(src, e) {
 // back at its first file with the comment gone). P: { file: { is, ie }, e } as src/picture.js reads it.
 export function fxEdits(src, P, current, orig, settings, newName) {
   const L = lineOf(src, P.e);
+  if (L.other) return { error: 'Another picture follows this one on its line, and the comment that says where an edited picture came from would be read as that one\'s: put this picture on a line of its own first.' };
   const edits = [];
   const plain = isPlain(settings);
   const name = plain ? orig : newName;
@@ -130,7 +151,7 @@ function renderIn(bytes, settings, o) {
   new Uint8Array(X.memory.buffer, p, n).set(bytes);
   const dec = X.pic_decode(n);
   if (dec === -1) { X.pic_done(); return { error: 'The picture has more than 40 million pixels: too large to work on in a browser tab.' }; }
-  if (!dec) { X.pic_done(); return { error: 'This file is no PNG or JPEG the picture tools read (a CMYK JPEG, a 16 bit PNG with odd chunks, or a broken file).' }; }
+  if (!dec) { X.pic_done(); return { error: 'This file is no PNG or JPEG the picture tools can read (a broken file, or a kind of PNG or JPEG they do not know).' }; }
   const w0 = X.pic_width(), h0 = X.pic_height();
   const rc = s.recolor ? RECOLORS[s.recolor] : 0, tint = s.tint ? [0, 2, 4].map((i) => parseInt(s.tint.slice(i, i + 2), 16)) : [0, 0, 0];
   X.pic_adjust(s.sharpen || 0, s.brightness || 0, s.contrast || 0, s.saturation ?? 1, s.tone || 0, rc, tint[0], tint[1], tint[2], s.transparency || 0);

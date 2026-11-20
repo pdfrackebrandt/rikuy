@@ -422,8 +422,8 @@ def pictures(page):
     h0 = page.evaluate('window.rikuy.hist.length')
     run_async(page, 'picture-corrections', {'brightness': 0.2})
     s = src(page)
-    m = re.search(r'\{(a-edited-[0-9a-f]{8}\.png)\} % rikuy: from a\.png, brightness 0\.2\n', s)
-    check('Corrections › Brightness +20%: a new file a-edited-….png beside a.png, the picture pointed at it, the comment at its line\'s end, one step', bool(m) and page.evaluate('window.rikuy.hist.length') == h0 + 1 and s.replace(m.group(1), 'a.png').replace(' % rikuy: from a.png, brightness 0.2', '') == D, s[s.find('\\begin{center}'):][:160])
+    m = re.search(r'\{(a-edited-[0-9a-f]{8}\.png)\} % rikuy: from \{a\.png\}, brightness 0\.2\n', s)
+    check('Corrections › Brightness +20%: a new file a-edited-….png beside a.png, the picture pointed at it, the comment at its line\'s end, one step', bool(m) and page.evaluate('window.rikuy.hist.length') == h0 + 1 and s.replace(m.group(1), 'a.png').replace(' % rikuy: from {a.png}, brightness 0.2', '') == D, s[s.find('\\begin{center}'):][:160])
     if m:
         check('the new file is in the project, the first one kept', page.evaluate('(n) => window.rikuy.assetBlobs.has(n) && window.rikuy.assetBlobs.has("a.png")', m.group(1)))
         px = page.evaluate(PIXEL, [0.1, 0.5])
@@ -437,7 +437,7 @@ def pictures(page):
         f.__name__ = 'Color ' + str(args)
         return f
     reset = lambda p: run_async(p, 'picture-reset', None, 400)
-    want = lambda key: (lambda t: bool(re.search(r'\{a-edited-[0-9a-f]{8}\.png\} % rikuy: from a\.png, ' + re.escape(key) + r'\n', t)))
+    want = lambda key: (lambda t: bool(re.search(r'\{a-edited-[0-9a-f]{8}\.png\} % rikuy: from \{a\.png\}, ' + re.escape(key) + r'\n', t)))
     roundtrip(page, D, sel, fx({'recolor': 'gray'}), want('recolor gray'), off_command=reset, label='Color › Grayscale, Reset Picture back')
     roundtrip(page, D, sel, fx({'saturation': 2}), want('saturation 2'), off_command=reset, label='Color › Saturation 200%')
     roundtrip(page, D, sel, lambda p: run_async(p, 'picture-transparency', {'transparency': 0.5}), want('transparency 0.5'), off_command=reset, label='Transparency 50%')
@@ -446,7 +446,7 @@ def pictures(page):
     check('Transparency 50%: the page draws the picture seen through (alpha 128)', px and px[3] == 128, px)
     run_async(page, 'picture-color', {'recolor': 'gray'})
     s = src(page)
-    check('Color › Grayscale on it: one comment with both, from the first file again', bool(re.search(r'% rikuy: from a\.png, transparency 0\.5, recolor gray\n', s)) and s.count('rikuy:') == 1, s[s.find('\\begin{center}'):][:160])
+    check('Color › Grayscale on it: one comment with both, from the first file again', bool(re.search(r'% rikuy: from \{a\.png\}, transparency 0\.5, recolor gray\n', s)) and s.count('rikuy:') == 1, s[s.find('\\begin{center}'):][:160])
     px = page.evaluate(PIXEL, [0.1, 0.5])
     check('and the page draws it gray and seen through', px and px[0] == px[1] == px[2] and px[3] == 128, px)
     run_async(page, 'picture-reset', None, 400)
@@ -457,10 +457,10 @@ def pictures(page):
     page.click('#rc-picture-corrections'); page.wait_for_timeout(250)
     n = page.evaluate("document.querySelectorAll('.pop [role^=menuitem]').length")
     page.get_by_role('menuitemradio', name='Brightness: +20% Contrast: -20%').click(); page.wait_for_timeout(900)
-    check('the Corrections menu: sharpen and soften, 25 of brightness and contrast, Options (%d items); a pick writes it' % n, n == 31 and '% rikuy: from a.png, brightness 0.2, contrast -0.2\n' in src(page), src(page)[-200:])
+    check('the Corrections menu: sharpen and soften, 25 of brightness and contrast, Options (%d items); a pick writes it' % n, n == 31 and '% rikuy: from {a.png}, brightness 0.2, contrast -0.2\n' in src(page), src(page)[-200:])
     sel_pic(page); run_async(page, 'picture-fx-options', None, 300)
     page.get_by_role('textbox', name='Sharpness (%)').fill('25'); page.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(900)
-    check('Format Picture: Sharpness 25 typed, OK keeps the others and adds it', '% rikuy: from a.png, sharpen 0.25, brightness 0.2, contrast -0.2\n' in src(page), src(page)[-200:])
+    check('Format Picture: Sharpness 25 typed, OK keeps the others and adds it', '% rikuy: from {a.png}, sharpen 0.25, brightness 0.2, contrast -0.2\n' in src(page), src(page)[-200:])
     # Compress Pictures: a large picture shown small, at 96 ppi; a picture of no width of its own keeps its size
     big = pic_doc('width=0.3\\linewidth', 'big.png').replace('\\end{center}\n', '\\end{center}\n\n\\begin{center}\n\\includegraphics{small.png}\n\\end{center}\n')
     load_doc(page, big); b0 = put_png(page, 'big.png', 2400, 1600, dpi=300); put_png(page, 'small.png', 900, 300, dpi=300, color=(40, 160, 90)); page.wait_for_timeout(900)
@@ -469,14 +469,14 @@ def pictures(page):
     h0 = page.evaluate('window.rikuy.hist.length')
     run_async(page, 'picture-compress', {'ppi': 96, 'all': True}, 2500)
     s = src(page)
-    names = re.findall(r'\{((?:big|small)-edited-[0-9a-f]{8}\.png)\} % rikuy: from (?:big|small)\.png, compress 96\n', s)
+    names = re.findall(r'\{((?:big|small)-edited-[0-9a-f]{8}\.png)\} % rikuy: from \{(?:big|small)\.png\}, compress 96\n', s)
     nb = page.evaluate('(n) => { const b = window.rikuy.assetBlobs.get(n); return b ? b.size : 0; }', names[0]) if names else 0
     dims = page.evaluate(PIXEL, [0.5, 0.5])
     toast = page.evaluate("(document.querySelector('#toast span') || {}).textContent || ''")
     check('Compress Pictures at 96 ppi, every picture: both written smaller in one step (%d bytes to %d)' % (b0, nb), len(names) == 2 and 0 < nb < b0 and page.evaluate('window.rikuy.hist.length') == h0 + 1, s[s.find('\\begin{document}'):][:400])
     # (0.3 of a 345 pt line is 103.5 pt, 138 pixels at 96 ppi)
     check('the big one now 0.3 of the line at 96 ppi: %d px wide' % (dims[4] if dims else 0), dims and 136 <= dims[4] <= 140, dims)
-    check('the bytes saved are said: ' + toast[:120], 'saved' in toast and 'Compressed 2 pictures' in toast)
+    check('what it did is said honestly (the PDF\'s bytes, and the project keeping the first files): ' + toast[:160], 'Compressed 2 pictures' in toast and 'the PDF carries' in toast and 'keeps the first files' in toast)
     page.wait_for_timeout(800)
     w_small2 = page.evaluate(W_PT)
     # (the page reads whole pixels per inch from a pHYs, TeX its pixels per metre: within 1%)
@@ -487,6 +487,68 @@ def pictures(page):
     load_doc(page, pic_doc(name='fig.pdf')); page.wait_for_timeout(200)
     sel_pic(page)
     check('on a PDF picture they are disabled, and say why', page.evaluate("document.getElementById('rc-picture-corrections').disabled") and 'PDF' in page.evaluate("window.rikuy.cmds.command('picture-corrections').whyNot(window.rikuy)"))
+
+
+def review_pictures(page):
+    """The hostile review's cases (docs/reviews/WORD-GAPS-OBJECTS.md H3, H4, H5, M3, M4, M5, L2)."""
+    edited = "[...window.rikuy.assetBlobs.keys()].filter((k) => /-edited-/.test(k))"
+    # H3: two pictures on a line: the first has no comment of the second's and is left alone
+    D = pic_doc().replace('\\includegraphics[width=0.5\\linewidth]{a.png}', '\\includegraphics[width=0.3\\linewidth]{a.png}\\hfill\\includegraphics[width=0.3\\linewidth]{b.png}')
+    load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); put_png(page, 'b.png', 300, 200, dpi=150, color=(40, 160, 90)); page.wait_for_timeout(300)
+    page.evaluate("() => { const g = window.rikuy, t = g.files.get('main.tex'); g.picSelect({ f: 'main.tex', s: t.lastIndexOf('\\\\includegraphics') }, { tab: true }); }")
+    run_async(page, 'picture-color', {'recolor': 'gray'})
+    after_b = src(page)
+    check('H3: the line\'s last picture takes Grayscale, its comment at the line\'s end', bool(re.search(r'\{b-edited-[0-9a-f]{8}\.png\} % rikuy: from \{b\.png\}, recolor gray\n', after_b)), after_b[-260:])
+    sel_pic(page)
+    check('H3: the first picture shows no edit of its own (Reset Picture has nothing to put back)', page.evaluate("(() => { const g = window.rikuy, h = g.picHere(); return g.picFxState(h).note; })()") is False)
+    run_async(page, 'picture-reset', None, 300); run_async(page, 'picture-corrections', {'brightness': 0.2})
+    toast = page.evaluate("(document.querySelector('#toast span') || {}).textContent || ''")
+    check('H3: Reset leaves both as they are, and Brightness on the first says to put it on a line of its own', src(page) == after_b and 'line of its own' in toast, toast)
+    # H4: a name with a space; M5: one edited file a picture; M4: in the worker
+    D = pic_doc(name='my photo.png')
+    load_doc(page, D); put_png(page, 'my photo.png', 300, 200, dpi=150); page.wait_for_timeout(300)
+    mine = "[...window.rikuy.assetBlobs.keys()].filter((k) => /^my photo-edited-/.test(k))"
+    sel_pic(page); run_async(page, 'picture-corrections', {'brightness': 0.2}); first = page.evaluate(mine)
+    sel_pic(page); run_async(page, 'picture-color', {'recolor': 'gray'}); second = page.evaluate(mine)
+    s = src(page)
+    check('H4: a name with a space: one comment, from the first file in braces, both settings', len(re.findall('rikuy:', s)) == 1 and '% rikuy: from {my photo.png}, brightness 0.2, recolor gray\n' in s and '-edited-f' not in s.split('rikuy')[0][-40:].replace('my photo-edited-', ''), s[-220:])
+    check('M5: one edited file for the picture at a time (%s, then %s)' % (first, second), len(first) == 1 and len(second) == 1 and first != second)
+    check('M4: the pixels were worked on in the worker', page.evaluate('!!(window.rikuy.picFxStats && window.rikuy.picFxStats.worker)'))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
+    check('M5: one undo brings the last edited file back with its comment', page.evaluate(mine) == first and '% rikuy: from {my photo.png}, brightness 0.2\n' in src(page))
+    sel_pic(page); run_async(page, 'picture-reset', None, 400)
+    check('H4: Reset Picture puts my photo.png back, the comment and the edited file gone', src(page) == D and page.evaluate(mine) == [], (src(page)[-160:], page.evaluate(mine)))
+    # M3: the first file replaced by another of its name makes a new edited file
+    D = pic_doc()
+    load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150, color=(220, 30, 30)); page.wait_for_timeout(300)
+    edited = "[...window.rikuy.assetBlobs.keys()].filter((k) => /^a-edited-/.test(k))"
+    sel_pic(page); run_async(page, 'picture-transparency', {'transparency': 0.3}); red = page.evaluate(edited)
+    sel_pic(page); run_async(page, 'picture-reset', None, 400)
+    put_png(page, 'a.png', 300, 200, dpi=150, color=(30, 200, 30)); page.wait_for_timeout(300)
+    sel_pic(page); run_async(page, 'picture-transparency', {'transparency': 0.3})
+    px = page.evaluate(PIXEL, [0.1, 0.5])
+    check('M3: a replaced first file gives a new edited file, drawn green (%s, then %s)' % (red, page.evaluate(edited)), page.evaluate(edited) != red and px and px[1] > 150 and px[0] < 80, px)
+    # L2: \includegraphics{a} with no extension, as hand written LaTeX often has it
+    D = pic_doc(name='a')
+    load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); page.wait_for_timeout(300)
+    sel_pic(page)
+    check('L2: Corrections are on for \\includegraphics{a} (a.png in the project)', not page.evaluate("document.getElementById('rc-picture-corrections').disabled"))
+    run_async(page, 'picture-color', {'recolor': 'sepia'})
+    check('L2: and its comment names {a}, so Reset writes what was written', '% rikuy: from {a}, recolor sepia\n' in src(page), src(page)[-160:])
+    sel_pic(page); run_async(page, 'picture-reset', None, 400)
+    check('L2: Reset Picture gives \\includegraphics{a} back', src(page) == D)
+    # H5: Compress with a turn and a crop reads the printed pixels per inch
+    D = pic_doc('angle=90,width=3cm', 'turned.png').replace('\\end{center}\n', '\\end{center}\n\n\\begin{center}\n\\includegraphics[trim=150 0 0 0,clip,width=8cm]{cropped.png}\n\\end{center}\n')
+    load_doc(page, D); put_png(page, 'turned.png', 1200, 800, dpi=300); put_png(page, 'cropped.png', 600, 400, dpi=72); page.wait_for_timeout(500)
+    run_async(page, 'picture-compress', {'ppi': 150, 'all': True}, 3000)
+    s = src(page)
+    toast = page.evaluate("(document.querySelector('#toast span') || {}).textContent || ''")
+    n = re.search(r'\{(turned-edited-[0-9a-f]{8}\.png)\}', s)
+    w = page.evaluate("async (n) => { const b = window.rikuy.assetBlobs.get(n); if (!b) return 0; const i = await createImageBitmap(b); return i.width; }", n.group(1)) if n else 0
+    # (its own width, 4.5 cm before the quarter turn makes the box 3 cm wide: 1200 px over 4.5 cm is
+    # 677 ppi; at 150, 1200 * 150 / 677 = 266 px)
+    check('H5: a picture turned a quarter, 3 cm wide: written at 150 ppi of its own width (%d px of 1200)' % w, 260 <= w <= 270, (w, s[-400:]))
+    check('H5: a cropped picture already below 150 ppi as printed is left as it is, and said so: ' + toast[-140:], 'cropped.png' not in ''.join(re.findall(r'\{[^}]*-edited-[^}]*\}', s)) and 'cropped.png: already' in toast)
 
 
 def pictures_unloaded(p):
@@ -533,7 +595,7 @@ def pictures_phone(p):
               return { l: r.left, r: r.right, w: innerWidth, small: it.filter((t) => t.height < 44).length, n: it.length }; }""")
             check('a tap on Color opens its menu in the screen, 44 px items' + tag, g and g['l'] >= 0 and g['r'] <= g['w'] + 1 and g['small'] == 0, g)
             page.get_by_role('menuitemradio', name='Grayscale').tap(); page.wait_for_timeout(1200)
-            check('a tap on Grayscale writes it' + tag, '% rikuy: from a.png, recolor gray\n' in src(page), src(page)[-160:])
+            check('a tap on Grayscale writes it' + tag, '% rikuy: from {a.png}, recolor gray\n' in src(page), src(page)[-160:])
             if w == 390: page.screenshot(path=os.path.join(SHOTS, 'picture-color-390.png'))
         finally:
             br.close()
@@ -604,7 +666,7 @@ def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (shapes, charts, smart, menus, compiled, pictures, pictures_compiled, arrange, selpane):
+        for f in (shapes, charts, smart, menus, compiled, pictures, review_pictures, pictures_compiled, arrange, selpane):
             if names and f.__name__ not in names:
                 continue
             try: f(page)
