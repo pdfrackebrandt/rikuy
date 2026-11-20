@@ -68,8 +68,8 @@ register(
     synonyms: ['Save a copy', 'Download', 'Export LaTeX'], when: always, run: (app) => app.runCommand('download-latex') },
   { id: 'open', name: 'Open', el: 'b-open', static: true, place: 'bar', title: 'Open .tex, .bib, images, an Overleaf .zip or a Word .docx (Ctrl+O)', keysElsewhere: ['Ctrl+O'], keys: ['Ctrl+F12', 'Ctrl+Alt+F2'], keyScope: 'app', synonyms: ['Open a file', 'Import'], when: always, run: () => $('#fileinput').click() },
   { id: 'share', name: 'Share', el: 'b-share', static: true, place: 'bar', title: 'A link anyone can open and type in, or a copy for Overleaf', synonyms: ['Share link', 'Overleaf'], when: always, run: (app) => app.openSharePanel() },
-  { id: 'new-document', name: 'New document', el: 'b-new', static: true, place: 'status', synonyms: ['New', 'Blank document'], when: always, run: (app) => app.newDocument() },
-  { id: 'load-sample', name: 'Load the sample', el: 'b-sample', static: true, place: 'status', synonyms: ['Sample document', 'Example'], when: always, run: (app) => app.resetToSample() },
+  { id: 'new-document', name: 'New document', el: 'b-new', static: true, place: 'status', title: 'New document: a blank article; this one stays under Review, Versions', synonyms: ['New', 'Blank document'], when: always, run: (app) => app.newDocument() },
+  { id: 'load-sample', name: 'Load the sample', el: 'b-sample', static: true, place: 'status', title: 'Load the sample: the document Rikuy opens with, in place of this one (it asks first)', synonyms: ['Sample document', 'Example'], when: always, run: (app) => app.resetToSample() },
 
   // ---- File ▸ New
   { id: 'new-blank', name: 'Blank document', order: 10, title: 'A new document from your default preamble (Set as default), or a plain article', synonyms: ['New blank', 'Empty document'],
@@ -209,6 +209,12 @@ export const methods = {
       // (busy without a longer name: the downloads stay at the row's end over the other groups,
       // and "Making the PDF…" ran over Home's Editing; the PDF pane, open meanwhile, says it)
       b.disabled = true; b.setAttribute('aria-busy', 'true'); b.title = 'Making the PDF…';
+      // what TeX is doing, in the status bar meanwhile, as Word shows a PDF being published there
+      // (the PDF pane that says it stays closed until the run fails)
+      const st = $('#st-save'), was = st ? st.textContent : '', ps = $('#pdf-status');
+      const say = () => { if (st && this.pdfBusy) st.textContent = 'Making the PDF: ' + (ps.textContent || '').replace(/…$/, '') + '…'; };
+      const watch = ps && st ? new MutationObserver(say) : null;
+      if (watch) { watch.observe(ps, { childList: true, characterData: true, subtree: true }); say(); }
       try {
         this.pdfPane();
         if (!this.compiling) await this.compilePdf();
@@ -216,6 +222,8 @@ export const methods = {
         while (this.compiling) await new Promise((r) => setTimeout(r, 150));
       } finally {
         this.pdfBusy = false;
+        // (only the words it wrote go: a "Not kept in this browser" written meanwhile stays)
+        if (watch) { watch.disconnect(); if (/^Making the PDF: /.test(st.textContent)) st.textContent = was; }
         b.disabled = false; b.removeAttribute('aria-busy'); b.title = title;
       }
     }

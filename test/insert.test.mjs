@@ -82,7 +82,8 @@ ok('formulas: a stranger\'s are bounded (length, nesting, size): no runaway', ()
 ok('descriptions: normalised, every field capped, nonsense dropped', () => {
   const s = K.normalize({ kind: 'function', f: ['x', 'x^2', 'x^3', 'x^4', 'x^5', 'x^6', 'x^7'], sliders: Array.from({ length: 20 }, (_, k) => ({ name: 'a' + k, min: 0, max: 1, value: 9 })).concat([{ name: 'sin' }, { name: '<b>' }]), title: 'T'.repeat(500), aspect: 99, x: { min: 5, max: 1 } });
   assert.equal(s.f.length, 6);
-  assert.equal(s.sliders.length, 8);
+  // (twelve since the hostile review of task 70: a Taylor rule or a ten parameter polynomial)
+  assert.equal(s.sliders.length, 12);
   assert.equal(s.sliders[0].value, 1);
   assert.equal(s.title.length, 200);
   assert.equal(s.aspect, 1.2);

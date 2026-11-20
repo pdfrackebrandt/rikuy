@@ -64,8 +64,14 @@ export function colorArg(pick) {
 // false for a check item, undefined for a plain one), radio, disabled, run }], null for a line
 // between them. o.label names the menu; o.cls adds classes; o.focus false leaves the focus where it
 // is (a menu opened by the mouse on the page keeps the caret). Returns the menu's element.
+let whySeq = 0;
 export function openMenu(app, at, items, o = {}) {
   const anchor = at instanceof Element ? at : null;
+  // (a greyed item given its reason, why: it stays in the arrows' reach, as WAI-ARIA's menu and Word
+  // keep it; the reason is its description and the note line under the menu as it is reached,
+  // pointed at or tapped)
+  let note = null;
+  const say = (t) => { if (note) { note.textContent = t || ''; note.hidden = !t; } };
   const p = app.makePop(anchor, 'pop-dl pop-menu ' + (o.cls || ''), null);
   if (!anchor && at) app.pop.rect = at;
   p.setAttribute('role', 'menu');
@@ -90,12 +96,22 @@ export function openMenu(app, at, items, o = {}) {
     if ((it.label ?? it.name) !== '') a.append(el('span', 'mi-n', it.label ?? it.name));
     if (it.keys) { const k = el('span', 'mi-k', keysInText(it.keys, macUA())); k.setAttribute('aria-hidden', 'true'); a.append(k); }
     if (it.disabled) a.setAttribute('aria-disabled', 'true');
+    if (it.disabled && it.why) {
+      a.dataset.reach = '1';
+      const d = el('span', 'mi-whyd', it.why);
+      d.id = 'mi-why-' + (++whySeq); d.hidden = true;
+      a.setAttribute('aria-describedby', d.id);
+      a.append(d);
+      a.addEventListener('focus', () => say(it.why));
+      a.addEventListener('mouseenter', () => say(it.why));
+    } else a.addEventListener('focus', () => say(''));
     // (a press keeps the caret on the page; the keyboard's Enter comes as a click)
     a.addEventListener('mousedown', (e) => e.preventDefault());
-    a.addEventListener('click', () => { if (isOff(a)) return; app.closePop(true); if (it.run) it.run(); });
+    a.addEventListener('click', () => { if (isOff(a)) { if (it.why) say(it.why); return; } app.closePop(true); if (it.run) it.run(); });
     p.append(a);
   }
   if (p.lastChild && p.lastChild.getAttribute('role') === 'separator') p.lastChild.remove();
+  if (items.some((it) => it && it.disabled && it.why)) { note = el('div', 'mi-why'); note.setAttribute('aria-hidden', 'true'); note.hidden = true; p.append(note); }
   app.positionPop();
   if (o.focus !== false) { const first = p.querySelector('[role^=menuitem]:not([aria-disabled])'); if (first) first.focus(); }
   return p;

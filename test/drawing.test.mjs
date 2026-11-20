@@ -27,7 +27,7 @@ ok('every shape Insert › Shapes writes is read back as the paths the page draw
 ok('hand written TikZ in the subset is drawn; anything else is left to the source box', () => {
   assert.ok(D.readTikz('\\begin{tikzpicture}[scale=2]\n\\draw (0,0) -- (1,1) -- (2,0) -- cycle; % a triangle\n\\fill[red!50] (3,0) circle (0.5);\n\\end{tikzpicture}'));
   assert.equal(D.readTikz('\\begin{tikzpicture}[scale=2]\n\\fill[red!50] (3,0) circle (0.5);\n\\end{tikzpicture}').scale, 2);
-  for (const t of ['\\begin{tikzpicture}\\node at (0,0) {A};\\end{tikzpicture}', '\\begin{tikzpicture}\\draw (0,0) to[bend left] (1,1);\\end{tikzpicture}',
+  for (const t of ['\\begin{tikzpicture}\\node[circle,draw] at (0,0) {$A$};\\end{tikzpicture}', '\\begin{tikzpicture}\\draw (0,0) to[bend left] (1,1);\\end{tikzpicture}',
     '\\begin{tikzpicture}\\draw[myStyle] (0,0) -- (1,1);\\end{tikzpicture}', '\\begin{tikzpicture}\\draw (0,0) -- (1,1)\\end{tikzpicture}', '\\begin{tikzpicture}\\foreach \\x in {1,2} \\draw (\\x,0) -- (1,1);\\end{tikzpicture}']) assert.equal(D.readTikz(t), null, t);
 });
 
@@ -54,7 +54,8 @@ ok('a chart from a grid: its coordinates read back as written; names made safe f
 });
 
 ok('SmartArt: the items as written, commas kept in braces, specials taken out', () => {
-  assert.equal(D.smartTex('flow diagram:horizontal', ['Plan', 'Write, edit', 'Sub%mit', '']), '\\smartdiagram[flow diagram:horizontal]{Plan, {Write, edit}, Sub mit}');
+  // (review M8: TeX's special characters escaped, not dropped)
+  assert.equal(D.smartTex('flow diagram:horizontal', ['Plan', 'Write, edit', 'Sub%mit', '']), '\\smartdiagram[flow diagram:horizontal]{Plan, {Write, edit}, Sub\\%mit}');
   assert.deepEqual(D.smartItems('Plan, {Write, edit}, Submit'), ['Plan', 'Write, edit', 'Submit']);
   assert.equal(D.SMART.length, 5);
   assert.ok(D.ICONS.length >= 30 && D.ICONS.every(([id, name, svg]) => /^[a-z-]+$/.test(id) && name && !/[<>]script|on\w+=/i.test(svg)));
