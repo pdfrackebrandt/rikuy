@@ -88,6 +88,9 @@ function finish(app, p, ok) {
   app.positionPop();
   const first = p.querySelector('input, select, [role=grid]');
   if (first) first.focus();
+  // (its value selected, as Word's dialogs and a Tab into a field have it: 3 typed at once is 3,
+  // not the 23 a caret after the 2 made)
+  if (first && first.matches('input[type=number], input[type=text]')) first.select();
 }
 
 // ---- the grid of sizes -------------------------------------------------------------------------

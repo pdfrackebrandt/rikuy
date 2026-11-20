@@ -486,6 +486,7 @@ export const methods = {
     this.closeGroup();
     if (c.ghost) {
       const g = this.ghost, needs = this.styleNeeds(to);
+      this.ghostOutOfEnv(g, to);
       if (to === 'p' || to === 'latex' || (isEnvStyle(to) && !needs.length)) {
         g.style = to === 'p' ? null : to;
         g.pend = '';
@@ -605,6 +606,18 @@ export const methods = {
       if (f === f0 && first != null) caret = { f, p: first, bias: -1 };
     }
     if (edits.length) this.commit(edits, caret || (c && !c.ghost ? { f: c.f, p: c.a, bias: -1 } : null), 'block');
+  },
+  // The blank paragraph after Enter at the end of an abstract, a quote or a proposition stands
+  // inside it. A heading or another environment there is a paragraph of that style alone, as in
+  // Word, where a style replaces the one before: it goes after the \end. Written where it stood,
+  // \section went inside the abstract and a proof inside the proposition, which the PDF shows.
+  ghostOutOfEnv(g, to) {
+    if (!g || g.before || g.style || g.tex || to === 'p' || to === 'latex') return;
+    const m = /^\s*\\end\s*\{([A-Za-z]+\*?)\}/.exec(this.src(g.f).slice(g.pos, g.pos + 400));
+    if (!m || m[1] === envOf(to)) return;
+    const K = this.styleCatalog();
+    const para = isEnvStyle(m[1]) || K.all.some((x) => isEnvStyle(x.v) && envOf(x.v) === m[1]);
+    if (para && m[1] !== 'verbatim') g.pos += m[0].length;
   },
   // a blank paragraph set to an environment that needs a definition: the environment goes in at
   // once, with its definition, the caret inside it

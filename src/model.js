@@ -832,6 +832,15 @@ class Builder {
     if (O.parindent == null) O.parindent = O.parskip ? 0 : ({ 10: 15, 11: 17, 12: 18 }[O.pt] || (O.ext ? O.ext.pi : 15));
     if (O.natbib && !O.forceNumeric) O.citeStyle = 'authoryear';
     if (O.biblatex) O.citeStyle = O.biblatexStyle === 'authoryear' ? 'authoryear' : 'numeric';
+    // (\bibliographystyle stands at the body's end, where it is read after the citations are
+    // numbered: the main file's last one decides here, as BibTeX takes it from the .aux. Under
+    // \bibliographystyle{unsrt} there the page numbered by author and the PDF by citation order.)
+    for (let i = String(ctx.src).lastIndexOf('\\bibliographystyle'); i >= 0; i = ctx.src.lastIndexOf('\\bibliographystyle', i - 1)) {
+      const ls = ctx.src.lastIndexOf('\n', i) + 1, m = /^\\bibliographystyle\s*\{([^{}\n]{1,60})\}/.exec(ctx.src.slice(i, i + 100));
+      if (!m || /(^|[^\\])%/.test(ctx.src.slice(ls, i))) continue;
+      O.bibstyle = m[1].trim();
+      break;
+    }
     if (['unsrt', 'unsrtnat', 'ieeetr', 'unsrt_abbrv'].includes(O.bibstyle)) O.sort = false;
     if (O.natbib && ['plain', 'unsrt', 'abbrv', 'alpha', 'ieeetr', 'siam', 'acm', 'amsplain', 'unsrtnat_num'].includes(O.bibstyle) && !O.forceAY) O.citeStyle = O.forceNumeric ? 'numeric' : O.citeStyle;
   }

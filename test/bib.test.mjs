@@ -160,5 +160,24 @@ const ap = (t, ed) => { for (const x of [...ed].sort((a, b) => b.s - a.s || b.e 
   check('V7: \\setcitestyle{numbers} read, and taken off for an author and year style', R.bibSetup(SC).numbers === true && ap(SC, R.bibStyleEdits(SC, 'abbrvnat')) === NB.replace('{plainnat}', '{abbrvnat}'), ap(SC, R.bibStyleEdits(SC, 'abbrvnat')));
 }
 
+// ---- the page's numbers as BibTeX's: \bibliographystyle read where it stands, at the body's end
+{
+  const bib = '@article{mirrlees1971, author={Mirrlees, James A.}, title={An Exploration}, journal={RES}, year={1971}}\n@article{chetty2012, author={Chetty, Raj}, title={Bounds}, journal={Econometrica}, year={2012}}\n';
+  const nums = (style, pre = '') => {
+    const src = '\\documentclass{article}\n' + pre + '\\begin{document}\nFirst \\cite{mirrlees1971}, then \\cite{chetty2012}.\n' + (style ? '\\bibliographystyle{' + style + '}\n' : '') + '\\bibliography{refs}\n\\end{document}\n';
+    const files = new Map([['main.tex', src], ['refs.bib', bib]]);
+    // (twice, as the page builds: the citations' numbers come from the build before)
+    const m1 = buildModel({ files, main: 'main.tex' }), m = buildModel({ files, main: 'main.tex', prev: m1 });
+    const refs = m.blocks.flatMap((b) => b.items || []).find((x) => x.type === 'refs');
+    return { sort: m.opts.sort, list: refs ? refs.entries.map((x) => x.key + ' ' + x.label).join('; ') : null };
+  };
+  const u = nums('unsrt');
+  check('Dogfood: \\bibliographystyle{unsrt} at the body\'s end lists in citation order, as the PDF', u.sort === false && /^mirrlees1971 \[1\]; chetty2012 \[2\]$/.test(u.list || ''), u);
+  const pl = nums('plain');
+  check('Dogfood: plain lists by author', pl.sort === true && /^chetty2012 \[1\]; mirrlees1971 \[2\]$/.test(pl.list || ''), pl);
+  const c = nums('', '%\\bibliographystyle{unsrt}\n');
+  check('Dogfood: a \\bibliographystyle in a comment is not read', c.sort === true, c);
+}
+
 console.log(`bib.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
