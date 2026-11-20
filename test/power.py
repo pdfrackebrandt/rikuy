@@ -157,6 +157,7 @@ def tab(page):
     check('tab: one undo gives the bytes back', src(page) == TAB)
     click_text(page, 'beta', 4); key(page, 'Escape'); key(page, 'Tab')
     check('tab: Esc, then Tab, leaves the page and writes nothing', active(page) != 'pages' and src(page) == TAB, active(page))
+    check('tab: the page says how to leave it (review M4)', 'Escape, then Tab, leaves' in page.evaluate("document.getElementById('pages-how').textContent"), None)
 
 
 REFS = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\usepackage{natbib}\n\\begin{document}\n\n\\section{Intro}\\label{sec:intro}\n\nAlpha beta gamma.\n\n'
