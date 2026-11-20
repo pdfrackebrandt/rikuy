@@ -147,6 +147,48 @@ export function sizeDialog(app, focus) {
   if (focus === 'height') hh.focus();
 }
 
+// ---- Format Picture: Corrections, Color and Transparency in numbers (src/cmd/picfx.js) -------------
+// Word's percentages; the colour tone in kelvin (6500 K as it is); Reset puts every one back
+const TONE_K = (t) => Math.round(6500 + (t >= 0 ? t * 4700 : t * 1800));
+const K_TONE = (k) => (k >= 6500 ? (k - 6500) / 4700 : (k - 6500) / 1800);
+export function picFxDialog(app) {
+  const o = open(app, 'Format Picture', 'rc-picture-corrections', 'pd-fx');
+  if (!o) return;
+  const S = app.picFxState(o.h).settings;
+  const num = (v) => text(String(v));
+  const f = { sharpen: num(Math.round((S.sharpen || 0) * 100)), brightness: num(Math.round((S.brightness || 0) * 100)), contrast: num(Math.round((S.contrast || 0) * 100)),
+    saturation: num(Math.round((S.saturation ?? 1) * 100)), tone: num(TONE_K(S.tone || 0)), transparency: num(Math.round((S.transparency || 0) * 100)) };
+  const rec = mk('select', 'tb-num');
+  for (const [v, n] of [['', 'No Recolor'], ['gray', 'Grayscale'], ['sepia', 'Sepia'], ['washout', 'Washout'], ['bw', 'Black and White: 50%'], ['tint', 'Tint']]) rec.add(new Option(n, v));
+  rec.value = S.recolor || '';
+  const tint = mk('input', 'tb-num');
+  tint.type = 'color'; tint.value = '#' + (S.tint || '2E75B6').toLowerCase();
+  const settings = () => ({ sharpen: parseFloat(f.sharpen.value) / 100, brightness: parseFloat(f.brightness.value) / 100, contrast: parseFloat(f.contrast.value) / 100,
+    saturation: parseFloat(f.saturation.value) / 100, tone: K_TONE(parseFloat(f.tone.value) || 6500), transparency: parseFloat(f.transparency.value) / 100, recolor: rec.value || null, tint: tint.value });
+  const ok = () => { const st = settings(); back(app, o.keep); app.runCommand('picture-fx-options', st); };
+  const reset = mk('button', 'btn ghost', 'Reset'); reset.type = 'button';
+  reset.addEventListener('click', () => { for (const k of ['sharpen', 'brightness', 'contrast', 'transparency']) f[k].value = '0'; f.saturation.value = '100'; f.tone.value = '6500'; rec.value = ''; });
+  p_append(o.p, [row('tb-sec', mk('div', 'tb-gl', 'Picture Corrections'), field('Sharpness (%)', f.sharpen), field('Brightness (%)', f.brightness), field('Contrast (%)', f.contrast)),
+    row('tb-sec', mk('div', 'tb-gl', 'Picture Color'), field('Saturation (%)', f.saturation), field('Temperature (K)', f.tone), field('Recolor', rec), field('Tint color', tint)),
+    row('tb-sec', mk('div', 'tb-gl', 'Picture Transparency'), field('Transparency (%)', f.transparency),
+      mk('p', 'tb-note', 'Worked into a copy of the picture beside it (its file kept); the line says where it came from. Reset Picture goes back.')), reset, buttons(app, ok, () => back(app, o.keep))]);
+  finish(app, o.p, ok);
+}
+const p_append = (p, kids) => p.append(...kids);
+// Compress Pictures: the resolution, and this picture alone or every one of the document
+export function compressDialog(app) {
+  const h = app.picHere();
+  const b = document.getElementById('rc-picture-compress');
+  const p = dialog(app, { title: 'Compress Pictures', anchor: b && b.offsetParent ? b : h ? h.el : null, rect: app.root.getBoundingClientRect(), cls: 'pop-tb pop-pic pd-compress' });
+  p.style.left = '8px'; p.style.top = '52px';
+  const res = radios('Resolution', [['330', 'HD (330 ppi): good quality for high-definition displays'], ['220', 'Print (220 ppi): excellent quality on most printers and screens'], ['150', 'Web (150 ppi): good for web pages and projectors'], ['96', 'E-mail (96 ppi): minimize document size for sharing']], '150');
+  const only = check('Apply only to this picture', !!h);
+  if (!h) { only.input.disabled = true; only.input.checked = false; }
+  const ok = () => { const v = res.value(), all = !only.input.checked; app.closePop(true); if (h) app.picSelect({ f: h.f, s: h.s }); app.runCommand('picture-compress', { ppi: +v, all }); };
+  p.append(row('tb-sec', only, res, mk('p', 'tb-note', 'Each PNG and JPEG larger than its place needs is written again at that size beside the first (its file kept); the bytes saved are said. TeX places a PDF picture as it is.')), buttons(app, ok, () => { app.closePop(true); if (h) app.picSelect({ f: h.f, s: h.s }); }));
+  finish(app, p, ok);
+}
+
 // ---- Insert's dialogs: SmartArt, Chart, Drop Cap Options ---------------------------------------
 // (opened from the caret: its place kept while a field has the focus, and put back for OK)
 function keepCaret(app) {
