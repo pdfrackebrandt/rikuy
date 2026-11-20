@@ -2657,3 +2657,6 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
 /* ---- the focus ring only for the keyboard (C13): after a press with the mouse or a finger no
    control keeps one, though a popover gave it the focus back (a field shows where typing goes) ---- */
 html[data-input="pointer"] :is(button, [role=tab], [role=menuitem], [role=menuitemradio], [role=menuitemcheckbox], a):focus-visible { outline: none !important; }
+/* the style list a field as the ribbon's others with a mouse: 24 px; a finger's menu items 44 */
+@media (min-width: 900px) and (pointer: fine) { #ribbon .rb-style { height: 24px; } }
+@media (pointer: coarse) { .pop-tpick .nav-act, .pop [role^=menuitem] { min-height: 44px; } }
