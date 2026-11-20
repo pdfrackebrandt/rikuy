@@ -42,7 +42,7 @@
     "fflate": "^0.8.3",
     "isomorphic-git": "^1.43.3",
     "jszip": "^3.10.1",
-    "katex": "^0.16.22",
+    "katex": "^0.19.1",
     "mathlive": "0.110.0",
     "pandoc-wasm": "1.1.0",
     "pdfjs-dist": "^4.10.38",

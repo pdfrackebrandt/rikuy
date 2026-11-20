@@ -3250,7 +3250,16 @@ Tests:
     checks, in `tex.yml`). Safari 15 cannot compile on the hosted copy (no `'wasm-unsafe-eval'`).
     Under the new policy: `browser.py` 199, `agent.py` 143, `offline.py` 60, `launch.py` 18,
     `engines.py` 44, `word.py` 111, `spell.py` 124, `widgets.py` 62, `insert.py` 224,
-    `mathfield.py` 19, `pdf.py` 23, `deploy_check.py` 61.
+    `mathfield.py` 19, `pdf.py` 23, `deploy_check.py` 61. *S2:* KaTeX 0.16.22 to 0.19.1 (its
+    page script, mhchem, style sheet and fonts; the pinned hashes, `package-lock.json`). New
+    `dev/katex_compare.mjs` draws every formula of the model of the documents given with two
+    KaTeX builds and sorts the differences: on the sample and the 716 corpus documents (16,193
+    formulas) no new error (one fewer, `\mapsfrom`), 11,785 drawn the same (0.18 prefixed its
+    inner classes with `katex-`, which Rikuy's styles never name, and writes lengths to four
+    decimals), 283 aligned blocks 0.15em shorter above their first row and below their last
+    (rows as far apart as before), 189 negated relations with an empty span keeping them on one
+    line, and 207 others: letters set one by one with their own italic correction,
+    `\underbrace` and `\overbrace` spaced as inner atoms, `\not` drawn another way.
 
 ## Open tasks
 
