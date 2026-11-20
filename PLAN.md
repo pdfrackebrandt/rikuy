@@ -3262,13 +3262,36 @@ Tests:
     `font.py` 309, `para.py` 254, `lists.py` 218, `picture.py` 228, `insert.py` 224,
     `styles.py` 426, `view.py` 163; screenshots of every tab at 1920 and 1366 px, light and dark,
     and 390 px.
+    The hostile review (fix first) and what changed for it: Word's grid is for a mouse alone,
+    `(min-width: 900px) and (pointer: fine)` in the style sheet and `wideLay()`, so a tablet in
+    landscape keeps its row of 44 px targets (H1; `tabs.py tablet`). The steps that shrink a group
+    are two chains given back from their ends, so ranks hold and a wider window never shows fewer
+    names; on a laid out tab the three downloads become one Download button before the names of
+    rank 4 and up go (M1; the sweep checks names too). A run of Word's small buttons stays in one
+    column when a group shrinks, Previous over Next (M2). The contextual tabs' KeyTips JT, JL, JP,
+    JE, JH (M3). Insert Table, Convert Text to Table and Table from Data File are items of Table's
+    menu, no buttons beside it; Page setup dialog, Footnote and Endnote and Size and Position are
+    their groups' corner arrows with a mouse from 900 px, the buttons they were elsewhere (M4).
+    Large split buttons as Word's, icon above, name and arrow below (L1); every shown name in its
+    accessible name (L2); keys the KeyTips take stop there (L4); on a Mac F10 alone (L5); arrows
+    move across the grid (L6); 67 px for every tab from 861 to 899 px (L7); a pressed toggle in the
+    highlight with forced colours (L8). Download PDF keeps its name and width while busy (the UX
+    audit). Names agents see that changed (L3): the group names in Title Case as Word's (Page
+    Setup, Document Formatting, Page Background, Document Setup, Citations & Bibliography, Table of
+    Authorities, Table Style Options, Table Styles, Rows & Columns, Cell Size), which a folded
+    group's button and `controls.json`'s groupName carry; View's group "Page" is gone, its Side to
+    Side, Dark page and Focus now in Page Movement, Dark Mode and Immersive; the three table
+    commands above are no ribbon controls in `controls.json` any more. No command's own name or
+    role changed. Evidence: `npm test` green, `tabs.py` 137 (word_layout 17, tablet 3,
+    mac_keytips 1), `agent.py` 143, `ribbon.py` 194 and its downloads 8.
 
 ## Open tasks
 
 67. **Word's ribbon buttons Rikuy has no command for** (task 66 left them out). Insert: 3D
     Models, Online Videos, Get Add-ins, WordArt, Signature Line, Object, and Date & Time (the
     command `insert-date` exists, without an icon or a place on the ribbon). Draw: the whole tab.
-    Design: Effects, Set as Default (File has `set-default`). Layout › Arrange: Bring Forward, Send
+    Design: Effects, Set as Default (File has `set-default`). Insert › Tables: Draw Table, Excel
+    Spreadsheet, Quick Tables in Table's menu. Layout › Arrange: Bring Forward, Send
     Backward, Selection Pane, Align, Group. References: Update Table (contents, figures,
     authorities), Update Index, Research (Search, Researcher). Mailings: the whole tab. Review:
     Translate, Protect (Block Authors, Restrict Editing), Hide Ink, the Tracking group's corner
