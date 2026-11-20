@@ -1179,6 +1179,12 @@ class App {
   // ---- input --------------------------------------------------------------------
   bindUI() {
     const R = this.root;
+    // (letters waiting to go in, typeQueue: written before any other key, press or command)
+    const first = (e) => { if (this.typeQ != null && !(e.type === 'keydown' && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && this.typeQueueable(e.key))) this.typeFlush(); };
+    document.addEventListener('keydown', first, true);
+    document.addEventListener('pointerdown', first, true);
+    R.addEventListener('blur', first);
+    R.addEventListener('compositionstart', first, true);
     R.addEventListener('beforeinput', (e) => this.onBeforeInput(e));
     R.addEventListener('keydown', (e) => this.onKeyDown(e));
     R.addEventListener('compositionstart', () => this.onCompStart());
@@ -1451,16 +1457,9 @@ class App {
           const tr = e.getTargetRanges()[0];
           if (tr) range = this.rangeToSrc(tr);
         }
-        const run = this.typedRun, c0 = this.caretNow();
-        this.insertText(data, range);
-        // Word's Repeat (F4) types the last run of typing again: what was typed since the caret
-        // last went elsewhere (src/cmd/view.js repeatLast)
-        const c1 = this.caretNow();
-        if (!this.cmdDepth && c1 && !c1.ghost) {
-          const on = !range && run && c0 && !c0.ghost && run.f === c0.f && run.p === c0.a;
-          this.typedRun = { f: c1.f, p: c1.a, text: (on ? run.text : '') + data };
-          this.lastAct = { text: this.typedRun.text };
-        }
+        if (!range && t === 'insertText' && this.typeQueueable(data)) { this.typeQueue(data); break; }
+        this.typeFlush();
+        this.typeIn(data, range);
         break;
       }
       case 'insertParagraph': this.enter(false); break;
@@ -1479,6 +1478,46 @@ class App {
       case 'historyRedo': this.redo(); break;
       default: break;
     }
+  }
+
+  // Letters typed faster than the page is built (a long document; a phone, where a key's edit and
+  // build take a third of a second): each key waited for the build of the one before, and the page
+  // fell seconds behind the typing (POWER-USER.md 4). A letter or digit typed within moments of the
+  // last edit waits here, and the letters behind it with it (the browser hands over the keys
+  // already waiting before a timer), and they go in as one edit in the next task; a letter after a
+  // pause goes in at once, as before. Any other key, a press, the page losing the focus or an input
+  // method first write what waits (bindUI).
+  typeQueueable(data) {
+    // (a space between words too, where AutoCorrect would do nothing with it: it acts on the space
+    // that ends a word, and with what waits written first it would not see that word)
+    const word = /^[\p{L}\p{N}]$/u.test(data || '');
+    if (!word && !(data === ' ' && this.typeQ && this.typeAt && !this.acLast && /[\p{L}\p{N}]$/u.test(this.typeQ) && !this.acActs(this.typeAt.f, this.typeAt.a, this.typeQ, ' '))) return false;
+    if (this.typeQ) return true;
+    if (this.composing || this.pop || this.armed || this.ghost || performance.now() - (this.typeLast || 0) > 60) return false;
+    const sel = getSelection();
+    return sel.rangeCount > 0 && sel.isCollapsed && this.root.contains(sel.anchorNode);
+  }
+  typeQueue(data) {
+    if (this.typeQ == null) { const c = this.caretNow(); this.typeAt = c && !c.ghost ? { f: c.f, a: c.a } : null; this.typeQ = ''; setTimeout(() => this.typeFlush(), 0); }
+    this.typeQ += data;
+  }
+  typeFlush() {
+    const q = this.typeQ;
+    this.typeQ = null;
+    if (q) this.typeIn(q, null);
+  }
+  typeIn(data, range) {
+    const run = this.typedRun, c0 = this.caretNow();
+    this.insertText(data, range);
+    // Word's Repeat (F4) types the last run of typing again: what was typed since the caret
+    // last went elsewhere (src/cmd/view.js repeatLast)
+    const c1 = this.caretNow();
+    if (!this.cmdDepth && c1 && !c1.ghost) {
+      const on = !range && run && c0 && !c0.ghost && run.f === c0.f && run.p === c0.a;
+      this.typedRun = { f: c1.f, p: c1.a, text: (on ? run.text : '') + data };
+      this.lastAct = { text: this.typedRun.text };
+    }
+    this.typeLast = performance.now();
   }
 
   rangeToSrc(r) {
