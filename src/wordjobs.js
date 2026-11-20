@@ -11,7 +11,8 @@ import { pageDocx, pageLatex, relsMap } from './wordpage.js';
 import { endnotesDocx, markEndnotes, endnotesTex } from './wordnotes.js';
 import { wrapMulticols } from './pagesrc.js';
 import { docSpacing } from './parasrc.js';
-import { tableExtras, applyTableExtras } from './wordtable.js';
+import { tableExtras, applyTableExtras, docxFormulas } from './wordtable.js';
+import { parseTable, setFormula, cellGrid, apply as applyEdits } from './table.js';
 
 // pandoc's messages worth telling the user: the ones that say something was lost
 const said = (ws) => (ws || []).filter((w) => w.verbosity && w.verbosity !== 'INFO').map((w) => w.pretty || w.type).slice(0, 20);
@@ -1098,6 +1099,34 @@ function geometry(pg, PG = {}) {
 }
 
 // docx -> { tex (a whole document with a short preamble), media: {name: bytes}, bib, warnings }
+// The formulas read from the .docx (wordtable.js docxFormulas) as "% formula" lines before their
+// tables: the k-th tabular no tabular holds is the k-th table no table holds; a line only where the
+// cell holds the value Word showed, so a table pandoc wrote otherwise gets none
+function formulaLines(tex, fx, N) {
+  if (!fx.length) return tex;
+  const tops = [];
+  const re = /\\(begin|end)\{tabular\}/g;
+  let d = 0, m;
+  while ((m = re.exec(tex)) && tops.length < 5000) { if (m[1] === 'begin') { if (d === 0) tops.push(m.index); d++; } else d = Math.max(0, d - 1); }
+  for (let k = tops.length - 1; k >= 0; k--) {
+    const mine = fx.filter((x) => x.table === k);
+    for (const F of mine) {
+      const T = parseTable(tex, tops[k]);
+      if (!T) continue;
+      const g = cellGrid(tex, T), cell = g[F.r] && g[F.r][F.c];
+      if (!cell || cell.tex.replace(/\\([$%&#])/g, '$1').replace(/\s+/g, '') !== F.value.replace(/\s+/g, '')) continue;
+      let c = F.c + 1, name = '';
+      while (c > 0) { const q = (c - 1) % 26; name = String.fromCharCode(65 + q) + name; c = Math.floor((c - 1) / 26); }
+      const r = setFormula(tex, T, name + (F.r + 1), F.formula, cell.tex.trim());
+      if (!r.edits) continue;
+      tex = applyEdits(tex, r.edits);
+      // (the line went in before the table: its start moves by as much, for the table's next field)
+      for (const x of r.edits) if (x.s <= tops[k]) tops[k] += x.t.length - (x.e - x.s);
+      N.formulas = (N.formulas || 0) + 1;
+    }
+  }
+  return tex;
+}
 export function docxToLatex(P, bytes, name) {
   // the zip pandoc reads is the one rebuilt from what passed the checks
   const parts = unzip(bytes);
@@ -1183,6 +1212,9 @@ export function docxToLatex(P, bytes, name) {
   // (and so the Word file saved from it) showed the word \noalign in the table's cells
   tex = tex.replace(/(\\(?:toprule|midrule|bottomrule))\\noalign\{\}/g, '$1');
   tex = tables(tex);
+  // (Word's formula fields in table cells: pandoc keeps their results; their formulas come back as
+  // "% formula" lines, each where its table's cell holds the result Word showed)
+  tex = formulaLines(tex, docxFormulas(text(parts.get('word/document.xml'))), N);
   tex = codeSpaces(tex);
   // pandoc's names for underlined and struck text are soul's, which the page does not draw; ulem's
   // it does

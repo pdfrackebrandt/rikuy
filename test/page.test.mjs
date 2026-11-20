@@ -142,7 +142,12 @@ ok('header and footer distances: geometry\'s keys where geometry lays the page o
   assert.equal(a1, doc('\\addtolength{\\topmargin}{\\headsep}\n\\setlength{\\headsep}{40pt}\n\\addtolength{\\topmargin}{-\\headsep}\n', 'Text.', '\\documentclass{amsart}'));
   // again: the value in place; the footer's distance a line of its own
   assert.equal(apply(a1, PS.headFootEdits(a1, { headsep: 30, footskip: 50 })), doc('\\addtolength{\\topmargin}{\\headsep}\n\\setlength{\\headsep}{30pt}\n\\addtolength{\\topmargin}{-\\headsep}\n\\setlength{\\footskip}{50pt}\n', 'Text.', '\\documentclass{amsart}'));
-  assert.deepEqual(PS.headFootLengths(a1).headsep, { pt: 40, keep: true, at: PS.headFootLengths(a1).headsep.at });
+  assert.deepEqual(PS.headFootLengths(a1).headsep, { pt: 40, keep: true, at: PS.headFootLengths(a1).headsep.at, steps: [{ pt: 40, keep: true }] });
+  // (each \headsep in order, the page needs them all: one by hand moves the text, the lines round
+  // Rikuy's do not; the review of PR 84, M3)
+  const hs = doc('\\setlength{\\headsep}{40pt}\n', 'Text.', '\\documentclass{amsart}');
+  const hs1 = apply(hs, PS.headFootEdits(hs, { headsep: 20 }));
+  assert.deepEqual(PS.headFootLengths(hs1).headsep.steps, [{ pt: 40, keep: false }, { pt: 20, keep: true }]);
   const b = doc('\\usepackage[margin=2cm]{geometry}\n');
   assert.equal(twice(b, (t) => PS.headFootEdits(t, { footskip: 30 })), doc('\\usepackage[margin=2cm,footskip=30pt]{geometry}\n'));
   // the page: the header moves, the text does not (TeX's: the body's first line stays)

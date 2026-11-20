@@ -212,7 +212,7 @@ the tree has.
 | I26 | Page number: top, bottom, Page X of Y, here | Y | Y RB/insert.rs:150-155, EN/insert.rs:71 | partial (as I25) | `\fancyhead[R]{\thepage}`; `\thepage\ of \pageref{LastPage}` (lastpage); in text `\thepage` | BUILD | S | 2 |
 | I27 | Format page numbers (i, A, start at) | Y | Y DG/dialogs_layout.rs:117, EN/page.rs:73 | N | `\pagenumbering{roman}`, `\setcounter{page}{5}` | BUILD | S | 2 |
 | I28 | Different first page; different odd and even | Y | Y EN/page.rs:65-69 | N | `\thispagestyle{empty}` or `\fancypagestyle{plain}{…}`; class `twoside` + `\fancyhead[LE,RO]{}` | BUILD | M | 3 |
-| I29 | Header and footer distance from the edge | Y | Y DG/page_setup.rs | N | geometry `headsep=`, `footskip=` | BUILD | S | 3 |
+| I29 | Header and footer distance from the edge | Y | Y DG/page_setup.rs | Y Header from Top and Footer from Bottom on the Header & Footer tab (task 68), as Word measures them; under geometry's includehead or includefoot the top or bottom margin moves with them, and a hand set `\setlength{\headsep}` or `\addtolength` is read as TeX reads it; Footer from Bottom to the sheet; greyed, saying why, where KOMA-Script, typearea or memoir lay the page out | geometry `headsep=`, `footskip=` (`top=`, `bottom=` with includehead, includefoot) | BUILT | S | 3 |
 | I30 | Text box | Y | Y RB/insert.rs:160, EN/insert.rs:50 | N | `\fbox{\begin{minipage}{0.4\linewidth}…\end{minipage}}`; styled `tcolorbox`; beside text `wrapfigure` | BUILD | M | 3 |
 | I31 | Quick Parts, AutoText, building blocks | Y | Y RB/insert.rs:162-178 | N | "Save selection as": `\newcommand{\name}{…}` in the preamble; inserting writes `\name{}` | BUILD | M | 3 |
 | I32 | Document property in the text (title, author, file name) | Y | Y DG/dialogs_insert/field.rs:27-37 | N | `\thetitle`, `\theauthor` (titling); `\jobname` | BUILD | S | 3 |
@@ -220,7 +220,7 @@ the tree has.
 | I34 | Update fields (F9), field codes (Shift+F9), lock, unlink | Y | Y EN/fields.rs:22-36 | Y numbers recomputed at every keystroke and compile; the Source shows the code | – | ALREADY BETTER: nothing goes stale, nothing to lock | – | – |
 | I35 | WordArt | Y | Y RB/insert.rs:181 | N | – | SKIP: decorative text art | – | – |
 | I36 | Drop Cap (dropped, in margin, lines, distance) | Y | Y RB/insert.rs:184, DG/dialogs_insert/columns.rs:52 | N | `\usepackage{lettrine}` `\lettrine[lines=3]{T}{his}`; in margin `lhang=1` | BUILD | S | 3 |
-| I37 | Signature line | Y | Y RB/insert.rs:192 | N | – | SKIP: Word's is a digital signature object; a ruled line is a LaTeX paragraph | – | – |
+| I37 | Signature line | Y | Y RB/insert.rs:192 | Y Signature Line (task 68): room, a rule, name, title, e-mail, the date, never parted at a page's end; after the list or the table the caret is in | `\noindent\rule{6cm}{0.4pt}\\* Name\\* Title\\* \today` | BUILT: the line and its words; signing the PDF is a PDF reader's, as Word's line is | – | – |
 | I38 | Date and Time (formats, update automatically) | Y | Y RB/insert.rs:193, DG/dialogs_insert/date_time.rs:80 | partial: renders `\today` (`src/model.js:1885`) | updating `\today`; a format `\usepackage[en-GB]{datetime2}` `\DTMsetstyle{iso}`; fixed: the text | BUILD | S | 2 |
 | I39 | Text from file | Y | Y EN/insert.rs:137 | partial: `\input` files render | adds the .tex to the project and writes `\input{chapter1}` | BUILD | S | 3 |
 | I40 | Object: a PDF's pages; OLE objects | Y | Y RB/insert.rs:194 | partial: `\includegraphics[page=2]` | `\includepdf[pages=-]{file.pdf}` (pdfpages); OLE has no form | BUILD (PDF only) | S | 3 |
@@ -282,7 +282,7 @@ the tree has.
 | ID | Feature | Word | WordCraft | Rikuy now | LaTeX it writes | Verdict | Eff | Pri |
 |---|---|---|---|---|---|---|---|---|
 | R1 | Table of contents: automatic, levels, remove | Y | Y RB/references.rs:7-16, DG/dialogs_refs/toc.rs:94 | partial: renders `\tableofcontents` (`src/model.js:822`); no control | `\tableofcontents`; levels `\setcounter{tocdepth}{2}` | BUILD | S | 1 |
-| R2 | Update table | Y | Y RB/references.rs:31 | Y the page's contents follow the headings at every keystroke | – | ALREADY BETTER: never stale | – | – |
+| R2 | Update table | Y | Y RB/references.rs:31 | Y the page's contents follow the headings at every keystroke | – | BUILT as Update Table and Update Index (task 68): the page's list rebuilt and flashed now, the PDF's at its next compile | – | – |
 | R3 | Add text (level, do not show in TOC) | Y | Y RB/references.rs:20-27 | N | not listed `\section*{}`; other text `\section[Short]{Long}`; extra entry `\addcontentsline{toc}{section}{…}` | BUILD | S | 3 |
 | R4 | Insert footnote (Ctrl+Alt+F) | Y | Y RB/references.rs:42, EN/references.rs:53 | Y Footnote | `\footnote{}` | ALREADY BETTER: typed in place on the page; given up empty, it goes again (`src/ribbon.js:285`) | – | – |
 | R5 | Insert endnote (Ctrl+Alt+D) | Y | Y RB/references.rs:44, EN/references.rs:56 | N | `\usepackage{enotez}` `\endnote{}` and `\printendnotes` | BUILD | M | 3 |
@@ -348,13 +348,13 @@ the tree has.
 | V4 | Outline: promote/demote (Alt+Shift+←/→), move (Alt+Shift+↑/↓), expand/collapse, show level, first line only | Y | Y RB/view.rs:140-206, EN/outline.rs:61-172 | partial: Outline panel lists headings, a click goes there (`src/app.js:3377`) | promote/demote the heading and every heading under it (`\subsection` to `\section`); move a section's source (its heading to the next heading of its level); collapse is the page's only | BUILD | M | 2 |
 | V5 | Focus mode | Y | Y RB/view.rs:21 | N | – | BUILD (bars hidden) | S | 3 |
 | V6 | Immersive Reader | Y | Y RB/view.rs:22 | N | – | SKIP: Microsoft's service; RV5 reads aloud | – | – |
-| V7 | Page movement: vertical, side to side | Y | Y RB/view.rs:25-26 | N | – | BUILD | S | 3 |
+| V7 | Page movement: vertical, side to side | Y | Y RB/view.rs:25-26 | Y Vertical and Side to Side (task 68 added Vertical) | – | BUILT | S | 3 |
 | V8 | Ruler | Y | Y RB/view.rs:32, UI/canvas/rulers.rs | N | dragging a margin writes geometry; an indent marker writes H50's lengths | BUILD | M | 3 |
-| V9 | Gridlines | Y | Y RB/view.rs:36 | N | – | SKIP: a grid for placing drawing objects | – | – |
+| V9 | Gridlines | Y | Y RB/view.rs:36 | Y View › Gridlines (task 68): the text's baselines and every centimetre, the screen only | – | BUILT | – | – |
 | V10 | Navigation Pane: headings, pages, results | Y | Y RB/view.rs:40, UI/panes/nav.rs:4 | partial: Outline panel is the headings (Ctrl+Shift+O); no pages, no results (H75) | – | BUILD (Pages tab of thumbnails; object filters for results) | M | 3 |
-| V11 | Zoom: dialog, 100%, one page, multiple pages, page width | Y | Y RB/view.rs:51-77 | partial: zoom in/out, Fit width, Ctrl+0, pinch (`src/app.js:4354`) | – | BUILD (One page, Multiple pages) | S | 3 |
+| V11 | Zoom: dialog, 100%, one page, multiple pages, page width | Y | Y RB/view.rs:51-77 | Y the Zoom dialog (task 68): 200, 100, 75 %, Page width, Text width, Whole page, Many pages, a percent | – | BUILT | S | 3 |
 | V12 | Dark mode for the page | Y | Y RB/view.rs:80 | partial: the interface follows the system; the page stays white (`src/app.css:83`, `513`) | – | BUILD (a dark page toggle, page only) | S | 3 |
-| V13 | New window, arrange, split, side by side, synchronous scrolling, switch | Y | Y RB/view.rs:96-121 | Y a second tab on the same project; page, source and PDF side by side with SyncTeX | – | ALREADY BETTER: three views of one document kept in step | – | – |
+| V13 | New window, arrange, split, side by side, synchronous scrolling, switch | Y | Y RB/view.rs:96-121 | Y Split (task 68): a second view under the first, kept current page by page at idle time, scrolled on its own, its bar dragged by mouse, finger or keys | – | BUILT Split (read only, and says so: Word's second pane edits; a press there puts the caret in the top view); New Window SKIP: two tabs on one project would save over each other | – | – |
 | V14 | Macros (record, run VBA) | Y | Y RB/view.rs:131 | partial: `window.rikuy.api`; LaTeX's own `\newcommand` | – | SKIP: VBA; the scripting surface is `window.rikuy.api` | – | – |
 
 ### Help
@@ -380,8 +380,8 @@ the tree has.
 | T3 | Shading of cells, rows | Y | Y RB/table.rs:84-94, EN/table.rs:94 | partial: cell colours drawn (PLAN version 31) | `\cellcolor{yellow!20}`, `\rowcolor{…}` | BUILD | S | 2 |
 | T4 | Borders (all, outside, inside, none, top, bottom), weight, colour, painter | Y | Y RB/table.rs:99-112, EN/table.rs:99 | partial: renders `\|`, `\hline`, `\cline`, booktabs | `\|` in the spec, `\hline`, `\cline{2-3}`, `\setlength{\arrayrulewidth}{1pt}`, `\arrayrulecolor{gray}` (colortbl) | BUILD | M | 2 |
 | T5 | Select cell, column, row, table | Y | Y RB/table.rs:185-190 | N | – | BUILD | S | 2 |
-| T6 | View gridlines | Y | Y EN/view.rs:81 | N | – | SKIP: the page draws the table's real rules | – | – |
-| T7 | Properties: width, alignment, row height, column width, vertical alignment, alt text | Y | Y RB/table.rs:208, EN/table.rs:227 | partial: renders `p{}` columns | `\begin{tabularx}{\linewidth}{lX}`; `p{3cm}`; `\centering`; `\renewcommand{\arraystretch}{1.3}`; `m{3cm}`, `b{}` (array) | BUILD | M | 2 |
+| T6 | View gridlines | Y | Y EN/view.rs:81 | Y View Gridlines (task 68): every cell's edge dashed on the page, kept for the next visit | – | BUILT: the page only, as Word's (the PDF is unchanged) | – | – |
+| T7 | Properties: width, alignment, row height, column width, vertical alignment, alt text | Y | Y RB/table.rs:208, EN/table.rs:227 | Y Table Properties in Word's tabs (task 68): Preferred width (l, c and r columns stretch; p, m, b and S keep theirs; off gives the bytes back), alignment, text wrapping, cell margins, row height, repeat as header row, column width, vertical alignment, alt text | `\begin{tabularx}{0.8\linewidth}{…}`; `\begin{wraptable}{r}{0.45\linewidth}` (wrapfig); `\setlength{\tabcolsep}{8pt}`; `longtable` with `\endhead` | BUILT | M | 2 |
 | T8 | Delete cells, columns, rows, table | Y | Y RB/table.rs:222-227, EN/table.rs:48-51 | N | the row with its `\\`; the column's cell in every row and its letter in the spec; the float | BUILD | S | 1 |
 | T9 | Insert rows above/below, columns left/right | Y | Y RB/table.rs:230-256, EN/table.rs:44-47 | partial: Ctrl+Enter adds a row below (`src/app.js:2084`) | ` & & \\`; a column: `&` in each row and a letter in the spec | BUILD | S | 1 |
 | T10 | Tab in the last cell adds a row | Y | Y | N (Tab stops at the last cell, `src/app.js:2068`) | as T9 | BUILD | S | 1 |
@@ -395,7 +395,7 @@ the tree has.
 | T18 | Sort rows | Y | Y RB/table.rs:308, EN/table.rs:197 | N | reorders the rows' source | BUILD | S | 3 |
 | T19 | Repeat header rows (across pages) | Y | Y RB/table.rs:313, EN/table.rs:171 | partial: `longtable` from Word import (`src/wordjobs.js:1000`) | `\begin{longtable}{ll} head \\ \midrule \endhead … \end{longtable}` | BUILD | M | 2 |
 | T20 | Convert table to text | Y | Y RB/table.rs:318, EN/table.rs:199 | N | rows to paragraphs, cells joined by a separator | BUILD | S | 3 |
-| T21 | Formula (=SUM(ABOVE)) | Y | Y RB/table.rs:319, EN/table_formula.rs | N | – | SKIP: TeX would compute once (spreadtab) and the source stops reading as a table; compute in the data (I8) | – | – |
+| T21 | Formula (=SUM(ABOVE)) | Y | Y RB/table.rs:319, EN/table_formula.rs | Y Formula and Update Formulas (task 68, `src/formula.js`): Word's functions, ABOVE/LEFT/BELOW/RIGHT, cells, ranges, number formats | the value in the cell; `% formula B5 [10.00]: =SUM(ABOVE) \# "0.00"` before the table (the value it wrote last in brackets) | BUILT: Rikuy computes and writes the value (the table compiles anywhere); Update Formulas computes again where Word's F9 would, and leaves a cell that holds something else than the formula's last value, saying so; the lines follow their cells through Rikuy's row, column, Sort, Merge and Delete Cells operations (references too, #REF! for a deleted cell) and go with Delete Table; to Word as Word's own field round the value, and from a .docx's `=` fields back as the lines | – | – |
 
 ### Contextual: Picture Format
 
@@ -420,7 +420,7 @@ the tree has.
 |---|---|---|---|---|---|---|---|---|
 | E1 | Structures: fraction, script, radical, integral, large operator, bracket, function, accent, limit, operator, matrix | Y | Y UI/equation_tab.rs:403 | partial: MathLive keys and its keyboard; Word style typing (`src/wordmath.js`) | `\frac{}{}`, `^{}`, `\sqrt[]{}`, `\int_{}^{}`, `\sum_{}^{}`, `\left(\right)`, `\hat{}`, `\lim_{}`, `\begin{pmatrix}…\end{pmatrix}` | BUILD (Equation tab while the field is open) | M | 2 |
 | E2 | Symbols: basic math, Greek, arrows, negated relations, geometry | Y | Y UI/equation_tab.rs:402 | partial: list in Help (`src/app.js:5425`) | the commands | BUILD | S | 2 |
-| E3 | Professional / Linear, Normal Text | Y | Y UI/canvas/context_menu.rs:37-38 | Y linear typing converts; quotes give `\text{}` (`test/eqextras.py`) | – | ALREADY BETTER: stored as LaTeX either way; Copy for Word gives a native Word equation (`src/app.js:5341`) | – | – |
+| E3 | Professional / Linear, Normal Text | Y | Y UI/canvas/context_menu.rs:37-38 | Y Convert (Professional, Linear), Unicode or LaTeX, Normal Text (task 68, `src/unimath.js`) | `\text{…}` | BUILT: Linear as Word's UnicodeMath (its operand runs, right associative scripts, ▒ and 〖〗), typed back into LaTeX only where it reads back unchanged and then only the part typed, else on Enter; commands it has no form for kept as written | – | – |
 | E4 | Equation number, inline ↔ display | Y | Y UI/canvas/context_menu.rs:39 | partial: numbered, unnumbered, align, gather (`src/app.js:2585`); no inline ↔ display | `equation` ↔ `equation*`; `$…$` ↔ `\begin{equation}` | BUILD (inline ↔ display) | S | 2 |
 | E5 | Save as new equation; math options | Y | Y UI/equation_tab.rs:409 | partial: user macros kept by name (`test/mathfield.py`) | saved snippets in the gallery (browser storage) | BUILD | S | 3 |
 | E6 | Alt+= (Mac Ctrl+=) | Y | Y EN/equation.rs:29 | N ($ and Ctrl+M) | display on an empty line, inline in text | BUILD | S | 2 |

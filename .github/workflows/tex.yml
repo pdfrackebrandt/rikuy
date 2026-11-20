@@ -104,13 +104,19 @@ jobs:
         with:
           python-version: '3.13'
       # dist/tex built by an earlier run from the same inputs: the tree is a function of tex/,
-      # inputs/ and the npm packages (Pyodide's wheels), and the manifest check below holds it
-      - name: The TeX tree of an earlier run with the same inputs
+      # inputs/ and the npm packages (Pyodide's wheels), and the manifest check below holds it.
+      # Without that run, the nearest earlier tree: most changes to those inputs (a page package
+      # in package-lock.json, a file of tex/ the tree does not take) leave the tree as it was,
+      # and rebuilding it costs about two hours of downloads and builds; the next step keeps it
+      # only when it is byte for byte the tree the manifest lists, and the post step saves it
+      # under this run's key
+      - name: The TeX tree of an earlier run with the same inputs, or the nearest
         id: tree
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: dist/tex
           key: dist-tex-${{ hashFiles('tex/**', 'inputs/**', 'package-lock.json', 'dev/dist-manifest.txt') }}
+          restore-keys: dist-tex-
       - name: Tools
         run: |
           npm ci --omit=dev
@@ -121,11 +127,22 @@ jobs:
           # the work folder holds about 10 GB; the runner's second disk has room
           sudo mkdir -p /mnt/eng && sudo chown "$USER" /mnt/eng
           df -h / /mnt
-      - name: Build inputs
+      # a tree from other inputs is kept only if the page's build over it gives exactly the files
+      # the manifest lists (the same check as below); otherwise it goes and the tree is built
+      - name: The nearest tree, if it is the one these inputs make
+        id: near
         if: steps.tree.outputs.cache-hit != 'true'
+        run: |
+          if [ -d dist/tex ] && node build.mjs >/dev/null && (cd dist/tex && find . -type f | sort | xargs sha256sum | diff -q ../../dev/dist-manifest.txt - >/dev/null); then
+            echo "same=true" >> "$GITHUB_OUTPUT"; echo "the nearest tree is this one: kept"
+          else
+            rm -rf dist/tex; echo "no tree, or another one: built below"
+          fi
+      - name: Build inputs
+        if: steps.tree.outputs.cache-hit != 'true' && steps.near.outputs.same != 'true'
         run: sh tex/fetch_inputs.sh
       - name: Build the tree and its packs
-        if: steps.tree.outputs.cache-hit != 'true'
+        if: steps.tree.outputs.cache-hit != 'true' && steps.near.outputs.same != 'true'
         run: python3 tex/build_tree.py tree && python3 tex/build_tree.py packs
       - name: Build the page
         run: node build.mjs && du -sh dist dist/tex

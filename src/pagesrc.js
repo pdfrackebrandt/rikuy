@@ -318,14 +318,20 @@ export function headFootLengths(src) {
   const idioms = [];
   HS_IDIOM.lastIndex = 0;
   for (let m, k = 0; (m = HS_IDIOM.exec(pre)) && k < 200; k++) idioms.push({ s: m.index, e: m.index + m[0].length, v: m[1], vAt: m.index + m[0].indexOf('{' + m[1] + '}', m[0].indexOf('\\setlength')) + 1 });
-  const hs = setLengths(pre, 'headsep'), last = hs[hs.length - 1];
+  // (each \setlength and \addtolength in order: one by hand moves the text, the lines round
+  // Rikuy's do not; the page needs them all as TeX reads them, src/layout.js geometry)
+  const all = setLengths(pre, 'headsep', { add: true }), hs = all.filter((x) => !x.add), last = hs[hs.length - 1];
+  const steps = all.map((x) => { const pt = lenPt(pre.slice(x.v[0], x.v[1])); const keep = idioms.some((y) => y.s <= x.s && x.e <= y.e); return pt == null ? null : x.add ? { pt, keep, add: true } : { pt, keep }; }).filter(Boolean);
   if (last) {
     const id = idioms.find((x) => x.s <= last.s && last.e <= x.e);
     const pt = lenPt(pre.slice(last.v[0], last.v[1]));
-    if (pt != null) out.headsep = { pt, keep: !!id, at: id ? [id.vAt, id.vAt + id.v.length] : last.v };
-  }
-  const fs = setLengths(pre, 'footskip'), lf = fs[fs.length - 1];
+    if (pt != null) out.headsep = { pt, keep: !!id, at: id ? [id.vAt, id.vAt + id.v.length] : last.v, steps };
+  } else if (steps.length) out.headsep = { pt: null, keep: false, at: null, steps };
+  const fsAll = setLengths(pre, 'footskip', { add: true }), fs = fsAll.filter((x) => !x.add), lf = fs[fs.length - 1];
   if (lf) { const pt = lenPt(pre.slice(lf.v[0], lf.v[1])); if (pt != null) out.footskip = { pt, at: lf.v }; }
+  // (an \addtolength{\footskip} after the last \setlength, or alone: the steps say how much)
+  const fsteps = fsAll.slice(fsAll.indexOf(lf) + 1).map((x) => lenPt(pre.slice(x.v[0], x.v[1]))).filter((x) => x != null);
+  if (fsteps.length) out.footskip = { ...(out.footskip || { pt: null, at: null }), adds: fsteps };
   return out;
 }
 export function headFootEdits(src, hf, o = {}) {
@@ -335,6 +341,11 @@ export function headFootEdits(src, hf, o = {}) {
     const ch = {};
     if (hf.headsep != null) ch.headsep = PT(hf.headsep);
     if (hf.footskip != null) ch.footskip = PT(hf.footskip);
+    // (geometry told to include the head or the foot in the body measures the top or bottom
+    // margin to the header or the footer: that margin moves, and the length with it, so the text
+    // stays where it is; hf.top and hf.bottom, in points, say where)
+    if (hf.top != null) ch.top = PT(hf.top);
+    if (hf.bottom != null) ch.bottom = PT(hf.bottom);
     return Object.keys(ch).length ? geometryEdits(src, ch, null, { end: M.end, others: o.others }) : [];
   }
   const L = headFootLengths(src), out = [];
@@ -343,7 +354,9 @@ export function headFootEdits(src, hf, o = {}) {
     if (L.headsep && L.headsep.keep) { if (src.slice(L.headsep.at[0], L.headsep.at[1]).trim() !== v) out.push({ s: L.headsep.at[0], e: L.headsep.at[1], t: v }); }
     else out.push(lineBefore(src, M.end, HS_LINES(v)));
   }
-  if (hf.footskip != null) out.push(...lengthEdits(src, 'footskip', PT(hf.footskip)));
+  // (an \addtolength{\footskip} after the last \setlength would add to the new value: a line of its
+  // own after it)
+  if (hf.footskip != null) out.push(...(L.footskip && L.footskip.adds ? [lineBefore(src, M.end, '\\setlength{\\footskip}{' + PT(hf.footskip) + '}')] : lengthEdits(src, 'footskip', PT(hf.footskip))));
   return joinEdits(out);
 }
 
@@ -675,9 +688,10 @@ export function unwrapMulticols(src, M) {
 // \setlength{\name}{value} and \setlength\name{value} of a text: [{ s, e, v: [a, b) }], read by
 // steps (a pattern with a run of spaces each side of an optional brace backtracked over a
 // stranger's spaces: 30 000 of them after \setlength took a second, 200 000 forty)
-export function setLengths(pre, name) {
+export function setLengths(pre, name, o = {}) {
   const out = [];
-  const re = /\\setlength(?![A-Za-z@])/g;
+  // (o.add: \addtolength too, each marked add)
+  const re = o.add ? /\\(?:set|addto)length(?![A-Za-z@])/g : /\\setlength(?![A-Za-z@])/g;
   for (let m, k = 0; (m = re.exec(pre)) && k < 2000 && out.length < 200; k++) {
     let i = m.index + m[0].length;
     const ws = () => { for (let n = 0; i < pre.length && n < 40 && /\s/.test(pre[i]); n++) i++; };
@@ -691,7 +705,7 @@ export function setLengths(pre, name) {
     if (pre[i] !== '{') continue;
     const z = groupEnd(pre, i, 200);
     if (z < 0) continue;
-    out.push({ s: m.index, e: z, v: [i + 1, z - 1] });
+    out.push(m[0] === '\\addtolength' ? { s: m.index, e: z, v: [i + 1, z - 1], add: true } : { s: m.index, e: z, v: [i + 1, z - 1] });
     re.lastIndex = z;
   }
   return out;
