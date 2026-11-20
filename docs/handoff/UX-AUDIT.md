@@ -13,12 +13,9 @@ open one. Findings in another agent's files are at the end, under that agent.
 
 ## Where it stands (branch `ux-pass-2`, draft PR 79)
 
-Fixed: findings 1 to 8, the PDF bar on a phone (9), Download PDF's progress and a first comment's
-name (10); each a commit with its part of `test/ux.py` (168 checks). Open, in rank order: the page
-at 58 to 62 % on a phone (a decision: Web Layout as a phone's first view), Help as a popover
-(Word's is a pane at the right: it would dock as finding 5's panes do, but as a popover it closes
-at a press on the page, so it needs its own pane), the rest of 9, and the other agents' findings
-at the end. Comments opening at the left stays: Word's Reviewing pane, which lists comments and
+Fixed: findings 1 to 8, the PDF bar on a phone (9), Download PDF's progress, a first comment's
+name, phones opening in Mobile View and Help as a pane (10); each a commit with its part of
+`test/ux.py`. Open: the rest of 9, and the other agents' findings at the end. Comments opening at the left stays: Word's Reviewing pane, which lists comments and
 changes together as Rikuy's Review tab does, docks at the left too.
 
 ## Perceived speed (measured, not ranked)
@@ -165,13 +162,19 @@ second) is the one number a Word user would call slow; it is the model's and the
   once is right, but the box opened at the comment and Comment with no name only changed a
   placeholder, which read as nothing happening. The name box now comes first (Enter goes on to the
   comment), and a missing name is marked and said. `test/ux.py first_comment`.
-- **Help is a narrow popover** (LOW, medium; open): How Rikuy works opens over the ribbon's end
-  with a two column table of keys wrapped word by word. Word's Help is a pane at the right.
-- **The page on a phone is drawn at 58 to 62 %** (MEDIUM, a decision for Pedro): the text block
-  fills the screen's width, so a line of text is about 7 px high. Word's phone app opens a
-  document in a reflowed view; Rikuy's Web Layout is that (the text at its actual size, lines as
-  wide as the screen), and could be a phone's first view. Its lines break where the browser
-  breaks them, not where TeX does, which is why it is not the default now.
+- **The page on a phone is drawn at 58 to 62 %** (MEDIUM) — fixed ("Open phones in Mobile View,
+  Print Layout one tap away"): the text block filled the screen's width, so a line of text was
+  about 7 px high. Word's phone app opens a document in Mobile View, reflowed; Rikuy's Web Layout
+  is that, and is now the default on a window under 700 px as the page opens: the text at its
+  actual size (13 px and up), every line inside the screen, no sideways scroll. "Mobile View" in
+  the status bar (44 px) turns it off for Print Layout and on again; the choice is kept on the
+  device (prefs.narrowWeb, apart from a wide window's Web Layout). The zoom button there makes the
+  text a quarter larger and back. Typing, Enter, selecting, Bold and the style list of the phone's
+  ribbon row, and the on-screen keyboard work in it. `test/ux.py mobile_view`. The suites written
+  for a phone's Print Layout open in it (`test/browser.py`'s `PRINT_LAYOUT`, as a tap would).
+- **Help is a narrow popover** (LOW, medium) — fixed ("Help as a pane at the right on a wide
+  window, as Word's"): from 1000 px Help is a pane at the right that stays while the page is
+  worked on; Close, Esc in it, or Help again close it. `test/ux.py help_pane`.
 
 ## Findings for other agents
 
