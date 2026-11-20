@@ -2691,3 +2691,9 @@ body.file-open #rp-file .rb-tb .btn { height: 32px; min-height: 32px; border-rad
 }
 /* an empty pane's sentence and its one button (UI-PRINCIPLES.md N5) */
 .nav-empty p { margin: 0 0 8px; }
+/* a number field with its unit (kit.js numberField: Page setup's margins, Insert Table's width) is
+   one field: its box 32 px (44 under a finger) with 4 px corners, its input and unit filling it
+   (the rule for fields above made the input 44 px inside a 30 px box, cropping it) */
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf { height: 32px; min-height: 32px; box-sizing: border-box; border-radius: 4px; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf :is(input[type="text"], input[type="number"], input:not([type]), select) { height: 100%; min-height: 0; border-radius: 0; }
+@media (pointer: coarse) { :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf { height: 44px; min-height: 44px; } }
