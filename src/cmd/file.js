@@ -45,7 +45,7 @@ const TEMPLATES = [
 ];
 
 // Export as: what pandoc writes from the page's AST, as the Word download does
-const EXPORTS = [['html', 'Web page (.html)', 'html'], ['markdown', 'Markdown (.md)', 'md'], ['odt', 'OpenDocument text (.odt)', 'odt'], ['rtf', 'Rich text (.rtf)', 'rtf'], ['epub', 'E-book (.epub)', 'epub'], ['txt', 'Plain text (.txt)', 'txt']];
+const EXPORTS = [['live', 'Web page with live graphs (.html)', 'html'], ['html', 'Web page (.html)', 'html'], ['markdown', 'Markdown (.md)', 'md'], ['odt', 'OpenDocument text (.odt)', 'odt'], ['rtf', 'Rich text (.rtf)', 'rtf'], ['epub', 'E-book (.epub)', 'epub'], ['txt', 'Plain text (.txt)', 'txt']];
 const MIME = { html: 'text/html', md: 'text/markdown', odt: 'application/vnd.oasis.opendocument.text', rtf: 'application/rtf', epub: 'application/epub+zip', txt: 'text/plain' };
 
 register(
@@ -91,7 +91,7 @@ register(
     tab: 'file', group: 'info', el: 'rf-a11y', label: 'Check accessibility', icon: I.a11y, also: [{ tab: 'review', group: 'accessibility', el: 'rr-a11y' }],
     when: (app) => !!app.model, run: (app, args) => (args === 'tagging' ? app.addTagging() : app.openAccessibility()) },
   // ---- File ▸ Save a copy
-  { id: 'export-as', name: 'Export as', order: 10, title: 'A copy as a web page, Markdown, OpenDocument, rich text, an e-book or plain text (pandoc, as the Word download)', synonyms: ['Save as', 'Export', 'HTML', 'Markdown', 'ODT', 'RTF', 'EPUB', 'Plain text'],
+  { id: 'export-as', name: 'Export as', order: 10, title: 'A copy as a web page with live graphs, a web page, Markdown, OpenDocument, rich text, an e-book or plain text', synonyms: ['Save as', 'Export', 'HTML', 'Markdown', 'ODT', 'RTF', 'EPUB', 'Plain text'],
     tab: 'file', group: 'save', el: 'rf-export', label: 'Export as', icon: I.export, kind: 'menu', when: (app) => !!app.model,
     menuItems: (app) => EXPORTS.map(([id, name]) => ({ name, run: () => app.runCommand('export-as', id) })),
     run: (app, args) => (typeof args === 'string' ? app.exportAs(args) : app.fileMenu('rf-export', 'Export as', EXPORTS.map(([id, name]) => ({ name, run: () => app.runCommand('export-as', id) })))) },
@@ -512,6 +512,8 @@ export const methods = {
   async exportAs(id) {
     const x = EXPORTS.find((e) => e[0] === id);
     if (!x) return false;
+    // (Rikuy's own page, no pandoc: every copy has it, the claude.ai one too; src/cmd/graphs.js)
+    if (id === 'live') return this.exportWebPage();
     if (!wordEnabled()) { this.wordMissing(); return false; }
     if (this.wordBusy) return false;
     this.wordBusy = true;

@@ -205,6 +205,8 @@ register(
 export const methods = {
   // whether the caret means an interactive graph (the right click menu's 'graph' items)
   graphHere(at) { return !!graphAt(this, at); },
+  // each graph's picture as its commands name it, and the graph's file: Map fallback -> file
+  graphFallbacks() { return new Map(graphUses(this).map((u) => [u.fb.v.trim(), u.path])); },
 
   // the dialog for a new graph (o.template: its kind's id, o.spec: a description)
   graphDialog(o = {}) {

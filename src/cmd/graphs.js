@@ -5,6 +5,8 @@
 import { register } from '../commands.js';
 import { graphThis, paramValues } from '../graphthis.js';
 import { absAtom } from '../editor.js';
+import { webPage } from '../webpage.js';
+import { packShare } from '../share.js';
 
 const ICON = '<path d="M3 16.5h14M3.5 16V3.5"/><path d="M5 14c2.5-1 4-4 5.5-7.5S14 4 16 4"/><path d="M12.5 13.5l2.2-2.2m0 0 2.2-2.2m-2.2 2.2-2.2-2.2m2.2 2.2 2.2 2.2" stroke-width="1.3"/>';
 const NONE = 'Right click an equation, or put the caret in a paragraph with one';
@@ -14,7 +16,11 @@ register(
     title: 'Graph this: the equation drawn as a live graph below it, every other letter a slider (y = f(x), f(x), x = g(t) and y = h(t), F(x, y) = c, a pair of time derivatives). One undo takes it out',
     synonyms: ['Plot this', 'Plot equation', 'Graph equation', 'Draw this equation', 'Live graph of this equation', 'Interactive graph of this equation', 'Desmos'],
     when: (app) => !!app.graphThisTarget(), whyNot: () => NONE,
-    run: (app) => app.graphThisRun() }
+    run: (app) => app.graphThisRun() },
+  // (also in File's Export as list, src/cmd/file.js)
+  { id: 'export-web-page', name: 'Web page with live graphs', title: 'Export as one .html file that reads like the paper, its math set, its interactive graphs live, with a link that opens the source in Rikuy: for a website',
+    synonyms: ['Export as web page', 'Export HTML', 'Publish', 'Website', 'Interactive web page', 'Live web page', 'HTML with graphs'],
+    when: (app) => !!app.model, whyNot: () => 'The page cannot show the document as it is now', run: (app) => app.exportWebPage() }
 );
 
 export const methods = {
@@ -50,5 +56,36 @@ export const methods = {
     await this.graphInsert(r.spec, '', { f: T.f, p: T.e });
     this.toast('Graph this: ' + r.what + '. Drag a slider; Edit graph changes the rest.', 6000);
     return true;
+  },
+
+  // File › Export as › Web page with live graphs: one .html file (src/webpage.js), downloaded.
+  // Its "Open in Rikuy" link is a #share= link of the project's text files, as Share makes.
+  async exportWebPage() {
+    if (!this.model) return false;
+    if (this.webBusy) return false;
+    this.webBusy = true;
+    try {
+      this.toast('Making the web page…', 60000);
+      const model = this.plainModel ? this.plainModel() : this.model;
+      let openUrl = null;
+      try {
+        const files = [...this.files].filter(([n, t]) => typeof t === 'string' && t.length < 2e6).slice(0, 200);
+        const u = this.shareBase() + '#share=' + await packShare({ v: 1, name: this.name || this.main, main: this.main, files });
+        // (an address past about 2 MB is one no browser opens)
+        if (u.length < 1.9e6) openUrl = u;
+      } catch (e) { /* no link */ }
+      const html = await webPage({ model, files: this.files, main: this.main, name: this.name, assets: this.assetBlobs, graphs: this.graphFallbacks(), katex: window.katex, openUrl, pdfPicture: (b) => this.pdfPicture(b), lang: (model.opts && model.opts.lang) || 'en' });
+      const blob = new Blob([html], { type: 'text/html' });
+      const fname = ((this.name || '').replace(/\.tex$/i, '').replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '') || 'paper') + '.html';
+      const D = this.caps && this.caps.downloads;
+      if (D) await D.save({ filename: fname, data: blob });
+      else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
+      this.lastExport = { name: fname, size: blob.size, blob };
+      this.toast('Saved ' + fname + ': open it in any browser, or put it on your website. Its graphs are live.', 6000);
+      return true;
+    } catch (e) {
+      if (!(e && e.code === 'declined')) this.toast('Could not make the web page: ' + ((e && e.message) || e), 8000);
+      return false;
+    } finally { this.webBusy = false; }
   }
 };
