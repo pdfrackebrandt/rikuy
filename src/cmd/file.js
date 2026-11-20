@@ -186,6 +186,12 @@ export const methods = {
     if (!fresh() || this.compiling) {
       this.pdfBusy = true;
       b.disabled = true; b.setAttribute('aria-busy', 'true'); lab.textContent = 'Making the PDF…';
+      // what TeX is doing, in the status bar meanwhile, as Word shows a PDF being published there
+      // (the PDF pane that says it stays closed until the run fails)
+      const st = $('#st-save'), was = st ? st.textContent : '', ps = $('#pdf-status');
+      const say = () => { if (st && this.pdfBusy) st.textContent = 'Making the PDF: ' + (ps.textContent || '').replace(/…$/, '') + '…'; };
+      const watch = ps && st ? new MutationObserver(say) : null;
+      if (watch) { watch.observe(ps, { childList: true, characterData: true, subtree: true }); say(); }
       try {
         this.pdfPane();
         if (!this.compiling) await this.compilePdf();
@@ -193,6 +199,7 @@ export const methods = {
         while (this.compiling) await new Promise((r) => setTimeout(r, 150));
       } finally {
         this.pdfBusy = false;
+        if (watch) { watch.disconnect(); st.textContent = was; }
         b.disabled = false; b.removeAttribute('aria-busy'); lab.textContent = 'PDF';
       }
     }
