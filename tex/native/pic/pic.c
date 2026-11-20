@@ -18,8 +18,9 @@
 #define STBI_ONLY_PNG
 #define STBI_ONLY_JPEG
 #define STBI_ASSERT(x) ((void)0)
-// (a picture larger than this many pixels a side is refused: 16384 by 16384 is 1 GiB of RGBA)
-#define STBI_MAX_DIMENSIONS 16384
+// (a side as long as stb takes: the 40 million pixels of pic_decode is the bound, so a picture of
+// 20000 by 2 pixels is read and one of 100000 by 100000 is "too large", not "no PNG")
+#define STBI_MAX_DIMENSIONS (1 << 24)
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #define STBI_WRITE_NO_STDIO
@@ -51,6 +52,14 @@ EMSCRIPTEN_KEEPALIVE int pic_decode(int n) {
   int w, h, ch;
   // (a stranger's picture of more than 40 million pixels is refused before it is decoded: its
   // RGBA would take more than 160 MB, a decompression bomb's way to stop the tab)
+  // (a PNG's own header first: stb refuses one whose pixels would pass 1 GiB without saying why
+  // after it has tried the other kinds, and that is "too large", not "no picture")
+  static const unsigned char SIG[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
+  if (n >= 24 && !memcmp(in_buf, SIG, 8)) {
+    unsigned long long pw = ((unsigned)in_buf[16] << 24) | (in_buf[17] << 16) | (in_buf[18] << 8) | in_buf[19];
+    unsigned long long ph = ((unsigned)in_buf[20] << 24) | (in_buf[21] << 16) | (in_buf[22] << 8) | in_buf[23];
+    if (pw * ph > 40000000ULL) return -1;
+  }
   if (!stbi_info_from_memory(in_buf, n, &w, &h, &ch)) return 0;
   if ((long long)w * h > 40000000LL) return -1;
   img = stbi_load_from_memory(in_buf, n, &w, &h, &ch, 4);
