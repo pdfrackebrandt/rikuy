@@ -380,6 +380,7 @@ try:
         # /git (functions/git/[[path]].js), here src/gitproxy.js itself behind a local server with
         # github.com standing for the test's git server; straight to a host it is refused
         stand = subprocess.Popen(['node', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gitproxy_server.mjs'), '8815', 'https://rikuy.test', 'github.com=http://127.0.0.1:%d' % PORT])
+        import atexit; atexit.register(stand.kill)  # (a run that stops part way leaves no server on the port)
         time.sleep(0.8)
         browser, page, errors3 = open_page(p, width=1440, height=900)
         via = []
@@ -403,6 +404,18 @@ try:
         check('and one straight to a host is refused by the policy, and the message names the proxy that works',
               'https://rikuy.test/git' in got.get('direct', '') and 'CORS proxy' in got.get('direct', '') and any(s.startswith('connect-src https://github.com') for s in got.get('seen', [])), got)
         check('the proxy takes git to public hosts by name only', got.get('refused') == 403, got.get('refused'))
+        # (review H1) a link to /git, clicked: a navigation, which the proxy refuses (inert text)
+        nav = page.context.new_page()
+        answers = []
+        nav.on('response', lambda r: answers.append(r))
+        try:
+            nav.goto('https://rikuy.test/git/github.com/paper.git/info/refs?service=git-upload-pack'); shown = True
+        except Exception as e:
+            shown = 'Download is starting' not in str(e)
+        resp = answers[0] if answers else None
+        check('a link to /git opens no page: refused, as an attachment of text that runs nothing', not shown and resp and resp.status == 403 and resp.headers.get('content-type', '').startswith('text/plain')
+              and resp.headers.get('content-security-policy') == "default-src 'none'; sandbox" and resp.headers.get('content-disposition') == 'attachment', (shown, resp and resp.status, resp and resp.headers))
+        nav.close()
         stand.kill()
         browser.close()
 except Exception as e:

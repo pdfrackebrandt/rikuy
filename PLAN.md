@@ -3270,7 +3270,15 @@ Tests:
     `no-transform` on the page and `dev/live_check.py` after each deployment; L2, where a browser
     refuses WebAssembly (Safari 15) the PDF pane says so plainly (`csp.py` 22); and `frame-src
     'self'` (the hosted page frames only its widget document), control and direction marks taken
-    out of comment names and texts, and a line that only looks like a comment counted as text. `para.py`, `picture.py`, `refs.py` and
+    out of comment names and texts, and a line that only looks like a comment counted as text.
+    *After the verification of 8212363:* the git proxy answers Rikuy's git client alone (the
+    header `X-Rikuy-Git`, which another site's page cannot send without a refused preflight; no
+    navigation, nothing but a script's fetch, nothing from another site), only to known git
+    hosts (nine, and `RIKUY_GIT_HOSTS`), every answer git's own type or bytes, sandboxed, an
+    attachment, readable by this site alone, capped at 256 MiB and 120 s, without the host's
+    `WWW-Authenticate`; the installed app's service worker refuses a navigation to `/git`;
+    HOSTING.md step 9 has the rate limiting rule (`gitproxy.test.mjs` 12 groups, `git.py` 49,
+    `offline.py` 62). `para.py`, `picture.py`, `refs.py` and
     `styles.py` serve the policy too.
     Under the new policy: `browser.py` 199, `agent.py` 143, `offline.py` 60, `launch.py` 18,
     `engines.py` 44, `word.py` 111, `spell.py` 124, `widgets.py` 62, `insert.py` 224,

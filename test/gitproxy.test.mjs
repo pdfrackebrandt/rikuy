@@ -2,7 +2,7 @@
 // git's smart HTTP to public https hosts goes through, Authorization to that host alone; every
 // other method, path, query, host form, site and redirect is refused, and a body has a ceiling.
 import assert from 'assert';
-import { handle, gitTarget, publicHost, MAX_BODY } from '../src/gitproxy.js';
+import { handle, gitTarget, publicHost, allowedHosts, MAX_BODY, HOSTS, DOWN_HEADERS } from '../src/gitproxy.js';
 
 const SITE = 'https://rikuy.example';
 let n = 0;
@@ -17,7 +17,12 @@ function upstream(answer) {
   f.seen = seen;
   return f;
 }
-const req = (path, o = {}) => new Request(SITE + path, o);
+// a request as the page's git client sends it: its mark (src/git.js), and as Chromium adds, a
+// script's fetch from this same site; bare() leaves either out
+const req = (path, o = {}) => new Request(SITE + path, { ...o, headers: { 'X-Rikuy-Git': '1', 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', ...(o.headers || {}) } });
+const bare = (path, headers = {}, o = {}) => new Request(SITE + path, { ...o, headers });
+// every answer: no page, no script, this site alone, not sniffed or kept
+const inert = (r) => Object.entries(DOWN_HEADERS).every(([k, v]) => r.headers.get(k) === v);
 
 await ok('info/refs for both services goes to the host over https, with the token and nothing of the site', async () => {
   for (const svc of ['git-upload-pack', 'git-receive-pack']) {
@@ -31,8 +36,8 @@ await ok('info/refs for both services goes to the host over https, with the toke
     assert.ok(!('cookie' in up.seen[0].headers) && !('origin' in up.seen[0].headers) && !('referer' in up.seen[0].headers), JSON.stringify(up.seen[0].headers));
     assert.equal(up.seen[0].redirect, 'manual');
     assert.equal(r.headers.get('Set-Cookie'), null, 'no cookie comes back');
-    assert.equal(r.headers.get('WWW-Authenticate'), 'Basic realm="x"', 'a host asking for credentials is heard (isomorphic-git onAuth)');
-    assert.equal(r.headers.get('Cache-Control'), 'no-store');
+    assert.equal(r.headers.get('WWW-Authenticate'), null, 'no question for a password: the browser\'s login box would come up under Rikuy\'s address');
+    assert.ok(inert(r), JSON.stringify(Object.fromEntries(r.headers)));
     assert.equal(r.headers.get('Access-Control-Allow-Origin'), null, 'no other site may read it');
   }
 });
@@ -44,6 +49,7 @@ await ok('a push and a fetch: POST with git\'s content type and its length, the 
     const r = await handle(req('/git/gitlab.com/a/b/c.git/' + svc, { method: 'POST', body, headers: { 'Content-Type': 'application/x-' + svc + '-request', 'Content-Length': String(body.length) } }), up);
     assert.equal(r.status, 200);
     assert.equal(up.seen[0].url, 'https://gitlab.com/a/b/c.git/' + svc);
+    assert.equal(r.headers.get('Content-Type'), 'application/octet-stream', 'the host\'s answer was not git\'s own type: bytes');
     assert.deepEqual([...up.seen[0].body], [...body]);
     assert.equal(up.seen[0].headers['content-type'], 'application/x-' + svc + '-request');
   }
@@ -113,7 +119,7 @@ await ok('a body has a ceiling and must say its length', async () => {
   assert.equal(up.seen.length, 0);
   // (a length that is not the body's)
   up = upstream();
-  const r = await handle({ url: SITE + P, method: 'POST', headers: new Headers({ ...T, 'Content-Length': '2' }), arrayBuffer: async () => new ArrayBuffer(5) }, up);
+  const r = await handle({ url: SITE + P, method: 'POST', headers: new Headers({ ...T, 'Content-Length': '2', 'X-Rikuy-Git': '1' }), arrayBuffer: async () => new ArrayBuffer(5) }, up);
   assert.equal(r.status, 400);
   assert.equal(up.seen.length, 0);
 });
@@ -142,6 +148,70 @@ await ok('the host\'s own answer comes back: 401 and its question for credential
     assert.equal(r.status, s);
     assert.equal(await r.text(), 'no');
   }
+});
+
+await ok('(review H1) a link to /git never shows a host\'s page as Rikuy: refused without the client\'s mark, as a navigation, from another site; any answer is bytes, sandboxed, an attachment', async () => {
+  const P = '/git/github.com/attacker/x/info/refs?service=git-upload-pack';
+  const html = () => new Response('<script>alert(document.domain)</script>', { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  for (const [name, r] of [
+    ['a link clicked (a navigation, no mark)', bare(P, { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document', Accept: 'text/html' })],
+    ['a link from Rikuy itself', bare(P, { 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' })],
+    ['a navigation even with the mark (it cannot have one, but)', req(P, { headers: { 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' } })],
+    ['a frame or an image', req(P, { headers: { 'Sec-Fetch-Dest': 'iframe' } })],
+    ['another site\'s img (no-cors, no Origin)', bare(P, { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'no-cors', 'Sec-Fetch-Dest': 'image' })],
+    ['another site\'s script with the mark (refused at its preflight in a browser)', req(P, { headers: { 'Sec-Fetch-Site': 'cross-site', Origin: 'https://evil.example' } })],
+    ['a command line client (no mark)', bare(P, { 'User-Agent': 'git/2.43' })],
+    ['a browser that sends no Sec-Fetch headers, without the mark', bare(P)]]) {
+    const up = upstream(html);
+    const res = await handle(r, up);
+    assert.equal(res.status, 403, name);
+    assert.equal(up.seen.length, 0, 'nothing went out: ' + name);
+    assert.ok(inert(res) && res.headers.get('Content-Type') === 'text/plain; charset=utf-8', name + ' ' + JSON.stringify(Object.fromEntries(res.headers)));
+  }
+  // the client's own fetch, from a host that answers HTML: bytes, inert
+  const res = await handle(req(P), upstream(html));
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('Content-Type'), 'application/octet-stream');
+  assert.ok(inert(res), JSON.stringify(Object.fromEntries(res.headers)));
+  // git's own answer types pass, for the service asked
+  const typed = (ct) => upstream(() => new Response('x', { headers: { 'Content-Type': ct } }));
+  assert.equal((await handle(req(P), typed('application/x-git-upload-pack-advertisement; charset=x'))).headers.get('Content-Type'), 'application/x-git-upload-pack-advertisement');
+  assert.equal((await handle(req(P), typed('application/x-git-receive-pack-advertisement'))).headers.get('Content-Type'), 'application/octet-stream', 'not the service asked');
+  const post = (ct) => handle(req('/git/github.com/a/b.git/git-receive-pack', { method: 'POST', body: 'x', headers: { 'Content-Type': 'application/x-git-receive-pack-request', 'Content-Length': '1' } }), typed(ct));
+  assert.equal((await post('application/x-git-receive-pack-result')).headers.get('Content-Type'), 'application/x-git-receive-pack-result');
+  assert.equal((await post('text/html')).headers.get('Content-Type'), 'application/octet-stream');
+});
+
+await ok('(review M3) git hosts this site knows, and those the variable names, alone', async () => {
+  for (const h of HOSTS) assert.ok(gitTarget('GET', h + '/a/b.git/info/refs', '?service=git-upload-pack').url, h);
+  for (const h of ['evil.example.org', 'victim.org', 'github.io', 'raw.githubusercontent.com', 'gist.github.com', 'github.com.evil.org', 'api.github.com'])
+    assert.equal(gitTarget('GET', h + '/a/b.git/info/refs', '?service=git-upload-pack').why, 'not a git host this site knows', h);
+  const up = upstream();
+  assert.equal((await handle(req('/git/victim.org/admin/delete/info/refs?service=git-upload-pack'), up)).status, 403);
+  assert.equal(up.seen.length, 0);
+  // the variable: names by commas or spaces, each still a public host by name
+  const more = allowedHosts('git.uni-x.edu, gitlab.example-corp.com  127.0.0.1 localhost bad host:1');
+  assert.ok(more.has('git.uni-x.edu') && more.has('gitlab.example-corp.com') && !more.has('127.0.0.1') && !more.has('localhost') && !more.has('host:1') && more.has('github.com'));
+  const r = await handle(req('/git/git.uni-x.edu/a.git/info/refs?service=git-upload-pack'), up, { hosts: 'git.uni-x.edu' });
+  assert.equal(r.status, 200);
+  assert.equal(up.seen[0].url, 'https://git.uni-x.edu/a.git/info/refs?service=git-upload-pack');
+});
+
+await ok('(review M3) an answer has a ceiling in bytes and in time', async () => {
+  const big = upstream(() => new Response(new ReadableStream({ start(c) { for (let i = 0; i < 5; i++) c.enqueue(new Uint8Array(1000)); c.close(); } }), { headers: { 'Content-Type': 'application/x-git-upload-pack-advertisement' } }));
+  const r = await handle(req('/git/github.com/a/b.git/info/refs?service=git-upload-pack'), big, { maxAnswer: 3000 });
+  await assert.rejects(r.arrayBuffer(), 'cut past the ceiling');
+  const ok2 = await handle(req('/git/github.com/a/b.git/info/refs?service=git-upload-pack'), big, { maxAnswer: 5000 });
+  assert.equal((await ok2.arrayBuffer()).byteLength, 5000);
+  // a host that never answers: given up after the time, said as such
+  const never = async (url, init) => new Promise((res, rej) => init.signal.addEventListener('abort', () => rej(init.signal.reason)));
+  const t0 = Date.now();
+  // (node does not wait for AbortSignal.timeout's timer: this one keeps the test alive meanwhile)
+  const alive = setTimeout(() => {}, 5000);
+  const r2 = await handle(req('/git/github.com/a/b.git/info/refs?service=git-upload-pack'), never, { timeout: 200 });
+  clearTimeout(alive);
+  assert.equal(r2.status, 504);
+  assert.ok(Date.now() - t0 < 2000 && inert(r2));
 });
 
 console.log('gitproxy: ' + n + ' groups of checks passed');

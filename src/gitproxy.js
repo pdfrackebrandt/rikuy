@@ -4,28 +4,57 @@
 // through this; it is on the page's own site, so the page's policy keeps connect-src 'self' and
 // no third party sees a token.
 //
-// It forwards git's smart HTTP and nothing else, to https hosts on the public internet:
+// It forwards git's smart HTTP and nothing else, over https to the git hosts it knows (HOSTS, and
+// those Pedro lists in the Pages variable RIKUY_GIT_HOSTS):
 //   GET  /git/<host>/<repo path>/info/refs?service=git-upload-pack | git-receive-pack
 //   POST /git/<host>/<repo path>/git-upload-pack | git-receive-pack, with git's own content type,
 //        a Content-Length and at most MAX_BODY bytes
-// and refuses every other method, path, query, host form (an IP address, a port, localhost and
-// names only a private network resolves), a request another site's page sent (Origin), and a
-// redirect to anything it would refuse. It passes Authorization through to that host alone and
-// keeps no record of it; cookies go neither way, and its answers are never cached.
+// and only for the page's own git client: a request must carry X-Rikuy-Git (which another site's
+// page cannot send without a preflight, and the preflight is refused), and one that says it is a
+// navigation, is for anything but a script's fetch, or comes from another site (Sec-Fetch-*,
+// Origin) is refused. It refuses every other method, path, query and host form (an IP address, a
+// port, userinfo, localhost and other private names), and a redirect to anything it would refuse
+// or to another host. What it answers is never a page: git's own content type or
+// application/octet-stream, as an attachment, sandboxed, with no script, readable by this site
+// alone, never sniffed or cached (DOWN_HEADERS), the refusals too: Pages applies no _headers to a
+// Function's answers, and a link to /git/<a host of anyone's>/... must not show that host's
+// HTML as Rikuy. Answers are capped in bytes (MAX_ANSWER) and time (TIMEOUT_MS). It passes
+// Authorization to that host alone and keeps no record of it; cookies go neither way, nor does a
+// host's question for a password (WWW-Authenticate would bring up the browser's own login box
+// under Rikuy's address; isomorphic-git asks for credentials on the 401 alone).
 // Pure: the fetch it forwards with is given (the function passes the platform's; the tests a
 // stand in), so test/gitproxy.test.mjs and test/git.py run this same code.
 
 export const MAX_BODY = 32 * 1024 * 1024;
+export const MAX_ANSWER = 256 * 1024 * 1024;
+export const TIMEOUT_MS = 120000;
+// the git hosts a browser reaches through this (dev.azure.com's git is under .../_git/...; Overleaf
+// is the Git panel's own case, src/git.js gitUrlOf)
+export const HOSTS = ['github.com', 'gitlab.com', 'bitbucket.org', 'codeberg.org', 'gitea.com', 'git.sr.ht', 'huggingface.co', 'dev.azure.com', 'git.overleaf.com'];
+// the header the page's git client sends (src/git.js) and every request must carry
+export const MARK = 'X-Rikuy-Git';
+// on every answer: no page, no script, no other site's reading, no sniffing, no keeping
+export const DOWN_HEADERS = { 'Content-Security-Policy': "default-src 'none'; sandbox", 'Content-Disposition': 'attachment', 'Cross-Origin-Resource-Policy': 'same-origin',
+  'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
 const SERVICES = new Set(['git-upload-pack', 'git-receive-pack']);
 const TYPES = { 'git-upload-pack': 'application/x-git-upload-pack-request', 'git-receive-pack': 'application/x-git-receive-pack-request' };
 // what goes up with a request, and what comes back (the length and the encoding are the
 // platform's to set: a fetch hands the body back decoded)
 const UP = ['authorization', 'content-type', 'accept', 'git-protocol'];
-const DOWN = ['content-type', 'www-authenticate'];
+// (git's own answer types, for the service asked)
+const ANSWER = { GET: (s) => 'application/x-' + s + '-advertisement', POST: (s) => 'application/x-' + s + '-result' };
 // names that reach a private network, or nothing, wherever they are resolved
 const PRIVATE_NAME = /(^|\.)(localhost|local|internal|intranet|lan|home|corp|private|test|invalid|example|onion|home\.arpa)$/;
 
-const refuse = (status, why) => new Response(why + '\n', { status, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
+const refuse = (status, why) => new Response(why + '\n', { status, headers: { ...DOWN_HEADERS, 'Content-Type': 'text/plain; charset=utf-8' } });
+
+// the hosts this deployment forwards to: HOSTS and a list in the variable (names, by commas or
+// spaces), each still a public host by name
+export function allowedHosts(extra) {
+  const out = new Set(HOSTS);
+  for (const h of String(extra || '').toLowerCase().split(/[\s,]+/)) if (h && publicHost(h) === h) out.add(h);
+  return out;
+}
 
 // The host a request may go to, or null: a name with a dot, no IP address in any form the URL
 // parser reads as one (it turns 2130706433 or 0x7f.1 into 127.0.0.1), no port but https's own
@@ -40,12 +69,13 @@ export function publicHost(h) {
 
 // What git asks of a remote, from the path after /git/ and the query: { url, service, post } or
 // the reason it is refused
-export function gitTarget(method, rest, search) {
+export function gitTarget(method, rest, search, hosts = new Set(HOSTS)) {
   const segs = rest.split('/');
   // (a dot segment, written or encoded, could climb out of the host it names)
   if (segs.some((s) => { let d; try { d = decodeURIComponent(s); } catch (e) { return true; } return d === '.' || d === '..' || d.includes('/') || d.includes('\\'); })) return { why: 'no dot segments' };
   const host = publicHost(segs[0] || '');
   if (!host) return { why: 'only a public https host by name' };
+  if (!hosts.has(host)) return { why: 'not a git host this site knows' };
   const path = segs.slice(1).join('/');
   if (!path) return { why: 'no repository' };
   const q = new URLSearchParams(search);
@@ -61,15 +91,21 @@ export function gitTarget(method, rest, search) {
   return { why: 'GET and POST only' };
 }
 
-// request: the browser's Request to <origin>/git/<host>/<path>; fetchUp: fetch to the host
-export async function handle(request, fetchUp) {
+// request: the browser's Request to <origin>/git/<host>/<path>; fetchUp: fetch to the host;
+// o.hosts: the variable's list of more hosts; o.maxAnswer, o.timeout: the caps (tests)
+export async function handle(request, fetchUp, o = {}) {
   const url = new URL(request.url);
   const at = url.pathname.indexOf('/git/');
   if (at < 0) return refuse(404, 'not a git request');
-  // a page of another site may not use it (it gets no CORS answer either way)
-  const origin = request.headers.get('Origin');
+  const h = (k) => request.headers.get(k);
+  // the page's git client alone: its mark, a script's fetch from this site (a browser that sends
+  // no Sec-Fetch headers, Safari before 16.4, still needs the mark, which no other site's page
+  // can send), never a navigation
+  if (h(MARK) !== '1') return refuse(403, 'only Rikuy\'s git client');
+  if ((h('Sec-Fetch-Mode') || 'cors') === 'navigate' || (h('Sec-Fetch-Dest') || 'empty') !== 'empty' || (h('Sec-Fetch-Site') || 'same-origin') !== 'same-origin') return refuse(403, 'not a request of this site\'s page');
+  const origin = h('Origin');
   if (origin && origin !== url.origin) return refuse(403, 'not from this site');
-  const t = gitTarget(request.method, url.pathname.slice(at + 5), url.search);
+  const t = gitTarget(request.method, url.pathname.slice(at + 5), url.search, allowedHosts(o.hosts));
   if (!t.url) return refuse(t.why.startsWith('GET and POST') ? 405 : 403, t.why);
   const headers = new Headers();
   for (const k of UP) { const v = request.headers.get(k); if (v != null) headers.set(k, v); }
@@ -83,10 +119,12 @@ export async function handle(request, fetchUp) {
     body = await request.arrayBuffer();
     if (body.byteLength !== n) return refuse(400, 'the body is not its Content-Length');
   }
-  // redirects followed here, each checked as a request is (a host may move a repository)
+  // redirects followed here, each checked as a request is (a host may move a repository); the
+  // whole exchange, answer included, within TIMEOUT_MS
+  const signal = AbortSignal.timeout(o.timeout || TIMEOUT_MS);
   let target = t.url, res;
   for (let hop = 0; ; hop++) {
-    res = await fetchUp(target, { method: request.method, headers, body, redirect: 'manual' });
+    try { res = await fetchUp(target, { method: request.method, headers, body, redirect: 'manual', signal }); } catch (e) { return refuse(504, 'the host did not answer in time'); }
     if (res.status < 300 || res.status > 399 || res.status === 304) break;
     const loc = res.headers.get('Location');
     let next;
@@ -96,7 +134,13 @@ export async function handle(request, fetchUp) {
     if (next.host !== new URL(target).host) return refuse(502, 'a redirect to another host');
     target = next.href;
   }
-  const out = new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
-  for (const k of DOWN) { const v = res.headers.get(k); if (v != null) out.set(k, v); }
-  return new Response(res.body, { status: res.status, headers: out });
+  // git's own type when the host answered with it, else bytes; nothing else of the host's headers
+  const want = ANSWER[request.method](t.service);
+  const type = (res.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+  const out = new Headers({ ...DOWN_HEADERS, 'Content-Type': type === want ? want : 'application/octet-stream' });
+  // (at most MAX_ANSWER bytes: past them the answer is cut, which git takes as a failed fetch)
+  let n = 0;
+  const max = o.maxAnswer || MAX_ANSWER;
+  const cap = new TransformStream({ transform(chunk, c) { n += chunk.byteLength; if (n > max) c.error(new Error('answer too large')); else c.enqueue(chunk); } });
+  return new Response(res.body ? res.body.pipeThrough(cap) : null, { status: res.status, headers: out });
 }

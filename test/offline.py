@@ -238,6 +238,13 @@ def main():
         try: op.open(URL + shell, timeout=10); st = 'no redirect'
         except urllib.error.HTTPError as e: st = (e.code, e.headers.get('Location'))
         sw_text = open(os.path.join(DIST, 'sw.js'), encoding='utf8').read()
+        # (review H1) a link to the git proxy, clicked in the installed app: the service worker
+        # answers it with a refusal and lets nothing of it reach the network as a page
+        nav = ctx.new_page()
+        r = nav.goto(URL + 'git/github.com/x/info/refs?service=git-upload-pack')
+        check('a link to /git in the installed app is refused by the service worker, as inert text', r.status == 403 and 'git client only' in nav.content()
+              and r.headers.get('content-security-policy') == "default-src 'none'; sandbox", (r.status, r.headers))
+        nav.close()
         check('the widget document is listed and asked for at its address without .html, which Pages redirects to',
               st == (308, '/' + shell[:-5]) and op.open(URL + shell[:-5], timeout=10).status == 200 and '"' + shell[:-5] + '":[' in sw_text and '"' + shell + '"' not in sw_text, st)
 

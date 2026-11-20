@@ -60,6 +60,20 @@ as its canonical one.
    the CNAME before the domain is set up in Cloudflare gives errors until it is.)
 8. **Leave Cloudflare Web Analytics off** for this project: it adds a script to the page that the
    page's policy refuses anyway, so it would count nothing.
+9. **The git proxy's two settings** (`/git`, below). They protect the account's daily allowance
+   of Functions requests, which `/git` shares with every Worker of the account.
+   - **A rate limiting rule** (the free plan has one). In the dashboard, the zone
+     `rackebrandt.pe`, **Security rules**, **Create rule**, **Rate limiting rules**. Rule name:
+     `Rikuy git proxy`. When incoming requests match: Field **URI Path**, Operator **starts
+     with**, Value `/git/`. With the same characteristics: **IP**. When rate exceeds: **10**
+     requests per **10 seconds** (a push or a pull is two or three). Then take action: **Block**,
+     Duration **10 seconds** (the free plan's only period and timeout). **Deploy**. One address
+     can then make at most 86,400 `/git` requests a day, and a person never meets the limit.
+   - **More git hosts, if wanted.** Workers & Pages, the project, **Settings**, **Variables and
+     Secrets**, Production, **Add**: Type **Text**, Variable name `RIKUY_GIT_HOSTS`, Value the
+     host names by commas or spaces (`git.uni.edu, gitlab.example.org`), **Save**; the next
+     deployment uses them. Hosts that are not public names by DNS (an address, a port, `.local`)
+     are ignored.
 
 ## What the workflows do
 
@@ -95,20 +109,29 @@ as its canonical one.
   panel's push, pull and clone go to `/git/<host>/<path>` on Rikuy's own site, and the page's
   policy keeps `connect-src 'self'`: no third party sees a token. It forwards git's smart HTTP
   and nothing else: `GET …/info/refs?service=git-upload-pack` or `git-receive-pack`, and `POST
-  …/git-upload-pack` or `…/git-receive-pack` with git's own content type and at most 32 MiB, to
-  `https://<host>` named by a public host name (no IP address in any form, no port, no
-  `localhost`, `.local`, `.internal` or other private name), following a redirect only to the
-  same host. It refuses every other method, path or query, a request sent by another site's page
-  (its `Origin`), and answers with no CORS header, so no other site's page can read it. The
-  `Authorization` header goes to that host alone and is never logged; cookies go neither way;
-  nothing is cached. wrangler writes a `_routes.json` that sends only `/git/*` to the function,
+  …/git-upload-pack` or `…/git-receive-pack` with git's own content type and at most 32 MiB,
+  over https to the git hosts it knows: github.com, gitlab.com, bitbucket.org, codeberg.org,
+  gitea.com, git.sr.ht, huggingface.co, dev.azure.com and git.overleaf.com, and those named in
+  the project's variable `RIKUY_GIT_HOSTS` (below), each a public host by name (no IP address in
+  any form, no port, no private name); a redirect only to the same host. It answers Rikuy's git
+  client alone: a request must carry the header `X-Rikuy-Git: 1`, which the page sends and
+  another site's page cannot send without a preflight (refused), and a navigation, anything but
+  a script's fetch, or another site's request (`Sec-Fetch-*`, `Origin`) is refused, so a link to
+  `/git/...` shows nothing. Every answer, refusals too, is git's own content type or
+  `application/octet-stream`, with `Content-Security-Policy: default-src 'none'; sandbox`,
+  `Content-Disposition: attachment`, `Cross-Origin-Resource-Policy: same-origin`, `nosniff` and
+  `no-store` (Pages applies no `_headers` to a Function's answers; the service worker of an
+  installed copy refuses a navigation to `/git` itself). An answer stops at 256 MiB or 120 s.
+  `Authorization` goes to that host alone and is never logged; cookies and a host's question for
+  a password (`WWW-Authenticate`) go neither way; nothing is cached. wrangler writes a `_routes.json` that sends only `/git/*` to the function,
   so every other file stays a static file. **Cost:** a git request is one Functions request; a
   push or pull is two or three. The free plan allows 100,000 a day (Workers and Pages Functions
   together, from midnight UTC), 10 ms of CPU each (the proxy waits on the network, which does not
   count), 128 MB of memory and 50 outgoing requests per request; past the daily allowance
   `/git` answers with Cloudflare's error 1027 until midnight UTC, and the static site is not
   affected. Static requests stay free and unlimited. Locally `test/gitproxy_server.mjs` runs the
-  same code (`test/git.py`), and `test/gitproxy.test.mjs` checks what it lets through.
+  same code (`test/git.py`), and `test/gitproxy.test.mjs` checks what it lets through. Two
+  settings in Cloudflare's dashboard, which no file can make (step 9).
 - **For crawlers and AI agents**: `robots.txt` (everyone allowed, the AI services' crawlers by
   name too), `sitemap.xml`, `llms.txt` (what Rikuy is, what a person can do with it, how an agent
   builds a link that opens a document in it, the page's controls by name and `rikuy.api`) and

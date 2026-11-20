@@ -3,7 +3,8 @@
 that rewrote the HTML on the way would stop the app, which the policy runs only by that hash),
 nothing may transform it, HSTS is on; the widget document answers at its address without .html
 with the widgets' own policy and may be framed (and its .html name redirects there, as Pages
-does); /git answers git's request for a public host and refuses an IP address.
+does); /git answers git's request for a git host it knows, inert, and refuses one without the
+page's mark and a host it does not know.
 Usage: python3 dev/live_check.py SITE DIST   (e.g. https://rikuy.rackebrandt.pe/ dist)
 Exits 1 on the first problem, after a few tries while the deployment reaches the edge."""
 import os, re, sys, time, urllib.request, urllib.error
@@ -20,8 +21,8 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 OPEN = urllib.request.build_opener(NoRedirect)
 
 
-def get(path):
-    req = urllib.request.Request(SITE + path, headers={'User-Agent': 'rikuy-live-check', 'Cache-Control': 'no-cache'})
+def get(path, **extra):
+    req = urllib.request.Request(SITE + path, headers={'User-Agent': 'rikuy-live-check', 'Cache-Control': 'no-cache', **extra})
     try:
         r = OPEN.open(req, timeout=30)
         return r.status, {k.lower(): v for k, v in r.headers.items()}, r.read()
@@ -54,12 +55,16 @@ def check():
     st, h, _ = get(shell)
     if not (st == 200 or (st in (301, 308) and h.get('location', '').rstrip('/').endswith('/' + shell[:-5]))):
         return 'widget .html name: %s %r' % (st, h.get('location'))
-    st, h, body = get('git/github.com/git/git.git/info/refs?service=git-upload-pack')
-    if st != 200 or h.get('content-type') != 'application/x-git-upload-pack-advertisement':
-        return '/git does not pass git\'s request to a public host: %s %r' % (st, h.get('content-type'))
-    st, _, _ = get('git/127.0.0.1/a.git/info/refs?service=git-upload-pack')
+    mark = {'X-Rikuy-Git': '1'}
+    st, h, body = get('git/github.com/git/git.git/info/refs?service=git-upload-pack', **mark)
+    if st != 200 or h.get('content-type') != 'application/x-git-upload-pack-advertisement' or h.get('content-disposition') != 'attachment' or "sandbox" not in h.get('content-security-policy', ''):
+        return '/git does not pass git\'s request to a git host, inert: %s %r' % (st, h)
+    st, h, _ = get('git/github.com/git/git.git/info/refs?service=git-upload-pack')
+    if st != 403 or "sandbox" not in h.get('content-security-policy', ''):
+        return '/git answers a request without the client\'s mark: %s' % st
+    st, _, _ = get('git/example.org/a.git/info/refs?service=git-upload-pack', **mark)
     if st != 403:
-        return '/git does not refuse an IP address: %s' % st
+        return '/git forwards to a host it does not know: %s' % st
     return None
 
 
