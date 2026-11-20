@@ -309,7 +309,13 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
      group (so the group is at least as wide as its name). --c: the columns it takes. */
   .rb-grp.lay:not(.folded) { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, 22px) minmax(0, 1fr); grid-template-columns: repeat(var(--c), auto); grid-auto-columns: auto; column-gap: 1px; align-items: center; justify-items: start; padding: 4px 1px 3px; }
   .rb-grp.lay:not(.folded) > .rb-glab { position: static; grid-row: 4; grid-column: 1 / -1; align-self: end; justify-self: stretch; padding: 0 4px; white-space: nowrap; }
-  .rb-grp.lay:not(.folded) > .rb-launch ~ .rb-glab { padding: 0 16px; }
+  .rb-grp.lay:not(.folded):has(> .rb-launch, > .rb-launch-c) > .rb-glab { padding: 0 16px; }
+  /* the corner arrow that is the group's own button (src/ribbon/tabs.js) */
+  /* (#ribbon: every ribbon button is position relative, #ribbon .btn) */
+  #ribbon .rb-grp.lay:not(.folded) > .rb-launch-c { position: absolute; right: 0; bottom: 1px; width: 16px; min-width: 0; height: 14px; padding: 0; gap: 0; align-items: center; justify-content: center; border: 0; border-radius: 2px; background: transparent; color: var(--mute); }
+  .rb-grp.lay:not(.folded) > .rb-launch-c:hover { background: var(--blue-wash); color: var(--ink-ui); }
+  .rb-grp.lay:not(.folded) > .rb-launch-c > :not(.rb-larrow):not(.sr) { display: none; }
+  .rb-grp.lay:not(.folded) > .rb-launch-c > .rb-larrow { display: block; width: 10px; height: 10px; stroke-width: 1.3; }
   .rb-grp.lay > [data-brk] { grid-row-start: 1; }
   .rb-grp.lay > .btn, .rb-grp.lay > .rb-split > .btn { height: 22px; border-radius: 4px; font-size: 12px; font-weight: 400; }
   .rb-grp.lay > .btn svg, .rb-grp.lay > .rb-split > .btn svg { width: 16px; height: 16px; }
@@ -382,7 +388,7 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
 }
 /* a name a laid out group gives a button that had none, and a menu's arrow after a name: from
    900 px, where the group has Word's layout */
-.rb-xl, .rb-car { display: none; }
+.rb-xl, .rb-car, .rb-larrow { display: none; }
 @media (min-width: 900px) and (pointer: fine) { .rb-grp.lay:not(.folded):not(.nm) .rb-xl { display: flex; } }
 /* File opens a backstage of the same commands: sections down the page, not another ribbon row */
 /* the File sheet is the ribbon, in the flow: it does not cover the page, so a click on the page still lands */

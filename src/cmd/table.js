@@ -102,11 +102,12 @@ register(
   { id: 'insert-table', name: 'Table', order: 30, title: 'Table: a table of two by two, booktabs\' rules; the arrow for its size, Insert Table…, Convert Text to Table and a table from a data file', tab: 'insert', group: 'tables', el: 'ri-table', label: 'Table', kind: 'split', searchable: false,
     icon: '<path d="M3.5 4.5h13v11h-13zM3.5 8.5h13M10 4.5v11"/>',
     run: (app, args) => app.insertTable(args && args.rows, args && args.cols, args || {}), menuItems: (app) => app.tablePickerItems() },
-  { id: 'insert-table-dialog', name: 'Insert Table', title: 'Insert Table…: its number of columns and rows, and how it fits (to its contents, to the page\'s width as tabularx, columns of a set width)', tab: 'insert', group: 'tables', order: 40, icon: ICON.dialog,
+  // (these three are items of Table's menu, as Word's: no buttons of their own beside it)
+  { id: 'insert-table-dialog', name: 'Insert Table', title: 'Insert Table…: its number of columns and rows, and how it fits (to its contents, to the page\'s width as tabularx, columns of a set width)', icon: ICON.dialog,
     synonyms: ['Table size', 'Insert Table…', 'New table'], when: (app, at) => !!at, run: (app, args) => (args ? app.insertTable(args.rows, args.cols, args) : insertTableDialog(app)) },
-  { id: 'text-to-table', name: 'Convert Text to Table', title: 'Convert Text to Table…: the selected lines become rows, cut at tabs, commas, semicolons or &', tab: 'insert', group: 'tables', order: 50, icon: ICON.fromText,
+  { id: 'text-to-table', name: 'Convert Text to Table', title: 'Convert Text to Table…: the selected lines become rows, cut at tabs, commas, semicolons or &', icon: ICON.fromText,
     synonyms: ['Text to table', 'Table from text', 'CSV to table'], when: (app, at) => !!app.textToTableRange(at), whyNot: () => 'Select the lines to make a table of (paragraphs of plain text).', run: (app, args) => (args && args.sep ? app.textToTable(args.sep, args) : textToTableDialog(app)) },
-  { id: 'table-from-data', name: 'Table from Data File', title: 'Table from Data File…: a .csv of the project set as a table by csvsimple (\\csvautobooktabular), read again at every compile', tab: 'insert', group: 'tables', order: 60, icon: ICON.data,
+  { id: 'table-from-data', name: 'Table from Data File', title: 'Table from Data File…: a .csv of the project set as a table by csvsimple (\\csvautobooktabular), read again at every compile', icon: ICON.data,
     synonyms: ['CSV', 'Spreadsheet', 'Excel', 'Data table', 'csvautotabular', 'pgfplotstable'], when: (app, at) => !!at, run: (app, args) => (args && args.file ? app.insertDataTable(args.file, args) : dataFileDialog(app)) },
 
   // ---- Table Layout: Table -------------------------------------------------------------------------

@@ -10,8 +10,10 @@
 // then these), '-' for none. The shown name, where given, is the name Word shows when it is shorter
 // than the control's own (Word's "Delete" for Delete Comment); the accessible name stays the
 // command's (agents find controls by it). '|' starts a new column. A command not listed (a batch's
-// new one) comes after the listed ones, small. Home has its own rules in src/app.css; its KeyTips
-// are TIPS.home below.
+// new one) comes after the listed ones, small. A command that a group's corner arrow runs (LAUNCH)
+// and that the group has as a button too is that arrow, with a mouse from 900 px (its line keeps
+// its place for a narrower row). Home has its own rules in src/app.css; its KeyTips are TIPS.home
+// below.
 //
 // When the window is too narrow for the names, every name goes at once (ribbonFit's step rb-fold):
 // a large button becomes a small icon, so the group packs three to a column.
@@ -19,7 +21,8 @@
 export const LAYOUT = {
   insert: {
     pages: ['cover-page S V', 'blank-page S NP', 'page-break S B'],
-    tables: ['insert-table L T', 'insert-table-dialog I AT', 'text-to-table I AC', 'table-from-data I AD'],
+    // (Insert Table, Convert Text to Table and Table from Data File are in Table's menu, as Word's)
+    tables: ['insert-table L T'],
     illustrations: ['picture L P', 'insert-shapes L SH', 'insert-icons L Y', 'insert-interactive-graph L G', 'insert-smartart S M', 'insert-chart S C', 'insert-screenshot S SC'],
     links: ['link L I', 'bookmark L K', 'cross-reference L RF'],
     comments: ['comment-new L L'],
@@ -88,7 +91,7 @@ export const LAYOUT = {
     styles: ['picture-border S SO', 'picture-caption S N'],
     accessibility: ['picture-alt L AT'],
     arrange: ['picture-position L PO', 'picture-wrap L TW', 'picture-rotate S AY'],
-    size: ['picture-crop L C', 'picture-height S H', 'picture-width S W', '|', 'picture-lock I L', 'picture-size I SZ']
+    size: ['picture-crop L C', 'picture-height S H', 'picture-width S W', '|', 'picture-lock I L', 'picture-size I -']
   },
   equation: {
     tools: ['eq-gallery L E', 'eq-numbered S N', 'eq-display S D'],

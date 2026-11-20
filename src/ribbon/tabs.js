@@ -170,23 +170,37 @@ export const tabs = {
           return b;
         };
         const gallery = T.id === 'home' && g.id === 'styles';
-        if (!gallery) { const b = launchBtn(); if (b) box.append(b); }
         // (a laid out group, Word's: each control's size, and the columns it takes with its names
         // and without them, so the group's name below spans them all; see src/ribbon/layout.js)
         const lay = items.some((x) => x.l);
+        // Where the corner arrow's command is a button of the group too (Page setup, Footnote and
+        // Endnote, Size and Position), that button is the arrow, with a mouse from 900 px: one
+        // control, not an arrow and an icon beside it that do the same. Elsewhere it is the button.
+        // (it keeps its place among them, for the narrower row)
+        const own = lay && launch ? items.find((x) => x.c.id === launch[0] && x.p.main) : null;
+        if (!own && !gallery) { const b = launchBtn(); if (b) box.append(b); }
+        const flow = own ? items.filter((x) => x !== own) : items;
         if (lay) {
           box.classList.add('lay');
           if (CHECKS.has(T.id + '/' + g.id)) box.classList.add('lay-check');
-          box.style.setProperty('--c', columns(items, false));
-          box.style.setProperty('--cf', columns(items, true));
+          box.style.setProperty('--c', columns(flow, false));
+          box.style.setProperty('--cf', columns(flow, true));
         }
-        const smallBreak = lay ? packed(items, true).brk : new Set();
-        items.forEach(({ c, p, l }, i) => {
+        const smallBreak = lay ? packed(flow, true).brk : new Set();
+        for (const x of items) {
+          const { c, p, l } = x;
+          if (x === own) {
+            const e = this.makeControl(c, p, null);
+            e.classList.add('rb-launch-c');
+            e.insertAdjacentHTML('beforeend', '<svg class="rb-larrow" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.2 7.8 7.8 2.2M4.2 2.2h3.6V5.8"/></svg>');
+            box.append(e);
+            continue;
+          }
           const e = c.kind === 'custom' ? made.get(c.id) : this.makeControl(c, p, l);
-          if (!e) return;
-          if (l) { e.dataset.size = l.size; if (l.brk) e.dataset.brk = '1'; if (smallBreak.has(i)) e.dataset.sbrk = '1'; }
+          if (!e) continue;
+          if (l) { e.dataset.size = l.size; if (l.brk) e.dataset.brk = '1'; if (smallBreak.has(flow.indexOf(x))) e.dataset.sbrk = '1'; }
           box.append(e);
-        });
+        }
         if (gallery) { const b = launchBtn(); if (b) box.append(b); }
         // the group's name under its controls, as Word's ribbon labels them (the Styles gallery
         // already has its own caption). Hidden from the accessibility tree: the group has the name.
@@ -581,7 +595,7 @@ function installKeyTips(app) {
       const el = document.getElementById(p.el);
       if (shown(el) && panel.contains(el)) { out.push({ k: map[c.id], el }); used.add(map[c.id]); }
     }
-    for (const b of panel.querySelectorAll('.rb-launch')) {
+    for (const b of panel.querySelectorAll('.rb-launch, .rb-launch-c')) {
       const L = LAUNCH[tab + '/' + b.closest('.rb-grp').dataset.group];
       if (L && L[2] && shown(b)) { out.push({ k: L[2], el: b }); used.add(L[2]); }
     }
