@@ -66,3 +66,36 @@ for (const [s, a, b, want] of [
     noChips: !M.warn.includes('\\frontmatter') && !M.warn.includes('\\mainmatter') };
   for (const [k, v] of Object.entries(want)) if (!v) { process.exitCode = 1; console.log('FAIL thesis project:', k, JSON.stringify({ heads, body, cls: M.opts.cls, macros: Object.keys(M.mathMacros), warn: M.warn })); }
 }
+
+// The undo record's comparison from where the edits were (App.commit's windows, joined by the
+// least of each as a step goes on, App.record): the same answer as comparing from the ends, on
+// random texts with repeats (where the smallest difference slides past the edit) and edits in
+// turns, inserted, deleted, replaced, several at once, side by side.
+{
+  const { diff } = await import('../src/editor.js');
+  let seed = 7, bad = 0, n = 0;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const piece = () => ['a', 'aa', 'b', ' ', '\n', 'ab', '\\x', '%'][Math.floor(rnd() * 8)];
+  const words = (k) => { let t = ''; for (let i = 0; i < k; i++) t += piece(); return t; };
+  for (let trial = 0; trial < 3000; trial++) {
+    const t0 = words(Math.floor(rnd() * 60));
+    let t = t0, pre = Infinity, suf = Infinity;
+    for (let step = 0, steps = 1 + Math.floor(rnd() * 4); step < steps; step++) {
+      // one to three edits that do not overlap, applied from the last as commit applies them
+      const list = [];
+      let p = 0;
+      for (let k = 0, m = 1 + Math.floor(rnd() * 3); k < m && p <= t.length; k++) {
+        const s = p + Math.floor(rnd() * (t.length - p + 1)), e = Math.min(t.length, s + Math.floor(rnd() * 4));
+        list.push({ s, e, t: rnd() < 0.3 ? '' : words(1 + Math.floor(rnd() * 3)) });
+        p = e;
+      }
+      list.sort((x, y) => y.s - x.s || y.e - x.e);
+      pre = Math.min(pre, list[list.length - 1].s); suf = Math.min(suf, t.length - list[0].e);
+      for (const ed of list) t = t.slice(0, ed.s) + ed.t + t.slice(ed.e);
+      n++;
+      if (JSON.stringify(diff(t0, t, pre, suf)) !== JSON.stringify(diff(t0, t))) { bad++; if (bad === 1) console.log('FAIL undo diff', JSON.stringify({ t0, t, pre, suf })); }
+    }
+  }
+  if (bad) process.exitCode = 1;
+  console.log('undo diff from the edits:', n - bad, 'of', n, 'the same');
+}
