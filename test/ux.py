@@ -791,7 +791,41 @@ def dialog_kinds(page, w):
     check(f'every check box\'s and radio button\'s row at least {R} px ({w})', not badr and any(v and v['rows'] for v in seen.values()), badr)
 
 
+CONTRAST = """(el) => { const rgb = (c) => (c.match(/[\\d.]+/g) || []).map(Number);
+  const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  let bg = null; for (let e = el; e; e = e.parentElement) { const c = rgb(getComputedStyle(e).backgroundColor); if (c.length === 3 || (c.length === 4 && c[3] > 0.9)) { bg = c.slice(0, 3); break; } }
+  const fg = rgb(getComputedStyle(el).color).slice(0, 3), a = lum(fg), b = lum(bg || [255, 255, 255]);
+  return Math.round((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) * 100) / 100; }"""
+
+
+def contrast(page, w):
+    """Text on the accent blue and in the search box's list reads at 4.5:1 or more (WCAG 1.4.3,
+    UI-PRINCIPLES.md D1), light and dark: the primary buttons of the dialogs (OK, Apply, Copy
+    link, Find Next) and a phone's selected search result."""
+    touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
+    load_doc(page, DOC)
+    got = {}
+    for cmd, name in (('paragraph-settings', 'OK'), ('insert-table-dialog', 'OK'), ('properties', 'Apply'), ('share', 'Copy link'), ('find-replace', 'Find Next')):
+        click_text(page, 'Second paragraph', 3)
+        if cmd == 'find-replace':
+            page.keyboard.press('Control+h')
+        else:
+            run_cmd(page, cmd)
+        page.wait_for_timeout(300)
+        h = page.evaluate_handle("(n) => [...document.querySelectorAll('body > .pop .btn, #fr .btn')].find((b) => b.offsetParent && b.textContent.trim() === n)", name)
+        got[cmd + ' ' + name] = page.evaluate(CONTRAST, h) if page.evaluate('(h) => !!h', h) else None
+        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    check(f'the dialogs\' primary buttons read at 4.5:1 or more ({w})', all(v and v >= 4.5 for v in got.values()), got)
+    page.locator('#bar .srch input').click() if not touch else page.tap('#bar .srch input')
+    page.keyboard.type('word count'); page.wait_for_timeout(400)
+    h = page.evaluate_handle("document.querySelector('.srch-opt.on .srch-n') || document.querySelector('.srch-opt.on')")
+    c = page.evaluate(CONTRAST, h) if page.evaluate('(h) => !!h', h) else None
+    check(f'the selected search result reads at 4.5:1 or more ({w})', c and c >= 4.5, c)
+    page.keyboard.press('Escape')
+
+
 PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
+         'contrast': (contrast, [(1366, False), (1366, True), (390, False), (390, True)]),
          'dialog_kinds': (dialog_kinds, [(1366, False), (1920, True), (390, False), (360, True)]),
          'verify_lows': (verify_lows, [(1366, False), (1920, True)]), 'widen': (widen, None),
          'place_kept': (place_kept, [(1366, False), (390, False)]),
