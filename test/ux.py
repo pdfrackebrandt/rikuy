@@ -339,8 +339,14 @@ def download_pdf(page, w):
     if not os.path.isfile(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'dist', 'tex', 'tree.wasm')):
         print('SKIP download_pdf: no dist/tex'); return
     seen = []
+    touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
     with page.expect_download(timeout=180000) as d:
-        page.click('#rb-pdf')
+        if touch:
+            # (a phone's one Download button, then its menu's Download PDF)
+            page.locator('#rb-dl-menu').tap(); page.wait_for_timeout(250)
+            page.locator('body > .pop [role=menuitem][aria-label="Download PDF"]').tap()
+        else:
+            page.click('#rb-pdf')
         for _ in range(60):
             page.wait_for_timeout(250)
             t = page.evaluate("(() => { const s = document.getElementById('st-save'); return s.checkVisibility() ? s.textContent : ''; })()")
@@ -559,7 +565,29 @@ def pane_room(page, w):
     run_cmd(page, 'styles-pane'); page.evaluate('window.rikuy.togglePdf(false)')
 
 
-PARTS = {'pane_room': (pane_room, [(1024, False), (1920, True)]),
+def lows(page, w):
+    """The review's lows: the phone menu's zoom item has no icon of another action; a tablet's status
+    bar has its views in sight; the zoom number and the comment boxes are 44 px under a finger."""
+    width = page.viewport_size['width']
+    if width <= 520:
+        page.locator('#b-nav').tap(); page.wait_for_timeout(250)
+        z = page.evaluate("(() => { const a = document.querySelector('#nav-acts [data-for=zoomv]'); return a ? a.querySelectorAll('svg').length : -1; })()")
+        check(f'the menu panel\'s zoom item has no icon of another action ({w})', z == 0, z)
+        page.locator('#nav-close').tap(); page.wait_for_timeout(200)
+        load_doc(page, DOC); select_text(page, 'bold word'); run_cmd(page, 'comment-new')
+        h = page.evaluate("[...document.querySelectorAll('.pop-comment .share-name, .pop-comment textarea')].map((e) => Math.round(e.getBoundingClientRect().height))")
+        check(f'a comment\'s name and text boxes are 44 px under a finger ({w})', h and min(h) >= 44, h)
+        page.keyboard.press('Escape')
+    else:
+        g = page.evaluate("""(() => { const s = document.getElementById('status').getBoundingClientRect(), v = document.getElementById('st-views').getBoundingClientRect(), z = document.getElementById('st-zoomv');
+          return { views: [Math.round(v.left), Math.round(v.right)], status: [Math.round(s.left), Math.round(s.right)], zoom: z.checkVisibility() ? Math.round(z.getBoundingClientRect().width) : null }; })()""")
+        check(f'a tablet\'s status bar has Page, LaTeX and PDF whole in sight ({w})', g['views'][0] >= g['status'][0] and g['views'][1] <= g['status'][1], g)
+        if g['zoom'] is not None:
+            check(f'its zoom number is 44 px wide under a finger ({w})', g['zoom'] >= 44, g)
+
+
+PARTS = {'lows': (lows, [(390, False), (768, False), (1024, True)]),
+         'pane_room': (pane_room, [(1024, False), (1920, True)]),
          'caret_back': (caret_back, [(1366, False), (1100, True)]),
          'help_pane': (help_pane, [(1366, False), (1920, True), (390, False)]),
          'mobile_view': (mobile_view, [(390, False), (360, True)]), 'wide_print': (wide_print, [(1366, False)]),
@@ -578,6 +606,8 @@ PARTS = {'pane_room': (pane_room, [(1024, False), (1920, True)]),
 
 # the parts that meet a phone's own default, Mobile View (the others open in Print Layout, as the suites written for it do)
 MOBILE = {'mobile_view', 'first_visit', 'doc_name', 'sample_spelling'}
+# the parts on tablets: a touch screen at any width
+TOUCH = {'lows'}
 
 
 def run(which):
@@ -588,7 +618,7 @@ def run(which):
                 fn(p)
                 continue
             for width, dark in sizes:
-                touch = width < 700
+                touch = width < 700 or name in TOUCH
                 browser, page, errors = open_page(p, width=width, height=820 if touch else 900, dark=dark, touch=touch, layout='mobile' if name in MOBILE else 'print')
                 fn(page, '%d px%s' % (width, ', dark' if dark else ''))
                 check(f'no console errors ({name}, {width} px)', not errors, errors[:4])
