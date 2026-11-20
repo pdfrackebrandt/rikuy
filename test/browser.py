@@ -33,10 +33,21 @@ def check(name, cond, detail=''):
     return bool(cond)
 
 
-def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, touch=False):
+# A window under 700 px opens in Mobile View (Web Layout) unless Print Layout was chosen on it. The
+# suites written for a phone's Print Layout (its pages, margins, headers, the sheet's zoom) say so
+# with this script, as a person's tap on Mobile View would: it marks Print Layout chosen when
+# nothing is (test/ux.py tests Mobile View itself, with layout='mobile').
+PRINT_LAYOUT = '''(() => { try { const k = 'galley.prefs.v1', p = JSON.parse(localStorage.getItem(k) || 'null') || {};
+  if (p.narrowWeb === undefined) { p.narrowWeb = false; localStorage.setItem(k, JSON.stringify(p)); } } catch (e) {} })()'''
+
+
+def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, touch=False, layout='print'):
     # touch: a phone's page (a touch screen, a mobile viewport: pointer coarse, no hover; tap())
+    # layout: 'print', a window under 700 px opens in Print Layout; 'mobile', in its default
     browser = p.chromium.launch(args=[a for a in os.environ.get('CHROME_ARGS', '').split() if a])
     ctx = browser.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=1, has_touch=touch, is_mobile=touch)
+    if layout == 'print' and width < 700:
+        ctx.add_init_script(PRINT_LAYOUT)
     page = ctx.new_page()
     errors = []
     page.on('console', lambda m: errors.append(m.text) if m.type == 'error' and 'Failed to load resource' not in m.text else None)
@@ -696,8 +707,14 @@ def first_visit(p):
         for w in (360, 390, 430):
             ctx = browser.new_context(viewport={'width': w, 'height': 800}, has_touch=True, is_mobile=True); ctx.route('**/*', serve)
             page = visit(ctx)
-            m = page.evaluate('(() => { const d = document.getElementById("desk"), r = document.querySelector("#pages .it.p").getBoundingClientRect(); return { font: parseFloat(getComputedStyle(document.querySelector("#pages .it.p")).fontSize), left: r.left, right: r.right, w: d.clientWidth, label: document.getElementById("zoomv").textContent, src: ' + on + ' }; })()')
-            check('a first visit on a %dpx phone opens with the text block across the screen, not the sheet' % w, m['font'] > 7.5 and m['left'] >= 0 and m['right'] <= m['w'] and m['right'] - m['left'] > m['w'] - 30 and not m['src'], m)
+            geo = '(() => { const d = document.getElementById("desk"), r = document.querySelector("#pages .it.p").getBoundingClientRect(); return { font: parseFloat(getComputedStyle(document.querySelector("#pages .it.p")).fontSize), left: r.left, right: r.right, w: d.clientWidth, label: document.getElementById("zoomv").textContent, src: ' + on + ', web: document.body.classList.contains("pg-web") }; })()'
+            m = page.evaluate(geo)
+            # (a phone opens in Mobile View, Word's phone app's: the text at its actual size, its lines as wide as the screen)
+            check('a first visit on a %dpx phone opens in Mobile View: the text at its actual size across the screen' % w, m['web'] and m['font'] >= 13 and m['left'] >= 0 and m['right'] <= m['w'] and m['right'] - m['left'] > m['w'] - 40 and not m['src'] and m['label'] == '100%', m)
+            # Print Layout, a tap on Mobile View away: the text block across the screen, not the sheet
+            page.tap('#sv-mobile'); page.wait_for_timeout(400)
+            m = page.evaluate(geo)
+            check('with Mobile View off a %dpx phone shows the text block across the screen, not the sheet' % w, not m['web'] and m['font'] > 7.5 and m['left'] >= 0 and m['right'] <= m['w'] and m['right'] - m['left'] > m['w'] - 30 and not m['src'], m)
             # what is stored must be a zoom the version before this one can read (it multiplies
             # anything but 'fit'): after a rollback its page would have no size
             z = page.evaluate('JSON.parse(localStorage.getItem("galley.prefs.v1")).zoom')
