@@ -394,3 +394,32 @@ export function diff(a, b, pre = 0, suf = 0) {
   while (e < n - s && a.charCodeAt(a.length - 1 - e) === b.charCodeAt(b.length - 1 - e)) e++;
   return { s, del: a.slice(s, a.length - e), ins: b.slice(s, b.length - e) };
 }
+
+// An undo step's record compares only what its edits left alone (win: for each file, how much of
+// its start, pre, and its end, suf, App.commit's edits did not touch). A step that goes on over
+// several commits (typing) keeps the least of each, which holds only while every commit starts
+// from the text the one before left: so the step keeps that text (after), and a file found
+// changed in between (opened over, Accept, another tab) loses its window and is compared from the
+// ends, which is always right. before: each edited file's text at this commit's start; now(f):
+// a file's text now; win: this commit's windows, or none.
+export function stepStart(before, now, win) {
+  const W = new Map(), after = new Map();
+  for (const [f] of before) { after.set(f, now(f)); const w = win && win.get(f); if (w) W.set(f, w); }
+  return { win: W, after };
+}
+export function stepJoin(step, before, now, win) {
+  const W = step.win || new Map();
+  for (const f of [...W.keys()]) {
+    const start = before.has(f) ? before.get(f) : now(f);
+    if (!step.after || step.after.get(f) !== start) W.delete(f);
+  }
+  for (const [f, b] of before) {
+    const w = win && win.get(f), had = W.get(f);
+    if (!step.before.has(f)) { step.before.set(f, b); if (w) W.set(f, w); else W.delete(f); }
+    else if (w && had) W.set(f, { pre: Math.min(had.pre, w.pre), suf: Math.min(had.suf, w.suf) });
+    else W.delete(f);
+  }
+  step.win = W;
+  step.after = new Map();
+  for (const [f] of step.before) step.after.set(f, now(f));
+}

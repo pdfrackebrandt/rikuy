@@ -67,35 +67,53 @@ for (const [s, a, b, want] of [
   for (const [k, v] of Object.entries(want)) if (!v) { process.exitCode = 1; console.log('FAIL thesis project:', k, JSON.stringify({ heads, body, cls: M.opts.cls, macros: Object.keys(M.mathMacros), warn: M.warn })); }
 }
 
-// The undo record's comparison from where the edits were (App.commit's windows, joined by the
-// least of each as a step goes on, App.record): the same answer as comparing from the ends, on
-// random texts with repeats (where the smallest difference slides past the edit) and edits in
-// turns, inserted, deleted, replaced, several at once, side by side.
+// The undo record's comparison from where the edits were (App.commit's windows, joined over a
+// step's commits by src/editor.js stepStart and stepJoin as App.record does): the same answer as
+// comparing from the ends, on random texts with repeats (where the smallest difference slides
+// past the edit), one to three edits a commit, up to four commits a step over two files, and
+// now and then a file changed between two commits outside them (a file opened over it, B0's
+// review F1), which must cost the step its window and never give a record of a text that was not.
 {
-  const { diff } = await import('../src/editor.js');
-  let seed = 7, bad = 0, n = 0;
+  const { diff, stepStart, stepJoin } = await import('../src/editor.js');
+  let seed = 7, bad = 0, n = 0, outside = 0;
   const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
   const piece = () => ['a', 'aa', 'b', ' ', '\n', 'ab', '\\x', '%'][Math.floor(rnd() * 8)];
   const words = (k) => { let t = ''; for (let i = 0; i < k; i++) t += piece(); return t; };
+  // one commit's edits on t (apart, applied from the last as commit applies them): [text, window]
+  const commit = (t) => {
+    const list = [];
+    let p = 0;
+    for (let k = 0, m = 1 + Math.floor(rnd() * 3); k < m && p <= t.length; k++) {
+      const s = p + Math.floor(rnd() * (t.length - p + 1)), e = Math.min(t.length, s + Math.floor(rnd() * 4));
+      list.push({ s, e, t: rnd() < 0.3 ? '' : words(1 + Math.floor(rnd() * 3)) });
+      p = e;
+    }
+    list.sort((x, y) => y.s - x.s || y.e - x.e);
+    const w = { pre: list[list.length - 1].s, suf: t.length - list[0].e };
+    for (const ed of list) t = t.slice(0, ed.s) + ed.t + t.slice(ed.e);
+    return [t, w];
+  };
   for (let trial = 0; trial < 3000; trial++) {
-    const t0 = words(Math.floor(rnd() * 60));
-    let t = t0, pre = Infinity, suf = Infinity;
-    for (let step = 0, steps = 1 + Math.floor(rnd() * 4); step < steps; step++) {
-      // one to three edits that do not overlap, applied from the last as commit applies them
-      const list = [];
-      let p = 0;
-      for (let k = 0, m = 1 + Math.floor(rnd() * 3); k < m && p <= t.length; k++) {
-        const s = p + Math.floor(rnd() * (t.length - p + 1)), e = Math.min(t.length, s + Math.floor(rnd() * 4));
-        list.push({ s, e, t: rnd() < 0.3 ? '' : words(1 + Math.floor(rnd() * 3)) });
-        p = e;
+    const files = new Map([['a.tex', words(Math.floor(rnd() * 60))], ['b.tex', words(Math.floor(rnd() * 30))]]);
+    const now = (f) => files.get(f);
+    let step = null;
+    for (let c = 0, cs = 1 + Math.floor(rnd() * 4); c < cs; c++) {
+      // (between two commits, a file changed outside them)
+      if (step && rnd() < 0.25) { const f = rnd() < 0.5 ? 'a.tex' : 'b.tex'; files.set(f, commit(files.get(f))[0]); outside++; }
+      const before = new Map(), win = new Map();
+      for (const f of rnd() < 0.7 ? ['a.tex'] : rnd() < 0.5 ? ['b.tex'] : ['a.tex', 'b.tex']) {
+        before.set(f, files.get(f));
+        const [t, w] = commit(files.get(f));
+        files.set(f, t); win.set(f, w);
       }
-      list.sort((x, y) => y.s - x.s || y.e - x.e);
-      pre = Math.min(pre, list[list.length - 1].s); suf = Math.min(suf, t.length - list[0].e);
-      for (const ed of list) t = t.slice(0, ed.s) + ed.t + t.slice(ed.e);
-      n++;
-      if (JSON.stringify(diff(t0, t, pre, suf)) !== JSON.stringify(diff(t0, t))) { bad++; if (bad === 1) console.log('FAIL undo diff', JSON.stringify({ t0, t, pre, suf })); }
+      if (!step) { step = { before: new Map(before), ...stepStart(before, now, win) }; } else stepJoin(step, before, now, win);
+      for (const [f, b] of step.before) {
+        const w = step.win.get(f) || { pre: 0, suf: 0 };
+        n++;
+        if (JSON.stringify(diff(b, now(f), w.pre, w.suf)) !== JSON.stringify(diff(b, now(f)))) { bad++; if (bad === 1) console.log('FAIL undo diff', JSON.stringify({ b, now: now(f), w })); }
+      }
     }
   }
   if (bad) process.exitCode = 1;
-  console.log('undo diff from the edits:', n - bad, 'of', n, 'the same');
+  console.log('undo diff from the edits:', n - bad, 'of', n, 'the same (' + outside + ' files changed between commits)');
 }
