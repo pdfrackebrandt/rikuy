@@ -3,7 +3,7 @@
 // through the edits made after them.
 import assert from 'node:assert/strict';
 import '../src/cmd/index.js';
-import { unicodeToggle, accented } from '../src/cmd/typing.js';
+import { unicodeToggle, accented, openBraces } from '../src/cmd/typing.js';
 import { editSpots } from '../src/cmd/find.js';
 
 let n = 0;
@@ -85,6 +85,14 @@ ok('Go Back: the last four places edited, newest first, moved through the edits 
   // an edit over the place: the place to the end of what replaced it
   assert.deepEqual(editSpots([step('a', 50, '', 'q'), step('a', 40, 'x'.repeat(20), 'yy')], 4), [{ f: 'a', p: 42 }]);
   assert.deepEqual(editSpots([], 4), []);
+});
+
+ok('the Spike\'s pieces join as paragraphs, but with a space inside a command\'s argument', () => {
+  const s = 'Text.\n\n\\section{Clo|sing} and \\{ \\textbf{x} % {\nmore|';
+  const at = (k) => s.replace(/\|/g, '').length && s.split('|').slice(0, k).join('').length;
+  const src = s.replace(/\|/g, '');
+  assert.equal(openBraces(src, at(1)), 1);
+  assert.equal(openBraces(src, at(2)), 0);
 });
 
 console.log('typing: ' + n + ' groups of checks passed');

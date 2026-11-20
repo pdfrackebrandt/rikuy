@@ -55,6 +55,20 @@ export function unicodeToggle(src, a, b) {
 }
 const hex = (n) => n.toString(16).toUpperCase().padStart(4, '0');
 
+// how many { are open at p, from the start of its paragraph (escaped braces and comments aside)
+export function openBraces(src, p) {
+  const s0 = src.lastIndexOf('\n\n', p - 1);
+  let d = 0;
+  for (let i = s0 < 0 ? 0 : s0; i < p; i++) {
+    const ch = src[i];
+    if (ch === '\\') { i++; continue; }
+    if (ch === '%') { while (i < p && src[i] !== '\n') i++; continue; }
+    if (ch === '{') d++;
+    else if (ch === '}') d = Math.max(0, d - 1);
+  }
+  return d;
+}
+
 // ---- the accent keys ------------------------------------------------------------------------------
 // Word's international characters: a key, then the letter. Each: the combining mark, and the
 // letters Word makes otherwise (Ctrl+' then d is ð; Ctrl+Shift+& then a is æ, o œ, s ß).
@@ -137,7 +151,10 @@ export const methods = {
     const items = this.spikeItems || [];
     if (!items.length) return false;
     this.spikeItems = [];
-    this.pasteData({ plain: items.map((x) => x.plain).join('\n'), latex: items.map((x) => x.latex).join('\n\n'), html: '' }, 'keep');
+    // (each piece a paragraph, as Word's; inside a command's argument, a heading's or a cell's, a
+    // paragraph break would end it: there the pieces join with a space)
+    const c = this.caretNow(), inArg = !!c && !c.ghost && openBraces(this.src(c.f), c.a) > 0;
+    this.pasteData({ plain: items.map((x) => x.plain).join(inArg ? ' ' : '\n'), latex: items.map((x) => x.latex).join(inArg ? ' ' : '\n\n'), html: '' }, 'keep');
     return true;
   },
 
