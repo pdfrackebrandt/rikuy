@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { commands, command, places, paletteItems, search, describe, menuItems, register, unregister, run, enabled, joinMethods } from '../src/commands.js';
 import '../src/cmd/index.js';
 import { TABS, groupOf, KEYTIPS } from '../src/ribbon/order.js';
+import { LAYOUT, TIPS, LAUNCH, CHECKS, readLine } from '../src/ribbon/layout.js';
 import { parseChord, chordFor } from '../src/keys.js';
 import { controls } from '../build/app.mjs';
 
@@ -144,6 +145,34 @@ ok('the methods of the modules joined into the app: a name in two of them throws
   class A { h() {} }
   assert.throws(() => joinMethods(A.prototype, { 'c.js': { h() {} } }), /h/);
   assert.doesNotThrow(() => joinMethods({}, { 'a.js': { toString() { return ''; } } }));
+});
+
+ok('Word\'s layout of the tabs (src/ribbon/layout.js): every line a command placed in that tab and group, once, with a size Word has', () => {
+  for (const [tab, groups] of Object.entries(LAYOUT)) for (const [group, lines] of Object.entries(groups)) {
+    assert.ok(groupOf(tab, group), tab + '/' + group + ' is a group of src/ribbon/order.js');
+    const ids = lines.map(readLine).filter((l) => !l.brk).map((l) => l.id);
+    assert.equal(new Set(ids).size, ids.length, tab + '/' + group + ': an id twice');
+    for (const l of lines.map(readLine)) {
+      if (l.brk) continue;
+      const c = command(l.id);
+      assert.ok(c && places(c).some((p) => p.tab === tab && p.group === group), l.id + ' is placed in ' + tab + '/' + group);
+      assert.ok(['L', 'S', 'I', 'T'].includes(l.size), l.id + ': size ' + l.size);
+    }
+  }
+  for (const k of CHECKS) assert.ok(groupOf(...k.split('/')), k);
+  for (const [k, [id]] of Object.entries(LAUNCH)) { assert.ok(groupOf(...k.split('/')), k); assert.ok(command(id) && command(id).run, k + ': ' + id); }
+});
+
+ok('KeyTips: in each tab every one is unique and none is the start of another (Word waits for no second letter), Z is left for folded groups', () => {
+  for (const tab of Object.keys(TIPS)) {
+    const tips = [...Object.values(TIPS[tab]), ...Object.entries(LAUNCH).filter(([k]) => k.startsWith(tab + '/')).map(([, v]) => v[2]).filter(Boolean)];
+    assert.equal(new Set(tips).size, tips.length, tab + ': ' + tips.filter((t, i) => tips.indexOf(t) !== i).join());
+    for (const a of tips) {
+      assert.match(a, /^[A-Y0-9][A-Z0-9]?$/, tab + ': ' + a);
+      for (const b of tips) assert.ok(a === b || !b.startsWith(a), tab + ': ' + a + ' starts ' + b);
+    }
+    for (const id of Object.keys(TIPS[tab])) assert.ok(command(id) && places(command(id)).some((p) => p.tab === tab), tab + ': ' + id + ' is on the tab');
+  }
 });
 
 console.log('commands: ' + n + ' groups of checks passed');

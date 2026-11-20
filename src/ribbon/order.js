@@ -12,15 +12,17 @@ export const TABS = [
   { id: 'file', name: 'File', groups: [['new', 'Create', 4], ['open', 'Open documents', 2], ['info', 'Info', 3], ['save', 'Save a copy', 2], ['print', 'Print', 1], ['share', 'Share', 1], ['options', 'Options', 1]] },
   { id: 'home', name: 'Home', groups: [['clipboard', 'Clipboard', 2], ['font', 'Font', 5], ['paragraph', 'Paragraph', 4], ['styles', 'Styles', 9], ['insert', 'Insert', 3, { spare: true }], ['editing', 'Editing', 1]] },
   { id: 'insert', name: 'Insert', groups: [['pages', 'Pages', 1], ['tables', 'Tables', 6], ['illustrations', 'Illustrations', 5], ['links', 'Links', 4], ['comments', 'Comments', 3], ['headfoot', 'Header & Footer', 2], ['text', 'Text', 2], ['symbols', 'Symbols', 7], ['latex', 'LaTeX', 8]] },
-  { id: 'design', name: 'Design', groups: [['formatting', 'Document formatting', 2], ['background', 'Page background', 1]] },
-  { id: 'layout', name: 'Layout', groups: [['setup', 'Page setup', 4], ['paragraph', 'Paragraph', 3], ['arrange', 'Arrange', 1], ['document', 'Document setup', 2]] },
-  { id: 'references', name: 'References', groups: [['toc', 'Table of contents', 3], ['footnotes', 'Footnotes', 6], ['citations', 'Citations & bibliography', 5], ['captions', 'Captions', 4], ['index', 'Index', 2], ['authorities', 'Table of authorities', 1]] },
+  { id: 'design', name: 'Design', groups: [['formatting', 'Document Formatting', 2], ['background', 'Page Background', 1]] },
+  { id: 'layout', name: 'Layout', groups: [['setup', 'Page Setup', 4], ['paragraph', 'Paragraph', 3], ['arrange', 'Arrange', 1], ['document', 'Document Setup', 2]] },
+  // (Word's names; but Table of contents in small letters: a group folded is a button of its
+  // name, which must not be the name of its own Table of Contents button, test/commands.test.mjs)
+  { id: 'references', name: 'References', groups: [['toc', 'Table of contents', 3], ['footnotes', 'Footnotes', 6], ['citations', 'Citations & Bibliography', 5], ['captions', 'Captions', 4], ['index', 'Index', 2], ['authorities', 'Table of Authorities', 1]] },
   { id: 'review', name: 'Review', groups: [['proofing', 'Proofing', 5], ['speech', 'Speech', 1], ['accessibility', 'Accessibility', 1], ['language', 'Language', 2], ['comments', 'Comments', 6], ['tracking', 'Tracking', 4], ['changes', 'Changes', 4], ['compare', 'Compare', 2], ['versions', 'Versions', 3]] },
-  { id: 'view', name: 'View', groups: [['views', 'Views', 4], ['show', 'Show', 3], ['zoom', 'Zoom', 2], ['page', 'Page', 1]] },
+  { id: 'view', name: 'View', groups: [['views', 'Views', 6], ['immersive', 'Immersive', 2], ['movement', 'Page Movement', 1], ['mode', 'Dark Mode', 1], ['show', 'Show', 4], ['zoom', 'Zoom', 3]] },
   { id: 'help', name: 'Help', groups: [['help', 'Help and support']] },
   // contextual tabs, after Help, while their object has the caret
-  { id: 'table-design', name: 'Table Design', ctx: 'table', groups: [['options', 'Table style options', 2], ['styles', 'Table styles', 3], ['borders', 'Borders', 1]] },
-  { id: 'table-layout', name: 'Table Layout', ctx: 'table', groups: [['table', 'Table', 3], ['rows', 'Rows & columns', 6], ['merge', 'Merge', 5], ['size', 'Cell size', 4], ['alignment', 'Alignment', 2], ['data', 'Data', 1]] },
+  { id: 'table-design', name: 'Table Design', ctx: 'table', groups: [['options', 'Table Style Options', 2], ['styles', 'Table Styles', 3], ['borders', 'Borders', 1]] },
+  { id: 'table-layout', name: 'Table Layout', ctx: 'table', groups: [['table', 'Table', 3], ['rows', 'Rows & Columns', 6], ['merge', 'Merge', 5], ['size', 'Cell Size', 4], ['alignment', 'Alignment', 2], ['data', 'Data', 1]] },
   // (Word's order: Adjust, Picture Styles, Accessibility, Arrange, Size. Size folds first: its two
   // fields are wide and its buttons few, so folding it last showed fewer controls in a wider window)
   { id: 'picture-format', name: 'Picture Format', ctx: 'picture', groups: [['adjust', 'Adjust', 2], ['styles', 'Picture Styles', 3], ['accessibility', 'Accessibility', 4], ['arrange', 'Arrange', 5], ['size', 'Size', 1]] },

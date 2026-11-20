@@ -30,14 +30,8 @@ function tipTitle(c, p) {
   return t + ' (' + shown + ')';
 }
 
-// Groups whose corner arrow opens a dialog that already exists. The label is not the button's name.
-const LAUNCH = {
-  'home/font': ['font-dialog', 'Font…'],
-  'home/paragraph': ['paragraph-settings', 'Paragraph…'],
-  'home/styles': ['styles-pane', 'Styles pane'],
-  'layout/setup': ['page-setup', 'Page setup…']
-};
-import { commands, command, inGroup, enabled, pressed, installers } from '../commands.js';
+import { LAUNCH, CHECKS, TIPS, groupLayout } from './layout.js';
+import { commands, command, inGroup, places, enabled, pressed, installers } from '../commands.js';
 import { $, mk, store, PREFS } from '../ui/dom.js';
 import { openMenu, splitButton, CARET } from '../ui/kit.js';
 import { measureTiles, installGallery } from '../ui/gallery.js';
@@ -45,9 +39,51 @@ import { styOfEl } from '../editor.js';
 import { enclosing } from '../wrap.js';
 
 const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + '</svg>';
+
+// A group's commands in Word's order where src/ribbon/layout.js lays the group out (those it does
+// not list after them, small), each with its line l; else in the registry's order
+function laidOut(tab, group) {
+  const items = inGroup(tab, group), lines = groupLayout(tab, group);
+  if (!lines) return items;
+  const out = [];
+  let brk = false;
+  for (const l of lines) {
+    if (l.brk) { brk = true; continue; }
+    const x = items.find((y) => y.c.id === l.id);
+    if (x) { out.push({ ...x, l: brk ? { ...l, brk } : l }); brk = false; }
+  }
+  for (const x of items) if (!out.some((y) => y.c.id === x.c.id)) out.push({ ...x, l: { id: x.c.id, size: 'S', tip: null, shown: null } });
+  return out;
+}
+// The columns a laid out group's controls take: a large one (or a tile) a column of its own, small
+// ones three to a column, '|' a new column; folded (the names gone), every one small.
+function columns(items, folded) {
+  let n = 0, row = 3;
+  for (const { l } of items) {
+    if (l.brk) row = 3;
+    if (!folded && (l.size === 'L' || l.size === 'T')) { n++; row = 3; continue; }
+    if (row >= 3) { n++; row = 0; }
+    row++;
+  }
+  return Math.max(n, 1);
+}
+// A large button's name over two lines, as Word breaks them: at the space that leaves the longer
+// line shortest ("Table of" over "Contents")
+function twoLines(t) {
+  const w = t.split(' ');
+  if (w.length < 2) return [t];
+  let best = null;
+  for (let k = 1; k < w.length; k++) {
+    const a = w.slice(0, k).join(' '), b = w.slice(k).join(' '), m = Math.max(a.length, b.length);
+    if (!best || m < best.m) best = { m, a, b };
+  }
+  return [best.a, best.b];
+}
 // a control the toolbar's arrows skip: disabled, or a tile that cannot apply here
 const isOff = (x) => x.disabled || x.getAttribute('aria-disabled') === 'true';
 const wideScreen = () => !window.matchMedia || window.matchMedia('(min-width: 861px)').matches;
+// where a laid out group has Word's layout (src/app.css)
+const wideLay = () => !window.matchMedia || window.matchMedia('(min-width: 900px)').matches;
 // where groups fold to fit the row (on a phone's width the row scrolls instead)
 const foldsGroups = () => !window.matchMedia || window.matchMedia('(min-width: 521px)').matches;
 
@@ -67,7 +103,7 @@ export const tabs = {
     for (const T of TABS) {
       const groups = [];
       for (const g of T.groups) {
-        const items = inGroup(T.id, g.id).filter(({ c }) => !c.static || c.kind === 'custom');
+        const items = laidOut(T.id, g.id).filter(({ c }) => !c.static || c.kind === 'custom');
         if (items.length) groups.push({ g, items });
       }
       if (!groups.length) continue;
@@ -122,12 +158,27 @@ export const tabs = {
           b.addEventListener('click', () => this.runCommand(cmd.id));
           return b;
         };
-        if (g.id !== 'styles') { const b = launchBtn(); if (b) box.append(b); }
-        for (const { c, p } of items) { const e = c.kind === 'custom' ? made.get(c.id) : this.makeControl(c, p); if (e) box.append(e); }
-        if (g.id === 'styles') { const b = launchBtn(); if (b) box.append(b); }
+        const gallery = T.id === 'home' && g.id === 'styles';
+        if (!gallery) { const b = launchBtn(); if (b) box.append(b); }
+        // (a laid out group, Word's: each control's size, and the columns it takes with its names
+        // and without them, so the group's name below spans them all; see src/ribbon/layout.js)
+        const lay = items.some((x) => x.l);
+        if (lay) {
+          box.classList.add('lay');
+          if (CHECKS.has(T.id + '/' + g.id)) box.classList.add('lay-check');
+          box.style.setProperty('--c', columns(items, false));
+          box.style.setProperty('--cf', columns(items, true));
+        }
+        for (const { c, p, l } of items) {
+          const e = c.kind === 'custom' ? made.get(c.id) : this.makeControl(c, p, l);
+          if (!e) continue;
+          if (l) { e.dataset.size = l.size; if (l.brk) e.dataset.brk = '1'; }
+          box.append(e);
+        }
+        if (gallery) { const b = launchBtn(); if (b) box.append(b); }
         // the group's name under its controls, as Word's ribbon labels them (the Styles gallery
         // already has its own caption). Hidden from the accessibility tree: the group has the name.
-        if (g.id !== 'styles') { const lab = mk('span', 'rb-glab', g.name); lab.setAttribute('aria-hidden', 'true'); box.append(lab); }
+        if (!gallery) { const lab = mk('span', 'rb-glab', g.name); lab.setAttribute('aria-hidden', 'true'); box.append(lab); }
         tb.append(box);
       });
       tb.append(mk('span', 'grow'));
@@ -143,8 +194,11 @@ export const tabs = {
     this.selectTab(want);
   },
 
-  // a command's control: a button (with its icon, glyph and label), a toggle, a split button
-  makeControl(c, p) {
+  // a command's control: a button (with its icon, glyph and label), a toggle, a split button. l:
+  // its line of a laid out group (src/ribbon/layout.js), which may show a shorter name, give a
+  // name to a button that had its icon alone (shown from 900 px only, so a narrower row is as it
+  // was), and break a large button's name over two lines with a menu's arrow after it.
+  makeControl(c, p, l) {
     const label = c.label ? (p.main ? c.label : p.name) : null;
     const b = mk('button', 'btn ghost' + (label ? '' : ' icon'));
     b.type = 'button'; b.id = p.el; b.dataset.cmd = c.id;
@@ -153,7 +207,19 @@ export const tabs = {
     if (c.kind === 'toggle') b.setAttribute('aria-pressed', 'false');
     if (c.icon) b.insertAdjacentHTML('beforeend', SVG(c.icon));
     else if (c.glyph) b.insertAdjacentHTML('beforeend', c.glyph);
-    b.append(label ? mk('span', '', label) : mk('span', 'sr', p.name));
+    const shown = l && l.size !== 'I' && l.size !== 'T' ? l.shown || label || p.name : label;
+    if (!shown) b.append(mk('span', 'sr', p.name));
+    else if (!l) b.append(mk('span', '', shown));
+    else {
+      // (a name the command had none of stays out of a narrow row: rb-xl)
+      if (!label) b.append(mk('span', 'sr', p.name));
+      const bl = mk('span', 'rb-bl' + (label ? '' : ' rb-xl'));
+      const lines = l.size === 'L' ? twoLines(shown) : [shown];
+      lines.forEach((t, k) => { if (k) bl.append(' '); bl.append(mk('span', 'rb-ln', t)); });
+      // a menu's arrow: after the name, or under it where the name is one line (a large button)
+      if (c.kind === 'menu') (lines.length > 1 ? bl.lastChild : bl).insertAdjacentHTML('beforeend', SVG(CARET).replace('<svg ', '<svg class="rb-car" '));
+      b.append(bl);
+    }
     if (c.kind === 'menu') { b.setAttribute('aria-haspopup', 'menu'); b.setAttribute('aria-expanded', 'false'); }
     if (c.kind === 'split') return splitButton(this, b, p.name, () => this.commandMenu(c));
     return b;
@@ -170,7 +236,7 @@ export const tabs = {
     const at = this.ribbonAt();
     if (at) at.memo = {};
     const items = [];
-    for (const { c, p } of inGroup(tab, g.id).filter(({ c }) => c.run && c.searchable !== false)) {
+    for (const { c, p } of laidOut(tab, g.id).filter(({ c }) => c.run && c.searchable !== false)) {
       const on = pressed(this, c, at);
       items.push({ name: p.name, title: c.title, keys: chordText((c.keys || [])[0]), checked: on === null ? undefined : on, radio: !!c.static, disabled: !enabled(this, c, at), run: () => { this.ribbonBack(); this.runCommand(c.id); } });
       // (a split button's other choices too, as Word's folded group lists them: Find's Advanced
@@ -288,7 +354,7 @@ export const tabs = {
     const fits = () => rb.scrollWidth <= rb.clientWidth + 1;
     const tiles = (n) => { if (gal && n !== this.rbTiles) { this.rbTiles = n; this.rbFollow = true; this.paintGallery(); } };
     const flag = (c) => ({ do: () => rb.classList.add(c), undo: () => rb.classList.remove(c) });
-    for (const g of groups) g.classList.remove('folded', 'ico');
+    for (const g of groups) g.classList.remove('folded', 'ico', 'sm', 'nm');
     rb.classList.remove('rb-narrow', 'rb-fold', 'rb-nolab', 'rb-dl1');
     // (a phone's width has the list whatever the room: the style sheet hides the gallery there)
     const wide = gal ? getComputedStyle(gw).display !== 'none' : wideScreen();
@@ -300,6 +366,17 @@ export const tabs = {
     const fold = (g) => ({ do: () => g.classList.add('folded', ...(g.querySelector('.rb-gico') ? ['ico'] : [])), undo: () => g.classList.remove('folded', 'ico') });
     const spare = foldsGroups() ? groups.filter((g) => g.dataset.spare).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
     const steps = [...spare.map(fold), flag('rb-nolab')];
+    // (a laid out group, from 900 px, gives way as Word's do: its large buttons small, the least
+    // needed group first, every group; then its names, the same way. Neither takes a control, so
+    // all of it goes before any group folds. src/ribbon/layout.js)
+    const lay = wideLay() ? groups.filter((g) => g.classList.contains('lay')).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
+    // (a group's large buttons made small only where that is narrower: one large button with a
+    // name over two lines is narrower than the same as a small one, and every step must take room)
+    const small = (g) => ({ do: () => { const w = g.offsetWidth; g.classList.add('sm'); if (g.offsetWidth >= w) g.classList.remove('sm'); }, undo: () => g.classList.remove('sm') });
+    const bare = (g) => ({ do: () => g.classList.add('nm'), undo: () => g.classList.remove('nm') });
+    // (and a group of one large button keeps its name: it would save next to nothing, and Word
+    // keeps such a group large until it folds)
+    steps.push(...lay.map(small), ...lay.filter((g) => g.querySelectorAll(':scope > [data-size]').length > 1).map(bare));
     // (the tiles one at a time: each undone only after the one after it, chain; down to three
     // before the buttons' names go, so a desktop keeps them; and the names in the chain too: a
     // tile given back for names lost showed more controls than a wider window)
@@ -450,35 +527,120 @@ export function installRibbon(app) {
   installKeyTips(app);
 }
 
-// Alt alone, or F10, shows Word's KeyTips on the tabs. A letter opens that tab; Help is Y then 2.
+// Alt alone, or F10, shows Word's KeyTips on the tabs. A letter opens that tab (Help is Y then 2)
+// and shows the letters of its controls, as Word's do (src/ribbon/layout.js): typing one runs that
+// control, a group folded into a button has Z and a letter, Escape goes back to the tabs' letters
+// and then away. The letters are drawn over the ribbon, not in the buttons: their names stay theirs.
 function installKeyTips(app) {
   const list = $('#rb-tabs');
   if (!list) return;
-  let altDown = false, altUsed = false, yWait = false;
+  let altDown = false, altUsed = false, yWait = false, level = 0, typed = '', tips = [];
+  const layer = mk('div', 'rb-kt-layer');
+  layer.setAttribute('aria-hidden', 'true');
+  document.body.append(layer);
   const field = (e) => e.target && e.target.closest && e.target.closest('input, textarea, select, math-field, [contenteditable="true"]:not(#pages), .CodeMirror');
-  const show = (on) => { yWait = false; document.body.classList.toggle('keytips', on); };
-  const open = (id) => { if (app.rbTabs && app.rbTabs.includes(id)) { app.selectTab(id); app.peekRibbon(true); } show(false); };
+  const shown = (el) => el && el.offsetParent !== null && el.getClientRects().length > 0;
+  // the open tab's controls that have letters, where they are now
+  const collect = () => {
+    const tab = app.rbTab, panel = $('#rp-' + tab), map = TIPS[tab] || {}, out = [], used = new Set();
+    if (!panel) return out;
+    for (const c of commands()) for (const p of places(c)) {
+      if (p.tab !== tab || !map[c.id]) continue;
+      const el = document.getElementById(p.el);
+      if (shown(el) && panel.contains(el)) { out.push({ k: map[c.id], el }); used.add(map[c.id]); }
+    }
+    for (const b of panel.querySelectorAll('.rb-launch')) {
+      const L = LAUNCH[tab + '/' + b.closest('.rb-grp').dataset.group];
+      if (L && L[2] && shown(b)) { out.push({ k: L[2], el: b }); used.add(L[2]); }
+    }
+    // a folded group: Z and its name's first letter (another of its letters, or a digit, where taken)
+    for (const b of panel.querySelectorAll('.rb-grp.folded > .rb-gbtn')) {
+      if (!shown(b)) continue;
+      const name = (b.getAttribute('aria-label') || '').toUpperCase().replace(/[^A-Z]/g, '');
+      const k = [...name, ...'123456789'].map((x) => 'Z' + x).find((x) => !used.has(x));
+      if (k) { out.push({ k, el: b }); used.add(k); }
+    }
+    return out;
+  };
+  const draw = () => {
+    layer.replaceChildren();
+    for (const t of tips) {
+      if (!t.k.startsWith(typed)) continue;
+      const r = t.el.getBoundingClientRect(), big = r.height > 40;
+      const b = mk('span', 'rb-kt', t.k);
+      // (under a large button's middle, as Word draws them; at a small one's icon)
+      b.style.left = Math.round(big ? r.left + r.width / 2 : r.left + Math.min(12, r.width / 2)) + 'px';
+      b.style.top = Math.round(big ? r.bottom - 7 : r.bottom - 3) + 'px';
+      layer.append(b);
+    }
+  };
+  const show = (on) => {
+    yWait = false; typed = '';
+    level = on ? 1 : 0;
+    document.body.classList.toggle('keytips', on);
+    tips = []; layer.replaceChildren();
+  };
+  const commandsOf = () => {
+    tips = collect();
+    if (!tips.length) return show(false);
+    level = 2; typed = '';
+    document.body.classList.remove('keytips');
+    draw();
+  };
+  const open = (id) => {
+    if (!(app.rbTabs && app.rbTabs.includes(id))) return show(false);
+    app.selectTab(id); app.peekRibbon(true);
+    // (File opens its own sheet: its commands are buttons on the page, reached by Tab)
+    if (id === 'file') return show(false);
+    commandsOf();
+  };
+  const press = (t) => {
+    show(false);
+    const el = t.el;
+    if (el.matches('input, select')) { el.focus(); if (el.select) el.select(); return; }
+    if (el.disabled) return;
+    el.click();
+  };
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Alt' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.shiftKey) { altDown = true; altUsed = false; return; }
     if (altDown && e.key !== 'Alt') altUsed = true;
     if (e.key === 'F10' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !field(e)) {
       e.preventDefault();
-      show(!document.body.classList.contains('keytips'));
+      show(!level);
       return;
     }
-    if (!document.body.classList.contains('keytips') || field(e)) return;
-    if (e.key === 'Escape') { show(false); e.preventDefault(); return; }
+    if (!level || field(e)) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (level === 2 && typed) { typed = ''; draw(); } else if (level === 2) show(true); else show(false);
+      return;
+    }
     const k = e.key.length === 1 ? e.key.toUpperCase() : '';
     if (!k || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (yWait) { yWait = false; if (k === '2' || k === 'Y') open('help'); e.preventDefault(); return; }
-    if (k === 'Y') { yWait = true; e.preventDefault(); return; }
+    e.preventDefault();
+    if (level === 2) {
+      const want = typed + k, hits = tips.filter((t) => t.k.startsWith(want));
+      if (!hits.length) return;
+      const exact = hits.find((t) => t.k === want);
+      if (exact) return press(exact);
+      typed = want; draw();
+      return;
+    }
+    if (yWait) { yWait = false; if (k === '2' || k === 'Y') open('help'); return; }
+    if (k === 'Y') { yWait = true; return; }
     const id = Object.keys(KEYTIPS).find((t) => KEYTIPS[t] === k);
-    if (id) { open(id); e.preventDefault(); }
+    if (id) open(id);
   }, true);
   document.addEventListener('keyup', (e) => {
     if (e.key !== 'Alt') return;
     const alone = altDown && !altUsed && !e.ctrlKey && !e.metaKey && !e.shiftKey && !field(e);
     altDown = false;
-    if (alone) { e.preventDefault(); show(!document.body.classList.contains('keytips')); }
+    if (alone) { e.preventDefault(); show(!level); }
   }, true);
+  // (anything else puts them away: a press, the window resized or scrolled, the focus gone)
+  const away = () => { if (level) show(false); };
+  document.addEventListener('pointerdown', away, true);
+  addEventListener('resize', away);
+  addEventListener('blur', away);
+  $('#ribbon').addEventListener('scroll', away);
 }

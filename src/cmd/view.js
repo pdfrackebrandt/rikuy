@@ -93,11 +93,11 @@ register(
 
   // ---- View ▸ Page (Word's Page Movement, Immersive and the page's colour)
   { id: 'side-to-side', name: 'Side to Side', order: 10, title: 'The pages one beside the other, turned like a book\'s; off: one under the other', synonyms: ['Page movement', 'Horizontal', 'Vertical', 'Book view'],
-    tab: 'view', group: 'page', el: 'rw-side', label: 'Side to Side', kind: 'toggle', icon: ICON.side, when: always, on: () => cls().contains('pg-side'), run: (app) => app.setPagesAcross(cls().contains('pg-side') ? 0 : 'side') },
+    tab: 'view', group: 'movement', el: 'rw-side', label: 'Side to Side', kind: 'toggle', icon: ICON.side, when: always, on: () => cls().contains('pg-side'), run: (app) => app.setPagesAcross(cls().contains('pg-side') ? 0 : 'side') },
   { id: 'dark-page', name: 'Dark page', order: 20, title: 'The page dark, its text light, for the screen only: the PDF and the files stay as they are', synonyms: ['Dark mode', 'Switch modes', 'Night', 'Page color'],
-    tab: 'view', group: 'page', el: 'rw-dark', label: 'Dark page', kind: 'toggle', icon: ICON.dark, when: always, on: () => cls().contains('dark-page'), run: (app) => app.setDarkPage(!cls().contains('dark-page')) },
+    tab: 'view', group: 'mode', el: 'rw-dark', label: 'Dark page', kind: 'toggle', icon: ICON.dark, when: always, on: () => cls().contains('dark-page'), run: (app) => app.setDarkPage(!cls().contains('dark-page')) },
   { id: 'focus', name: 'Focus', order: 30, title: 'Focus: the page alone, every bar hidden; Esc brings them back', synonyms: ['Focus mode', 'Distraction free', 'Full screen', 'Zen'],
-    tab: 'view', group: 'page', el: 'rw-focus', label: 'Focus', kind: 'toggle', icon: ICON.focus, when: always, on: () => cls().contains('focus'), run: (app) => app.setFocus(!cls().contains('focus')) },
+    tab: 'view', group: 'immersive', el: 'rw-focus', label: 'Focus', kind: 'toggle', icon: ICON.focus, when: always, on: () => cls().contains('focus'), run: (app) => app.setFocus(!cls().contains('focus')) },
 
   // ---- Repeat (Word's F4, and Ctrl+Y with nothing to redo)
   { id: 'repeat', name: 'Repeat', title: 'Do the last command again where the caret is now (F4, or Ctrl+Y with nothing to redo)', synonyms: ['Redo', 'Repeat last action', 'Again'], keys: ['F4'],
