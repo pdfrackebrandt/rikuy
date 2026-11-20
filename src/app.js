@@ -1454,6 +1454,9 @@ class App {
   onKeyDown(e) {
     const mod = isMac ? e.metaKey : e.ctrlKey;
     const k = e.key.toLowerCase();
+    // (after $$, only a letter or a backslash may still make it a display: dollarPairTakes)
+    // (AltGr types the backslash on many layouts)
+    if (this.dollarPair && (((mod || e.altKey) && !(e.getModifierState && e.getModifierState('AltGraph'))) || !(e.key === 'Shift' || e.key === 'AltGraph' || /^[\p{L}\\]$/u.test(e.key)))) this.dollarPair = null;
     if (mod && !e.altKey) {
       if (k === 'z') { e.preventDefault(); if (e.shiftKey) this.redo(); else this.undo(); return; }
       if (k === 'y') { e.preventDefault(); this.redo(); return; }
@@ -1542,6 +1545,8 @@ class App {
     if (e.isComposing || t === 'insertCompositionText' || t === 'deleteCompositionText' || t === 'insertFromComposition') return;
     e.preventDefault();
     if (this.composing) return;
+    if (this.dollarPair && t === 'insertText' && this.dollarPairTakes(e.data)) return;
+    this.dollarPair = null;
     // (R3) words dragged out of the page are copied there: a move within the page is the page's
     // own drop (src/cmd/move.js), so a deletion by drag only ever follows a drop elsewhere
     if (t === 'deleteByDrag' || t === 'insertFromDrop') return;
@@ -3294,7 +3299,7 @@ class App {
     const prev = document.createElement('div'); prev.className = 'pv';
     const err = document.createElement('div'); err.className = 'pv-err'; err.hidden = true;
     const row = document.createElement('div'); row.className = 'pop-row';
-    const hint = document.createElement('span'); hint.className = 'hint'; hint.textContent = o.closer ? 'Enter or \\) to insert.' : 'Enter or $ to insert; $ at once for a display, a space for a dollar sign.';
+    const hint = document.createElement('span'); hint.className = 'hint'; hint.textContent = o.closer ? 'Enter or \\) to insert.' : 'Enter or $ to insert. $ at once is a dollar sign, or a display when a letter follows.';
     row.appendChild(hint);
     if (this.caps.sample) {
       const ai = document.createElement('button');
@@ -3344,17 +3349,24 @@ class App {
     };
     const push = debounce(() => this.pop && insert(ta.value), 160);
     const preview = () => { const r = this.renderer.katex(this.mathPreviewTex(ta.value, false), false); prev.innerHTML = ta.value ? r.html : ''; err.textContent = r.err ? plainMathError(r.err, ta.value) : ''; err.title = r.err || ''; err.hidden = !r.err || !ta.value; };
-    // An empty formula: $ at once is a display, as $$ in the source (Overleaf's); a space a dollar
-    // sign and the space, as a $ alone in prose is (review M6, L6); \$ is a dollar sign too
+    // An empty formula: $ at once is a dollar sign, as $$ always was here (a price: $$5), and a
+    // display, as $$ in the source (Overleaf's), when a letter or a backslash comes next
+    // (dollarPairTakes); a space a dollar sign and the space, as a $ alone in prose is (review M6,
+    // L6); \$ is a dollar sign too
     let keys = 0;
     const emptyKey = (k) => {
       if (ta.value || ins || (k !== '$' && k !== ' ') || o.closer) return false;
       if (k === '$' && keys) return false;
       this.closePop(true);
       if (k === '$') {
-        if (ghost) { this.ghost = ghost; if (ghost.el.isConnected) this.caretToGhost(); } else this.restoreCaret({ f: base.f, p: base.a });
-        this.newDisplayMath('\\[');
-        if (this.pop) this.pop.dollarClose = true;
+        // (its own step, nothing typed after it joined to it: the next key may take it back)
+        const redo0 = this.redoStack;
+        this.closeGroup();
+        if (ghost) { this.ghost = ghost; this.ghostInsert('\\$'); }
+        else this.commit([{ f: base.f, s: base.a, e: base.b, t: '\\$' }], { f: base.f, p: base.a + 2 }, 'insert');
+        this.closeGroup();
+        const c2 = this.caretNow();
+        this.dollarPair = c2 && !c2.ghost && c2.collapsed ? { f: c2.f, p: c2.a, n: this.hist.length, h: this.hist[this.hist.length - 1], redo0, at: base ? base.a : null, ghost: ghost ? { pos: ghost.pos, style: ghost.style } : null } : null;
         return true;
       }
       if (ghost) { this.ghost = ghost; this.ghostInsert('\\$ '); }
@@ -3409,6 +3421,32 @@ class App {
         if (e.key.length === 1) keys++;
       }
     });
+  }
+
+  // $$ then a letter or a backslash, as Overleaf's $$x^2$$: the \$ the second $ wrote is taken
+  // back with its step, as if never typed, and a display opens there with the key in its LaTeX
+  // box, where what follows is typed as in the source and $$ closes it. Anything else after $$
+  // (a digit, a space, a sign, Enter, Esc) keeps the dollar sign: a price, $$5, is \$5
+  dollarPairTakes(data) {
+    const P = this.dollarPair;
+    this.dollarPair = null;
+    if (!P || !/^[\p{L}\\]$/u.test(data || '')) return false;
+    const c = this.caretNow(), h = this.hist[this.hist.length - 1];
+    if (!c || c.ghost || !c.collapsed || c.f !== P.f || c.a !== P.p || this.hist.length !== P.n || h !== P.h || this.src(P.f).slice(P.p - 2, P.p) !== '\\$') return false;
+    this.hist.pop();
+    for (const d of h.files) { const s = this.files.get(d.f) ?? ''; this.files.set(d.f, s.slice(0, d.s) + d.del + s.slice(d.s + d.ins.length)); }
+    this.redoStack = P.redo0;
+    this.rebuild({ f: P.f, p: P.ghost ? P.ghost.pos : P.at });
+    this.pushToSource(); this.saveSoon(); this.updateUndoUI();
+    if (P.ghost) this.ghostAt(P.f, P.ghost.pos, P.ghost.style);
+    this.newDisplayMath('\\[');
+    const pop = this.pop, ta = pop && pop.el.querySelector('#pop-tex');
+    if (!pop || !ta) return true;
+    pop.dollarClose = true;
+    ta.value = data;
+    ta.dispatchEvent(new Event('input'));
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    return true;
   }
 
   // env: the Equation tab's Numbered on a new equation still empty makes it again of that kind
