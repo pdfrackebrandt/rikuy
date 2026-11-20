@@ -3,7 +3,8 @@ that fits passes; one file over 25 MiB, more than 20,000 files, a _headers file 
 rules or a line over 2,000 characters, or a build without the app's files fails. And the hosted
 build's own _headers (build/app.mjs): its policy is test/serve.py's (the one the browser tests
 run under) without the outside sources it never uses, plus frame-ancestors 'none' and
-manifest-src; and the caching, nosniff, Referrer-Policy and Permissions-Policy rules are there;
+manifest-src; and the caching, HSTS (this host only), nosniff, Referrer-Policy and Permissions-Policy
+rules are there;
 llms.txt, llms-full.txt, robots.txt and sitemap.xml, and no other file, are open to every site as
 UTF-8 text. And the hosted page as a program reads it before any script runs (appPage): its
 language, its title in the head, its schema.org data, the plain lines its body opens with.
@@ -65,6 +66,8 @@ for p in ('/tex/p-0123456789abcdef.wasm', '/tex/w-0123456789abcdef.wasm', '/tex/
 for p in ('/', '/index.html', '/sw.js', '/manifest.webmanifest'):
     ok('revalidated on every request: ' + p, H(p).get('cache-control') == 'no-cache', H(p))
 ok('scripts bound to the version keep Pages\' default caching', 'cache-control' not in H('/tex/engine.js') and 'cache-control' not in H('/tex/tree.wasm'), H('/tex/engine.js'))
+for p in ('/', '/index.html', '/sw.js', '/git.js', '/tex/engine.js', '/tex/p-0123456789abcdef.wasm', '/llms.txt', '/x/y'):
+    ok('HTTPS only for a year, on this host alone (no includeSubDomains, no preload): ' + p, H(p).get('strict-transport-security') == 'max-age=31536000', H(p))
 h = H('/git.js')
 ok('nosniff, no framing, no referrer and no device access on every file', h.get('x-content-type-options') == 'nosniff' and h.get('x-frame-options') == 'DENY'
    and h.get('referrer-policy') == 'no-referrer' and 'camera=()' in h.get('permissions-policy', '') and 'geolocation=()' in h.get('permissions-policy', ''), h)

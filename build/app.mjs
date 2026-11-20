@@ -861,12 +861,18 @@ export const CSP = [
 // immutable; the page, the service worker and the manifest are revalidated on every request,
 // so an update is seen at once; everything else keeps Pages' default (max-age=0,
 // must-revalidate). The service worker checks every file it keeps by hash anyway.
+//
+// Strict-Transport-Security: a browser that has seen the site once over HTTPS never asks for it
+// over plain HTTP again for a year (Cloudflare's redirect alone leaves the first request of each
+// visit open to a downgrade). This host only: includeSubDomains and preload would bind every name
+// under rackebrandt.pe, the personal site and whatever comes later among them, for that year.
+export const HSTS = 'max-age=31536000';
 export function headers() {
   const NO_CACHE = 'no-cache';
   const FOREVER = 'public, max-age=31536000, immutable';
   const rule = (p, ...h) => p + '\n' + h.map((x) => '  ' + x).join('\n') + '\n';
   return '# Written by build/app.mjs for Cloudflare Pages; see docs/HOSTING.md\n'
-    + rule('/*', 'Content-Security-Policy: ' + CSP, 'X-Content-Type-Options: nosniff', 'X-Frame-Options: DENY', 'Referrer-Policy: no-referrer',
+    + rule('/*', 'Strict-Transport-Security: ' + HSTS, 'Content-Security-Policy: ' + CSP, 'X-Content-Type-Options: nosniff', 'X-Frame-Options: DENY', 'Referrer-Policy: no-referrer',
       'Permissions-Policy: accelerometer=(), browsing-topics=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), midi=(), payment=(), serial=(), usb=(), xr-spatial-tracking=()')
     + ['/', '/index.html', '/sw.js', '/manifest.webmanifest'].map((p) => rule(p, 'Cache-Control: ' + NO_CACHE)).join('')
     // What agents and crawlers fetch, and only that: readable from a script on any site (they

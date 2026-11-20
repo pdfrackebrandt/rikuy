@@ -3233,6 +3233,12 @@ Tests:
     `outline.py` 105 and `view.py` 160 with `dist/tex`, `file.py` 100 with `dist/tex` and
     `dist/word`, `tabs.py` 115.
 
+66. **The security review's open items (S2 to S5 of `docs/reviews/SECURITY.md`).** Done in the
+    code (branch `sec-followups`), one commit each. *S4:* the hosted copy sends
+    `Strict-Transport-Security: max-age=31536000` on every file, for its own host only (no
+    `includeSubDomains`, no preload: those would bind rackebrandt.pe's other names for a year);
+    `test/deploy_check.py` checks it (53 checks).
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000

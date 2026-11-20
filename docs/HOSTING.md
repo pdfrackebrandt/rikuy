@@ -73,7 +73,8 @@ move over by themselves.
   one at a time, in order.
 - **What Pages serves**: `_headers` (written by `build/app.mjs`): the page's Content-Security-
   Policy (the one the browser tests run under, without outside sources, and `frame-ancestors
-  'none'`), `nosniff`, `Referrer-Policy: no-referrer`, a Permissions-Policy turning off cameras,
+  'none'`), `Strict-Transport-Security: max-age=31536000` (HTTPS only for a year, for this host
+  alone: no `includeSubDomains`, no preload), `nosniff`, `Referrer-Policy: no-referrer`, a Permissions-Policy turning off cameras,
   microphones, location and the like; TeX packs, engine chunks, programs and fonts (named by their
   hash) cached for a year as immutable; the page, `sw.js` and the manifest revalidated on every
   request. `404.html` keeps Pages from answering a missing file with the page.
