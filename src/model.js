@@ -350,6 +350,17 @@ const PURE_CMDS = new Set(['textbf', 'textit', 'emph', 'texttt', 'textsc', 'text
 // the names an offset is kept under in a model's units (every numeric field the corpus's models move
 // when text is typed before them; test/incremental.test.mjs finds a missed one)
 export const OFFSET_KEYS = new Set(['s', 'e', 'is', 'ie', 'itemS', 'itemE', 'listS', 'listE', 'cmdE', 'ps', 'pe', 'vs', 've']);
+// .bst files that number references in the order they are cited (review E6: IEEEtran and the
+// others numbered by author on the page and in Word, by citation order in the PDF)
+const UNSORTED_BST = new Set(['unsrt', 'unsrtnat', 'ieeetr', 'unsrt_abbrv', 'IEEEtran', 'IEEEtranN', 'IEEEtranSN', 'elsarticle-num', 'vancouver', 'naturemag', 'nature', 'achemso', 'JHEP', 'utphys', 'apsrev4-2', 'apsrev4-1', 'aipnum4-2', 'unsrturl', 'ieeetr_url', 'plainnat_unsrt', 'abbrvnat_unsrt']);
+// The first \bibliographystyle of a text that is not in a comment, a verbatim block or \iffalse
+function bibStyleIn(t) {
+  if (typeof t !== 'string' || t.indexOf('\\bibliographystyle') < 0) return null;
+  const u = t.slice(0, 2e6).replace(/\\begin\s*\{(verbatim\*?|Verbatim|lstlisting|minted|comment)\}[\s\S]*?\\end\s*\{\1\}/g, ' ').replace(/\\iffalse\b[\s\S]*?\\fi\b/g, ' ').replace(/(^|[^\\])%[^\n]*/g, '$1');
+  const m = /\\bibliographystyle\s*\{([^{}\n]{1,60})\}/.exec(u);
+  return m ? m[1].trim() : null;
+}
+
 const MATH_READS = /\\(?:eqref|ref|cref|Cref|autoref|label|intertext|shortintertext)\b|color/;
 
 function pureNodes(ns, src, macros) {
@@ -833,15 +844,13 @@ class Builder {
     if (O.natbib && !O.forceNumeric) O.citeStyle = 'authoryear';
     if (O.biblatex) O.citeStyle = O.biblatexStyle === 'authoryear' ? 'authoryear' : 'numeric';
     // (\bibliographystyle stands at the body's end, where it is read after the citations are
-    // numbered: the main file's last one decides here, as BibTeX takes it from the .aux. Under
-    // \bibliographystyle{unsrt} there the page numbered by author and the PDF by citation order.)
-    for (let i = String(ctx.src).lastIndexOf('\\bibliographystyle'); i >= 0; i = ctx.src.lastIndexOf('\\bibliographystyle', i - 1)) {
-      const ls = ctx.src.lastIndexOf('\n', i) + 1, m = /^\\bibliographystyle\s*\{([^{}\n]{1,60})\}/.exec(ctx.src.slice(i, i + 100));
-      if (!m || /(^|[^\\])%/.test(ctx.src.slice(ls, i))) continue;
-      O.bibstyle = m[1].trim();
-      break;
-    }
-    if (['unsrt', 'unsrtnat', 'ieeetr', 'unsrt_abbrv'].includes(O.bibstyle)) O.sort = false;
+    // numbered: it is looked for here, in the main file and then the project's other .tex files,
+    // the first that is not in a comment, verbatim or \iffalse, as BibTeX takes the first \bibstyle
+    // of the .aux. Under \bibliographystyle{unsrt} there the page numbered by author and the PDF by
+    // citation order.)
+    const bst = bibStyleIn(ctx.src) || [...this.files].filter(([n, t]) => n !== ctx.f && /\.(tex|ltx)$/i.test(n) && typeof t === 'string').map(([, t]) => bibStyleIn(t)).find(Boolean);
+    if (bst) O.bibstyle = bst;
+    if (UNSORTED_BST.has(O.bibstyle) || (O.biblatex && O.bibUnsorted)) O.sort = false;
     if (O.natbib && ['plain', 'unsrt', 'abbrv', 'alpha', 'ieeetr', 'siam', 'acm', 'amsplain', 'unsrtnat_num'].includes(O.bibstyle) && !O.forceAY) O.citeStyle = O.forceNumeric ? 'numeric' : O.citeStyle;
   }
 
@@ -952,6 +961,8 @@ class Builder {
             O.biblatexStyle = /style\s*=\s*(authoryear|apa|chicago|ext-authoryear)/.test(op) ? 'authoryear' : 'numeric';
             // natbib=true gives biblatex natbib's \citep and \citet; without it they are undefined
             O.biblatexNatbib = /\bnatbib\b(?!\s*=\s*false)/.test(op);
+            // (sorting=none and the styles that number in citation order: ieee, nature, chem-*, phys)
+            if (/\bsorting\s*=\s*none\b/.test(op) || /\bstyle\s*=\s*(ieee|nature|chem-acs|chem-angew|chem-rsc|phys)\b/.test(op) && !/\bsorting\s*=/.test(op)) O.bibUnsorted = true;
           }
           if (this.files.has(p + '.sty')) this.preFile(p + '.sty', true);
           if (p === 'apacite' || p === 'harvard' || p === 'chicago') { O.natbib = true; O.forceAY = true; }

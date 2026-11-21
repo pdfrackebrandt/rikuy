@@ -2328,6 +2328,8 @@ class App {
     const o = { prev: src[at0 - 1] || ' ', hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*hyperref/.test(pre), booktabs: /\\usepackage(\[[^\]]*\])?\{[^}]*booktabs/.test(pre), inlineOnly: inline };
     // (a PDF's ligatures as letters; its Greek and symbols as formulas where pdfLaTeX compiles it: escapeTeX)
     const pdfText = !this.textEngine().unicode;
+    // (a preamble that sets Greek up for pdfLaTeX's text: Greek pasted there stays letters)
+    const greekSet = /\\usepackage\s*\[[^\]]*\b(greek|polutonikogreek|LGR)\b[^\]]*\]\s*\{(babel|fontenc)\}|\\usepackage\s*(\[[^\]]*\])?\s*\{[^}]*\b(textgreek|alphabeta|teubner|greektex|lgrx)\b|\\DeclareUnicodeCharacter\s*\{0?3[9AaBbCc][0-9A-Fa-f]\}|\\newunicodechar\s*\{[\u0370-\u03FF]\}/.test(pre);
     const rich = () => withPdfText(pdfText, () => {
       if (plainOnly) return textToTeX(plain, o.prev);
       let t = '';
@@ -2335,7 +2337,7 @@ class App {
       if (!t.trim()) t = plainToTeX(plain, o.prev, o);
       if (inline) t = t.replace(/\s*\n\s*\n\s*/g, ' ').replace(/\n/g, ' ');
       return t;
-    });
+    }, { greek: !greekSet });
     if (c.ghost) { const t = latex || rich(); this.ghostInsert(t, this.pastePackages(t)); return; }
     if (whole) { const t = latex || rich(), pk = this.pastePackages(t); this.replaceBody(whole, t, 'paste'); if (pk.length) this.commit(pk, null, 'paste'); return; }
     const edits = this.deletionEdits(c.f, c.a, c.b);
@@ -2629,10 +2631,17 @@ class App {
   // openMath) when another popover is opening over it; its text is then written as it is
   // An arrow out of a formula in the line (attachField's move-out): Right puts the caret after it,
   // Left before it, as Word's arrows leave an equation. A new formula still empty closes as Esc.
-  leaveMath(d) {
+  // how: 'arrow', 'extend' (Shift with it: the formula selected and the selection on by one
+  // character, as Word's), 'tab' (forward). In a paragraph that runs right to left, Right leaves on
+  // the formula's left, which is its logical start (review E8).
+  leaveMath(d, how = 'arrow') {
     const P = this.pop;
     if (!P) return;
+    const it = P.anchor && P.anchor.closest ? P.anchor.closest('.it') : null;
+    const rtl = P.rtl != null ? P.rtl : !!(it && getComputedStyle(it).direction === 'rtl');
+    if (rtl && how !== 'tab') d = d === 'forward' ? 'backward' : 'forward';
     P.leftBy = d;
+    P.extend = how === 'extend';
     this.closePop();
   }
   closePop(silent, force) {
@@ -2642,8 +2651,13 @@ class App {
     if (P.pullField) P.pullField();
     if (!force && P.refuse && P.refuse()) return;
     if (P.onClose) { try { P.onClose(); } catch (e) { console.error(e); } }
-    // (left by Left at its start: the caret before the formula, where it stands once written)
-    if (P.leftBy === 'backward' && P.anchorPos && P.returnCaret) P.returnCaret = { f: P.anchorPos.f, p: P.anchorPos.s, bias: -1 };
+    // (left by Left at its start: the caret before the formula, where it stands once written; with
+    // Shift, the formula selected, the selection going on past it)
+    if (P.leftBy && P.anchorPos && P.returnCaret && P.returnCaret.p != null) {
+      const f0 = P.anchorPos.f, s0 = P.anchorPos.s, e0 = P.returnCaret.p;
+      if (P.extend) P.returnCaret = P.leftBy === 'backward' ? { f: f0, selA: e0, selB: s0, extendBy: 'backward' } : { f: f0, selA: s0, selB: e0, extendBy: 'forward' };
+      else if (P.leftBy === 'backward') P.returnCaret = { f: f0, p: s0, bias: -1 };
+    }
     if (P.mathText) { try { this.ensurePackages(P.mathText(), P); } catch (e) { console.error(e); } }
     if (P.wordTyping) P.wordTyping.destroy();
     try { if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) window.mathVirtualKeyboard.hide(); } catch (e) { /* ignore */ }
@@ -2651,7 +2665,10 @@ class App {
     if (this.popOutside) document.removeEventListener('mousedown', this.popOutside, true);
     P.el.remove();
     this.closeGroup();
-    if (!silent && P.returnCaret) this.restoreCaret(P.returnCaret);
+    if (!silent && P.returnCaret) {
+      this.restoreCaret(P.returnCaret);
+      if (P.returnCaret.extendBy) try { getSelection().modify('extend', P.returnCaret.extendBy, 'character'); } catch (e) { /* the formula alone stays selected */ }
+    }
     // Opened from a blank paragraph and closed with nothing made, or a document that so far
     // holds only what the popover made (a first formula) and has no text to put the caret in:
     // the caret goes to the blank paragraph, so typing goes on
@@ -2917,15 +2934,29 @@ class App {
     // typed next went into the formula, their spaces lost ($ihasincome$). Only in a formula in the
     // line: in a display the arrows stay in it.
     if (opts.onMoveOut) {
-      // (the arrows only: Tab and Shift+Tab move out too, to the LaTeX box and Done, as before)
-      let arrow = false;
-      mf.addEventListener('keydown', (e) => { arrow = (e.key === 'ArrowRight' || e.key === 'ArrowLeft') && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey; }, true);
+      // The keys that leave a formula: Right and Left (with Shift, the selection goes on out of it,
+      // as Word's), and Tab at its end, which Word takes as leaving forward. Shift+Tab goes on to
+      // the LaTeX box. MathLive sends move-out for all of them, Tab's leap and Shift+Tab's too.
+      let key = null;
+      mf.addEventListener('keydown', (e) => {
+        const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
+        key = plain && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') ? (e.shiftKey ? 'extend' : 'arrow') : plain && e.key === 'Tab' && !e.shiftKey ? 'tab' : null;
+        // (Shift with an arrow at the field's edge sends no move-out: MathLive keeps the selection in)
+        if (key === 'extend' && !wt.active() && mf.mode !== 'latex') {
+          let at = -1, last = -2;
+          try { at = mf.position; last = mf.lastOffset; } catch (x) { /* as MathLive has it */ }
+          const d = e.key === 'ArrowRight' ? (at === last ? 'forward' : null) : (at === 0 ? 'backward' : null);
+          if (d) { e.preventDefault(); e.stopImmediatePropagation(); pull(); setTimeout(() => { if (this.pop === P) opts.onMoveOut(d, 'extend'); }, 0); }
+        }
+      }, true);
       mf.addEventListener('move-out', (e) => {
-        const d = e.detail && e.detail.direction;
-        if (!arrow || (d !== 'forward' && d !== 'backward') || wt.active() || mf.mode === 'latex') return;
+        const d = e.detail && e.detail.direction, how = key;
+        if (!how || (d !== 'forward' && d !== 'backward') || (how === 'tab' && d !== 'forward') || wt.active() || mf.mode === 'latex') return;
         e.preventDefault();
         pull();
-        opts.onMoveOut(d);
+        // (after MathLive is done with the key: the field torn down inside its handling threw
+        // "Cannot read properties of undefined (reading 'host')", review E3)
+        setTimeout(() => { if (this.pop === P) opts.onMoveOut(d, how); }, 0);
       });
     }
     P.wordTyping = wt;
@@ -3093,7 +3124,7 @@ class App {
         P.wordTyping.newRow();
       } : null,
       onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
-      onMoveOut: display ? null : (d) => { if (stay()) return; push.flush(); this.leaveMath(d); },
+      onMoveOut: display ? null : (d, how) => { if (stay()) return; push.flush(); this.leaveMath(d, how); },
       onEscape: () => { push.flush(); this.closePop(); }
     });
   }
@@ -3141,6 +3172,7 @@ class App {
     const canDisplay = this.eqCanDisplayHere(this.ribbonAt());
     const p = this.makePop(null, 'pop-math', 'New inline math');
     this.pop.display = false;
+    { const n = sel.anchorNode, it = n && (n.nodeType === 1 ? n : n.parentElement); const P0 = it && it.closest ? it.closest('.it') : null; this.pop.rtl = !!(P0 && getComputedStyle(P0).direction === 'rtl'); }
     this.pop.eqWhere = { display: canDisplay };
     this.pop.rect = rect && (rect.width || rect.height) ? rect : (sel.anchorNode && sel.anchorNode.parentElement ? sel.anchorNode.parentElement.getBoundingClientRect() : null);
     const ta = document.createElement('textarea');
@@ -3236,7 +3268,7 @@ class App {
       display: false, initial: '', keepFocus: true,
       env: () => '$',
       onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
-      onMoveOut: (d) => { if (stay()) return; push.flush(); this.leaveMath(d); },
+      onMoveOut: (d, how) => { if (stay()) return; push.flush(); this.leaveMath(d, how); },
       onEscape: () => { push.flush(); this.closePop(); },
       onKey: (e) => {
         if (e.key === '$' && !ta.value && !ins) {
@@ -3363,14 +3395,14 @@ class App {
     const out = [];
     const item = (k, e, loose) => ({ key: k, label: shortAuthors(e) + ' ' + entryYear(e), title: texToPlain(e.fields.title || '').replace(/[{}]/g, ''), ...(loose ? { loose } : {}) });
     for (const [k, e] of this.model.bibEntries) out.push(item(k, e));
-    // A .bib the project holds and the document names nowhere yet (Open or a drop added it):
-    // its entries are offered all the same, as Overleaf offers a project's, and the first one
-    // picked writes the document's bibliography lines (citeBibFor). The list was empty, saying
-    // no bibliography was loaded, right after the toast that said the .bib was added.
-    if (!out.length && !this.bibNamed()) {
-      const seen = new Set();
+    // A .bib the project holds that the document does not name (Open or a drop added it): its
+    // entries are offered too, after the named ones, as Overleaf offers a project's, and a key
+    // picked from one puts that file in the document's bibliography (citeBibFor). The list was
+    // empty, saying no bibliography was loaded, right after the toast that said the .bib was added.
+    if (!this.bibState().thebib) {
+      const named = this.bibFilesNamed(), seen = new Set(out.map((x) => x.key));
       for (const [n, t] of this.files) {
-        if (!/\.bib$/i.test(n) || typeof t !== 'string') continue;
+        if (!/\.bib$/i.test(n) || typeof t !== 'string' || named.has(n)) continue;
         try { for (const [k, e] of parseBib(t, n)) if (!seen.has(k)) { seen.add(k); out.push(item(k, e, n)); } } catch (e) { /* a .bib it cannot read */ }
         if (out.length > 5000) break;
       }

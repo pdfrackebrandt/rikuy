@@ -623,11 +623,16 @@ export const methods = {
   // \section went inside the abstract and a proof inside the proposition, which the PDF shows.
   ghostOutOfEnv(g, to) {
     if (!g || g.before || g.style || g.tex || to === 'p' || to === 'latex') return;
-    const m = /^\s*\\end\s*\{([A-Za-z]+\*?)\}/.exec(this.src(g.f).slice(g.pos, g.pos + 400));
-    if (!m || m[1] === envOf(to)) return;
-    const K = this.styleCatalog();
-    const para = isEnvStyle(m[1]) || K.all.some((x) => isEnvStyle(x.v) && envOf(x.v) === m[1]);
-    if (para && m[1] !== 'verbatim') g.pos += m[0].length;
+    const K = this.styleCatalog(), src = this.src(g.f);
+    const para = (n) => n !== 'verbatim' && (isEnvStyle(n) || K.all.some((x) => isEnvStyle(x.v) && envOf(x.v) === n));
+    // (every one it stands at the end of, a quote's inside a theorem's too, for a heading, which
+    // belongs at the top level; another environment leaves those up to one of its own name)
+    for (let n = 0; n < 8; n++) {
+      const m = /^\s*\\end\s*\{([A-Za-z]+\*?)\}/.exec(src.slice(g.pos, g.pos + 400));
+      if (!m || m[1] === envOf(to) || !para(m[1])) return;
+      g.pos += m[0].length;
+      if (!isHeading(to) && to !== 'part') return;
+    }
   },
   // a blank paragraph set to an environment that needs a definition: the environment goes in at
   // once, with its definition, the caret inside it
