@@ -3581,7 +3581,14 @@ Tests:
     (L5). Letters queued within a word, a space ending the run (M1, so a system's autocorrect sees
     the word): on dev/bench/long, 62 characters 15 ms apart, the page done 527 ms after the last
     key with the queue and 891 without; at 4x CPU slowdown 3147 and 7312 (`lat3.py`, a busy
-    machine). `test/power.py` 111 checks, in CI. Open: findings 11, 12, 15 (PR 79's areas), L2, L3, L7.
+    machine). Its verification at 2308408 (fix first) fixed: Ctrl+Enter with `\text{` open (N1), Enter in
+    the LaTeX box the field handed over to (N2), Print found by name, Esc in the insert list as text,
+    `$5 ` a price, `$$` a dollar sign unless a letter or a backslash follows. And the owner's live
+    cases typed at full speed as keys and as keyless characters: a formula in a new paragraph, LaTeX
+    after Alt+= as a display, the caret after the field closes (a heading's formula, then End,
+    Enter), the next line after a display in its paragraph (a second Enter a new one), no display
+    inside a command's argument. `test/power.py` 147 checks, in CI. Open: findings 11, 12, 15 (PR
+    79's areas), L2, L3, L7.
 
 ## Open tasks
 
