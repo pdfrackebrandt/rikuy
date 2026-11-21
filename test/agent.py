@@ -1210,6 +1210,17 @@ def structure(p):
     cites = [(val(n, 'name'), val(n, 'description'), props(n).get('roledescription')) for n in nodes if val(n, 'role') == 'link' and val(n, 'name') == 'Knuth (1984)']
     check("Chromium's own accessibility tree says the same: the formulas math with their LaTeX, the figure, the citation with its keys",
           any(m.startswith('Equation (1): V(k)') for m in math) and '\\alpha + \\beta = \\gamma' in math and 'Table 1: Shortcuts. On a Mac, use Cmd for Ctrl.' in figs and cites and cites[0][1] == 'cites knuth1984', (math[:4], figs, cites))
+    # (review H2) a long document as loaded, its top in view: every page in Chromium's own tree, not
+    # only those near the view (pages were content-visibility: auto, which left the rest out)
+    files = {f: open(os.path.join(ROOT, 'dev/bench/long', f), encoding='utf8').read() for f in ('main.tex', 'refs.bib')}
+    load_doc(page, files); page.wait_for_timeout(1500)
+    page.evaluate("document.getElementById('desk').scrollTop = 0"); page.wait_for_timeout(500)
+    dom = page.evaluate("({ math: document.querySelectorAll('#pages [role=math]').length, heads: document.querySelectorAll('#pages [role=heading], #pages h1, #pages h2, #pages h3, #pages h4, #pages h5, #pages h6').length, pages: document.querySelectorAll('#pages .page').length })")
+    nodes = cdp.send('Accessibility.getFullAXTree')['nodes']
+    live = [n for n in nodes if not n.get('ignored')]
+    tree = {'math': sum(1 for n in live if val(n, 'role') == 'math'), 'heads': sum(1 for n in live if val(n, 'role') == 'heading')}
+    check("dev/bench/long as loaded: Chromium's own tree has every formula and every heading of all its pages, as the page has them (review H2)",
+          dom['pages'] > 30 and dom['math'] >= 11 and dom['heads'] >= 43 and tree['math'] == dom['math'] and tree['heads'] == dom['heads'], (dom, tree))
     check('no page errors (structure)', not errors, errors[:3])
     browser.close()
 

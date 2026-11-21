@@ -63,4 +63,23 @@ body.dark-page .rk-caret { background: var(--rk-color-caret-dark-page); }
    a triangle's turn, a control fading in on hover */
 :root[data-motion="off"] .nv-tog svg, :root[data-motion="off"] .fold-tg svg, :root[data-motion="reduced"] .nv-tog svg, :root[data-motion="reduced"] .fold-tg svg { transition: none; }
 :root[data-motion="off"] .w-src, :root[data-motion="off"] .w-edit, :root[data-motion="off"] .focus-x { transition: none; }
-@media (prefers-reduced-motion: reduce) { .pdf-prog.busy span { animation: none; } }
+
+/* ---- where something landed (motion.js flash): a wash beside the text, faded by the script */
+.rk-flash { position: absolute; z-index: 2; background: var(--rk-color-flash); border-radius: 2px; pointer-events: none; }
+@media print { .rk-flash { display: none !important; } }
+@media (forced-colors: active) { .rk-flash { background: Highlight; opacity: .4; } }
+
+/* ---- busy indicators and SyncTeX's mark in the PDF (app.css), on the tokens: the PDF button's
+   pulse and the progress bar's sweep, opacity and transform only, each way --rk-loop; the mark
+   held --rk-hold, then faded. Reduced motion keeps the mark's fade and stills the rest; with
+   Animations off nothing moves: the busy states show still, the mark goes at once once held. */
+#rb-pdf[aria-busy="true"] svg { animation: rb-busy var(--rk-loop) var(--rk-curve-standard) infinite alternate; }
+@keyframes rb-busy { from { opacity: 1; } to { opacity: .25; } }
+.pdf-prog.busy span { width: 35% !important; animation: pdfbusy var(--rk-loop) var(--rk-curve-standard) infinite; }
+@keyframes pdfbusy { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+.pdf-mark { animation: rk-gone var(--rk-duration-slow) var(--rk-curve-accelerate) var(--rk-hold) forwards; }
+@keyframes rk-gone { to { opacity: 0; } }
+:root[data-motion="off"] #rb-pdf[aria-busy="true"] svg, :root[data-motion="reduced"] #rb-pdf[aria-busy="true"] svg { animation: none; opacity: .5; }
+:root[data-motion="off"] .pdf-prog.busy span, :root[data-motion="reduced"] .pdf-prog.busy span { animation: none; transform: none; }
+:root[data-motion="reduced"] .pdf-mark { animation-duration: var(--rk-duration-faster); }
+:root[data-motion="off"] .pdf-mark { animation: none; }

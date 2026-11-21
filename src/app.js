@@ -46,7 +46,7 @@ import { installFileView } from './ui/fileview.js';
 import { methods as helpPaneMethods } from './ui/helppane.js';
 import { installDock } from './ui/dock.js';
 import { installKeys } from './keys.js';
-import { installMotion } from './motion.js';
+import { installMotion, flash } from './motion.js';
 import { installCaret } from './caret.js';
 import { installWebMcp } from './webmcp.js';
 import { TOOLS, agentTools, callTool as callAgentTool, describeCommand } from './agent.js';
@@ -2452,8 +2452,7 @@ class App {
         const sel = getSelection();
         this.root.focus({ preventScroll: true });
         sel.collapse(last.firstChild, last.firstChild.data.length);
-        f.classList.add('flash');
-        setTimeout(() => f.classList.remove('flash'), 900);
+        flash(f);
         this.scrollToCaret();
         return;
       }
@@ -3532,7 +3531,7 @@ class App {
       const i = segOfSpan(span);
       if (!i || i.seg.f !== f) continue;
       const x = boundary(i.B, i.seg, i.o), y = boundary(i.B, i.seg, i.o + i.len);
-      if (y > a && x < b) { span.classList.add('flash'); setTimeout(() => span.classList.remove('flash'), 1400); }
+      if (y > a && x < b) flash(span, { inline: true });
     }
   }
 
@@ -4119,8 +4118,7 @@ class App {
     const it = el.closest('.it') || el;
     const R = it.getBoundingClientRect(), D = this.desk.getBoundingClientRect();
     if (R.top < D.top + 30 || R.bottom > D.bottom - 30) this.desk.scrollTop += R.top - D.top - D.height / 3;
-    it.classList.remove('flash'); void it.offsetWidth; it.classList.add('flash');
-    setTimeout(() => it.classList.remove('flash'), 900);
+    flash(it);
   }
 
   dragGutter(e) {
