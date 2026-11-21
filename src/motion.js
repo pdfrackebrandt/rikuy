@@ -231,6 +231,11 @@ function shownOrHidden(recs) {
 // meanwhile: a toolbar 8 px to the right would widen the ribbon's scrolling row, and the
 // ribbon's fitting (src/ribbon/tabs.js ribbonFit) measures that row. File's backstage comes in
 // from the left, as Word's does.
+// A press is hit tested where the button is drawn, so one aimed at a button's final place while
+// it slides lands beside it: the pointer moving onto the panel ends the slide first (a mouse always
+// moves there before it presses), and a tab opened by a finger or a pen, which presses with no
+// move before, only fades.
+let slide = null, fingerAt = -1e9;
 function panelShown(p) {
   const panels = [...p.parentElement.querySelectorAll(':scope > .rb-panel')];
   const from = lastPanel && lastPanel.isConnected ? panels.indexOf(lastPanel) : -1;
@@ -238,11 +243,12 @@ function panelShown(p) {
   const tb = p.querySelector(':scope > .rb-tb') || p;
   if (p.dataset.tab === 'file') return enter(tb, 'backstage', [{ opacity: 0, translate: -T.slideBackstage + 'px 0' }, { opacity: 1, translate: '0 0' }], T.slow);
   if (from < 0) return null;
+  if (performance.now() - fingerAt < 1000) return enter(tb, 'tab', [{ opacity: 0 }, { opacity: 1 }], T.fast);
   const dir = panels.indexOf(p) > from ? 1 : -1;
   p.classList.add('rk-clip');
   const a = enter(tb, 'tab', [{ opacity: 0, translate: dir * T.slide + 'px 0' }, { opacity: 1, translate: '0 0' }], T.fast);
-  const unclip = () => p.classList.remove('rk-clip');
-  if (a) { a.addEventListener('finish', unclip); a.addEventListener('cancel', unclip); } else unclip();
+  const unclip = () => { p.classList.remove('rk-clip'); if (slide && slide.a === a) slide = null; };
+  if (a) { slide = { a, p }; a.addEventListener('finish', unclip); a.addEventListener('cancel', unclip); } else unclip();
   return a;
 }
 
@@ -381,7 +387,8 @@ export function installMotion(a) {
   // (another tab changed the setting)
   addEventListener('storage', (e) => { if (e.key === KEY) { settings = null; applyMode(); } });
   // a press or a key during an animation acts at once, on the final state
-  addEventListener('pointerdown', timed((e) => { if (live.size || vt || xf) finishAll(!!(e.target && e.target.closest && e.target.closest('#pdfpane'))); }), true);
+  addEventListener('pointerdown', timed((e) => { if (e.pointerType === 'touch' || e.pointerType === 'pen') fingerAt = performance.now(); if (live.size || vt || xf) finishAll(!!(e.target && e.target.closest && e.target.closest('#pdfpane'))); }), true);
+  addEventListener('pointermove', (e) => { if (slide && e.target instanceof Node && slide.p.contains(e.target)) slide.a.finish(); }, true);
   addEventListener('keydown', timed(() => { if (live.size || vt) finishAll(false); }), true);
   const off = () => motionMode() === 'off';
   const gate = (fn) => timed((recs) => { if (!off()) fn(recs); });

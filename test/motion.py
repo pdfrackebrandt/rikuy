@@ -11,7 +11,7 @@ motion: opacity alone, 100 ms, nothing leaving, the browser's caret. Animations 
 Options): nothing. A click or a key during an animation acts at once. Motion's own callbacks
 never come near a long task, and toasts and menus make none. Typing on dev/bench/long: input to
 next paint with the animated caret on and off, alternating, the same within noise.
-Usage: python3 motion.py [tokens surfaces leaving views pdf caret clicks reduced off cost latency shots]
+Usage: python3 motion.py [tokens surfaces leaving views pdf caret clicks aim touch reduced off cost latency shots]
 (shots: stills of each animation a third of the way in, and a recording, into $RIKUY_SHOTS,
 default /tmp/motion-shots)"""
 import json, os, statistics, sys, time
@@ -303,6 +303,49 @@ def clicks(page):
     page.click('#sv-page'); page.wait_for_timeout(500)
 
 
+# where a click lands: what each click of the page hit, its actions held back while __hold is set
+CLICKS = """() => { window.__clicks = []; if (window.__clicking) return; window.__clicking = true;
+  for (const t of ['pointerdown', 'mousedown', 'click']) addEventListener(t, (e) => { if (!window.__hold) return; if (t === 'click') { const b = e.target.closest('button,[role=menuitem],[role=tab]'); window.__clicks.push(b ? b.id || b.getAttribute('aria-label') || b.textContent.trim() : 'not a button: ' + e.target.className); }
+    if (e.target.closest('.rb-panel')) { e.stopPropagation(); e.preventDefault(); } }, true); }"""
+
+
+def aim(page):
+    """review L4: a press aimed at a button's final place while its tab slides in lands on it"""
+    load_doc(page, '\\documentclass{article}\n\\begin{document}\nPress here.\n\\end{document}\n')
+    click_text(page, 'Press', 1)
+    ev(page, CLICKS)
+    page.click('#rt-insert'); page.wait_for_timeout(500)
+    btns = ev(page, "() => [...document.querySelectorAll('.rb-panel:not([hidden]) .rb-tb button')].filter((b) => b.offsetWidth > 0 && b.id).slice(2, 10).map((b) => { const r = b.getBoundingClientRect(); return { id: b.id, x: r.left, y: r.top, w: r.width, h: r.height }; })")
+    hits, ran = [], 0
+    for b in btns:
+        page.click('#rt-home'); page.wait_for_timeout(300)
+        page.click('#rt-insert', no_wait_after=True); page.wait_for_timeout(40)
+        ran += ev(page, "document.getAnimations().filter((a) => a.id === 'rk-tab' && a.playState === 'running').length")
+        ev(page, 'window.__clicks = []; window.__hold = true')
+        page.mouse.click(b['x'] + b['w'] * 0.2, b['y'] + b['h'] / 2)
+        page.wait_for_timeout(200)
+        got = ev(page, 'window.__clicks'); ev(page, 'window.__hold = false')
+        hits.append((b['id'], got[-1] if got else None))
+    check('a button pressed 40 ms after its tab, at the left fifth of where it ends up, while the tab slides in: the press lands on it, 8 of 8 (review L4)', ran >= 6 and len(hits) == 8 and all(a == g for a, g in hits), (ran, hits))
+    page.click('#rt-home'); page.wait_for_timeout(300)
+
+
+def touch(p):
+    """a tab a finger opens fades, without the slide (its next tap comes with no move before it)"""
+    browser, page, errors = open_page(p, 1400, 900, motion=True, touch=True)
+    load_doc(page, '\\documentclass{article}\n\\begin{document}\nPress here.\n\\end{document}\n')
+    page.wait_for_timeout(300)
+    n = mark(page)
+    page.locator('#rt-insert').tap(); page.wait_for_timeout(400)
+    a = one(since(page, n), 'rk-tab')
+    page.locator('#rt-home').click(); page.wait_for_timeout(1100)
+    n = mark(page)
+    page.click('#rt-insert'); page.wait_for_timeout(100)
+    b = one(since(page, n), 'rk-tab')
+    check('a tab opened by a tap only fades, 150 ms; by the mouse it fades and slides', shaped(a, 150, tok(page)['decelerate'], {'opacity'}) and shaped(b, 150, tok(page)['decelerate'], {'opacity', 'translate'}), (a, b))
+    browser.close()
+
+
 def reduced(page):
     page.emulate_media(reduced_motion='reduce')
     try: page.wait_for_function("document.documentElement.dataset.motion === 'reduced'", timeout=3000)
@@ -474,7 +517,7 @@ def shots(p):
     print('  stills and', out)
 
 
-SECTIONS = [('tokens', tokens), ('surfaces', surfaces), ('leaving', leaving), ('views', views), ('pdf', pdf), ('caret', caret), ('clicks', clicks), ('reduced', reduced), ('off', off), ('cost', cost), ('latency', latency)]
+SECTIONS = [('tokens', tokens), ('surfaces', surfaces), ('leaving', leaving), ('views', views), ('pdf', pdf), ('caret', caret), ('clicks', clicks), ('aim', aim), ('reduced', reduced), ('off', off), ('cost', cost), ('latency', latency)]
 with sync_playwright() as p:
     want = sys.argv[1:]
     browser, page, errors = open_page(p, 1400, 900, motion=True)
@@ -485,6 +528,9 @@ with sync_playwright() as p:
         except Exception as e: check(name + ' ran to its end', False, repr(e)[:400])
     check('no errors in the page', not errors, errors[:3])
     browser.close()
+    if not want or 'touch' in want:
+        try: touch(p)
+        except Exception as e: check('touch ran to its end', False, repr(e)[:400])
     if 'shots' in want:
         shots(p)
 
