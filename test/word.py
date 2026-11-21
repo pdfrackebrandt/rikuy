@@ -391,10 +391,14 @@ try:
         huge = ''.join('<w:p>' + ''.join(run('w%d ' % (i * 30 + j)) + tins('Bo' if j % 2 else 'Ana', 'x', 10 + i * 30 + j) for j in range(30)) + '</w:p>' for i in range(400))
         open_file(page, body_docx('Huge.docx', huge))
         toast = page.inner_text('#toast')
-        m = re.search(r'The changes before line (\d+) of main\.tex are not credited to their authors and show as yours', toast)
+        m = re.search(r'The changes before line (\d+) of main\.tex are credited to "Word", not to their authors', toast)
         line = int(m.group(1)) if m else -1
         first = page.evaluate("(n) => { const R = window.rikuy, t = R.files.get('main.tex'); const at = t.split('\\n').slice(0, n - 1).join('\\n').length; return R.realChanges().filter((c) => c.bs > at + 200).every((c) => c.who === 'Ana' || c.who === 'Bo'); }", line)
         check('a file with more pieces of tracked text than the layer keeps says from which line its changes are credited, and they are (review M2)', line > 1 and first, toast[:400])
+        # (those before it are "Word"'s, not the person's own: Reject by author "You" would take them
+        # too, and Save as Word sign them with the person's name; review N1)
+        start = page.evaluate("(n) => { const R = window.rikuy, t = R.files.get('main.tex'); const at = t.split('\\n').slice(0, n - 1).join('\\n').length; return [...new Set(R.realChanges().filter((c) => c.be < at).map((c) => R.rvName(c.who)))].concat(R.rvReviewers()); }", line)
+        check('and those before it are credited to "Word", none to the person (review N1)', start[:1] == ['Word'] and 'You' not in start, start)
 
         # ---- what pandoc alone loses: kept where LaTeX has it, said where it has not ----
         fx2 = os.path.join(TMP, 'Reform.docx')

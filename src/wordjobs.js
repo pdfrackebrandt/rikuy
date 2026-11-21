@@ -1150,8 +1150,9 @@ function formulaLines(tex, fx, N) {
 // src/word.js) and, author by author, the text with theirs accepted too, so that each change on
 // the page is its author's (they came in accepted, and no one could review them). The layer of
 // who wrote what is made here, off the page (src/authors.js authorSteps): r.tracked is
-// { base, segs, authors, cut }, cut the pieces at the start left without an author and upto the
-// line of main.tex where the credited ones start.
+// { base, segs, authors, cut }, cut the pieces at the start left without their authors (credited to
+// "Word", as changes the file names no author for) and upto the line of main.tex where the credited
+// ones start.
 const MAX_TRACK_AUTHORS = 6;
 const NOTES = /^% Opened from a Word file by Rikuy\.\n(?:% - [^\n]*\n)*/;
 export function openDocx(P, bytes, name) {
@@ -1171,7 +1172,7 @@ export function openDocx(P, bytes, name) {
     steps.push({ who: who.slice(k - 1).join(', '), tex: r.tex });
     const A = authorSteps(base, steps);
     const tracked = { base, segs: A.segs, authors: who, cut: A.cut };
-    if (A.cut) tracked.upto = r.tex.slice(0, A.segs.length ? A.segs[0].s : r.tex.length).split('\n').length;
+    if (A.cut) tracked.upto = r.tex.slice(0, A.from).split('\n').length;
     return { ...r, tracked };
   } catch (e) {
     // (the extra readings failed, a file too large for them or one pandoc reads only once: the

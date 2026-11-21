@@ -123,9 +123,10 @@ export function byAuthor(c, segs, now) {
   const from = (x) => { let lo = 0, hi = segs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (segs[m].e < x) lo = m + 1; else hi = m; } return lo; };
   const whoAt = (op, p, len) => {
     if (op === '+') { for (let i = from(p + 1); i < segs.length; i++) { const g = segs[i]; if (g.s >= p + len) break; if (g.e > g.s && g.s < p + len && p < g.e) return g.who; } return ''; }
-    let best = null;
-    for (let i = from(p - 2); i < segs.length; i++) { const g = segs[i]; if (g.s > p + 2) break; if (g.e === g.s && Math.abs(g.s - p) <= 2 && (!best || Math.abs(g.s - p) < Math.abs(best.s - p))) best = g; }
-    return best ? best.who : '';
+    let best = null, rest = '';
+    for (let i = from(p - 2); i < segs.length; i++) { const g = segs[i]; if (g.s > p + 2) break; if (g.e === g.s && Math.abs(g.s - p) <= 2 && (!best || Math.abs(g.s - p) < Math.abs(best.s - p))) best = g; if (g.rest && g.s <= p && p <= g.e) rest = g.who; }
+    // (no mark: inside the range standing for the pieces left out, src/authors.js capped, its name)
+    return best ? best.who : rest;
   };
   // (a deletion where marks with their texts stand: cut into each one's words, the rest of it going
   // with the piece before it; review M4)
@@ -231,7 +232,7 @@ export const review = {
       if (!Array.isArray(x) || typeof x[0] !== 'string' || !Array.isArray(x[2])) continue;
       const t = this.files.get(x[0]);
       if (t == null || t.length !== x[1]) continue;
-      const segs = x[2].filter((g) => g && Number.isInteger(g.s) && Number.isInteger(g.e) && g.s >= 0 && g.e >= g.s && g.e <= t.length && typeof g.who === 'string').slice(0, 20000).map((g) => (g.e === g.s && typeof g.t === 'string' && g.t.length <= 2000 ? { s: g.s, e: g.e, who: g.who.slice(0, 200), t: g.t } : { s: g.s, e: g.e, who: g.who.slice(0, 200) }));
+      const segs = x[2].filter((g) => g && Number.isInteger(g.s) && Number.isInteger(g.e) && g.s >= 0 && g.e >= g.s && g.e <= t.length && typeof g.who === 'string').slice(0, 20000).map((g) => (g.e === g.s && typeof g.t === 'string' && g.t.length <= 2000 ? { s: g.s, e: g.e, who: g.who.slice(0, 200), t: g.t } : g.e > g.s && g.rest === true ? { s: g.s, e: g.e, who: g.who.slice(0, 200), rest: true } : { s: g.s, e: g.e, who: g.who.slice(0, 200) }));
       this.authors.set(x[0], segs);
     }
   },
