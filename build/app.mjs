@@ -26,8 +26,9 @@ const root = path.join(path.dirname(new URL(import.meta.url).pathname), '..');
 const R = (p) => path.join(root, p);
 const sha = (b, alg = 'sha256') => crypto.createHash(alg).update(b).digest('hex');
 
-// the colours of the interface (src/app.css): the bar, the desk behind the pages, the ink
-const THEME = { light: '#F5F7F9', dark: '#1B222A', background: '#DCE1E7' };
+// the colours of the interface (src/app.css): the title bar's (--bar, light and dark), which the
+// installed app's window takes, and the desk behind the pages
+const THEME = { light: '#DCEAF7', dark: '#1C2A3A', background: '#DCE1E7' };
 const DESCRIPTION = 'A LaTeX editor where you type on the typeset page. TeX Live 2026 runs in the browser; nothing is uploaded.';
 // where the hosted copy answers (docs/HOSTING.md): for the page's canonical address, the picture
 // a pasted link shows, robots.txt, sitemap.xml and llms.txt. Another site sets RIKUY_SITE.
@@ -351,8 +352,9 @@ of window.rikuy is the app itself and changes without notice.
 - commands(): every command of the interface, as the ribbon, the keys and the search box have
   them: [{id, name, tab, group, keys, enabled}], enabled where the caret is now.
 - run(id): a Promise. Runs one command by its id where the caret is, as its button does (for
-  "bold", the selection on the page becomes bold, one Undo takes it back); resolves to true when
-  it ran, false when it cannot run there.
+  "bold", the selection on the page becomes bold, one Undo takes it back); with no caret on the
+  page, where the caret last was or at the document's end, as Word always has one; resolves to
+  true when it ran, false when it cannot run there.
 
 Tables: put the caret in a cell (click it) and run the commands of the tabs Table Layout and
 Table Design by id: "table-row-below", "table-row-above", "table-col-left", "table-col-right",
@@ -772,7 +774,7 @@ Read Mode (the PDF view), Print Layout (the page), Web Layout (the text as wide 
 pages; the lines are the browser's, not TeX's), LaTeX Mode (the LaTeX view), Draft (the pages
 run on), Outline; Ruler (sliders "Left Indent", "Right Indent", "First Line Indent", "Hanging
 Indent", "Left margin", "Right margin", "Top margin", "Bottom margin": dragged or moved with the
-arrows, a quarter centimetre a press; not on a touch screen), Show LaTeX, Formatting marks,
+arrows, a quarter centimetre a press; not on a touch screen), Show LaTeX, Show marks,
 Navigation pane; 100%, One page, Multiple pages, Page
 width; Side to Side, Dark page (the screen only), Focus (every bar hidden; Escape or "Leave
 Focus"). The File tab covers the window below the tabs; "Back to the document" or Escape give
