@@ -12,12 +12,14 @@ Usage: python3 dev/live_check.py SITE DIST [DEPLOYMENT] [--within SECONDS] [--ev
 DEPLOYMENT is the deployment's own address, which wrangler prints: it serves this build the moment
 the upload ends, so it is checked first, and anything wrong there is the build's and fails at once.
 Until it answers at all (a name that does not resolve yet, a refused connection, a 404 or 5xx for
-the page) it is asked again. Then SITE, the custom domain, which serves a new deployment only once
+the page) it is asked again. Where it redirects to SITE (the owner's Bulk Redirect of
+rikuy-3dl.pages.dev, which takes every deployment's address under it along), it says so and the
+deployment is checked at SITE alone. Then SITE, the custom domain, which serves a new deployment only once
 it reaches Cloudflare's edge: it is asked every --every seconds (10) until it passes or --within
 seconds (300) from the start have gone. Every try prints why it did not pass; a network error on
 the runner (a name that did not resolve) is one more try of the same poll, never a pass. The last
 line is the verdict, with the seconds it took or the reason of the last try."""
-import argparse, http.client, os, re, sys, time, urllib.request, urllib.error
+import argparse, http.client, os, re, sys, time, urllib.error, urllib.parse, urllib.request
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'test'))
 from serve import inline_hashes
 
@@ -58,6 +60,8 @@ def problem(site, dist):
     st, h, body = get(site, '')
     if st == 404 or st >= 500:
         return 'down', 'the page answers %s' % st
+    if st in (301, 302, 307, 308):
+        return 'moved', h.get('location', '')
     page = body.decode('utf8', 'replace')
     m = re.search(r'<meta name="rikuy-app" content="([0-9a-f]{16})"', page)
     if st != 200 or not m or m.group(1) != want:
@@ -115,6 +119,14 @@ def main():
                 print('%s serves this build: %s (%.0f s, try %d)' % (name, site, spent, tries), flush=True)
                 break
             kind, why = got
+            # the account's Bulk Redirect sends rikuy-3dl.pages.dev and every deployment's address
+            # under it to the site (PLAN.md task 36): this deployment can then be read only there
+            if own and kind == 'moved' and urllib.parse.urljoin(site, why).startswith(a.site.rstrip('/') + '/'):
+                print('%s redirects to the site (%s): this deployment is checked there alone' % (name, why), flush=True)
+                break
+            if kind == 'moved':
+                why = 'the page redirects to %r' % why
+                kind = 'wrong'
             print('try %d (%.0f s), %s: %s' % (tries, spent, name, why), flush=True)
             # the deployment's own address serves this upload or nothing: no edge to wait for
             if own and kind == 'wrong':

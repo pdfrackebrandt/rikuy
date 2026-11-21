@@ -177,7 +177,9 @@ def server(state):
         def log_message(self, *a): pass
         def do_GET(self):
             p, hs, body = self.path, {}, b''
-            if p == '/':
+            if p == '/' and state.get('moved'):
+                st, hs = 301, {'Location': state['moved']}
+            elif p == '/':
                 doc = page(state['version'])
                 st, body = 200, doc.encode()
                 hs = {'Content-Security-Policy': "script-src 'self' 'sha256-%s'" % inline_hashes(doc)[0], 'Cache-Control': 'no-cache, no-transform', 'Strict-Transport-Security': 'max-age=31536000'}
@@ -221,6 +223,13 @@ own['widget'] = True
 edge['version'] = 'cccccccccccccccc'
 code, out, took = live(EDGE, OWN, within=2)
 ok('live check: a domain that never serves this build fails at the bound, with its last answer', code == 1 and 'within 2 s' in out and 'want aaaaaaaaaaaaaaaa' in out.splitlines()[-1] and 1.5 < took < 6, out)
+edge['version'] = 'aaaaaaaaaaaaaaaa'
+own['moved'] = EDGE
+code, out, took = live(EDGE, OWN)
+ok('live check: a deployment\'s address redirected to the site (the owner\'s Bulk Redirect) says so, and the site alone decides', code == 0 and 'redirects to the site' in out and 'live check passed' in out, out)
+own['moved'] = 'https://elsewhere.example/'
+code, out, took = live(EDGE, OWN)
+ok('live check: a deployment\'s address redirected anywhere else fails at once', code == 1 and "redirects to 'https://elsewhere.example/'" in out and EDGE not in out, out)
 code, out, took = live(EDGE, 'http://rikuy-live-check.invalid/', within=1.5)
 ok('live check: an address that does not resolve is asked again within the bound, then fails with why; never a pass', code == 1 and out.count('no answer') >= 2 and 'live check passed' not in out
    and 'within 2 s' in out and 'no answer' in out.splitlines()[-1], out)

@@ -122,10 +122,11 @@ jobs:
       # the live site as it answers: this build's page, its policy naming the hash of the script
       # it serves (an edge that rewrote the page would stop the app), no-transform and HSTS; the
       # widget document with its own policy; /git passing git's request and refusing an IP. First
-      # at the deployment's own address, where anything wrong is the build's and fails at once;
-      # then the custom domain, asked every 10 s until it serves this build, for at most 5 minutes
-      # (Cloudflare's edge takes seconds to a minute; a name that does not resolve on the runner
-      # is one more try of that poll, never a pass)
+      # at the deployment's own address, where anything wrong is the build's and fails at once
+      # (while the Bulk Redirect of rikuy-3dl.pages.dev takes that address to the site too, it
+      # says so and only the site is checked); then the custom domain, asked every 10 s until it
+      # serves this build, for at most 5 minutes (Cloudflare's edge takes seconds to a minute; a
+      # name that does not resolve on the runner is one more try of that poll, never a pass)
       - name: The live site serves what was built
         env:
           SITE: ${{ vars.RIKUY_SITE || 'https://rikuy.rackebrandt.pe/' }}
