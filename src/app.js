@@ -2842,9 +2842,12 @@ class App {
     // typed next went into the formula, their spaces lost ($ihasincome$). Only in a formula in the
     // line: in a display the arrows stay in it.
     if (opts.onMoveOut) {
+      // (the arrows only: Tab and Shift+Tab move out too, to the LaTeX box and Done, as before)
+      let arrow = false;
+      mf.addEventListener('keydown', (e) => { arrow = (e.key === 'ArrowRight' || e.key === 'ArrowLeft') && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey; }, true);
       mf.addEventListener('move-out', (e) => {
         const d = e.detail && e.detail.direction;
-        if ((d !== 'forward' && d !== 'backward') || wt.active() || mf.mode === 'latex') return;
+        if (!arrow || (d !== 'forward' && d !== 'backward') || wt.active() || mf.mode === 'latex') return;
         e.preventDefault();
         pull();
         opts.onMoveOut(d);
