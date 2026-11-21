@@ -145,6 +145,22 @@ def dollars(page):
         page.wait_for_timeout(300)
         s = src(page)
         check('dollars: ' + typed_.strip() + ' gives' + want, 'gamma.' + want + '\n' in s and active(page) == 'pages', (s[60:130], active(page)))
+    # (verification of eb14945, V1) the key after the space decides: a letter starting a word makes
+    # the price; a sign, <, =, a backslash, a digit or $ keeps the formula that opens with a number
+    import re
+    for typed_, want in ((' costs $5 and $10 now', re.escape(' Costs \\$5 and \\$10 now')), (' it costs $5. Then more', re.escape(' It costs \\$5. Then more')),
+                         (' pay $5, then go', re.escape(' Pay \\$5, then go')),
+                         (' the $1 - \\alpha$ level', r' The \$1\s*-\s*\\alpha\$ level'), (' with $0 < x < 1$ ok', r' With \$0\s*<\s*x\s*<\s*1\$ ok'),
+                         (' and $2 \\times 3$ ok', r' And \$2\s*\\times\s*3\$ ok'), (' so $5 = x$ ok', r' So \$5\s*=\s*x\$ ok'), (' at $5 \b+1$ ok', r' At \$5\+1\$ ok')):
+        load_doc(page, MATH)
+        click_text(page, 'gamma.', 6)
+        for ch in typed_.replace('\\b', '\x08'):
+            if ch == '\x08': key(page, 'Backspace', 60); continue
+            page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
+        page.wait_for_timeout(300)
+        s = src(page)
+        check('dollars: ' + typed_.strip().replace('\\b', '(Backspace)') + (' is a price' if '\\\\$' in want else ' stays a formula'),
+              re.search('gamma\\.' + want + '\n', s) is not None and 'textbackslash' not in s and active(page) == 'pages', (s[60:130], active(page)))
 
 
 def field(page, keys):
@@ -190,6 +206,21 @@ def latex(page):
         s = src(page); body = ''.join(s[s.find('\\begin{equation}'):s.find('\\end{equation}')].split())
         check('latex: ' + how + ' in \\text{…} keeps it in the \\text', ('\\text{' + text.strip() + '}+y') in body, body)
         key(page, 'Escape', 300)
+    # (CI on 5994e31: \text{if}\}) dictation as the field opens, before MathLive's late focus of
+    # its keyboard and its late input event: the keys typed into the field, the dictation and the
+    # keys after it all kept, in the \text
+    bad = []
+    for _ in range(6):
+        page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+        load_doc(page, MATH)
+        click_text(page, 'gamma.', 6)
+        key(page, 'Enter'); key(page, 'Alt+Equal', 20)
+        page.keyboard.type('x=1\\text{'); cdp.send('Input.insertText', {'text': 'if '}); page.wait_for_timeout(250)
+        page.keyboard.type('}+y', delay=15); page.wait_for_timeout(500)
+        s = src(page); body = ''.join(s[s.find('\\begin{equation}'):s.find('\\end{equation}')].split())
+        if 'x=1\\text{if}+y' not in body: bad.append(body)
+        key(page, 'Escape', 300)
+    check('latex: dictation in \\text{…} as the field opens keeps every key, six times over', not bad, bad)
     # what the field cannot hold goes on in its LaTeX box, typed on there
     load_doc(page, MATH)
     click_text(page, 'gamma.', 6)
@@ -228,6 +259,10 @@ def latex(page):
         key(page, 'Control+Enter', 400); page.wait_for_timeout(300)
         s = src(page)
         check('latex: Ctrl+Enter in ' + want[:-2] + '…} ends it, nothing else written', want in s and 'insertText' not in s, s[60:220])
+        # (verification of eb14945, V5) and adds the row, as without the argument open
+        page.keyboard.type('z=2', delay=15); page.wait_for_timeout(300); key(page, 'Enter', 400)
+        s = src(page); b = ''.join(s[s.find('\\begin{align}'):s.find('\\end{align}')].split())
+        check('latex: Ctrl+Enter in ' + want[:-2] + '…} makes a new row, typed on in it', b.startswith('\\begin{align}') and (want + '\\\\z=2') in b, s[60:220])
         key(page, 'Escape', 300)
 
 
@@ -634,7 +669,68 @@ def accept(page):
     check('accept: an equation closed empty goes with its environment, leaving no undo step', src(page) == ACC and page.evaluate('window.rikuy.hist.length') == n, (src(page)[100:200], page.evaluate('window.rikuy.hist.length'), n))
 
 
-PARTS = [accept, footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips, palette, insertlist, repeat, quickopen, burst]
+CTX = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\nText\\footnote{Note here.} more.\n\n'
+       '\\begin{itemize}\n\\item Item text.\n\\end{itemize}\n\n\\begin{tabular}{lp{3cm}}\nCell a & Para cell\\\\\n\\end{tabular}\n\n'
+       '\\begin{figure}\n\\centering\n\\caption{Cap text.}\n\\end{figure}\n\nBold \\textbf{strong words} end.\n\nPrice text.\n\n\\end{document}\n')
+
+
+def slow(page, text, d=60):
+    for ch in text:
+        page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else d)
+    page.wait_for_timeout(300)
+
+
+def pairs(page):
+    """$$x^2$$ typed where a display cannot go, and in the middle of a line (verification of
+    eb14945, V2 to V4)."""
+    # (V2, V3) in a command's argument or a table cell set in a line: a formula in the line, every
+    # key kept, its closing $$ taken as one
+    for at, off, want in (('Note here', 9, '\\footnote{Note here $x^2$ z.}'), ('Cap text', 8, '\\caption{Cap text $x^2$ z.}'),
+                          ('strong words', 6, '\\textbf{strong $x^2$ z words}'), ('Cell a', 6, 'Cell a $x^2$ z & Para cell')):
+        fresh(page, CTX); click_text(page, at, off); slow(page, ' $$x^2$$ z')
+        s = src(page)
+        check('pairs: $$x^2$$ in ' + at + ' is a formula in the line, every key kept', want in s and '\\$' not in s and '\\[' not in s and active(page) == 'pages', (s[s.find(at.split()[0]) - 20:][:80], active(page)))
+    for ch in '$$': page.keyboard.type(ch); page.wait_for_timeout(250)
+    check('pairs: a $$ typed again after it is a dollar sign, not swallowed', '$x^2$ z\\$' in src(page), src(page)[src(page).find('Cell a'):][:60])
+    # (a p{} cell takes a display, as a paragraph does)
+    fresh(page, CTX); click_text(page, 'Para cell', 9); slow(page, ' $$x^2$$')
+    s = src(page)
+    check('pairs: $$x^2$$ in a p{} cell is a display', '\\[' in s and 'x^2' in s[s.find('\\['):s.find('\\]')] and '\\$' not in s, s[s.find('Para cell'):][:60])
+    # (V4) in the middle of a line, the words typed after the closing $$ go on in the line, no
+    # line break between them and the rest of the paragraph
+    for at, off in (('Price text', 10), ('Item text', 9)):
+        fresh(page, CTX); click_text(page, at, off); slow(page, ' abc $$x^2$$ end')
+        s = src(page)
+        check('pairs: $$x^2$$ in the middle of ' + at + ', the words after it in the line', '\\] end.' in s and 'end\n.' not in s and 'x^2' in s[s.find('\\['):s.find('\\]')], s[s.find(at.split()[0]):][:70])
+        # one undo step back to the start for each part, the display's own steps among them
+        for _ in range(6):
+            if src(page) == CTX: break
+            key(page, 'Control+z', 250)
+        check('pairs: undo goes back to the document as it was (' + at + ')', src(page) == CTX, src(page)[-120:])
+    # closed by Esc instead of $$: the caret in the line after \] too
+    fresh(page, CTX); click_text(page, 'Price text', 10); slow(page, ' abc $$x^2'); key(page, 'Escape', 400); slow(page, ' end')
+    s = src(page)
+    check('pairs: $$x^2 then Esc in the middle of a line, the words after it in the line', '\\] end.' in s and 'end\n.' not in s, s[s.find('Price'):][:70])
+
+
+PASTE = """(t) => { const dt = new DataTransfer(); dt.setData('text/plain', t);
+  window.rikuy.root.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }"""
+
+
+def paste(page):
+    """Dollars in plain text pasted (verification of eb14945, V6): money stays money, a formula is
+    a formula, $..$ and $$..$$ alike; where a display cannot go $$..$$ is a formula in the line."""
+    for txt, want in ((' costs $5 and $x^2$ here', ' costs \\$5 and $x^2$ here'), (' it costs $5 and $10.', ' it costs \\$5 and \\$10.'),
+                      (' so $$x$$ and $y$ ok', ' so\n\\[\nx\n\\]\nand $y$ ok')):
+        fresh(page, CTX); click_text(page, 'Price text', 10); page.evaluate(PASTE, txt); page.wait_for_timeout(400)
+        s = src(page)
+        check('paste: ' + repr(txt.strip()), 'Price text' + want + '.' in s, s[s.find('Price'):][:70])
+    fresh(page, CTX); click_text(page, 'Cap text', 8); page.evaluate(PASTE, ' then $$x$$ and $y$'); page.wait_for_timeout(400)
+    s = src(page)
+    check('paste: $$x$$ into a caption is a formula in the line', '\\caption{Cap text then $x$ and $y$.}' in s, s[s.find('caption'):][:60])
+
+
+PARTS = [accept, footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips, palette, insertlist, repeat, quickopen, burst, pairs, paste]
 
 
 def run():
