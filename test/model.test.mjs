@@ -130,3 +130,15 @@ if (bad) process.exitCode = 1;
   if (fails.length) process.exitCode = 1;
 }
 
+// \ensuremath in text (\text{in \R}, a package's \newcommand{\R}{\ensuremath{\mathbb{R}}}) is math
+// there, as LaTeX makes it; '{#1}' kept text mode and KaTeX refused \mathbb (review N1)
+{
+  const { KATEX_DEFAULT_MACROS } = await import('../src/render.js');
+  const katex = (await import('katex/dist/katex.mjs')).default;
+  const fails = [];
+  for (const t of ['\\text{area \\ensuremath{\\alpha}}', '\\ensuremath{\\alpha}^2', 'x^\\ensuremath{2}', '\\R^n', '\\text{in \\R}', '\\ensuremath\\alpha']) {
+    try { katex.renderToString(t, { throwOnError: true, macros: { ...KATEX_DEFAULT_MACROS, '\\R': '\\ensuremath{\\mathbb{R}}' } }); } catch (e) { fails.push(t + ': ' + e.message.slice(0, 80)); }
+  }
+  console.log('ensuremath', fails.length ? 'FAIL ' + fails.join('; ') : 'ok');
+  if (fails.length) process.exitCode = 1;
+}

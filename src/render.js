@@ -11,14 +11,15 @@ export const BLOCKS = new Map();
 let blockSeq = 1;
 let itemSeq = 1;
 
-const KATEX_DEFAULT_MACROS = {
+export const KATEX_DEFAULT_MACROS = {
   '\\mathbbm': '\\mathbb', '\\mathds': '\\mathbb', '\\bbm': '\\mathbb', '\\nicefrac': '\\frac',
   '\\eqqcolon': '=\\vcentcolon', '\\T': '^{\\top}', '\\middlebar': '\\middle|',
   // \mleft ... \mright (mleftright package): brackets without the extra space before them
   '\\mleft': '\\left', '\\mright': '\\right',
-  // \ensuremath (LaTeX's own): in a formula it is its argument; KaTeX lacks it, so a package's
-  // \newcommand{\R}[1]{\ensuremath{...}} used in $...$ showed as an error
-  '\\ensuremath': '{#1}',
+  // \ensuremath (LaTeX's own): in a formula it is its argument, in text a formula; KaTeX lacks
+  // it, so a package's \newcommand{\R}[1]{\ensuremath{...}} used in $...$ showed as an error
+  // (and, as its argument alone, in \text{in \R}: \mathbb in text mode)
+  '\\ensuremath': '\\TextOrMath{$#1$}{#1}',
   // amsmath and mathdots symbols KaTeX lacks
   '\\iiiint': '\\mathop{\\int\\mkern-9mu\\int\\mkern-9mu\\int\\mkern-9mu\\int}\\nolimits',
   '\\iddots': '\\mathinner{\\mkern1mu\\raisebox{0.1em}{.}\\mkern2mu\\raisebox{0.4em}{.}\\mkern2mu\\raisebox{0.7em}{.}\\mkern1mu}'
