@@ -55,7 +55,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           if [ "$EVENT" != pull_request ]; then echo "need=true" >> "$GITHUB_OUTPUT"; echo "a $EVENT: TeX runs"; exit 0; fi
-          gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' > "$RUNNER_TEMP/files.txt"
+          gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/files.txt"
           n=$(wc -l < "$RUNNER_TEMP/files.txt")
           echo "$n files changed"
           # GitHub lists at most 3000 files of a pull request: with that many, run TeX rather than guess
@@ -227,7 +227,9 @@ jobs:
   # passed on this commit.
   tex:
     needs: [changes, tree, tex-shard]
-    if: ${{ !cancelled() }}
+    # always(), not !cancelled(): a cancelled run must end this gate red, never skipped (GitHub
+    # counts a skipped job as passing a required check)
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
