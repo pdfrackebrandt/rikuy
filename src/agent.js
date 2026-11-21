@@ -37,6 +37,7 @@ import { widgetPath } from './widget.js';
 import { plainOf, mathText } from './a11y.js';
 import { wordDiff } from './diff.js';
 import { TABS } from './ribbon/order.js';
+import { commentsBlanked, preambleEnd } from './scan.js';
 
 // ---- the commands' arguments --------------------------------------------------------------
 // JSON schemas of the arguments the commands with a dialog take (llms.txt says each). A command
@@ -131,6 +132,42 @@ export function lostChars(a, b) {
   let n = 0;
   for (const [op, t] of wordDiff(a, b)) if (op === '-') n += t.length;
   return n;
+}
+
+// The text as the page and the PDF print it, for counting what an edit hides: comments and each
+// \iffalse block (to its \fi or \else, nested conditionals counted as TeX skips them; one never
+// closed runs to the end) made spaces, the offsets kept
+export function shownText(t) {
+  t = commentsBlanked(String(t || ''), String(t || '').length);
+  const IF = /\\(if[a-zA-Z]*|fi|else)(?![a-zA-Z])/g;
+  let out = '', from = 0, m;
+  while ((m = IF.exec(t))) {
+    if (m[1] !== 'iffalse') continue;
+    let d = 1, end = t.length, x;
+    while ((x = IF.exec(t))) {
+      const w = x[1];
+      if (w === 'fi') { if (--d === 0) { end = x.index + x[0].length; break; } }
+      else if (w === 'else') { if (d === 1) { end = x.index + x[0].length; break; } }
+      // (\iff is a symbol and \ifthenelse a macro: neither opens a conditional)
+      else if (w !== 'iff' && w !== 'ifthenelse') d++;
+    }
+    out += t.slice(from, m.index) + t.slice(m.index, end).replace(/[^\n]/g, ' ');
+    from = end; IF.lastIndex = end;
+  }
+  return out + t.slice(from);
+}
+
+// What an edit of a whole file (a to b) takes out of the printed text: commenting the body out,
+// or putting it inside \iffalse, takes it out as deleting it does
+export function lostShown(a, b) {
+  const A = shownText(a), B = shownText(b), n = Math.min(A.length, B.length);
+  let s = 0;
+  while (s < n && A.charCodeAt(s) === B.charCodeAt(s)) s++;
+  let e = 0;
+  while (e < n - s && A.charCodeAt(A.length - 1 - e) === B.charCodeAt(B.length - 1 - e)) e++;
+  // (the spaces a comment was made are no text: runs of them count as one, and alone as nothing)
+  const gone = A.slice(s, A.length - e).replace(/\s+/g, ' '), put = B.slice(s, B.length - e).replace(/\s+/g, ' ');
+  return /\S/.test(gone) ? lostChars(gone, put) : 0;
 }
 
 // Where a person presses a command: its name, keys, and its place in the window
@@ -428,6 +465,20 @@ export function agentTools(app) {
     if (end == null) return;
     if (!Number.isInteger(end) || end < start || end > n) throw new Error('end must be a whole number from start (' + start + ') to ' + n + ' (the length of ' + f + ').');
   };
+  // what an edit takes out of file f: the source's words that go (ra to rb, the changed part), or
+  // the printed text's, whichever is more (a, b: the whole file before and after)
+  const tex = (f) => f === app.main || /\.(tex|ltx)$/i.test(f);
+  const lost = (f, a, b, ra, rb) => Math.max(lostChars(ra, rb), a != null && b != null && tex(f) ? lostShown(a, b) : 0);
+  // a place the page shows, where a command may act: text on the page there, or a place inside a
+  // block the page draws (a formula, a command's argument) that is not in the main file's preamble
+  const shown = (f, p) => {
+    const r = app.index && app.index.find ? app.index.find(f, p, -1) : null;
+    if (r && r.node && !r.inexact) return true;
+    const pe = f === app.main ? preambleEnd(app.files.get(f) || '') : -1;
+    if (pe >= 0 && p < pe) return false;
+    const B = app.renderer && app.renderer.blocks;
+    return !B || B.some((b) => b.f === f && b.s <= p && p <= b.e);
+  };
   const textOk = (t) => { if (typeof t !== 'string') throw new TypeError('text must be a string.'); if (t.length > MAX_TEXT) throw new RangeError('text is longer than ' + MAX_TEXT + ' characters: edit a part at a time.'); return t; };
   const selection = () => {
     const c = app.caretNow && app.caretNow();
@@ -462,9 +513,14 @@ export function agentTools(app) {
         out.step = name;
       }
     }
+    // (an edit in the preamble leaves no caret there: the page shows it at the nearest text, and a
+    // command then acts there, not inside \documentclass; review N1)
+    const c = app.caretNow && app.caretNow();
+    if (c && c.f != null && !c.ghost && app.pending && !shown(c.f, c.a)) app.pending = null;
     out.selection = selection();
     // (what it took out; for an undo, less what it put back)
-    out[LOST] = back ? -regions.reduce((n, x) => n + lostChars(x.b, x.a), 0) : regions.reduce((n, x) => n + lostChars(x.a, x.b), 0);
+    out[LOST] = back ? -regions.reduce((n, x) => n + lost(x.file, app.files.get(x.file), before.get(x.file), x.b, x.a), 0)
+      : regions.reduce((n, x) => n + lost(x.file, before.get(x.file), app.files.get(x.file), x.a, x.b), 0);
     return out;
   };
   // the page must read what the edit leaves (as rikuy.api.setSource refuses what it cannot)
@@ -561,6 +617,9 @@ export function agentTools(app) {
       flush();
       const f = fileOf(file), e = end ?? start;
       span(f, start, e);
+      // (a place the page does not show, as inside \documentclass, is refused before the caret
+      // moves: restoreCaret would report it as asked, and a command would then write there; N1)
+      if (!shown(f, start) || !shown(f, e)) throw new Error('That place is not on the page (it is in the preamble, or outside what the page shows): edit it with edit_source.');
       app.closePop(true, true);
       if (e > start) app.restoreCaret({ f, p: e, selA: start, selB: e }); else app.restoreCaret({ f, p: start });
       if (app.root && document.activeElement !== app.root) app.root.focus({ preventScroll: true });
@@ -622,9 +681,11 @@ export function agentTools(app) {
     asks: (x) => {
       let f, s, e;
       try { ({ f, s, e } = editAt(x)); } catch (err) { return false; }
-      const gone = app.files.get(f).slice(s, e), lost = lostChars(gone, x.text), before = budget(app).total();
-      if (lost + before <= BIG) return false;
-      return 'take out ' + lost + ' characters of ' + f + (before ? ' (after ' + before + ' taken out by its edits in the last two minutes)' : '') + (x.text ? ', putting ' + x.text.length + ' in' : '') + ', starting "' + cap(gone.replace(/\s+/g, ' '), 160) + '"';
+      const cur = app.files.get(f), gone = cur.slice(s, e), n = lost(f, cur, cur.slice(0, s) + x.text + cur.slice(e), gone, x.text), before = budget(app).total();
+      if (n + before <= BIG) return false;
+      // (text hidden, not deleted: said as what the page and the PDF lose)
+      const hid = n > lostChars(gone, x.text);
+      return 'take out ' + n + ' characters of ' + f + (hid ? ' from what the page and the PDF show (commented out or inside \\iffalse)' : '') + (before ? ' (after ' + before + ' taken out by its edits in the last two minutes)' : '') + (x.text ? ', putting ' + x.text.length + ' in' : '') + (gone ? ', starting "' + cap(gone.replace(/\s+/g, ' '), 160) + '"' : '');
     },
     run: (x) => tracked(() => {
       const { f, s, e } = editAt(x);
