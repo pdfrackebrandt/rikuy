@@ -490,6 +490,15 @@ class App {
       this.main = saved.main || this.files.keys().next().value;
       this.name = saved.name || this.main;
       this.zipDirty = !!saved.zipDirty;
+      // (Undo's steps, written with this very copy of the project: historyKept)
+      try {
+        const H = await kvGet('history');
+        if (H && H.t === saved.t && H.name === this.name && H.main === this.main && Array.isArray(H.hist)) {
+          const live = (x) => ({ ...x, open: false, before: null, win: null, after: null });
+          this.hist = H.hist.map(live);
+          this.redoStack = (H.redo || []).map(live);
+        }
+      } catch (e) { /* the text loads without them */ }
       try {
         const bin = await kvGet('binary');
         if (bin) {
@@ -501,6 +510,7 @@ class App {
     } else this.loadSample();
     this.bindUI();
     this.applyPrefs();
+    this.updateUndoUI();
     // the installed app (hosted build only): its service worker, updates, the offline marks
     if (__RIKUY_APP__ && appInit().on) registerApp(this);
     await this.waitForKaTeX();
@@ -1206,6 +1216,26 @@ class App {
   }
 
   closeGroup() { const top = this.hist[this.hist.length - 1]; if (top) { top.open = false; top.before = null; top.win = null; top.after = null; } }
+
+  // The undo and redo steps as IndexedDB keeps them across a reload: what each changed and where
+  // the caret was, the newest first back to a step that holds pictures or Track Changes' base
+  // (kept in memory only), at most 2 MB of text. Word loses its undo when the file closes; a
+  // browser tab is closed by accident, and the steps are small.
+  historyKept(meta) {
+    const keep = (list) => {
+      const out = [];
+      let size = 0;
+      for (let i = list.length - 1; i >= 0; i--) {
+        const h = list[i];
+        if ((h.blobs && h.blobs.length) || h.base0 || h.base1) break;
+        size += h.files.reduce((n, d) => n + d.del.length + d.ins.length + 40, 0);
+        if (size > 2e6) break;
+        out.unshift({ kind: h.kind, files: h.files.map((d) => ({ f: d.f, s: d.s, del: d.del, ins: d.ins, ...(d.made ? { made: true } : {}) })), caretBefore: h.caretBefore || null, caretAfter: h.caretAfter || null, time: h.time, abs: h.abs });
+      }
+      return out;
+    };
+    return { t: meta.t, name: meta.name, main: meta.main, hist: keep(this.hist), redo: keep(this.redoStack) };
+  }
 
   undo() {
     // (nothing stays selected across a change of the text: its offsets would be stale)
@@ -4674,6 +4704,9 @@ class App {
     const prevT = this.savedT;
     this.savedT = meta.t;
     const jobs = [kvSwap('project', meta).then((cur) => { if (cur && cur.files && cur.t !== prevT) return this.keepOtherTab(cur); })];
+    // Undo's history goes with the text it undoes, under the same time, so a reload can still undo
+    // (init reads it only where the project it was written with is the one it loads)
+    jobs.push(kvPut('history', this.historyKept(meta)).catch(() => {}));
     if (this.binaryDirty) {
       this.binaryDirty = false;
       jobs.push(kvPut('binary', {
