@@ -313,6 +313,29 @@ def latex(page):
     box = page.evaluate("(() => { const t = document.querySelector('#pop-tex'); return t && t.value; })()")
     check('latex: a press on the field with \\begin{ unfinished leaves the keys in the LaTeX box', (box or '').strip() == 'x=\\begin{aligned}a&=b\\end{aligned}' and active(page) == 'pop-tex', (box, active(page)))
     key(page, 'Escape', 400)
+    # (verification of befd04a, X3) MathLive's late focus of its keyboard, 60 ms after the field took
+    # the focus, never takes the box's focus away: the field focused, then the box at once, as a
+    # click or a fill of the box as the field arrives (browser.py lost \gamma under load)
+    load_doc(page, MATH.replace('Alpha beta', 'Alpha $x+y$ beta'))
+    page.click('.a-math >> nth=0'); page.wait_for_selector('#pop-field')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    page.evaluate("(() => { const mf = document.querySelector('#pop-field'), ta = document.querySelector('#pop-tex'); ta.focus(); mf.focus(); const k = mf.shadowRoot && mf.shadowRoot.querySelector('.ML__keyboard-sink'); if (k) k.focus(); ta.focus(); })()")
+    page.wait_for_timeout(300)
+    a = active(page); page.keyboard.type('+z'); page.wait_for_timeout(400)
+    box = page.evaluate("(() => { const t = document.querySelector('#pop-tex'); return t && t.value; })()")
+    check('latex: the field\'s late focus leaves the box the focus, the keys typed there', a == 'pop-tex' and box == 'x+y+z', (a, box))
+    key(page, 'Escape', 400)
+    # (and browser.py's case: the box filled the moment the field has the focus)
+    for _ in range(3):
+        load_doc(page, MATH.replace('Alpha beta', 'Alpha $x+y$ beta'))
+        page.click('.a-math >> nth=0'); page.wait_for_selector('#pop-field')
+        page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+        page.fill('#pop-tex', '\\alpha + \\beta = \\delta'); page.wait_for_timeout(600)
+        s = src(page)
+        if '$\\alpha + \\beta = \\delta$' not in s: break
+        key(page, 'Escape', 300)
+    check('latex: the box filled as the field takes the focus writes what was filled', '$\\alpha + \\beta = \\delta$' in s, s[50:110])
+    key(page, 'Escape', 300)
     # what the field cannot hold goes on in its LaTeX box, typed on there
     load_doc(page, MATH)
     click_text(page, 'gamma.', 6)

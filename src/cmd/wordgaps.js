@@ -667,7 +667,8 @@ Object.assign(methods, {
       const note = P.el.querySelector('#pop-lin-note');
       if (note) note.hidden = true;
       P.el.classList.remove('eq-linear-latex');
-      if (mf) { mf.hidden = false; mf.focus(); }
+      // (the page's own move to the field, which the field's guard against a late focus lets by)
+      if (mf) { mf.hidden = false; if (P.fieldFocus) P.fieldFocus(); else mf.focus(); }
     }
     this.positionPop();
     this.ribbonSync();
@@ -677,7 +678,7 @@ Object.assign(methods, {
     const mf = mfOf(this);
     if (!mf) { this.toast(FIELD_WHY); return false; }
     try { mf.executeCommand(['switchMode', mf.mode === 'text' ? 'math' : 'text']); } catch { return false; }
-    mf.focus();
+    if (this.pop && this.pop.fieldFocus) this.pop.fieldFocus(); else mf.focus();
     this.ribbonSync();
     return true;
   },
