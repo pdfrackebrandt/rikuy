@@ -243,7 +243,12 @@ def latex(page):
         key(page, 'Control+Enter', 400); page.wait_for_timeout(300)
         s = src(page)
         check('latex: Ctrl+Enter in ' + want[:-2] + '…} ends it, nothing else written', want in s and 'insertText' not in s, s[60:220])
-        key(page, 'Escape', 300)
+        # (verification of eb14945, V5) and adds the row, as without the argument open
+        page.keyboard.type('z=2', delay=15); page.wait_for_timeout(300); key(page, 'Enter', 400)
+        s = src(page); b = ''.join(s[s.find('\\begin{align}'):s.find('\\end{align}')].split())
+        check('latex: Ctrl+Enter in ' + want[:-2] + '…} makes a new row, typed on in it', b.startswith('\\begin{align}') and (want + '\\\\z=2') in b, s[60:220])
+        # (Enter closed it: an Esc now would be the page's, and its Tab the next part's, leaving the page)
+        page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
 
 
 TAB = '\\documentclass{article}\n\\begin{document}\n\nAlpha beta gamma.\n\n\\noindent Second one here.\n\nThird one here.\n\n\\end{document}\n'

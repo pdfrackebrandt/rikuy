@@ -333,9 +333,9 @@ function patchFenceSpacing(mf) {
   if (fencePatched) return;
   try {
     const keep = mf.getValue('latex');
-    mf.setValue('\\mleft(x\\mright)', { silenceNotifications: true });
+    mf.setValue('\\mleft(x\\mright)', { silenceNotifications: true, mode: 'math' });
     const lr = mf._mathfield.model.atoms.find((a) => a.type === 'leftright');
-    mf.setValue(keep, { silenceNotifications: true });
+    mf.setValue(keep, { silenceNotifications: true, mode: 'math' });
     const proto = lr && Object.getPrototypeOf(lr);
     if (!proto || typeof proto.render !== 'function') return;
     const render = proto.render;
@@ -535,7 +535,7 @@ export function installWordTyping(mf, opts) {
     }
     if (!at) return false;
     try { mf.executeCommand('addRowAfter'); } catch (e) { return false; }
-    mf.setValue(mf.getValue('latex'), { silenceNotifications: true });
+    mf.setValue(mf.getValue('latex'), { silenceNotifications: true, mode: 'math' });
     const again = cellAt(pos);
     if (again) goCell(again, at.r + 1, 0);
     changed();
@@ -746,6 +746,10 @@ export function installWordTyping(mf, opts) {
     // AltGr (Windows: Ctrl+Alt) and Option (Mac) type characters such as { [ | \ on many layouts
     const altGr = !!(e.getModifierState && e.getModifierState('AltGraph'));
     const shortcut = e.metaKey || (e.ctrlKey && !altGr) || (e.altKey && !altGr && /^[A-Za-z0-9]$/.test(k));
+    // Ctrl+Enter (or Shift+Enter) with \text{if still open: the argument ends, then the new row
+    // below, as without one (verification of eb14945, V5: the display became an align, no row)
+    const rowKey = k === 'Enter' && !e.altKey && ((e.ctrlKey || e.metaKey) !== e.shiftKey);
+    if (arg && rowKey) argDone();
     if (arg) {
       // (a chord ends the argument first, as Enter does, then does what it does: Ctrl+Enter's new
       // row came in as an insertion the input listener below took for the person's, review N1)

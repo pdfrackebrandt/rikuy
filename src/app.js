@@ -2988,7 +2988,7 @@ class App {
     // read back how the field writes each one so it can be folded back to its name.
     const canon = {};
     for (const [k, d] of Object.entries(ops)) {
-      try { mf.setValue(d, { silenceNotifications: true }); canon[k] = modelValue(mf) || d; } catch (e) { canon[k] = d; }
+      try { mf.setValue(d, { silenceNotifications: true, mode: 'math' }); canon[k] = modelValue(mf) || d; } catch (e) { canon[k] = d; }
     }
     let fieldMacros = [];
     try { fieldMacros = Object.keys(mf.macros).filter((k) => /^[A-Za-z]+$/.test(k) && !canon[k]); } catch (e) { fieldMacros = Object.keys(plain); }
@@ -3015,7 +3015,7 @@ class App {
     const same = window.katex ? makeSame(window.katex, strMacros, !!opts.display, R.si ? (t) => siInMath(t, R.si.opts, R.si.units, R.si.lang) : null) : null;
     let st = toField(ta.value, opts.display, opts.env(), D);
     st.same = same;
-    mf.setValue(st.latex, { silenceNotifications: true });
+    mf.setValue(st.latex, { silenceNotifications: true, mode: 'math' });
     st.ml = fieldRows(modelValue(mf), st.multi, D);
     // A formula the field cannot hold as written (an array with *{n}{c} columns, a command it
     // does not know) would come back changed after the first keystroke: keep it as source.
@@ -3048,7 +3048,9 @@ class App {
       if (fromMf) return;
       st = toField(ta.value, opts.display, opts.env(), D);
       st.same = same;
-      if (mf.getValue('latex') !== st.latex) mf.setValue(st.latex, { silenceNotifications: true });
+      // (mode math: without it MathLive reads a whole value in the mode at its caret, text just
+      // after a \text{…}, and a display made one of rows got its LaTeX as words; V5)
+      if (mf.getValue('latex') !== st.latex) mf.setValue(st.latex, { silenceNotifications: true, mode: 'math' });
       given = mf.getValue('latex');
       st.ml = fieldRows(modelValue(mf), st.multi, D);
     };
