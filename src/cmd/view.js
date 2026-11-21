@@ -4,7 +4,8 @@
 // Layout, LaTeX Mode, Draft, Show LaTeX, One page, Multiple pages, Side to Side, Dark page, Focus
 // (Show marks there is B2's). Nothing here writes to the source but what is typed into a block shown as LaTeX.
 
-import { register, onInstall } from '../commands.js';
+import { register, onInstall, commands } from '../commands.js';
+import { keyTitle, macUA } from '../keys.js';
 import { $, PREFS, store } from '../ui/dom.js';
 import { openMenu } from '../ui/kit.js';
 import { buildModel } from '../model.js';
@@ -39,7 +40,7 @@ register(
   { id: 'preview', name: 'Preview', el: 'b-pdf', static: true, place: 'bar', title: 'Preview (Ctrl+F2): show the PDF as TeX makes it, beside the page', keys: ['Ctrl+F2', 'Ctrl+Alt+I'], keyScope: 'app', synonyms: ['PDF', 'Compile', 'Print Preview'], when: always, run: (app) => app.togglePdf() },
   { id: 'source', name: 'Source', el: 'b-src', static: true, place: 'bar', title: 'Show the source beside the page (Ctrl+\\)', keysElsewhere: ['Ctrl+\\'], synonyms: ['LaTeX source', 'Code'], when: always, run: (app) => app.toggleSource() },
   { id: 'zoom-out', name: 'Zoom out', el: 'b-zout', static: true, place: 'bar', only: 'wide', title: 'Zoom out (Ctrl+-): show the page smaller', keysElsewhere: ['Ctrl+-'], when: always, run: (app) => app.setZoom(-1) },
-  { id: 'zoom-fit', name: 'Fit width', el: 'zoomv', static: true, place: 'bar', title: 'Zoom: the page at this percentage of its size; a press fits it to the window\'s width', synonyms: ['Zoom'], when: always, run: (app) => app.setZoom(0) },
+  { id: 'zoom-fit', name: 'Fit width', el: 'zoomv', static: true, place: 'bar', title: 'Fit width: fit the page to the window\'s width; the button shows the zoom as a percentage of the page\'s size', synonyms: ['Zoom'], when: always, run: (app) => app.setZoom(0) },
   { id: 'zoom-in', name: 'Zoom in', el: 'b-zin', static: true, place: 'bar', only: 'wide', title: 'Zoom in (Ctrl+=): show the page larger', keysElsewhere: ['Ctrl+='], when: always, run: (app) => app.setZoom(+1) },
 
   // ---- the status bar: Page · LaTeX · PDF, and the zoom slider (Word's view buttons and slider)
@@ -57,7 +58,7 @@ register(
     when: always, on: (app) => viewIs('page')(app) && app.webOn(), run: (app) => { const on = !(viewIs('page')(app) && app.webOn()); app.setView('page'); app.setWeb(on); } },
   { id: 'zoom-slider', name: 'Zoom', el: 'st-zoom', role: 'slider', static: true, place: 'status', only: 'wide', title: 'Zoom: drag, or Ctrl and + or -', synonyms: ['Zoom slider', 'Magnification'],
     when: always, run: (app, args) => app.zoomTo((+args || 100) / 100, null) },
-  { id: 'zoom-level', name: 'Zoom level', el: 'st-zoomv', static: true, place: 'status', only: 'wide', title: 'The zoom; a press shows the page at its actual size (Ctrl+0)', when: always, run: (app) => app.zoomTo(1, null) },
+  { id: 'zoom-level', name: 'Zoom level', el: 'st-zoomv', static: true, place: 'status', only: 'wide', title: 'Show the page at its actual size; the button says the zoom (Ctrl+0)', when: always, run: (app) => app.zoomTo(1, null) },
 
   // ---- View ▸ Views
   { id: 'read-mode', name: 'Read Mode', order: 10, title: 'Read Mode: TeX\'s PDF across the window, to read (the status bar\'s PDF)', synonyms: ['Reading view', 'PDF view', 'Full screen reading'],
@@ -577,7 +578,27 @@ function restorePrefs(app) {
   if (!web && (P.pages === 'side' || P.pages === 'grid')) cls().add(P.pages === 'side' ? 'pg-side' : 'pg-grid');
 }
 
+// The bar's and the status bar's tooltips as the ribbon's (UI-PRINCIPLES.md C14): the control's
+// name, its keys, then what it does ("Preview (Ctrl+F2): show the PDF as TeX makes it, beside the
+// page"); the template's own titles had the description alone, some without the keys
+export function barTip(c, mac) {
+  const t = keyTitle(c, c.name, mac), n = c.name, esc = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let d = t, keys = '';
+  // (its keys right after its name, wherever the title had them: Word's "Open (Ctrl+O): …")
+  const lead = t.match(new RegExp('^' + esc + '(?: \\(([^()]*)\\))?: '));
+  if (lead) { keys = lead[1] || ''; d = t.slice(lead[0].length); }
+  const m = d.match(/\s*\(([^()]*)\)\s*$/);
+  if (m && /Ctrl|Alt|Shift|⌘|⌥|⇧|\bF\d/.test(m[1])) { keys = keys || m[1]; d = d.slice(0, m.index); }
+  const head = n + (keys ? ' (' + keys + ')' : '');
+  if (!d.trim() || d.trim() === n) return head;
+  return head + ': ' + (/^[A-Z][a-z]*[\s,.:;]/.test(d) ? d[0].toLowerCase() + d.slice(1) : d);
+}
 onInstall((app) => {
+  for (const c of commands()) {
+    if (!c.static || !c.el || !c.title || !['bar', 'status'].includes(c.place)) continue;
+    const el = document.getElementById(c.el);
+    if (el) el.title = barTip(c, macUA());
+  }
   restorePrefs(app);
   // a window that opened under 700 px (Mobile View) and widens past it takes a wide window's view,
   // where the Mobile View toggle is not; narrowed again, a phone's (N5 of the verification)

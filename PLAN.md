@@ -3289,7 +3289,15 @@ Tests:
     fields 32 px with 4 px corners (44 under a finger), dialogs and sheets 8 px, one title style
     (14 px semibold), a close button 44 px under a finger, the status bar's words one size and
     its views one height, File's column 32 px, a phone's top bar 44 px (`ux.py consistency`).
-    Open, in the audit: findings for the ribbon tabs agent.
+    Then (branch `ux-consistency-2`, PR 90) the verification of 0a6ef7b and the rest of
+    `UI-PRINCIPLES.md` outside the ribbon, each a commit with its part of `ux.py` (audit section
+    13): one height per kind inside dialogs, number fields one box; dark mode's primary buttons
+    and the search list at 4.5:1; dialogs take the focus, keep Tab inside, give it back to a
+    keyboard opener; the phone's bar 8 px apart at 320 px; the ruler by a double click; motion
+    in opacity and transform only; the right click menu's words, "…" from the registry's
+    `dialog`; empty panes with one sentence and one command; the focused field above the
+    on-screen keyboard; touch targets 8 px apart; tooltips name, keys, description; text spacing.
+    `ux.py` 449 checks. Open, in the audit: findings for the ribbon tabs agent.
 
 66a. **The ribbon's other tabs laid out as Word's.** Done in the code (branch `ribbon-tabs-word`).
     Home was done in PR 75; `src/ribbon/layout.js` now says, for Insert, Design, Layout,
@@ -3555,6 +3563,68 @@ Tests:
     PDF; edited pictures, one seen through, on the three engines; phones at 390 and 360 px with
     touch); `tabs.py` 127 (the fold sweep on all 19 tabs, the five new ones among them), `agent.py` 143, `picture.py` 228, `ribbon.py` 195, `test:browser` 199, the corpus model run 716 of 716; screenshots
     in `/tmp/g1-shots`.
+
+70. **Interactive graphs as Rikuy's edge: the live paper** (branch graphs-edge;
+    `docs/handoff/GRAPHS.md`). One `.tex` typed like Word, printed by real TeX, whose figures
+    are live on the page while the PDF carries the same figure. The opening document leads with
+    a live graph in its abstract (the saving rule k′ = αβk^α that solves its Bellman equation,
+    the 45 degree line, the steady state marked; α and β on sliders), whole in the first screen
+    at 1366 by 768; its TikZ sentence says what the page draws. **Graph this** (`src/graphthis.js`,
+    `src/cmd/graphs.js`; the equation's right click menu, the Equation tab, the search box) reads
+    an equation's LaTeX and inserts a live graph below it in one undo: y = f(x), f(x), a
+    parametric pair, F(x, y) = c, k̇ = f(k) with its rest points, k_{t+1} = g(k_t) against the
+    45 degree line, a pair of time derivatives as a phase portrait round its rest point, two
+    curves of one left side (IS and LM); every other letter a slider, its range from its role and
+    from a value the document gives it; a `\max` or a sum is said, not drawn. New kinds
+    (`src/graph.js`): implicit curves (marching squares), phase portraits (field, nullclines, a
+    Runge–Kutta path from a dragged point), shaded areas with their value (surpluses, integrals),
+    crossings marked with dashed lines and coordinates, the start curves faint while a slider
+    moves; templates for supply and demand, IS–LM, Solow, Ramsey, a budget line with an
+    indifference curve, the normal and t densities, the central limit theorem. **The PDF's
+    figure is vector**: `paint()` runs on a recording context that writes PGF (`.pgf` beside
+    the graph, its labels set in the document's fonts, input by `rikuy.sty` v1.1; no shell
+    escape); an older project's PNG and rikuy.sty v1.0 are renewed on Update in the same undo.
+    **Export as, Web page with live graphs** (`src/webpage.js`): one file, the page's model as
+    HTML (the Word download's tree), KaTeX with its fonts inside, graphs live in sandboxed frames
+    from their descriptions, a policy allowing Rikuy's three scripts by hash, an Open in Rikuy
+    link. The dialog: six kinds and a Template list, formulas' mistakes underlined, its own undo
+    (Ctrl+Z, Ctrl+Y). Every slider by keyboard; a phase portrait's start by the arrow keys; while a
+    slider moves the drawing uses half the samples and grids (full 150 ms after it rests).
+    Interactive graph is the second large button of Illustrations; Help, Learn Rikuy, llms.txt
+    and README lead with it. The security audit's quick profile (notes outside the repository)
+    found two availability problems from a stranger's document, fixed with tests: the values
+    pattern's backtracking on a run of digits, and an implicit graph's unbounded PGF.
+    Evidence: `npm test` green (`test/graphs.test.mjs` 11 groups: the formula language both ways
+    on 2,000 random trees, Graph this on 19 equations (14 drawn, 5 refused with the reason), the kinds against known answers, PGF ASCII
+    and balanced and inside TeX's lengths, the web writer's escaping); `test/graphs.py` 137
+    checks: TeX's PGF picture on pdfLaTeX, XeLaTeX and LuaLaTeX against the live drawing in
+    pixels (mean difference 2.9 to 4.1 of 255, 96 to 100 % of the curves' pixels within 2 px;
+    four templates), a slider frame at a phone's speed (CPU 4 times slower, 390 px; best of
+    three drags): median 3.2 to 5.1 ms, 90th percentile 5.6 to 11.1 ms, the full drawing at rest 3 to
+    10 ms, no long task of the graph's own over 50 ms; `test/csp.py` 25 under the hosted policy (a graph, Graph this and the
+    web page with no refusal); `insert.py` 225 (its pictures PGF now; a graph's file 49 KB in the
+    built page, under its budget of 52); `browser.py` 199; the other suites by CI on the pull
+    request (PR 88). Screenshots in /tmp/graph-shots. Then the polish and the hostile review
+    (`docs/reviews/GRAPHS.md`, two rounds): typeset labels in the paper's faces placed off the
+    curves, equal axes for circles and the 45 degree line (the opening graph above its abstract,
+    the Bellman equation the one its rule solves), supply and demand with P up, crossings of
+    pairs with different left sides marked, poles and areas, economists' notation, the web
+    page's link carrying only what the main file reads (comment lines alone removed; a .bib
+    never); `test/graphs-review.test.mjs` 18 groups, each failing before its fix.
+    Left (task 70's open part): the description in the `.tex` itself (a `rikuygraph`
+    environment); Graph this on systems of more than two equations, on inequalities, on
+    `\hat x` and `\tilde x` (refused), on `\mathbb E_t[\pi_{t+1}]` and other indices with a sign
+    in them beyond y_{t-1} in an AR(1) (refused with the parser's subscript message); the Ramsey
+    saddle path and a phase portrait's rest point marked; the web page's dark mode and font
+    subsets; PGF labels that keep their size whatever width the picture is printed at (a much
+    narrower width than the text's can bring a label onto the plot); an arXiv download without
+    the `graphs/*.html` files TeX never reads; the Open in Rikuy link's length (1.9 MB) tried in
+    Firefox and Safari; from the review's last verification (merge at 549fdb0): Graph this on the textbook IS–LM pair
+    (`Y = C_0 + c(Y − T) + I_0 − br + G, M/P = kY − hr`) starts with c = 1, degenerate, the
+    crossing out of view, while its toast says "marked": say "marked" only when a mark is drawn,
+    and move starting values (c to 0.6, M down) until the crossing is in view, as the linear pairs
+    do (Medium); `\mathbb E_t \pi_{t+1}` refused with the parser's subscript message, where a
+    plain one would do (Low).
 
 ## Open tasks
 

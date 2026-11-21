@@ -93,6 +93,7 @@
   :root:not([data-theme="light"]) {
     --desk: #151A20; --desk-2: #0F1318; --chrome: #1B222A; --panel: #1F2730; --line: #2E3843;
     --ink-ui: #E2E7ED; --mute: #8D9AA8; --blue: #6AAEE3; --blue-wash: #1B3650; --blue-ink: #9CCBF0;
+    --on-blue: #0B1621;
     --title: #143E66; --ribbon: #1F2730; --tabrow: #1B222A;
     --bar: #1C2A3A; --bar-ink: #E2E7ED; --bar-mute: #B4C2D0; --bar-field: #151C24; --bar-line: #7A90A8;
     --bar-hover: rgba(255, 255, 255, .09); --bar-press: rgba(255, 255, 255, .16); --file: #1F64A3;
@@ -105,6 +106,7 @@
 :root[data-theme="dark"] {
   --desk: #151A20; --desk-2: #0F1318; --chrome: #1B222A; --panel: #1F2730; --line: #2E3843;
   --ink-ui: #E2E7ED; --mute: #8D9AA8; --blue: #6AAEE3; --blue-wash: #1B3650; --blue-ink: #9CCBF0;
+  --on-blue: #0B1621;
   --title: #143E66; --ribbon: #1F2730; --tabrow: #1B222A;
   --bar: #1C2A3A; --bar-ink: #E2E7ED; --bar-mute: #B4C2D0; --bar-field: #151C24; --bar-line: #7A90A8;
   --bar-hover: rgba(255, 255, 255, .09); --bar-press: rgba(255, 255, 255, .16); --file: #1F64A3;
@@ -149,7 +151,7 @@ button { font: inherit; color: inherit; }
 #bar .sep { height: 20px; background: color-mix(in srgb, var(--bar-ink) 30%, transparent); }
 .tools { display: flex; align-items: center; gap: 2px; flex: none; }
 .sep { width: 1px; height: 20px; background: var(--line); margin: 0 6px; }
-.btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 4px; border: 1px solid transparent; background: var(--blue); color: #fff; cursor: pointer; font-weight: 500; font-size: 13px; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 4px; border: 1px solid transparent; background: var(--blue); color: var(--on-blue, #fff); cursor: pointer; font-weight: 500; font-size: 13px; white-space: nowrap; }
 .btn:hover { filter: brightness(1.06); }
 .btn:focus-visible, .linkish:focus-visible, .pitem:focus-visible, .bubble button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .btn.ghost { background: transparent; color: var(--ink-ui); }
@@ -582,7 +584,8 @@ body.file-open #rp-file .rf-back span { display: inline !important; }
 .pop.pop-menu { width: auto; min-width: 200px; max-width: min(380px, calc(100vw - 16px)); padding: 5px; gap: 0; }
 .pop-menu .nav-act { width: 100%; min-height: 32px; font-weight: 400; position: relative; padding: 0 10px 0 26px; }
 .pop-menu .nav-act svg { margin-left: -18px; }
-.pop-menu .nav-act:focus-visible { outline: none; background: var(--blue-wash); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 45%, transparent); }
+/* (the keys' ring an outline, which forced colours keep; a box shadow they drop: C13) */
+.pop-menu .nav-act:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; background: var(--blue-wash); }
 .pop-menu .nav-act[aria-disabled="true"] { opacity: .45; cursor: default; }
 /* a greyed item's reason (Position's): its description, and this line under the menu as it is reached, pointed at or tapped */
 .pop-menu .nav-act[data-reach]:focus { opacity: .7; }
@@ -626,7 +629,7 @@ body.pdf-on #pdfpane { display: flex; }
 .pdf-shell input { margin: 0; }
 @media (max-width: 1280px) { .pdf-shell { font-size: 0; gap: 0; } .pdf-shell::after { content: 'Shell'; font-size: 11.5px; margin-left: 3px; } }
 .pdf-prog { height: 3px; background: color-mix(in srgb, var(--blue) 18%, transparent); flex: none; overflow: hidden; }
-.pdf-prog span { display: block; height: 100%; width: 0; background: var(--blue); transition: width .2s; }
+.pdf-prog span { display: block; height: 100%; width: 0; background: var(--blue); }
 .pdf-prog.busy span { width: 35% !important; animation: pdfbusy 1.1s ease-in-out infinite; }
 @keyframes pdfbusy { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
 .pdf-msg { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); padding: 8px 12px; font: 12.5px/1.45 var(--font-ui); background: color-mix(in srgb, var(--warn) 10%, var(--panel)); color: var(--ink-ui); cursor: pointer; flex: none; }
@@ -636,8 +639,8 @@ body.pdf-on #pdfpane { display: flex; }
 .pdf-pages { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .pdf-page { position: relative; background: #fff; box-shadow: var(--shadow); flex: none; cursor: pointer; }
 .pdf-page canvas { display: block; }
-.pdf-mark { position: absolute; left: 0; right: 0; background: color-mix(in srgb, var(--blue) 22%, transparent); border-left: 3px solid var(--blue); pointer-events: none; animation: pdfmark 1.6s ease-out forwards; }
-@keyframes pdfmark { 0%, 60% { opacity: 1; } 100% { opacity: 0; } }
+.pdf-mark { position: absolute; left: 0; right: 0; background: color-mix(in srgb, var(--blue) 22%, transparent); border-left: 3px solid var(--blue); pointer-events: none; animation: pdfmark .3s ease-out 1.3s forwards; }
+@keyframes pdfmark { from { opacity: 1; } to { opacity: 0; } }
 .pdf-empty { padding: 28px 16px; font: 13.5px/1.5 var(--font-ui); color: var(--ink-ui); max-width: 440px; margin: 0 auto; }
 .pdf-empty p { margin: 0; }
 .pdf-empty b { color: var(--ink-ui); font-weight: 600; }
@@ -937,7 +940,7 @@ body.pdf-on #pdfpane { display: flex; }
 .wgate:hover { box-shadow: none; }
 .w-run { pointer-events: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink-ui); font: 500 12px/1.4 var(--font-ui); padding: 4px 10px; cursor: pointer; box-shadow: 0 2px 8px rgba(10, 20, 30, .15); }
 .w-run:hover { border-color: var(--blue); }
-.w-src { position: absolute; top: 4px; right: 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 500 11px/1.4 var(--font-mono); padding: 1px 6px; cursor: pointer; opacity: 0; transition: opacity .12s; }
+.w-src { position: absolute; top: 4px; right: 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 500 11px/1.4 var(--font-mono); padding: 1px 6px; cursor: pointer; opacity: 0; transition: opacity .1s; }
 .wbox:hover .w-src, .w-src:focus-visible { opacity: 1; }
 @media (hover: none) { .w-src { opacity: .85; } }
 .a-logo { white-space: nowrap; }
@@ -946,8 +949,9 @@ body.pdf-on #pdfpane { display: flex; }
 .lg-sc { font-variant: small-caps; text-transform: lowercase; }
 .lg-rev { display: inline-block; transform: scaleX(-1); vertical-align: -.22em; margin: 0 -.06em; }
 .mac { }
-.flash { animation: flash 1.2s ease-out; }
-@keyframes flash { 0% { background: rgba(43, 116, 176, .28); } 100% { background: transparent; } }
+/* (the place a jump landed on, marked for as long as the class stays: a still mark, no fade of its
+   background, since only opacity and transform are animated, UI-PRINCIPLES.md M3) */
+.flash { background-color: rgba(43, 116, 176, .22); }
 .ghostp { outline: 1px dashed rgba(43, 116, 176, .45); outline-offset: 2px; min-height: var(--lh); }
 #pages.stale { opacity: .45; }
 /* the caret's hint, on the white page (dark page below). #3E4C59 on white is past 7:1;
@@ -982,7 +986,7 @@ body.dropping .dropzone { display: grid; }
 .pop-x:hover { color: var(--ink-ui); background: var(--blue-wash); }
 .pop-x:focus-visible, .ftab:focus-visible, .nav-tab:focus-visible, .pdf-engine:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .pdf-shell:focus-within { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 4px; }
-.pop textarea, .pop input[type="text"], .pop input[type="search"], .pop select, .ask textarea, .ask input { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--chrome); color: var(--ink-ui); padding: 7px 9px; font: 13px/1.5 var(--font-ui); }
+.pop textarea, .pop input[type="text"], .pop input[type="search"], .pop select, .ask textarea, .ask input { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 4px; background: var(--chrome); color: var(--ink-ui); padding: 5px 8px; font: 13px/1.5 var(--font-ui); }
 .pop select { width: auto; padding: 4px 6px; }
 .code { font-family: var(--font-mono) !important; font-size: 12.5px !important; }
 .pop textarea { resize: vertical; }
@@ -1172,9 +1176,6 @@ body.dropping .dropzone { display: grid; }
 }
 /* (the name is back on a phone: with Save and Copy source gone from the bar, it fits at 360px) */
 @container (max-width: 119px) { .title-name { display: none; } }
-@media (prefers-reduced-motion: reduce) {
-  .flash { animation: none; }
-}
 
 /* unsaved-zip marker on the Save button */
 #b-save { position: relative; }
@@ -1191,7 +1192,7 @@ body.nav-on #nav { display: flex; }
 .nav-tab { border: 0; background: transparent; padding: 6px 8px; flex: none; font: 500 12.5px var(--font-ui); color: var(--mute); border-radius: 6px 6px 0 0; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
 /* the bar's actions by name, where its buttons are icons alone (see the 980px rule above) */
 .nav-acts { display: none; grid-template-columns: 1fr 1fr; gap: 2px; padding: 8px 6px; border-bottom: 1px solid var(--line); flex: none; }
-.nav-act { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-ui); font: 500 13px var(--font-ui); text-align: left; cursor: pointer; }
+.nav-act { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--ink-ui); font: 500 13px var(--font-ui); text-align: left; cursor: pointer; }
 .nav-act:hover, .nav-act:focus-visible { background: var(--blue-wash); }
 .nav-act:disabled { opacity: .38; cursor: default; }
 .nav-act svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
@@ -1313,7 +1314,7 @@ body.nav-on.nav-wide #nav { width: 340px; }
   .page { box-shadow: none !important; margin: 0 !important; break-after: page; break-inside: avoid; content-visibility: visible !important; contain: none !important; }
   .page:last-child { break-after: auto; }
   .has-err, .ghostp { outline: none !important; }
-  .flash { animation: none !important; }
+  .flash { background-color: transparent !important; }
 }
 
 /* sharing and comments (src/collab.js) */
@@ -1389,7 +1390,7 @@ body.guest #b-new, body.guest #b-sample { display: none; }
 .fr[hidden] { display: none; }
 .fr-head { display: flex; align-items: center; justify-content: space-between; margin: 0 -12px; padding: 7px 8px 5px 14px; cursor: move; font-weight: 600; font-size: 12.5px; color: var(--ink-ui); user-select: none; touch-action: none; }
 .fr-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: -6px -12px 2px; padding: 0 10px; }
-.fr-tab { position: relative; border: 0; background: transparent; padding: 6px 10px 7px; font: 500 12.5px var(--font-ui); color: var(--mute); cursor: pointer; border-radius: 6px 6px 0 0; }
+.fr-tab { position: relative; border: 0; background: transparent; padding: 6px 10px 7px; font: 500 12.5px var(--font-ui); color: var(--mute); cursor: pointer; border-radius: 4px 4px 0 0; }
 .fr-tab:hover { color: var(--ink-ui); }
 .fr-tab.on { color: var(--blue-ink); }
 .fr-tab.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--blue); }
@@ -1478,7 +1479,7 @@ body.guest #b-new, body.guest #b-sample { display: none; }
 .nv-row .nav-item[draggable="true"], .nv-txt[draggable="true"] { cursor: pointer; }
 .nv-tog { flex: none; width: 20px; height: 26px; padding: 0; border: 0; background: transparent; color: var(--mute); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .nv-tog.none { cursor: default; }
-.nv-tog svg { width: 11px; height: 11px; fill: currentColor; stroke: none; transform: rotate(90deg); transition: transform .12s; }
+.nv-tog svg { width: 11px; height: 11px; fill: currentColor; stroke: none; transform: rotate(90deg); transition: transform .1s; }
 .nv-tog[aria-expanded="false"] svg { transform: none; }
 .nv-tog:hover { color: var(--ink-ui); }
 .nv-txt { flex: 1 1 auto; min-width: 0; text-align: left; border: 0; background: transparent; color: var(--mute); padding: 4px 10px 4px 2px; font: 12.5px/1.4 var(--font-doc, Georgia, serif); cursor: pointer; }
@@ -1651,9 +1652,9 @@ body.nav-on.nav-outline #nav { width: 460px; }
 .split-view .split-pages { display: flex; flex-direction: column; align-items: flex-start; gap: 22px; cursor: text; }
 .split-view:focus-visible { box-shadow: inset 0 0 0 2px var(--blue); }
 /* (G2) Update Table and Update Index: the list flashes where it stands, rebuilt */
-@keyframes rk-updated { from { background-color: rgba(43, 116, 176, .22); } to { background-color: transparent; } }
-#pages .rk-updated { animation: rk-updated 1.3s ease-out; }
-@media (prefers-reduced-motion: reduce) { #pages .rk-updated { animation: none; outline: 2px solid rgba(43, 116, 176, .5); } }
+/* (a still mark for as long as the class stays, 1.4 s, as .flash: only opacity and transform are
+   animated, UI-PRINCIPLES.md M3) */
+#pages .rk-updated { background-color: rgba(43, 116, 176, .22); }
 /* (G2) the equation in Word's linear format, a text to type in */
 .pop textarea.pop-lin { font: 15px/1.5 var(--font-doc, serif); }
 .pop .pop-lin-note { font-size: 12px; color: var(--mute); margin: 2px 0 4px; }
@@ -2103,7 +2104,7 @@ body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outli
 /* the Paragraph dialog */
 .pop.pop-pd { width: min(480px, calc(100vw - 16px)); }
 .pd-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: -2px -10px 2px; padding: 0 8px; }
-.pd-tab { position: relative; border: 0; background: transparent; padding: 6px 10px 7px; font: 500 12.5px var(--font-ui); color: var(--mute); cursor: pointer; border-radius: 6px 6px 0 0; }
+.pd-tab { position: relative; border: 0; background: transparent; padding: 6px 10px 7px; font: 500 12.5px var(--font-ui); color: var(--mute); cursor: pointer; border-radius: 4px 4px 0 0; }
 .pd-tab:hover { color: var(--ink-ui); }
 .pd-tab[aria-selected="true"] { color: var(--blue-ink); }
 .pd-tab[aria-selected="true"]::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--blue); }
@@ -2288,7 +2289,28 @@ body.view-pdf #pdf-host { width: 100%; max-width: 1040px; margin: 0 auto; }
 
 /* ---- B11: Insert › Interactive graph (src/ui/graphdialog.js) and a graph on the page ---- */
 .pop.pop-graph { width: min(860px, calc(100vw - 16px)); gap: 10px; }
-.gd-kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+/* Export as, Web page with live graphs: what its link carries, and the choice to leave it out */
+.pop.pop-web { width: min(460px, calc(100vw - 16px)); gap: 8px; }
+.pop-web .gd-ck { display: flex; }
+@media (pointer: coarse) { .pop-web .btn { min-height: 44px; min-width: 64px; } }
+.gd-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.gd-top > select { width: auto; max-width: 220px; min-height: 40px; }
+.gd-kinds { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+/* a formula field's mistakes: its text mirrored behind it, the stretch in error underlined */
+.gd-ed { position: relative; display: grid; min-width: 0; }
+.gd-ed > * { grid-area: 1 / 1; }
+.gd-mirror { pointer-events: none; color: transparent; white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; border-color: transparent !important; background: transparent !important; }
+.gd-ed > .gd-in:not(.gd-mirror) { background: transparent; position: relative; }
+.gd-ed { background: var(--chrome); border-radius: 6px; }
+textarea.gd-mirror { resize: none; }
+.gd-wave { text-decoration: underline wavy #C42B1C; text-decoration-skip-ink: none; text-underline-offset: 3px; }
+.gd-ck { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-ui); min-height: 28px; cursor: pointer; }
+.gd-ck input { margin: 0; accent-color: var(--blue); width: 15px; height: 15px; }
+.gd-row > .gd-ck { align-self: end; padding-bottom: 4px; }
+.gd-shade { align-items: end; }
+.gd-shade > .gd-x { height: 30px; width: 30px; justify-content: center; padding: 0; font-size: 18px; }
+.gd-undo { width: 34px; height: 32px; justify-content: center; padding: 0; }
+.gd-undo:disabled { opacity: .4; cursor: default; }
 .gd-kind { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--chrome); color: var(--ink-ui); font: 500 13px var(--font-ui); cursor: pointer; }
 .gd-kind:hover { border-color: var(--blue); }
 .gd-kind[aria-checked="true"] { border-color: var(--blue); background: var(--blue-wash); box-shadow: inset 0 0 0 1px var(--blue); }
@@ -2300,7 +2322,7 @@ body.view-pdf #pdf-host { width: 100%; max-width: 1040px; margin: 0 auto; }
 .gd-note, .gd-hint { margin: 0; font-size: 12px; line-height: 1.45; color: var(--mute); }
 .gd-f { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--mute); min-width: 0; flex: 1 1 0; }
 .gd-f .gd-l { font-weight: 500; }
-.gd-in { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--chrome); color: var(--ink-ui); font: 13px var(--font-ui); padding: 5px 7px; }
+.gd-in { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--chrome); color: var(--ink-ui); font: 13px var(--font-ui); padding: 5px 7px; }
 .gd-in:focus { outline: 2px solid color-mix(in srgb, var(--blue) 55%, transparent); outline-offset: 0; border-color: var(--blue); }
 .gd-in:disabled { opacity: .55; }
 textarea.gd-in { resize: vertical; line-height: 1.4; }
@@ -2325,8 +2347,14 @@ textarea.gd-in { resize: vertical; line-height: 1.4; }
   .gd-pv { position: static; order: 0; }
   .gd-frame { height: 220px; }
 }
+@media (max-width: 760px) {
+  .gd-top { grid-template-columns: minmax(0, 1fr); }
+  .gd-top > select { max-width: none; width: 100%; }
+  .gd-kinds { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 @media (max-width: 520px) {
-  .gd-kinds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gd-kinds { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .gd-kind { flex-direction: column; gap: 2px; font-size: 12px; }
   .gd-sl { grid-template-columns: repeat(3, minmax(0, 1fr)) 44px; }
   .gd-sl > .gd-n { grid-column: 1 / 4; }
   .gd-sl > .gd-x { grid-column: 4; grid-row: 1; align-self: end; }
@@ -2334,19 +2362,32 @@ textarea.gd-in { resize: vertical; line-height: 1.4; }
 @media (pointer: coarse) {
   .gd-kind, .pop-graph .gd-in, .pop-graph .btn, .pop-graph .pop-x { min-height: 44px; }
   .pop-graph .btn, .pop-graph .pop-x, .gd-sl .gd-x { min-width: 44px; }
-  .gd-sl .gd-x { height: 44px; }
+  .gd-sl .gd-x, .gd-shade > .gd-x { height: 44px; width: 44px; }
   .pop-graph .gd-in { font-size: 16px; }
+  .gd-ck { min-height: 44px; min-width: 44px; }
+  .gd-ck input { width: 22px; height: 22px; }
+  .gd-undo { width: 44px; height: 44px; }
+  .gd-top > select { min-height: 44px; }
 }
 /* a graph on the page: Edit graph beside the LaTeX tab, shown as the LaTeX tab is (on a touch
    screen always), at its own size whatever the page's zoom (--ws: the box's scale) */
-.w-edit { position: absolute; top: 4px; right: 54px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 500 11px/1.4 var(--font-ui); padding: 1px 7px; cursor: pointer; opacity: 0; transition: opacity .12s; transform: scale(calc(1 / var(--ws, 1))); transform-origin: top right; }
+.w-edit { position: absolute; top: 4px; right: 54px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 500 11px/1.4 var(--font-ui); padding: 1px 7px; cursor: pointer; opacity: 0; transition: opacity .1s; transform: scale(calc(1 / var(--ws, 1))); transform-origin: top right; }
 .wbox:hover .w-edit, .wbox.sel .w-edit, .w-edit:focus-visible { opacity: 1; }
 .wbox .w-src { transform: scale(calc(1 / var(--ws, 1))); transform-origin: top right; }
+/* a graph's two sit above its top edge, outside the figure: inside, they covered the sliders'
+   values and the curves */
+.wbox.wgraph .w-src, .wbox.wgraph .w-edit { top: auto; bottom: 100%; transform-origin: bottom right; }
+.wbox.wgraph .w-src { right: 0; width: 52px; box-sizing: border-box; }
+.wbox.wgraph .w-edit { right: calc(58px / var(--ws, 1)); }
 .w-hint { position: absolute; left: 0; top: calc(100% + 6px); z-index: 2; display: flex; align-items: center; gap: 10px; max-width: 520px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink-ui); font: 13px/1.4 var(--font-ui); box-shadow: 0 6px 20px rgba(10, 20, 30, .16); transform: scale(calc(1 / var(--ws, 1))); transform-origin: top left; }
 .w-hint .btn { flex: none; }
 @media (pointer: coarse) {
-  /* (centred at the top: at the right it covered the LaTeX tab and the sliders' values) */
-  .w-edit { opacity: 1; min-height: 44px; min-width: 44px; padding: 0 12px; font-size: 14px; top: 4px; right: auto; left: 50%; transform: translateX(-50%) scale(calc(1 / var(--ws, 1))); transform-origin: top center; }
+  /* a graph's buttons wait for a tap in it (the frame says so, src/widget.js), then stand above
+     it a while, 44 px on the screen: always shown, they covered its curves */
+  .wbox.wgraph .w-src, .wbox.wgraph .w-edit { opacity: 0; pointer-events: none; min-height: 44px; min-width: 44px; padding: 0 12px; font-size: 14px; }
+  .wbox.wgraph .w-src { width: 64px; }
+  .wbox.wgraph .w-edit { right: calc(70px / var(--ws, 1)); }
+  .wbox.wgraph.wtouch .w-src, .wbox.wgraph.wtouch .w-edit, .wbox.wgraph.sel .w-src, .wbox.wgraph.sel .w-edit, .wbox.wgraph .w-src:focus-visible, .wbox.wgraph .w-edit:focus-visible { opacity: 1; pointer-events: auto; }
   .w-hint { max-width: min(520px, calc(100vw - 32px)); }
   .w-hint .btn { min-height: 44px; min-width: 44px; }
 }
@@ -2354,8 +2395,9 @@ textarea.gd-in { resize: vertical; line-height: 1.4; }
 .sym-g { font: 17px var(--font-doc); line-height: 1; }
 .pop.pop-sym { width: min(460px, calc(100vw - 16px)); }
 .sym-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 4px; max-height: 300px; overflow: auto; }
-.sym-b { height: 40px; border: 1px solid var(--line); border-radius: 6px; background: var(--chrome); color: var(--ink-ui); font: 18px var(--font-doc); cursor: pointer; }
-.sym-b:hover, .sym-b:focus-visible { border-color: var(--blue); outline: none; background: var(--blue-wash); }
+.sym-b { height: 40px; border: 1px solid var(--line); border-radius: 4px; background: var(--chrome); color: var(--ink-ui); font: 18px var(--font-doc); cursor: pointer; }
+.sym-b:hover, .sym-b:focus-visible { border-color: var(--blue); background: var(--blue-wash); }
+.sym-b:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .sym-special { gap: 0; }
 .sym-row { display: flex; justify-content: space-between; width: 100%; }
 .pop.pop-pastesp, .pop.pop-env { width: min(400px, calc(100vw - 16px)); }
@@ -2701,7 +2743,7 @@ html.pic-moving, html.pic-moving * { cursor: grabbing !important; }
 /* the triangles beside the headings: over the page, never in it (src/cmd/find.js foldPaint) */
 .fold-layer { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 2; }
 .fold-tg { position: absolute; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #7A8794; display: grid; place-items: center; cursor: pointer; }
-.fold-tg svg { width: 14px; height: 14px; fill: currentColor; stroke: none; transition: transform .12s; }
+.fold-tg svg { width: 14px; height: 14px; fill: currentColor; stroke: none; transition: transform .1s; }
 .fold-tg.shut svg { transform: rotate(-90deg); }
 .fold-tg.shut { color: var(--blue); }
 @media (hover: hover) { .fold-tg:hover { background: var(--blue-wash); color: var(--blue-ink); } body.dark-page .fold-tg:hover { background: #2A3440; } }
@@ -2929,7 +2971,9 @@ html[data-input="pointer"] :is(button, [role=tab], [role=menuitem], [role=menuit
 .pop-x:focus:not(:focus-visible) { outline: none; }
 @media (pointer: coarse) {
   :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .stp-f, .help-pane, .pop-help) .btn,
-  :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) :is(input[type="text"], input[type="search"], input[type="number"], input:not([type]), select) { height: auto; min-height: 44px; }
+  :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) :is(input[type="text"], input[type="search"], input[type="number"], input:not([type]), select) { height: 44px; min-height: 44px; }
+  /* (a one line text area, Properties' Title and Author, as tall as a field) */
+  :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) textarea[rows="1"] { min-height: 44px; }
   .pop-x { min-width: 44px; min-height: 44px; }
 }
 /* a phone's top bar: every button 44 px under a finger; Open and Source go to the menu panel
@@ -2946,10 +2990,76 @@ html[data-input="pointer"] :is(button, [role=tab], [role=menuitem], [role=menuit
   #bar .srch:not(:focus-within) input:active { background: var(--bar-press); }
   #bar .srch:not(:focus-within) > svg { left: 50%; margin-left: -9px; width: 18px; height: 18px; margin-top: -9px; stroke: var(--bar-ink); }
   #b-open, #b-src { display: none; }
-  #bar { gap: 0; }
+  /* 8 px between two targets, as Google asks of a touch screen (UI-PRINCIPLES.md T3): at 320 px
+     Search ran 10 px into Share */
+  #bar, #bar .bar-left, #bar .qat, #bar .title-end, #bar .tools, #bar .zoom { column-gap: 8px; gap: 8px; }
+  #bar .tools .sep { display: none; }
 }
+/* under 380 px six targets fit with their gaps, seven did not: Redo goes to the menu panel, by
+   name (Undo stays, the one pressed most), the brand's mark goes, and the zoom is 44 px wide */
+@media (max-width: 379px) and (pointer: coarse) { #b-redo, #bar .brand { display: none; } #bar #zoomv { min-width: 44px; padding: 0 2px !important; font-size: 12px; } }
 /* the status bar's words all one size, as its other items */
 #status .linkish { font-size: 12px; }
 /* File's column: its commands one height, with the corners of every other control */
 body.file-open #rp-file .rb-tb .btn { height: 32px; min-height: 32px; border-radius: 4px; box-sizing: border-box; }
 @media (pointer: coarse) { body.file-open #rp-file .rb-tb .btn { height: auto; min-height: 44px; } }
+/* Inside dialogs, one height per kind again (the verification of 0a6ef7b): a dialog's tabs as its
+   buttons, 32 px (44 under a finger); a check box's or a radio button's row at least 24 px, the
+   size WCAG asks of any target (44 under a finger); single line fields 32 px exactly; and a phone's
+   rule for the bar's buttons (icons alone, 32 px wide) kept out of dialogs, where it squeezed
+   Cancel out of its border and folded AutoCorrect's Add over two lines */
+:is(.pd-tab, .fr-tab, .fd-tab) { min-height: 32px; box-sizing: border-box; display: inline-flex; align-items: center; }
+:is(.pop, .fr, .stp, .help-pane) label:has(input[type="checkbox"], input[type="radio"]):not(:has(input[type="text"], select, textarea)) { min-height: 24px; box-sizing: border-box; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) :is(input[type="text"], input[type="search"], input[type="number"], input:not([type]), select) { height: 32px; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .stp-f, .help-pane, .pop-help) .btn:not(.icon) { width: auto; white-space: nowrap; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .stp-f, .help-pane, .pop-help) .btn:not(.icon) span:not(.sr) { display: inline; }
+@media (pointer: coarse) {
+  :is(.pd-tab, .fr-tab, .fd-tab) { min-height: 44px; }
+  :is(.pop, .fr, .stp, .help-pane) label:has(input[type="checkbox"], input[type="radio"]):not(:has(input[type="text"], select, textarea)) { min-height: 44px; }
+  :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) :is(input[type="text"], input[type="search"], input[type="number"], input:not([type]), select) { height: 44px; }
+  :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .stp-f, .help-pane, .pop-help) .btn:not(.icon) { min-width: 44px; padding: 0 12px; }
+}
+/* Text on the accent blue: white on the light theme's blue, near black on the dark theme's lighter
+   blue (white there was 2.4:1; WCAG 1.4.3 asks 4.5:1), as Word's dark mode writes its primary
+   buttons. The search box's list in the colours of the window, not the bar's white (the selected
+   result on a phone was white on pale blue, 1.3:1) */
+.toast .btn { color: var(--on-blue, #fff); }
+.srch-list { color: var(--ink-ui); }
+/* reduced motion: nothing moves; fades only (UI-PRINCIPLES.md M2); last, over the rules
+   above */
+@media (prefers-reduced-motion: reduce) {
+  .pdf-prog.busy span { animation: none; opacity: .6; }
+  .nv-tog svg, .fold-tg svg { transition: none; }
+}
+/* an empty pane's sentence and its one button (UI-PRINCIPLES.md N5) */
+.nav-empty p { margin: 0 0 8px; }
+/* a number field with its unit (kit.js numberField: Page setup's margins, Insert Table's width) is
+   one field: its box 32 px (44 under a finger) with 4 px corners, its input and unit filling it
+   (the rule for fields above made the input 44 px inside a 30 px box, cropping it) */
+/* (its edge an inset outline, not a border: the input and the unit then fill the whole 32 or
+   44 px, as a field of their own would; forced colours keep an outline) */
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf { height: 32px; min-height: 32px; box-sizing: border-box; border-radius: 4px; border: 0; outline: 1px solid var(--line); outline-offset: -1px; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf:focus-within { outline: 2px solid var(--blue); outline-offset: 1px; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf :is(input[type="text"], input[type="number"], input:not([type])) { height: 100%; min-height: 0; border: 0; border-radius: 0; background: transparent; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf select { height: 100%; min-height: 0; border-radius: 0; border-top: 0; border-right: 0; border-bottom: 0; }
+/* (the box's ring shows the focus, not the input's own) */
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf :is(input, select):focus { outline: none; }
+@media (pointer: coarse) { :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf { height: 44px; min-height: 44px; } }
+/* 8 px between two targets under a finger (UI-PRINCIPLES.md T3): the status bar's views, a
+   dialog's tabs, the Paragraph dialog's rows of fields, were 2 px apart */
+@media (pointer: coarse) {
+  .st-views, .pd-tabs, .fr-tabs, .fd-tabs { gap: 8px; }
+  .pd-grid, .ps-grid, .ps-sec { row-gap: 8px; }
+  /* (and the rest the review of PR 90 measured: Font's effects and buttons, Insert Table's rows
+     and radios, AutoCorrect's rows, Symbols' grid, Find and Replace's options, rows and buttons,
+     Bookmark's buttons, any dialog's row of buttons) */
+  :is(.pop-dlg, .pop-share, .pop-comment, .fr) :is(.pop-row, .fd-btns, .tb-sec, .tb-radios, .gd-sec, .fr-row, .fr-btns) { gap: 8px; }
+  :is(.pop-dlg, .pop-share, .pop-comment, .fr) :is(.fd-eff, .fr-opts) { row-gap: 8px; }
+  .sym-grid { gap: 8px; }
+  .pd-tabs { margin-top: 4px; }
+}
+/* the keys' ring only after a key (html.rk-keys, src/app.js; not "keys", Help's list of keys is a .keys): a menu opened by a press, or File
+   opened by one, puts the focus on its first item or on Back with no ring, as Word highlights
+   nothing until a key moves (UI-PRINCIPLES.md C13); fields keep theirs */
+html:not(.rk-keys) :is(.pop-menu .nav-act, #rp-file button, #rf-home button):focus-visible { outline: none; }
+html:not(.rk-keys) .pop-menu .nav-act:focus-visible:not(:hover) { background: transparent; }

@@ -28,9 +28,19 @@ def wait_pdf(page, timeout=180):
     return page.evaluate("document.getElementById('pdf-status').textContent")
 
 
+# What ended the page, if the run stops part way: the page navigated (nothing a document does may
+# do that) or its renderer crashed (the TeX worker runs in it). Playwright reports both, to a call
+# waiting on the page, as "Execution context was destroyed, most likely because of a navigation":
+# any protocol error that is not the page's own becomes that message (CI on ab27d09). A new
+# document in the page is what counts: framenavigated fires for history.replaceState as well (the
+# page drops a #share= or #tex= from its address so), which keeps the document (review of
+# 2badc1f, I2), so the new document's DOMContentLoaded is what is noted.
+ended = []
 try:
     with sync_playwright() as p:
         browser, page, errors = open_page(p, width=1500, height=950)
+        page.on('domcontentloaded', lambda pg: ended.append('the page navigated: a new document at ' + pg.url[:120]))
+        page.on('crash', lambda: ended.append('the page crashed (its renderer, with the TeX worker in it)'))
         page.click('#b-pdf')
         st = wait_pdf(page)
         check('the sample compiles with pdfLaTeX', 'pdfLaTeX' in st and 'page' in st, st)
@@ -311,11 +321,12 @@ try:
         lc = page.evaluate("window.rikuy.lastCompile")
         probs = page.evaluate("window.rikuy.texIssues.map(x => x.msg)")
         check('without them a paper loading Libertinus gets no PDF, and the result names only those packs, not a missing file', bool(lc) and lc.get('unkeptScripts') is True and not lc.get('ok') and not any('libertinus.sty' in x and 'not found' in x for x in probs), [lc and {k: lc[k] for k in ('unkept', 'unkeptScripts', 'ok')}, probs[:3]])
+        check('nothing a document did navigated the page', not ended, ended)
         browser.close()
 except Exception as e:
     # a run that stops part way has failed, whatever the checks before it said
     traceback.print_exc()
-    check('the run reaches its end', False, e)
+    check('the run reaches its end', False, [str(e)[:300]] + (ended or ['no navigation and no crash of the page was seen']))
 
 bad = [r for r in results if not r[1]]
 print('%d/%d passed' % (len(results) - len(bad), len(results)))

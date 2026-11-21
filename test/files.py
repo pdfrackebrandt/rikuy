@@ -322,7 +322,8 @@ try:
           document.elementFromPoint(x, y).dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true, clientX: x, clientY: y })); }""", ['my plot} \\end{document} %50 (v2).PNG', b64(PNG), xy[0], xy[1]])
         page.wait_for_function('window.rikuy.files.get("main.tex").includes("includegraphics")', timeout=5000)
         after = page.evaluate('window.rikuy.files.get("main.tex")')
-        names = [n for n in page.evaluate('[...window.rikuy.assetBlobs.keys()]') if n not in ('paper.pdf',)]
+        # (the opening document's own graph keeps its picture among them: graphs/saving.pgf)
+        names = [n for n in page.evaluate('[...window.rikuy.assetBlobs.keys()]') if n not in ('paper.pdf',) and not n.startswith('graphs/')]
         import re as _re
         check('a dropped picture is kept under a name of letters, digits, dot, dash and underscore', len(names) == 1 and _re.fullmatch(r'[A-Za-z0-9_-]+\.png', names[0]), names)
         check('and placed after the heading it was dropped on, under that name', names and '\\section{How to use it}\n\n\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{%s}\n\\end{center}\n' % names[0] in after and after.count('\\end{document}') == 1 and after.count('%50') == 0, after[after.find('\\section{How'):][:200])

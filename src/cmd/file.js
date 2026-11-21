@@ -49,7 +49,7 @@ const TEMPLATES = [
 ];
 
 // Export as: what pandoc writes from the page's AST, as the Word download does
-const EXPORTS = [['html', 'Web page (.html)', 'html'], ['markdown', 'Markdown (.md)', 'md'], ['odt', 'OpenDocument text (.odt)', 'odt'], ['rtf', 'Rich text (.rtf)', 'rtf'], ['epub', 'E-book (.epub)', 'epub'], ['txt', 'Plain text (.txt)', 'txt']];
+const EXPORTS = [['live', 'Web page with live graphs (.html)', 'html'], ['html', 'Web page (.html)', 'html'], ['markdown', 'Markdown (.md)', 'md'], ['odt', 'OpenDocument text (.odt)', 'odt'], ['rtf', 'Rich text (.rtf)', 'rtf'], ['epub', 'E-book (.epub)', 'epub'], ['txt', 'Plain text (.txt)', 'txt']];
 const MIME = { html: 'text/html', md: 'text/markdown', odt: 'application/vnd.oasis.opendocument.text', rtf: 'application/rtf', epub: 'application/epub+zip', txt: 'text/plain' };
 
 register(
@@ -71,7 +71,7 @@ register(
   { id: 'save-as', name: 'Save As', title: 'Save As (F12): the LaTeX on your computer, the .tex or the project as .zip (Download LaTeX)', keys: ['F12'],
     synonyms: ['Save a copy', 'Download', 'Export LaTeX'], when: always, run: (app) => app.runCommand('download-latex') },
   { id: 'open', name: 'Open', el: 'b-open', static: true, place: 'bar', title: 'Open .tex, .bib, images, an Overleaf .zip or a Word .docx (Ctrl+O)', keysElsewhere: ['Ctrl+O'], keys: ['Ctrl+F12', 'Ctrl+Alt+F2'], keyScope: 'app', synonyms: ['Open a file', 'Import'], when: always, run: () => $('#fileinput').click() },
-  { id: 'share', name: 'Share', el: 'b-share', static: true, place: 'bar', title: 'A link anyone can open and type in, or a copy for Overleaf', synonyms: ['Share link', 'Overleaf'], when: always, run: (app) => app.openSharePanel() },
+  { id: 'share', name: 'Share', el: 'b-share', static: true, place: 'bar', title: 'Share a link anyone can open and type in, or send a copy to Overleaf', synonyms: ['Share link', 'Overleaf'], when: always, run: (app) => app.openSharePanel() },
   { id: 'new-document', name: 'New document', el: 'b-new', static: true, place: 'status', title: 'New document: a blank article; this one stays under Review, Versions', synonyms: ['New', 'Blank document'], when: always, run: (app) => app.newDocument() },
   { id: 'load-sample', name: 'Load the sample', el: 'b-sample', static: true, place: 'status', title: 'Load the sample: the document Rikuy opens with, in place of this one (it asks first)', synonyms: ['Sample document', 'Example'], when: always, run: (app) => app.resetToSample() },
 
@@ -101,7 +101,7 @@ register(
     menuItems: (app) => mainItems(app),
     run: (app, args) => (typeof args === 'string' ? app.setMain(args) : app.fileMenu('rf-main', 'Main document', mainItems(app))) },
   // ---- File ▸ Save a copy
-  { id: 'export-as', name: 'Export as', order: 10, title: 'A copy as a web page, Markdown, OpenDocument, rich text, an e-book or plain text (pandoc, as the Word download)', synonyms: ['Save as', 'Export', 'HTML', 'Markdown', 'ODT', 'RTF', 'EPUB', 'Plain text'],
+  { id: 'export-as', name: 'Export as', order: 10, title: 'A copy as a web page with live graphs, a web page, Markdown, OpenDocument, rich text, an e-book or plain text', synonyms: ['Save as', 'Export', 'HTML', 'Markdown', 'ODT', 'RTF', 'EPUB', 'Plain text'],
     tab: 'file', group: 'save', el: 'rf-export', label: 'Export as', icon: I.export, kind: 'menu', when: (app) => !!app.model,
     menuItems: (app) => EXPORTS.map(([id, name]) => ({ name, run: () => app.runCommand('export-as', id) })),
     run: (app, args) => (typeof args === 'string' ? app.exportAs(args) : app.fileMenu('rf-export', 'Export as', EXPORTS.map(([id, name]) => ({ name, run: () => app.runCommand('export-as', id) })))) },
@@ -559,6 +559,8 @@ export const methods = {
   async exportAs(id) {
     const x = EXPORTS.find((e) => e[0] === id);
     if (!x) return false;
+    // (Rikuy's own page, no pandoc: every copy has it, the claude.ai one too; src/cmd/graphs.js)
+    if (id === 'live') return this.exportWebPage();
     if (!wordEnabled()) { this.wordMissing(); return false; }
     if (this.wordBusy) return false;
     this.wordBusy = true;

@@ -5,6 +5,7 @@
 
 import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, mergeProjects, commentOnly, onlyComments, commentsBack, bodyAt, linkRole } from './share.js';
 import { kvGet, kvPut, kvDel } from './store.js';
+import { graphShort, graphWhole } from './graph.js';
 import { buildModel } from './model.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -77,7 +78,8 @@ export const collab = {
       base = (v && v.sig) || this.lastSig || null;
     }
     const o = { v: 1, name: this.name, main: this.main, files: [...this.files.entries()], base, by: this.myName() || 'A coauthor', role, rid, t: Date.now() };
-    const url = this.shareBase() + '#share=' + await packShare(o);
+    // (a graph's file as its description alone: the reader's Rikuy writes it again, src/share.js)
+    const url = this.shareBase() + '#share=' + await packShare(o, graphShort);
     return { url, figures: this.assetBlobs.size };
   },
 
@@ -160,7 +162,7 @@ export const collab = {
   // ---- opening a link -----------------------------------------------------------------
   async openSharedLink(s) {
     let o;
-    try { o = await unpackShare(s); } catch (e) { this.toast('Could not open the link: ' + e.message, 8000); return; }
+    try { o = await unpackShare(s, graphWhole); } catch (e) { this.toast('Could not open the link: ' + e.message, 8000); return; }
     await this.openLinked(o);
   },
   // a link with plain LaTeX in it (#tex=...): one file, opened as a shared link's document is

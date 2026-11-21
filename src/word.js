@@ -183,6 +183,8 @@ export const word = {
       if (!k) return null;
       if (/\.eps$/i.test(k)) return null;
       if (/\.pdf$/i.test(k)) { pics.set(k, k.replace(/\.pdf$/i, '.pdf.png')); return k.replace(/\.pdf$/i, '.pdf.png'); }
+      // (an interactive graph's PGF picture: Word gets the graph drawn as a PNG)
+      if (/\.pgf$/i.test(k)) { pics.set(k, k + '.png'); return k + '.png'; }
       pics.set(k, k);
       return k;
     };
@@ -190,7 +192,8 @@ export const word = {
     for (const [k, out] of pics) {
       try {
         const bytes = new Uint8Array(await this.assetBlobs.get(k).arrayBuffer());
-        resources[out] = /\.pdf$/i.test(k) ? await this.pdfPicture(bytes) : bytes;
+        resources[out] = /\.pdf$/i.test(k) ? await this.pdfPicture(bytes) : /\.pgf$/i.test(k) ? await this.graphPictureBytes(k) : bytes;
+        if (!resources[out]) throw new Error('no picture');
       } catch (e) { W.degraded.push(k + ' (could not be drawn)'); }
     }
     return {
