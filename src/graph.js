@@ -1938,6 +1938,22 @@ export function readGraph(html) {
   try { return K.normalize(JSON.parse(html.slice(a, b))); } catch (e) { return null; }
 }
 
+// A graph's file in a share link (src/share.js packShare): its description alone, when the file is
+// exactly what graphHtml writes for it (so the reader's Rikuy writes the same file again); null for
+// a file edited by hand or written by another version, which travels whole
+export function graphShort(html) {
+  const s = readGraph(html);
+  return s && graphHtml(s) === html ? JSON.stringify(s) : null;
+}
+// and back: the file for such a description, as graphHtml writes it (src/share.js unpackShare);
+// the description is a stranger's, read as readGraph reads a file's (capped, normalized)
+export function graphWhole(json) {
+  if (typeof json !== 'string' || json.length > 1e6) throw new Error('not a graph');
+  const s = JSON.parse(json);
+  if (!s || typeof s !== 'object' || Array.isArray(s)) throw new Error('not a graph');
+  return graphHtml(s);
+}
+
 // whether two descriptions draw the same graph
 export const sameGraph = (a, b) => JSON.stringify(K.normalize(a)) === JSON.stringify(K.normalize(b));
 
