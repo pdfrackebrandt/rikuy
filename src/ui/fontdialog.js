@@ -7,7 +7,7 @@
 // text reaches the dialog only as text (the preview's words, a colour's name).
 
 import * as F from '../charfmt.js';
-import { dialog, BASE_COLORS, STANDARD_COLORS, DVIPS_COLORS } from './kit.js';
+import { dialog, accessKeys, BASE_COLORS, STANDARD_COLORS, DVIPS_COLORS } from './kit.js';
 import { mk, $ } from './dom.js';
 import { escapeTeX } from '../editor.js';
 import { packages, preambleEnd } from '../preamble.js';
@@ -240,6 +240,8 @@ export function openFontDialog(app) {
   // (Enter on a list is OK too, as in the Paragraph dialog and Word's: the dialog opens with the
   // focus on the font's list, where Enter did nothing)
   p.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.altKey && e.target.tagName !== 'BUTTON') { e.preventDefault(); ok.click(); } });
+  accessKeys(p, { Font: 'N', Advanced: 'V', 'Font name': 'F', 'Font style': 'Y', Size: 'S', 'Font color': 'C', 'Underline style': 'U', 'Underline color': 'I', Strikethrough: 'K', 'Double strikethrough': 'L',
+    Superscript: 'P', Subscript: 'B', 'Small caps': 'M', 'All caps': 'A', 'Set As Default': 'D' });
   app.positionPop();
   fam.focus();
   return true;

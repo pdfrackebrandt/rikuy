@@ -240,3 +240,74 @@ export function dialog(app, o) {
   if (o.onClose) app.pop.onClose = o.onClose;
   return p;
 }
+
+// ---- access keys ---------------------------------------------------------------------------------
+// Word's underlined letters in a dialog: Alt and a control's letter presses a button or a tab,
+// ticks a box or puts the focus in a field, while the focus is in that dialog. accessKeys gives
+// the controls of root their letters: { name: 'A' }, a control's name its aria-label or its
+// label's words, or [[element, 'A']] for controls whose name changes. The letters are underlined
+// while Alt is held (installAccessKeys); a letter on a tab not shown belongs to that tab only.
+const AK_CONTROLS = 'button, input, select, textarea, [role=tab]';
+function akLabel(el) {
+  if (el.matches('button, [role=tab]')) return el;
+  return el.closest('label') || (el.id && el.ownerDocument.querySelector('label[for="' + el.id + '"]')) || null;
+}
+function akName(el) {
+  const a = el.getAttribute('aria-label');
+  if (a) return a.trim();
+  const l = akLabel(el);
+  return (l ? l.textContent : el.textContent).trim();
+}
+export function accessKeys(root, keys) {
+  const all = [...root.querySelectorAll(AK_CONTROLS)];
+  const pairs = Array.isArray(keys) ? keys : Object.entries(keys).map(([name, k]) => [all.find((el) => akName(el) === name), k]);
+  for (const [el, k] of pairs) {
+    if (!el) continue;
+    el.dataset.ak = k.toLowerCase();
+    el.setAttribute('aria-keyshortcuts', 'Alt+' + k.toUpperCase());
+  }
+}
+// the letter underlined in the control's label: the first capital that is the letter, else the
+// first word starting with it, else its first place ("Replace _A_ll", "Fi_n_d what")
+function akMark(el) {
+  const l = akLabel(el), k = el.dataset.ak;
+  if (!l || !k || l.querySelector('.ak')) return;
+  const texts = [];
+  const w = document.createTreeWalker(l, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement.closest('select, option, input, textarea, .ak') || (l !== el && el.contains(n)) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+  for (let n = w.nextNode(); n; n = w.nextNode()) texts.push(n);
+  const find = (test) => { for (const n of texts) for (let i = 0; i < n.data.length; i++) if (test(n.data, i)) return [n, i]; return null; };
+  const at = find((s, i) => s[i] === k.toUpperCase()) || find((s, i) => s[i].toLowerCase() === k && (i === 0 || /\s/.test(s[i - 1]))) || find((s, i) => s[i].toLowerCase() === k);
+  if (!at) return;
+  const [n, i] = at, r = document.createRange();
+  r.setStart(n, i); r.setEnd(n, i + 1);
+  const u = document.createElement('span');
+  u.className = 'ak';
+  r.surroundContents(u);
+}
+export function installAccessKeys() {
+  // (not on a Mac: there Option and a letter types a character, é or ©, and Word for Mac's
+  // dialogs have no access keys)
+  if (macUA()) return;
+  const dlg = () => { const a = document.activeElement; return a && a.closest ? a.closest('[role=dialog]') : null; };
+  const shown = (el) => el.getClientRects().length && !el.disabled && !el.closest('[hidden]');
+  const off = () => document.body.classList.remove('ak-on');
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Alt') {
+      const d = dlg();
+      if (d && !e.ctrlKey && !e.metaKey) { for (const el of d.querySelectorAll('[data-ak]')) akMark(el); document.body.classList.add('ak-on'); }
+      return;
+    }
+    if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const m = /^Key([A-Z])$/.exec(e.code || '');
+    const d = m && dlg();
+    if (!d) return;
+    const el = [...d.querySelectorAll('[data-ak="' + m[1].toLowerCase() + '"]')].find(shown);
+    if (!el) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    el.focus();
+    if (el.matches('button, [role=tab], input[type=checkbox], input[type=radio]')) el.click();
+    else if (el.select && el.matches('input, textarea')) el.select();
+  }, true);
+  document.addEventListener('keyup', (e) => { if (e.key === 'Alt') off(); }, true);
+  addEventListener('blur', off);
+}

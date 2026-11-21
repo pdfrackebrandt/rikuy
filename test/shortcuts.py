@@ -427,6 +427,47 @@ def source_pane(page):
     key(page, 'Control+Backslash', 300)
 
 
+def focused(page):
+    return page.evaluate("(() => { const a = document.activeElement; return a ? (a.getAttribute('aria-label') || a.textContent || '').trim() : null; })()")
+
+
+def access_keys(page):
+    """Word's underlined letters in its dialogs: Alt and the letter, with the focus in the dialog,
+    presses, ticks or focuses that control (Find and Replace, Font, Paragraph, Insert Table, Page
+    setup); held, Alt underlines them, and it does not bring up the ribbon's KeyTips there."""
+    load_doc(page, DOC); click_text(page, 'Third paragraph', 0)
+    key(page, 'Control+h', 300); page.keyboard.type('paragraph here'); page.wait_for_timeout(300)
+    page.keyboard.down('Alt'); page.wait_for_timeout(100)
+    under = page.evaluate("[...document.querySelectorAll('[role=dialog] .ak')].filter((x) => x.getClientRects().length && getComputedStyle(x).textDecorationLine === 'underline').map((x) => x.textContent)")
+    page.keyboard.up('Alt'); page.wait_for_timeout(100)
+    plain = page.evaluate("[...document.querySelectorAll('[role=dialog] .ak')].filter((x) => getComputedStyle(x).textDecorationLine === 'underline').length")
+    check('Find and Replace: Alt held underlines its letters, and only while held', len(under) >= 15 and plain == 0 and not page.evaluate("document.body.classList.contains('keytips')"), (under, plain))
+    key(page, 'Alt+i', 150)
+    check('Alt+I goes to Replace with', focused(page) == 'Replace with', focused(page))
+    page.keyboard.type('line'); key(page, 'Alt+u', 150)
+    ticked = page.get_by_role('dialog', name='Find and Replace', exact=True).get_by_label('Use wildcards', exact=True).is_checked()
+    key(page, 'Alt+u', 150); key(page, 'Alt+a', 400)
+    check('Alt+U ticks Use wildcards (again: off), Alt+A is Replace All', ticked and src(page) == DOC.replace('paragraph here', 'line'), src(page)[60:260])
+    key(page, 'Escape', 200); undo(page)
+    load_doc(page, DOC); select_text(page, 'Third'); key(page, 'Control+d', 300); key(page, 'Alt+b', 150); key(page, 'Enter', 300)
+    check('Font: Ctrl+D, Alt+B (Subscript), Enter', '\\textsubscript{Third}' in src(page), src(page)[100:220])
+    load_doc(page, DOC); click_text(page, 'Third paragraph', 3)
+    page.evaluate("window.rikuy.runCommand('paragraph-settings')"); page.wait_for_timeout(300)
+    key(page, 'Alt+p', 200); key(page, 'Alt+x', 150)
+    kept = page.get_by_role('checkbox', name='Keep with next').is_checked()
+    check('Paragraph: Alt+P opens Line and Page Breaks, Alt+X ticks Keep with next', kept, kept)
+    key(page, 'Escape', 200)
+    load_doc(page, DOC); click_text(page, 'Fourth paragraph', 0)
+    page.evaluate("window.rikuy.runCommand('insert-table-dialog')"); page.wait_for_timeout(300)
+    key(page, 'Alt+c', 100); page.keyboard.type('3'); key(page, 'Alt+r', 100); page.keyboard.type('4'); key(page, 'Enter', 400)
+    check('Insert Table: Alt+C 3, Alt+R 4, Enter: three columns, four rows', '\\begin{tabular}{lll}' in src(page) and src(page).count('\\\\') >= 4, src(page)[200:420])
+    load_doc(page, DOC); click_text(page, 'Fourth paragraph', 0)
+    page.evaluate("window.rikuy.runCommand('page-setup')"); page.wait_for_timeout(300)
+    key(page, 'Alt+b', 150)
+    check('Page setup: Alt+B goes to Bottom', focused(page) == 'Bottom', focused(page))
+    key(page, 'Escape', 200)
+
+
 def tips_and_help(page, mac=False, tag=''):
     title = page.evaluate("document.getElementById('rb-b') ? document.getElementById('rb-b').title : [...document.querySelectorAll('#ribbon [data-cmd=bold]')].map((b) => b.title)[0]")
     check(tag + 'the Bold button\'s tooltip names its key' + (' as a Mac does (\u2318B)' if mac else ' (Ctrl+B)'), ('\u2318B' if mac else 'Ctrl+B') in (title or ''), title)
@@ -506,7 +547,7 @@ def run():
     only = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (paragraphs, references, finding, views, typing, fields, headings, tables, files, caret_keys, paste_format, source_pane):
+        for f in (paragraphs, references, finding, views, typing, fields, headings, tables, files, caret_keys, paste_format, source_pane, access_keys):
             if only and f.__name__ not in only: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])

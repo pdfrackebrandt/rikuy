@@ -4,7 +4,7 @@
 // Line numbering options, Hyphenation options, Format page numbers. Each writes what changed, and
 // only that, in one step of history (App.pageEdit; the edits are src/pagesrc.js's).
 
-import { dialog, numberField } from './kit.js';
+import { dialog, accessKeys, numberField } from './kit.js';
 import { mk } from './dom.js';
 import * as PS from '../pagesrc.js';
 import { geometry } from '../layout.js';
@@ -128,6 +128,7 @@ export function openPageSetup(app, focus) {
     if (!steps.length) return null;
     return () => app.pageEdit(app.pageSteps(steps), 'page-setup');
   });
+  accessKeys(p, { Top: 'T', Bottom: 'B', Left: 'L', Right: 'R', Gutter: 'G', 'Mirror margins (two sided pages: inside and outside)': 'M', Orientation: 'O', 'Paper size': 'Z', Width: 'W', Height: 'E', 'Header to text': 'H', 'Text to footer': 'F', 'Vertical alignment': 'V' });
   app.positionPop();
   const want = { margins: top, paper: pSel, layout: hs }[focus] || top;
   (want.matches && want.matches('select') ? want : want.querySelector('input')).focus();

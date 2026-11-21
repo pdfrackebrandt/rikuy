@@ -5642,6 +5642,8 @@ window.rikuy = app;
 installCollab(app);
 installWord(app);
 installRibbon(app);
+// (Alt and a dialog's letter, before the keys of the commands: src/ui/kit.js)
+kit.installAccessKeys();
 installKeys(app, isMac, (id, at) => app.runCommand(id, null, at));
 installSearch(app);
 installMenu(app);

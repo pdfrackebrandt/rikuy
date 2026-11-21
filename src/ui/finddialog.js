@@ -5,7 +5,7 @@
 // document's text reaches it only as text (the search box's own, a label's key in the list).
 
 import { $, mk } from './dom.js';
-import { openMenu } from './kit.js';
+import { openMenu, accessKeys } from './kit.js';
 import { FORMATS, FMT } from '../find.js';
 
 const OPTS = [['matchCase', 'Match case'], ['wholeWord', 'Find whole words only'], ['wildcards', 'Use wildcards'], ['regex', 'Use regular expressions'], ['source', 'In LaTeX source'], ['insel', 'In selection']];
@@ -107,6 +107,9 @@ function build(app) {
 
   const D = { d, T, pf, pg, q: q.i, r: r.i, fmt, O, st, gst, what, n: n.i, nl: n.s, list, bGo, bGPrev, bFmt, bSpec, bNoFmt };
   app.fr = D;
+  // Word's letters: Alt and the letter, the focus in the dialog (src/ui/kit.js accessKeys)
+  accessKeys(d, [[T.find, 'D'], [T.replace, 'P'], [T.goto, 'G'], [q.i, 'N'], [r.i, 'I'], [O.matchCase, 'H'], [O.wholeWord, 'Y'], [O.wildcards, 'U'], [O.regex, 'X'], [O.source, 'L'], [O.insel, 'S'],
+    [bFmt, 'O'], [bSpec, 'E'], [bNoFmt, 'T'], [bRep, 'R'], [bAll, 'A'], [bPrev, 'V'], [bNext, 'F'], [what, 'O'], [n.i, 'E'], [bGo, 'T'], [bGPrev, 'S']]);
 
   // ---- what each part does
   x.addEventListener('click', () => closeFindDialog(app));

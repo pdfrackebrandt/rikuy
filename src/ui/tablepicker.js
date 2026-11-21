@@ -5,7 +5,7 @@
 // Close, Escape), its fields named for agents; OK runs the command as one commit where the caret
 // was when it opened. A document's text reaches these only as text (a column's header in Sort).
 
-import { dialog, numberField, parseLength, formatLength } from './kit.js';
+import { dialog, accessKeys, numberField, parseLength, formatLength } from './kit.js';
 import { mk } from './dom.js';
 import * as X from '../table.js';
 import * as FX from '../formula.js';
@@ -184,6 +184,7 @@ export function insertTableDialog(app) {
   p.append(row('tb-sec', mk('div', 'tb-gl', 'Table size'), field('Number of columns', cols), field('Number of rows', rows)),
     row('tb-sec', fit, wf), row('tb-sec', head, cap, remember), buttons(app, ok));
   fixedOnly();
+  accessKeys(p, { 'Number of columns': 'C', 'Number of rows': 'R', 'Fixed column width': 'W', 'AutoFit to contents': 'F', 'AutoFit to window': 'D', 'Column width': 'O', 'Header row': 'H', Caption: 'P', 'Remember dimensions for new tables': 'S' });
   finish(app, p, ok);
 }
 
