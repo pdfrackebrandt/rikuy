@@ -1887,9 +1887,12 @@ class App {
       const itemText = src.slice(+cmdE + base, +ie + base);
       if (!itemText.trim() && c.collapsed) {
         // exit the list: remove empty item, continue after the list
-        const s = +is + base, e = +ie + base;
+        const s = +is + base, e0 = +ie + base;
+        // (the empty item's line goes and one line break stays: \end{itemize} was glued to the
+        // item before it, "\item Fourth\end{itemize}")
+        const nl = src.lastIndexOf('\n', e0 - 1), e = nl >= s ? nl : e0;
         let s2 = s; while (s2 > 0 && (src[s2 - 1] === ' ' || src[s2 - 1] === '\t')) s2--;
-        if (src[s2 - 1] === '\n') s2--;
+        if (src[s2 - 1] === '\n' && nl >= s) s2--;
         const listEnd = +le + base;
         const removed = e - s2;
         const ins = '\n\n';
