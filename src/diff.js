@@ -101,7 +101,7 @@ export function wordDiff(a, b) {
 const nl = (t) => { let n = 0; for (let i = 0; i < t.length; i++) if (t.charCodeAt(i) === 10) n++; return n; };
 export function changes(a, b, f) {
   const out = [];
-  for (const h of hunks(a, b)) {
+  for (const h of joinBlank(hunks(a, b), a, b)) {
     const ops = wordDiff(h.a, h.b);
     let ap = h.as, bp = h.bs, line = h.line;
     let cur = null, pend = null;
@@ -123,6 +123,22 @@ export function changes(a, b, f) {
       cur.ae = ap; cur.be = bp;
     }
     flush();
+  }
+  return out;
+}
+// Hunks with only blank lines between them as one: a blank line is a poor anchor, and where one
+// paragraph was joined to the next and another split (a Word file's tracked changes, each its
+// author's) the lines' diff pairs the wrong paragraphs, by blank lines, and lists the join as text
+// put in at one place and taken out at another, which no author's step made; the words' diff
+// over the block finds the paragraph break that went and the one that came. (Small blocks only:
+// past 2000 characters the words' diff could pass MAXD and give the block as one replacement.)
+function joinBlank(H, a, b) {
+  const out = [];
+  for (const h of H) {
+    const L = out[out.length - 1];
+    const gap = L ? a.slice(L.as + L.a.length, h.as) : null;
+    if (L && /^\s+$/.test(gap) && gap.length <= 8 && h.as + h.a.length - L.as + h.be - L.bs <= 2000) out[out.length - 1] = { a: a.slice(L.as, h.as + h.a.length), b: b.slice(L.bs, h.be), as: L.as, bs: L.bs, be: h.be, line: L.line };
+    else out.push(h);
   }
   return out;
 }
