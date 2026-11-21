@@ -120,7 +120,7 @@ register(
     when: (app, at) => app.paraIndentCan(at, 1), whyNot: (app, at) => app.paraIndentWhy(at, 1), run: (app, args, at) => app.paraIndentStep(1, at) },
   // (Word for Mac's Cmd+8 too)
   { id: 'show-marks', name: 'Show marks', order: 70, tab: 'home', group: 'paragraph', kind: 'toggle', icon: ICON.marks, keys: ['Ctrl+Shift+8'], keysMac: ['Ctrl+8'],
-    also: [{ tab: 'view', group: 'show', name: 'Formatting marks', order: 30 }],
+    also: [{ tab: 'view', group: 'show', order: 30 }],
     title: 'Show marks (Ctrl+Shift+8): ¶ at the end of each paragraph, ↵ at each line break (\\\\), → at each \\hfill, and the space of \\vspace; nothing is written',
     synonyms: ['Show/Hide', 'Show/Hide ¶', 'Formatting marks', 'Pilcrow', 'Paragraph marks', 'Hidden marks'],
     when: (app) => !!app.model, on: (app) => !!app.marksOn, run: (app) => app.toggleMarks() },
