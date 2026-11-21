@@ -2080,11 +2080,16 @@ await ok('a file\'s tracked changes: the layer made off the page, its changes ea
   const H = openDocx(P, tracked(runs.join('')), 'big.docx');
   assert.ok(H.tracked.cut > 0 && H.tracked.segs.length === MAX_SEGS && H.tracked.upto > 1, H.tracked.cut + ' ' + H.tracked.upto);
   const upto = H.tex.split('\n').slice(0, H.tracked.upto - 1).join('\n').length;
-  assert.ok(H.tracked.segs[0].s >= upto && H.tracked.segs[0].s <= upto + 200, 'upto: the line of the first credited piece');
+  // (before it, one range in the name of changes no author is named for, "Word"; review N1)
+  const credited = H.tracked.segs.find((g) => !g.rest);
+  assert.ok(H.tracked.segs[0].rest && H.tracked.segs[0].who === 'Word' && H.tracked.segs[0].e === credited.s, JSON.stringify(H.tracked.segs.slice(0, 2)));
+  assert.ok(credited.s >= upto && credited.s <= upto + 200, 'upto: the line of the first credited piece');
   const t0 = Date.now();
   const L2 = [];
   for (const c of changes(H.tracked.base, H.tex, 'main.tex')) L2.push(...byAuthor(c, H.tracked.segs, H.tex).map((x) => [x.who, x.bs]));
   assert.ok(Date.now() - t0 < 5000, 'listing ' + L2.length + ' changes: ' + (Date.now() - t0) + ' ms');
+  const before = L2.filter((x) => x[1] < upto - 200);
+  assert.ok(before.length > 30 && before.every((x) => x[0] === 'Word'), before.length + ' ' + JSON.stringify(before.filter((x) => x[0] !== 'Word').slice(0, 3)));
   const after = L2.filter((x) => x[1] > upto + 200);
   assert.ok(after.length > 5000 && after.every((x) => x[0] === 'Ana' || x[0] === 'Bo'), after.length + ' ' + JSON.stringify(after.filter((x) => !/^(Ana|Bo)$/.test(x[0])).slice(0, 3)));
   // (L6) the extra readings failing: the file opens with its changes accepted, and says so
