@@ -3613,7 +3613,7 @@ Tests:
     to paint within noise. A ribbon press during a tab's slide lands where aimed; the highlights,
     busy indicators and SyncTeX's mark run on the tokens and stop with Animations off.
     `test/agent.test.mjs` 17 groups, `test/agent.py` 190 checks without `dist/tex` (review
-    and structure: 19 and 1 new), `test/motion.py` 66 checks. Typing on `dev/bench/sample`, where
+    and structure: 19 and 1 new), `test/motion.py` 67 checks. Typing on `dev/bench/sample`, where
     the caret glides (`dev/bench_typing.py --doc sample`, 240 keys each): input to next paint
     26.0 ms median with the caret on, 25.8 off, 23.9 for main; Event Timing's median 32 against
     24 and 24, and 24 with the caret on but never gliding: the glide cost a frame. So a character
