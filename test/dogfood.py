@@ -14,17 +14,17 @@ paragraph shows above, to type in); Undo works after a reload. Then lecture note
 set: \\mathbb typed in the equation field or pasted from a chat assistant brings amssymb; amsmath's
 \\intertext drawn as a line of text between the rows; "- " in a definition starts a list there; Replace All
 across the notes' files keeps the case of what it replaces. And the hostile reviews' cases
-(E1 to E10; then E11 to E18: review2).
+(E1 to E10; then E11 to E18: review2; the verification's V1 to V9: review3).
 
   python3 dogfood.py [part ...]   parts: formula arrows textfield styles table caption cite paste
-                                  split filename undo_words enter reload_undo mathpkg intertext envlist replace review review2
+                                  split filename undo_words enter reload_undo mathpkg intertext envlist replace review review2 review3
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import open_page, check, results, src, load_doc, click_text, ROOT
 from playwright.sync_api import sync_playwright
 
-PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo', 'mathpkg', 'intertext', 'envlist', 'replace', 'review', 'review2']
+PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo', 'mathpkg', 'intertext', 'envlist', 'replace', 'review', 'review2', 'review3']
 DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
 TEX = os.path.isdir(os.path.join(DIST, 'tex')) and any(n.endswith('.wasm') for n in os.listdir(os.path.join(DIST, 'tex')))
 
@@ -591,6 +591,111 @@ def review2(page):
     page.wait_for_timeout(400)
     xs = page.evaluate("[...document.querySelectorAll('#pages .dm .dm-rows .mtable > .col-align-l')].map((l) => l.getBoundingClientRect().left)")
     check('review: the rows after \\intertext line their = up with those before', len(xs) == 2 and abs(xs[0] - xs[1]) < 1, xs)
+
+
+
+def review3(page):
+    """The verification of PR 94 (V1 to V9, and two older bugs it met on main), each failing on 119e23f."""
+    k = page.keyboard
+    ghost = lambda: page.evaluate('!!window.rikuy.ghost')
+    D = DOC.replace('Agent income here.', '\\section{Intro}\nFirst paragraph words.').replace('Second paragraph.', 'Second paragraph words.\n\nThird paragraph words.')
+    def at2():
+        load_doc(page, D)
+        click_text(page, 'Second paragraph words.', 0)
+    # V1: a heading on the first paragraph of an abstract of several: the abstract goes on after it
+    Da = DOC.replace('Agent income here.', '\\begin{abstract}\nFirst abs words.\n\nSecond abs words.\n\nThird abs words.\n\\end{abstract}')
+    load_doc(page, Da)
+    click_text(page, 'First abs words.', 3)
+    k.press('Control+Alt+1'); page.wait_for_timeout(300)
+    check('review3 V1: a heading on an abstract\'s first paragraph keeps the rest in the abstract', '\\section{First abs words.}\n\n\\begin{abstract}\nSecond abs words.\n\nThird abs words.\n\\end{abstract}' in src(page), src(page))
+    if TEX:
+        t = pdf_text(page)
+        check('review3 V1: the PDF titles the abstract once', t.count('Abstract') == 1 and 'Third abs words' in t, t[:300])
+    # V2: one empty paragraph per Enter at a paragraph's start; Backspace and Undo take one each
+    at2()
+    k.press('Enter'); k.press('Enter'); page.wait_for_timeout(200)
+    check('review3 V2: two Enters at a paragraph\'s start write nothing', src(page) == D and ghost(), src(page)[-90:])
+    k.press('Backspace'); page.wait_for_timeout(300)
+    check('review3 V2: the first Backspace takes one empty paragraph, one stays', src(page) == D and ghost(), src(page)[-90:])
+    k.press('Backspace'); page.wait_for_timeout(300)
+    check('review3 V2: the second takes the other, and joins nothing', src(page) == D and not ghost(), src(page)[-90:])
+    k.type('Z'); page.wait_for_timeout(300)
+    check('review3 V2: the caret is where it was', 'ZSecond paragraph words.' in src(page), src(page)[-90:])
+    at2()
+    k.type('Z'); page.wait_for_timeout(300); k.press('ArrowLeft'); page.wait_for_timeout(100)
+    typed = src(page)
+    k.press('Enter'); k.press('Enter'); page.wait_for_timeout(200)
+    k.press('Control+z'); page.wait_for_timeout(300); k.press('Control+z'); page.wait_for_timeout(300)
+    check('review3 V2: two Ctrl+Z after two Enters take the two empty paragraphs, not the typing', src(page) == typed and not ghost(), src(page)[-90:])
+    k.press('Control+z'); page.wait_for_timeout(300)
+    check('review3 V2: the third takes the typing', src(page) == D, src(page)[-90:])
+    # V3: Shift+Left or Shift+Up after that Enter selects the empty paragraph; Backspace takes it alone
+    for key in ('Shift+ArrowLeft', 'Shift+ArrowUp'):
+        at2()
+        k.press('Enter'); page.wait_for_timeout(200); k.press(key); page.wait_for_timeout(200)
+        check('review3 V3: ' + key + ' after Enter keeps the empty paragraph', ghost(), src(page)[-90:])
+        k.press('Backspace'); page.wait_for_timeout(300)
+        check('review3 V3: ' + key + ', Backspace: only the empty paragraph goes', src(page) == D and not ghost(), src(page)[-90:])
+        k.type('Y'); page.wait_for_timeout(300)
+        check('review3 V3: ' + key + ', Backspace: the caret at the paragraph\'s start', 'YSecond paragraph words.' in src(page), src(page)[-90:])
+    at2()
+    k.press('Enter'); page.wait_for_timeout(200); k.press('Shift+ArrowLeft'); page.wait_for_timeout(200); k.type('X'); page.wait_for_timeout(300)
+    check('review3 V3: typed over the empty paragraph\'s mark, the letter starts the paragraph', 'words.\n\nXSecond paragraph words.' in src(page) and not ghost(), src(page)[-90:])
+    # V8: Enter, Up, a letter, two Backspaces give back what was there
+    at2()
+    k.press('Enter'); page.wait_for_timeout(200); k.press('ArrowUp'); page.wait_for_timeout(200)
+    k.type('x'); page.wait_for_timeout(300); k.press('Backspace'); page.wait_for_timeout(300); k.press('Backspace'); page.wait_for_timeout(300)
+    check('review3 V8: Enter, Up, x, Backspace twice: the source as it was, no space left', src(page) == D, src(page)[-90:])
+    k.type('Y'); page.wait_for_timeout(300)
+    check('review3 V8: the caret at the end of the paragraph above', 'First paragraph words.Y\n\n' in src(page), src(page)[-90:])
+    # V9: that Enter is an action: nothing is left to redo
+    load_doc(page, D)
+    click_text(page, 'Third paragraph words.', 22); k.type(' Q'); page.wait_for_timeout(300)
+    k.press('Control+z'); page.wait_for_timeout(300)
+    click_text(page, 'Second paragraph words.', 0); k.press('Enter'); page.wait_for_timeout(200)
+    k.press('Control+y'); page.wait_for_timeout(300)
+    check('review3 V9: Ctrl+Y after Enter at a paragraph\'s start redoes nothing undone before it', src(page) == D, src(page)[-90:])
+    # (main too) Backspace at the start of a \noindent paragraph after a comment line joins with a space
+    Dn = D.replace('\nSecond paragraph', '\n% note\n\\noindent Second paragraph')
+    load_doc(page, Dn)
+    click_text(page, 'Second paragraph words.', 0)
+    k.press('Backspace'); page.wait_for_timeout(300)
+    check('review3: Backspace at a \\noindent paragraph\'s start after a comment keeps the comment and a space', 'First paragraph words.\n% note\nSecond paragraph words.' in src(page), src(page)[-110:])
+    # V4: Ctrl+B at the end of \textbf{\emph{bold}} ends the bold for what is typed next, the italic going on
+    Db = DOC.replace('Agent income here.', 'Plain \\textbf{\\emph{bold}} after.')
+    load_doc(page, Db)
+    page.evaluate("(p) => window.rikuy.restoreCaret({ f: 'main.tex', p, bias: -1 })", Db.index('bold}}') + 4); page.wait_for_timeout(200)
+    k.press('Control+b'); page.wait_for_timeout(250); k.type('X'); page.wait_for_timeout(400)
+    check('review3 V4: Ctrl+B at the end of a nested bold keeps the word bold; X goes on in italic', 'Plain \\textbf{\\emph{bold}}\\emph{X} after.' in src(page), src(page)[60:140])
+    # V5: two .bib files whose names come to the same safe name: the second gets a free one
+    load_doc(page, DOC)
+    openf = lambda name, text: page.evaluate("async ([n, t]) => { await window.rikuy.openFiles([new File([t], n, { type: 'text/plain' })]); }", [name, text])
+    A = '@article{alpha2001, author={Alpha, Ann}, title={From A}, journal={J}, year={2001}}\n'
+    B = '@article{beta2002, author={Beta, Ben}, title={From B}, journal={J}, year={2002}}\n'
+    openf('My Library.bib', A); page.wait_for_timeout(500)
+    openf('My  Library.bib', B); page.wait_for_timeout(500)
+    files = page.evaluate('Object.fromEntries([...window.rikuy.files].filter(([n]) => n.endsWith(".bib")))')
+    check('review3 V5: a second .bib coming to the same safe name joins under a free one', files.get('My-Library.bib') == A and files.get('My-Library-2.bib') == B, list(files))
+    A2 = A + '@book{gamma2003, author={Gamma, G}, title={C}, publisher={P}, year={2003}}\n'
+    openf('My Library.bib', A2); page.wait_for_timeout(500)
+    files = page.evaluate('Object.fromEntries([...window.rikuy.files].filter(([n]) => n.endsWith(".bib")))')
+    toast = page.inner_text('#toast')
+    check('review3 V5: the first opened again replaces the file it joined as, and says so', files.get('My-Library.bib') == A2 and files.get('My-Library-2.bib') == B and len(files) == 2 and 'replaced' in toast, (list(files), toast[:160]))
+    # V7: download names: no marks that turn or join text unseen, no Windows device name, at most 200 bytes
+    for name, want in (('Report\u202egnp.exe\u200b', 'Reportgnp.exe'), ('CON', 'CON_'), ('nul.draft', 'nul_.draft'), ('Lpt9', 'Lpt9_'), ('Console', 'Console')):
+        page.evaluate('(n) => { window.rikuy.name = n; }', name)
+        got = page.evaluate('window.rikuy.fileBase()')
+        check('review3 V7: download name of ' + repr(name), got == want, got)
+    page.evaluate("window.rikuy.name = '経'.repeat(100)")
+    got = page.evaluate('window.rikuy.fileBase()')
+    check('review3 V7: a long name in Chinese is cut at 200 bytes of UTF-8, between characters', got == '経' * 66, (len(got), len(got.encode())))
+    # (main too) a one-paragraph proof made a heading leaves its \qedhere behind
+    Dq = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,amsthm}').replace('Agent income here.', '\\begin{proof}\nOnly plain step. \\qedhere\n\\end{proof}')
+    load_doc(page, Dq)
+    click_text(page, 'Only plain step.', 3)
+    k.press('Control+Alt+1'); page.wait_for_timeout(300)
+    check('review3: a proof made a heading leaves \\qedhere behind', '\\section{Only plain step.}\n\nSecond paragraph.' in src(page) and 'qedhere' not in src(page), src(page)[-120:])
+    compiles(page, 'review3 qedhere')
 
 
 with sync_playwright() as p:
