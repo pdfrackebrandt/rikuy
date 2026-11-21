@@ -117,13 +117,29 @@ onInsertText((app, text, range) => {
   if (range && (range.f !== c.f || range.b !== c.a || range.a > c.a)) return;
   const at = app.ribbonAt();
   if (!at || at.cell || !at.it || at.it.dataset.li || !at.B || at.B.f !== c.f) return;
-  const pp = app.plainPara(at.B, at.it), from = range ? range.a : c.a;
+  const pp = app.plainPara(at.B, at.it) || envPara(app, at.B, c.a), from = range ? range.a : c.a;
   if (!pp || from < pp.s || c.a - pp.s > 6) return;
   const typed = escapeTeX(w[1], ' ');
   const M = autoMarker(app.src(c.f).slice(pp.s, from) + typed);
   if (!M) return;
   return app.autoList(at, pp, M, { s: from, e: c.a, t: typed + ' ' }) ? true : undefined;
 });
+// A paragraph of a definition, a theorem or a quote of several paragraphs: [s, e) of its words
+// where they are plain, the one the caret is in. "- " typed there began no list (plainPara reads a
+// block of one paragraph), so the properties a definition lists stayed a paragraph of dashes.
+function envPara(app, B, p) {
+  const q = app.quoteOf ? app.quoteOf(B) : null;
+  if (!q || p < q.ws || p > q.we) return null;
+  const src = app.src(B.f), words = src.slice(q.ws, q.we), gap = /[ \t]*\r?\n[ \t]*(?:\r?\n[ \t]*)+/g;
+  let s = 0;
+  for (let m; (m = gap.exec(words));) {
+    if (q.ws + m.index >= p) break;
+    s = m.index + m[0].length;
+  }
+  const rest = words.slice(s), z = rest.search(gap), e = q.ws + s + (z < 0 ? rest.length : z);
+  const para = src.slice(q.ws + s, e);
+  return para && para[0] !== '%' && !NOT_PLAIN.test(para) ? { s: q.ws + s, e } : null;
+}
 // The same where the keyboard composed the marker and its space (an IME's word committed with it):
 // the composition is already written, one step; the list is the next
 onInstall((app) => {

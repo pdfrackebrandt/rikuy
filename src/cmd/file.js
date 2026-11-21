@@ -528,7 +528,7 @@ export const methods = {
       const req = await this.wordRequest();
       const res = await this.wordEngine().run('convert', { req, to: id });
       const blob = new Blob([res.bytes], { type: MIME[x[2]] });
-      const fname = ((this.name || '').replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '') || 'paper') + '.' + x[2];
+      const fname = this.fileBase() + '.' + x[2];
       const D = this.caps && this.caps.downloads;
       if (D) await D.save({ filename: fname, data: blob });
       else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }

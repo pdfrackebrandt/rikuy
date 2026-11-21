@@ -2968,6 +2968,20 @@ class Builder {
     const out = [];
     if (multi) {
       const rs = splitRows(inner);
+      // amsmath's \intertext{words} (\shortintertext) at a row's start: a line of text across the
+      // display between its rows, as TeX sets it. KaTeX knows neither; written as \text{} the words
+      // stood inside the row, before its formula. The rows on each side are drawn as displays of
+      // their own, the words between them (parts; tex stays whole for Word and the rest).
+      const inter = new Map();
+      rs.forEach((r, k) => {
+        const m = /^\s*\\(?:short)?intertext\s*\{/.exec(inner.slice(r.s, r.e));
+        if (!m) return;
+        let d = 1, i = r.s + m[0].length;
+        for (; i < r.e && d; i++) { if (inner[i] === '\\') i++; else if (inner[i] === '{') d++; else if (inner[i] === '}') d--; }
+        if (d) return;
+        inter.set(k, inner.slice(r.s + m[0].length, i - 1));
+        r.s = i;
+      });
       rs.forEach((r, k) => {
         let t = inner.slice(r.s, r.e);
         const info = this.rowInfo(t, ctx);
@@ -2990,7 +3004,16 @@ class Builder {
         tex = '\\begin{alignat*}{' + (m ? m[1] : (nd.args[0] ? this.argText(ctx, nd.args[0]) : '1')) + '}' + out.join('\\\\') + '\\end{alignat*}';
       } else tex = '\\begin{' + envOut + '}' + out.join('\\\\') + '\\end{' + envOut + '}';
       this.use('M' + tags.join(','));
-      return { type: 'math', f: ctx.f, s: nd.s, e: nd.e, is, ie, env, tex, tags };
+      let parts = null;
+      if (inter.size && base !== 'alignat') {
+        parts = [];
+        let from = 0;
+        const rows = (a, b) => { const g = out.slice(a, b).filter((x) => x.trim()); if (g.length) parts.push({ tex: '\\begin{' + envOut + '}' + g.join('\\\\') + '\\end{' + envOut + '}' }); };
+        for (const [k, words] of [...inter].sort((x, y) => x[0] - y[0])) { rows(from, k); parts.push({ text: words }); from = k; }
+        rows(from, out.length);
+        this.use('I' + JSON.stringify([...inter]));
+      }
+      return { type: 'math', f: ctx.f, s: nd.s, e: nd.e, is, ie, env, tex, tags, ...(parts ? { parts } : {}) };
     }
     const info = this.rowInfo(inner, ctx);
     let tag = info.tag;
