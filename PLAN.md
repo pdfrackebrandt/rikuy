@@ -3568,7 +3568,8 @@ Tests:
     bibliography, labels, cross references, footnotes, problems, the PDF, the selection, each
     with file and offsets; 2.7 ms on `dev/bench/long`). Edits say what changed and their Undo
     steps; deletions, the whole text replaced, sharing, downloads and links ask the person in a
-    modal dialog only a real press allows (armed after 500 ms), calls that edit run one at a time.
+    modal dialog only a real press allows (armed after 500 ms), calls that edit run one at a time
+    (as first written; the review below changed it).
     The page in the accessibility tree (`src/a11y.js`): formulas math named by their LaTeX, floats
     figures named by their captions, citations and cross references described links, headings
     with their numbers. Security audit, quick profile: a data file's name climbing out of the
@@ -3590,6 +3591,32 @@ Tests:
     (`open_page`'s default; `RIKUY_MOTION=1` runs one with it). *Ready:* `docs/handoff/FUTURE.md`
     (where app.css switches to the tokens after PRs 79, 86 and 90, what to adopt next and when,
     and a local MCP server for Claude Code and Desktop over Rikuy's model, with a first sketch).
+    *After the hostile review* (`docs/reviews/AGENTS-MOTION.md`, changes requested at dbb55a0;
+    each fix with a test that failed before). No tool sends the document out of the page, opens
+    another site or another document: run_command answers personOnly with where the person
+    presses it (Share opens its panel), and the page opens no link while a tool runs. The
+    question is a speed bump, said so: an agent driving input through the DevTools protocol can
+    press Allow, so llms.txt and the question tell agents never to, and hosts to confirm
+    destructiveHint calls; consequentialHint is on none. Allow answers a pointer press, or Enter
+    once it has held the focus 500 ms, never Space or a typing person; deletions add up over two
+    minutes (a question past 200 characters, after the edit for a command that took that much);
+    paste asks; undo takes back only the agent's own edits (step); get_document reads
+    thebibliography, honours include, pages and caps its lists (100,000 characters), gives the
+    outline and counts by default; list_commands compact and paged; no enum of 600 ids in the
+    descriptors (under 12 KB); inputs checked against their schemas; errors thrown on
+    document.modelContext. Every page is drawn again (pages were `content-visibility: auto`,
+    which left all but the pages in view out of Chromium's accessibility tree: on
+    `dev/bench/long` 11 of 11 formulas and 43 of 43 headings now, 1 and 4 before), but past
+    250,000 elements (`#pages.lazy`: 500 formulas of 120 terms, 1.3 million elements, crashed
+    the renderer when drawn whole). Its cost on `dev/bench/long`: first render 343 ms against
+    209, a zoom 238 against 190, layout and style 1 to 2 ms a key (Chromium's counters), keydown
+    to paint within noise. A ribbon press during a tab's slide lands where aimed; the highlights,
+    busy indicators and SyncTeX's mark run on the tokens and stop with Animations off.
+    `test/agent.test.mjs` 17 groups, `test/agent.py` 190 checks without `dist/tex` (review
+    and structure: 19 and 1 new), `test/motion.py` 66 checks. Typing on `dev/bench/sample`, where
+    the caret glides (`dev/bench_typing.py --doc sample`, 240 keys each): input to next paint
+    26.0 ms median with the caret on, 25.8 off, 23.9 for main; Event Timing's median 32 against
+    24 and 24.
 
 ## Open tasks
 
