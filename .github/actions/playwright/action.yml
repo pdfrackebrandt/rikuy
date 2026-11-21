@@ -28,12 +28,14 @@ runs:
         echo "browsers=playwright-$PW-shell-$ID$VERSION_ID-$(uname -m)" >> "$GITHUB_OUTPUT"
         echo "pip=pip-$ID$VERSION_ID-py$py-$(printf '%s %s' "$PW" "$PACKAGES" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
     - name: pip's downloads from an earlier run
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      id: pip
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.cache/pip
         key: ${{ steps.keys.outputs.pip }}
     - name: Playwright's browsers from an earlier run
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      id: browsers
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.cache/ms-playwright
         key: ${{ steps.keys.outputs.browsers }}
@@ -53,3 +55,17 @@ runs:
         # fonts included, as before (both are Playwright's "chromium" group). A cached shell is found
         # and not fetched again.
         python3 -m playwright install --with-deps --only-shell chromium
+    # saved as soon as they are here, not at the end of a job that passed: a job cancelled by a
+    # newer push or failed by a test still leaves them for the next run
+    - name: pip's downloads for the next run
+      if: steps.pip.outputs.cache-hit != 'true'
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.cache/pip
+        key: ${{ steps.keys.outputs.pip }}
+    - name: Playwright's browsers for the next run
+      if: steps.browsers.outputs.cache-hit != 'true'
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ steps.keys.outputs.browsers }}
