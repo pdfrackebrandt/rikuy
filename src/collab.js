@@ -267,6 +267,15 @@ export const collab = {
     this.linkCache.set(k, v);
     if (v && v !== there && !this.noIdb) kvPut('link:' + k, v).catch(() => {});
   },
+  // A guest's record of the link the document came in (guest mode, Send back), kept under the
+  // project's name and main file, goes with it to another of its main files (File, Main document):
+  // left under the old one, the next start read none and the guest was the document's owner (N4).
+  carryShare(from, main) {
+    const c = this.shareCtx;
+    if (!c || c.name !== this.name || c.main !== from) return;
+    this.shareCtx = { ...c, main };
+    if (!this.noIdb) kvPut('share:' + this.name + '|' + main, this.shareCtx).catch(() => {});
+  },
   // the sample and a new document hold nothing of a stranger's: a mark left under their name
   // (by an archive dropped on the sample, or a link to a document of that name) goes
   clearLink(name = this.name, main = this.main) {

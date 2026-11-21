@@ -132,6 +132,15 @@ def marks():
         page.evaluate("window.rikuy.markFromLink('', 'repo', 'c.tex', 'git')")
         f = git('Pulled', [['c.tex', EVIL]])
         check('marks: an Allow given here never lifts a restriction kept under the pull\'s main file', f['key'] == 'repo|c.tex' and restricted(f), f)
+        # a guest of a shared link who makes another document the main one is still a guest after
+        # a reload (N4): the link's record went with the mark
+        page.evaluate("""(fs) => window.rikuy.openLinked({ v: 1, name: 'Duo', main: 'main.tex', by: 'Ana', base: 'b0', role: 'coauthor', files: fs })""", [['main.tex', MINE], ['talk/slides.tex', MINE.replace('Mine', 'Talk')]])
+        page.wait_for_function("window.rikuy.name === 'Duo' && document.body.classList.contains('guest')", timeout=5000)
+        page.evaluate("window.rikuy.runCommand('main-document', 'talk/slides.tex')")
+        page.wait_for_function("window.rikuy.main === 'talk/slides.tex'", timeout=5000); page.wait_for_timeout(300)
+        page.reload(); page.wait_for_function('window.rikuy && window.rikuy.model', timeout=20000); page.wait_for_timeout(800); page.evaluate(STUB)
+        g = page.evaluate("({ key: window.rikuy.name + '|' + window.rikuy.main, guest: document.body.classList.contains('guest'), ctx: window.rikuy.shareCtx && [window.rikuy.shareCtx.by, window.rikuy.shareCtx.main] })")
+        check('marks: a guest who changes the main document is still the guest of the link after a reload', g == {'key': 'Duo|talk/slides.tex', 'guest': True, 'ctx': ['Ana', 'talk/slides.tex']}, g)
         # the shell escape mode is part of what a PDF was made from, as the engine is (N3): after
         # Allow with the preview closed, the restricted PDF was taken as this one's
         put('late.zip', zipped({'main.tex': MINE}), 'main.tex')

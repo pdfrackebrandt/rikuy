@@ -273,6 +273,7 @@ export const methods = {
     if (this.name + '|' + this.main !== key || !this.files.has(name)) return false;
     this.closeGroup();
     this.carryLink(mark, name, there);
+    this.carryShare(this.main, name);
     this.main = name;
     this.srcFile = name;
     this.forceRender = true;
