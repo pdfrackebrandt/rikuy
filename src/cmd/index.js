@@ -27,8 +27,9 @@ import * as research from './research.js';  // Frontier, to come (References ›
 import * as wordgaps from './wordgaps.js';  // task 67: Word's buttons Rikuy lacked (the document's)
 import * as objects from './objects.js';    // formatting a drawing, a chart or a SmartArt after it is in
 import * as picfx from './picfx.js';        // Corrections, Color, Transparency, Compress Pictures (C in WebAssembly)
+import * as motion from './motion.js';      // task 71: File › Options › Animations, Animated caret
 import * as graphs from './graphs.js';      // task 70 interactive graphs: Graph this, the web page
 
 
 // (a method name two modules both add throws here: test/commands.test.mjs imports this file)
-export const methods = joinMethods({}, Object.fromEntries(Object.entries({ frame, font, para, lists, styles, find, page, table, picture, refs, review, proofing, insert, file, view, help, equation, parts, move, typing, research, wordgaps, objects, picfx, graphs }).map(([k, m]) => ['src/cmd/' + k + '.js', m.methods || {}])));
+export const methods = joinMethods({}, Object.fromEntries(Object.entries({ frame, font, para, lists, styles, find, page, table, picture, refs, review, proofing, insert, file, view, help, equation, parts, move, typing, research, wordgaps, objects, picfx, graphs, motion }).map(([k, m]) => ['src/cmd/' + k + '.js', m.methods || {}])));

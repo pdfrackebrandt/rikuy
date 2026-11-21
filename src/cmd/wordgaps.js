@@ -14,6 +14,7 @@ import { dialog, numberField } from '../ui/kit.js';
 import { mk } from '../ui/dom.js';
 import { segOfSpan, boundary } from '../editor.js';
 import { toLinear, linearEdit } from '../unimath.js';
+import { flash } from '../motion.js';
 
 const CM = 72.27 / 2.54, PX_PER_PT = 96 / 72.27;
 const always = () => true;
@@ -586,9 +587,7 @@ Object.assign(methods, {
     this.rebuild();
     // (shown: the list flashes where it stands on the page)
     requestAnimationFrame(() => {
-      const els = [...this.root.querySelectorAll(L.sel)];
-      for (const el of els) { el.classList.remove('rk-updated'); void el.offsetWidth; el.classList.add('rk-updated'); }
-      setTimeout(() => { for (const el of els) el.classList.remove('rk-updated'); }, 1400);
+      for (const el of this.root.querySelectorAll(L.sel)) flash(el);
     });
     const pdf = document.body.classList.contains('pdf-on');
     if (pdf && this.compilePdf) this.compilePdf(); else this.pdfStale = true;

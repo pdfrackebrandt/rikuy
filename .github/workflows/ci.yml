@@ -106,10 +106,13 @@ jobs:
       # its PDF checks (page size, header, line numbers, Print) need dist/tex and run in tex.yml
       - name: The page's set up (margins, size, breaks, columns, headers and footers, line numbers, background)
         run: cd test && python3 page.py
-      - name: Rikuy as an agent meets it (the scripting surface, every control by its name)
+      - name: Rikuy as an agent meets it (the scripting surface, every control by its name, the WebMCP tools, the page in the accessibility tree)
         run: cd test && python3 agent.py
       - name: What a newcomer meets outside the ribbon (dialogs, the File view, the status bar, panes, phones)
         run: cd test && python3 ux.py
+      # (its typing latency part compares the animated caret on and off on dev/bench/long)
+      - name: Motion (each animation's duration, curve and properties, reduced and off, clicks during one, the animated caret)
+        run: cd test && python3 motion.py
       # their PDF checks need dist/tex and run in tex.yml; here they say they skip that part
       - name: Find, Replace and Go To (the Navigation pane's search, the Find and Replace dialog, Select)
         run: cd test && python3 find.py

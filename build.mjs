@@ -193,7 +193,9 @@ if (/url\(fonts\//.test(katexCss)) throw new Error('KaTeX font url left behind')
 const cmCss = fs.readFileSync(R('node_modules/codemirror/lib/codemirror.css'), 'utf8');
 
 // 6. assemble
-const css = fs.readFileSync(R('src/app.css'), 'utf8');
+// the design tokens first (src/tokens.css), then the page's styles, then motion's (src/motion.css:
+// its own file, so the branches changing app.css and motion do not meet)
+const css = ['src/tokens.css', 'src/app.css', 'src/motion.css'].map((f) => fs.readFileSync(R(f), 'utf8')).join('\n');
 let html = fs.readFileSync(R('src/template.html'), 'utf8');
 // the installed app's marks in the status bar (src/pwa.js shows them); the artifact has none
 const appStatus = APP ? '<span id="st-net" hidden title="No network. Typing works and is kept in this browser; compiling uses the TeX files this browser has kept.">Offline</span>'

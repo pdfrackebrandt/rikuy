@@ -21,6 +21,7 @@ import { filesRead } from '../scan.js';
 import { blockText, compile, hitsIn, hitSource } from '../find.js';
 import * as RS from '../refsrc.js';
 import { openMenu } from '../ui/kit.js';
+import { flash } from '../motion.js';
 import { openSourceForm, openSourceManager, sourceFiles, addSource } from '../ui/sourceform.js';
 import { near, openCaptionDialog, openCrossRefDialog, openLinkDialog, openBookmarkDialog, openMarkEntryDialog, openIndexDialog, openNotesDialog, openShortTitleDialog, openMarkCitationDialog, TOA_CATEGORIES } from '../ui/refsdialog.js';
 
@@ -435,7 +436,7 @@ export const methods = {
     this.root.focus({ preventScroll: true });
     s.removeAllRanges(); s.addRange(r);
     m.scrollIntoView({ block: 'center' });
-    m.classList.add('flash'); setTimeout(() => m.classList.remove('flash'), 900);
+    flash(m);
     return true;
   },
   // whether a caret r stands just before or just after a mark m on the page
@@ -464,7 +465,7 @@ export const methods = {
     const m = near(fm) || (!em.length ? fm[0] : null);
     if (m) { const info = atomOfEl(m); if (info) { this.gotoFootnote(m, info); return true; } }
     const list = this.root.querySelector('.en-e');
-    if (list) { list.scrollIntoView({ block: 'center' }); list.classList.add('flash'); setTimeout(() => list.classList.remove('flash'), 900); return true; }
+    if (list) { list.scrollIntoView({ block: 'center' }); flash(list); return true; }
     if (em.length) { em[0].scrollIntoView({ block: 'center' }); return true; }
     return false;
   },
