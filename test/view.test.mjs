@@ -126,14 +126,19 @@ await ok('V4: one undo region over 40 views in 850 KB: its hunks read once, well
   for (let i = 0; i < 14000; i++) text += 'Paragraph ' + i + ' with some words to make it a line of text.\n\n';
   const starts = [];
   for (let i = 0; i < 40; i++) starts.push(text.indexOf('Paragraph ' + (i * 300 + 7) + ' '));
-  const app = { ...methods, name: 'n', main: 'm.tex', files: new Map([['m.tex', text]]), src(f) { return this.files.get(f); } };
-  app.texViews = new Map(starts.map((s) => ['m.tex\u0000' + s, { f: 'm.tex', s }]));
-  app.texViewDoc = 'n\u0000m.tex'; app.viewSnap();
-  // undo of a preamble line and a word near the end: one region from the start to the end
-  const E = { s: 0, e: text.length - 5, t: 'X' + text.slice(0, text.length - 5) }, before = new Map([['m.tex', text]]);
-  app.files.set('m.tex', E.t + text.slice(text.length - 5));
-  const t0 = performance.now(); app.viewMap(new Map([['m.tex', [E]]]), before); const ms = performance.now() - t0;
-  assert.deepEqual([...app.texViews.values()].map((v) => v.s), starts.map((s) => s + 1));
+  // the best of three runs: the check is for hunks read once (a slip to once per view is
+  // hundreds of ms), not for how busy the machine is (one run on a loaded CI runner took 54 ms)
+  let ms = Infinity;
+  for (let run = 0; run < 3; run++) {
+    const app = { ...methods, name: 'n', main: 'm.tex', files: new Map([['m.tex', text]]), src(f) { return this.files.get(f); } };
+    app.texViews = new Map(starts.map((s) => ['m.tex\u0000' + s, { f: 'm.tex', s }]));
+    app.texViewDoc = 'n\u0000m.tex'; app.viewSnap();
+    // undo of a preamble line and a word near the end: one region from the start to the end
+    const E = { s: 0, e: text.length - 5, t: 'X' + text.slice(0, text.length - 5) }, before = new Map([['m.tex', text]]);
+    app.files.set('m.tex', E.t + text.slice(text.length - 5));
+    const t0 = performance.now(); app.viewMap(new Map([['m.tex', [E]]]), before); ms = Math.min(ms, performance.now() - t0);
+    assert.deepEqual([...app.texViews.values()].map((v) => v.s), starts.map((s) => s + 1));
+  }
   assert.ok(ms < 50, ms + ' ms');
 });
 await ok('Export as refuses a format it does not know', () => assert.throws(() => exportAs(P, { doc: W.doc }, 'exe')));

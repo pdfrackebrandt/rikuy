@@ -12,6 +12,7 @@
 // tables are edited in their own style, booktabs ones in theirs, and a new table is booktabs.
 
 import { register, onInstall } from '../commands.js';
+import { cleanPath } from '../share.js';
 import * as X from '../table.js';
 import { mapPos } from '../wrap.js';
 import { BLOCKS } from '../render.js';
@@ -480,9 +481,14 @@ export const methods = {
   },
   // Table from Data File: \csvautobooktabular{file} in a table float (csvsimple, booktabs)
   insertDataTable(file, o = {}) {
+    // (a name from arguments, an agent's or a script's, is a project file's name like any other: a
+    // relative path inside the project, never one that climbs out of it, which a zip of the
+    // project would carry to whoever unpacks it; the dialog's names are a picked file's own)
+    const clean = cleanPath(String(file));
+    if (!clean) throw new Error('A data file\'s name must be a path inside the project, such as data.csv or data/table.csv.');
     const { f, p, pre, post } = this.afterBlockPos();
     const nl = '\n';
-    const name = String(file).replace(/[{}\\%#]/g, '');
+    const name = clean.replace(/[{}\\%#]/g, '');
     // (respect all: a value's _ % & $ # are its own characters, as the page shows them, not TeX's)
     const cmd = (o.booktabs === false ? '\\csvautotabular' : '\\csvautobooktabular') + '[respect all' + (o.sep && o.sep !== ',' ? ',separator=' + { ';': 'semicolon', '\t': 'tab', ' ': 'space' }[o.sep] : '') + ']{' + name + '}';
     const text = ['\\begin{table}[h]', '\\centering', cmd, '\\caption{}', '\\end{table}'].join(nl);

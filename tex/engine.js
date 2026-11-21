@@ -959,6 +959,31 @@ function biberAssets() {
   }
   return biberP;
 }
+// BusyTeX's XML::LibXML was built without Perl's UTF-8 support (HAVE_UTF8): every string it
+// gives back holds UTF-8 bytes that Perl reads as Latin-1 letters. biber reads its table of LaTeX
+// accents (recode_data.xml) and the .bcf through it, so {\'e} in a .bib came out as e and the
+// two bytes of U+0301 written again as UTF-8, which pdfLaTeX refuses ("Unicode character U+0081").
+// This module, loaded before biber, decodes what those methods return, as a desktop's does.
+const BIBER_UTF8 = `package RikuyUTF8;
+use strict;
+use warnings;
+require XML::LibXML;
+no strict 'refs';
+no warnings 'redefine';
+for my $m (qw(Node::textContent Node::findvalue Node::nodeName Node::nodeValue Node::to_literal
+              Node::string_value Text::data Attr::value Attr::getValue Element::getAttribute
+              Element::getAttributeNS Literal::value)) {
+  my $name = 'XML::LibXML::' . $m;
+  next unless defined &{$name};
+  my $orig = \\&{$name};
+  *{$name} = sub {
+    my @r = wantarray ? $orig->(@_) : (scalar $orig->(@_));
+    for (@r) { utf8::decode($_) if defined $_ && !ref $_ && !utf8::is_utf8($_) }
+    return wantarray ? @r : $r[0];
+  };
+}
+1;
+`;
 async function runBiber(cwd, base, files, sub) {
   let log = '';
   try {
@@ -973,22 +998,26 @@ async function runBiber(cwd, base, files, sub) {
     const B = await self.biber(Module);
     const work = '/home/web_user/biber';
     const mk = (d) => { const parts = d.split('/').filter(Boolean); let c = ''; for (const x of parts) { c += '/' + x; try { B.FS.mkdir(c); } catch (e) { /* exists */ } } };
-    mk(work);
-    B.FS.chdir(work);
+    // biber looks for data files relative to the document's folder: the project's files are laid
+    // out as they are, and biber runs in the document's folder, so a talk/slides.tex reading
+    // ../refs.bib finds it (review N5: from a folder of their own, the files beside it were not)
+    const dir = sub ? work + '/' + projectPath(sub) : work;
+    mk(dir);
+    B.FS.chdir(dir);
     // the control file, and the bibliography files as the .bcf names them (paths relative to the document)
-    B.FS.writeFile(work + '/' + base + '.bcf', M.FS.readFile(cwd + '/' + base + '.bcf'));
-    for (const f of files) {
-      if (!/\.(bib|bibtex|ris|xml|dbx|bbx|cbx|lbx)$/i.test(f.path)) continue;
-      // biber looks for data files relative to the document's folder
-      const rel = sub && f.path.startsWith(sub + '/') ? f.path.slice(sub.length + 1) : f.path.replace(/^(\.\.\/)+/, '');
-      const p = work + '/' + rel;
-      mk(p.slice(0, p.lastIndexOf('/')));
-      B.FS.writeFile(p, f.data);
-    }
+    B.FS.writeFile(dir + '/' + base + '.bcf', M.FS.readFile(cwd + '/' + base + '.bcf'));
+    const put = (p, data) => { mk(p.slice(0, p.lastIndexOf('/'))); B.FS.writeFile(p, data); };
+    const data = files.filter((f) => /\.(bib|bibtex|ris|xml|dbx|bbx|cbx|lbx)$/i.test(f.path));
+    for (const f of data) put(work + '/' + projectPath(f.path), f.data);
+    // (and, as before, a file of the project's root named as if beside the document, where no
+    // file of that name is: \addbibresource{refs.bib} in talk/ with refs.bib at the root)
+    if (sub) for (const f of data) { const p = dir + '/' + projectPath(f.path); if (!f.path.startsWith(sub + '/') && !B.FS.analyzePath(p).exists) put(p, f.data); }
     let code = 0;
-    try { code = B.callMain(['/opt/perl-wasm/bin/biber', '--output-format=bbl', '--outfile=' + base + '.bbl', '--nolog', base + '.bcf']); }
+    mk('/home/web_user/rikuy-perl');
+    B.FS.writeFile('/home/web_user/rikuy-perl/RikuyUTF8.pm', BIBER_UTF8);
+    try { code = B.callMain(['-I/home/web_user/rikuy-perl', '-MRikuyUTF8', '/opt/perl-wasm/bin/biber', '--output-format=bbl', '--outfile=' + base + '.bbl', '--nolog', base + '.bcf']); }
     catch (e) { code = e && typeof e.status === 'number' ? e.status : 1; }
-    const out = work + '/' + base + '.bbl';
+    const out = dir + '/' + base + '.bbl';
     let bbl = null;
     try { bbl = B.FS.readFile(out); } catch (e) { bbl = null; }
     return { code: bbl ? code : (code || 1), log, bbl };
