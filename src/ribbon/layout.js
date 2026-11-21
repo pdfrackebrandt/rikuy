@@ -45,6 +45,7 @@ export const LAYOUT = {
   references: {
     toc: ['table-of-contents L T', 'toc-add-text S A', 'update-toc S U'],
     footnotes: ['footnote L F', 'endnote S E', 'next-footnote S O', 'show-notes S H', 'footnote-options I -'],
+    research: ['frontier L RS'],
     citations: ['citation L C', 'manage-sources S M', 'citation-style S L', 'bibliography S B', 'add-source S W'],
     captions: ['insert-caption L P', 'table-of-figures S G', 'update-tof S V Update Table', 'cross-reference S RF'],
     index: ['mark-entry L N', 'insert-index S X', 'update-index S D'],
@@ -66,7 +67,7 @@ export const LAYOUT = {
     immersive: ['focus L O'],
     movement: ['page-vertical L V', 'side-to-side L 7'],
     mode: ['dark-page L D'],
-    show: ['ruler S R', 'view-gridlines-page S G', 'navigation-pane S K', 'show-latex S SL', 'show-marks S SM Formatting marks'],
+    show: ['ruler S R', 'view-gridlines-page S G', 'navigation-pane S K', 'show-latex S SL', 'show-marks S SM'],
     zoom: ['zoom-dialog L Q Zoom', 'zoom-100 L J', 'one-page S 1', 'multiple-pages S M', 'page-width S I'],
     window: ['split-view L B']
   },
