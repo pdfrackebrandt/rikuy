@@ -330,6 +330,8 @@ export const collab = {
     this.files = files;
     this.main = main;
     this.name = name;
+    // (no place of the document before: a command with no caret on the page acts at this one's end)
+    this.rbLast = null;
     this.binaryDirty = true;
     this.zipDirty = false;
     this.hist = []; this.redoStack = []; this.updateUndoUI();
