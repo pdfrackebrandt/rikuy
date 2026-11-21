@@ -4064,20 +4064,27 @@ class App {
     const whole = () => mathMadeWhole(ta.value, kerr(ta.value));
     this.pop.onClose = () => {
       push.cancel();
-      if (!this.pop || priced) return;
+      const P = this.pop;
+      if (!P) return;
+      let v = '';
+      // (closed as a price by its key: makePrice wrote it)
+      if (priced) { /* written */ }
       // (closed by a click or the like with a word after "$5 ": the price, W6)
-      if (pend !== null && word) {
-        const t = priceText(word), P = this.pop;
+      else if (pend !== null && word) {
+        const t = priceText(word);
         pend = null; word = '';
         if (ins) { this.commit([{ f: ins.f, s: ins.s, e: ins.e, t }], null, P.session); P.returnCaret = { f: ins.f, p: ins.s + t.length }; ins = null; }
         else if (ghost) { this.ghost = ghost; this.ghostInsert(t); P.returnCaret = null; }
         else { this.commit([{ f: base.f, s: base.a, e: base.b, t }], null, P.session); P.returnCaret = { f: base.f, p: base.a + t.length }; }
         ta.value = '';
-        return;
+      } else {
+        v = held(ta.value) ? whole() : ta.value;
+        if (!v) dropEmpty(); else insert(v);
       }
-      const v = held(ta.value) ? whole() : ta.value;
-      if (!v) { dropEmpty(); return; }
-      insert(v); this.eqClosed(this.pop, v);
+      // (the Equation tab's menus and the ribbon follow however the box closed: closed empty or as
+      // a price, the ribbon kept the Equation tab of a formula gone, and Insert's Equation button,
+      // agent.py's next step, stayed out of reach)
+      if (!priced) this.eqClosed(P, v);
     };
     this.pop.refuse = () => !!held(ta.value) && !!held(whole());
     this.pop.mathText = () => ta.value;
