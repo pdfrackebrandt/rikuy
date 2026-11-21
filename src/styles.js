@@ -169,13 +169,15 @@ export function restyle(src, b, to, p) {
   return { edits, p: b.s + A.length + Math.min(Math.max(p, b.ws), b.we) - b.ws };
 }
 
-// One paragraph of an environment of several (an abstract, a quote, a theorem) made a heading:
-// Word gives the style to that paragraph alone, so the environment ends before it and starts
-// again after it, its other paragraphs kept where they are. b: the environment's block as
-// styleOfBlock reads it ({ v, s, ws, we, e }: the whole of it and its words), p the caret, to the
-// heading's command. The paragraph is the one the caret is in, of plain words; the paragraphs
-// before it keep the \begin (with a theorem's [title]), those after it get a bare one. Returns
-// { edits, p } or { why }.
+// One paragraph of an environment of several (a quote, a quotation, a verse, an abstract) made a
+// heading: Word gives the style to that paragraph alone, so the environment ends before it and
+// starts again after it, its other paragraphs kept where they are. An abstract is not begun
+// again (TeX would title it "Abstract" a second time): the paragraphs after the heading leave it.
+// A theorem or a proof is never split (src/cmd/styles.js SPLITS): its second part would print
+// its title, and a theorem's a new number. b: the environment's block as styleOfBlock reads it
+// ({ v, s, ws, we, e }: the whole of it and its words), p the caret, to the heading's command.
+// The paragraph is the one the caret is in, of plain words; the paragraphs before it keep the
+// \begin, those after it get a bare one. Returns { edits, p } or { why }.
 export function splitEnvEdits(src, b, to, p) {
   const name = envOf(b.v), words = src.slice(b.ws, b.we);
   // the paragraphs: [s, e) of each one's words, apart by blank lines
@@ -195,8 +197,9 @@ export function splitEnvEdits(src, b, to, p) {
   // \begin line goes
   const head = k > 0 ? { s: paras[k - 1][1], e: ps, t: eol + '\\end{' + name + '}' + eol + eol } : { s: b.s, e: ps, t: '' };
   const edits = [head, { s: ps, e: ps, t: '\\' + to + '{' }, { s: pe, e: pe, t: '}' }];
-  if (k < paras.length - 1) edits.push({ s: pe, e: paras[k + 1][0], t: eol + eol + '\\begin{' + name + '}' + eol });
-  else edits.push({ s: pe, e: b.e, t: '' });
+  if (k === paras.length - 1) edits.push({ s: pe, e: b.e, t: '' });
+  else if (name === 'abstract') edits.push({ s: pe, e: paras[k + 1][0], t: eol + eol }, { s: b.we, e: b.e, t: '' });
+  else edits.push({ s: pe, e: paras[k + 1][0], t: eol + eol + '\\begin{' + name + '}' + eol });
   // the caret where it was in the words, which moved by what went before them
   const shift = head.t.length - (head.e - head.s) + to.length + 2;
   return { edits, p: Math.min(Math.max(p, ps), pe) + shift };

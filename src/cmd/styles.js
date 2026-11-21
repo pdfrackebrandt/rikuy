@@ -37,6 +37,9 @@ export const WHY = {
 // the gallery's tiles: which slot shows which style in this document (Heading 1 is \chapter in a
 // report), and the element each is (Heading 1 to 3 keep the ids they had when they were sections)
 export const SLOT_EL = { p: 'rb-st-p', title: 'rb-st-title', h1: 'rb-st-section', h2: 'rb-st-subsection', h3: 'rb-st-subsubsection', h4: 'rb-st-h4', h5: 'rb-st-h5', h6: 'rb-st-h6', latex: 'rb-st-latex', quote: 'rb-st-quote' };
+// the environments of several paragraphs a heading on one of them splits (splitEnvEdits): no title
+// or counter of their own to print again, and the abstract, which ends before the heading
+const SPLITS = /^(?:quote|quotation|verse|abstract)$/;
 // a name for an environment of the document's own that Rikuy writes in a regular expression
 const SAFE_NAME = /^[A-Za-z]{1,40}$/;
 // classes that have no abstract environment
@@ -318,7 +321,7 @@ export const methods = {
         else for (const k of Object.keys(TITLE_PARTS)) why[k] = 'Give the document a title first (Title on its first paragraph).';
       }
     }
-    return Object.keys(why).length ? { ...st, whyTo: why } : st;
+    return Object.keys(why).length ? { ...st, whyTo: { ...(st.whyTo || {}), ...why } } : st;
   },
   // how many typewriter characters a line of the text holds (cmtt's are .525em wide)
   codeCols() {
@@ -407,10 +410,15 @@ export const methods = {
         else {
           // its paragraphs out of it, or in another environment; one paragraph of plain text may be a heading
           to.add('p'); envs.filter((x) => x !== v).forEach((x) => to.add(x));
-          // (of several paragraphs: the one with the caret, split out of it, splitEnvEdits)
-          if ((q.one && q.plain) || !q.one) heads.forEach((h) => to.add(h));
+          // (of several paragraphs: the one with the caret, split out of it, splitEnvEdits; only
+          // out of an environment with no title or number of its own, or an abstract, whose
+          // paragraphs after the heading leave it. A theorem or a proof begun again after the
+          // heading printed "Theorem 2." and renumbered every later one, or a second "Proof."
+          // and its square.)
+          if ((q.one && q.plain) || (!q.one && SPLITS.test(q.name))) heads.forEach((h) => to.add(h));
         }
-        return { v, opt: q.opt, split: !q.opt && !q.one, to: latex(to), b: { v, s: B.s, ws: q.ws, we: q.we, e: B.e, spot } };
+        const whyTo = !q.one && !SPLITS.test(q.name) ? Object.fromEntries(heads.map((h) => [h, 'A heading cannot stand inside ' + (q.name === 'proof' ? 'a proof' : 'a theorem or the like') + ': TeX would begin it again after the heading, with its title' + (q.name === 'proof' ? '' : ' and a new number') + '. Make the paragraph Normal first, or put the heading before or after it.'])) : null;
+        return { v, opt: q.opt, split: !q.opt && !q.one && SPLITS.test(q.name), to: latex(to), b: { v, s: B.s, ws: q.ws, we: q.we, e: B.e, spot }, ...(whyTo ? { whyTo } : {}) };
       }
     }
     const r = this.plainPara(B, it);

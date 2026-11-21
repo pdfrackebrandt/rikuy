@@ -503,16 +503,25 @@ ok('Dogfood: a heading on one paragraph of an environment of several splits it a
   const src = 'x\n\\begin{abstract}\nFirst para.\n\nSecond para.\n\nThird para.\n\\end{abstract}\n\nBody.';
   const s = src.indexOf('\\begin'), e = src.indexOf('{abstract}', src.indexOf('\\end')) + 10;
   const b = { v: 'abstract', s, ws: src.indexOf('First'), we: src.indexOf('Third para.') + 11, e };
+  // (review E13: an abstract is never begun again, which TeX titles "Abstract" a second time: the
+  // paragraphs after the heading leave it; a quote is split around the heading)
   const want = {
-    First: 'x\n\\section{First para.}\n\n\\begin{abstract}\nSecond para.\n\nThird para.\n\\end{abstract}\n\nBody.',
-    Second: 'x\n\\begin{abstract}\nFirst para.\n\\end{abstract}\n\n\\section{Second para.}\n\n\\begin{abstract}\nThird para.\n\\end{abstract}\n\nBody.',
+    First: 'x\n\\section{First para.}\n\nSecond para.\n\nThird para.\n\nBody.',
+    Second: 'x\n\\begin{abstract}\nFirst para.\n\\end{abstract}\n\n\\section{Second para.}\n\nThird para.\n\nBody.',
     Third: 'x\n\\begin{abstract}\nFirst para.\n\nSecond para.\n\\end{abstract}\n\n\\section{Third para.}\n\nBody.'
   };
-  for (const [w, t] of Object.entries(want)) {
-    const r = SR2.splitEnvEdits(src, b, 'section', src.indexOf(w) + 2);
-    const out = applyEdits(src, r.edits);
-    assert.equal(out, t, w);
-    assert.equal(out.slice(r.p - 2, r.p + 1), w.slice(0, 3), w + ': the caret');
+  const q = src.replace(/abstract/g, 'quote'), bq = { ...b, v: 'quote', ws: q.indexOf('First'), e: q.indexOf('{quote}', q.indexOf('\\end')) + 7, we: q.indexOf('Third para.') + 11 };
+  const wantQ = {
+    First: 'x\n\\section{First para.}\n\n\\begin{quote}\nSecond para.\n\nThird para.\n\\end{quote}\n\nBody.',
+    Second: 'x\n\\begin{quote}\nFirst para.\n\\end{quote}\n\n\\section{Second para.}\n\n\\begin{quote}\nThird para.\n\\end{quote}\n\nBody.'
+  };
+  for (const [text, bb, list] of [[src, b, want], [q, bq, wantQ]]) {
+    for (const [w, t] of Object.entries(list)) {
+      const r = SR2.splitEnvEdits(text, bb, 'section', text.indexOf(w) + 2);
+      const out = applyEdits(text, r.edits);
+      assert.equal(out, t, w);
+      assert.equal(out.slice(r.p - 2, r.p + 1), w.slice(0, 3), w + ': the caret');
+    }
   }
   // a paragraph with a display or a footnote cannot be a heading; one paragraph is restyle's
   const d = src.replace('Second para.', 'Second\\footnote{n} para.');
