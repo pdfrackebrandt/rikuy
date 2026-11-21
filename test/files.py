@@ -315,6 +315,72 @@ try:
         check('no page errors (archive marks)', not errors, errors[:5])
         browser.close()
 
+    # An Overleaf project with more than one document: a paper, its talk in a folder of its own
+    # reading ../style and ../figures, a subfiles chapter. The paper opens; Main document (File,
+    # Info) makes the talk the one TeX compiles and the page shows, with the project's mark
+    # (restricted shell escape) going with it; the talk's ../style package is read on the page;
+    # beamer's overlays (\\item<2->) are not drawn as text. A project without main.tex opens its
+    # own document, not a subfiles chapter, or the one its latexmkrc names.
+    TREE = os.path.isfile(os.path.join(os.environ.get('RIKUY_DIST') or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'dist'), 'tex', 'tree.wasm'))
+    with sync_playwright() as p:
+        browser, page, errors = open_page(p)
+        def zipped2(d):
+            z = io.BytesIO()
+            with zipfile.ZipFile(z, 'w') as f:
+                for k, v in d.items(): f.writestr(k, v)
+            return z.getvalue()
+        def open_zip(name, data):
+            path = os.path.join(TMP, name)
+            open(path, 'wb').write(data)
+            page.set_input_files('#fileinput', path)
+            page.wait_for_function('(n) => window.rikuy.name === n', arg=name[:-4], timeout=10000)
+            page.wait_for_timeout(500)
+        LINKNOW = "(() => { const g = window.rikuy, v = g.linkCache && g.linkCache.get(g.name + '|' + g.main); return v ? { origin: v.origin, allowed: v.allowed } : null; })()"
+        talk = ('\\documentclass{beamer}\n\\usepackage{../style/defs}\n\\graphicspath{{../figures/}}\n\\begin{document}\n\\begin{frame}{The question}\n\\begin{itemize}\n'
+                '\\item<1-> Why do regimes cycle?\n\\item<2-> When is $\\regime{D}$ saved?\n\\end{itemize}\n\\end{frame}\n\\end{document}\n')
+        open_zip('Overleaf.zip', zipped2({
+            'sections/ch.tex': '\\documentclass[../main.tex]{subfiles}\n\\begin{document}\nA chapter alone.\n\\end{document}\n',
+            'talk/slides.tex': talk,
+            'main.tex': '\\documentclass{article}\n\\usepackage{style/defs}\n\\usepackage{subfiles}\n\\begin{document}\nThe paper, $\\regime{1}$.\n\\subfile{sections/ch}\n\\end{document}\n',
+            'style/defs.sty': '\\ProvidesPackage{defs}\n\\newcommand{\\regime}[1]{\\mathcal{R}_{#1}}\n',
+            'figures/fig.png': PNG}))
+        check('an Overleaf .zip with a paper, a talk and a chapter opens the paper', page.evaluate('window.rikuy.main') == 'main.tex')
+        items = page.evaluate("window.rikuy.cmds.command('main-document').menuItems(window.rikuy).map((x) => [x.name, x.checked])")
+        check('Main document lists the project\'s documents, the main one ticked, the chapter last', items == [['main.tex', True], ['talk/slides.tex', False], ['sections/ch.tex', False]], items)
+        page.evaluate("window.rikuy.runCommand('main-document')"); page.wait_for_timeout(300)
+        page.get_by_role('menuitemradio', name='talk/slides.tex', exact=True).click()
+        page.wait_for_function("window.rikuy.main === 'talk/slides.tex'", timeout=5000); page.wait_for_timeout(500)
+        text = page.inner_text('#pages')
+        check('picked there, the talk is the main document: the page shows it', 'Why do regimes cycle?' in text and 'The paper' not in text and page.evaluate('window.rikuy.srcFile') == 'talk/slides.tex', text[:200])
+        check('the talk\'s ../style package is read on the page: its macro draws, no math error', not page.evaluate("document.querySelectorAll('#pages .merr').length") and page.evaluate("document.querySelectorAll('#pages .katex').length") >= 1,
+              page.evaluate("[...document.querySelectorAll('#pages .merr')].map((e) => e.textContent)"))
+        check('beamer\'s overlay specifications are not drawn as text, and stay in the source', '<1->' not in text and '<2->' not in text and '\\item<1-> Why' in src(page, 'talk/slides.tex'), text[:200])
+        click_text(page, 'Why do', 0); page.keyboard.type('So, ')
+        page.wait_for_timeout(400)
+        check('typing at an item\'s start goes after its overlay', '\\item<1-> So, Why do' in src(page, 'talk/slides.tex'), src(page, 'talk/slides.tex')[120:220])
+        page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+        check('the talk is still the .zip\'s, so a stranger\'s: shell escape restricted', page.evaluate(LINKNOW) == {'origin': 'zip', 'allowed': False}, page.evaluate(LINKNOW))
+        if TREE:
+            r = page.evaluate("async () => { const r = await window.rikuy.api.compile(); return { ok: r.ok, engine: r.engine, pages: r.pages, errs: r.problems.filter((x) => x.severity === 'error').map((x) => x.message) }; }")
+            check('the talk compiles from its folder, ../style and ../figures found', r['ok'] and r['pages'] >= 1 and not r['errs'], r)
+        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        page.evaluate("window.rikuy.runCommand('main-document', 'main.tex')")
+        page.wait_for_function("window.rikuy.main === 'main.tex'", timeout=5000); page.wait_for_timeout(300)
+        check('back to the paper, the Allow given for the project stays', page.evaluate(LINKNOW) == {'origin': 'zip', 'allowed': True} and 'The paper' in page.inner_text('#pages'), page.evaluate(LINKNOW))
+        page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it")', timeout=20000); page.wait_for_timeout(500)
+        page.evaluate("window.rikuy.runCommand('main-document', 'talk/slides.tex')"); page.wait_for_timeout(500)
+        page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it")', timeout=20000); page.wait_for_timeout(800)
+        check('the main document is kept across a reload', page.evaluate('window.rikuy.main') == 'talk/slides.tex', page.evaluate('window.rikuy.main'))
+        # without main.tex: the project's own document, not a subfiles chapter listed first
+        open_zip('Paper.zip', zipped2({'appendix.tex': '\\documentclass[paper]{subfiles}\n\\begin{document}\nAppendix.\n\\end{document}\n',
+                                       'paper.tex': '\\documentclass{article}\n\\usepackage{subfiles}\n\\begin{document}\nPaper.\n\\subfile{appendix}\n\\end{document}\n'}))
+        check('a project without main.tex opens its own document, not the subfiles chapter', page.evaluate('window.rikuy.main') == 'paper.tex', page.evaluate('window.rikuy.main'))
+        open_zip('Letters.zip', zipped2({'cover.tex': '\\documentclass{letter}\n\\begin{document}\nCover.\n\\end{document}\n',
+                                         'paper.tex': '\\documentclass{article}\n\\begin{document}\nPaper.\n\\end{document}\n', 'latexmkrc': "@default_files = ('paper.tex');\n"}))
+        check('the document a latexmkrc names opens, as latexmk compiles it', page.evaluate('window.rikuy.main') == 'paper.tex', page.evaluate('window.rikuy.main'))
+        check('no page errors (main document)', not errors, errors[:5])
+        browser.close()
+
     # storage turned off (as in some private windows), or full: the page still opens, and says so
     NO_STORE = ("Object.defineProperty(IDBFactory.prototype, 'open', { value() { throw new DOMException('denied', 'SecurityError'); } });"
                 "Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('denied', 'SecurityError'); } });")
