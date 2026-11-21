@@ -319,6 +319,20 @@ def clipboard(page):
     page.evaluate('window.rikuy.runCommand("paste-special")'); page.wait_for_selector('[role=dialog] .ps-list')
     page.get_by_role('radio', name='LaTeX source').check(); page.get_by_role('button', name='OK').click(); page.wait_for_timeout(400)
     check('clipboard: Paste Special, LaTeX source', '$x_1$ & 50%Delta' in src(page), src(page))
+    # by the keys, as Word's: Ctrl+Alt+V gives the dialog the focus, the arrows choose, Enter is OK
+    # (the keys went on to the page: Enter broke the paragraph and nothing was pasted)
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    doc = src(page); click_text(page, 'Delta', 0)
+    page.keyboard.press('Control+Alt+v'); page.wait_for_selector('[role=dialog] .ps-list')
+    page.wait_for_timeout(150)
+    focus = page.evaluate('document.activeElement.getAttribute("aria-label")')
+    for k in ('ArrowDown', 'Enter'): page.keyboard.press(k); page.wait_for_timeout(120)
+    page.wait_for_timeout(300)
+    check('clipboard: Ctrl+Alt+V, Down, Enter pastes as LaTeX source, the focus in the dialog till then', focus == 'Unformatted text' and src(page) == doc.replace('Delta', '$x_1$ & 50%Delta'), (focus, src(page)))
+    # a word copied from inside its bold stays bold, as Word's copy keeps it (it came plain)
+    load_doc(page, W('Alpha \\textbf{beta} gamma.\n\nDelta.'))
+    select_text(page, 'eta'); page.keyboard.press('Control+c'); click_text(page, 'Delta', 5); page.keyboard.press('Control+v'); page.wait_for_timeout(300)
+    check('clipboard: letters copied from a bold word paste bold', src(page) == W('Alpha \\textbf{beta} gamma.\n\nDelta\\textbf{eta}.'), src(page))
 
 
 def once(page, doc, at, cmd, want, label):
