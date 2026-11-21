@@ -3363,14 +3363,14 @@ class App {
     const out = [];
     const item = (k, e, loose) => ({ key: k, label: shortAuthors(e) + ' ' + entryYear(e), title: texToPlain(e.fields.title || '').replace(/[{}]/g, ''), ...(loose ? { loose } : {}) });
     for (const [k, e] of this.model.bibEntries) out.push(item(k, e));
-    // A .bib the project holds and the document names nowhere yet (Open or a drop added it):
-    // its entries are offered all the same, as Overleaf offers a project's, and the first one
-    // picked writes the document's bibliography lines (citeBibFor). The list was empty, saying
-    // no bibliography was loaded, right after the toast that said the .bib was added.
-    if (!out.length && !this.bibNamed()) {
-      const seen = new Set();
+    // A .bib the project holds that the document does not name (Open or a drop added it): its
+    // entries are offered too, after the named ones, as Overleaf offers a project's, and a key
+    // picked from one puts that file in the document's bibliography (citeBibFor). The list was
+    // empty, saying no bibliography was loaded, right after the toast that said the .bib was added.
+    if (!this.bibState().thebib) {
+      const named = this.bibFilesNamed(), seen = new Set(out.map((x) => x.key));
       for (const [n, t] of this.files) {
-        if (!/\.bib$/i.test(n) || typeof t !== 'string') continue;
+        if (!/\.bib$/i.test(n) || typeof t !== 'string' || named.has(n)) continue;
         try { for (const [k, e] of parseBib(t, n)) if (!seen.has(k)) { seen.add(k); out.push(item(k, e, n)); } } catch (e) { /* a .bib it cannot read */ }
         if (out.length > 5000) break;
       }

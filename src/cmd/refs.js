@@ -168,6 +168,9 @@ register(
 // A working copy of the files one action changes: each set of edits is worked out on the text as
 // the sets before it left it (two edits of one preamble line never overlap), places of interest
 // (the caret) move with them, and commit makes one step of history.
+// \bibliography{names} and biblatex's \addbibresource[options]{name}
+const BIB_CMD = /\\(?:bibliography|addbibresource)\s*(?:\[[^\]]*\])?\s*\{([^{}]*)\}/;
+
 class Work {
   constructor(app) { this.app = app; this.t = new Map(); this.marks = []; }
   src(f) { return this.t.has(f) ? this.t.get(f) : this.app.src(f); }
@@ -551,21 +554,67 @@ export const methods = {
     void nl;
     return place === 'end' ? w : w.commit(null, 'insert');
   },
-  // whether the document names a bibliography file: \bibliography{...}, or biblatex's \addbibresource
-  bibNamed() { const B = this.bibState(); return B.system === 'thebibliography' || (B.biblatex ? B.resources.length > 0 : !!B.bib); },
-  // A key the citation picker took from a .bib the document names nowhere (bibList): the lines
-  // that print the bibliography from it go in, at the document's end, in the citation's own step
-  // (the popover's session), so one Undo takes both. BibTeX's plain (natbib's plainnat where natbib
-  // is loaded), or biblatex's resource and \printbibliography. Without them TeX prints [?].
+  // Whether the document names a bibliography file anywhere in the project: \bibliography,
+  // biblatex's \addbibresource, or a hand written thebibliography (review E4: one named in an \input
+  // file was missed, and a second pair went into main.tex, which BibTeX refuses)
+  bibNamed() {
+    const B = this.bibState();
+    if (B.system === 'thebibliography' || (B.biblatex ? B.resources.length > 0 : !!B.bib)) return true;
+    for (const [f, t] of this.files) if (f !== this.main && /\.(tex|ltx)$/i.test(f) && typeof t === 'string' && BIB_CMD.test(stripComments(t.slice(0, 2e6)))) return true;
+    return false;
+  },
+  // A .bib of the project as the main file names it: from the main file's folder, where TeX runs
+  // (tex/engine.js), without .bib for \bibliography (review E1: paper/refs.bib was written
+  // \bibliography{paper/refs}, which BibTeX looked for in paper/paper/)
+  bibRel(file, withExt) {
+    const dir = this.main.includes('/') ? this.main.slice(0, this.main.lastIndexOf('/') + 1) : '';
+    let rel = file;
+    if (dir && file.startsWith(dir)) rel = file.slice(dir.length);
+    else if (dir) rel = '../'.repeat(dir.split('/').length - 1) + file;
+    return withExt ? rel : rel.replace(/\.bib$/i, '');
+  },
+  // The .bib files (project paths) the document's \bibliography and \addbibresource name
+  bibFilesNamed() {
+    const out = new Set(), dir = this.main.includes('/') ? this.main.slice(0, this.main.lastIndexOf('/') + 1) : '';
+    const norm = (x) => { const parts = []; for (const q of x.split('/')) { if (q === '..') parts.pop(); else if (q && q !== '.') parts.push(q); } return parts.join('/'); };
+    for (const [f, t] of this.files) {
+      if (!/\.(tex|ltx)$/i.test(f) || typeof t !== 'string') continue;
+      for (const m of stripComments(t.slice(0, 2e6)).matchAll(new RegExp(BIB_CMD.source, 'g'))) {
+        for (const n of m[1].split(',').map((x) => x.trim()).filter(Boolean)) {
+          const hit = [dir + n, dir + n + '.bib', n, n + '.bib'].map(norm).find((c) => this.files.has(c));
+          if (hit) out.add(hit);
+        }
+      }
+    }
+    return out;
+  },
+  // A key the citation picker took from a .bib the document does not name (bibList): that file
+  // goes into the document's bibliography in the citation's own step (the popover's session), so
+  // one Undo takes both. Where the document names none yet, the lines that print one go in at its
+  // end (\bibliographystyle{plain} or natbib's plainnat and \bibliography; biblatex's
+  // \addbibresource and \printbibliography); where it names some, this one joins them (review E2:
+  // a key from a second .bib printed [?]): \bibliography{a,b}, or another \addbibresource.
   citeBibFor(file) {
     const P = this.pop;
-    if (!P || this.bibNamed()) return;
-    const f = this.main, src = this.src(f), B = this.bibState(), name = file.replace(/\.bib$/i, '');
-    const edits = [];
+    if (!P || this.bibFilesNamed().has(file)) return;
+    const B = this.bibState(), edits = [];
+    let f = this.main;
     if (B.biblatex) {
-      edits.push(...RS.preambleLine(src, '\\addbibresource{' + file + '}'));
-      if (!B.print) edits.push(...RS.endLines(src, ['\\printbibliography'], ['printindex']));
-    } else edits.push(...RS.endLines(src, [...(B.styleCall ? [] : ['\\bibliographystyle{' + (B.natbib ? 'plainnat' : 'plain') + '}']), '\\bibliography{' + name + '}'], ['printindex']));
+      edits.push(...RS.preambleLine(this.src(f), '\\addbibresource{' + this.bibRel(file, true) + '}'));
+      if (!B.print && !this.bibNamed()) edits.push(...RS.endLines(this.src(f), ['\\printbibliography'], ['printindex']));
+    } else {
+      // (the first \bibliography of the project's files, main first: its list takes the name)
+      const files = [this.main, ...[...this.files.keys()].filter((x) => x !== this.main && /\.(tex|ltx)$/i.test(x))];
+      let at = null;
+      for (const g of files) {
+        const t = this.src(g);
+        if (typeof t !== 'string') continue;
+        const m = new RegExp('\\\\bibliography\\s*\\{([^{}]*)\\}').exec(stripComments(t.slice(0, 2e6)));
+        if (m) { at = { g, e: m.index + m[0].length - 1, list: m[1] }; break; }
+      }
+      if (at) { f = at.g; edits.push({ s: at.e, e: at.e, t: (at.list.trim() ? ',' : '') + this.bibRel(file) }); }
+      else if (!this.bibNamed()) edits.push(...RS.endLines(this.src(f), [...(B.styleCall ? [] : ['\\bibliographystyle{' + (B.natbib ? 'plainnat' : 'plain') + '}']), '\\bibliography{' + this.bibRel(file) + '}'], ['printindex']));
+    }
     if (!edits.length) return;
     this.commit(edits.map((x) => ({ f, ...x })), null, P.session);
     // (a line in the preamble moves the citation the popover writes, and where the caret goes back)
@@ -573,7 +622,7 @@ export const methods = {
     if (R && R.f === f) { const d = grow(R.s); R.s += d; R.e += d; }
     if (P.returnCaret && P.returnCaret.f === f) P.returnCaret = { ...P.returnCaret, p: P.returnCaret.p + grow(P.returnCaret.p) };
     if (P.anchorPos && P.anchorPos.f === f) P.anchorPos = { ...P.anchorPos, s: P.anchorPos.s + grow(P.anchorPos.s) };
-    this.toast('The bibliography from ' + file + ' goes at the end of the document.');
+    this.toast('The bibliography now reads ' + file + '.');
   },
   bibRemove() {
     const B = this.bibState(), spots = this.bodySpots(['bibliography', 'printbibliography', ...(B.biblatex ? [] : ['bibliographystyle'])], true);

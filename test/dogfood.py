@@ -13,10 +13,11 @@ from the paragraph after it; Enter at a paragraph's start writes no blank lines 
 paragraph shows above, to type in); Undo works after a reload. Then lecture notes and a problem
 set: \\mathbb typed in the equation field or pasted from a chat assistant brings amssymb; amsmath's
 \\intertext drawn as a line of text between the rows; "- " in a definition starts a list there; Replace All
-across the notes' files keeps the case of what it replaces.
+across the notes' files keeps the case of what it replaces. And the hostile review's cases
+(docs: /tmp/review-dogfood.md, E1 to E10).
 
   python3 dogfood.py [part ...]   parts: formula arrows textfield styles table caption cite paste
-                                  split filename undo_words enter reload_undo mathpkg intertext envlist replace
+                                  split filename undo_words enter reload_undo mathpkg intertext envlist replace review
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
@@ -367,6 +368,84 @@ def replace(page):
     check('replace: Replace All without Match case keeps each one\'s case, in every file', src(page) == files['main.tex'].replace('utility', 'welfare') and src(page, 'ch1.tex') == '\\section{Welfare}\nWelfare is ordinal. WELFARE matters; welfare functions differ.\n', src(page, 'ch1.tex'))
     k.press('Escape'); page.wait_for_timeout(200); k.press('Control+z'); page.wait_for_timeout(300)
     check('replace: one Undo takes it all back', src(page) == files['main.tex'] and src(page, 'ch1.tex') == files['ch1.tex'], src(page, 'ch1.tex'))
+
+
+def review(page):
+    """The hostile review of PR 94 (E1 to E10)."""
+    k = page.keyboard
+    A = '@article{alpha2001, author={Alpha, Ann}, title={From A}, journal={J}, year={2001}}\n'
+    Bb = '@article{beta2002, author={Beta, Ben}, title={From B}, journal={J}, year={2002}}\n'
+    def cite(*keys):
+        k.type('\\'); page.wait_for_timeout(200); k.type('cite', delay=20); page.wait_for_timeout(300); k.press('Enter')
+        page.wait_for_selector('#pop-citesearch', timeout=5000); page.wait_for_timeout(200)
+        for q in keys:
+            k.type(q); page.wait_for_timeout(200); k.press('Enter'); page.wait_for_timeout(400)
+        k.press('Escape'); page.wait_for_timeout(300)
+    # E1: the main file in a folder: the .bib named from that folder, where TeX runs
+    load_doc(page, {'paper/main.tex': DOC, 'paper/refs.bib': A}, main='paper/main.tex')
+    click_text(page, 'Agent income here.', 18); k.type(' See ')
+    cite('alpha')
+    s = src(page, 'paper/main.tex')
+    check('review E1: a .bib beside a main file in a folder is named from there', '\\bibliography{refs}' in s and 'paper/refs' not in s, s[-120:])
+    compiles(page, 'review E1')
+    # E2: a key from each of two .bib files the document names nowhere
+    load_doc(page, {'main.tex': DOC, 'a.bib': A, 'b.bib': Bb})
+    click_text(page, 'Agent income here.', 18); k.type(' See ')
+    cite('alpha', 'beta')
+    s = src(page)
+    check('review E2: keys from two .bib files name both', '\\cite{alpha2001, beta2002}' in s and '\\bibliography{a,b}' in s, s[-160:])
+    if TEX:
+        text = page.evaluate("async () => { const r = await window.rikuy.api.compile(); return r.ok + ' ' + r.problems.map((p) => p.message).join(' | '); }")
+        check('review E2: no undefined citation', text.startswith('true') and 'undefined' not in text.lower(), text)
+    k.press('Control+z'); page.wait_for_timeout(300)
+    check('review E2: one Undo takes the keys and the bibliography lines (the empty \\cite the list wrote is a step before)', src(page) == DOC.replace('here.', 'here. See \\cite{}'), src(page))
+    # E4: a \bibliography in an \input file: no second pair in main.tex
+    load_doc(page, {'main.tex': DOC.replace('\\end{document}', '\\input{back}\n\\end{document}'), 'back.tex': '\\bibliographystyle{plain}\n\\bibliography{refs}\n', 'refs.bib': A, 'other.bib': Bb})
+    click_text(page, 'Agent income here.', 18); k.type(' See ')
+    cite('beta')
+    s, back = src(page), src(page, 'back.tex')
+    check('review E4: a key from another .bib joins the \\input file\'s \\bibliography, main.tex gets none', '\\bibliography' not in s and '\\bibliography{refs,other}' in back, (s[-100:], back))
+    compiles(page, 'review E4')
+    # E3: Tab at the end of an inline formula leaves it forward, with no error, the keys on the page
+    load_doc(page, DOC)
+    click_text(page, 'Agent income', 5); k.type(' ')
+    k.press('Control+m'); page.wait_for_selector('#pop-field', timeout=10000); page.wait_for_timeout(200)
+    k.type('x'); page.wait_for_timeout(100); k.press('Tab'); page.wait_for_timeout(300)
+    check('review E3: Tab at a formula\'s end leaves it, the keys on the page', not page.evaluate("!!document.querySelector('#pop-field')") and focus_id(page) == 'pages', focus_id(page))
+    k.type('y'); page.wait_for_timeout(300)
+    check('review E3: what is typed next goes after it', 'Agent $x$y income' in src(page), src(page)[40:100])
+    # E10: Shift+Right at a formula's end: the formula selected and one character after it
+    load_doc(page, DOC)
+    click_text(page, 'Agent income', 5); k.type(' ')
+    k.press('Control+m'); page.wait_for_selector('#pop-field', timeout=10000); page.wait_for_timeout(200)
+    k.type('x'); page.wait_for_timeout(100); k.press('Shift+ArrowRight'); page.wait_for_timeout(400)
+    sel = page.evaluate("(() => { const c = window.rikuy.caretNow(); return c ? [c.a, c.b, window.rikuy.files.get('main.tex').slice(c.a, c.b)] : null; })()")
+    check('review E10: Shift+Right at a formula\'s end selects it and the next character', not page.evaluate("!!document.querySelector('#pop-field')") and sel and sel[2] == '$x$ ', sel)
+    # E5: a heading after a quote inside a theorem goes to the top level
+    pre = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,amsthm}\n\\newtheorem{theorem}{Theorem}')
+    load_doc(page, pre.replace('Agent income here.', '\\begin{theorem}\nClaim text.\n\\begin{quote}\nQuoted line.\n\\end{quote}\n\\end{theorem}'))
+    click_text(page, 'Quoted line.', 12); k.press('Enter'); page.wait_for_timeout(150)
+    k.press('Control+Alt+1'); page.wait_for_timeout(200); k.type('Next', delay=10); page.wait_for_timeout(300)
+    check('review E5: a heading after a quote inside a theorem goes after both', '\\end{quote}\n\\end{theorem}\n\n\\section{Next}' in src(page), src(page))
+    # E9: Greek pasted where the preamble sets Greek up stays Greek; a prime is the formula's '
+    def put(text):
+        page.evaluate("""(t) => { const dt = new DataTransfer(); dt.setData('text/plain', t);
+          document.activeElement.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }""", text)
+        page.wait_for_timeout(400)
+    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\usepackage{textgreek}'))
+    click_text(page, 'Agent income here.', 18); k.type(' ')
+    put('Hence f′(x) > 0 and αβγ ≤ 1.')
+    s = src(page)
+    check('review E9: Greek stays where the preamble sets it up; a prime is $\'$', "f$'$(x) > 0 and αβγ $\\le$ 1." in s, s[40:200])
+    # E8: Right out of a formula in a paragraph that runs right to left lands on its right side,
+    # its logical start
+    rtl = '\\documentclass{article}\n\\usepackage{fontspec}\n\\usepackage[bidi=basic]{babel}\n\\babelprovide[main,import]{arabic}\n\\babelfont{rm}{Amiri}\n\\begin{document}\n\u0627\u0644\u062f\u062e\u0644 $x$ \u0647\u0646\u0627.\n\\end{document}\n'
+    load_doc(page, rtl); page.wait_for_timeout(400)
+    if page.evaluate("getComputedStyle(document.querySelector('#pages .it.p')).direction") == 'rtl':
+        page.locator('#pages .it.p .katex').first.click(); page.wait_for_selector('#pop-field', timeout=10000); page.wait_for_timeout(300)
+        page.evaluate("(() => { const mf = document.getElementById('pop-field'); mf.focus(); mf.executeCommand('moveToMathfieldEnd'); })()")
+        k.press('ArrowRight'); page.wait_for_timeout(400); k.type('Q'); page.wait_for_timeout(300)
+        check('review E8: Right out of a formula in a right to left paragraph lands at its right, before it', 'Q$x$' in src(page), src(page)[-60:])
 
 
 with sync_playwright() as p:
