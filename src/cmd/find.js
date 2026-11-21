@@ -31,7 +31,7 @@ const promoteOK = (delta) => (app, at) => memo(at, 'pro' + delta, () => { const 
 const moveOK = (dir) => (app, at) => memo(at, 'mv' + dir, () => !!app.moveEditsAt(at, dir));
 
 register(
-  { id: 'outline-panel', name: 'Outline and problems', el: 'b-nav', static: true, place: 'bar', title: 'Outline, problems and changes (Ctrl+Shift+O)', keysElsewhere: ['Ctrl+Shift+O'], synonyms: ['Outline', 'Problems', 'Side panel'],
+  { id: 'outline-panel', name: 'Outline and problems', el: 'b-nav', static: true, place: 'bar', title: 'Show the outline, the problems and the changes in the side panel (Ctrl+Shift+O)', keysElsewhere: ['Ctrl+Shift+O'], synonyms: ['Outline', 'Problems', 'Side panel'],
     when: () => true, run: (app) => app.toggleNav() },
   { id: 'navigation-pane', name: 'Navigation pane', title: 'The Navigation pane: search the document, its headings and pages; a click goes there', synonyms: ['Outline', 'Headings', 'Document map', 'Pages', 'Thumbnails'], tab: 'view', group: 'show', el: 'rw-nav', label: 'Navigation pane', kind: 'toggle',
     icon: '<path d="M3.5 4.5h13v11h-13zM8.5 4.5v11M5 7.5h2M5 10h2"/>', when: () => true, on: (app) => app.navOpen('outline') && !app.outlineView, run: (app) => { if (app.outlineView) app.setOutlineView(false, true); else app.toggleNav(!app.navOpen('outline'), 'outline'); } },

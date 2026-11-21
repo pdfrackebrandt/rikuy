@@ -322,7 +322,10 @@ export function openParagraphDialog(app, at, p, args = {}) {
   });
   pick(panels[args.tab === 'breaks' ? 1 : 0][0]);
   app.positionPop();
-  const focus = { 'indent-left': left.input, 'indent-right': right.input, 'spacing-before': bef.input, 'spacing-after': aft.input, line: ls, document: dls }[args.focus] || (ok ? alignSel : dls);
+  const named = { 'indent-left': left.input, 'indent-right': right.input, 'spacing-before': bef.input, 'spacing-after': aft.input, line: ls, document: dls }[args.focus];
+  // (a field the command named keeps the focus on a phone too, src/app.js makePop)
+  if (named) named.dataset.named = '';
+  const focus = named || (ok ? alignSel : dls);
   if (args.tab === 'breaks') panels[1][0].focus(); else focus.focus();
   return d;
 }

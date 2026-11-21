@@ -31,7 +31,7 @@ async function through(bytes, stream) {
 
 // Anyone can make a link, so what it holds is checked before it is opened. A link of half a
 // megabyte can inflate to gigabytes; text this long is no document anyone shares.
-const MAX_JSON = 32e6, MAX_FILES = 2000, MAX_LABEL = 200;
+const MAX_JSON = 32e6, MAX_FILES = 2000, MAX_LABEL = 200, MAX_GRAPHS = 50;
 
 async function inflateCapped(bytes, cap) {
   const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
@@ -67,12 +67,21 @@ const label = (x, dflt) => (typeof x === 'string' && x.trim() ? x.trim().slice(0
 // role: 'coauthor' (edits and comments), 'comments' (comments only) or 'back' (a copy sent back);
 // rid: the link's own random name, which a copy sent back carries, so the sender's browser knows
 // which link it answers and what that link allowed (src/collab.js takeBack)
-export async function packShare(o) {
+//
+// short: a file the reader's own Rikuy writes again need not travel whole. An interactive graph's
+// file as Rikuy writes it is its description (half a kilobyte) and the drawing code every graph
+// carries (60 kB): short(text) gives the description for such a file, null for any other, and the
+// link carries [name, description, 'g']; unpackShare's whole(description) writes the file again
+// (src/graph.js graphShort and graphWhole, given by the page: the Word worker reads this module
+// too and has no use for the graph's code). Its picture travels in no link either way: the page
+// draws it again as the graph is shown and before a compile (src/cmd/insert.js graphRefresh).
+export async function packShare(o, short = null) {
+  if (short) o = { ...o, files: o.files.map(([n, t]) => { const d = /\.html?$/i.test(n) && typeof t === 'string' ? short(t) : null; return typeof d === 'string' ? [n, d, 'g'] : [n, t]; }) };
   const z = await through(enc.encode(JSON.stringify(o)), new CompressionStream('deflate-raw'));
   return V + b64url(z);
 }
 
-export async function unpackShare(s) {
+export async function unpackShare(s, whole = null) {
   let o;
   try {
     s = decodeURIComponent(String(s).trim());
@@ -88,10 +97,22 @@ export async function unpackShare(s) {
   if (o.files.length > MAX_FILES) throw new Error('The link holds too many files.');
   // every field is the sender's to choose: keep only well formed files with safe names
   const files = [];
+  const refuse = () => new Error('The link holds a file with a name or content the editor cannot accept.');
+  // (each graph written again is 85 kB from a few bytes of the link: no more than a document has)
+  if (o.files.filter((f) => Array.isArray(f) && f[2] === 'g').length > MAX_GRAPHS) throw new Error('The link holds too many graphs.');
   for (const f of o.files) {
     const n = Array.isArray(f) && typeof f[1] === 'string' ? cleanPath(f[0]) : null;
-    if (n === null) throw new Error('The link holds a file with a name or content the editor cannot accept.');
-    files.push([n, f[1]]);
+    if (n === null) throw refuse();
+    let t = f[1];
+    // a graph's file as its description alone (packShare's short): written again by the reader's
+    // own Rikuy, from the description only, or the link is refused
+    if (f[2] === 'g') {
+      if (!whole || !/\.html?$/i.test(n) || t.length > 1e6) throw refuse();
+      // (a writer that can say why, another version of Rikuy, says it; anything else is refused alike)
+      try { t = whole(t); } catch (e) { throw e && typeof e.linkMessage === 'string' ? new Error(e.linkMessage) : refuse(); }
+      if (typeof t !== 'string') throw refuse();
+    }
+    files.push([n, t]);
   }
   const main = cleanPath(o.main);
   if (!main || !files.some(([n]) => n === main)) throw new Error('The link does not hold a document.');
