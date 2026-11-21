@@ -20,15 +20,23 @@ const MAX_DOCX = 100e6;
 
 // A numeric citation style of Rikuy's own for pandoc's citeproc (its default is author-date):
 // [1] in the text, the list in citation order
-const NUMERIC_CSL = `<?xml version="1.0" encoding="utf-8"?>
+const NUMERIC_CSL_ANY = `<?xml version="1.0" encoding="utf-8"?>
 <style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0" demote-non-dropping-particle="sort-only">
 <info><title>Rikuy numeric</title><id>rikuy-numeric</id><updated>2026-11-10T00:00:00+00:00</updated></info>
 <macro name="author"><names variable="author"><name initialize-with=". " delimiter=", " and="text"/><substitute><names variable="editor"/></substitute></names></macro>
 <macro name="year"><date variable="issued"><date-part name="year"/></date></macro>
 <citation collapse="citation-number"><sort><key variable="citation-number"/></sort><layout prefix="[" suffix="]" delimiter=", "><text variable="citation-number"/><text variable="locator" prefix=", "/></layout></citation>
-<bibliography second-field-align="flush"><layout suffix="."><text variable="citation-number" prefix="[" suffix="] "/><group delimiter=". "><text macro="author"/><text variable="title"/><text variable="container-title" font-style="italic"/><text variable="publisher"/><text macro="year"/></group></layout></bibliography>
+<bibliography second-field-align="flush">%SORT%<layout suffix="."><text variable="citation-number" prefix="[" suffix="] "/><group delimiter=". "><text macro="author"/><text variable="title"/><text variable="container-title" font-style="italic"/><text variable="publisher"/><text macro="year"/></group></layout></bibliography>
 </style>
 `;
+// (two of it: in citation order, as unsrt and ieeetr number; by author, year and title, as plain,
+// abbrv, alpha and the page number them. Word had citation order alone, so under plain its [1]
+// was another entry than the PDF's and the page's [1].)
+const NUMERIC_CSL = NUMERIC_CSL_ANY.replace('%SORT%', '');
+// (sorted as BibTeX's plain sorts: "van Dijk" under v, its particle kept with the family name;
+// CSL's sort-only took it under D, review E7)
+const NUMERIC_CSL_SORTED = NUMERIC_CSL_ANY.replace('%SORT%', '<sort><key macro="author"/><key macro="year"/><key variable="title"/></sort>').replace('demote-non-dropping-particle="sort-only"', 'demote-non-dropping-particle="never"');
+export const numericCsl = (sorted) => (sorted ? NUMERIC_CSL_SORTED : NUMERIC_CSL);
 
 // ---- the worker ---------------------------------------------------------------------------------
 
@@ -140,7 +148,7 @@ export const word = {
       const res = await this.wordEngine().run('export', { req });
       await this.wordRemember(res.mark);
       const blob = new Blob([res.docx], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-      const fname = ((this.name || '').replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '') || 'paper') + '.docx';
+      const fname = (this.fileBase ? this.fileBase() : 'paper') + '.docx';
       this.lastDocx = { blob, name: fname, degraded: req.degraded, warnings: res.warnings };
       if (D) await D.save({ filename: fname, data: blob });
       else {
@@ -166,7 +174,7 @@ export const word = {
     for (const b of bibs) resources[b] = this.files.get(b);
     let cslName = null;
     if (csl) { cslName = csl; resources[csl] = new Uint8Array(await this.extra.get(csl).arrayBuffer()); }
-    else if (model.opts.citeStyle === 'numeric') { cslName = 'rikuy-numeric.csl'; resources[cslName] = NUMERIC_CSL; }
+    else if (model.opts.citeStyle === 'numeric') { cslName = 'rikuy-numeric.csl'; resources[cslName] = numericCsl(model.opts.sort !== false); }
     const citeproc = bibs.length > 0 && model.cites && model.cites.length > 0;
     const find = (name) => {
       if (!name) return null;
@@ -197,7 +205,7 @@ export const word = {
       } catch (e) { W.degraded.push(k + ' (could not be drawn)'); }
     }
     return {
-      doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources, bibs: citeproc ? bibs : [], csl: citeproc ? cslName : null, citeproc,
+      doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources, bibs: citeproc ? bibs : [], csl: citeproc ? cslName : null, citeproc, vonSort: cslName === 'rikuy-numeric.csl' && model.opts.sort !== false,
       bullets: W.bullets,
       toc: W.doc.blocks && model.blocks.some((u) => u.items.some((x) => x.type === 'toc')),
       // the page's set up (task 44): paper, margins, columns, headers and footers, in Word's terms

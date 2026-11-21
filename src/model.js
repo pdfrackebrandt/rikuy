@@ -2,6 +2,7 @@
 // numbering, cross references and citations resolved. Every editable
 // character keeps a pointer to its exact source range.
 import { parse, scanUserSigs, CHARS, ACCENTS, splitRows, MATH_BUDGET } from './parser.js';
+import { filesRead, resolveIn } from './scan.js';
 import { refsSetup, readIndexArg, indexKey, istRight } from './refsrc.js';
 import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bib.js';
 import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
@@ -372,6 +373,17 @@ const PURE_CMDS = new Set(['textbf', 'textit', 'emph', 'texttt', 'textsc', 'text
 // the names an offset is kept under in a model's units (every numeric field the corpus's models move
 // when text is typed before them; test/incremental.test.mjs finds a missed one)
 export const OFFSET_KEYS = new Set(['s', 'e', 'is', 'ie', 'itemS', 'itemE', 'listS', 'listE', 'cmdE', 'ps', 'pe', 'vs', 've']);
+// .bst files that number references in the order they are cited (review E6: IEEEtran and the
+// others numbered by author on the page and in Word, by citation order in the PDF)
+const UNSORTED_BST = new Set(['unsrt', 'unsrtnat', 'ieeetr', 'unsrt_abbrv', 'IEEEtran', 'IEEEtranN', 'IEEEtranSN', 'elsarticle-num', 'vancouver', 'naturemag', 'nature', 'achemso', 'JHEP', 'utphys', 'apsrev4-2', 'apsrev4-1', 'aipnum4-2', 'unsrturl', 'ieeetr_url', 'plainnat_unsrt', 'abbrvnat_unsrt']);
+// The first \bibliographystyle of a text that is not in a comment, a verbatim block or \iffalse
+function bibStyleIn(t) {
+  if (typeof t !== 'string' || t.indexOf('\\bibliographystyle') < 0) return null;
+  const u = t.slice(0, 2e6).replace(/\\begin\s*\{(verbatim\*?|Verbatim|lstlisting|minted|comment)\}[\s\S]*?\\end\s*\{\1\}/g, ' ').replace(/\\iffalse\b[\s\S]*?\\fi\b/g, ' ').replace(/(^|[^\\])%[^\n]*/g, '$1');
+  const m = /\\bibliographystyle\s*\{([^{}\n]{1,60})\}/.exec(u);
+  return m ? m[1].trim() : null;
+}
+
 const MATH_READS = /\\(?:eqref|ref|cref|Cref|autoref|label|intertext|shortintertext)\b|color/;
 
 function pureNodes(ns, src, macros) {
@@ -854,7 +866,14 @@ class Builder {
     if (O.parindent == null) O.parindent = O.parskip ? 0 : ({ 10: 15, 11: 17, 12: 18 }[O.pt] || (O.ext ? O.ext.pi : 15));
     if (O.natbib && !O.forceNumeric) O.citeStyle = 'authoryear';
     if (O.biblatex) O.citeStyle = O.biblatexStyle === 'authoryear' ? 'authoryear' : 'numeric';
-    if (['unsrt', 'unsrtnat', 'ieeetr', 'unsrt_abbrv'].includes(O.bibstyle)) O.sort = false;
+    // (\bibliographystyle stands at the body's end, where it is read after the citations are
+    // numbered: it is looked for here, in the main file and then the .tex files it reads (filesRead:
+    // not a talk or a letter beside it), the first that is not in a comment, verbatim or \iffalse,
+    // as BibTeX takes the first \bibstyle of the .aux. Under \bibliographystyle{unsrt} there the
+    // page numbered by author and the PDF by citation order.)
+    const bst = bibStyleIn(ctx.src) || filesRead(this.files, ctx.f).filter((n) => n !== ctx.f).map((n) => this.files.get(n)).filter((t) => typeof t === 'string').map((t) => bibStyleIn(t)).find(Boolean);
+    if (bst) O.bibstyle = bst;
+    if (UNSORTED_BST.has(O.bibstyle) || (O.biblatex && O.bibUnsorted)) O.sort = false;
     if (O.natbib && ['plain', 'unsrt', 'abbrv', 'alpha', 'ieeetr', 'siam', 'acm', 'amsplain', 'unsrtnat_num'].includes(O.bibstyle) && !O.forceAY) O.citeStyle = O.forceNumeric ? 'numeric' : O.citeStyle;
   }
 
@@ -869,7 +888,7 @@ class Builder {
       if (nd.t === 'group') this.preWalk(nd.nodes, c, own);
       else if (nd.t === 'env' && !nd.raw && nd.nodes) this.preWalk(nd.nodes, c, own);
       else if (nd.t !== 'cmd') continue;
-      else if (nd.name === 'input' && nd.args[0]) this.preFile(this.resolveFile(this.argText(c, nd.args[0])), own);
+      else if (nd.name === 'input' && nd.args[0]) this.preFile(this.resolveFile(this.argText(c, nd.args[0]), c.f), own);
       else if (!own) this.preCmd(nd, c);
       else if (nd.name === 'definecolor') this.defColor(nd, c);
       else if (nd.name === 'usepackage' || nd.name === 'RequirePackage') {
@@ -965,6 +984,8 @@ class Builder {
             O.biblatexStyle = /style\s*=\s*(authoryear|apa|chicago|ext-authoryear)/.test(op) ? 'authoryear' : 'numeric';
             // natbib=true gives biblatex natbib's \citep and \citet; without it they are undefined
             O.biblatexNatbib = /\bnatbib\b(?!\s*=\s*false)/.test(op);
+            // (sorting=none and the styles that number in citation order: ieee, nature, chem-*, phys)
+            if (/\bsorting\s*=\s*none\b/.test(op) || /\bstyle\s*=\s*(ieee|nature|chem-acs|chem-angew|chem-rsc|phys)\b/.test(op) && !/\bsorting\s*=/.test(op)) O.bibUnsorted = true;
           }
           if (this.styFile(p)) this.preFile(this.styFile(p), true);
           if (p === 'apacite' || p === 'harvard' || p === 'chicago') { O.natbib = true; O.forceAY = true; }
@@ -1101,7 +1122,7 @@ class Builder {
       for (const nd of ns) {
         if (nd.t === 'cmd') {
           if (nd.name === 'input' || nd.name === 'include' || nd.name === 'subfile') {
-            const f = this.resolveFile(this.argText(c, nd.args[0]));
+            const f = this.resolveFile(this.argText(c, nd.args[0]), c.f, nd.name === 'subfile');
             if (f && !this.included.has('defs:' + f)) {
               this.included.add('defs:' + f);
               walk(this.parseFile(f), { f, src: this.files.get(f), pm: null });
@@ -1216,15 +1237,10 @@ class Builder {
     return rel && this.files.has(rel) ? rel : name && this.files.has(name + '.sty') ? name + '.sty' : null;
   }
 
-  resolveFile(name) {
-    name = (name || '').trim();
-    if (!name) return null;
-    const rel = this.fromMain(name);
-    const cands = [...(rel ? [rel, rel + '.tex'] : []), name, name + '.tex', name.replace(/^\.\//, ''), name.replace(/^\.\//, '') + '.tex'];
-    for (const c of cands) if (this.files.has(c)) return c;
-    const base = name.split('/').pop();
-    for (const [k] of this.files) if (k.endsWith('/' + base) || k.endsWith('/' + base + '.tex') || k === base + '.tex') return k;
-    return null;
+  // from: the file whose \input, \include or \subfile (sub) names it; the rule the project-wide
+  // scans follow too (src/scan.js resolveIn), so the page and they read the same files
+  resolveFile(name, from, sub) {
+    return resolveIn(this.files, name, this.project.main, from, sub);
   }
 
   // ---- direction -------------------------------------------------------------
@@ -1649,7 +1665,7 @@ class Builder {
         const name = nd.name;
         if (name === 'input' || name === 'include' || name === 'subfile') {
           flushPara();
-          const f = this.resolveFile(this.argText(ctx, nd.args[0]));
+          const f = this.resolveFile(this.argText(ctx, nd.args[0]), ctx.f, name === 'subfile');
           if (f && !this.included.has(f)) {
             this.included.add(f);
             const sub = { f, src: this.files.get(f), pm: null };
@@ -3014,6 +3030,15 @@ class Builder {
     const out = [];
     if (multi) {
       const rs = splitRows(inner);
+      // amsmath's \intertext{words} (\shortintertext) at a row's start: a line of text across the
+      // display between its rows, as TeX sets it. KaTeX knows neither, and written as \text{} (as
+      // tex keeps it, for Word and the rest) the words stood inside the row, before its formula.
+      // The rows on each side are drawn as displays of their own, the words between (parts).
+      const inter = new Map();
+      rs.forEach((r, k) => {
+        const m = /^\s*\\(?:short)?intertext\s*\{([^{}]*)\}/.exec(inner.slice(r.s, r.e));
+        if (m) inter.set(k, m[1]);
+      });
       rs.forEach((r, k) => {
         let t = inner.slice(r.s, r.e);
         const info = this.rowInfo(t, ctx);
@@ -3036,7 +3061,19 @@ class Builder {
         tex = '\\begin{alignat*}{' + (m ? m[1] : (nd.args[0] ? this.argText(ctx, nd.args[0]) : '1')) + '}' + out.join('\\\\') + '\\end{alignat*}';
       } else tex = '\\begin{' + envOut + '}' + out.join('\\\\') + '\\end{' + envOut + '}';
       this.use('M' + tags.join(','));
-      return { type: 'math', f: ctx.f, s: nd.s, e: nd.e, is, ie, env, tex, tags };
+      let parts = null;
+      if (inter.size && base !== 'alignat') {
+        parts = [];
+        let from = 0;
+        const cut = (k) => { const t = out[k], w = '\\text{' + inter.get(k) + '}', i = t.indexOf(w); return i >= 0 && !t.slice(0, i).trim() ? t.slice(i + w.length) : null; };
+        const rows = (a, b) => { const g = []; for (let j = a; j < b; j++) { const t = inter.has(j) ? cut(j) : out[j]; if (t == null) return false; if (t.trim()) g.push(t); } if (g.length) parts.push({ tex: '\\begin{' + envOut + '}' + g.join('\\\\') + '\\end{' + envOut + '}' }); return true; };
+        let ok = true;
+        for (const k of [...inter.keys()].sort((x, y) => x - y)) { ok = ok && rows(from, k); parts.push({ text: inter.get(k) }); from = k; }
+        ok = ok && rows(from, out.length);
+        if (!ok) parts = null;
+        else this.use('I' + JSON.stringify([...inter]));
+      }
+      return { type: 'math', f: ctx.f, s: nd.s, e: nd.e, is, ie, env, tex, tags, ...(parts ? { parts } : {}) };
     }
     const info = this.rowInfo(inner, ctx);
     let tag = info.tag;
