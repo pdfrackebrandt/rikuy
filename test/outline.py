@@ -333,8 +333,28 @@ def collapse(page):
     # the heading's right click menu
     click_text(page, 'Beta', 1)
     page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); window.rikuy.openContextMenu(r.left, r.bottom); })()"); page.wait_for_timeout(200)
-    names = page.get_by_role('menuitem').all_inner_texts()
-    check('a heading\'s right click menu has Collapse heading, Expand heading, Expand all and Collapse all headings', all(any(i.startswith(n) for i in names) for n in ('Collapse heading', 'Expand heading', 'Expand all headings', 'Collapse all headings')), names)
+    # (since PR 90's review the four are in one item, Expand/Collapse, as Word's: its menu has them,
+    # opened by a press, or by → from the keys)
+    FOUR = ('Collapse heading', 'Expand heading', 'Expand all headings', 'Collapse all headings')
+    ctx = page.get_by_role('menu', name='Context menu', exact=True)
+    fold = ctx.get_by_role('menuitem', name='Expand/Collapse', exact=True)
+    has = fold.count() == 1 and fold.get_attribute('aria-haspopup') == 'menu'
+    if has:
+        fold.click(); page.wait_for_timeout(250)
+    sub = page.get_by_role('menu', name='Expand/Collapse', exact=True)
+    names = [sub.get_by_role('menuitem').nth(k).get_attribute('aria-label') for k in range(sub.get_by_role('menuitem').count())]
+    check('a heading\'s right click menu has Expand/Collapse, and its menu Collapse heading, Expand heading, Expand all and Collapse all headings', has and set(names) == set(FOUR), names)
+    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    click_text(page, 'Beta', 1)
+    page.keyboard.press('Shift+F10'); page.wait_for_timeout(250)
+    for _ in range(30):
+        if page.evaluate("document.activeElement.getAttribute('aria-label') === 'Expand/Collapse'"):
+            break
+        page.keyboard.press('ArrowDown'); page.wait_for_timeout(20)
+    page.keyboard.press('ArrowRight'); page.wait_for_timeout(250)
+    names = [sub.get_by_role('menuitem').nth(k).get_attribute('aria-label') for k in range(sub.get_by_role('menuitem').count())]
+    on = page.evaluate("document.activeElement.closest('[role=menu]') && document.activeElement.closest('[role=menu]').getAttribute('aria-label')")
+    check('by the keys: Shift+F10, down to Expand/Collapse, → opens its menu with the focus in it', set(names) == set(FOUR) and on == 'Expand/Collapse', (names, on))
     page.keyboard.press('Escape')
     # TeX's PDF keeps the text (the source is untouched; with dist/tex, compiled)
     if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
@@ -376,7 +396,7 @@ def fold_review(page):
 
 def collapse_phones(p):
     """On a phone (390 and 360 px, touch): the caret in a heading shows its triangle, 44 px, a tap
-    collapses; a long press's menu has Collapse heading; no sideways scroll."""
+    collapses; a long press's menu has Collapse heading, in Expand/Collapse; no sideways scroll."""
     os.makedirs(SHOTS, exist_ok=True)
     for w, h in ((390, 844), (360, 740)):
         for dark in ((False, True) if w == 390 else (False,)):
@@ -401,8 +421,13 @@ def collapse_phones(p):
             check('%d px: L4: the triangle beside a heading of several lines covers no word of the line above' % w, ov == 0, ov)
             load_doc(page, DOC)
             click_text(page, 'Gamma', 1)
-            items = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); window.rikuy.openContextMenu(r.left, r.bottom); return [...document.querySelectorAll('.pop [role=menuitem]')].map((x) => x.textContent); })()")
-            check('%d px: a long press\'s menu (the right click menu) has Collapse heading' % w, any(i.startswith('Collapse heading') for i in items), items)
+            page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); window.rikuy.openContextMenu(r.left, r.bottom); })()"); page.wait_for_timeout(250)
+            # (in its Expand/Collapse, a tap away)
+            fold = page.locator('.pop-ctx [aria-label="Expand/Collapse"]')
+            if fold.count():
+                fold.tap(); page.wait_for_timeout(300)
+            items = page.evaluate("[...document.querySelectorAll('.pop [role=menuitem]')].map((x) => x.getAttribute('aria-label'))")
+            check('%d px: a long press\'s menu (the right click menu) has Expand/Collapse, and a tap there Collapse heading' % w, fold.count() == 0 and 'Collapse heading' in items, items)
             check('%d px: no sideways scroll' % w, page.evaluate('document.documentElement.scrollWidth') <= w)
             check('%d px: no errors' % w, not errors, errors[:3])
             browser.close()

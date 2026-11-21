@@ -79,7 +79,7 @@ function treeVersion(OUT) {
 // instead (the lines are clipped to a pixel, and their links are out of the Tab order); a screen
 // reader reads them as the page's heading; without JavaScript the last line shows.
 const TITLE = 'Rikuy: a LaTeX editor where you type on the typeset page';
-const HOW = 'Open the page and type: the sample document is there to edit. Open takes .tex, .bib, .zip and Word .docx files, the row of buttons formats and inserts, Preview shows the PDF, and Download gives the PDF, a Word file or the LaTeX source.';
+const HOW = 'Open the page and type: the sample document is there to edit. Open takes .tex, .bib, .zip and Word .docx files, the row of buttons formats and inserts, Preview shows the PDF, and Download gives the PDF, a Word file or the LaTeX source. Its figures can be live: Insert, Interactive graph, or right click an equation and choose Graph this; the page runs the graph, the PDF prints the same graph as vector lines, and File, Export as, Web page with live graphs puts the paper on a website with its graphs live.';
 // text into HTML, and JSON into a script element (no "<" left to end the element with)
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 export const jsonScript = (o) => JSON.stringify(o).replace(/</g, '\\' + 'u003c');
@@ -295,7 +295,9 @@ let a coauthor who does not know LaTeX edit a paper.
    {"v":1,"name":"My paper","main":"main.tex","files":[["main.tex","\\\\documentclass{article}..."]],"by":"Your name"}
 
    "files" is a list of [name, text] pairs and must hold "main". Text files only: pictures and
-   other binary files need the .zip route. "name" and "by" are optional: without "name" the
+   other binary files need the .zip route. A link Rikuy makes carries each interactive graph's
+   file (graphs/*.html) as [name, its description as a JSON string, "g"]: the page that opens it
+   writes the file again from the description, and draws the graph's picture again. "name" and "by" are optional: without "name" the
    document is called by its main file. With "by", the person opens it as that sender's guest: a
    bar says who shared it, their edits are marked as changes, and Send back makes a link that
    carries their copy back to the sender. Without "by" it is their own document, as with #tex=.
@@ -320,8 +322,9 @@ What either link does when opened:
 - A link that is cut short or is not a document opens nothing: the page says "Could not open
   the link" with the reason, and the document that was open stays.
 - Size: a #share= link is about two thirds as long as the LaTeX in it, a #tex= link a third
-  longer than it. Rikuy's sample document (5,800 characters in two files) makes a #share= link
-  of 3,700 characters; its .tex alone (4,700 characters) makes a #tex= link of 6,300. Chrome
+  longer than it. Rikuy's sample document (8,400 characters of LaTeX and BibTeX in three files, and
+  a live graph, which a link carries as its description alone) makes a #share= link of 5,600
+  characters; its .tex alone (5,300 characters) makes a #tex= link of 7,100. Chrome
   takes addresses up to 2 MB and Firefox up to 1 MB, but chat and mail programs cut long links:
   under 2,000 characters is safe everywhere (about 3,000 characters of LaTeX as #share=, 1,400
   as #tex=). For more than a few pages, hand over the file.
@@ -624,16 +627,35 @@ Ctrl is Cmd on a Mac.
 - Ctrl+Shift+V: paste as plain text. The right click menu: Cut, Copy, Paste (the browser asks
   once to let the page read the clipboard); the search box finds them and Keep Text Only, Paste
   as LaTeX source and Paste Special
-- Insert, Interactive graph (command insert-interactive-graph; Help can call it): the dialog
-  "Interactive graph" with the radiogroup "Graph type" (Function, Data and fit, Curve,
-  Distribution), fields "Formulas" (one a line, in x; any other letter gets a slider), "Data",
+- Interactive graphs, Rikuy's live paper: one .tex typed like Word, printed by real TeX, whose
+  figures are live on the page while the PDF carries the same figure as vector graphics in the
+  document's fonts. Insert, Interactive graph (command insert-interactive-graph, args
+  { template }: function, data, curve, implicit, phase, dist, or a named one: supply-demand,
+  is-lm, solow, ramsey, budget, normal, t, clt): the dialog "Interactive graph" with the radiogroup
+  "Graph type" (Function, Data and fit, Curve, Implicit, Phase, Distribution), the combobox
+  "Template", fields "Formulas" (one a line; "Variable" names the one drawn against, any other
+  letter gets a slider), "Equations" (implicit: F(x, y) = c, one a line; "Across" and "Up" name
+  the two variables), "dx/dt =" and "dy/dt =" with "Path from" (phase), "Mark where they cross",
+  "Faint start curves", "Add shaded area" (Shade n under, down to, from, to, name), "Data",
   "Fit", "r(θ) =", "x(t) =", "Distribution", "Show", "Slider n name/from/to/step/start", axes,
-  "Description", "Caption", a live preview, and Insert. It writes graphs/<kind>-<n>.html (the graph
-  as JSON and its script), graphs/<kind>-<n>.png (the picture the PDF prints, the graph at its
-  sliders' starting values), \\rikuywidget[width=\\linewidth]{…}{…}, rikuy.sty and
-  \\usepackage{rikuy}: one undo. On the page the graph runs live; its button "Edit graph" (or
-  command edit-graph with {file}) reopens the dialog, whose Update rewrites the file and picture
-  only
+  "Description", "Caption", a live preview, "Undo graph change" and "Redo graph change" (Ctrl+Z,
+  Ctrl+Y in the dialog), and Insert. A formula's mistake is said in words and underlined. It writes
+  graphs/<kind>-<4 letters>.html (the graph as JSON, one key a line, and Rikuy's script that
+  draws it), graphs/<kind>-<4 letters>.pgf (the picture TeX prints: PGF drawn from the same
+  drawing, the graph at its sliders' starting values), \\rikuywidget[width=\\linewidth]{…}{…},
+  rikuy.sty (v1.1, which inputs a .pgf) and \\usepackage{rikuy}: one undo. On the page the graph
+  runs live; its button "Edit graph" (or command edit-graph with {file}) reopens the dialog,
+  whose Update rewrites the file and picture only. Graph this (command graph-this; the right
+  click menu of an equation, the Equation tab, the search box): the equation at the caret, or the
+  one open or right clicked, drawn as a live graph below it in one undo (y = f(x), f(x), x = g(t)
+  with y = h(t), F(x, y) = c, \\dot k = …, k_{t+1} = …, a pair of time derivatives); it says in
+  words what it drew or why it cannot (a \\max, a sum, a function defined by itself).
+  File, Export as, "Web page with live graphs (.html)" (command export-web-page {link, comments}):
+  one self contained page that reads like the paper, its graphs live in sandboxed frames, Rikuy's
+  scripts alone allowed by a Content Security Policy, and an "Open in Rikuy" link carrying the
+  main file and the files it reads (no other file of the project; its % comments left out unless
+  comments is true; link false leaves the link out); with no arguments a dialog says what the
+  link carries
 - Round 3's objects, each one commit and one undo, each command also with its fields as
   arguments: Insert's Cover Page (cover-page {design: plain | sideline | motion}; a titlepage
   first in the text; Remove Current Cover Page), Quick Parts (quick-part-save {name},

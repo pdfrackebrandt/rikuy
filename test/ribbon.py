@@ -586,8 +586,11 @@ def latex_typing(page):
     page.keyboard.type(' $\\x_{1}$ 50% & #~ "q" -- <b>'); page.wait_for_timeout(250)
     check('what is typed in the box is written as it is: \\ $ % & # ~ " -- and markup', 'alpha $\\x_{1}$ 50% & #~ "q" -- <b> line' in src(page) and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, body(page))
     check('and shows as text, never as markup', page.evaluate('document.querySelectorAll("#pages .it.tex b").length') == 0 and '<b> line' in boxes(page)[0], boxes(page))
-    page.keyboard.press('Control+z'); page.wait_for_timeout(200)
-    check('one undo takes the typing back', src(page) == doc, body(page))
+    # (typing is undone word by word, as Word's: src/app.js record)
+    n = 0
+    while src(page) != doc and n < 12:
+        page.keyboard.press('Control+z'); page.wait_for_timeout(120); n += 1
+    check('undo takes the typing back word by word', src(page) == doc and n == 7, (n, body(page)))
     # Enter in the middle of a line: a line break with the line's indent
     click_text(page, 'beta', 2); page.keyboard.press('Enter'); page.wait_for_timeout(200)
     check('Enter in a line breaks it, the new line indented as it was, and the paragraph stays one box', '  be\n  ta line' in src(page) and len(boxes(page)) == 1, body(page))

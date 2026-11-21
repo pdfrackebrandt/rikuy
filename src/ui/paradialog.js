@@ -324,7 +324,10 @@ export function openParagraphDialog(app, at, p, args = {}) {
   accessKeys(d, { 'Indents and Spacing': 'I', 'Line and Page Breaks': 'P', Alignment: 'G', 'Left (cm)': 'L', 'Right (cm)': 'R', Special: 'S', 'By (cm)': 'Y', 'Before (pt)': 'B', 'After (pt)': 'F', 'Line spacing': 'N', At: 'A',
     'Document line spacing': 'C', 'Space between paragraphs (pt)': 'W', 'First line indent (cm)': 'E', 'Tabs…': 'T', 'Widow/Orphan control': 'W', 'Keep with next': 'X', 'Keep lines together': 'K', 'Page break before': 'B' });
   app.positionPop();
-  const focus = { 'indent-left': left.input, 'indent-right': right.input, 'spacing-before': bef.input, 'spacing-after': aft.input, line: ls, document: dls }[args.focus] || (ok ? alignSel : dls);
+  const named = { 'indent-left': left.input, 'indent-right': right.input, 'spacing-before': bef.input, 'spacing-after': aft.input, line: ls, document: dls }[args.focus];
+  // (a field the command named keeps the focus on a phone too, src/app.js makePop)
+  if (named) named.dataset.named = '';
+  const focus = named || (ok ? alignSel : dls);
   if (args.tab === 'breaks') panels[1][0].focus(); else focus.focus();
   return d;
 }

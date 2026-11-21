@@ -13,7 +13,7 @@
 
 import { register, command, enabled, onInstall } from '../commands.js';
 import { firstKey } from '../keys.js';
-import { compile, expand, hitsIn, hitsInSource, runsWith, blockText, charSrc, hitSource, joinRanges, labelsIn, hasParaMark, pageParaText, paraHitSource, controlWords, inControlWord, PARA, PMARK, FMT, FORMATS, MAX_HITS } from '../find.js';
+import { compile, expand, caseLike, hitsIn, hitsInSource, runsWith, blockText, charSrc, hitSource, joinRanges, labelsIn, hasParaMark, pageParaText, paraHitSource, controlWords, inControlWord, PARA, PMARK, FMT, FORMATS, MAX_HITS } from '../find.js';
 import { headingAt, sectionRange, promoteEdits, swapEdit, moveEdits, newHeading, eolOf, foldItems, foldEntry, matchFold, NAME } from '../outline.js';
 import { absAtom, posFromDom, diff, endsWithControlWord } from '../editor.js';
 import { $, load, store } from '../ui/dom.js';
@@ -31,7 +31,7 @@ const promoteOK = (delta) => (app, at) => memo(at, 'pro' + delta, () => { const 
 const moveOK = (dir) => (app, at) => memo(at, 'mv' + dir, () => !!app.moveEditsAt(at, dir));
 
 register(
-  { id: 'outline-panel', name: 'Outline and problems', el: 'b-nav', static: true, place: 'bar', title: 'Outline, problems and changes (Ctrl+Shift+O)', keysElsewhere: ['Ctrl+Shift+O'], synonyms: ['Outline', 'Problems', 'Side panel'],
+  { id: 'outline-panel', name: 'Outline and problems', el: 'b-nav', static: true, place: 'bar', title: 'Show the outline, the problems and the changes in the side panel (Ctrl+Shift+O)', keysElsewhere: ['Ctrl+Shift+O'], synonyms: ['Outline', 'Problems', 'Side panel'],
     when: () => true, run: (app) => app.toggleNav() },
   { id: 'navigation-pane', name: 'Navigation pane', title: 'The Navigation pane: search the document, its headings and pages; a click goes there', synonyms: ['Outline', 'Headings', 'Document map', 'Pages', 'Thumbnails'], tab: 'view', group: 'show', el: 'rw-nav', label: 'Navigation pane', kind: 'toggle',
     icon: '<path d="M3.5 4.5h13v11h-13zM8.5 4.5v11M5 7.5h2M5 10h2"/>', when: () => true, on: (app) => app.navOpen('outline') && !app.outlineView, run: (app) => { if (app.outlineView) app.setOutlineView(false, true); else app.toggleNav(!app.navOpen('outline'), 'outline'); } },
@@ -493,7 +493,8 @@ export const methods = {
     if (h.st != null && src.slice(h.s, h.e) !== h.st) return null;
     const groups = fs.o.wildcards || fs.o.regex;
     // (in a formula the replacement is LaTeX as it is written: only ^& and the groups are codes)
-    const text = !/[\\^$]/.test(rep) ? rep : h.eq ? expand(rep, h.m || [h.text], { ...(groups ? fs.o : {}), literal: true }) : expandRep(rep, h, fs.o, groups);
+    let text = !/[\\^$]/.test(rep) ? rep : h.eq ? expand(rep, h.m || [h.text], { ...(groups ? fs.o : {}), literal: true }) : expandRep(rep, h, fs.o, groups);
+    if (!fs.o.matchCase && !groups && !h.eq && !h.src && h.text != null) text = caseLike(h.text, text);
     if (h.src) return [{ f: h.f, s: h.s, e: h.e, t: text }];
     const a = h.parts[0][0], b = h.parts[h.parts.length - 1][1];
     // (a hit across a paragraph's end, ^p: each paragraph's part as typing over it takes it away,
