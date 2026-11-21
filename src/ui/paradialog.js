@@ -7,7 +7,7 @@
 // history (App.paraDialogApply); Tabs… opens the dialog of a tab stop with a leader. Also the
 // Layout tab's four paragraph fields (paraField).
 
-import { dialog } from './kit.js';
+import { dialog, accessKeys } from './kit.js';
 import { mk } from './dom.js';
 import * as P from '../parasrc.js';
 import { usePackages } from '../preamble.js';
@@ -321,6 +321,8 @@ export function openParagraphDialog(app, at, p, args = {}) {
     else if (c0 && !c0.ghost) app.restoreCaret(c0.collapsed ? { f: c0.f, p: c0.a, bias: -1 } : { f: c0.f, p: c0.a, selA: c0.a, selB: c0.b }, true);
   });
   pick(panels[args.tab === 'breaks' ? 1 : 0][0]);
+  accessKeys(d, { 'Indents and Spacing': 'I', 'Line and Page Breaks': 'P', Alignment: 'G', 'Left (cm)': 'L', 'Right (cm)': 'R', Special: 'S', 'By (cm)': 'Y', 'Before (pt)': 'B', 'After (pt)': 'F', 'Line spacing': 'N', At: 'A',
+    'Document line spacing': 'C', 'Space between paragraphs (pt)': 'W', 'First line indent (cm)': 'E', 'Tabs…': 'T', 'Widow/Orphan control': 'W', 'Keep with next': 'X', 'Keep lines together': 'K', 'Page break before': 'B' });
   app.positionPop();
   const named = { 'indent-left': left.input, 'indent-right': right.input, 'spacing-before': bef.input, 'spacing-after': aft.input, line: ls, document: dls }[args.focus];
   // (a field the command named keeps the focus on a phone too, src/app.js makePop)

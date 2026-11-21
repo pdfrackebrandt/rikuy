@@ -341,6 +341,71 @@ try:
         check('the page shows it without error chips', page.evaluate("document.querySelectorAll('#pages .a-chip.err').length") == 0, page.evaluate("[...document.querySelectorAll('#pages .a-chip.err')].map(x => x.textContent)"))
         check('a project from a Word file compiles with restricted shell escape', page.evaluate("(window.rikuy.linkCache.get(window.rikuy.name + '|' + window.rikuy.main) || {}).origin") == 'docx')
 
+        # ---- tracked changes both ways: a file's come in as changes waiting, each its author's
+        # (they came in accepted, so no one could review them), and changes waiting go out as
+        # Word's own, w:ins and w:del with their authors ----
+        P0 = parts(fx)
+        d = P0['word/document.xml'].decode()
+        d = d.replace('<w:r><w:t>First finding</w:t></w:r>', '<w:r><w:t xml:space="preserve">First </w:t></w:r><w:del w:id="801" w:author="Ana" w:date="2026-11-01T10:00:00Z"><w:r><w:delText>finding</w:delText></w:r></w:del><w:ins w:id="802" w:author="Ana" w:date="2026-11-01T10:00:00Z"><w:r><w:t>result</w:t></w:r></w:ins>', 1)
+        d = d.replace('<w:r><w:t>Second finding</w:t></w:r>', '<w:r><w:t xml:space="preserve">Second </w:t></w:r><w:ins w:id="803" w:author="Bo" w:date="2026-11-02T10:00:00Z"><w:r><w:t xml:space="preserve">big </w:t></w:r></w:ins><w:r><w:t>finding</w:t></w:r>', 1)
+        P0['word/document.xml'] = d.encode()
+        ftr = make_zip(os.path.join(TMP, 'Tracked.docx'), P0)
+        open_file(page, ftr)
+        t = src(page)
+        ch = page.evaluate("window.rikuy.realChanges().map((c) => [window.rikuy.rvName(c.who), c.a, c.b])")
+        check('a .docx\'s tracked changes come in waiting, each its author\'s: Ana\'s finding to result, Bo\'s big', '\\item\n  First result' in t and '\\item\n  Second big finding' in t
+              and ['Ana', 'finding', 'result'] in ch and ['Bo', '', 'big '] in ch and len(ch) == 2, ch)
+        check('they are marked on the page, as Word shows them', page.evaluate("document.querySelectorAll('#pages .chg-ins, #pages [class*=chg-ins], #pages ins').length") > 0 or page.evaluate("document.querySelectorAll('#pages [class*=chg]').length") > 0)
+        page.evaluate("window.rikuy.rejectChanges(window.rikuy.realChanges().filter((c) => window.rikuy.rvName(c.who) === 'Bo'))"); page.wait_for_timeout(300)
+        check('rejecting Bo\'s takes his word out, Ana\'s stays waiting', '\\item\n  Second finding' in src(page) and '\\item\n  First result' in src(page) and len(page.evaluate("window.rikuy.realChanges()")) == 1, src(page)[src(page).find('First'):][:80])
+        out_tr = save_docx(page, os.path.join(TMP, 'tracked-out.docx'))
+        dd = parts(out_tr)['word/document.xml'].decode()
+        check('and it goes out to Word as Ana\'s tracked change: w:del of finding, w:ins of result', re.search(r'<w:del w:id="\d+" w:author="Ana" w:date="[^"]+"><w:r><w:delText xml:space="preserve">finding</w:delText>', dd) is not None
+              and re.search(r'<w:ins w:id="\d+" w:author="Ana" w:date="[^"]+">(?:(?!</w:ins>).)*>result</w:t>', dd, re.S) is not None and 'rkIns' not in dd, re.findall(r'<w:(?:ins|del) [^>]*>', dd)[:4])
+
+        # ---- many tracked changes, many authors (the second review of Track Changes): the layer of
+        # who wrote what made in the worker, the page not held up (M2: 3000 changes stalled it for
+        # 1.8 s, 20000 for a minute); a file with more pieces than the layer keeps says where its
+        # credited changes start (M2); the open message names a few authors and counts the rest
+        # (L3: 300 names made 5,800 characters), each name without the characters that turn the
+        # text's direction (L4) ----
+        def body_docx(name, body):
+            P1 = parts(fx)
+            d1 = P1['word/document.xml'].decode()
+            P1['word/document.xml'] = re.sub(r'<w:body>[\s\S]*</w:body>', lambda m: '<w:body>' + body + '<w:sectPr/></w:body>', d1).encode()
+            return make_zip(os.path.join(TMP, name), P1)
+        run = lambda t: '<w:r><w:t xml:space="preserve">%s</w:t></w:r>' % t
+        tins = lambda who, t, i: '<w:ins w:id="%d" w:author="%s" w:date="2026-11-01T10:00:00Z">%s</w:ins>' % (i, who, run(t))
+        many = ''.join('<w:p>' + ''.join(run('w%d ' % (i * 50 + j)) + tins('Bo' if j % 2 else 'Ana', 'x', 10 + i * 50 + j) for j in range(50)) + '</w:p>' for i in range(60))
+        page.evaluate("window.__gap = 0; let last = performance.now(); const f = () => { const n = performance.now(); window.__gap = Math.max(window.__gap, n - last); last = n; requestAnimationFrame(f); }; requestAnimationFrame(f);")
+        open_file(page, body_docx('Many.docx', many)); page.wait_for_timeout(800)
+        gap = page.evaluate('window.__gap')
+        ch = page.evaluate("window.rikuy.realChanges().map((c) => window.rikuy.rvName(c.who))")
+        check('3000 tracked changes come in each its author\'s, the page never held up for a second (review M2: 1.8 s)', len(ch) > 2500 and set(ch) == {'Ana', 'Bo'} and gap < 1000, (len(ch), sorted(set(ch)), gap))
+        # (Reject by author and Reject All move the layer in one pass: they held the page 0.9 and 1.5 s; N3)
+        page.evaluate("window.__gap = 0"); page.evaluate("window.rikuy.rejectChanges(window.rikuy.realChanges().filter((c) => window.rikuy.rvName(c.who) === 'Bo'))"); page.wait_for_timeout(500)
+        g_bo, left = page.evaluate('window.__gap'), page.evaluate("window.rikuy.realChanges().map((c) => window.rikuy.rvName(c.who))")
+        page.evaluate("window.__gap = 0"); page.evaluate("window.rikuy.rejectAllChanges(false)"); page.wait_for_timeout(500)
+        g_all = page.evaluate('window.__gap')
+        check('Reject by Bo and then Reject All on them hold the page under half a second each (review N3: 0.9 and 1.5 s)', set(left) == {'Ana'} and len(left) >= 60 and g_bo < 500 and g_all < 500 and not page.evaluate("window.rikuy.realChanges().length") and src(page) == page.evaluate("window.rikuy.base.files.get('main.tex')"), (len(left), round(g_bo), round(g_all)))
+        people = ''.join(tins('Author number %d' % k, 'x', 10 + k) + run('w%d ' % k) for k in range(300))
+        # (Eve first: past the sixth, authors share the last step and its joined name)
+        open_file(page, body_docx('People.docx', '<w:p>' + run('Then ') + tins('\u202eEve\u2066', 'cc ', 400) + run('end.') + '</w:p>' + '<w:p>' + run('Start ') + people + '</w:p>'))
+        toast = page.inner_text('#toast')
+        check('the open message names three authors and counts the rest (review L3)', 'by Eve, Author number 0, Author number 1 and 298 others,' in toast and len(toast) < 800, (len(toast), toast[:300]))
+        check('a name turning the text\'s direction comes without those characters (review L4)', 'Eve' in page.evaluate("window.rikuy.realChanges().map((c) => window.rikuy.rvName(c.who)).join(' ')") and not re.search('[\u202a-\u202e\u2066-\u2069]', page.evaluate("window.rikuy.realChanges().map((c) => c.who).join('')") + toast))
+        huge = ''.join('<w:p>' + ''.join(run('w%d ' % (i * 30 + j)) + tins('Bo' if j % 2 else 'Ana', 'x', 10 + i * 30 + j) for j in range(30)) + '</w:p>' for i in range(400))
+        open_file(page, body_docx('Huge.docx', huge))
+        toast = page.inner_text('#toast')
+        m = re.search(r'The changes before line (\d+) of main\.tex are credited to "Word", not to their authors', toast)
+        line = int(m.group(1)) if m else -1
+        first = page.evaluate("(n) => { const R = window.rikuy, t = R.files.get('main.tex'); const at = t.split('\\n').slice(0, n - 1).join('\\n').length; return R.realChanges().filter((c) => c.bs > at + 200).every((c) => c.who === 'Ana' || c.who === 'Bo'); }", line)
+        check('a file with more pieces of tracked text than the layer keeps says from which line its changes are credited, and they are (review M2)', line > 1 and first, toast[:400])
+        # (those before it are "Word"'s, not the person's own: Reject by author "You" would take them
+        # too, and Save as Word sign them with the person's name; review N1)
+        start = page.evaluate("(n) => { const R = window.rikuy, t = R.files.get('main.tex'); const at = t.split('\\n').slice(0, n - 1).join('\\n').length; return [...new Set(R.realChanges().filter((c) => c.be < at).map((c) => R.rvName(c.who)))].concat(R.rvReviewers()); }", line)
+        check('and those before it are credited to "Word", none to the person (review N1)', start[:1] == ['Word'] and 'You' not in start, start)
+
         # ---- what pandoc alone loses: kept where LaTeX has it, said where it has not ----
         fx2 = os.path.join(TMP, 'Reform.docx')
         open(fx2, 'wb').write(word_fixture.make_rich())
