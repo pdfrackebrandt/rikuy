@@ -1174,7 +1174,14 @@ class App {
     const now = Date.now();
     const top = this.hist[this.hist.length - 1];
     const contiguous = top && top.caretAfter && cb && top.caretAfter.f === cb.f && Math.abs(top.caretAfter.p - cb.p) <= 2;
-    if (top && top.open && kind && top.kind === kind && now - top.time < 2000 && (kind !== 'type' && kind !== 'del' || contiguous)) {
+    // Typing is undone word by word, as Word's: a step is a word with the spaces after it (a space
+    // typed first goes with the word after it), and a new paragraph starts one. A heading's words
+    // and the paragraph typed after it, or a sentence of 40 words, went in one Ctrl+Z.
+    const typed = kind === 'type' && top && files.length === 1 ? files[0].ins : null;
+    const prev = typed != null ? (this.files.get(files[0].f) || '')[files[0].s - 1] || '' : '';
+    const had = typed != null ? ((top.files.find((d) => d.f === files[0].f) || {}).ins || '') : '';
+    const newWord = typed != null && (/\n/.test(typed) || (/\s/.test(prev) && /^\S/.test(typed) && /\S/.test(had)));
+    if (top && top.open && kind && top.kind === kind && now - top.time < 2000 && (kind !== 'type' && kind !== 'del' || contiguous) && !newWord) {
       // (what every edit of the step left alone is the least of what each left alone, for the files
       // nothing changed between its commits: src/editor.js stepJoin)
       stepJoin(top, before, (f) => this.files.get(f), win);
