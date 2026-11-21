@@ -296,6 +296,26 @@ const SMART_RESET_RE = /\s*\\smartdiagramset\s*\{\s*set color list=\{red!40,cyan
 const SMART_BACK_RE = /\s*\\smartdiagramset\s*\{(?:[^{}]|\{[^{}]*\})*\}% rikuy: colours back/y;
 function smartEnd(src, e) { SMART_BACK_RE.lastIndex = e; if (SMART_BACK_RE.test(src)) return SMART_BACK_RE.lastIndex; SMART_RESET_RE.lastIndex = e; return SMART_RESET_RE.test(src) ? SMART_RESET_RE.lastIndex : e; }
 
+// An optional argument written as text at the start of nodes ("[a)] Lab", "[\\textbf{b)}] Bold"):
+// { o, s, e, is, ie, nodes } as the parser gives one, taken out of nodes; null when nodes do not
+// start with [ or no ] closes it before a paragraph ends (a par node; LaTeX's first ] outside
+// braces ends it, and a ] inside a group is inside another node).
+function bracketArg(nodes, src) {
+  const n0 = nodes[0];
+  if (!n0 || n0.t !== 'text' || src[n0.s] !== '[') return null;
+  const kids = [];
+  for (let i = 0; i < nodes.length && i < 64; i++) {
+    const n = nodes[i], from = i === 0 ? n0.s + 1 : n.s;
+    if (n.t !== 'text') { if (n.t === 'par') return null; kids.push(n); continue; }
+    const j = src.indexOf(']', from);
+    if (j < 0 || j >= n.e) { if (n.e > from) kids.push({ ...n, s: from }); continue; }
+    if (j > from) kids.push({ ...n, s: from, e: j });
+    nodes.splice(0, i + 1, ...(j + 1 < n.e ? [{ ...n, s: j + 1 }] : []));
+    return { o: true, s: n0.s, e: j + 1, is: n0.s + 1, ie: j, nodes: kids };
+  }
+  return null;
+}
+
 export function buildModel(project, hint) {
   if (hint && hint.labels) {
     if (INCR.on) {
@@ -2521,6 +2541,11 @@ class Builder {
         const m = n && n.t === 'text' ? /^<[^<>\n]{1,60}>[ \t]*/.exec(ctx.src.slice(n.s, n.e)) : null;
         if (!m) continue;
         if (n.s + m[0].length < n.e) it.nodes[0] = { ...n, s: n.s + m[0].length }; else it.nodes.shift();
+        // \item<+->[a)]: the parser reads \item's [label] only right after its name, so after an
+        // overlay it stayed text, drawn as "[a)] Lab" beside a bullet (review N2): made the item's
+        // optional argument here, as the parser makes it
+        const arg = it.cmd.args[0] ? null : bracketArg(it.nodes, ctx.src);
+        if (arg) it.cmd = { ...it.cmd, e: arg.e, args: [arg] };
       }
     }
     // What labels and numbers it, as TeX reads it (src/lists.js, which the list commands share):
