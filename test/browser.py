@@ -333,6 +333,16 @@ def default_macros(page):
     probs = page.evaluate("(window.rikuy.problems || []).filter((x) => /Math error/.test(x.msg)).map((x) => x.msg)")
     n = page.evaluate("document.querySelectorAll('#pages .katex').length")
     check('\\tfrac, \\nicefrac and \\mathbbm render without a math error', not probs and n >= 2, (probs, n))
+    # \ensuremath is LaTeX's own, which KaTeX lacks: a package's macro built on it (an Overleaf
+    # project's macros.sty) showed every formula using it as an error
+    load_doc(page, {'main.tex': '\\documentclass{article}\n\\usepackage{mymacros}\n\\begin{document}\nRegimes $\\regime{1}, \\dots, \\regime{n}$ and \\regime{2} in text.\n\\end{document}\n',
+                    'mymacros.sty': '\\ProvidesPackage{mymacros}\n\\newcommand{\\regime}[1]{\\ensuremath{\\mathcal{R}_{#1}}}\n'})
+    page.wait_for_timeout(600)
+    page.evaluate('window.rikuy.refreshNav()')
+    probs = page.evaluate("(window.rikuy.problems || []).filter((x) => /Math error/.test(x.msg)).map((x) => x.msg)")
+    n = page.evaluate("document.querySelectorAll('#pages .katex').length")
+    bad = page.evaluate("document.querySelectorAll('#pages .katex-error, #pages .merr').length")
+    check('a macro built on \\ensuremath, in a formula and in text, renders without a math error', not probs and not bad and n >= 2, (probs, bad, n))
 
 
 def skipped_args(page):

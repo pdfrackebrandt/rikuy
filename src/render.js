@@ -16,6 +16,9 @@ const KATEX_DEFAULT_MACROS = {
   '\\eqqcolon': '=\\vcentcolon', '\\T': '^{\\top}', '\\middlebar': '\\middle|',
   // \mleft ... \mright (mleftright package): brackets without the extra space before them
   '\\mleft': '\\left', '\\mright': '\\right',
+  // \ensuremath (LaTeX's own): in a formula it is its argument; KaTeX lacks it, so a package's
+  // \newcommand{\R}[1]{\ensuremath{...}} used in $...$ showed as an error
+  '\\ensuremath': '{#1}',
   // amsmath and mathdots symbols KaTeX lacks
   '\\iiiint': '\\mathop{\\int\\mkern-9mu\\int\\mkern-9mu\\int\\mkern-9mu\\int}\\nolimits',
   '\\iddots': '\\mathinner{\\mkern1mu\\raisebox{0.1em}{.}\\mkern2mu\\raisebox{0.4em}{.}\\mkern2mu\\raisebox{0.7em}{.}\\mkern1mu}'
