@@ -1638,6 +1638,13 @@ class App {
     this.typeQ = null;
     if (q) this.typeIn(q, null);
   }
+  // What came in one insert with no key (dictation, a phone's suggestion bar) after the formula
+  // it began in has closed: on the page, where the caret now is; the second $ of a closing $$
+  // taken as a key would be (W4)
+  typeRest(rest) {
+    if (rest[0] === '$' && this.swallowDollar && performance.now() - this.swallowDollar < 1500) { this.swallowDollar = 0; rest = rest.slice(1); }
+    if (rest && this.caretNow()) this.typeIn(rest, null);
+  }
   typeIn(data, range) {
     const run = this.typedRun, c0 = this.caretNow();
     this.insertText(data, range);
@@ -3065,8 +3072,18 @@ class App {
     let handed = false, backOk = false;
     mf.addEventListener('pointerdown', () => { backOk = true; }, true);
     ta.addEventListener('keydown', (e) => { if (e.key === 'Tab') backOk = true; });
+    // While the box holds what the field cannot show (\begin{ or a brace not yet closed, an
+    // environment not yet ended) the keys stay in the box, a press on the field too: the field's
+    // reading of it replaced the box's text, \begin{ lost and } and & escaped (W3)
+    const boxOnly = () => (P.held && P.held()) || (ta.value.match(/\\begin\s*\{/g) || []).length > (ta.value.match(/\\end\s*\{/g) || []).length;
     mf.addEventListener('focusin', (e) => {
-      if (!handed || e.relatedTarget !== ta || !ta.isConnected) return;
+      if (e.relatedTarget !== ta || !ta.isConnected) return;
+      if (boxOnly()) {
+        if (backOk) { backOk = false; this.toast('The equation field shows this once it is complete: type on in the LaTeX box.'); }
+        queueMicrotask(() => ta.focus({ preventScroll: true }));
+        return;
+      }
+      if (!handed) return;
       if (backOk) { backOk = false; handed = false; return; }
       queueMicrotask(() => ta.focus({ preventScroll: true }));
     });
@@ -3095,6 +3112,9 @@ class App {
       onDollar: opts.onDollar,
       closer: () => this.pop && this.pop.closer,
       onCloser: () => opts.onEnter(),
+      // (W2, W4) what came in one insert after the box took the keys, or after the formula closed
+      boxType: (t) => { ta.setRangeText(t, ta.selectionStart, ta.selectionEnd, 'end'); ta.dispatchEvent(new Event('input')); },
+      afterClose: (rest) => this.typeRest(rest),
       // what the field cannot hold, typed as LaTeX (\begin{aligned}): it goes on in the LaTeX
       // box above, at the caret's place, the field showing what it makes
       toLatex: (more) => {
@@ -3236,7 +3256,9 @@ class App {
     ta.addEventListener('beforeinput', (e) => {
       if (e.data !== '$' || !(!display || (this.pop && this.pop.dollarClose)) || !dollarEnds(ta)) return;
       e.preventDefault(); if (stay()) return; push.flush();
-      if (display) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; }
+      // (opened by $$, its second closing $ is taken however the page draws it: in a p{} or X
+      // cell or a \parbox the display is drawn in the line, not as a display; W1)
+      if (display || this.pop.dollarClose) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; }
       this.closePop();
     });
     // a one line display made one of rows (Ctrl+Enter), as Word's: false, said why, where it cannot
@@ -3266,7 +3288,7 @@ class App {
       if (e.key === 'Enter' && (!display || fieldKeys || e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
       // (the closing $ of a formula in the line, as typed in the source; \$ stays a dollar sign)
-      if (e.key === '$' && (!display || (this.pop && this.pop.dollarClose)) && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); if (display) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; } this.closePop(); }
+      if (e.key === '$' && (!display || (this.pop && this.pop.dollarClose)) && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); if (display || this.pop.dollarClose) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; } this.closePop(); }
       // \) or \] typed in the box ends a formula opened by \( or \[
       if (this.pop && this.pop.closer && e.key === this.pop.closer && /(^|[^\\])\\$/.test(ta.value.slice(0, ta.selectionStart))) {
         e.preventDefault(); ta.setRangeText('', ta.selectionStart - 1, ta.selectionStart, 'end'); ta.dispatchEvent(new Event('input'));
@@ -3318,7 +3340,7 @@ class App {
         if (check || !ok) return ok;
         if (stay()) return;
         push.flush();
-        if (display) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; }
+        if (display || this.pop.dollarClose) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; }
         this.closePop();
       },
       onEscape: () => { push.flush(); this.closePop(); }
@@ -3370,6 +3392,7 @@ class App {
     // (where a display could stand instead, for the Equation tab's Display)
     const canDisplay = this.eqCanDisplayHere(this.ribbonAt());
     const p = this.makePop(null, 'pop-math', 'New inline math');
+    const PM = this.pop;
     this.pop.closer = o.closer || null;
     this.pop.display = false;
     this.pop.eqWhere = { display: canDisplay };
@@ -3436,6 +3459,9 @@ class App {
     // L6); \$ is a dollar sign too
     let keys = 0;
     const emptyKey = (k) => {
+      // (keys typed into the field whose input event is still to come: "5 each" in one insert
+      // found the formula empty at its space and wrote \$ there, the words after it lost; W4)
+      if ((k === '$' || k === ' ') && !ta.value && this.pop && this.pop.pullField) this.pop.pullField();
       if (ta.value || ins || (k !== '$' && k !== ' ') || o.closer) return false;
       if (k === '$' && keys) return false;
       this.closePop(true);
@@ -3455,37 +3481,23 @@ class App {
       return true;
     };
     // $5 then a space is a price, as Word users type one ($5 now), or a formula that opens with a
-    // number ($1 - \alpha$, $0 < x < 1$): the key after the space decides (verification of
-    // eb14945, V1; the space alone made both prices). The space waits (pend); a letter makes the
-    // price, written with the letter and the formula so far in one step; anything else (a sign,
-    // <, =, a backslash, a digit, a brace, ^, _, $, Enter) keeps the formula, the space in it.
-    // Backspace takes the waiting space back. k is a key's name, or with data what came in
-    // without one (dictation), decided by its first character.
-    let pend = false;
+    // number ($1 - \alpha$, $0 < x < 1$, $2 x$): the keys after the space decide (verification of
+    // eb14945, V1; of 5446132, W6, W7). The space waits (pend, the number as typed; a % or \% after
+    // it waits as the number does, $5% now). A sign, <, =, a backslash, a digit, a brace, ^, _, $
+    // or Enter keeps the formula, the space in it. A letter starts a word, which goes into the
+    // formula while it may still be one: $ right after the word ($2 x$) keeps the formula; a space
+    // or a sentence's mark after it, Enter, Esc or the box closing makes the price, written with
+    // the word in one step ($5 each, $5 each.). Backspace takes the space back. Text from an input
+    // method or a dead key after the space is a word, never a variable (W5).
+    let pend = null, word = '';
+    const PRICE = /^\d+([.,]\d+)?(\\?%)?[.,;:!?)]?$/;
+    const priceText = (more) => '\\$' + pend.replace(/(^|[^\\])%/g, '$1\\%') + ' ' + more;
     // (a formula opened by $$ where a display cannot go: its closing $$ is one, the second $ taken)
     const pairDone = () => { if (this.pop && this.pop.pairInline) this.swallowDollar = performance.now(); };
-    const priceKey = (k, inBox, data) => {
-      if (!k || o.closer) return false;
-      if (!pend) {
-        if (k !== ' ') return false;
-        // (keys typed into the field whose input event is still to come)
-        if (this.pop && this.pop.pullField) this.pop.pullField();
-        if (!/^\d+([.,]\d+)?[.,;:!?)]?$/.test(ta.value)) return false;
-        pend = true;
-        return true;
-      }
-      const ch = data ? k[0] : k.length === 1 ? k : null;
-      if (k === ' ') return true;
-      if (k === 'Backspace') { pend = false; return true; }
-      // (Shift, Caps Lock and the like come before the letter they make: still waiting)
-      if (!ch && !/^(Enter|Escape|Tab|Delete|Arrow|Home|End|Page)/.test(k)) return false;
-      pend = false;
-      if (!ch || !/^\p{L}$/u.test(ch)) {
-        if (inBox && ch && ch !== '$') ta.setRangeText(' ', ta.selectionStart, ta.selectionEnd, 'end');
-        return false;
-      }
+    const makePrice = (more) => {
       push.cancel();
-      const t = '\\$' + ta.value + ' ' + k, at = ins, P = this.pop;
+      const t = priceText(more), at = ins, P = this.pop;
+      pend = null; word = '';
       ins = null; ta.value = '';
       if (at) this.commit([{ f: at.f, s: at.s, e: at.e, t }], null, P.session);
       this.closePop(true);
@@ -3494,7 +3506,65 @@ class App {
       else this.commit([{ f: base.f, s: base.a, e: base.b, t }], { f: base.f, p: base.a + t.length }, 'type');
       return true;
     };
+    // k: a key's name, or with data a character that came with no key
+    const priceKey = (k, inBox, data) => {
+      if (!k || o.closer) return false;
+      if (pend === null) {
+        if (k !== ' ') return false;
+        // (keys typed into the field whose input event is still to come)
+        if (this.pop && this.pop.pullField) this.pop.pullField();
+        if (!PRICE.test(ta.value)) return false;
+        pend = ta.value; word = '';
+        return true;
+      }
+      const ch = data ? k[0] : k.length === 1 ? k : null;
+      // (Shift, Caps Lock, an input method's Process and the like come before what they make)
+      if (!ch && !/^(Enter|Escape|Tab|Delete|Backspace|Arrow|Home|End|Page)/.test(k)) return false;
+      const letter = !!ch && /^\p{L}$/u.test(ch);
+      if (!word) {
+        if (k === ' ') return true;
+        if (k === 'Backspace') { pend = null; return true; }
+        if (!letter) pend = null;
+        else word = ch;
+        if (inBox && ch && ch !== '$') ta.setRangeText(' ', ta.selectionStart, ta.selectionEnd, 'end');
+        return false;
+      }
+      if (letter) { word += ch; return false; }
+      if (k === 'Backspace') {
+        if (word.length > 1) { word = word.slice(0, -1); return false; }
+        // (the word's last letter, and with it the space it was given in the box: the space waits again)
+        word = '';
+        if (inBox) { ta.setRangeText('', Math.max(0, ta.selectionStart - 2), ta.selectionStart, 'end'); ta.dispatchEvent(new Event('input')); return true; }
+        return false;
+      }
+      if (ch && /^[ .,;:!?)'"]$/.test(ch)) return makePrice(word + ch);
+      if (/^(Enter|Escape|Tab)$/.test(k)) return makePrice(word);
+      pend = null; word = '';
+      return false;
+    };
+    // (W5) an input method's or a dead key's text after "$5 ": the price, with it as its word; it
+    // went into the formula, and the waiting space after it
+    p.addEventListener('compositionend', (e) => {
+      if (pend === null || !e.data || this.pop !== PM) return;
+      e.stopPropagation(); e.preventDefault();
+      makePrice(word + e.data);
+    }, true);
     ta.addEventListener('beforeinput', (e) => {
+      // (W4) several characters with no key (dictation, a phone's suggestion bar) before the field
+      // is there: one at a time through the rules below, as keys, and once the box has closed the
+      // rest on the page; "5 each" went into the formula whole, the words lost
+      if (e.inputType === 'insertText' && !e.isComposing && e.data && [...e.data].length > 1) {
+        e.preventDefault();
+        const chars = [...e.data];
+        for (let i = 0; i < chars.length; i++) {
+          if (this.pop !== PM) { this.typeRest(chars.slice(i).join('')); return; }
+          const ch = chars[i];
+          if (emptyKey(ch) || priceKey(ch, true, true)) continue;
+          if (ch === '$' && !o.closer && dollarEnds(ta) && !stay()) { push.flush(); pairDone(); this.closePop(); continue; }
+          ta.setRangeText(ch, ta.selectionStart, ta.selectionEnd, 'end'); ta.dispatchEvent(new Event('input')); keys++;
+        }
+        return;
+      }
       if (emptyKey(e.data) || priceKey(e.data, true, true)) { e.preventDefault(); return; }
       // (the closing $ that comes with no key, from dictation, an on-screen keyboard or a script:
       // it went into the formula, and what followed with it)
@@ -3504,7 +3574,7 @@ class App {
     ta.addEventListener('input', () => { preview(); push(); });
     ta.addEventListener('keydown', (e) => {
       // (a named key after a price's space: Backspace takes the space back; characters come by beforeinput)
-      if (pend && e.key.length !== 1 && priceKey(e.key, true)) { e.preventDefault(); return; }
+      if (pend !== null && e.key.length !== 1 && priceKey(e.key, true)) { e.preventDefault(); return; }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
       if (e.key === '$' && !o.closer && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); pairDone(); this.closePop(); }
@@ -3514,7 +3584,21 @@ class App {
       }
     });
     const whole = () => mathMadeWhole(ta.value, kerr(ta.value));
-    this.pop.onClose = () => { push.cancel(); if (!this.pop) return; const v = held(ta.value) ? whole() : ta.value; insert(v); this.eqClosed(this.pop, v); };
+    this.pop.onClose = () => {
+      push.cancel();
+      if (!this.pop) return;
+      // (closed by a click or the like with a word after "$5 ": the price, W6)
+      if (pend !== null && word) {
+        const t = priceText(word), P = this.pop;
+        pend = null; word = '';
+        if (ins) { this.commit([{ f: ins.f, s: ins.s, e: ins.e, t }], null, P.session); P.returnCaret = { f: ins.f, p: ins.s + t.length }; ins = null; }
+        else if (ghost) { this.ghost = ghost; this.ghostInsert(t); P.returnCaret = null; }
+        else { this.commit([{ f: base.f, s: base.a, e: base.b, t }], null, P.session); P.returnCaret = { f: base.f, p: base.a + t.length }; }
+        ta.value = '';
+        return;
+      }
+      const v = held(ta.value) ? whole() : ta.value; insert(v); this.eqClosed(this.pop, v);
+    };
     this.pop.refuse = () => !!held(ta.value) && !!held(whole());
     this.pop.mathText = () => ta.value;
     this.pop.returnCaret = base ? { f: base.f, p: base.a } : null;
@@ -3935,7 +4019,9 @@ class App {
     }
     if (!opens.length) return base;
     const open = opens[0];
-    const m = /\\([A-Za-z]+)\*?\s*(?:\[[^\]]*\]\s*)?$/.exec(src.slice(Math.max(B.s, open - 60), open));
+    // (the command's earlier arguments before it: \href{url}{text}, \parbox{4cm}{…},
+    // \colorbox{red}{…}; read past, the text was taken for a bare group and got a display; W1)
+    const m = /\\([A-Za-z]+)\*?\s*(?:\[[^\]]*\]\s*|\{[^{}]*\})*$/.exec(src.slice(Math.max(B.s, open - 400), open));
     const name = m ? m[1] : '';
     if (!name) return base;
     if (/^(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)$/.test(name)) {

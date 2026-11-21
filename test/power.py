@@ -137,7 +137,8 @@ def dollars(page):
     click_text(page, 'gamma.', 6); typed(page, ' z '); typed(page, '\\', 300); typed(page, 'sec'); key(page, 'Escape', 300); typed(page, ' w')
     check('dollars: \\sec then Esc in prose is the text \\sec, not the formula command', 'gamma. Z \\textbackslash{}sec w' in src(page), src(page)[60:110])
     # a price as Word users type it: $ a number and a space is a dollar sign (verification of 2308408)
-    for typed_, want in ((' costs $5 each', ' Costs \\$5 each'), (' pay $12.50 now', ' Pay \\$12.50 now'), (' so $5x$ ok', ' So $5x$ ok')):
+    # (the word after the space decides at its end: a space or a mark, W6)
+    for typed_, want in ((' costs $5 each.', ' Costs \\$5 each.'), (' pay $12.50 now.', ' Pay \\$12.50 now.'), (' so $5x$ ok', ' So $5x$ ok')):
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
         for ch in typed_:
@@ -148,7 +149,7 @@ def dollars(page):
     # (verification of eb14945, V1) the key after the space decides: a letter starting a word makes
     # the price; a sign, <, =, a backslash, a digit or $ keeps the formula that opens with a number
     import re
-    for typed_, want in ((' costs $5 and $10 now', re.escape(' Costs \\$5 and \\$10 now')), (' it costs $5. Then more', re.escape(' It costs \\$5. Then more')),
+    for typed_, want in ((' costs $5 and $10 now.', re.escape(' Costs \\$5 and \\$10 now.')), (' it costs $5. Then more', re.escape(' It costs \\$5. Then more')),
                          (' pay $5, then go', re.escape(' Pay \\$5, then go')),
                          (' the $1 - \\alpha$ level', r' The \$1\s*-\s*\\alpha\$ level'), (' with $0 < x < 1$ ok', r' With \$0\s*<\s*x\s*<\s*1\$ ok'),
                          (' and $2 \\times 3$ ok', r' And \$2\s*\\times\s*3\$ ok'), (' so $5 = x$ ok', r' So \$5\s*=\s*x\$ ok'), (' at $5 \b+1$ ok', r' At \$5\+1\$ ok')):
@@ -161,6 +162,44 @@ def dollars(page):
         s = src(page)
         check('dollars: ' + typed_.strip().replace('\\b', '(Backspace)') + (' is a price' if '\\\\$' in want else ' stays a formula'),
               re.search('gamma\\.' + want + '\n', s) is not None and 'textbackslash' not in s and active(page) == 'pages', (s[60:130], active(page)))
+    # (verification of 5446132) W6: $ right after the word keeps the formula ($2 x$), a click away
+    # after the word makes the price; W7: a % or \% after the number waits as the number does
+    for typed_, want in ((' a $2 x$ term', r' A \$2\s*x\$ term'), (' save $5% now.', re.escape(' Save \\$5\\% now.')), (' save $5\\% now.', re.escape(' Save \\$5\\% now.'))):
+        load_doc(page, MATH)
+        click_text(page, 'gamma.', 6)
+        for ch in typed_:
+            page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
+        page.wait_for_timeout(300)
+        s = src(page)
+        check('dollars: ' + typed_.strip() + (' is a price' if '%' in typed_ else ' stays a formula'), re.search('gamma\\.' + want + '\n', s) is not None and active(page) == 'pages', (s[60:130], active(page)))
+    load_doc(page, MATH)
+    click_text(page, 'gamma.', 6)
+    for ch in ' costs $5 each': page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
+    click_text(page, 'Next', 0); page.wait_for_timeout(400)
+    check('dollars: $5 each then a click away is a price', 'gamma. Costs \\$5 each\n' in src(page), src(page)[60:130])
+    # W4: words with no key (dictation, a phone's suggestion bar) into a $ just opened are kept;
+    # W5: an input method's or a dead key's word after "$5 " keeps the space
+    cdp = page.context.new_cdp_session(page)
+    for ins_, after, want in (('5 each', ' ok.', re.escape(' See \\$5 each ok.')), ('ab cd', '$ ok', r' See \$ab\s*cd\$ ok')):
+        page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+        load_doc(page, MATH)
+        click_text(page, 'gamma.', 6)
+        for ch in ' see $': page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
+        cdp.send('Input.insertText', {'text': ins_}); page.wait_for_timeout(400)
+        for ch in after: page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
+        page.wait_for_timeout(300)
+        s = src(page)
+        check('dollars: ' + repr(ins_) + ' in one insert after $ keeps its words', re.search('gamma\\.' + want + '\n', s) is not None, s[60:130])
+    for how, comp, commit in (('an input method', 'に', '日本'), ('a dead key', '´', 'é')):
+        page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+        load_doc(page, MATH)
+        click_text(page, 'gamma.', 6)
+        for ch in ' price $5 ': page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
+        cdp.send('Input.imeSetComposition', {'text': comp, 'selectionStart': 1, 'selectionEnd': 1}); page.wait_for_timeout(200)
+        cdp.send('Input.insertText', {'text': commit}); page.wait_for_timeout(300)
+        page.keyboard.type(' ok'); page.wait_for_timeout(300)
+        s = src(page)
+        check('dollars: after "$5 " ' + how + '\'s word is the price\'s, the space kept', 'gamma. Price \\$5 ' + commit + ' ok\n' in s and active(page) == 'pages', (s[60:130], active(page)))
 
 
 def field(page, keys):
@@ -221,6 +260,26 @@ def latex(page):
         if 'x=1\\text{if}+y' not in body: bad.append(body)
         key(page, 'Escape', 300)
     check('latex: dictation in \\text{…} as the field opens keeps every key, six times over', not bad, bad)
+    # (verification of 5446132) W2: the whole formula in one insert with no key: the rest after
+    # \text{ goes to the LaTeX box as it came
+    page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+    load_doc(page, MATH)
+    click_text(page, 'gamma.', 6)
+    key(page, 'Enter'); key(page, 'Alt+Equal', 800)
+    cdp.send('Input.insertText', {'text': 'x=1\\text{if }+y'}); page.wait_for_timeout(800); key(page, 'Enter', 600)
+    s = src(page); body = ''.join(s[s.find('\\begin{equation}'):s.find('\\end{equation}')].split())
+    check('latex: x=1\\text{if }+y in one insert is written as it came', body == '\\begin{equation}x=1\\text{if}+y', body)
+    # W3: a press on the field while the box holds \begin{ unfinished keeps the keys in the box
+    page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+    load_doc(page, MATH)
+    click_text(page, 'gamma.', 6)
+    key(page, 'Enter'); key(page, 'Alt+Equal', 800)
+    page.keyboard.type('x=\\begin{'); page.wait_for_timeout(200)
+    page.click('#pop-field', timeout=2000); page.wait_for_timeout(200)
+    page.keyboard.type('aligned}a&=b\\end{aligned}'); page.wait_for_timeout(800)
+    box = page.evaluate("(() => { const t = document.querySelector('#pop-tex'); return t && t.value; })()")
+    check('latex: a press on the field with \\begin{ unfinished leaves the keys in the LaTeX box', (box or '').strip() == 'x=\\begin{aligned}a&=b\\end{aligned}' and active(page) == 'pop-tex', (box, active(page)))
+    key(page, 'Escape', 400)
     # what the field cannot hold goes on in its LaTeX box, typed on there
     load_doc(page, MATH)
     click_text(page, 'gamma.', 6)
@@ -675,6 +734,11 @@ CTX = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\nTe
        '\\begin{figure}\n\\centering\n\\caption{Cap text.}\n\\end{figure}\n\nBold \\textbf{strong words} end.\n\nPrice text.\n\n\\end{document}\n')
 
 
+CTX2 = ('\\documentclass{article}\n\\usepackage{amsmath,tabularx,hyperref}\n\\begin{document}\n\nSee \\href{https://x.org}{the link text} here.\n\n'
+        '\\begin{tabularx}{\\linewidth}{lX}\nCell l & Cell xcol\\\\\n\\end{tabularx}\n\n\\begin{tabular}{p{3cm}c}\nCell para & Cell cc\\\\\n\\end{tabular}\n\n'
+        'Box \\parbox{4cm}{parbox words} end.\n\n\\end{document}\n')
+
+
 def slow(page, text, d=60):
     for ch in text:
         page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else d)
@@ -693,6 +757,13 @@ def pairs(page):
         check('pairs: $$x^2$$ in ' + at + ' is a formula in the line, every key kept', want in s and '\\$' not in s and '\\[' not in s and active(page) == 'pages', (s[s.find(at.split()[0]) - 20:][:80], active(page)))
     for ch in '$$': page.keyboard.type(ch); page.wait_for_timeout(250)
     check('pairs: a $$ typed again after it is a dollar sign, not swallowed', '$x^2$ z\\$' in src(page), src(page)[src(page).find('Cell a'):][:60])
+    # (verification of 5446132, W1) \href's text is an argument: a formula in the line; a display
+    # in a p{} or X cell or a \parbox takes its second closing $ as one too
+    for at, off, want in (('link text', 4, '{the link $x^2$ z text}'), ('Cell xcol', 9, 'Cell xcol \n\\[x^2\\] z\\\\'),
+                          ('Cell para', 9, 'Cell para \n\\[x^2\\] z &'), ('parbox words', 6, '{parbox $x^2$ z words}')):
+        fresh(page, CTX2); click_text(page, at, off); slow(page, ' $$x^2$$ z')
+        s = src(page)
+        check('pairs: $$x^2$$ z in ' + at + ': no stray dollar sign', want in s and '\\$' not in s and active(page) == 'pages', (s[s.find(at.split()[0]) - 20:][:80], active(page)))
     # (a p{} cell takes a display, as a paragraph does)
     fresh(page, CTX); click_text(page, 'Para cell', 9); slow(page, ' $$x^2$$')
     s = src(page)
