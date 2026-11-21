@@ -1250,6 +1250,7 @@ class App {
     if (this.takeBackGhost('undo')) return;
     const h = this.hist.pop();
     if (!h) { this.toast('Nothing to undo'); return; }
+    if (!this.stepFits(h, true)) return;
     h.open = false; h.before = null; h.win = null; h.after = null;
     const was = new Map(h.files.map((d) => [d.f, this.files.get(d.f) ?? '']));
     for (const d of h.files) { const t = this.files.get(d.f) ?? ''; this.files.set(d.f, t.slice(0, d.s) + d.del + t.slice(d.s + d.ins.length)); if (d.made && !this.files.get(d.f)) this.files.delete(d.f); }
@@ -1273,6 +1274,7 @@ class App {
     const h = this.redoStack.pop();
     // nothing to redo: Ctrl+Y repeats the last command at the caret, as Word's does (src/cmd/view.js)
     if (!h) { if (!this.repeatLast()) this.toast('Nothing to redo'); return; }
+    if (!this.stepFits(h, false)) return;
     const was = new Map(h.files.map((d) => [d.f, this.files.get(d.f) ?? '']));
     for (const d of h.files) { const t = this.files.get(d.f) ?? ''; this.files.set(d.f, t.slice(0, d.s) + d.ins + t.slice(d.s + d.del.length)); }
     for (const b of h.blobs || []) this.setAsset(b.name, b.after);
@@ -1285,6 +1287,25 @@ class App {
     this.pushToSource();
     this.saveSoon();
     this.updateUndoUI();
+  }
+  // A step is applied only to the text it made (undo) or the text it was undone to (redo): each
+  // file's text at its place must be what the step put there. A file replaced outside the
+  // history (opened over by another of its name, before that was a step: openFiles) had its
+  // coauthor's text cut at the old offsets with no word, and since the steps are kept across a
+  // reload (historyKept) for as long as they last. Where one does not fit, every step goes, as
+  // none can be trusted to fit either.
+  stepFits(h, back) {
+    const ok = h.files.every((d) => {
+      if (!this.files.has(d.f)) return !back && !!d.made;
+      const t = this.files.get(d.f), want = back ? d.ins : d.del;
+      return d.s >= 0 && t.slice(d.s, d.s + want.length) === want;
+    });
+    if (ok) return true;
+    // (what is kept across a reload goes at the next save; until then a reload meets this again)
+    this.hist = []; this.redoStack = [];
+    this.updateUndoUI();
+    this.toast('The text changed outside Undo\'s history, so ' + (back ? 'Undo' : 'Redo') + ' would not fit it. The history is cleared; Review, Versions keeps earlier copies.', 8000);
+    return false;
   }
   updateUndoUI() { $('#b-undo').disabled = !this.hist.length; $('#b-redo').disabled = !this.redoStack.length; if ($('#b-undo-x')) $('#b-undo-x').disabled = !this.hist.length; }
 
@@ -4613,9 +4634,13 @@ class App {
         this.markFromLink('', this.name, this.main, from || 'zip');
         if (!from) markNote = was && was.allowed ? ' Shell escape, allowed for this project before, is restricted again: new files from an archive arrived. Allow it in the PDF pane if you trust them.' : ' They came in an archive, so shell escape is restricted for this project until you allow it in the PDF pane.';
       }
-      // (a file opened over another is a step of its own: typing before it and after it are two undos)
+      // (a file opened over another is a step of its own: typing before it and after it are two
+      // undos, and Undo puts the text it replaced back. It was no step, so the steps before it
+      // were applied to the new text at the old offsets: stepFits)
       this.closeGroup();
+      const overText = new Map([...texts.keys()].filter((n) => this.files.has(n) && this.files.get(n) !== texts.get(n)).map((n) => [n, this.files.get(n)]));
       for (const [n, t] of texts) this.files.set(n, t);
+      if (overText.size) { this.record(overText, 'open', null, null); this.closeGroup(); }
       for (const [n, o] of orig) this.orig.set(n, o);
       for (const [n, b] of blobs) this.addAsset(n, b);
       for (const [n, b] of extra) this.extra.set(n, b);

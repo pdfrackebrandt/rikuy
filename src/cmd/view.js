@@ -117,7 +117,7 @@ register(
 
 // What a step of the history was, for Undo's list (the kinds App.commit is given)
 const KIND = { type: 'Typing', del: 'Delete', enter: 'New paragraph', paste: 'Paste', block: 'Paragraph', restore: 'Restore', reject: 'Reject', merge: 'Merge', 'del-atom': 'Delete',
-  'page-border': 'Page border', style: 'Style', api: 'Script', 'other-tab': 'Another tab', move: 'Move', table: 'Table' };
+  'page-border': 'Page border', style: 'Style', api: 'Script', 'other-tab': 'Another tab', move: 'Move', table: 'Table', open: 'Open file' };
 const kindName = (k) => KIND[k] || (k ? String(k).replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase()).slice(0, 40) : 'Edit');
 
 // commands that only show or move, never write: Repeat skips them
