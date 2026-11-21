@@ -3628,7 +3628,7 @@ class App {
     };
     const hint0 = hint.textContent;
     const wait = () => {
-      hint.textContent = pend === null ? hint0 : '$' + pend + ' ' + word + (word ? ': a price at the next space or mark; $ keeps a formula.' : ': a price if a word follows.');
+      hint.textContent = pend === null ? hint0 : word ? '$' + pend + ' ' + word + ': a price at the next space or mark; $ keeps a formula.' : '$' + pend + ' and a space: a price if a word follows.';
       hint.classList.toggle('wait', pend !== null);
     };
     // k: a key's name, or with data a character that came with no key
