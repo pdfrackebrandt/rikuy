@@ -193,6 +193,14 @@ try:
         fonts, text = pdf_fonts_text(page)
         errs = page.evaluate("window.rikuy.texIssues.filter((x) => x.sev === 'error').map((x) => x.msg)")
         check('accents written as LaTeX in a .bib come out of biber as letters: no Unicode error, Pérez and María in the PDF', 'page' in st and not errs and 'Pérez' in text and 'María' in text and 'Müller' in text, [st, errs[:2], text[:200]])
+        # a main document in a folder of its own (File, Main document) reading ../refs.bib: biber ran
+        # in a folder of its own with the files' ../ taken off, could not find it and printed [p] (review N5)
+        page.evaluate("""(fs) => { window.rikuy.loadProject(new Map(fs), 'talk/slides.tex', 'biber-folder', 'Opened'); window.rikuy.compilePdf(); }""",
+                      [['talk/slides.tex', '\\documentclass{article}\n\\usepackage[backend=biber]{biblatex}\n\\addbibresource{../refs.bib}\n\\begin{document}\nSee \\cite{p}.\n\\printbibliography\n\\end{document}\n'],
+                       ['refs.bib', '@article{p, author={Perez, A}, title={Regimes in Folders}, journal={J}, year={2019}}\n']])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('biber finds ../refs.bib from a main document in a folder', 'page' in st and 'Regimes in Folders' in text and '[p]' not in text, [st, text[:200]])
 
         open_doc(page, [['main.tex', '\\documentclass{article}\n\\usepackage[scheme=plain]{ctex}\n\\begin{document}\nHello 你好，世界！\\textbf{粗体} \\textit{楷体} 繁體：臺灣。\n\\end{document}\n']])
         st = wait_pdf(page)
