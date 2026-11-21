@@ -3079,6 +3079,7 @@ class App {
     // MathLive 0.108+ can miss focusing itself when clicked while another input has focus.
     mf.addEventListener('pointerup', () => { if (document.activeElement !== mf) focusField(mf); }, true);
     P.syncField = sync;
+    P.pullField = pull;
     if (opts.onKey) mf.addEventListener('keydown', (e) => { if (!wt.active() && mf.mode !== 'latex') opts.onKey(e); }, true);
     const wt = installWordTyping(mf, {
       host: P.el,
@@ -3450,12 +3451,36 @@ class App {
       else this.commit([{ f: base.f, s: base.a, e: base.b, t: '\\$ ' }], { f: base.f, p: base.a + 3 }, 'type');
       return true;
     };
-    // $5 then a space: a price, as Word users type one, not the formula $5$ (review of M6); the
-    // formula written so far goes in the same step
-    const priceKey = (k) => {
-      if (k !== ' ' || o.closer || !/^\d+([.,]\d+)?[.,;:!?)]?$/.test(ta.value)) return false;
+    // $5 then a space is a price, as Word users type one ($5 now), or a formula that opens with a
+    // number ($1 - \alpha$, $0 < x < 1$): the key after the space decides (verification of
+    // eb14945, V1; the space alone made both prices). The space waits (pend); a letter makes the
+    // price, written with the letter and the formula so far in one step; anything else (a sign,
+    // <, =, a backslash, a digit, a brace, ^, _, $, Enter) keeps the formula, the space in it.
+    // Backspace takes the waiting space back. k is a key's name, or with data what came in
+    // without one (dictation), decided by its first character.
+    let pend = false;
+    const priceKey = (k, inBox, data) => {
+      if (!k || o.closer) return false;
+      if (!pend) {
+        if (k !== ' ') return false;
+        // (keys typed into the field whose input event is still to come)
+        if (this.pop && this.pop.pullField) this.pop.pullField();
+        if (!/^\d+([.,]\d+)?[.,;:!?)]?$/.test(ta.value)) return false;
+        pend = true;
+        return true;
+      }
+      const ch = data ? k[0] : k.length === 1 ? k : null;
+      if (k === ' ') return true;
+      if (k === 'Backspace') { pend = false; return true; }
+      // (Shift, Caps Lock and the like come before the letter they make: still waiting)
+      if (!ch && !/^(Enter|Escape|Tab|Delete|Arrow|Home|End|Page)/.test(k)) return false;
+      pend = false;
+      if (!ch || !/^\p{L}$/u.test(ch)) {
+        if (inBox && ch && ch !== '$') ta.setRangeText(' ', ta.selectionStart, ta.selectionEnd, 'end');
+        return false;
+      }
       push.cancel();
-      const t = '\\$' + ta.value + ' ', at = ins, P = this.pop;
+      const t = '\\$' + ta.value + ' ' + k, at = ins, P = this.pop;
       ins = null; ta.value = '';
       if (at) this.commit([{ f: at.f, s: at.s, e: at.e, t }], null, P.session);
       this.closePop(true);
@@ -3465,7 +3490,7 @@ class App {
       return true;
     };
     ta.addEventListener('beforeinput', (e) => {
-      if (emptyKey(e.data) || priceKey(e.data)) { e.preventDefault(); return; }
+      if (emptyKey(e.data) || priceKey(e.data, true, true)) { e.preventDefault(); return; }
       // (the closing $ that comes with no key, from dictation, an on-screen keyboard or a script:
       // it went into the formula, and what followed with it)
       if (e.data === '$' && !o.closer && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); return; }
@@ -3473,6 +3498,8 @@ class App {
     });
     ta.addEventListener('input', () => { preview(); push(); });
     ta.addEventListener('keydown', (e) => {
+      // (a named key after a price's space: Backspace takes the space back; characters come by beforeinput)
+      if (pend && e.key.length !== 1 && priceKey(e.key, true)) { e.preventDefault(); return; }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
       if (e.key === '$' && !o.closer && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
@@ -3511,7 +3538,7 @@ class App {
       onEscape: () => { push.flush(); this.closePop(); },
       onKey: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        if (emptyKey(e.key) || priceKey(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+        if (emptyKey(e.key) || priceKey(e.key, false)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
         if (e.key.length === 1) keys++;
       }
     });

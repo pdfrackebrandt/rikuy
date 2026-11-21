@@ -145,6 +145,22 @@ def dollars(page):
         page.wait_for_timeout(300)
         s = src(page)
         check('dollars: ' + typed_.strip() + ' gives' + want, 'gamma.' + want + '\n' in s and active(page) == 'pages', (s[60:130], active(page)))
+    # (verification of eb14945, V1) the key after the space decides: a letter starting a word makes
+    # the price; a sign, <, =, a backslash, a digit or $ keeps the formula that opens with a number
+    import re
+    for typed_, want in ((' costs $5 and $10 now', re.escape(' Costs \\$5 and \\$10 now')), (' it costs $5. Then more', re.escape(' It costs \\$5. Then more')),
+                         (' pay $5, then go', re.escape(' Pay \\$5, then go')),
+                         (' the $1 - \\alpha$ level', r' The \$1\s*-\s*\\alpha\$ level'), (' with $0 < x < 1$ ok', r' With \$0\s*<\s*x\s*<\s*1\$ ok'),
+                         (' and $2 \\times 3$ ok', r' And \$2\s*\\times\s*3\$ ok'), (' so $5 = x$ ok', r' So \$5\s*=\s*x\$ ok'), (' at $5 \b+1$ ok', r' At \$5\+1\$ ok')):
+        load_doc(page, MATH)
+        click_text(page, 'gamma.', 6)
+        for ch in typed_.replace('\\b', '\x08'):
+            if ch == '\x08': key(page, 'Backspace', 60); continue
+            page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
+        page.wait_for_timeout(300)
+        s = src(page)
+        check('dollars: ' + typed_.strip().replace('\\b', '(Backspace)') + (' is a price' if '\\\\$' in want else ' stays a formula'),
+              re.search('gamma\\.' + want + '\n', s) is not None and 'textbackslash' not in s and active(page) == 'pages', (s[60:130], active(page)))
 
 
 def field(page, keys):
