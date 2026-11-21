@@ -34,7 +34,7 @@ export function guide(app, title, el, w, cls) {
 
 const always = () => true;
 register(
-  { id: 'help', name: 'Help', el: 'b-help', static: true, place: 'bar', only: 'wide', title: 'How it works', when: always, run: (app) => app.openHelp() },
+  { id: 'help', name: 'Help', el: 'b-help', static: true, place: 'bar', only: 'wide', title: 'Read how Rikuy works, beside the page', when: always, run: (app) => app.openHelp() },
   { id: 'help-how', name: 'How it works', order: 10, title: 'What Rikuy is and how to work in it (F1)', synonyms: ['Help', 'Guide', 'Manual'], tab: 'help', group: 'help', el: 'rh-how', label: 'How it works', keys: ['F1'], keyScope: 'app',
     icon: '<circle cx="10" cy="10" r="7"/><path d="M8 8a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.2v.5M10 14v.2"/>', when: always, run: (app) => app.openHelp() },
   { id: 'help-tour', name: 'Learn Rikuy', order: 20, title: 'A short document to try things in: typing on the page, Page, LaTeX and PDF, an equation, a live graph', synonyms: ['Tour', 'Tutorial', 'Getting started', 'Show me', 'Training'],

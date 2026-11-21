@@ -3289,7 +3289,15 @@ Tests:
     fields 32 px with 4 px corners (44 under a finger), dialogs and sheets 8 px, one title style
     (14 px semibold), a close button 44 px under a finger, the status bar's words one size and
     its views one height, File's column 32 px, a phone's top bar 44 px (`ux.py consistency`).
-    Open, in the audit: findings for the ribbon tabs agent.
+    Then (branch `ux-consistency-2`, PR 90) the verification of 0a6ef7b and the rest of
+    `UI-PRINCIPLES.md` outside the ribbon, each a commit with its part of `ux.py` (audit section
+    13): one height per kind inside dialogs, number fields one box; dark mode's primary buttons
+    and the search list at 4.5:1; dialogs take the focus, keep Tab inside, give it back to a
+    keyboard opener; the phone's bar 8 px apart at 320 px; the ruler by a double click; motion
+    in opacity and transform only; the right click menu's words, "…" from the registry's
+    `dialog`; empty panes with one sentence and one command; the focused field above the
+    on-screen keyboard; touch targets 8 px apart; tooltips name, keys, description; text spacing.
+    `ux.py` 449 checks. Open, in the audit: findings for the ribbon tabs agent.
 
 66a. **The ribbon's other tabs laid out as Word's.** Done in the code (branch `ribbon-tabs-word`).
     Home was done in PR 75; `src/ribbon/layout.js` now says, for Insert, Design, Layout,
