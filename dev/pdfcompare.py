@@ -65,7 +65,9 @@ def display():
         return os.environ['DISPLAY']
     if _xvfb is None:
         n = 90 + os.getpid() % 100
-        _xvfb = subprocess.Popen(['Xvfb', ':%d' % n, '-screen', '0', '1280x1024x24', '-nolisten', 'tcp'],
+        # -noreset: no keymap compiled again each time the last client leaves (a failed one ends
+        # Xvfb, and every later asy 3D picture would come out blank)
+        _xvfb = subprocess.Popen(['Xvfb', ':%d' % n, '-screen', '0', '1280x1024x24', '-nolisten', 'tcp', '-noreset'],
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(1)
         _xvfb.display = ':%d' % n
@@ -233,7 +235,10 @@ def main():
     filt = sys.argv[4] if len(sys.argv) > 4 else ''
     done = set()
     if os.path.exists(out_path):
-        done = {json.loads(l)['doc'] for l in open(out_path)}
+        # a run started again compares what an earlier one left for lack of time
+        kept = [l for l in open(out_path) if l.strip() and json.loads(l).get('error') != 'budget']
+        done = {json.loads(l)['doc'] for l in kept}
+        open(out_path, 'w').writelines(kept)
     out = open(out_path, 'a')
     index = {doc: i for i, doc in enumerate(OLD)}
     budget = doclimit.Budget(os.environ.get('DEADLINE'))
@@ -245,7 +250,9 @@ def main():
         if doc in done or (filt and filt not in doc):
             continue
         rec = {'doc': doc, 'engine': r.get('engine'), 'galley_ok': r.get('ok')}
-        if r.get('error') == 'budget' or not budget.fits(DOC_LIMIT):  # Rikuy's side ran out first, or this side
+        # Rikuy's side ran out of time first, or this side has: a row without a result needs no
+        # compile and is written as it is
+        if r.get('error') == 'budget' or (r.get('ok') is not None and not budget.fits(DOC_LIMIT)):
             rec['error'] = 'budget'
             left += 1
         else:

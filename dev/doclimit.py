@@ -50,10 +50,12 @@ def _procs():
     return out
 
 
-def descendants(root=None, depth=1):
+def descendants(root=None, depth=1, keep=()):
     """The live processes under root (this process by default) at that depth or deeper (1: its
-    children, 2: their children)."""
+    children, 2: their children), leaving out those in keep and everything under them (Xvfb runs
+    xkbcomp as its own child: killing that kills Xvfb)."""
     root = os.getpid() if root is None else root
+    keep = set(keep)
     procs = _procs()
     kids = {}
     for pid, (ppid, _) in procs.items():
@@ -61,18 +63,18 @@ def descendants(root=None, depth=1):
     out, level, d = [], [root], 0
     while level:
         d += 1
-        level = [c for p in level for c in kids.get(p, [])]
+        level = [c for p in level for c in kids.get(p, []) if c not in keep]
         if d >= depth:
             out += [c for c in level if procs[c][1] != 'Z']
     return out
 
 
 def sweep(keep=(), depth=1, root=None):
-    """Kill the descendants (from that depth) but those in keep, until none is left; reap those that
-    are this process's own. Returns how many were killed."""
+    """Kill the descendants (from that depth) but those in keep and their own, until none is left;
+    reap those that are this process's own. Returns how many were killed."""
     keep, killed = set(keep), set()
     for _ in range(200):
-        pids = [p for p in descendants(root, depth) if p not in keep]
+        pids = descendants(root, depth, keep)
         if not pids:
             break
         for p in pids:

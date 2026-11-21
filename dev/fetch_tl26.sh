@@ -35,14 +35,17 @@ grep -v '^#' "$HERE/tl26-packages.txt" | while read -r name pool hash; do
   algo=${hash%%:*}; sum=${hash#*:}
   if ! { [ -f "$f" ] && echo "$sum  $f" | ${algo}sum -c --status; }; then
     good() { [ -f "$f.part" ] && echo "$sum  $f.part" | ${algo}sum -c --status; }
-    # (a mirror that answers with other bytes counts as one that failed)
-    if dl "$MIRROR/$pool" "$f.part"; then got=1; else got=; fi
-    if ! { [ -n "$got" ] && good; } && [ "$MIRROR" != "$ARCHIVE" ]; then
-      rm -f "$f.part"  # the mirror's bytes, whole or not, are not taken up by the archive's
-      if dl "$ARCHIVE/$pool" "$f.part"; then got=1; else got=; fi
+    # The archive goes on from a transfer the mirror broke off (the hash decides at the end),
+    # then once more from nothing: a part holding other bytes (a mirror's error page, a stale
+    # part of an earlier run) would otherwise be resumed on every run and never be whole.
+    ok=
+    if dl "$MIRROR/$pool" "$f.part" && good; then ok=1
+    elif dl "$ARCHIVE/$pool" "$f.part" && good; then ok=1
+    else
+      rm -f "$f.part"
+      if dl "$ARCHIVE/$pool" "$f.part" && good; then ok=1; fi
     fi
-    [ -n "$got" ] || { echo "fetch_tl26: cannot download $pool" >&2; exit 1; }
-    good || { echo "fetch_tl26: hash mismatch for $pool" >&2; exit 1; }
+    [ -n "$ok" ] || { rm -f "$f.part"; echo "fetch_tl26: cannot download $pool, or not with its hash" >&2; exit 1; }
     mv "$f.part" "$f"
   fi
   [ -z "${TL26_DEBS_ONLY:-}" ] || continue

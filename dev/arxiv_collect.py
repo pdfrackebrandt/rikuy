@@ -1,7 +1,12 @@
 """Merge the arXiv corpus shards' results into dev/arxiv-results.jsonl and dev/arxiv-pdfcompare.jsonl
 (the collect job of .github/workflows/arxiv.yml, which may push).
 
-  arxiv_collect.py IDS SHARDS_DIR OUT_DIR
+  arxiv_collect.py IDS SHARDS_DIR OUT_DIR [PREVIOUS]
+
+Exits 1 when no result row is kept (shards that never ran: the job must not push an empty
+merge over the last one), and 2 when the run is partial (a paper with a main file has no row,
+or was left for lack of time) and has fewer rows than PREVIOUS, the arxiv-results.jsonl the
+branch holds now: the workflow then keeps that one and pushes this merge to a branch of its own.
 
 The shard files are what papers compiled with shell escape could touch, so they are data to
 check, not to trust: a line is kept only if it is a JSON object whose "doc" names a paper of the
@@ -66,18 +71,44 @@ def expected(ids_path):
     return out
 
 
-def main(ids_path, shards, out_dir):
+def done_rows(rows):
+    """Rows of papers that were tried, not left for lack of time."""
+    return sum(1 for r in rows if isinstance(r, dict) and r.get('error') != 'budget')
+
+
+def previous_rows(path):
+    """How many tried papers the branch's arxiv-results.jsonl has (0 when there is none); its
+    rows came through this merge, but a line that does not read is not counted."""
+    rows = []
+    if path and os.path.isfile(path) and not os.path.islink(path):
+        for l in open(path, 'rb'):
+            try: rows.append(json.loads(l.decode('utf8')))
+            except (ValueError, UnicodeDecodeError): pass
+    return done_rows(rows)
+
+
+def main(ids_path, shards, out_dir, previous=None):
     order = load(ids_path)
     want = expected(ids_path)
+    verdict = 0
     for kind in ('results', 'pdfcompare'):
         rows, dropped = rows_of(glob.glob(os.path.join(shards, 'arxiv-shard-*', 'arxiv-%s-*.jsonl' % kind)), order)
         with open(os.path.join(out_dir, 'arxiv-%s.jsonl' % kind), 'w', encoding='utf8') as out:
             for r in rows:
                 out.write(json.dumps(r) + '\n')
         have = {r['doc'].split('/')[1] for r in rows}
+        left = sum(1 for r in rows if r.get('error') == 'budget')
         print(kind, len(rows), 'kept,', dropped, 'dropped,', len(want - have), 'papers without a row,',
-              sum(1 for r in rows if r.get('error') == 'budget'), 'left for lack of time')
+              left, 'left for lack of time')
+        if kind == 'results':
+            if not rows:
+                print('no result rows: nothing to commit')
+                verdict = 1
+            elif (want - have or left) and done_rows(rows) < previous_rows(previous):
+                print('partial: %d papers tried against %d in the merge before; that one stays' % (done_rows(rows), previous_rows(previous)))
+                verdict = 2
+    return verdict
 
 
 if __name__ == '__main__':
-    main(*sys.argv[1:4])
+    sys.exit(main(*sys.argv[1:5]))

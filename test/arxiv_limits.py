@@ -6,6 +6,11 @@ running into GitHub's cancel (run 44766248361: five shards cancelled at 5 h 50 m
 compared). The browser case runs where Playwright and its Chromium are installed."""
 import json, os, shutil, subprocess, sys, tempfile, time
 
+if not sys.platform.startswith('linux'):
+    # /proc and prctl: the limits are for the Linux runners the corpus compiles on
+    print('skip: dev/doclimit.py runs on Linux only')
+    sys.exit(0)
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEV = os.path.join(HERE, '..', 'dev')
 sys.path.insert(0, DEV)
@@ -48,8 +53,8 @@ try:
             dog = doclimit.Watchdog(lambda: doclimit.sweep(depth=2))
             dog.arm(2)
             t0 = time.time()
-            try:
-                pg.evaluate('new Promise(() => {})')
+            try:  # a minute at most: a watchdog that does not fire fails the test instead of hanging it
+                pg.evaluate('new Promise(r => setTimeout(r, 60000))')
                 raised = False
             except Exception:
                 raised = True
@@ -112,25 +117,44 @@ check('the watchdog kills the grandchild and keeps the child', ended and dog.fir
 dog.arm(60); dog.disarm(); time.sleep(0.5)
 check('a disarmed watchdog does not fire', not dog.fired)
 
+# What is kept is kept with everything under it (Xvfb and the xkbcomp it runs)
+kept = subprocess.Popen(['sh', '-c', 'sleep 300 & echo $!; wait'], stdout=subprocess.PIPE)
+under = int(kept.stdout.readline())
+other = subprocess.Popen(['sh', '-c', 'sleep 300 & wait'])
+time.sleep(0.3)
+doclimit.sweep(keep={kept.pid})
+check('a sweep spares a kept process and its children, and kills the rest',
+      alive(kept.pid) and alive(under) and other.wait(timeout=10) is not None, (alive(kept.pid), alive(under)))
+os.kill(under, 9); kept.wait(timeout=10)
+
 b = doclimit.Budget(time.time() + 100)
 check('the budget: a document fits before the deadline or not', b.fits(50) and not b.fits(200) and doclimit.Budget('').fits(1e9))
 
-# pdfcompare.py past its deadline: a row for every paper left, at once, nothing compiled
+# pdfcompare.py past its deadline: a row for every paper left, at once, nothing compiled; a row
+# without a result (no compile needed) is not counted as left; a run started again compares the
+# papers left before and keeps the rest
 d = tempfile.mkdtemp(prefix='limits-')
 try:
-    open(os.path.join(d, 'ids.txt'), 'w').write('# sample\n2401.00001 math.AG main.tex\n2401.00002 hep-th paper.tex\n')
-    for pid in ('2401.00001', '2401.00002'):
+    open(os.path.join(d, 'ids.txt'), 'w').write('# sample\n2401.00001 math.AG main.tex\n2401.00002 hep-th paper.tex\n2401.00003 cs.LG main.tex\n')
+    for pid in ('2401.00001', '2401.00002', '2401.00003'):
         os.makedirs(os.path.join(d, 'src', pid))
-    rows = [{'doc': 'arxiv/2401.00001/main.tex', 'ok': True, 'engine': 'pdflatex'}, {'doc': 'arxiv/2401.00002/paper.tex', 'ok': None, 'error': 'budget'}]
+    rows = [{'doc': 'arxiv/2401.00001/main.tex', 'ok': True, 'engine': 'pdflatex'}, {'doc': 'arxiv/2401.00002/paper.tex', 'ok': None, 'error': 'budget'},
+            {'doc': 'arxiv/2401.00003/main.tex', 'ok': None, 'error': 'harness over the 330 s limit'}]
     open(os.path.join(d, 'results.jsonl'), 'w').write(''.join(json.dumps(r) + '\n' for r in rows))
-    env = dict(os.environ, CORPUS_LIST=os.path.join(d, 'ids.txt'), CORPUS_REPO=os.path.join(d, 'src'), DEADLINE=str(int(time.time()) + 60), TL26='/nonexistent')
+    # DISPLAY: no Xvfb needed; TL26 nowhere: the desktop's compile fails at once
+    env = dict(os.environ, CORPUS_LIST=os.path.join(d, 'ids.txt'), CORPUS_REPO=os.path.join(d, 'src'), TL26='/nonexistent', DISPLAY=':99')
+    cmd = [sys.executable, '-I', os.path.join(DEV, 'pdfcompare.py'), os.path.join(d, 'results.jsonl'), d, os.path.join(d, 'out.jsonl')]
     t0 = time.time()
-    r = subprocess.run([sys.executable, '-I', os.path.join(DEV, 'pdfcompare.py'), os.path.join(d, 'results.jsonl'), d, os.path.join(d, 'out.jsonl')],
-                       env=env, capture_output=True, text=True, timeout=120)
+    r = subprocess.run(cmd, env=dict(env, DEADLINE=str(int(time.time()) + 60)), capture_output=True, text=True, timeout=120)
     got = [json.loads(l) for l in open(os.path.join(d, 'out.jsonl'))] if os.path.exists(os.path.join(d, 'out.jsonl')) else []
-    check('pdfcompare.py past its budget writes a "budget" row per paper and stops at once',
-          r.returncode == 0 and [(x['doc'], x.get('error')) for x in got] == [(x['doc'], 'budget') for x in rows] and time.time() - t0 < 30
-          and '2 documents not compared' in r.stdout, (r.returncode, got, r.stdout[-300:], r.stderr[-300:]))
+    check('pdfcompare.py past its budget writes a "budget" row per paper to compile and stops at once',
+          r.returncode == 0 and [(x['doc'], x.get('error')) for x in got] == [(rows[0]['doc'], 'budget'), (rows[1]['doc'], 'budget'), (rows[2]['doc'], None)]
+          and time.time() - t0 < 30 and '2 documents not compared' in r.stdout, (r.returncode, got, r.stdout[-300:], r.stderr[-300:]))
+    r = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
+    got = [json.loads(l) for l in open(os.path.join(d, 'out.jsonl'))]
+    check('started again, it compares the paper left for time and keeps one row a paper',
+          r.returncode == 0 and sorted((x['doc'], x.get('error')) for x in got) == [(rows[0]['doc'], None), (rows[1]['doc'], 'budget'), (rows[2]['doc'], None)]
+          and any(x['doc'] == rows[0]['doc'] and x.get('desktop_ok') is False for x in got), (r.returncode, got, r.stderr[-300:]))
 finally:
     shutil.rmtree(d, ignore_errors=True)
 

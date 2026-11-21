@@ -47,6 +47,24 @@ try:
           '1 papers without a row, 1 left for lack of time' in r.stdout, r.stdout)
     cmp = [json.loads(l) for l in open(os.path.join(d, 'arxiv-pdfcompare.jsonl'))]
     check('a link is not followed and bytes that are not UTF-8 are dropped', cmp == [{'doc': 'arxiv/2401.00001'}] and 'pdfcompare 1 kept, 2 dropped' in r.stdout, (cmp, r.stdout))
+
+    # a run whose shards never uploaded: nothing kept, so nothing may be pushed
+    e = os.path.join(d, 'empty')
+    os.makedirs(os.path.join(e, 'shards', 'arxiv-ids'))
+    r = subprocess.run([sys.executable, '-I', os.path.join(HERE, '..', 'dev', 'arxiv_collect.py'), os.path.join(d, 'ids.txt'), os.path.join(e, 'shards'), e],
+                       capture_output=True, text=True)
+    check('no result row: the merge exits 1', r.returncode == 1 and 'no result rows' in r.stdout, (r.returncode, r.stdout))
+
+    # a partial run (2401.00005 has no row, 2401.00004 was left for lack of time) against the
+    # merge before it: fewer papers tried than it had keeps that one (exit 2), more replaces it
+    def against(n):
+        prev = os.path.join(d, 'prev-%d.jsonl' % n)
+        open(prev, 'w').write(''.join('{"doc": "arxiv/x/%d", "ok": true}\n' % k for k in range(n)) + '{"doc": "arxiv/y", "error": "budget"}\nnot json\n')
+        return subprocess.run([sys.executable, '-I', os.path.join(HERE, '..', 'dev', 'arxiv_collect.py'), os.path.join(d, 'ids.txt'), os.path.join(d, 'shards'), d, prev],
+                              capture_output=True, text=True)
+    r4, r2 = against(4), against(2)
+    check('a partial run with fewer papers than the merge before keeps that one', r4.returncode == 2 and 'partial: 3 papers tried against 4' in r4.stdout, (r4.returncode, r4.stdout))
+    check('a partial run with more papers replaces it', r2.returncode == 0, (r2.returncode, r2.stdout))
 finally:
     shutil.rmtree(d, ignore_errors=True)
 

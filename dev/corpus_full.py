@@ -76,12 +76,18 @@ def main():
       dog = doclimit.Watchdog(lambda: doclimit.sweep(depth=2))
       state = {'b': None}
 
-      def fresh():
-          """A page whose worker is ready, in a new browser when the old one is gone; None after
-          three failures."""
-          for _ in range(3):
+      def fresh(new=False, tries=3):
+          """A page whose worker is ready, in a new browser when the old one is gone or new is set
+          (just after the watchdog killed Chromium the old one may still say it is connected);
+          None after that many failures."""
+          for _ in range(tries):
               dog.arm(300)
               try:
+                  if new and state['b'] is not None:
+                      try: state['b'].close()
+                      except Exception: pass
+                      state['b'] = None
+                  new = False
                   if state['b'] is None or not state['b'].is_connected():
                       state['b'] = pw.chromium.launch()
                   p = state['b'].new_page(); p.goto(page); p.wait_for_function('window.ready', timeout=180000)
@@ -107,6 +113,8 @@ def main():
               out.write(json.dumps({'doc': doc, 'ok': None, 'error': 'budget'}) + '\n'); out.flush(); left += 1; continue
           if not os.path.exists(os.path.join(REPO, doc[len('arxiv/'):] if doc.startswith('arxiv/') else doc[3:])):
               out.write(json.dumps({'doc': doc, 'ok': None, 'error': 'gone'}) + '\n'); continue
+          if pg is None and budget.fits(limit + 300):
+              pg = fresh(tries=1)  # a browser that would not start may start now
           if pg is None:  # no browser would start: the rows say so instead of the shard stopping
               out.write(json.dumps({'doc': doc, 'ok': None, 'error': 'harness no page'}) + '\n'); out.flush(); continue
           dog.arm(limit)
@@ -130,11 +138,12 @@ def main():
               try:  # a crashed page cannot reload: start a new one
                   pg.close()
               except Exception: pass
-              dog.disarm()
-              pg = fresh()
+              pg = None
           dog.disarm()
-          if dog.fired and pg is not None and not state['b'].is_connected():
-              pg = fresh()  # the watchdog fired as the document ended: the next one needs a browser
+          # a new page after a failure, and a new browser whenever the watchdog fired, also when it
+          # fired just as the document ended
+          if pg is None or dog.fired:
+              pg = fresh(new=dog.fired)
           log = r.get('log') or ''
           lines = log.split('\n')
           errs = [l for l in lines if l.startswith('!') or ': LaTeX Error' in l or ':' in l[:80] and ' Error:' in l][:4]

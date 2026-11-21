@@ -3802,10 +3802,22 @@ Tests:
     `subprocess.run(timeout=600)` killed latexmk alone and then waited on the pipe a program the
     paper started kept open); the comparison runs on the rows Rikuy's step wrote even when that step
     failed; and `arxiv_collect.py` counts the papers without a row and those left for lack of time.
-    Evidence: `test/arxiv_limits.py` (13, in `npm test`; its daemon, background job, budget and
-    browser cases fail with the sweep or the budget taken out), `test/arxiv_collect.py` 6/6, three
-    papers through corpus_full.py (one looping TeX stopped at its limit, the next compiled in the
-    same session), `actionlint`.
+    PR 99's hostile review (fix first) added: collect commits nothing when no shard left a row and
+    sends a partial run with fewer papers than the merge already there to
+    `arxiv-results-partial-<run>`; the `desktop` job confirms its cache entry, and a shard whose
+    restore misses downloads what it lacks within its step's 150 min; each sandbox step is also
+    killed from outside, as root, five minutes after its deadline (`timeout -k 30`, which takes the
+    namespace with it), since a paper can stop the scripts that keep the budget; Rikuy's rows are
+    uploaded before the comparison starts; the sandbox's /tmp holds 4 GB; Xvfb runs with `-noreset`
+    and a sweep spares what is kept with its children; a new browser after every watchdog kill, and
+    a browser tried again per document; a bad part of a download is never resumed; one run at a
+    time. Evidence: `test/arxiv_limits.py` (15, in `npm test`, Linux only, the browser case bounded
+    to a minute; its daemon, background job, kept subtree, budget and resume cases each fail with
+    its fix taken out), `test/arxiv_collect.py` 9/9 (an empty merge exits 1, a partial one with
+    fewer papers 2), `sandbox_check.py` passing inside the sized sandbox, `timeout -k` ending a PID
+    namespace whose processes ignore TERM, `fetch_tl26.sh` with a stale part and with the mirror
+    down, three papers through corpus_full.py (one looping TeX stopped at its limit, the next
+    compiled in the same session), `actionlint`.
     The partial run's numbers, shards 1, 3 and 4 only (375 papers, every eighth paper from three
     offsets): Rikuy compiled 361 (96.3 %), the desktop 361; of the desktop's 361 Rikuy compiled
     361 (100 %); 339 of the 361 matched (93.9 %); median compile 2.3 s, 90th percentile 7.8 s. The
