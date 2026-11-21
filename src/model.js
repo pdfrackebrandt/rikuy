@@ -2968,6 +2968,15 @@ class Builder {
     const out = [];
     if (multi) {
       const rs = splitRows(inner);
+      // amsmath's \intertext{words} (\shortintertext) at a row's start: a line of text across the
+      // display between its rows, as TeX sets it. KaTeX knows neither, and written as \text{} (as
+      // tex keeps it, for Word and the rest) the words stood inside the row, before its formula.
+      // The rows on each side are drawn as displays of their own, the words between (parts).
+      const inter = new Map();
+      rs.forEach((r, k) => {
+        const m = /^\s*\\(?:short)?intertext\s*\{([^{}]*)\}/.exec(inner.slice(r.s, r.e));
+        if (m) inter.set(k, m[1]);
+      });
       rs.forEach((r, k) => {
         let t = inner.slice(r.s, r.e);
         const info = this.rowInfo(t, ctx);
@@ -2990,7 +2999,19 @@ class Builder {
         tex = '\\begin{alignat*}{' + (m ? m[1] : (nd.args[0] ? this.argText(ctx, nd.args[0]) : '1')) + '}' + out.join('\\\\') + '\\end{alignat*}';
       } else tex = '\\begin{' + envOut + '}' + out.join('\\\\') + '\\end{' + envOut + '}';
       this.use('M' + tags.join(','));
-      return { type: 'math', f: ctx.f, s: nd.s, e: nd.e, is, ie, env, tex, tags };
+      let parts = null;
+      if (inter.size && base !== 'alignat') {
+        parts = [];
+        let from = 0;
+        const cut = (k) => { const t = out[k], w = '\\text{' + inter.get(k) + '}', i = t.indexOf(w); return i >= 0 && !t.slice(0, i).trim() ? t.slice(i + w.length) : null; };
+        const rows = (a, b) => { const g = []; for (let j = a; j < b; j++) { const t = inter.has(j) ? cut(j) : out[j]; if (t == null) return false; if (t.trim()) g.push(t); } if (g.length) parts.push({ tex: '\\begin{' + envOut + '}' + g.join('\\\\') + '\\end{' + envOut + '}' }); return true; };
+        let ok = true;
+        for (const k of [...inter.keys()].sort((x, y) => x - y)) { ok = ok && rows(from, k); parts.push({ text: inter.get(k) }); from = k; }
+        ok = ok && rows(from, out.length);
+        if (!ok) parts = null;
+        else this.use('I' + JSON.stringify([...inter]));
+      }
+      return { type: 'math', f: ctx.f, s: nd.s, e: nd.e, is, ie, env, tex, tags, ...(parts ? { parts } : {}) };
     }
     const info = this.rowInfo(inner, ctx);
     let tag = info.tag;

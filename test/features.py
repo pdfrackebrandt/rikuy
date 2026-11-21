@@ -86,7 +86,10 @@ try:
         page.reload()
         page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=15000)
         check('document persists across reload', 'MainX text' in src(page))
-        page.keyboard.press('Control+z')
+        # (Undo's steps are kept with it: the X typed before the reload goes, and Redo puts it back)
+        page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+        check('undo after the reload takes the X typed before it', 'MainX text' not in src(page) and 'Main text' in src(page))
+        page.keyboard.press('Control+y'); page.wait_for_timeout(200)
         # --- Ask Claude
         click_text(page, 'MainX text before input', 0)
         select_text(page, 'MainX text before input')

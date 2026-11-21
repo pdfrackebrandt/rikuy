@@ -7,14 +7,22 @@ caption drawn where its \\caption stands; the citation picker offering a .bib th
 name yet, and writing its bibliography in the same step; text pasted from a PDF (ligatures, Greek)
 that pdfLaTeX can set. Where dist/tex exists, what they write compiles with no error.
 
+Round two: a heading on one paragraph of an abstract of several splits the abstract around it; a
+new document's downloads are named by its title; typing is undone word by word and a heading apart
+from the paragraph after it; Enter at a paragraph's start writes no blank lines (an empty
+paragraph shows above, to type in); Undo works after a reload. Then lecture notes and a problem
+set: \mathbb typed in the equation field or pasted from a chat assistant brings amssymb; amsmath's
+\intertext drawn as a line of text between the rows; "- " in a definition starts a list there.
+
   python3 dogfood.py [part ...]   parts: formula arrows textfield styles table caption cite paste
+                                  split filename undo_words enter reload_undo mathpkg intertext envlist
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import open_page, check, results, src, load_doc, click_text, ROOT
 from playwright.sync_api import sync_playwright
 
-PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste']
+PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo', 'mathpkg', 'intertext', 'envlist']
 DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
 TEX = os.path.isdir(os.path.join(DIST, 'tex')) and any(n.endswith('.wasm') for n in os.listdir(os.path.join(DIST, 'tex')))
 
@@ -202,6 +210,142 @@ def paste(page):
     put('Rule τ ≤ ε, ﬁxed.')
     s = src(page)
     check('paste: a fontspec document keeps τ, ≤ and ε', 'Rule τ ≤ ε, fixed.' in s, s[40:200])
+
+
+def split(page):
+    k = page.keyboard
+    doc = DOC.replace('Agent income here.', '\\begin{abstract}\nFirst para.\n\nSecond para.\n\nThird para.\n\\end{abstract}')
+    load_doc(page, doc)
+    click_text(page, 'Second para.', 3)
+    k.press('Control+Alt+1'); page.wait_for_timeout(300)
+    s = src(page)
+    check('split: Heading 1 on the middle paragraph of an abstract splits it around that paragraph', '\\begin{abstract}\nFirst para.\n\\end{abstract}\n\n\\section{Second para.}\n\n\\begin{abstract}\nThird para.\n\\end{abstract}' in s, s)
+    k.type('X'); page.wait_for_timeout(200)
+    check('split: the caret stays in the words', '\\section{SecXond para.}' in src(page), src(page)[40:140])
+    k.press('Control+z'); page.wait_for_timeout(200); k.press('Control+z'); page.wait_for_timeout(300)
+    check('split: undo gives the source back byte for byte', src(page) == doc, src(page))
+    click_text(page, 'Third para.', 1)
+    k.press('Control+Alt+2'); page.wait_for_timeout(300)
+    check('split: on the last paragraph the abstract ends before it', '\\begin{abstract}\nFirst para.\n\nSecond para.\n\\end{abstract}\n\n\\subsection{Third para.}\n\nSecond paragraph.' in src(page), src(page))
+    compiles(page, 'split')
+
+
+def filename(page):
+    k = page.keyboard
+    page.get_by_text('New document', exact=True).click(); page.wait_for_timeout(600)
+    k.type('Optimal Taxation: a Note', delay=10)
+    k.press('Control+Shift+S'); page.wait_for_timeout(200); k.type('Title'); page.wait_for_timeout(200); k.press('Enter'); page.wait_for_timeout(400)
+    check('filename: the project is still Untitled', page.evaluate("window.rikuy.name").startswith('Untitled'), page.evaluate("window.rikuy.name"))
+    check('filename: downloads take the title', page.evaluate("window.rikuy.fileBase()") == 'Optimal-Taxation-a-Note', page.evaluate("window.rikuy.fileBase()"))
+    if TEX:
+        with page.expect_download(timeout=90000) as d:
+            from browser import download
+            download(page, 'rb-pdf')
+        check('filename: Download PDF is Optimal-Taxation-a-Note.pdf', d.value.suggested_filename == 'Optimal-Taxation-a-Note.pdf', d.value.suggested_filename)
+    # a document of its own name keeps it
+    page.evaluate("window.rikuy.name = 'My paper'")
+    check('filename: a named document keeps its name', page.evaluate("window.rikuy.fileBase()") == 'My-paper', page.evaluate("window.rikuy.fileBase()"))
+
+
+def undo_words(page):
+    k = page.keyboard
+    doc = DOC
+    load_doc(page, doc)
+    click_text(page, 'Second paragraph.', 17)
+    k.press('Enter'); k.press('Control+Alt+1'); k.type('Model', delay=15); k.press('Enter')
+    k.type('Consider an economy.', delay=15); page.wait_for_timeout(300)
+    steps = []
+    for _ in range(6):
+        k.press('Control+z'); page.wait_for_timeout(150); steps.append(src(page))
+    want = ['Consider an \n', 'Consider \n', '\\section{Model}\n\\end', '\\section{}\n\\end', 'Second paragraph.\n\\end']
+    check('undo_words: typing is undone word by word, the heading apart from the paragraph after it', all(w in steps[i] for i, w in enumerate(want)), [x[60:] for x in steps])
+    check('undo_words: and back to the start byte for byte', steps[4] == doc, steps[4])
+
+
+def enter(page):
+    k = page.keyboard
+    load_doc(page, DOC)
+    click_text(page, 'Second paragraph.', 0)
+    for _ in range(4): k.press('Enter')
+    page.wait_for_timeout(300)
+    check('enter: Enter at a paragraph\'s start writes no blank lines', src(page) == DOC, src(page))
+    check('enter: an empty paragraph shows above it', page.evaluate("!!document.querySelector('#pages .ghostp')"))
+    k.type('Z'); page.wait_for_timeout(300)
+    check('enter: the caret stayed at the paragraph\'s start, as Word\'s', 'ZSecond paragraph.' in src(page), src(page))
+    load_doc(page, DOC)
+    click_text(page, 'Second paragraph.', 0)
+    k.press('Enter'); k.press('ArrowUp'); k.type('New one.', delay=10); page.wait_for_timeout(300)
+    check('enter: Up types in the empty paragraph', 'Agent income here.\n\nNew one.\n\nSecond paragraph.' in src(page), src(page))
+    load_doc(page, DOC)
+    click_text(page, 'Second paragraph.', 7)
+    for _ in range(3): k.press('Enter')
+    page.wait_for_timeout(300)
+    check('enter: three Enters in a paragraph split it once', 'Second \n\nparagraph.' in src(page) and '\n\n\n' not in src(page), src(page))
+
+
+def reload_undo(page):
+    k = page.keyboard
+    load_doc(page, DOC)
+    page.evaluate("window.rikuy.persist()"); page.wait_for_timeout(400)
+    click_text(page, 'Agent income here.', 18)
+    k.type(' More words.', delay=15); page.wait_for_timeout(2500)
+    before = src(page)
+    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); page.wait_for_timeout(400)
+    check('reload_undo: the text is back', src(page) == before, src(page))
+    k.press('Control+z'); page.wait_for_timeout(300)
+    check('reload_undo: Undo after a reload takes the last word', 'More \n' in src(page) and 'words.' not in src(page), src(page))
+    k.press('Control+y'); page.wait_for_timeout(300)
+    check('reload_undo: and Redo puts it back', src(page) == before, src(page))
+
+
+def mathpkg(page):
+    k = page.keyboard
+    load_doc(page, DOC)
+    click_text(page, 'Agent income here.', 18)
+    k.type(' ')
+    k.press('Control+m'); page.wait_for_selector('#pop-field', timeout=10000); page.wait_for_timeout(200)
+    k.press('Shift+Tab'); page.wait_for_timeout(100)
+    check('mathpkg: Shift+Tab in a new formula reaches its LaTeX box', focus_id(page) == 'pop-newtex', focus_id(page))
+    k.type('\\mathbb{R}^n'); page.wait_for_timeout(300); k.press('Enter'); page.wait_for_timeout(400)
+    s = src(page)
+    check('mathpkg: \\mathbb typed in the field brings amssymb', '\\usepackage{amssymb}' in s and '$\\mathbb{R}^n$' in s, s[:200])
+    compiles(page, 'mathpkg field')
+    load_doc(page, DOC)
+    click_text(page, 'Agent income here.', 18)
+    k.type(' ')
+    html = '<p>Let <span class="katex"><span class="katex-mathml"><math><semantics><mrow></mrow><annotation encoding="application/x-tex">x \\in \\mathbb{R}^n</annotation></semantics></math></span></span> be given.</p>'
+    page.evaluate("""(h) => { const dt = new DataTransfer(); dt.setData('text/plain', 'Let x be given.'); dt.setData('text/html', h);
+      document.activeElement.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }""", html)
+    page.wait_for_timeout(500)
+    s = src(page)
+    check('mathpkg: \\mathbb pasted from a chat assistant brings amssymb', '\\usepackage{amssymb}' in s and 'Let $x \\in \\mathbb{R}^n$ be given.' in s, s[:200])
+    compiles(page, 'mathpkg paste')
+    k.press('Control+z'); page.wait_for_timeout(300)
+    check('mathpkg: one Undo takes the paste and its package', src(page) == DOC.replace('Agent income here.', 'Agent income here. '), src(page))
+
+
+def intertext(page):
+    doc = DOC.replace('Second paragraph.', '\\begin{align}\na &= b + c \\\\\n\\intertext{Taking first-order conditions, with $\\lambda>0$,}\nd &= e \\tag{FOC}\n\\end{align}\nAfter.')
+    load_doc(page, doc)
+    page.wait_for_timeout(400)
+    r = page.evaluate("""(() => { const d = document.querySelector('#pages .dm'); if (!d) return null; const t = d.querySelector('.intertext'), rows = d.querySelectorAll('.dm-rows');
+      if (!t || rows.length !== 2) return { html: d.innerHTML.slice(0, 200) };
+      const a = rows[0].getBoundingClientRect(), b = t.getBoundingClientRect(), c = rows[1].getBoundingClientRect(), page = document.querySelector('#pages .page .it').getBoundingClientRect();
+      return { text: t.textContent, between: a.bottom <= b.top + 1 && b.bottom <= c.top + 1, left: Math.abs(b.left - page.left) < 3 }; })()""")
+    check('intertext: drawn as a line of text between the rows, at the text\\'s left edge', r and r.get('between') and r.get('left') and 'Taking first-order conditions, with' in r.get('text', ''), r)
+    check('intertext: no formula error on the page', page.evaluate("document.querySelectorAll('#pages .has-err').length") == 0)
+    compiles(page, 'intertext')
+
+
+def envlist(page):
+    k = page.keyboard
+    doc = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\usepackage{amsthm}\n\\newtheorem{definition}{Definition}').replace('Agent income here.', '\\begin{definition}\nA relation is rational if:\n\\end{definition}')
+    load_doc(page, doc)
+    click_text(page, 'rational if:', 12)
+    k.press('Enter'); k.type('- ', delay=30); page.wait_for_timeout(200); k.type('complete', delay=10); k.press('Enter'); k.type('transitive', delay=10); page.wait_for_timeout(300)
+    s = src(page)
+    check('envlist: "- " in a definition starts a list in it', 'rational if:\n\n\\begin{itemize}\n  \\item complete\n  \\item transitive\n\\end{itemize}' in s and s.find('\\end{itemize}') < s.find('\\end{definition}'), s)
+    compiles(page, 'envlist')
 
 
 with sync_playwright() as p:

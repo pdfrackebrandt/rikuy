@@ -145,7 +145,7 @@ export const word = {
       const res = await this.wordEngine().run('export', { req });
       await this.wordRemember(res.mark);
       const blob = new Blob([res.docx], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-      const fname = ((this.name || '').replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '') || 'paper') + '.docx';
+      const fname = (this.fileBase ? this.fileBase() : 'paper') + '.docx';
       this.lastDocx = { blob, name: fname, degraded: req.degraded, warnings: res.warnings };
       if (D) await D.save({ filename: fname, data: blob });
       else {

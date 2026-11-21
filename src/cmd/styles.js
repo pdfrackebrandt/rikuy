@@ -9,7 +9,7 @@
 import { register, command, onInsertText, onInstall } from '../commands.js';
 import { $ } from '../ui/dom.js';
 import { BLOCKS } from '../render.js';
-import { NOT_PLAIN, latexSpot, restyle, startsLine, headLevels, isHeading, ENV_STYLES, THM_STYLES, isEnvStyle, envOf, quoteWords, thmLine, starEdits, applyEdits, numberingEdits, charStyleBody, formatOnlyBegin, thmDefsIn, eolAt, codeSafe, codeBlock, codeText, titleInfo, titlePartAt, titlePartEdits, titleNormalEdits, renameEdits, createsOwn, verbatimRuns, makesCounter } from '../styles.js';
+import { NOT_PLAIN, latexSpot, restyle, splitEnvEdits, startsLine, headLevels, isHeading, ENV_STYLES, THM_STYLES, isEnvStyle, envOf, quoteWords, thmLine, starEdits, applyEdits, numberingEdits, charStyleBody, formatOnlyBegin, thmDefsIn, eolAt, codeSafe, codeBlock, codeText, titleInfo, titlePartAt, titlePartEdits, titleNormalEdits, renameEdits, createsOwn, verbatimRuns, makesCounter } from '../styles.js';
 import { escapeTeX } from '../editor.js';
 import { defines, packageLine, packageOptions, preambleEnd, stripComments } from '../preamble.js';
 import { wrapBlockEdits } from '../blockenv.js';
@@ -407,9 +407,10 @@ export const methods = {
         else {
           // its paragraphs out of it, or in another environment; one paragraph of plain text may be a heading
           to.add('p'); envs.filter((x) => x !== v).forEach((x) => to.add(x));
-          if (q.one && q.plain) heads.forEach((h) => to.add(h));
+          // (of several paragraphs: the one with the caret, split out of it, splitEnvEdits)
+          if ((q.one && q.plain) || !q.one) heads.forEach((h) => to.add(h));
         }
-        return { v, opt: q.opt, to: latex(to), b: { v, s: B.s, ws: q.ws, we: q.we, e: B.e, spot } };
+        return { v, opt: q.opt, split: !q.opt && !q.one, to: latex(to), b: { v, s: B.s, ws: q.ws, we: q.we, e: B.e, spot } };
       }
     }
     const r = this.plainPara(B, it);
@@ -502,6 +503,15 @@ export const methods = {
       return;
     }
     if (cur.many) { this.setManyStyle(cur, to, c); this.closeGroup(); return; }
+    // a heading on one paragraph of an abstract or a quote of several: that paragraph alone, the
+    // environment split around it (Word styles the paragraph, not its neighbours)
+    if (cur.split && (isHeading(to) || to === 'part')) {
+      const f = at.B.f, r = splitEnvEdits(this.src(f), cur.b, to, c.a);
+      if (r.why) { this.toast(r.why); return; }
+      this.commit(r.edits.map((x) => ({ f, ...x })), { f, p: r.p, bias: -1 }, 'block');
+      this.closeGroup();
+      return;
+    }
     const f = at.B.f, r = restyle(this.src(f), cur.b, to, c.a);
     if (!r) return;
     const needs = this.styleNeeds(to), grow = needs.filter((x) => x.f === f && x.s <= cur.b.s).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
