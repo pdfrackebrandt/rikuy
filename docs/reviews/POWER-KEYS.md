@@ -444,3 +444,111 @@ as typed.
 (a syntax error in `src/app.js`, an IndentationError in `test/power.py`); 8ab19a9 puts them back,
 without rewriting history: skip the two when bisecting. Each finding has checks in
 `test/power.py` (173 in all; new parts `pairs` and `paste`) that fail on 5994e31's build.
+
+## Verification of 5446132
+
+Reviewer: Claude, hostile, in a fresh worktree at 5446132, `npm run build`, no TeX tree. I reran
+`v3.py` (as `v3w.py`) and wrote `v4.py` and `v4b.py` for this round's attacks, all in
+`/tmp/review-power-out/scripts/` and run with `/tmp/rk-heavy`.
+
+**Verdict: fix first, one small thing.** V1, V4, V5 and V6 hold, and V2 and V3 hold where the
+first round found them. But `$$x^2$$` still writes a display inside `\href`'s text, and it leaves
+a stray `\$` after every display in a `p{}` or `X` cell or a `\parbox`. That is the bug class
+V2/V3 named, in places this round did not cover. The two Medium race findings can follow.
+
+### Fix first
+
+**W1 (Medium-High, V2/V3 not covered): `$$…$$` in a `p{}` or `X` cell, a `\parbox`, or `\href`'s
+text leaves `\$` after the display, and in `\href` writes the display itself.**
+- Repro (`v4.py v23`, ` $$x^2$$ z` typed key by key):
+
+  | where | source written |
+  |---|---|
+  | `\href{https://x.org}{the link text}` | `{the link \n\[x^2\]\$ z text}` (a display in link text: TeX error) |
+  | `tabularx` `X` column | `Cell xcol \n\[x^2\]\$ z` |
+  | `p{3cm}` column | `Cell para \n\[x^2\]\$ z` |
+  | `\parbox{4cm}{…}` | `{parbox \n\[x^2\]\$ z words}` |
+
+  In the last three the display itself is valid, but the second closing `$` prints as a dollar
+  sign. `l` and `c` cells, footnotes, captions and `\textbf{}` correctly get `$x^2$ z`.
+- Fix: the second `$` of the closing pair must be swallowed for a display written in one line
+  (`\[x^2\]`), as it is for one on its own lines. `\href`'s text, like every argument, takes a
+  formula in the line.
+
+### Medium (may follow)
+
+**W2: a keyless insert of several characters into the equation field goes through its rules
+wrongly.**
+- Repro (`v4b.py`, also at 4x CPU in `v4.py race`): Alt+= on a new line, then one
+  `Input.insertText` of `x=1\text{if }+y` (dictation, a phone keyboard's commit). The result is
+  `x=1\text{i}f\}+y`.
+- The same characters inserted one at a time give `x=1\text{if }+y`, which is the case
+  `power.py` covers.
+
+**W3: clicking into the field after the hand-over to the LaTeX box loses what the box held.**
+- Repro (`v4.py race`, at 1x and 4x): type `x=\begin{`, which hands over to the box; click the
+  field; type `aligned}a&=b\end{aligned}`.
+- The box ends `x=aligned\}a\&=b\end{aligned}`: `\begin{` is gone, and `}` and `&` are escaped.
+- The field's value replaced the box's text, which the field could not hold.
+
+**W4: a keyless insert of words into a `$` field just opened is lost.**
+- Repro (`v4b.py`): after ` see $`, one insert of `5 each` or `ab cd`, then `$ ok`. The result is
+  `see \$ \$ ok`: the words are gone.
+- Single tokens work (`x^2` gives `$x^2$`, `5` gives `$5$`). This is the iOS predictive bar and
+  dictation case.
+
+### Low
+
+- **W5:** after `$5 `, a key that comes by an input method or a Mac dead key makes the price but
+  drops the waiting space: `\$5日本`, `\$5é lan`. A typed letter keeps it (`\$5 each`).
+- **W6:** `$2 x$` (a coefficient, a space, a variable) is taken for a price: `\$2 x\$`. This is
+  the price rule's remaining ambiguity.
+- **W7:** `$5% now` and `$5\% now` give `$5\%now$`: the words after it go into the formula with
+  their spaces lost. That is the old `$5 each` problem for a percentage. A space after `%` or `\%`
+  could decide as the space after digits does.
+
+### V6's rule: sound
+
+Pasted text keeps `$…$` as math when its inside looks mathematical, and money otherwise. A pair
+taken for money gives its closing `$` to the next pair, and Ctrl+Shift+V escapes everything. Mixed
+paragraphs come out right:
+- `It costs $5 and $10, while $x^2 + y$ holds and $$z = 1$$ too.` gives
+  `\$5 and \$10, while $x^2 + y$ holds and \[z = 1\] too`.
+- `From $5 to $x$`, `Pay $3 now; $a+b$ later, $2 more.`, `We need $n$ items at $4 each.` and
+  `Value $1,000 vs $\alpha$.` are all right.
+- Hostile money: `Total $5 + $3 = $8 today.`, `Pay $5 x 3 = $15 now.` and `Ranges $5-$10 and
+  $20-$30.` all stay money.
+- Ctrl+Shift+V of `costs $5 and $x^2$` gives `\$5 and \$x\textasciicircum{}2\$`.
+
+Chat-pasted math staying math is right for this owner, and the escape key exists. Only W4's typed
+counterpart (keyless words) loses text; paste does not.
+
+### Held up
+
+- **V1:**
+  - `$1 - \alpha$`, `$0 < x < 1$`, `$2 \times 3$` and `$1 = 1$` stay formulas.
+  - `costs $5 each and $x^2$ here` gives `\$5 each and $x^2$ here`; `pay $5 for $2x + 1$` gives
+    `\$5 for $2x+1$`.
+  - `$5$` alone is a formula. `$5, then $y$` and `$5. Then` are prices.
+  - Space, Backspace, `x`: `$5x$`. Space, Backspace, space, `each`: a price.
+  - Space, Enter or Esc: `$5$`. Shift and a capital: `\$5 Each`.
+- **V2 and V3 as first found:** a footnote, a caption and `\textbf{}` give `$x^2$ z`; `l`/`c`
+  cells give `$x^2$ z`; a minipage and a list item get a valid display.
+- **V4:** `abc \[x^2\] end.`, with no stray break, after Esc too.
+- **V5:** Ctrl+Enter with `\text{if` open adds the row (`x=1\text{if} \\ &`).
+- **Whole `v3.py` rerun:**
+  - `$$`, its Undo chain and Redo.
+  - Enter and Esc after a display at the document's end.
+  - IME and dead keys through the field (`x^2`, `\alpha`, `\text{日本}`).
+  - N1 and N2.
+  - Empty Alt+= leaves no undo step; `\equation`, `\sec` then Esc, a heading ending in a formula.
+  - `$$` in a LaTeX paragraph.
+- **Suites:** all pass.
+
+  | suite | checks |
+  |---|---|
+  | power.py | 173 |
+  | browser.py | 201 |
+  | mathfield.py | 19 |
+  | paste.py | 25 |
+  | eqtab.py | 158 |
