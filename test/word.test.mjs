@@ -26,6 +26,7 @@ import { zipSync } from 'fflate';
 import { pageForWord } from '../src/pageword.js';
 import { hfPlaces } from '../src/wordpage.js';
 import { graphHtml, template } from '../src/graph.js';
+import { numericCsl } from '../src/word.js';
 
 const P = await createPandoc(fs.readFileSync(new URL('../node_modules/pandoc-wasm/src/pandoc.wasm', import.meta.url)));
 let n = 0;
@@ -1943,6 +1944,19 @@ await ok('R1: art and styled page borders, the title and author in a header, a p
   assert.ok(back.includes('\\usetikzlibrary{decorations.markings}') && /\\path\[postaction=\{decorate\},decoration=\{markings,mark=between positions 0 and [\d.]+ step [\d.]+ with \{\\fill\[pageborder\] \(90:/.test(back) && back.includes("\\definecolor{pageborder}{HTML}{FF0000}"), preambleOf(back));
   assert.ok(back.includes('\\fancyhead[L]{My Title}') && back.includes('\\fancyhead[R]{Ann Author}'), preambleOf(back));
   assert.ok(back.includes('\\begin{nolinenumbers}\nNot numbered.\n\\end{nolinenumbers}'), bodyOf(back));
+});
+
+await ok('Dogfood: numeric citations in Word numbered as the .bst numbers them: plain by author, unsrt by citation order', () => {
+  const bib = '@article{mirrlees1971, author={Mirrlees, James A.}, title={An Exploration}, journal={RES}, year={1971}}\n@article{chetty2012, author={Chetty, Raj}, title={Bounds}, journal={Econometrica}, year={2012}}\n';
+  for (const [style, mir] of [['plain', '2'], ['unsrt', '1']]) {
+    const src = '\\documentclass{article}\n\\begin{document}\nFirst \\cite{mirrlees1971}, then \\cite{chetty2012}.\n\\bibliographystyle{' + style + '}\n\\bibliography{refs}\n\\end{document}\n';
+    const files = new Map([['main.tex', src], ['refs.bib', bib]]);
+    const m = buildModel({ files, main: 'main.tex' });
+    const W = buildWordDoc(m, files, { citeproc: true, now: 0, main: 'main.tex' });
+    const E = exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources: { 'refs.bib': bib, 'rikuy-numeric.csl': numericCsl(m.opts.sort !== false) }, bibs: ['refs.bib'], csl: 'rikuy-numeric.csl', citeproc: true, project: { name: 'P', main: 'main.tex', files: [...files] } });
+    const d = text(unzip(E.docx).get('word/document.xml')).replace(/<[^>]+>/g, '');
+    assert.ok(d.includes('First [' + mir + '], then [' + (mir === '2' ? '1' : '2') + ']'), style + ': ' + d.slice(0, 200));
+  }
 });
 
 console.log('word: ' + n + ' groups of checks passed');
