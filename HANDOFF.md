@@ -23,7 +23,7 @@ Overleaf user), 97 and 98 (two flaky checks fixed). Their reviews are in `docs/r
 
 | work | pull request, branch | state | next step |
 |---|---|---|---|
-| Power users: keys, Overleaf typing, pickers, quick open, the typing queue | 87, `power-keys` | verified over six rounds (`docs/reviews/POWER-KEYS.md` is in worktree `wt-power`, not yet on the branch on GitHub: push it with the branch). Head 1c49b4d. On it the `editor` and `tex` checks failed: `test/agent.py`'s Equation click, which its author was fixing | merge main, get `editor` and `tex` green, merge |
+| Power users: keys, Overleaf typing, pickers, quick open, the typing queue | 87, `power-keys` | verified over six rounds (`docs/reviews/POWER-KEYS.md` on the branch). Head 90815ba. On it the `editor` and `tex` checks failed: `test/agent.py`'s Equation click, which its author was fixing | merge main, get `editor` and `tex` green, merge |
 | This file | 89, `handoff-1120b` | rewritten now | merge when Pedro or the next agent has read it, then start the next handoff branch from main |
 | R6, the arXiv corpus: run 4 | branch `arxiv-shards` (pull request being opened) | 5 of the 8 shards hit the 6 hour limit | open the PR (shorter shards or more of them), classify the finished shards; rates into PLAN.md task 16, README.md, tex/README.md; add `sourcesanspro`, `foekfont`, cbfonts' `grmn`; 1502.01027 |
 
