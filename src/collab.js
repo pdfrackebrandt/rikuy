@@ -17,6 +17,20 @@ const MAX_ADDRESS = 2 * 1024 * 1024;
 
 const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
 
+// Of two marks (a stranger's project: shell escape restricted unless allowed, live figures waiting
+// unless allowed; null for one's own), the one that lets less run: any mark over none, and what
+// each allows only where both allow it. The same object back when it is already the stricter.
+export function stricterMark(a, b) {
+  if (!a) return b || null;
+  if (!b) return { ...a };
+  const allowed = !!(a.allowed && b.allowed), widgets = !!(a.widgets && b.widgets);
+  if (!!b.allowed === allowed && !!b.widgets === widgets) return b;
+  // (the restricted one's origin and sender: they say why it is restricted)
+  const v = { ...(a.allowed ? b : a), allowed };
+  if (widgets) v.widgets = true; else delete v.widgets;
+  return v;
+}
+
 function blobToBase64(blob) {
   return new Promise((res, rej) => {
     const r = new FileReader();
@@ -223,8 +237,10 @@ export const collab = {
   // project opened from a link, or holding a copy that came back, compiles with TeX Live's
   // restricted shell escape (the programs TeX Live allows by default) until its owner allows
   // more for it. Kept per project, so switching away and back keeps the restriction.
-  async linkInfo() {
-    const k = this.name + '|' + this.main;
+  async linkInfo() { return this.markOf(this.name, this.main); },
+  // the mark kept under a project's name and main file, or null
+  async markOf(name, main) {
+    const k = name + '|' + main;
     this.linkCache = this.linkCache || new Map();
     if (!this.linkCache.has(k)) {
       let v = null;
@@ -240,12 +256,16 @@ export const collab = {
     this.linkCache.set(k, v);
     if (!this.noIdb) kvPut('link:' + k, v).catch(() => {});
   },
-  // the mark of the project (mark: linkInfo's, or null) under another of its main files
-  carryLink(mark, main) {
-    const k = this.name + '|' + main, v = mark ? { ...mark } : null;
+  // The mark of the project (mark: linkInfo's, or null) under another of its main files, whose own
+  // mark (there: markOf's, read before) it meets: the stricter of the two stays. The key may hold
+  // a stranger's document (a version of another project kept under the same name, a branch or a
+  // pull that brought another main file), so what the project had here never loosens it: no mark
+  // never deletes one there, nor does an Allow given here lift a restriction there (review I1).
+  carryLink(mark, main, there) {
+    const k = this.name + '|' + main, v = stricterMark(mark, there);
     this.linkCache = this.linkCache || new Map();
     this.linkCache.set(k, v);
-    if (!this.noIdb) (v ? kvPut('link:' + k, v) : kvDel('link:' + k)).catch(() => {});
+    if (v && v !== there && !this.noIdb) kvPut('link:' + k, v).catch(() => {});
   },
   // the sample and a new document hold nothing of a stranger's: a mark left under their name
   // (by an archive dropped on the sample, or a link to a document of that name) goes
@@ -255,11 +275,25 @@ export const collab = {
     this.linkCache.set(k, null);
     if (!this.noIdb) kvDel('link:' + k).catch(() => {});
   },
+  // What the owner allows (shell escape, live figures) is for the project's files as they are
+  // now, whichever of its documents is the main one: the marks kept under its other documents
+  // get it too, so switching the main document, which keeps the stricter of two marks, does not
+  // take it back. The mark here, or null when there is none (or another project opened meanwhile).
+  async allowMark(field) {
+    const name = this.name, main = this.main;
+    const others = (this.mainDocs ? this.mainDocs() : []).filter((d) => d !== main);
+    const marks = await Promise.all([main, ...others].map((d) => this.markOf(name, d)));
+    if (!marks[0] || this.name !== name || this.main !== main) return null;
+    [main, ...others].forEach((d, i) => {
+      const m = marks[i];
+      if (!m || m[field]) return;
+      m[field] = true;
+      if (!this.noIdb) kvPut('link:' + name + '|' + d, m).catch(() => {});
+    });
+    return marks[0];
+  },
   async allowShellHere() {
-    const v = await this.linkInfo();
-    if (!v) return;
-    v.allowed = true;
-    if (!this.noIdb) kvPut('link:' + this.name + '|' + this.main, v).catch(() => {});
+    if (!(await this.allowMark('allowed'))) return;
     this.syncEngineMenu();
     if (document.body.classList.contains('pdf-on')) this.compilePdf({ clean: true });
   },

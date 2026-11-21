@@ -584,8 +584,9 @@ export const review = {
     await this.stashBinary();
     await this.loadBinary(v.name, v.main);
     // a version of this project kept under another main document (File, Main document): the
-    // project's mark (a stranger's, shell escape restricted or allowed) is the one it has now
-    if (v.name === this.name && v.main !== this.main) this.carryLink(await this.linkInfo(), v.main);
+    // project's mark (a stranger's, shell escape restricted or allowed) goes with it, the stricter
+    // of it and the one kept there
+    if (v.name === this.name && v.main !== this.main) { const [here, there] = await Promise.all([this.linkInfo(), this.markOf(v.name, v.main)]); this.carryLink(here, v.main, there); }
     this.files = new Map(files);
     this.main = v.main;
     this.name = v.name;
