@@ -3859,40 +3859,30 @@ Tests:
     sandbox, `timeout -k` ending a PID namespace whose processes ignore TERM, `fetch_tl26.sh` with a
     stale part and with the mirror down, three papers through corpus_full.py (one looping TeX
     stopped at its limit, the next compiled in the same session), `actionlint`.
-    The partial run's numbers, shards 1, 3 and 4 only (375 papers, every eighth paper from three
-    offsets): Rikuy compiled 361 (96.3 %), the desktop 361; of the desktop's 361 Rikuy compiled
-    361 (100 %); 339 of the 361 matched (93.9 %); median compile 2.3 s, 90th percentile 7.8 s. The
-    second run on the same 375 papers: 361, 361, 332 matched (92.0 %): 13 of its mismatches match
-    now (10 a bibliography that printed [?] or ?, the .bbl fix; 3 a page count, 2011.06158,
-    2101.01047, 2303.00056), and 6 of its matches differ now. Classified:
-    - 0 fail in Rikuy alone. The second run's two, `sourcesanspro.sty` (2412.05099) and
-      `foekfont.sty` (2407.02273), are in the shards that never compiled; the tree is unchanged,
-      so they are still missing.
-    - 14 fail on both: 9 load a journal's class or package arXiv supplies beyond TeX Live (aa.cls
-      2, mn2e.cls 2, aastex.cls, svjour3.cls, jheppub.sty, acl.sty, and slashbox.sty, gone from
-      TeX Live); 2 stop under TeX Live 2026 (a U+FFFD in the source, "Not in outer par mode"); 3
-      ran past 240 s (1903.00895, 2211.03835, 2310.05154, the same three as in the second run,
-      their trails TeX passes again and again and a biber run; pdfcompare.py does not compile a
-      row without a result on the desktop). No file of TeX Live's tree is missing in any failure;
-      in papers that compiled, "not found" names only biblatex-dm.cfg (5, optional) and the
-      papers' own missing figures.
-    - 22 mismatches, 17 of them the bibliography's: 4 print [?] where the desktop prints numbers
-      (2405.04320, 2601.03656 and 2609.06483 after a bibtex run ending with errors; 1907.02003
-      without a bibtex run); 4 the other way, the desktop printing ? where Rikuy prints the
-      references (1704.02934, 2111.06004, 2409.00542, 2506.06493; the second and third matched in
-      the second run, both sides printing ?); 3 print an accent as "Ì" and a combining mark where
-      the desktop prints ö, á, ü (2304.00169, 2401.01960, 2605.01984: bibtex's .bbl from a .bib
-      with combining characters, as in the second run); 4 matched in the second run and now
-      print another bibliography than latexmk's (numbered [9] against [1], IEEEtran's dash for a
-      repeated author, a year, 43 pages against 40: 2110.03074, 2110.00158, 2410.00188,
-      2005.04818): the .bbl rule chose otherwise than latexmk, and which side prints the paper's
-      bibliography needs the PDFs (the workflow keeps none); 2
-      are the desktop's (2304.04535 prints an older biblatex's .bbl as text, "author3hash=...";
-      2310.05363 drops the journal macro "A&A" Rikuy prints). The other 5: 2 break lines
-      elsewhere ("di-mension", "correc-ted"), 1509.06023 orders a subscript and a superscript the
-      other way in the text layer, 1502.01027 prints the hook name "begindocument/before", and
-      2202.05036 lacks cbfonts' `grmn` (cbfonts is in `build_tree.py`'s DROP, 72 MB), as before.
-    Next: once the fix is merged, dispatch the workflow again with `sources_from_run`
+    Run 4 was partial (three of eight shards, 375 papers: five shards never left the desktop
+    download), so it gives no rates; run 5 below is the first full run after PR 99.
+
+    Fifth run, 44904020552 (2026-11-21, main after PR 99, `sources_from_run`
+    44077385415; rows on `arxiv-results` at d4092a3, `dev/arxiv-results.jsonl` and
+    `dev/arxiv-pdfcompare.jsonl`): 998 papers, Rikuy compiled 961 (96.3 %), the desktop 963; of the
+    desktop's 963 Rikuy compiled 961 (99.8 %); 896 of the 961 both compiled matched (93.2 %). Median
+    compile 2.3 s in the page, 90th percentile 7.3 s. Every shard finished in about 30 minutes
+    (the desktop's packages come from the cache now). All numbers recomputed from the two files.
+    - 2 fail in Rikuy alone, the same two as in the second run: `sourcesanspro.sty` (2412.05099)
+      and `foekfont.sty` (2407.02273), not in the tree.
+    - 65 mismatches, classified by the first difference in the text layer (about, since the
+      workflow keeps no PDFs): 32 are the bibliography's, 22 of them Rikuy or the desktop printing
+      [?] or ? where the other prints numbers or names, and 10 another number, label or entry
+      text (a .bbl chosen otherwise than latexmk chooses); 6 are the desktop's (5 print an older
+      biblatex's .bbl as text, "author2hash=...", and 2310.05363 drops the macro "A&A"); 11 break
+      lines elsewhere ("ampli- tudes" against "amplitudes"); 4 differ in pixels only (text equal);
+      9 put a float or a page break elsewhere (page counts differ in 30 of the 65 in all); 3 are
+      named: 1502.01027 prints the hook name "begindocument/before", 1509.06023 orders a subscript
+      and a superscript the other way, 2202.05036 lacks cbfonts' `grmn`.
+    - Not in the tree yet and needed for the last two Rikuy only failures and 2202.05036:
+      `sourcesanspro`, `foekfont`, cbfonts' `grmn`. Adding them changes `dev/dist-manifest.txt` and
+      makes `tex.yml` rebuild the tree, which took more than the job's 180 minutes before; its
+      `timeout-minutes` must be raised, or the rebuild split into jobs, before they are added.
     44077385415 for the whole 998.
 66. **Everything that computes, in C or C++ for WebAssembly.** Planned, not started: asked for by
     the owner on 2026-11-20 ("even where the gain is small", after the UI and UX work).

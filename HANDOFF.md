@@ -19,14 +19,15 @@ Merged since the last version of this file: 78 (ribbon tabs), 79 (UX outside the
 (arXiv rerun), 86 (ribbon polish), 88 (interactive graphs as the edge), 90 (consistency outside
 the ribbon), 91 (the TeX job reuses an identical tree), 92 (agents first, motion), 93 (editor jobs
 get 60 minutes), 94 (dogfood as an economist), 95 (dogfood as a Word user), 96 (dogfood as an
-Overleaf user), 97 and 98 (two flaky checks fixed). Their reviews are in `docs/reviews/`.
+Overleaf user), 97 and 98 (two flaky checks fixed), 87, 89, 99 and 100. Their reviews are in `docs/reviews/`.
 
 | work | pull request, branch | state | next step |
 |---|---|---|---|
-| Power users: keys, Overleaf typing, pickers, quick open, the typing queue | 87, `power-keys` | verified over six rounds (`docs/reviews/POWER-KEYS.md` on the branch). Head 90815ba. On it the `editor` and `tex` checks failed: `test/agent.py`'s Equation click, which its author was fixing | merge main, get `editor` and `tex` green, merge |
-| This file | 89, `handoff-1120b` | rewritten now | merge when Pedro or the next agent has read it, then start the next handoff branch from main |
-| R6, the arXiv corpus: run 4 | 99, `arxiv-shards` | run 4 (44766248361) partial: no shard ran past a document's limit; five spent 5 h 50 min downloading the desktop TeX Live from a slowed mirror. The PR downloads it once into the cache, adds hard limits per document and per shard, and keeps a partial merge off `arxiv-results`; partial numbers in PLAN task 16; reviewed twice (`docs/reviews/ARXIV-SHARDS.md`), every finding fixed | verify, merge; dispatch arXiv corpus with `sources_from_run=44077385415`; classify; rates into PLAN.md task 16, README.md, tex/README.md; add `sourcesanspro`, `foekfont`, cbfonts' `grmn`; 1502.01027 |
-
+| Power users: keys, Overleaf typing, pickers, quick open, the typing queue | 87, `power-keys` | merged | none |
+| This file | 89, `handoff-1120b` | merged | none |
+| R6, the arXiv corpus | 99, `arxiv-shards` | merged; run 5 (44904020552) is the first full run after it: 961 of 998 compiled, 896 of 961 matched, numbers in PLAN task 16 | add `sourcesanspro`, `foekfont`, cbfonts' `grmn` once `tex.yml`'s 180 minute limit is raised or the rebuild split (PLAN task 16); 1502.01027 |
+| Deploy fix | 100, `fix-widget-headers` | merged. Every deploy from PR 81 to PR 99 had failed its live check (live figures did not run on the hosted site); the deploy of 1cc5449 passed | none |
+| Widget document's name | 101 | open: the widget document's name hashes its headers' rule, so browsers that cached it with the wrong headers during the PR 81 to PR 100 window get a new address | merges when green |
 Pedro's to do (his accounts): the WAF rate rule on `/git/` (docs/HOSTING.md step 9, one time);
 the git proxy is live. Optional `RIKUY_GIT_HOSTS`.
 
@@ -64,7 +65,12 @@ UI and agents first, in this order:
 5. **AGENTS-MOTION**: the typing latency check is flaky on loaded machines (its L5 and H2 notes
    give the numbers); typing on long documents wants its own task, and `LAZY` could count pages as
    well as elements.
-6. **Then the C and C++ batches B1 to B3** (`docs/handoff/CPP-PLAN.md`): B1 the source scanner in
+6. **power.py's "keytips: F10, H, 1 makes the selection bold"** fails only with the full TeX tree
+   after earlier parts: after F10, H drops the page's selection. Not reproduced alone; CI runs
+   power.py without the tree.
+7. **Watch main's Deploy runs after every merge.** A skipped deploy job is not a deploy; PR 81 to
+   PR 99 deployed nothing that worked and no one saw it.
+8. **Then the C and C++ batches B1 to B3** (`docs/handoff/CPP-PLAN.md`): B1 the source scanner in
    C++, B2 the parse made incremental in the core, B3 the model's text runs.
 
 ### Grok Bot's list of 2026-11-20 (for the record)
