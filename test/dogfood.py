@@ -12,17 +12,18 @@ new document's downloads are named by its title; typing is undone word by word a
 from the paragraph after it; Enter at a paragraph's start writes no blank lines (an empty
 paragraph shows above, to type in); Undo works after a reload. Then lecture notes and a problem
 set: \\mathbb typed in the equation field or pasted from a chat assistant brings amssymb; amsmath's
-\\intertext drawn as a line of text between the rows; "- " in a definition starts a list there.
+\\intertext drawn as a line of text between the rows; "- " in a definition starts a list there; Replace All
+across the notes' files keeps the case of what it replaces.
 
   python3 dogfood.py [part ...]   parts: formula arrows textfield styles table caption cite paste
-                                  split filename undo_words enter reload_undo mathpkg intertext envlist
+                                  split filename undo_words enter reload_undo mathpkg intertext envlist replace
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import open_page, check, results, src, load_doc, click_text, ROOT
 from playwright.sync_api import sync_playwright
 
-PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo', 'mathpkg', 'intertext', 'envlist']
+PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo', 'mathpkg', 'intertext', 'envlist', 'replace']
 DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
 TEX = os.path.isdir(os.path.join(DIST, 'tex')) and any(n.endswith('.wasm') for n in os.listdir(os.path.join(DIST, 'tex')))
 
@@ -352,6 +353,20 @@ def envlist(page):
     s = src(page)
     check('envlist: "- " in a definition starts a list in it', 'rational if:\n\n\\begin{itemize}\n  \\item complete\n  \\item transitive\n\\end{itemize}' in s and s.find('\\end{itemize}') < s.find('\\end{definition}'), s)
     compiles(page, 'envlist')
+
+
+def replace(page):
+    k = page.keyboard
+    files = {'main.tex': '\\documentclass{article}\n\\begin{document}\nIntro on utility.\n\n\\input{ch1}\n\\end{document}\n',
+             'ch1.tex': '\\section{Utility}\nUtility is ordinal. UTILITY matters; utility functions differ.\n'}
+    load_doc(page, files)
+    click_text(page, 'Intro on', 0)
+    k.press('Control+h'); page.wait_for_selector('#fr-q', timeout=5000)
+    page.fill('#fr-q', 'utility'); page.fill('#fr-r', 'welfare'); page.wait_for_timeout(200)
+    page.get_by_role('button', name='Replace All').click(); page.wait_for_timeout(600)
+    check('replace: Replace All without Match case keeps each one\'s case, in every file', src(page) == files['main.tex'].replace('utility', 'welfare') and src(page, 'ch1.tex') == '\\section{Welfare}\nWelfare is ordinal. WELFARE matters; welfare functions differ.\n', src(page, 'ch1.tex'))
+    k.press('Escape'); page.wait_for_timeout(200); k.press('Control+z'); page.wait_for_timeout(300)
+    check('replace: one Undo takes it all back', src(page) == files['main.tex'] and src(page, 'ch1.tex') == files['ch1.tex'], src(page, 'ch1.tex'))
 
 
 with sync_playwright() as p:
