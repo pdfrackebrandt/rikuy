@@ -3030,21 +3030,37 @@ class App {
       return null;
     }
     let fromMf = false;
-    mf.addEventListener('input', () => {
+    // (the field as the box last set it: MathLive sends its input event a task after the change,
+    // so one for keys typed before the box took over came after it and wrote the field's reading
+    // of the box back over the box)
+    let given = mf.getValue('latex');
+    const pull = () => {
+      if (mf.getValue('latex') === given) return;
       const tex = fromField(fieldValue(mf), st);
       if (tex === ta.value) return;
       fromMf = true;
       ta.value = tex;
       ta.dispatchEvent(new Event('input'));
       fromMf = false;
-    });
+    };
+    mf.addEventListener('input', pull);
     const sync = () => {
       if (fromMf) return;
       st = toField(ta.value, opts.display, opts.env(), D);
       st.same = same;
       if (mf.getValue('latex') !== st.latex) mf.setValue(st.latex, { silenceNotifications: true });
+      given = mf.getValue('latex');
       st.ml = fieldRows(modelValue(mf), st.multi, D);
     };
+    // MathLive focuses its keyboard sink 60 ms after the field takes the focus, whatever happened
+    // since: a hand over to the box sooner than that (dictation as the field opens, or a busy
+    // page that runs the timer late) lost the box's focus to the field, and the next keys went
+    // into the formula (\text{if}\} on CI). That focus never passes MathLive's onFocus, so the
+    // field still counts itself blurred: it goes back to the box.
+    mf.addEventListener('focusin', (e) => {
+      const m = mf._mathfield;
+      if (e.relatedTarget === ta && m && m.blurred && ta.isConnected) queueMicrotask(() => ta.focus({ preventScroll: true }));
+    });
     ta.addEventListener('input', sync);
     mf.addEventListener('paste', (e) => {
       const t = e.clipboardData && e.clipboardData.getData('text/plain');
@@ -3075,6 +3091,8 @@ class App {
         // (a box the field handed over to keeps the field's keys: Enter done, Ctrl+Enter a row;
         // review N2, where Enter in a display's box was a newline and the next words went in)
         if (this.pop) this.pop.boxFromField = true;
+        // (keys typed into the field whose input event is still to come: in the box first)
+        pull();
         let at = ta.value.length;
         try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (ta.value.startsWith(pre)) at = pre.length; } catch (e) { /* at the end */ }
         ta.focus();
