@@ -34,7 +34,7 @@ How to read it:
 | Ctrl+F2, Ctrl+Alt+I | | Print Preview | `preview` (the PDF beside the page) | added |
 | Ctrl+X, Ctrl+C, Ctrl+V | | Cut, Copy, Paste | `cut`, `copy`, `paste` | works |
 | Ctrl+Shift+V | | Paste text only | `paste-text` | works |
-| Ctrl+Alt+V | Cmd+Control+V | Paste Special (older Word); Paste Formatting in Microsoft 365, which moved it here from Ctrl+Shift+V when that became Paste Text Only | `paste-special`, the dialog taking the keys (arrows, Enter) | works as older Word; formatting is copied and pasted by the Format Painter (Ctrl+Shift+C, then the words selected) |
+| Ctrl+Alt+V | Cmd+Option+V | Paste Formatting, as Microsoft 365's Word (moved here from Ctrl+Shift+V when that became Paste Text Only; Paste Special before) | `paste-formatting`: the formatting Ctrl+Shift+C or the Format Painter copied, on the selection or the caret's word, one undo; nothing copied, nothing changes | works; Paste Special stays in Paste's menu (and Word for Mac's Cmd+Control+V) |
 | Ctrl+Alt+C | | Copy formatting (Word 365); © (older Word) | `insert-copyright`; copy formatting is `format-painter`, Ctrl+Shift+C | other: © as older Word |
 | Ctrl+Z, Ctrl+Y | | Undo, Redo | `undo`, `redo` | works |
 | F4 | | Repeat | `repeat` | works |
@@ -88,7 +88,7 @@ How to read it:
 | Ctrl+F3, Ctrl+Shift+F3 | Cmd+F3, Cmd+Shift+F3 | Spike: cut to it, put it all in | `spike`, `spike-insert` (in a heading or a cell its pieces join with spaces) | added |
 | Alt+F3 | Option+F3 | New building block | `quick-part-save` | added |
 | F3 (after a name) | | Insert a building block | Insert › Quick Parts | none: Chromium's F3 is Find again |
-| Ctrl+Shift+C | Cmd+Shift+C | Copy formatting | `format-painter` | works |
+| Ctrl+Shift+C | Cmd+Shift+C | Copy formatting | `format-painter` (Ctrl+Alt+V pastes it) | works |
 | Alt+Shift+R | | Header like the section before | | none: LaTeX's headers are the document's |
 | Ctrl+Shift+F7 | | Update linked information | | none |
 | Alt+Shift+F10 | | Paste options, AutoCorrect actions | Paste's arrow; AutoCorrect undoes with Ctrl+Z | none as a key |
