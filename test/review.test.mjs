@@ -15,7 +15,7 @@ const { commentsOf, onlyComments, linkRole, commentsBack, bodyAt, findComments, 
 const L = (who, quote, body) => safeCommentLine({ kind: 'comment', who, quote, body });
 const reached = (text, w) => text.includes(w) || findComments(text, '').some((c) => [c.who, c.quote, c.body, ...c.replies.map((r) => r.body)].join(' ').includes(w));
 const { buildModel } = await import('../src/model.js');
-const { changes } = await import('../src/diff.js');
+const { changes, hunks, hunkChanges } = await import('../src/diff.js');
 const { setLanguageEdits } = await import('../src/ui/wordcount.js');
 const { usePackages } = await import('../src/preamble.js');
 
@@ -442,6 +442,51 @@ group('a Word file\'s tracked changes: the layer of who wrote what made in one p
   for (const c of changes(base, now, 'main.tex')) list.push(...byAuthor(c, A.segs, now));
   assert.ok(Date.now() - t1 < 3000, 'byAuthor over 20000 segments: ' + (Date.now() - t1) + ' ms');
   assert.ok(list.some((c) => c.who === 'Ana') && list.some((c) => c.who === 'Bo') && list.some((c) => c.who === ''), 'the start, left out, has no author');
+});
+
+group('hunks taken as one block list no more characters than apart, and no change across a paragraph break but a join or a split (review N2)', () => {
+  let seed = 3;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const ri = (n) => Math.floor(rnd() * n);
+  const W = ['alpha', 'beta', 'gamma', 'delta', 'x', 'y', 'z', 'the', 'and', '.', ','];
+  const para = () => { const w = []; for (let i = 1 + ri(12); i > 0; i--) w.push(W[ri(W.length)]); return w.join(' '); };
+  const doc = () => { const ps = []; for (let i = 2 + ri(15); i > 0; i--) ps.push(para()); return ps.join(rnd() < 0.8 ? '\n\n' : '\n\n\n') + '\n'; };
+  // (a join, a split, a paragraph out or in, a word changed: one to four of them)
+  const mutate = (t) => {
+    const ps = t.split('\n\n');
+    for (let k = 1 + ri(4); k > 0; k--) {
+      if (!ps.length) ps.push(para());
+      const i = ri(ps.length), r = rnd();
+      if (r < 0.2 && i + 1 < ps.length) { ps[i] += ' ' + ps[i + 1]; ps.splice(i + 1, 1); }
+      else if (r < 0.4) { const w = ps[i].split(' '), c = ri(w.length + 1); ps.splice(i, 1, w.slice(0, c).join(' '), w.slice(c).join(' ')); }
+      else if (r < 0.6) ps.splice(i, 1);
+      else if (r < 0.75) ps.splice(i, 0, para());
+      else { const w = ps[i].split(' '); w[ri(w.length)] = W[ri(W.length)]; ps[i] = w.join(' '); }
+    }
+    return ps.join('\n\n');
+  };
+  const chars = (cs) => cs.reduce((n, c) => n + c.a.length + c.b.length, 0);
+  const across = (c) => /\n[ \t]*\n/.test(c.a + '\0' + c.b) && /\S/.test(c.a + c.b);
+  let pairs = 0, fewer = 0;
+  for (let it = 0; it < 3000; it++) {
+    const a = doc(), b = mutate(a);
+    if (a === b) continue;
+    pairs++;
+    const C = changes(a, b, 'm'), apart = hunks(a, b).flatMap((h) => hunkChanges(h, 'm'));
+    let back = b;
+    for (const c of [...C].sort((x, y) => y.bs - x.bs)) back = back.slice(0, c.bs) + c.a + back.slice(c.be);
+    let fwd = a;
+    for (const c of [...C].sort((x, y) => y.as - x.as)) fwd = fwd.slice(0, c.as) + c.b + fwd.slice(c.ae);
+    assert.ok(back === a && fwd === b, 'Reject All and Accept All exact: ' + JSON.stringify([a, b]));
+    assert.ok(chars(C) <= chars(apart), 'no more characters than the hunks apart: ' + JSON.stringify([a, b, C.map((c) => [c.a, c.b])]));
+    for (const c of C) assert.ok(!across(c) || apart.some((o) => o.as === c.as && o.a === c.a && o.b === c.b), 'a change across a paragraph break only where the hunks apart list it: ' + JSON.stringify([a, b, c.a, c.b]));
+    if (chars(C) < chars(apart)) fewer++;
+  }
+  assert.ok(pairs > 2900 && fewer > 100, pairs + ' pairs, ' + fewer + ' with fewer characters');
+  // (review N2's pair: delta to gamma and a paragraph out, not one change across the break)
+  const a = 'beta and delta .\n\ngamma z alpha z\n\n, y alpha y\n\nand z z , , z and z x z\n\nthe alpha the . gamma beta y x x\n\nx , and x\n';
+  const b = 'beta and gamma .\n\n, y alpha y\n\nand z z ,\n\nthe alpha the . gamma beta y x x\n\nx , and x\n';
+  assert.deepStrictEqual(changes(a, b, 'm').slice(0, 2).map((c) => [c.a, c.b]), [['delta', 'gamma'], ['gamma z alpha z\n\n', '']]);
 });
 
 console.log('review: ' + groups + ' groups of checks passed');
