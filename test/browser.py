@@ -795,7 +795,9 @@ def select_all(page):
     check('with the blank paragraph ready for typing', page.evaluate('!!(window.rikuy.ghost && window.rikuy.ghost.sticky)') and page.evaluate('(window.rikuy.caretNow() || {}).ghost === true') and page.evaluate('document.querySelectorAll("#pages .it:not(.ghostp)").length') == 0)
     page.keyboard.type('Fresh start'); wait_src(page, 'Fresh start')
     check('and typing starts the new text', (body() or '').split() == ['Fresh', 'start', '\\end{document}'], body())
-    page.keyboard.press('Control+z'); page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    # ("start", "Fresh " and the deletion: typing is undone word by word, as Word's)
+    for _ in range(3): page.keyboard.press('Control+z')
+    page.wait_for_timeout(300)
     check('undo brings the whole document back byte for byte', src(page) == base)
     click_text(page, 'Click anywhere'); page.keyboard.press('Control+a'); page.keyboard.type('Z'); wait_src(page, '\n\nZ\n\n')
     one = body()
@@ -1123,8 +1125,8 @@ def run():
         page.keyboard.type('New item')
         s11 = src(page)
         check('enter in list adds item', 'between visits.\n  \\item New item' in s11, s11[s11.find('between visits'):][:40])
-        page.keyboard.press('Control+z')
-        page.keyboard.press('Control+z')
+        # (typing is undone word by word, as Word's: the item's Enter, "New ", "item")
+        for _ in range(3): page.keyboard.press('Control+z')
         check('undo list', src(page) == base, src(page)[src(page).find('between visits'):][:40])
 
         # 15. enter at end of paragraph -> ghost, then type
@@ -1133,6 +1135,9 @@ def run():
         page.keyboard.type('Fresh paragraph.')
         s12 = src(page)
         check('ghost paragraph inserts clean source', 'edited by hand.\n\nFresh paragraph.\n\n\\section{Citations' in s12, s12[s12.find('by hand.'):][:60])
+        # (word by word: "Fresh " with its paragraph, then "paragraph.")
+        page.keyboard.press('Control+z')
+        check('undo takes the last word typed', 'edited by hand.\n\nFresh \n' in src(page) or 'edited by hand.\n\nFresh\n' in src(page), src(page)[src(page).find('by hand.'):][:60])
         page.keyboard.press('Control+z')
         check('undo ghost', src(page) == base, src(page)[src(page).find('by hand.'):][:60])
 

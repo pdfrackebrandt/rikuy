@@ -146,8 +146,12 @@ def api(p):
     page.evaluate('''() => window.rikuy.openFiles([new File([Uint8Array.from('%s'.match(/../g).map((h) => parseInt(h, 16)))], 'dot.png', { type: 'image/png' })])''' % PNG)
     page.wait_for_function('window.rikuy.assetBlobs.has("dot.png")', timeout=5000)
     files = page.evaluate('rikuy.api.getFiles()')
-    check('api.getFiles gives each text file with its text and a picture with its size', [sorted(f) for f in files] == [['name', 'text'], ['name', 'text'], ['bytes', 'name']]
-          and [f['name'] for f in files] == ['main.tex', 'refs.bib', 'dot.png'] and files[0]['text'] == src(page) and files[1]['text'] == src(page, 'refs.bib') and files[2]['bytes'] == len(PNG) // 2, [(f['name'], f.get('bytes')) for f in files])
+    # (the opening document's live graph brings its own text files, rikuy.sty and graphs/saving.html,
+    # and its picture once it is drawn: each in the shape its kind has)
+    by = {f['name']: f for f in files}
+    check('api.getFiles gives each text file with its text and a picture with its size', all(sorted(f) == (['bytes', 'name'] if re.search(r'\.(png|jpe?g|pdf|pgf)$', f['name']) else ['name', 'text']) for f in files)
+          and [f['name'] for f in files][:2] == ['main.tex', 'refs.bib'] and {'rikuy.sty', 'graphs/saving.html', 'dot.png'} <= set(by)
+          and by['main.tex']['text'] == src(page) and by['refs.bib']['text'] == src(page, 'refs.bib') and by['dot.png']['bytes'] == len(PNG) // 2, [(f['name'], f.get('bytes')) for f in files])
     before = [src(page), page.evaluate('rikuy.hist.length')]
     check('the sample needs no script set up: api.needs is [] and api.setUpScripts resolves to null, changing nothing',
           page.evaluate('rikuy.api.needs()') == [] and page.evaluate('rikuy.api.setUpScripts()') is None and [src(page), page.evaluate('rikuy.hist.length')] == before)
