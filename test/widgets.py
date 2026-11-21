@@ -265,6 +265,7 @@ try:
         # typing next to the widget: in its caption (which redraws the figure) and around it
         page.evaluate(MARK)
         orig = src(page)
+        steps0 = page.evaluate('window.rikuy.hist.length')
         click_text(page, 'Histogram', 9)
         page.keyboard.type(' (live)')
         page.wait_for_timeout(300)
@@ -276,11 +277,13 @@ try:
         page.wait_for_timeout(300)
         want = orig.replace('Histogram of', 'Histogram (live) of', 1).replace('four thousand', 'four or so thousand', 1)
         check('typing in the paragraph before patches only the typed text', src(page) == want, src(page)[:900])
-        page.click('#b-undo')
+        # (typing is undone word by word: as many Undo presses as the typing made steps)
+        steps = page.evaluate('window.rikuy.hist.length') - steps0
+        for _ in range(steps):
+            page.click('#b-undo')
+            page.wait_for_timeout(150)
         page.wait_for_timeout(150)
-        page.click('#b-undo')
-        page.wait_for_timeout(300)
-        check('undo gives the source back byte for byte', src(page) == orig)
+        check('undo gives the source back byte for byte', 2 <= steps <= 4 and src(page) == orig, steps)
         check('the widget kept its state through the edits and the undo', page.evaluate(KEPT) and fl.locator('#v').inner_text() == 'n = 5')
 
         # the tab: the command, as a figure's source; Alt: the line in the source pane

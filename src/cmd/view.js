@@ -119,7 +119,7 @@ register(
 
 // What a step of the history was, for Undo's list (the kinds App.commit is given)
 const KIND = { type: 'Typing', del: 'Delete', enter: 'New paragraph', paste: 'Paste', block: 'Paragraph', restore: 'Restore', reject: 'Reject', merge: 'Merge', 'del-atom': 'Delete',
-  'page-border': 'Page border', style: 'Style', api: 'Script', 'other-tab': 'Another tab', move: 'Move', table: 'Table' };
+  'page-border': 'Page border', style: 'Style', api: 'Script', 'other-tab': 'Another tab', move: 'Move', table: 'Table', open: 'Open file' };
 const kindName = (k) => KIND[k] || (k ? String(k).replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase()).slice(0, 40) : 'Edit');
 
 // commands that only show or move, never write: Repeat skips them
@@ -560,7 +560,7 @@ export const methods = {
   undoMenu() {
     const steps = this.hist.slice(-12).reverse();
     if (!steps.length) return false;
-    const items = steps.map((h, i) => ({ name: (i ? 'Undo ' + (i + 1) + ' steps, back to: ' : 'Undo: ') + kindName(h.kind), title: new Date(h.time).toLocaleTimeString(), run: () => { for (let k = 0; k <= i; k++) this.undo(); } }));
+    const items = steps.map((h, i) => ({ name: (i ? 'Undo ' + (i + 1) + ' steps, back to: ' : 'Undo: ') + kindName(h.kind), title: new Date(h.time).toLocaleTimeString(), run: () => { this.removeGhost(); for (let k = 0; k <= i; k++) this.undo(); } }));
     // (under the arrow; where the bar hides it, a phone's menu panel pressed it: under the bar)
     const x = $('#b-undo-x'), at = x && x.offsetParent ? x : new DOMRect(8, $('#bar').getBoundingClientRect().bottom, 0, 0);
     openMenu(this, at, items, { label: 'Undo options' });

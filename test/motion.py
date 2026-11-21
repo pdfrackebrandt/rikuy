@@ -275,6 +275,16 @@ def caret(page):
     r = since(page, n, 300)
     b5 = caret_box(page)
     check('a jump to a place out of view is a jump, not a glide across the document', not [x for x in r if x['id'] == 'transition:transform' and 'rk-caret' in x['cls']] and b5 and abs(b5['y'] - b5['ry']) <= 1, (r, b5))
+    # Enter at a paragraph's start shows an empty paragraph above it, the caret staying in the text
+    # (PR 94); Enter again grows it with the selection unchanged: the caret goes down with the text
+    load_doc(page, '\\documentclass{article}\n\\begin{document}\nThe first paragraph.\n\nThe second paragraph is here.\n\\end{document}\n')
+    page.wait_for_timeout(300)
+    click_text(page, 'second paragraph', 0); page.keyboard.press('Home'); page.wait_for_timeout(200)
+    ys = []
+    for k in range(3):
+        page.keyboard.press('Enter'); page.wait_for_timeout(200)
+        b6 = caret_box(page); ys.append(b6 and (round(b6['y']), round(b6['ry']), b6['hidden']))
+    check('Enter again and again at a paragraph\'s start: the caret drawn where the text went, a line lower each time', all(y and abs(y[0] - y[1]) <= 1 and not y[2] for y in ys) and ys[0][1] < ys[1][1] < ys[2][1], ys)
 
 
 def clicks(page):
