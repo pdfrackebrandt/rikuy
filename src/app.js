@@ -4925,7 +4925,11 @@ class App {
         if (t) n = t;
       }
     }
-    return n.replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '').slice(0, 100).replace(/[-.]+$/, '') || 'paper';
+    // (a file name as Word suggests one: letters of any script, digits and spaces kept, only what
+    // a file system refuses taken out; "Política Económica" came out Pol-tica-Econ-mica, and a
+    // title in Chinese as paper; review E17)
+    n = n.normalize('NFC').replace(/[\\/:*?"<>|\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').replace(/^[\s.]+|[\s.]+$/g, '');
+    return [...n].slice(0, 100).join('').replace(/[\s.]+$/, '') || 'paper';
   }
   // a blank article to type into; the open project stays under Review, Versions
   async newDocument() {
