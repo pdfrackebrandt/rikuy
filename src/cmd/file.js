@@ -203,7 +203,7 @@ export const methods = {
   async downloadPdfNow() {
     if (this.pdfBusy) return;
     const b = $('#rb-pdf'), title = b.title;
-    const fresh = () => !!this.lastPdf && this.lastPdfSig === this.textSigNow();
+    const fresh = () => !!this.lastPdf && this.lastPdfSig === this.pdfSigNow();
     if (!fresh() || this.compiling) {
       this.pdfBusy = true;
       // (busy without a longer name: the downloads stay at the row's end over the other groups,

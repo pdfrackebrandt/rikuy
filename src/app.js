@@ -4906,7 +4906,7 @@ class App {
     const gen = this.pdfGen || 0;
     const st = $('#pdf-status'), bar = $('#pdf-prog'), msg = $('#pdf-msg');
     let said = ''; // how the run ended, for the "PDF status" line
-    const sig = textSig(this.main, [...this.files.entries()]);
+    const sig = this.pdfSigNow();
     // (what decides the PDF's sheet in the source compiled: the sheet TeX gives it is the page's)
     const mediaKey = this.model && this.model.opts.page ? this.model.opts.page.mediaKey : null;
     // a long TeX run gets a clock and a Stop button; one that never ends is stopped after
@@ -5032,7 +5032,7 @@ class App {
       const again = this.compileAgain;
       this.compileAgain = false;
       if (again && document.body.classList.contains('pdf-on')) this.compilePdf({ clean: again === 'clean' });
-      else if (textSig(this.main, [...this.files.entries()]) !== sig) this.pdfSoon();
+      else if (this.pdfSigNow() !== sig) this.pdfSoon();
     }
   }
 
@@ -5042,7 +5042,7 @@ class App {
   async compileResult() {
     const idle = async () => { while (this.compiling) await new Promise((r) => setTimeout(r, 100)); };
     await idle();
-    const fresh = !!this.lastPdf && this.lastPdfSig === this.textSigNow() && !!this.lastCompile && this.lastCompile.ok;
+    const fresh = !!this.lastPdf && this.lastPdfSig === this.pdfSigNow() && !!this.lastCompile && this.lastCompile.ok;
     if (!fresh) { this.pdfPane(); await this.compilePdf(); await idle(); }
     const c = this.lastCompile || { ok: false, failed: 'another document was opened while TeX ran' };
     const ok = !!c.ok && !!this.lastPdf;
@@ -5064,6 +5064,7 @@ class App {
     store(PREFS, this.prefs);
     this.syncEngineMenu();
     if (document.body.classList.contains('pdf-on')) this.compilePdf({ clean: true });
+    else this.pdfStale = true;
   }
   syncEngineMenu() {
     const sel = $('#pdf-engine');
@@ -5503,6 +5504,9 @@ App.prototype.insertFromPalette = function (k) {
 // a link opened from a command (Help's) as one in a document is: web and mail addresses only
 App.prototype.openLink = openLink;
 App.prototype.textSigNow = function () { return textSig(this.main, [...this.files.entries()]); };
+// what the PDF was made from: the text and the engine chosen, so a PDF from another engine is not
+// taken as this one's (rikuy.api.compile and Download PDF right after the engine was changed)
+App.prototype.pdfSigNow = function () { return this.textSigNow() + '|' + this.engineChoice(); };
 // the Word worker's files, asked for as the page asks for its other files (src/word.js)
 App.prototype.assetUrl = asset;
 
