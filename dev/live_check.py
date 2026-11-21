@@ -16,7 +16,7 @@ the page) it is asked again. Where it redirects to SITE (the owner's Bulk Redire
 rikuy-3dl.pages.dev, which takes every deployment's address under it along), it says so and the
 deployment is checked at SITE alone. Then SITE, the custom domain, which serves a new deployment only once
 it reaches Cloudflare's edge: it is asked every --every seconds (10) until it passes or --within
-seconds (300) from the start have gone. Every try prints why it did not pass; a network error on
+seconds (120) from the start have gone. Every try prints why it did not pass; a network error on
 the runner (a name that did not resolve) is one more try of the same poll, never a pass. The last
 line is the verdict, with the seconds it took or the reason of the last try."""
 import argparse, http.client, os, re, sys, time, urllib.error, urllib.parse, urllib.request
@@ -102,7 +102,7 @@ def main():
     ap.add_argument('site')
     ap.add_argument('dist')
     ap.add_argument('deployment', nargs='?')
-    ap.add_argument('--within', type=float, default=300)
+    ap.add_argument('--within', type=float, default=120)
     ap.add_argument('--every', type=float, default=10)
     a = ap.parse_args()
     t0 = time.monotonic()

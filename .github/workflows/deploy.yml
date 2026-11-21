@@ -125,10 +125,10 @@ jobs:
       # at the deployment's own address, where anything wrong is the build's and fails at once
       # (while the Bulk Redirect of rikuy-3dl.pages.dev takes that address to the site too, it
       # says so and only the site is checked); then the custom domain, asked every 10 s until it
-      # serves this build, for at most 5 minutes (Cloudflare's edge takes seconds to a minute; a
+      # serves this build, for at most 2 minutes, as before (Cloudflare's edge takes seconds to a minute; a
       # name that does not resolve on the runner is one more try of that poll, never a pass)
       - name: The live site serves what was built
         env:
           SITE: ${{ vars.RIKUY_SITE || 'https://rikuy.rackebrandt.pe/' }}
           DEPLOYMENT: ${{ steps.upload.outputs.deployment }}
-        run: python3 dev/live_check.py "$SITE" dist "$DEPLOYMENT" --within 300 --every 10
+        run: python3 dev/live_check.py "$SITE" dist "$DEPLOYMENT" --within 120 --every 10
