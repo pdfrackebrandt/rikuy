@@ -60,7 +60,6 @@ def project(doc):
     return files, main
 def main():
   import serve, doclimit
-  from playwright.sync_api import sync_playwright
   serve.start(PORT)
   OUT = sys.argv[1]
   FILT = sys.argv[2] if len(sys.argv) > 2 else ''
@@ -69,92 +68,94 @@ def main():
   out = open(OUT, 'a' if int(os.environ.get('START', '0')) else 'w')  # START: resume after a stop
   timeout = int(os.environ.get('TIMEOUT', '240'))
   limit = timeout + 90  # the whole document, hard: TeX's time and its files in and the PDF out
+  start = 300  # at most, for a browser to start and its worker to be ready
   budget = doclimit.Budget(os.environ.get('DEADLINE'))
-  with sync_playwright() as pw:
-      # Playwright's driver is this process's child and Chromium the driver's: killing everything
-      # from the second generation down ends Chromium, and the call waiting on it raises
-      dog = doclimit.Watchdog(lambda: doclimit.sweep(depth=2))
-      state = {'b': None}
+  # Playwright's driver is this process's child and Chromium the driver's: killing everything
+  # from the second generation down ends Chromium, and the call waiting on it raises
+  dog = doclimit.Watchdog(lambda: doclimit.sweep(depth=2))
+  # Playwright and the browser start when a document needs them, not before: a shard whose time
+  # is spent (it started late) writes its 'budget' rows at once, before the step is killed
+  state = {'pw': None, 'b': None, 'stale': False}
 
-      def fresh(new=False, tries=3):
-          """A page whose worker is ready, in a new browser when the old one is gone or new is set
-          (just after the watchdog killed Chromium the old one may still say it is connected);
-          None after that many failures."""
-          for _ in range(tries):
-              dog.arm(300)
-              try:
-                  if new and state['b'] is not None:
-                      try: state['b'].close()
-                      except Exception: pass
-                      state['b'] = None
-                  new = False
-                  if state['b'] is None or not state['b'].is_connected():
-                      state['b'] = pw.chromium.launch()
-                  p = state['b'].new_page(); p.goto(page); p.wait_for_function('window.ready', timeout=180000)
-                  return p
-              except Exception as e:
-                  print('page not ready', str(e)[:200], flush=True)
-                  try: state['b'].close()
-                  except Exception: pass
-                  state['b'] = None
-              finally:
-                  dog.disarm()
-          return None
-
-      pg = fresh()
-      if pg is None: raise SystemExit('corpus_full.py: the page never became ready')
-      t0 = time.time()
-      left = 0
-      for i, doc in enumerate(OLD):
-          if FILT and FILT not in doc: continue
-          if i < int(os.environ.get('START', '0')): continue
-          if SHARD and i % SHARD[1] != SHARD[0]: continue
-          if not budget.fits(limit):
-              out.write(json.dumps({'doc': doc, 'ok': None, 'error': 'budget'}) + '\n'); out.flush(); left += 1; continue
-          if not os.path.exists(os.path.join(REPO, doc[len('arxiv/'):] if doc.startswith('arxiv/') else doc[3:])):
-              out.write(json.dumps({'doc': doc, 'ok': None, 'error': 'gone'}) + '\n'); continue
-          if pg is None and budget.fits(limit + 300):
-              pg = fresh(tries=1)  # a browser that would not start may start now
-          if pg is None:  # no browser would start: the rows say so instead of the shard stopping
-              out.write(json.dumps({'doc': doc, 'ok': None, 'error': 'harness no page'}) + '\n'); out.flush(); continue
-          dog.arm(limit)
-          files, main = project(doc)
-          try:
-              pg.evaluate("""([files, main, id]) => compile(files.map(f => f.b64 ? { path: f.path, data: Uint8Array.from(atob(f.b64), c => c.charCodeAt(0)) } : f), main, true, 'c' + id)""", [files, main, i])
-              pg.wait_for_function('window.result || window.err', timeout=timeout * 1000, polling=200)
-              r = pg.evaluate("window.result ? ({ok: result.ok, ms: result.ms, passes: result.passes, net: result.net, log: result.log, engine: result.engine, runs: result.runs.map(x => [x.cmd, x.code, (x.log||'').slice(-600)])}) : ({error: window.err.error})")
-              if PDF_DIR and r.get('ok'):
-                  # as base64: a list of numbers costs Python gigabytes for a large PDF
-                  b64 = pg.evaluate("(() => { const u = new Uint8Array(window.result.pdf); let s = ''; for (let k = 0; k < u.length; k += 0x8000) s += String.fromCharCode.apply(null, u.subarray(k, k + 0x8000)); return btoa(s); })()")
-                  open(os.path.join(PDF_DIR, '%d.pdf' % i), 'wb').write(base64.b64decode(b64))
-          except Exception as e:
-              r = {'error': 'harness ' + ('over the %d s limit' % limit if dog.fired else str(e)[:200])}
-              try:  # what the worker was doing when time ran out (a pass, a program)
-                  r['trail'] = pg.evaluate('(window.trail || []).slice(-8)')
+  def fresh():
+      """A page whose worker is ready, in a new browser when the old one is gone or the watchdog
+      killed it (just after, the old one may still say it is connected); None if that fails."""
+      dog.arm(start)
+      try:
+          if state['pw'] is None:
+              from playwright.sync_api import sync_playwright
+              state['pw'] = sync_playwright().start()
+          if state['stale'] and state['b'] is not None:
+              try: state['b'].close()
               except Exception: pass
-              try:  # a TeX run still spinning keeps the page from closing: stop the worker first
-                  pg.evaluate('w.terminate()')
-              except Exception: pass
-              try:  # a crashed page cannot reload: start a new one
-                  pg.close()
-              except Exception: pass
-              pg = None
-          dog.disarm()
-          # a new page after a failure, and a new browser whenever the watchdog fired, also when it
-          # fired just as the document ended
-          if pg is None or dog.fired:
-              pg = fresh(new=dog.fired)
-          log = r.get('log') or ''
-          lines = log.split('\n')
-          errs = [l for l in lines if l.startswith('!') or ': LaTeX Error' in l or ':' in l[:80] and ' Error:' in l][:4]
-          miss = [l for l in lines if 'not found' in l and ('File' in l or 'file' in l)][:3]
-          out.write(json.dumps({'doc': doc, 'main': main, 'nfiles': len(files), 'ok': r.get('ok'), 'ms': r.get('ms'), 'passes': r.get('passes'), 'net': r.get('net'),
-                                'engine': r.get('engine'), 'errs': errs, 'miss': miss, 'error': r.get('error'), 'trail': r.get('trail'), 'runs': r.get('runs'), 'tail': log[-1500:] if not r.get('ok') else ''}) + '\n'); out.flush()
-          if i % 50 == 0: print(i, doc, r.get('ok'), r.get('ms'), round(time.time() - t0), flush=True)
-      if left: print(left, 'documents not compiled: the shard\'s time was spent (rows with the error "budget")', flush=True)
-      if state['b'] is not None:
+              state['b'] = None
+          state['stale'] = False
+          if state['b'] is None or not state['b'].is_connected():
+              state['b'] = state['pw'].chromium.launch()
+          p = state['b'].new_page(); p.goto(page); p.wait_for_function('window.ready', timeout=180000)
+          return p
+      except Exception as e:
+          print('page not ready', str(e)[:200], flush=True)
           try: state['b'].close()
           except Exception: pass
+          state['b'] = None
+          return None
+      finally:
+          dog.disarm()
+
+  pg = None
+  t0 = time.time()
+  left = 0
+  for i, doc in enumerate(OLD):
+      if FILT and FILT not in doc: continue
+      if i < int(os.environ.get('START', '0')): continue
+      if SHARD and i % SHARD[1] != SHARD[0]: continue
+      # no document starts that could end past the deadline, nor a browser that could not start
+      # and then compile it in time
+      if not budget.fits(limit if pg is not None else limit + start):
+          out.write(json.dumps({'doc': doc, 'ok': None, 'error': 'budget'}) + '\n'); out.flush(); left += 1; continue
+      if not os.path.exists(os.path.join(REPO, doc[len('arxiv/'):] if doc.startswith('arxiv/') else doc[3:])):
+          out.write(json.dumps({'doc': doc, 'ok': None, 'error': 'gone'}) + '\n'); continue
+      if pg is None:
+          pg = fresh()  # the first, or after a failure: tried again for every document
+      if pg is None:  # no browser would start: the rows say so instead of the shard stopping
+          out.write(json.dumps({'doc': doc, 'ok': None, 'error': 'harness no page'}) + '\n'); out.flush(); continue
+      dog.arm(limit)
+      files, main = project(doc)
+      try:
+          pg.evaluate("""([files, main, id]) => compile(files.map(f => f.b64 ? { path: f.path, data: Uint8Array.from(atob(f.b64), c => c.charCodeAt(0)) } : f), main, true, 'c' + id)""", [files, main, i])
+          pg.wait_for_function('window.result || window.err', timeout=timeout * 1000, polling=200)
+          r = pg.evaluate("window.result ? ({ok: result.ok, ms: result.ms, passes: result.passes, net: result.net, log: result.log, engine: result.engine, runs: result.runs.map(x => [x.cmd, x.code, (x.log||'').slice(-600)])}) : ({error: window.err.error})")
+          if PDF_DIR and r.get('ok'):
+              # as base64: a list of numbers costs Python gigabytes for a large PDF
+              b64 = pg.evaluate("(() => { const u = new Uint8Array(window.result.pdf); let s = ''; for (let k = 0; k < u.length; k += 0x8000) s += String.fromCharCode.apply(null, u.subarray(k, k + 0x8000)); return btoa(s); })()")
+              open(os.path.join(PDF_DIR, '%d.pdf' % i), 'wb').write(base64.b64decode(b64))
+      except Exception as e:
+          r = {'error': 'harness ' + ('over the %d s limit' % limit if dog.fired else str(e)[:200])}
+          try:  # what the worker was doing when time ran out (a pass, a program)
+              r['trail'] = pg.evaluate('(window.trail || []).slice(-8)')
+          except Exception: pass
+          try:  # a TeX run still spinning keeps the page from closing: stop the worker first
+              pg.evaluate('w.terminate()')
+          except Exception: pass
+          try:  # a crashed page cannot reload: the next document starts a new one
+              pg.close()
+          except Exception: pass
+          pg = None
+      dog.disarm()
+      if dog.fired:  # also when it fired just as the document ended: a new browser next time
+          pg, state['stale'] = None, True
+      log = r.get('log') or ''
+      lines = log.split('\n')
+      errs = [l for l in lines if l.startswith('!') or ': LaTeX Error' in l or ':' in l[:80] and ' Error:' in l][:4]
+      miss = [l for l in lines if 'not found' in l and ('File' in l or 'file' in l)][:3]
+      out.write(json.dumps({'doc': doc, 'main': main, 'nfiles': len(files), 'ok': r.get('ok'), 'ms': r.get('ms'), 'passes': r.get('passes'), 'net': r.get('net'),
+                            'engine': r.get('engine'), 'errs': errs, 'miss': miss, 'error': r.get('error'), 'trail': r.get('trail'), 'runs': r.get('runs'), 'tail': log[-1500:] if not r.get('ok') else ''}) + '\n'); out.flush()
+      if i % 50 == 0: print(i, doc, r.get('ok'), r.get('ms'), round(time.time() - t0), flush=True)
+  if left: print(left, 'documents not compiled: the shard\'s time was spent (rows with the error "budget")', flush=True)
+  for close in (lambda: state['b'].close(), lambda: state['pw'].stop()):
+      try: close()
+      except Exception: pass
   print('done', flush=True)
 
 

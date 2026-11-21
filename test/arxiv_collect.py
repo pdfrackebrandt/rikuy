@@ -56,15 +56,40 @@ try:
     check('no result row: the merge exits 1', r.returncode == 1 and 'no result rows' in r.stdout, (r.returncode, r.stdout))
 
     # a partial run (2401.00005 has no row, 2401.00004 was left for lack of time) against the
-    # merge before it: fewer papers tried than it had keeps that one (exit 2), more replaces it
-    def against(n):
-        prev = os.path.join(d, 'prev-%d.jsonl' % n)
-        open(prev, 'w').write(''.join('{"doc": "arxiv/x/%d", "ok": true}\n' % k for k in range(n)) + '{"doc": "arxiv/y", "error": "budget"}\nnot json\n')
-        return subprocess.run([sys.executable, '-I', os.path.join(HERE, '..', 'dev', 'arxiv_collect.py'), os.path.join(d, 'ids.txt'), os.path.join(d, 'shards'), d, prev],
+    # merge before it: fewer rows that count than it had keeps that one (exit 2), more replaces it
+    def merge(shards, ids, prev_rows):
+        """arxiv_collect.py against a merge before holding these rows of each kind."""
+        prev = tempfile.mkdtemp(dir=d)
+        for kind, rows in prev_rows.items():
+            open(os.path.join(prev, 'arxiv-%s.jsonl' % kind), 'w').write(''.join(json.dumps(x) + '\n' for x in rows) + 'not json\n')
+        out = tempfile.mkdtemp(dir=d)
+        return subprocess.run([sys.executable, '-I', os.path.join(HERE, '..', 'dev', 'arxiv_collect.py'), ids, shards, out, prev],
                               capture_output=True, text=True)
-    r4, r2 = against(4), against(2)
-    check('a partial run with fewer papers than the merge before keeps that one', r4.returncode == 2 and 'partial: 3 papers tried against 4' in r4.stdout, (r4.returncode, r4.stdout))
+    ok = lambda k: [{'doc': 'arxiv/x/%d' % i, 'ok': True} for i in range(k)] + [{'doc': 'arxiv/y', 'error': 'budget'}]
+    r4, r2 = merge(os.path.join(d, 'shards'), os.path.join(d, 'ids.txt'), {'results': ok(4)}), merge(os.path.join(d, 'shards'), os.path.join(d, 'ids.txt'), {'results': ok(2)})
+    check('a partial run with fewer papers than the merge before keeps that one', r4.returncode == 2 and 'partial results: 3 rows that count against 4' in r4.stdout, (r4.returncode, r4.stdout))
     check('a partial run with more papers replaces it', r2.returncode == 0, (r2.returncode, r2.stdout))
+
+    # three papers, all compiled, one compared, against a complete merge: the comparison is
+    # partial and smaller, so the merge stays (it was force pushed over before)
+    f = os.path.join(d, 'f1')
+    os.makedirs(os.path.join(f, 'shards', 'arxiv-shard-0'))
+    open(os.path.join(f, 'ids.txt'), 'w').write('# s\n2501.00001 a main.tex\n2501.00002 a main.tex\n2501.00003 a main.tex\n')
+    docs = ['arxiv/2501.0000%d/main.tex' % k for k in (1, 2, 3)]
+    open(os.path.join(f, 'shards', 'arxiv-shard-0', 'arxiv-results-0.jsonl'), 'w').write(''.join(json.dumps({'doc': x, 'ok': True}) + '\n' for x in docs))
+    open(os.path.join(f, 'shards', 'arxiv-shard-0', 'arxiv-pdfcompare-0.jsonl'), 'w').write(
+        json.dumps({'doc': docs[0], 'match': True}) + '\n' + json.dumps({'doc': docs[1], 'error': 'budget'}) + '\n' + json.dumps({'doc': docs[2], 'error': 'over the 900 s limit'}) + '\n')
+    full = {'results': [{'doc': x, 'ok': True} for x in docs], 'pdfcompare': [{'doc': x, 'match': True} for x in docs]}
+    r = merge(os.path.join(f, 'shards'), os.path.join(f, 'ids.txt'), full)
+    check('a complete compile with a third of the comparison does not replace a complete merge',
+          r.returncode == 2 and 'partial pdfcompare: 1 rows that count against 3' in r.stdout, (r.returncode, r.stdout))
+
+    # every paper without a browser: no paper was compiled, so the merge before stays
+    open(os.path.join(f, 'shards', 'arxiv-shard-0', 'arxiv-results-0.jsonl'), 'w').write(
+        ''.join(json.dumps({'doc': x, 'ok': None, 'error': 'harness no page'}) + '\n' for x in docs[:2]) + json.dumps({'doc': docs[2], 'ok': None, 'error': 'gone'}) + '\n')
+    r = merge(os.path.join(f, 'shards'), os.path.join(f, 'ids.txt'), full)
+    check('rows of papers with no browser or no source do not count as compiled',
+          r.returncode == 2 and 'partial results: 0 rows that count against 3' in r.stdout, (r.returncode, r.stdout))
 finally:
     shutil.rmtree(d, ignore_errors=True)
 

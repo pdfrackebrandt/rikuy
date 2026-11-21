@@ -108,3 +108,50 @@ Fix: give the Keep step an id and add `steps.keep.outcome == 'success'` to the c
   - The mirror's partial download is resumed by the archive.
 
 Checks: `test/arxiv_limits.py` 15/15, `test/arxiv_collect.py` 9/9, `test/arxiv_unpack.py` 10/10; three papers through `corpus_full.py`; pdfcompare's budget and resume on real rows; actionlint 1.7.12 clean.
+
+## Verification of 3b57bc0 (the answer to this review; 25 minute check)
+
+Verdict: fix first. F1 and F3 are a few lines each. The rest of 3b57bc0 holds.
+
+Checks at 3b57bc0:
+- `test/arxiv_limits.py`: 15/15 (the browser case ran)
+- `test/arxiv_collect.py`: 9/9
+- `actionlint`: clean
+- Probes: `arxiv_collect.py` run on hand made shard folders (A to C below), and `timeout -k` against `unshare --kill-child` with processes that ignore TERM and leave their session
+
+**Held:**
+- M1: collect is skipped when the shards were skipped, and 0 rows exits 1.
+- M2: the first restore is lookup only, the save is confirmed, a shard falls back to downloading on a miss, and the setup step has 150 min.
+- M3: the outer `sudo timeout -k 30` works. Tried here, a namespace whose processes ignore TERM and leave their session is gone at KILL, with nothing left over.
+- L1 to L6 and the nits.
+- Artifact names against collect's glob: `arxiv-shard-k-rikuy/arxiv-results-k.jsonl` and `arxiv-shard-k/arxiv-pdfcompare-k.jsonl` each match exactly one glob. Older runs' artifacts (both files in `arxiv-shard-k`) still merge.
+- Partial branch name: `$RUN` is checked to be digits only before the merge step, and it reaches the shell as an env value, not through `${{ }}`. `arxiv-results-partial-<digits>` cannot be injected.
+- tmpfs sizes: the repository is public, so runners have 16 GB. /tmp at 4g holds a paper's copy, its build, the `tlhome` copy and both PDFs' PGMs (a 300 page paper is about 0.3 GB). /dev/shm at 1g is well above the 64 MB that breaks Chromium. I did not measure the size of the warmed `/mnt/tl26/home`.
+- Concurrency: a fixed group with `cancel-in-progress: false` serialises runs, including `from_run` collects, and nothing else pushes `arxiv-results`. Nit: GitHub keeps one pending run per group, so a third dispatch silently cancels the second.
+
+**F1 (Medium): a partial comparison replaces a complete one** (`dev/arxiv_collect.py:107`).
+The partial rule looks only at `results`. Probe A: results 3/3, comparison 1/3, previous merge complete gives exit 0, and `arxiv-results` is force pushed with the partial comparison.
+The comparison is now the part most likely to be cut short: it runs last, the outer timeout kills it, and its rows upload separately from Rikuy's.
+Fix: apply the rule to both kinds. Fetch the branch's `arxiv-pdfcompare.jsonl` too, and count compared rows (no `budget`, no over the limit error). Return 2 when either kind is partial and has fewer rows than the previous one.
+
+**F2 (Low): harness failures count as tried** (`arxiv_collect.py:74`).
+`done_rows` counts `harness no page` rows. Probe B: every row `harness no page` against a complete previous merge gives exit 0. A run with no browser for most of a shard replaces a good merge.
+Fix: leave `harness no page` (and `gone`) out of `done_rows`, and count such papers as missing for the partial test.
+
+**F3 (Low): a failed fetch of the previous merge means "no previous merge"** (`arxiv.yml:344`).
+Any `git fetch` failure, such as a network blip, is treated as no previous merge. Probe C: any partial run then exits 0 and replaces the full merge.
+Fix: `git ls-remote --exit-code --heads origin arxiv-results`. Exit 2 means the branch is absent: go on without a previous merge. Any other failure, or a failed fetch after that, fails the job.
+
+**F4 (Low): papers can end up with no row instead of a 'budget' row** (`dev/corpus_full.py:104,145`).
+When the compile step starts late, `left` can be 1 s. corpus_full launches Chromium (up to 300 s) before its first budget check, so the outer kill lands before any 'budget' row is written. The empty file then reads as "papers without a row".
+The same happens when the last document that fits fails at about minute 209: `fresh()` can take 3 x 300 s, and the kill at 215 comes before the remaining papers get their 'budget' rows.
+Fix: write the 'budget' rows without starting a browser when nothing fits. After a failure, start a browser lazily: the per document `if pg is None and budget.fits(...)` already does that.
+
+## Fixes of the verification (on top of 3b57bc0)
+
+- **F1.** The partial rule applies to both kinds. collect fetches the branch's `arxiv-results.jsonl` and `arxiv-pdfcompare.jsonl` into a folder, and `arxiv_collect.py` exits 2 when either kind is partial and has fewer rows that count than before. A comparison row counts unless it is 'budget' or 'over the ... limit'. Probe A as a test: 3 of 3 compiled, 1 of 3 compared, against a complete merge, now exits 2.
+- **F2.** A result row counts unless it is 'budget', 'harness no page' or 'gone'. Probe B as a test: every paper without a browser or a source, against a complete merge, now exits 2.
+- **F3.** `git ls-remote --exit-code --heads origin arxiv-results`. Exit 2 means no merge yet. Any other exit, or a failed `git fetch` or `git show` afterwards, fails the job under `bash -e`. Checked here: 0 for arxiv-results, 2 for a missing branch.
+- **F4.** `corpus_full.py` starts Playwright and the browser only when a document needs them. A document without a page must fit `limit + 300` s (the start) before one is started. After a failure or a watchdog kill, the next document starts a new browser only if it fits. A shard past its budget writes its 'budget' rows at once, and needs no Playwright to do it. New test: with the browsers' path leading nowhere and the deadline 60 s away, two 'budget' rows in under 30 s; on 3b57bc0 it exits 1 with no row.
+
+Checks: `test/arxiv_limits.py` 16/16 and `test/arxiv_collect.py` 11/11. The three new cases fail on 3b57bc0's scripts. `test/arxiv_unpack.py` 10/10, three papers through `corpus_full.py` (a looping TeX stopped, the next compiled), actionlint 1.7.12 clean.

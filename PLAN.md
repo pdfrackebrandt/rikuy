@@ -3803,21 +3803,24 @@ Tests:
     paper started kept open); the comparison runs on the rows Rikuy's step wrote even when that step
     failed; and `arxiv_collect.py` counts the papers without a row and those left for lack of time.
     PR 99's hostile review (fix first) added: collect commits nothing when no shard left a row and
-    sends a partial run with fewer papers than the merge already there to
-    `arxiv-results-partial-<run>`; the `desktop` job confirms its cache entry, and a shard whose
-    restore misses downloads what it lacks within its step's 150 min; each sandbox step is also
-    killed from outside, as root, five minutes after its deadline (`timeout -k 30`, which takes the
-    namespace with it), since a paper can stop the scripts that keep the budget; Rikuy's rows are
-    uploaded before the comparison starts; the sandbox's /tmp holds 4 GB; Xvfb runs with `-noreset`
-    and a sweep spares what is kept with its children; a new browser after every watchdog kill, and
-    a browser tried again per document; a bad part of a download is never resumed; one run at a
-    time. Evidence: `test/arxiv_limits.py` (15, in `npm test`, Linux only, the browser case bounded
-    to a minute; its daemon, background job, kept subtree, budget and resume cases each fail with
-    its fix taken out), `test/arxiv_collect.py` 9/9 (an empty merge exits 1, a partial one with
-    fewer papers 2), `sandbox_check.py` passing inside the sized sandbox, `timeout -k` ending a PID
-    namespace whose processes ignore TERM, `fetch_tl26.sh` with a stale part and with the mirror
-    down, three papers through corpus_full.py (one looping TeX stopped at its limit, the next
-    compiled in the same session), `actionlint`.
+    sends a run whose compiles or comparisons are partial and fewer than the merge already there has
+    to `arxiv-results-partial-<run>` (a missing branch told apart from a failed lookup; rows of
+    papers with no browser or no source, left for time or stopped at the limit, not counted); the
+    `desktop` job confirms its cache entry, and a shard whose restore misses downloads what it lacks
+    within its step's 150 min; each sandbox step is also killed from outside, as root, five minutes
+    after its deadline (`timeout -k 30`, which takes the namespace with it), since a paper can stop
+    the scripts that keep the budget; Rikuy's rows are uploaded before the comparison starts; the
+    sandbox's /tmp holds 4 GB; Xvfb runs with `-noreset` and a sweep spares what is kept with its
+    children; a new browser after every watchdog kill, and a browser started only when a document
+    needs it and fits in the time left (a shard that starts late writes its `budget` rows at once);
+    a bad part of a download is never resumed; one run at a time. Evidence: `test/arxiv_limits.py`
+    (16, in `npm test`, Linux only, the browser case bounded to a minute; its daemon, background
+    job, kept subtree, budget, resume and late shard cases each fail with its fix taken out),
+    `test/arxiv_collect.py` 11/11 (an empty merge exits 1; a partial one with fewer rows 2, the
+    comparison and rows without a browser included), `sandbox_check.py` passing inside the sized
+    sandbox, `timeout -k` ending a PID namespace whose processes ignore TERM, `fetch_tl26.sh` with a
+    stale part and with the mirror down, three papers through corpus_full.py (one looping TeX
+    stopped at its limit, the next compiled in the same session), `actionlint`.
     The partial run's numbers, shards 1, 3 and 4 only (375 papers, every eighth paper from three
     offsets): Rikuy compiled 361 (96.3 %), the desktop 361; of the desktop's 361 Rikuy compiled
     361 (100 %); 339 of the 361 matched (93.9 %); median compile 2.3 s, 90th percentile 7.8 s. The

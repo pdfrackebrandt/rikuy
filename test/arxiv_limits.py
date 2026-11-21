@@ -158,5 +158,28 @@ try:
 finally:
     shutil.rmtree(d, ignore_errors=True)
 
+# corpus_full.py past its budget: 'budget' rows at once, no browser started (a shard that
+# starts late is killed a few minutes after its deadline; a browser's start could outlast that
+# and leave the papers with no row at all). Its browsers path leads nowhere: starting one fails.
+import socket  # noqa: E402
+d = tempfile.mkdtemp(prefix='limits-')
+try:
+    open(os.path.join(d, 'ids.txt'), 'w').write('# sample\n2401.00001 math.AG main.tex\n2401.00002 hep-th main.tex\n')
+    for pid in ('2401.00001', '2401.00002'):
+        os.makedirs(os.path.join(d, 'src', pid))
+        open(os.path.join(d, 'src', pid, 'main.tex'), 'w').write('\\documentclass{article}\\begin{document}x\\end{document}\n')
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+    env = dict(os.environ, CORPUS_LIST=os.path.join(d, 'ids.txt'), CORPUS_REPO=os.path.join(d, 'src'), PORT=str(port),
+               PLAYWRIGHT_BROWSERS_PATH=os.path.join(d, 'none'), DEADLINE=str(int(time.time()) + 60))
+    t0 = time.time()
+    r = subprocess.run([sys.executable, '-I', os.path.join(DEV, 'corpus_full.py'), os.path.join(d, 'out.jsonl')], env=env, capture_output=True, text=True, timeout=120)
+    got = [json.loads(l) for l in open(os.path.join(d, 'out.jsonl'))] if os.path.exists(os.path.join(d, 'out.jsonl')) else []
+    check('corpus_full.py past its budget writes its "budget" rows without starting a browser',
+          r.returncode == 0 and [(x['doc'], x.get('error')) for x in got] == [('arxiv/2401.00001/main.tex', 'budget'), ('arxiv/2401.00002/main.tex', 'budget')]
+          and time.time() - t0 < 30 and 'page not ready' not in r.stdout, (r.returncode, got, r.stdout[-300:], r.stderr[-300:]))
+finally:
+    shutil.rmtree(d, ignore_errors=True)
+
 print('%d/%d passed' % (n - bad, n))
 sys.exit(1 if bad else 0)

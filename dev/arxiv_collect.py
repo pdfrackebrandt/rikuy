@@ -1,12 +1,14 @@
 """Merge the arXiv corpus shards' results into dev/arxiv-results.jsonl and dev/arxiv-pdfcompare.jsonl
 (the collect job of .github/workflows/arxiv.yml, which may push).
 
-  arxiv_collect.py IDS SHARDS_DIR OUT_DIR [PREVIOUS]
+  arxiv_collect.py IDS SHARDS_DIR OUT_DIR [PREVIOUS_DIR]
 
 Exits 1 when no result row is kept (shards that never ran: the job must not push an empty
-merge over the last one), and 2 when the run is partial (a paper with a main file has no row,
-or was left for lack of time) and has fewer rows than PREVIOUS, the arxiv-results.jsonl the
+merge over the last one), and 2 when either kind is partial (a paper with a main file has no
+row of it that counts) and counts fewer rows than the same file in PREVIOUS_DIR, the merge the
 branch holds now: the workflow then keeps that one and pushes this merge to a branch of its own.
+A result row counts unless the paper was left for lack of time, had no browser or no source;
+a comparison row unless it was left for lack of time or stopped at its limit.
 
 The shard files are what papers compiled with shell escape could touch, so they are data to
 check, not to trust: a line is kept only if it is a JSON object whose "doc" names a paper of the
@@ -71,20 +73,29 @@ def expected(ids_path):
     return out
 
 
-def done_rows(rows):
-    """Rows of papers that were tried, not left for lack of time."""
-    return sum(1 for r in rows if isinstance(r, dict) and r.get('error') != 'budget')
+NOT_DONE = {'results': ('budget', 'harness no page', 'gone'), 'pdfcompare': ('budget',)}
 
 
-def previous_rows(path):
-    """How many tried papers the branch's arxiv-results.jsonl has (0 when there is none); its
+def counts(r, kind):
+    """Whether a row stands for a paper compiled (results) or compared (pdfcompare)."""
+    if not isinstance(r, dict) or not isinstance(r.get('doc'), str):
+        return False
+    e = r.get('error')
+    if e in NOT_DONE[kind]:
+        return False
+    return not (kind == 'pdfcompare' and isinstance(e, str) and e.startswith('over the '))
+
+
+def previous_rows(folder, kind):
+    """How many rows that count the branch's file of that kind has (0 when there is none); its
     rows came through this merge, but a line that does not read is not counted."""
+    path = os.path.join(folder, 'arxiv-%s.jsonl' % kind) if folder else ''
     rows = []
     if path and os.path.isfile(path) and not os.path.islink(path):
         for l in open(path, 'rb'):
             try: rows.append(json.loads(l.decode('utf8')))
             except (ValueError, UnicodeDecodeError): pass
-    return done_rows(rows)
+    return sum(1 for r in rows if counts(r, kind))
 
 
 def main(ids_path, shards, out_dir, previous=None):
@@ -100,13 +111,15 @@ def main(ids_path, shards, out_dir, previous=None):
         left = sum(1 for r in rows if r.get('error') == 'budget')
         print(kind, len(rows), 'kept,', dropped, 'dropped,', len(want - have), 'papers without a row,',
               left, 'left for lack of time')
-        if kind == 'results':
-            if not rows:
-                print('no result rows: nothing to commit')
-                verdict = 1
-            elif (want - have or left) and done_rows(rows) < previous_rows(previous):
-                print('partial: %d papers tried against %d in the merge before; that one stays' % (done_rows(rows), previous_rows(previous)))
-                verdict = 2
+        if kind == 'results' and not rows:
+            print('no result rows: nothing to commit')
+            return 1
+        done = [r for r in rows if counts(r, kind)]
+        partial = want - {r['doc'].split('/')[1] for r in done}
+        if partial and len(done) < previous_rows(previous, kind):
+            print('partial %s: %d rows that count against %d in the merge before; that one stays'
+                  % (kind, len(done), previous_rows(previous, kind)))
+            verdict = 2
     return verdict
 
 

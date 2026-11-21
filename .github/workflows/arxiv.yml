@@ -340,12 +340,21 @@ jobs:
       - name: Merge and commit to arxiv-results
         run: |
           cp shards/arxiv-ids/arxiv-ids.txt dev/arxiv-ids.txt
-          # the merge there now, which a partial run with fewer papers does not replace
-          if git fetch -q origin arxiv-results; then git show FETCH_HEAD:dev/arxiv-results.jsonl > "$RUNNER_TEMP/previous.jsonl" || :; fi
+          # The merge there now, which a partial run with fewer rows does not replace. Only a
+          # branch that is not there means no merge before; any other failure stops the job, or
+          # a network blip would let a partial run replace a complete one.
+          mkdir -p "$RUNNER_TEMP/previous"
+          st=0; git ls-remote --exit-code --heads origin arxiv-results > /dev/null || st=$?
+          case "$st" in
+            0) git fetch -q origin arxiv-results
+               for k in results pdfcompare; do git show "FETCH_HEAD:dev/arxiv-$k.jsonl" > "$RUNNER_TEMP/previous/arxiv-$k.jsonl"; done ;;
+            2) echo "no arxiv-results yet" ;;
+            *) echo "cannot tell whether arxiv-results exists (git ls-remote: $st)" >&2; exit 1 ;;
+          esac
           # The shard files come from jobs that ran the papers: rows are checked, not trusted.
-          # 1: no result row, nothing is committed; 2: partial and fewer papers than the merge
-          # there, which stays, this one going to a branch of its own.
-          st=0; python3 -I dev/arxiv_collect.py dev/arxiv-ids.txt shards dev "$RUNNER_TEMP/previous.jsonl" || st=$?
+          # 1: no result row, nothing is committed; 2: the compiles or the comparisons partial and
+          # fewer than in the merge there, which stays, this one going to a branch of its own.
+          st=0; python3 -I dev/arxiv_collect.py dev/arxiv-ids.txt shards dev "$RUNNER_TEMP/previous" || st=$?
           case "$st" in 0) branch=arxiv-results ;; 2) branch="arxiv-results-partial-$RUN" ;; *) exit 1 ;; esac
           git config user.name "github-actions[bot]"
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
