@@ -795,7 +795,7 @@ export function installWordTyping(mf, opts) {
         if (TEXT_ARG.has(name)) { arg = { name, text: '', depth: 0 }; draw(); return; }
         draw();
         // what the field cannot hold (\begin{aligned}, a command it does not know) goes on as LaTeX
-        if (!tex || !tex.includes('#?') || tex.includes('\\begin')) { if (opts.toLatex) opts.toLatex('\\' + name + '{'); return; }
+        if (!tex || !tex.includes('#?') || tex.includes('\\begin')) { if (opts.toLatex) hand('\\' + name + '{'); return; }
         put(tex);
         const b = emptyBox();
         if (b) boxes.push({ owner: b.owner, open: true });
@@ -880,10 +880,12 @@ export function installWordTyping(mf, opts) {
   // onKey reads: the letters of a command's argument waiting (\text{caf) move to the LaTeX box with
   // what comes, and the input method goes on in a plain text box; it went into the formula outside
   // the \text, or before it (review H2)
+  let handed = false;
+  const hand = (t) => { handed = true; opts.toLatex(t); };
   const toBox = (more) => {
     const t = arg;
     arg = null; draw();
-    if (opts.toLatex) opts.toLatex('\\' + t.name + '{' + t.text + (more || ''));
+    if (opts.toLatex) hand('\\' + t.name + '{' + t.text + (more || ''));
     else put('\\' + t.name + '{' + t.text + (more || '') + '}', { selectionMode: 'after' });
   };
   mf.addEventListener('compositionstart', () => { if (arg) toBox(''); }, true);
@@ -909,9 +911,18 @@ export function installWordTyping(mf, opts) {
     // one character the rules leave alone goes in as the field takes it; more, one by one
     if (data.length === 1) { if (keyOf(data)) { e.preventDefault(); e.stopImmediatePropagation(); } return; }
     e.preventDefault(); e.stopImmediatePropagation();
-    for (const ch of data) {
-      if (arg) { toBox(ch); continue; }
-      if (!keyOf(ch)) { try { mf.executeCommand(['typedText', ch]); } catch (err) { put(ch); } }
+    // (once the LaTeX box has the keys, \text{ or \begin{ handed over, the rest goes there as it
+    // came: x=1\text{if }+y in one insert gave x=1\text{i}f\}+y, the letters after the first
+    // typed into the field again, W2; once the formula has closed, a price's word or its closing
+    // $, the rest goes on the page, W4)
+    handed = false;
+    const chars = [...data];
+    for (let i = 0; i < chars.length; i++) {
+      const rest = () => chars.slice(i).join('');
+      if (arg) { toBox(rest()); return; }
+      if (handed && opts.boxType) { opts.boxType(rest()); return; }
+      if (!mf.isConnected) { if (opts.afterClose) opts.afterClose(rest()); return; }
+      if (!keyOf(chars[i])) { try { mf.executeCommand(['typedText', chars[i]]); } catch (err) { put(chars[i]); } }
     }
   }, true);
   mf.addEventListener('pointerdown', () => { groups = []; }, true);
