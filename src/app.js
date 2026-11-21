@@ -4,7 +4,7 @@ import { buildModel, INCR } from './model.js';
 import { Renderer, BLOCKS, esc, widgetCss } from './render.js';
 import { Layout, geometry } from './layout.js';
 import {
-  posFromDom, CaretIndex, segOfSpan, atomOfEl, styOfEl, visibleRanges, escapeTeX, textToTeX,
+  posFromDom, CaretIndex, segOfSpan, atomOfEl, styOfEl, visibleRanges, escapeTeX, textToTeX, withPdfText,
   endsWithControlWord, isBalanced, diff, stepStart, stepJoin, boundary, clusterEdge, sourceEdge, backspaceUnits
 } from './editor.js';
 import { SAMPLE } from './sample.js';
@@ -2271,14 +2271,16 @@ class App {
     const inline = inArg || (!whole && !!(el && el.closest && el.closest('td, .it.h, .cap')));
     const pre = this.src(this.main).split(/\\begin\s*\{document\}/)[0];
     const o = { prev: src[at0 - 1] || ' ', hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*hyperref/.test(pre), booktabs: /\\usepackage(\[[^\]]*\])?\{[^}]*booktabs/.test(pre), inlineOnly: inline };
-    const rich = () => {
+    // (a PDF's ligatures as letters; its Greek and symbols as formulas where pdfLaTeX compiles it: escapeTeX)
+    const pdfText = !this.textEngine().unicode;
+    const rich = () => withPdfText(pdfText, () => {
       if (plainOnly) return textToTeX(plain, o.prev);
       let t = '';
       if (html && /<[a-z]/i.test(html)) { try { t = htmlToTeX(html, o); } catch (err) { t = ''; } }
       if (!t.trim()) t = plainToTeX(plain, o.prev, o);
       if (inline) t = t.replace(/\s*\n\s*\n\s*/g, ' ').replace(/\n/g, ' ');
       return t;
-    };
+    });
     if (c.ghost) { this.ghostInsert(latex || rich()); return; }
     if (whole) { this.replaceBody(whole, latex || rich(), 'paste'); return; }
     const edits = this.deletionEdits(c.f, c.a, c.b);
