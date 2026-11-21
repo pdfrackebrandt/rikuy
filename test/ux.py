@@ -884,11 +884,14 @@ def focus_rules(page, w):
         page.keyboard.press('Shift+Tab'); page.wait_for_timeout(40)
         check(f'and Shift+Tab too ({w})', page.evaluate(where)[0])
         page.keyboard.press('Escape'); page.wait_for_timeout(200)
-        # opened by the keys from a control of the ribbon: Esc gives it the focus back (N7)
+        # opened by the keys from a control of the ribbon: Esc gives the page its caret back, as Word's
+        # ribbon does once its command has run (tabs.py's Frontier by keys; N7's opener is the page)
+        click_text(page, 'Second paragraph', 3)
         page.focus('#rr-a11y'); page.keyboard.press('Enter'); page.wait_for_timeout(400)
         page.keyboard.press('Escape'); page.wait_for_timeout(200)
         back = page.evaluate("document.activeElement.id")
-        check(f'a dialog opened by the keys from a ribbon button gives that button the focus back ({w})', back == 'rr-a11y', back)
+        page.keyboard.type('Q'); page.wait_for_timeout(200)
+        check(f'a dialog opened by the keys from a ribbon button gives the page its caret back, as Word ({w})', back == 'pages' and 'SecQond' in src(page), (back, src(page)[-60:]))
         # a dialog opened from another by the keys (Paragraph's Tabs…) gives back what that one would:
         # the caret, and the next key lands there (it went to the ribbon's launcher, the key lost)
         load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
