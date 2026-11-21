@@ -9,6 +9,7 @@ import {
 } from './editor.js';
 import { SAMPLE } from './sample.js';
 import { splitRows, parseJS, scanUserSigs, setNativeParse } from './parser.js';
+import { mathNeeds } from './ui/eqtab.js';
 import { installWordTyping, wordShortcuts, makeDialect, classifyMacros, resolveCommand, PACKAGES, WORD_GROUPS, FIELD_MACROS, fieldValue, modelValue } from './wordmath.js';
 import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
@@ -1990,7 +1991,8 @@ class App {
   removeGhost() { if (this.ghost) { const g = this.ghost; this.ghost = null; g.el.remove(); if (g.restore) g.restore(); } }
   // what is typed in the blank paragraph or line is LaTeX source, written as it is
   ghostRaw() { return !!this.ghost && (!!this.ghost.tex || this.ghost.style === 'latex'); }
-  ghostInsert(tex) {
+  // extra: edits of the same step (the packages a paste needs, src/app.js pastePackages)
+  ghostInsert(tex, extra = []) {
     const g = this.ghost;
     if (g.tex) { this.texGhostInsert(tex); return; }
     // Spaces alone after the mark would make a blank line, which marks nothing: they wait in
@@ -2015,7 +2017,8 @@ class App {
     const pre = g.pos === 0 ? '' : '\n'.repeat(Math.max(0, 2 - nlB));
     const post = g.pos >= src.length ? '' : '\n'.repeat(Math.max(0, 2 - nlA));
     this.removeGhost();
-    this.commit([{ f: g.f, s: g.pos, e: g.pos, t: pre + open + tex + close + post }], { f: g.f, p: g.pos + pre.length + open.length + tex.length, bias: -1 }, 'type');
+    const grew = extra.filter((x) => x.f === g.f && x.s <= g.pos).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
+    this.commit([...extra, { f: g.f, s: g.pos, e: g.pos, t: pre + open + tex + close + post }], { f: g.f, p: g.pos + grew + pre.length + open.length + tex.length, bias: -1 }, 'type');
   }
 
   // ---- LaTeX paragraphs (src/styles.js) ----------------------------------------------
@@ -2333,8 +2336,8 @@ class App {
       if (inline) t = t.replace(/\s*\n\s*\n\s*/g, ' ').replace(/\n/g, ' ');
       return t;
     });
-    if (c.ghost) { this.ghostInsert(latex || rich()); return; }
-    if (whole) { this.replaceBody(whole, latex || rich(), 'paste'); return; }
+    if (c.ghost) { const t = latex || rich(); this.ghostInsert(t, this.pastePackages(t)); return; }
+    if (whole) { const t = latex || rich(), pk = this.pastePackages(t); this.replaceBody(whole, t, 'paste'); if (pk.length) this.commit(pk, null, 'paste'); return; }
     const edits = this.deletionEdits(c.f, c.a, c.b);
     const at = edits.length && edits[0].s >= c.a ? edits[0].s : c.a;
     // (landing in a LaTeX paragraph from a selection that started outside it: as source)
@@ -2343,7 +2346,8 @@ class App {
     if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!raw && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
     const removedBefore = edits.filter((ed) => ed.e <= at).reduce((s, ed) => s + (ed.e - ed.s), 0);
-    this.commit([...edits, { f: c.f, s: at, e: at, t }], { f: c.f, p: at - removedBefore + t.length }, 'paste');
+    const pk = raw ? [] : this.pastePackages(t), grew = pk.filter((x) => x.f === c.f && x.s <= at).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
+    this.commit([...edits, { f: c.f, s: at, e: at, t }, ...pk], { f: c.f, p: at - removedBefore + t.length + grew }, 'paste');
     // LaTeX source pasted as text got its backslashes escaped: offer to keep it as LaTeX
     if (!latex && !plainOnly && t !== plain && /\\[A-Za-z]+/.test(plain) && /\\textbackslash\{\}|\\\$/.test(t)) {
       const pos = { f: c.f, s: at - removedBefore, len: t.length, raw: plain };
@@ -2698,8 +2702,25 @@ class App {
 
   // A few Word symbols need a package beyond amsmath and amssymb (\\llbracket needs stmaryrd).
   // Add the \\usepackage line once, in the same undo step as the equation edit.
-  ensurePackages(tex, P) {
+  // The packages what was pasted needs (\mathbb from a chat assistant's formula, amssymb's): in the
+  // paste's own step, so Undo takes them with it. Pasted, \mathbb stopped TeX with "Undefined
+  // control sequence", where the equation field adds the package for it.
+  pastePackages(t) {
+    // (only what stands in formulas: \mathbb in the text is no command of amssymb's)
     const need = new Set();
+    for (const m of String(t).matchAll(/\$\$?((?:[^$\\]|\\[\s\S])+)\$\$?|\\\[([\s\S]*?)\\\]|\\\(([\s\S]*?)\\\)/g)) {
+      const x = m[1] || m[2] || m[3] || '';
+      for (const p of mathNeeds(x)) need.add(p);
+      x.replace(/\\([A-Za-z]+)/g, (q, n) => { if (PACKAGES[n]) need.add(PACKAGES[n]); return q; });
+    }
+    if (!need.size) return [];
+    const f = this.main, src = this.src(f), others = this.preambleOthers();
+    return usePackages(src, [...need].filter((x) => !hasPackage(src, x, undefined, others)), { others }).map((x) => ({ f, ...x }));
+  }
+  ensurePackages(tex, P) {
+    // (amssymb's \mathbb and the like too, as the Equation tab adds them: typed in the field they
+    // were written with no package, and TeX stopped at them)
+    const need = new Set(mathNeeds(tex));
     String(tex).replace(/\\([A-Za-z]+)/g, (m, n) => { if (PACKAGES[n]) need.add(PACKAGES[n]); return m; });
     if (!need.size) return;
     const f = this.main;
