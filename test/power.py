@@ -194,6 +194,19 @@ def dollars(page):
         key(page, 'Escape', 400)
         check('dollars: and Esc then makes the price at %d px' % width, 'gamma. Costs \\$5 each\n' in src(page), src(page)[60:120])
     page.set_viewport_size({'width': 1400, 'height': 1000})
+    # (agent.py at 90815ba) closed empty or as a price, the formula's Equation tab goes with it: it
+    # stayed, and Insert's Equation button was out of reach
+    TABS = "(() => [...document.querySelectorAll('[role=tab]')].filter((t) => t.offsetParent).map((t) => t.getAttribute('aria-label') || t.textContent.trim()))()"
+    for how, keys in (('empty, by Esc', [' ', '$', 'Escape']), ('empty, by Backspace', [' ', '$', 'x', 'Backspace', 'Backspace']), ('as a price', list(' $5 each.'))):
+        fresh(page, MATH)
+        click_text(page, 'gamma.', 6)
+        opened = False
+        for k in keys:
+            if len(k) > 1: key(page, k, 300)
+            else: page.keyboard.type(k); page.wait_for_timeout(300 if k == '$' else 60)
+            opened = opened or 'Equation' in page.evaluate(TABS)
+        page.wait_for_timeout(500)
+        check('dollars: a formula closed ' + how + ' takes its Equation tab with it', opened and 'Equation' not in page.evaluate(TABS) and not page.evaluate('!!window.rikuy.pop'), page.evaluate(TABS))
     # (verification of befd04a, X1) Backspace deletes a formula's last character, then the formula,
     # as Word's does an equation: no stray \$, no undo step left for it, the caret where the $ was
     for typed_, n in ((' costs $x', 2), (' costs $ab+1', 5), (' costs $5', 2), (' costs $5 each', 7)):
