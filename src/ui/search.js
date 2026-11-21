@@ -43,7 +43,7 @@ export function installSearch(app) {
   if (!inp) return;
   // (its key as this computer has it: Control+Option+Q on a Mac, where Option+Q types œ)
   const sk = firstKey(command('search'), macUA()), kbd = inp.parentElement && inp.parentElement.querySelector('.srch-key');
-  if (sk) { if (kbd) kbd.textContent = sk; inp.title = 'Search for a command by its name (' + sk + ')'; }
+  if (sk) { if (kbd) kbd.textContent = sk; inp.title = 'Search (' + sk + '): find a command by its name'; }
   let hits = [], hi = 0;
   const where = (c) => {
     const t = c.tab && tabById(c.tab);

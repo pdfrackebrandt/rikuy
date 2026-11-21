@@ -135,6 +135,16 @@ run('INDEX = ' + JSON.stringify({
 }) + '; packs.clear();');
 const P = (i) => 'p:' + sha16(zp[i]);
 
+await ok('TeX fetched ahead keeps what the opening document reads: rikuy.sty loads pgf for its live graph\'s picture', async () => {
+  // (CI's TeX job, test/offline.py: the sample's first PDF asked for pgf's two packs when the
+  // warm list had none of them)
+  const { WARM_FILES } = await import('../src/pwa.js');
+  const { RIKUY_STY } = await import('../src/graph.js');
+  const main = fs.readFileSync(new URL('../sample/main.tex', import.meta.url), 'utf8');
+  assert.ok(/\\usepackage\{rikuy\}/.test(main) && /\\rikuywidget[^\n]*\.pgf\}/.test(main) && /\\RequirePackage\{pgf\}/.test(RIKUY_STY));
+  assert.ok(WARM_FILES.includes('tex/latex/pgf/basiclayer/pgf.sty*') && WARM_FILES.some((f) => f.startsWith('tex/generic/pgf/')), WARM_FILES.join(' '));
+});
+
 await ok('the offline plan is the core packs and the packs holding files under the folders named', () => {
   assert.deepEqual([...ctx.keepPlan(['tex/latex/amsmath'])], [0, 1], 'a folder is a whole path segment: amsmath2 is not amsmath');
   assert.deepEqual([...ctx.keepPlan(['/fonts/type1/public/lm/', 'tex/latex/amsmath2'])], [0, 2, 3]);

@@ -80,9 +80,10 @@ ok('formulas: a stranger\'s are bounded (length, nesting, size): no runaway', ()
 });
 
 ok('descriptions: normalised, every field capped, nonsense dropped', () => {
-  const s = K.normalize({ kind: 'function', f: ['x', 'x^2', 'x^3', 'x^4', 'x^5'], sliders: Array.from({ length: 20 }, (_, k) => ({ name: 'a' + k, min: 0, max: 1, value: 9 })).concat([{ name: 'sin' }, { name: '<b>' }]), title: 'T'.repeat(500), aspect: 99, x: { min: 5, max: 1 } });
-  assert.equal(s.f.length, 4);
-  assert.equal(s.sliders.length, 8);
+  const s = K.normalize({ kind: 'function', f: ['x', 'x^2', 'x^3', 'x^4', 'x^5', 'x^6', 'x^7'], sliders: Array.from({ length: 20 }, (_, k) => ({ name: 'a' + k, min: 0, max: 1, value: 9 })).concat([{ name: 'sin' }, { name: '<b>' }]), title: 'T'.repeat(500), aspect: 99, x: { min: 5, max: 1 } });
+  assert.equal(s.f.length, 6);
+  // (twelve since the hostile review of task 70: a Taylor rule or a ten parameter polynomial)
+  assert.equal(s.sliders.length, 12);
   assert.equal(s.sliders[0].value, 1);
   assert.equal(s.title.length, 200);
   assert.equal(s.aspect, 1.2);
@@ -128,7 +129,7 @@ ok('the templates draw: their sliders, their ranges, their series', () => {
   for (const t of TEMPLATES) {
     const s = template(t.id), R = K.ranges(s), d = K.compute(s, K.defaults(s));
     assert.ok(R.X[1] > R.X[0] && R.Y[1] > R.Y[0], t.id);
-    assert.ok(d.series.length >= 1 && d.series.every((x) => x.pts.length > 0), t.id);
+    assert.ok(d.series.length >= 1 && d.series.every((x) => (x.pts || x.lines).length > 0), t.id);
   }
   // a function's y range is from its values at the starting sliders; tan's poles do not set it
   const tan = K.ranges(K.normalize({ kind: 'function', f: ['tan(x)'], x: { min: -5, max: 5 } }));
