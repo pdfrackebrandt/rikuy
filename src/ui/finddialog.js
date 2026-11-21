@@ -5,7 +5,7 @@
 // document's text reaches it only as text (the search box's own, a label's key in the list).
 
 import { $, mk } from './dom.js';
-import { openMenu } from './kit.js';
+import { openMenu, accessKeys } from './kit.js';
 import { FORMATS, FMT } from '../find.js';
 
 const OPTS = [['matchCase', 'Match case'], ['wholeWord', 'Find whole words only'], ['wildcards', 'Use wildcards'], ['regex', 'Use regular expressions'], ['source', 'In LaTeX source'], ['insel', 'In selection']];
@@ -107,12 +107,22 @@ function build(app) {
 
   const D = { d, T, pf, pg, q: q.i, r: r.i, fmt, O, st, gst, what, n: n.i, nl: n.s, list, bGo, bGPrev, bFmt, bSpec, bNoFmt };
   app.fr = D;
+  // Word's letters: Alt and the letter, the focus in the dialog (src/ui/kit.js accessKeys)
+  accessKeys(d, [[T.find, 'D'], [T.replace, 'P'], [T.goto, 'G'], [q.i, 'N'], [r.i, 'I'], [O.matchCase, 'H'], [O.wholeWord, 'Y'], [O.wildcards, 'U'], [O.regex, 'X'], [O.source, 'L'], [O.insel, 'S'],
+    [bFmt, 'O'], [bSpec, 'E'], [bNoFmt, 'T'], [bRep, 'R'], [bAll, 'A'], [bPrev, 'V'], [bNext, 'F'], [what, 'O'], [n.i, 'E'], [bGo, 'T'], [bGPrev, 'S']]);
 
   // ---- what each part does
   x.addEventListener('click', () => closeFindDialog(app));
   d.addEventListener('mousedown', (e) => { if (!e.target.closest('input, select, label')) e.preventDefault(); });
   d.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeFindDialog(app); }
+    // Tab goes round the dialog's controls, as Word's: past Find Next it left for the window's
+    // top bar, where Escape no longer closed the dialog (the page is a click or Escape away)
+    if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      const all = [...d.querySelectorAll('button, input, select, textarea, [tabindex]')].filter((x) => !x.disabled && x.tabIndex >= 0 && x.offsetParent);
+      const i = all.indexOf(document.activeElement);
+      if (all.length && (e.shiftKey ? i === 0 : i === all.length - 1)) { e.preventDefault(); all[e.shiftKey ? all.length - 1 : 0].focus(); }
+    }
   });
   tabs.addEventListener('click', (e) => { const t = e.target.closest('[role=tab]'); if (t) selectTab(app, t.dataset.tab, true); });
   tabs.addEventListener('keydown', (e) => {
@@ -269,7 +279,11 @@ export function closeFindDialog(app) {
   // the hit shown stays selected; the marks go unless the Navigation pane's box still searches
   const fs = app.findState();
   const keep = app.navOpen && app.navOpen('outline') && app.nv && app.nv.q.value;
-  if (D.tab !== 'goto' && fs.hits[fs.cur]) app.findSelectCur(); else app.ribbonBack();
+  // (opened from the source pane: back there, the hit shown selected in it)
+  const h = fs.hits[fs.cur], fromSrc = fs.fromSrc && app.cm && document.body.classList.contains('src-on');
+  if (fs.fromSrc) { fs.o.source = !!fs.srcWas; fs.fromSrc = false; }
+  if (fromSrc) { if (D.tab !== 'goto' && h && h.src) app.reveal(h.f, h.s, true, h.e); else app.cm.focus(); }
+  else if (D.tab !== 'goto' && h) app.findSelectCur(); else app.ribbonBack();
   if (!keep) app.findClear();
 }
 

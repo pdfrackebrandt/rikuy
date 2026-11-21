@@ -115,6 +115,16 @@ def dialog(page):
     check('and it says how many: Replaced 4 places.', st.startswith('Replaced 4 places.'), st)
     page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
     check('one undo takes all of it back, byte for byte', src(page) == DOC)
+    # Tab goes round the dialog, as Word's: past its last control it left for the window's top
+    # bar, where Escape no longer closed it
+    d.get_by_label('Find what', exact=True).focus()
+    inside = []
+    for _ in range(30):
+        page.keyboard.press('Tab'); page.wait_for_timeout(20)
+        inside.append(page.evaluate('!!document.activeElement.closest("[role=dialog]")'))
+    d.get_by_role('button', name='Close', exact=True).focus(); page.keyboard.press('Shift+Tab'); page.wait_for_timeout(20)
+    inside.append(page.evaluate('!!document.activeElement.closest("[role=dialog]")'))
+    check('Tab and Shift+Tab go round the dialog\'s controls and stay in it', all(inside), inside)
     d.get_by_label('Find whole words only', exact=True).uncheck()
     # a hit across markup: the replacement takes the first character's place, the braces stay
     load_doc(page, WRAP('Some \\textbf{bold} text here.'))

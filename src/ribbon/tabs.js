@@ -837,7 +837,8 @@ function installKeyTips(app) {
   }, true);
   document.addEventListener('keyup', (e) => {
     if (e.key !== 'Alt') return;
-    const alone = altDown && !altUsed && !e.ctrlKey && !e.metaKey && !e.shiftKey && !field(e);
+    // (in a dialog Alt shows the dialog's own letters, src/ui/kit.js accessKeys, as Word's)
+    const alone = altDown && !altUsed && !e.ctrlKey && !e.metaKey && !e.shiftKey && !field(e) && !(e.target.closest && e.target.closest('[role=dialog]'));
     altDown = false;
     if (alone && !mac) { e.preventDefault(); show(!level); }
   }, true);

@@ -180,6 +180,16 @@ export class TeXEngine {
 // file and ")" when it closes it, which tells which file a warning belongs to. Errors (from
 // --file-line-error) carry their own file and line; an error inside a TeX Live file has no
 // line the author can use, so it gets none.
+// What Problems says of an issue parseTeXLog found: its message, and for an error where TeX
+// stopped (the context it prints after "l.86"); where that context is blank (an error at a
+// line's start or on an empty line) the source line's own text, and nothing when that is blank
+// too (it showed "(at )").
+export function issueText(x, lineText) {
+  const one = (t) => String(t || '').replace(/\s+/g, ' ').trim();
+  const at = 'ctx' in x ? one(x.ctx) || one(lineText) : '';
+  return x.msg + (at ? ' (at ' + at.slice(0, 60) + ')' : '');
+}
+
 export function parseTeXLog(log) {
   const out = [];
   if (!log) return out;
