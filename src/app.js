@@ -1902,21 +1902,24 @@ class App {
         const s = +is + base, e0 = +ie + base;
         // (the empty item's line goes and one line break stays: \end{itemize} was glued to the
         // item before it, "\item Fourth\end{itemize}")
-        const nl = src.lastIndexOf('\n', e0 - 1), e = nl >= s ? nl : e0;
+        // (a file whose lines end in CR LF keeps them so: the break kept, and the two written)
+        const nl = src.lastIndexOf('\n', e0 - 1), e = nl >= s ? (src[nl - 1] === '\r' && nl - 1 >= s ? nl - 1 : nl) : e0;
         let s2 = s; while (s2 > 0 && (src[s2 - 1] === ' ' || src[s2 - 1] === '\t')) s2--;
-        if (src[s2 - 1] === '\n' && nl >= s) s2--;
+        if (src[s2 - 1] === '\n' && nl >= s) { s2--; if (src[s2 - 1] === '\r') s2--; }
         const listEnd = +le + base;
         const removed = e - s2;
-        const ins = '\n\n';
+        const NL = /\r\n/.test(src) ? '\r\n' : '\n';
+        const ins = NL + NL;
         this.commit([{ f, s: s2, e, t: '' }, { f, s: listEnd, e: listEnd, t: ins }], { f, p: listEnd - removed + ins.length, bias: 1 }, 'enter');
         return;
       }
-      const t = '\n' + (lkind === 'desc' ? '\\item[] ' : '\\item ');
+      const NL = /\r\n/.test(src) ? '\r\n' : '\n';
+      const t = NL + (lkind === 'desc' ? '\\item[] ' : '\\item ');
       // indent like the current item line
       let ls2 = +is + base; let ind = '';
       while (ls2 > 0 && (src[ls2 - 1] === ' ' || src[ls2 - 1] === '\t')) { ind = src[ls2 - 1] + ind; ls2--; }
       const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
-      const ins = w.close + '\n' + ind + t.slice(1) + w.open;
+      const ins = w.close + NL + ind + t.slice(NL.length) + w.open;
       this.commit([...edits, { f, s: w.p, e: w.p, t: ins }], { f, p: Math.max(w.p, p) + ins.length, bias: 1 }, 'enter');
       return;
     }
