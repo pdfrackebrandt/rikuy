@@ -2,7 +2,7 @@
 // status bar (Page, LaTeX, PDF: one at a time, at the same place); Show LaTeX, which turns one
 // block of the page into its source where it stands and back; and the View tab: Read Mode, Print
 // Layout, LaTeX Mode, Draft, Show LaTeX, One page, Multiple pages, Side to Side, Dark page, Focus
-// (Formatting marks there is B2's Show marks). Nothing here writes to the source but what is typed into a block shown as LaTeX.
+// (Show marks there is B2's). Nothing here writes to the source but what is typed into a block shown as LaTeX.
 
 import { register, onInstall } from '../commands.js';
 import { $, PREFS, store } from '../ui/dom.js';
@@ -37,11 +37,11 @@ const viewIs = (v) => (app) => (app.view || 'page') === v;
 
 register(
   // (Word's Ctrl+F2 is Print Preview: here the PDF as TeX makes it)
-  { id: 'preview', name: 'Preview', el: 'b-pdf', static: true, place: 'bar', title: 'Show the PDF as TeX makes it, beside the page (Ctrl+F2)', keys: ['Ctrl+F2', 'Ctrl+Alt+I'], keyScope: 'app', synonyms: ['PDF', 'Compile', 'Print Preview'], when: always, run: (app) => app.togglePdf() },
+  { id: 'preview', name: 'Preview', el: 'b-pdf', static: true, place: 'bar', title: 'Preview (Ctrl+F2): show the PDF as TeX makes it, beside the page', keys: ['Ctrl+F2', 'Ctrl+Alt+I'], keyScope: 'app', synonyms: ['PDF', 'Compile', 'Print Preview'], when: always, run: (app) => app.togglePdf() },
   { id: 'source', name: 'Source', el: 'b-src', static: true, place: 'bar', title: 'Show the source beside the page (Ctrl+\\)', keysElsewhere: ['Ctrl+\\'], synonyms: ['LaTeX source', 'Code'], when: always, run: (app) => app.toggleSource() },
-  { id: 'zoom-out', name: 'Zoom out', el: 'b-zout', static: true, place: 'bar', only: 'wide', keysElsewhere: ['Ctrl+-'], when: always, run: (app) => app.setZoom(-1) },
+  { id: 'zoom-out', name: 'Zoom out', el: 'b-zout', static: true, place: 'bar', only: 'wide', title: 'Zoom out (Ctrl+-): show the page smaller', keysElsewhere: ['Ctrl+-'], when: always, run: (app) => app.setZoom(-1) },
   { id: 'zoom-fit', name: 'Fit width', el: 'zoomv', static: true, place: 'bar', title: 'Zoom: the page at this percentage of its size; a press fits it to the window\'s width', synonyms: ['Zoom'], when: always, run: (app) => app.setZoom(0) },
-  { id: 'zoom-in', name: 'Zoom in', el: 'b-zin', static: true, place: 'bar', only: 'wide', keysElsewhere: ['Ctrl+='], when: always, run: (app) => app.setZoom(+1) },
+  { id: 'zoom-in', name: 'Zoom in', el: 'b-zin', static: true, place: 'bar', only: 'wide', title: 'Zoom in (Ctrl+=): show the page larger', keysElsewhere: ['Ctrl+='], when: always, run: (app) => app.setZoom(+1) },
 
   // ---- the status bar: Page · LaTeX · PDF, and the zoom slider (Word's view buttons and slider)
   { id: 'view-page', name: 'Page view', el: 'sv-page', static: true, place: 'status', kind: 'toggle', title: 'Page: the typeset page you type on, at the same place', synonyms: ['Print Layout', 'Typeset page', 'Editing view'],
