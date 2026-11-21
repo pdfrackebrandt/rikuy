@@ -1,19 +1,22 @@
 """Balance the editor's shards (.github/ci-shards.json and ci.yml's matrix) by measured times.
 
-  python3 dev/ci_balance.py [--runs N] [--records DIR] [--shards K] [--write]
+  python3 dev/ci_balance.py [--runs N] [--run ID]... [--records DIR] [--shards K] [--write]
 
-Each command of the list keeps a p95, in seconds. --runs N first takes them from the records of
-main's last N successful CI runs (the ci-shard-* artifacts dev/ci_shards.py leaves, fetched with
-gh); --records DIR reads such records from a folder instead. A command with no record keeps the
+Each command of the list keeps a p95, in seconds. --runs N first takes them from main's last N
+successful CI runs (pushes), --run ID from one run (repeatable), both from the line dev/ci_shards.py
+prints after each command in the shards' logs (gh api; the logs are kept 90 days); --records DIR
+from the ci-shard-*.json records instead (the artifacts, kept 30 days on main). A command with no record keeps the
 p95 it had (a new suite: add its command to any shard with an estimate, then run this).
 
 Then the commands are dealt to K shards (default: as many as now), longest first, each to the
 shard with the least so far, and each shard gets timeout-minutes of 1.5 times its p95 (setup plus
 its commands' p95s) rounded up: a shard over its budget fails rather than waits. Without --write
 it prints the plan; with it, it rewrites the list and ci.yml's matrix."""
-import argparse, glob, json, math, os, subprocess, sys, tempfile
+import argparse, glob, json, math, os, re, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ci_shards import CI, LIST, MATRIX_RE, check, load, matrix_text
+
+WORKFLOW, JOB = 'ci.yml', 'editor shard '
 
 
 def dump(spec):
@@ -36,18 +39,35 @@ def p95(xs):
     return xs[min(len(xs) - 1, math.ceil(0.95 * len(xs)) - 1)]
 
 
-def records_from_main(n, folder):
-    out = subprocess.run(['gh', 'run', 'list', '--workflow', 'ci.yml', '--branch', 'main', '--event', 'push', '--status', 'success',
-                          '--limit', str(n), '--json', 'databaseId', '--jq', '.[].databaseId'], capture_output=True, text=True, check=True).stdout.split()
-    for rid in out:
-        d = os.path.join(folder, rid)
-        r = subprocess.run(['gh', 'run', 'download', rid, '--pattern', 'ci-shard-*', '--dir', d], capture_output=True, text=True)
-        if r.returncode:
-            print('run %s: no records (%s)' % (rid, r.stderr.strip()[:120]))
-    return folder
+def gh(path):
+    return subprocess.run(['gh', 'api', path], capture_output=True, text=True, check=True).stdout
+
+
+LINE_RE = re.compile(r'^\S+ (python3 .+?): exit (\d+), ([\d.]+) s, ', re.M)
+
+
+def times_from_runs(ids):
+    """Each command's seconds in these CI runs, read from the shards' logs (the line ci_shards.py
+    prints after each command), so only the API is needed, not the artifacts' storage."""
+    by = {}
+    for rid in ids:
+        jobs = json.loads(gh('repos/{owner}/{repo}/actions/runs/%s/jobs?per_page=100' % rid))['jobs']
+        for j in jobs:
+            if not j['name'].startswith(JOB) or j['conclusion'] != 'success':
+                continue
+            for cmd, code, sec in LINE_RE.findall(gh('repos/{owner}/{repo}/actions/jobs/%d/logs' % j['id'])):
+                if code == '0':
+                    by.setdefault(cmd, []).append(float(sec))
+    return by
+
+
+def main_runs(n):
+    runs = json.loads(gh('repos/{owner}/{repo}/actions/workflows/%s/runs?branch=main&event=push&status=success&per_page=%d' % (WORKFLOW, n)))
+    return [r['id'] for r in runs['workflow_runs']]
 
 
 def times(folder):
+    """The same from records (the ci-shard-* artifacts) in a folder."""
     by = {}
     for f in glob.glob(os.path.join(folder, '**', '*.json'), recursive=True):
         with open(f, encoding='utf8') as fh:
@@ -71,16 +91,17 @@ def deal(cmds, k):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--runs', type=int)
-    ap.add_argument('--records')
+    ap.add_argument('--runs', type=int, help="main's last N successful CI runs (pushes)")
+    ap.add_argument('--run', action='append', default=[], help='a CI run by its id (any branch); repeatable')
+    ap.add_argument('--records', help='a folder of ci-shard-*.json records')
     ap.add_argument('--shards', type=int)
     ap.add_argument('--write', action='store_true')
     a = ap.parse_args()
     spec = load()
     cmds = [c for s in spec['shards'] for c in s['commands']]
-    folder = a.records or (records_from_main(a.runs, tempfile.mkdtemp(prefix='ci-records-')) if a.runs else None)
-    if folder:
-        seen = times(folder)
+    ids = a.run + (main_runs(a.runs) if a.runs else [])
+    if a.records or ids:
+        seen = times(a.records) if a.records else times_from_runs(ids)
         for c in cmds:
             xs = seen.get(' '.join(c['argv']))
             if xs:

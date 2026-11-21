@@ -23,7 +23,16 @@ import ast, json, os, re, subprocess, sys, time
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 LIST = os.path.join(ROOT, '.github', 'ci-shards.json')
 CI = os.path.join(ROOT, '.github', 'workflows', 'ci.yml')
-SUMMARY_RE = re.compile(r'(\d+) passed, (\d+) failed')
+# the suites' last lines: "N passed, M failed", "N checks, M failed" or "N/T passed"
+SUMMARY_RE = re.compile(r'\b(\d+) (passed|checks), (\d+) failed|\b(\d+)/(\d+) passed\b')
+
+
+def checks_of(m):
+    """[passed, failed] from a summary line's match."""
+    if m.group(4):
+        return [int(m.group(4)), int(m.group(5)) - int(m.group(4))]
+    n, f = int(m.group(1)), int(m.group(3))
+    return [n - f if m.group(2) == 'checks' else n, f]
 
 
 def load():
@@ -148,7 +157,7 @@ def run(name, report):
         code = p.wait()
         sec = round(time.monotonic() - t, 1)
         print('::endgroup::', flush=True)
-        checks = [int(last.group(1)), int(last.group(2))] if last else None
+        checks = checks_of(last) if last else None
         print('%s: exit %d, %.1f s, %s' % (line, code, sec, '%d passed, %d failed' % tuple(checks) if checks else 'no summary line'), flush=True)
         if code:
             print('::error title=%s failed::%s exited %d after %.0f s (shard %s)' % (argv[1], line, code, sec, name), flush=True)
