@@ -646,7 +646,7 @@ export const methods = {
     const stop = () => { this.toast('Print stopped (Escape): nothing went to the printer.', 5000); return false; };
     try {
       this.togglePdf(true);
-      const fresh = () => this.lastPdf && this.lastPdfSig === this.textSigNow();
+      const fresh = () => this.lastPdf && this.lastPdfSig === this.pdfSigNow();
       if (!fresh()) { try { await this.compilePdf(); } catch (e) { /* the PDF pane says why */ } }
       if (stopped) return stop();
       if (!this.lastPdf) { this.toast('No PDF to print yet: TeX stopped at an error, which the PDF pane shows. The page itself prints with the browser\'s Print (its menu).', 7000); return false; }

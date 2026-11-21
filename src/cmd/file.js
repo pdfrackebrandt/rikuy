@@ -10,7 +10,7 @@ import { wordEnabled } from '../word.js';
 import { $, mk, load, store } from '../ui/dom.js';
 import { openMenu, dialog } from '../ui/kit.js';
 import { guide } from './help.js';
-import { preambleEnd, lastCall, hasPackage, docClass, stripComments, groupEnd, parseKV, kvEdits } from '../preamble.js';
+import { preambleEnd, lastCall, hasPackage, docClass, stripComments, groupEnd, parseKV, kvEdits, projectDocs } from '../preamble.js';
 import { readProperties, propertyEdits } from '../props.js';
 
 const LIVE_NOTE = 'Graphs are pictures in a PDF or Word file. Download LaTeX to keep them live.';
@@ -29,8 +29,12 @@ const I = {
   props: '<path d="M5 2.5h7l3.5 3.5v11.5H5zM7.5 10h5M7.5 13h3M7.5 7h2"/>',
   a11y: '<circle cx="10" cy="4" r="1.6"/><path d="M4 7.5l6 1 6-1M10 8.5v4l-3 5M10 12.5l3 5"/>',
   export: '<path d="M5 2.5h7l3.5 3.5v11.5H5zM10 8v6M7.5 11.5 10 14l2.5-2.5"/>',
-  dflt: '<path d="M10 2.5l2 4.6 5 .5-3.8 3.3 1.1 4.9L10 13.3l-4.3 2.5 1.1-4.9L3 7.6l5-.5z"/>'
+  dflt: '<path d="M10 2.5l2 4.6 5 .5-3.8 3.3 1.1 4.9L10 13.3l-4.3 2.5 1.1-4.9L3 7.6l5-.5z"/>',
+  main: '<path d="M5 2.5h7l3.5 3.5v11.5H5zM7.5 12l2 2 3.5-4"/>'
 };
+
+// the project's documents, the main one ticked
+const mainItems = (app) => app.mainDocs().map((n) => ({ name: n, radio: true, checked: n === app.main, run: () => app.runCommand('main-document', n) }));
 
 // New from template: skeletons of the classes TeX Live has, each one that compiles as it is
 const TEMPLATES = [
@@ -90,6 +94,12 @@ register(
   { id: 'check-accessibility', name: 'Check accessibility', order: 20, title: 'What a screen reader would miss: pictures without alt text, skipped heading levels, tables without a header row, no title or language', synonyms: ['Accessibility checker', 'Tagged PDF', 'PDF/UA', 'Alt text'],
     tab: 'file', group: 'info', el: 'rf-a11y', label: 'Check accessibility', icon: I.a11y, also: [{ tab: 'review', group: 'accessibility', el: 'rr-a11y' }],
     when: (app) => !!app.model, run: (app, args) => (args === 'tagging' ? app.addTagging() : app.openAccessibility()) },
+  { id: 'main-document', name: 'Main document', order: 30, title: 'The document TeX compiles and the page shows, as Overleaf\'s Main document: another of the project\'s (its slides, a letter, a chapter alone)',
+    synonyms: ['Main file', 'Root document', 'Set as main', 'Master document', 'Compile another file'],
+    tab: 'file', group: 'info', el: 'rf-main', label: 'Main document', icon: I.main, kind: 'menu', when: (app) => app.mainDocs().length > 1,
+    whyNot: () => 'The project has one document: a .tex file with \\documentclass and \\begin{document}.',
+    menuItems: (app) => mainItems(app),
+    run: (app, args) => (typeof args === 'string' ? app.setMain(args) : app.fileMenu('rf-main', 'Main document', mainItems(app))) },
   // ---- File ▸ Save a copy
   { id: 'export-as', name: 'Export as', order: 10, title: 'A copy as a web page with live graphs, a web page, Markdown, OpenDocument, rich text, an e-book or plain text', synonyms: ['Save as', 'Export', 'HTML', 'Markdown', 'ODT', 'RTF', 'EPUB', 'Plain text'],
     tab: 'file', group: 'save', el: 'rf-export', label: 'Export as', icon: I.export, kind: 'menu', when: (app) => !!app.model,
@@ -203,7 +213,7 @@ export const methods = {
   async downloadPdfNow() {
     if (this.pdfBusy) return;
     const b = $('#rb-pdf'), title = b.title;
-    const fresh = () => !!this.lastPdf && this.lastPdfSig === this.textSigNow();
+    const fresh = () => !!this.lastPdf && this.lastPdfSig === this.pdfSigNow();
     if (!fresh() || this.compiling) {
       this.pdfBusy = true;
       // (busy without a longer name: the downloads stay at the row's end over the other groups,
@@ -246,6 +256,35 @@ export const methods = {
       p.append(a);
     }
     this.positionPop();
+  },
+
+  // ---- Main document -------------------------------------------------------------------------
+  mainDocs() { return projectDocs(this.files); },
+  // Another of the project's documents becomes the main one: TeX compiles it, the page shows it,
+  // the source pane opens it. Nothing of the text changes, so no step of history. The mark a
+  // stranger's project carries (shell escape restricted, live figures waiting; kept per project
+  // and main file) goes with it: a .zip's other document is the same stranger's.
+  async setMain(name) {
+    if (name === this.main || !this.mainDocs().includes(name)) return false;
+    const key = this.name + '|' + this.main;
+    // (the stricter of the project's mark and the one kept under the other document: see carryLink)
+    const [mark, there] = await Promise.all([this.linkInfo(), this.markOf(this.name, name)]);
+    // (another project opened while the mark was read: nothing of it is carried there)
+    if (this.name + '|' + this.main !== key || !this.files.has(name)) return false;
+    this.closeGroup();
+    this.carryLink(mark, name, there);
+    this.carryShare(this.main, name);
+    this.main = name;
+    this.srcFile = name;
+    this.forceRender = true;
+    this.desk.scrollTop = 0;
+    this.rebuild();
+    if (this.cm || this.cmFallback) this.showSrcFile(name);
+    this.updateFileTabs();
+    this.resetPdf();
+    this.persist();
+    this.toast(name + ' is the main document now: TeX compiles it and the page shows it.');
+    return true;
   },
 
   // a File tab menu under its button (or, folded or from the search box, under the ribbon)

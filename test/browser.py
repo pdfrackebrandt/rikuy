@@ -63,6 +63,13 @@ def check(name, cond, detail=''):
     return bool(cond)
 
 
+# The setting File › Options › Animations keeps (src/motion.js): the tests of features run with it
+# off, so what they measure (a menu's place, a target's size, a screenshot) is never caught half
+# way through a 150 ms entrance; test/motion.py runs with it on (open_page(motion=True)), and
+# RIKUY_MOTION=1 runs any suite with motion on.
+MOTION_OFF = "try { if (!localStorage.getItem('rikuy.motion.v1')) localStorage.setItem('rikuy.motion.v1', JSON.stringify({ anim: false, caret: false })); } catch (e) {}"
+
+
 # A window under 700 px opens in Mobile View (Web Layout) unless Print Layout was chosen on it. The
 # suites written for a phone's Print Layout (its pages, margins, headers, the sheet's zoom) say so
 # with this script, as a person's tap on Mobile View would: it marks Print Layout chosen when
@@ -71,9 +78,10 @@ PRINT_LAYOUT = '''(() => { try { const k = 'galley.prefs.v1', p = JSON.parse(loc
   if (p.narrowWeb === undefined) { p.narrowWeb = false; localStorage.setItem(k, JSON.stringify(p)); } } catch (e) {} })()'''
 
 
-def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, touch=False, connect=(), layout='print'):
+def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, touch=False, connect=(), layout='print', motion=None):
     # touch: a phone's page (a touch screen, a mobile viewport: pointer coarse, no hover; tap())
     # layout: 'print', a window under 700 px opens in Print Layout; 'mobile', in its default
+    # motion: animations on (True) or off (False); None: off unless RIKUY_MOTION=1
     browser = p.chromium.launch(args=[a for a in os.environ.get('CHROME_ARGS', '').split() if a])
     ctx = browser.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=1, has_touch=touch, is_mobile=touch)
     if layout == 'print' and width < 700:
@@ -106,6 +114,8 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, tou
         return route.abort()
     # on the context, so a second tab (page.context.new_page()) loads the same page and storage
     ctx.route('**/*', handler)
+    if not (motion if motion is not None else os.environ.get('RIKUY_MOTION') == '1'):
+        ctx.add_init_script(MOTION_OFF)
     if init:
         page.add_init_script(init)
     page.goto('https://rikuy.test/')
@@ -334,6 +344,16 @@ def default_macros(page):
     probs = page.evaluate("(window.rikuy.problems || []).filter((x) => /Math error/.test(x.msg)).map((x) => x.msg)")
     n = page.evaluate("document.querySelectorAll('#pages .katex').length")
     check('\\tfrac, \\nicefrac and \\mathbbm render without a math error', not probs and n >= 2, (probs, n))
+    # \ensuremath is LaTeX's own, which KaTeX lacks: a package's macro built on it (an Overleaf
+    # project's macros.sty) showed every formula using it as an error
+    load_doc(page, {'main.tex': '\\documentclass{article}\n\\usepackage{mymacros}\n\\begin{document}\nRegimes $\\regime{1}, \\dots, \\regime{n}$ and \\regime{2} in text.\n\\end{document}\n',
+                    'mymacros.sty': '\\ProvidesPackage{mymacros}\n\\newcommand{\\regime}[1]{\\ensuremath{\\mathcal{R}_{#1}}}\n'})
+    page.wait_for_timeout(600)
+    page.evaluate('window.rikuy.refreshNav()')
+    probs = page.evaluate("(window.rikuy.problems || []).filter((x) => /Math error/.test(x.msg)).map((x) => x.msg)")
+    n = page.evaluate("document.querySelectorAll('#pages .katex').length")
+    bad = page.evaluate("document.querySelectorAll('#pages .katex-error, #pages .merr').length")
+    check('a macro built on \\ensuremath, in a formula and in text, renders without a math error', not probs and not bad and n >= 2, (probs, bad, n))
 
 
 def skipped_args(page):
