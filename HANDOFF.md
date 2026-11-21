@@ -6,30 +6,66 @@ from the repository alone. This file is how. Read AGENTS.md first, then this, th
 requests. When this file and a pull request's own Handoff section disagree, the pull request is
 newer.
 
-## Start here (2026-11-20, 15:30 UTC: Claude)
+## Start here (2026-11-21, 10:00 UTC: Claude)
 
 Pedro's order of work, given 2026-11-20: **UI and UX first** (Word look-alike, clean room, as
-WordCraft; phones; plain words), maximum speed and quality; **then** move everything possible to
-C or C++ compiled to WebAssembly (`docs/handoff/CPP-PLAN.md`, batches B1 onward). Reviews of the
-work below are in `docs/reviews/` (RIBBON-TABS, UX-2, SHORTCUTS, SECURITY-2, CPP-B0).
+WordCraft; phones; plain words; consistency: like things the same size, for novices and power
+users), **AI and agent compatibility high**, speed with quality, motion where it helps; **then**
+C or C++ for WebAssembly (`docs/handoff/CPP-PLAN.md`, B1 onward). UI rules are in
+`docs/handoff/UI-PRINCIPLES.md`.
+
+Merged since the last version of this file: 78 (ribbon tabs), 79 (UX outside the ribbon), 81
+(security and the git proxy), 82 (B0), 83 (Word's object tools), 84 (Word's document gaps), 85
+(arXiv rerun), 86 (ribbon polish), 88 (interactive graphs as the edge), 90 (consistency outside
+the ribbon), 91 (the TeX job reuses an identical tree), 92 (agents first, motion), 93 (editor jobs
+get 60 minutes), 94 (dogfood as an economist), 95 (dogfood as a Word user), 96 (dogfood as an
+Overleaf user), 97 and 98 (two flaky checks fixed). Their reviews are in `docs/reviews/`.
 
 | work | pull request, branch | state | next step |
 |---|---|---|---|
-| Ribbon tabs laid out like Word's | 78, `ribbon-tabs-word` | reviewed (RIBBON-TABS.md: merge); after merging main, CI's tabs.py fold rule fails on Home at 1150 to 1160 px (main's new commands); an agent is fixing it | fix, green, merge |
-| The downloads as a Word group (Pedro: PDF, Word, LaTeX stacked, prettier) | `ribbon-downloads`, no PR yet (based on 78) | built at 943b91c, being finished | PR once 78 merges; a short review |
-| UX outside the ribbon | 79, `ux-pass-2` | review UX-2.md: fix first; an agent is fixing H1, H2, M1 to M6, the lows, File backstage, the phone's reflowed view | finish, merge main, verify against UX-2.md, merge |
-| Security S2 to S5 and the git proxy | 81, `sec-followups` | SECURITY-2.md's last verification: merge | merge when green; then L6 (the proxy's byte cap costs Worker CPU on big clones) |
-| Word's gaps: objects (contextual tabs, picture corrections in C, Selection Pane, Arrange) | 83, `word-gaps-objects` | done; hostile review running | review, fixes, merge main after 78, renumber its PLAN task 68 (84 also has a 68), merge |
-| Word's gaps: document (Table Properties, Formula, Header & Footer tab, Split, UnicodeMath) | 84, `word-gaps-doc` | done; hostile review running | the same |
-| R6, the arXiv corpus | 85, `arxiv-resume` | run 3 (44728716263) stopped on arXiv's 429; this PR waits it out and reruns run 2's sample | merge; dispatch arXiv corpus with `sources_from_run=44077385415`; classify; rates into PLAN.md's table, README.md, tex/README.md; add `sourcesanspro`, `foekfont`, cbfonts' `grmn` to the tree; 1502.01027 printing "begindocument/b..." |
-| C and C++, B0 | 82, merged | B0 done | B1 to B3 after the UI work |
+| Power users: keys, Overleaf typing, pickers, quick open, the typing queue | 87, `power-keys` | verified over six rounds (`docs/reviews/POWER-KEYS.md` on the branch). Head 90815ba. On it the `editor` and `tex` checks failed: `test/agent.py`'s Equation click, which its author was fixing | merge main, get `editor` and `tex` green, merge |
+| This file | 89, `handoff-1120b` | rewritten now | merge when Pedro or the next agent has read it, then start the next handoff branch from main |
+| R6, the arXiv corpus: run 4 | branch `arxiv-shards` (pull request being opened) | 5 of the 8 shards hit the 6 hour limit | open the PR (shorter shards or more of them), classify the finished shards; rates into PLAN.md task 16, README.md, tex/README.md; add `sourcesanspro`, `foekfont`, cbfonts' `grmn`; 1502.01027 |
 
-Pedro's to do (needs his accounts): a WAF rate rule on `/git/` (docs/HOSTING.md step 9) before
-or at the deploy of 81; optionally `RIKUY_GIT_HOSTS`. Open in Overleaf cannot post (the page's
-`form-action 'self'`); Safari 15 cannot compile.
+Pedro's to do (his accounts): the WAF rate rule on `/git/` (docs/HOSTING.md step 9, one time);
+the git proxy is live. Optional `RIKUY_GIT_HOSTS`.
+
+PLAN.md's task numbers to tidy: main has two 66s (shortcuts, C/C++), 66a (ribbon), 67 (security;
+UX's 67 too), 68 (document gaps); 69 objects, 70 graphs, 71 motion; power-keys wrote 68 and must
+become 72. Task 71 also has a second meaning, below (marks per version).
 
 If a branch above is not on GitHub yet, its agent's work is in `wip/<branch>` (dev/wip.sh) or
 not started.
+
+## Follow-ups, each with its source
+
+UI and agents first, in this order:
+
+1. **DOGFOOD-ECON, verification 2, four lows** (`docs/reviews/DOGFOOD-ECON.md`, W1 to W4):
+   - W1: `resolveIn` picks a file TeX would not read (`intro` before `intro.tex`; a file of that
+     name anywhere in the project, even above it).
+   - W2: empty paragraphs are forgotten once the caret leaves them.
+   - W3: redo and selection do not follow the counted Enters (Ctrl+Y, Shift+Left, one Ctrl+Z).
+   - W4: Ctrl+B inside a longer bold run takes the bold off the whole run.
+2. **dogfood-word's leftovers** (PR 95's body; the verification text is `/tmp/word-verify.md` on
+   the machine that ran it, so it may be gone): tracked changes inside equations are accepted
+   silently; a tracked table row; the typing path's attribution loop. Its N1 to N5 lows: changes
+   past the 20000 segment cap show as "You" (`rvName('')`); `diff.js` `joinBlank` sometimes lists a
+   coarser change; `rvAuthorStep` still runs the per span loop on the main thread (0.9 s for Reject
+   by Bo on 3000 changes); `src/word.js:280` has two statements on one line; `chainAt` does not
+   know `\usefont`.
+3. **DOGFOOD-LATEX leftovers** (`docs/reviews/DOGFOOD-LATEX.md`):
+   - a pull that changes only a picture keeps the Allow;
+   - there is no file tree to create, rename or delete project files;
+   - beamer overlay syntax (`\only<2>`, `\uncover`, `\alert<2>`) in `parser.js` and `parse.cc`;
+   - code listings on the page.
+4. **PLAN task 71, marks per version** (DOGFOOD-LATEX): versions should carry the mark's id, for
+   another tab's text kept as a "From another tab" version and for the residual from before the fix.
+5. **AGENTS-MOTION**: the typing latency check is flaky on loaded machines (its L5 and H2 notes
+   give the numbers); typing on long documents wants its own task, and `LAZY` could count pages as
+   well as elements.
+6. **Then the C and C++ batches B1 to B3** (`docs/handoff/CPP-PLAN.md`): B1 the source scanner in
+   C++, B2 the parse made incremental in the core, B3 the model's text runs.
 
 ### Grok Bot's list of 2026-11-20 (for the record)
 
@@ -78,8 +114,9 @@ The `wip/round3-r2-styles`, `wip/round3-r3-objects` and `wip/round3-r4-review` s
 
 ## Known flaky checks
 
-- `test/view.test.mjs` V4 times an action against 50 ms and fails on a loaded machine; rerun it
-  alone before calling it a failure.
+- `test/view.test.mjs` V4 now takes the best of three runs (PR 98); `preamble.py`'s clock case no
+  longer depends on the minute (PR 97).
+- The motion typing latency check fails on loaded machines; rerun it alone.
 - `test/widgets.py` failed four checks once in CI on a docs only change (PR 71) and passed on the
   rerun of the same job.
 
