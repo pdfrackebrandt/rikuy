@@ -335,3 +335,92 @@ Every finding from E11 to E18, and the Ctrl+B issue seen in passing, is fixed on
 
 - Tests: `dogfood.py review3` (31 checks; 7/29 on 119e23f's build, every finding failing at least once), `test/bib.test.mjs` V6 (5 failing on 119e23f), `test/styles.test.mjs` (the abstract's first case, `\qedhere`).
 - On 8a42876's build with `dist/tex`: npm test exit 0; browser.py 202 passed, 0 failed; dogfood.py 155/155; styles.py 428 passed, 0 failed; font.py 309 passed, 0 failed; history.py 40/40; refs.py 293 checks, 0 failed; file.py 101 checks, 0 failed. `node test/native.test.mjs` 43 passed, `node test/incremental.test.mjs` 35 passed. No corpus clone on this machine: `npm run test:corpus` was not run.
+
+---
+
+# Verification 2: the fixes for V1 to V9, 119e23f..0024fd4 (10 commits)
+
+Verifier: Claude (not the author), 2026-11-21.
+
+- Build: 0024fd4 in its own worktree (`RIKUY_NO_WORD=1`, with `wt-tree`'s `dist/tex`).
+- Every script in `/tmp/econver/` was rerun against that build.
+- New attacks: `fr2.mjs` (resolveIn and `\iffalse`), `ghost2.py` (counted Enters, three nested wrappers) and `midb.py`.
+
+## Verdict: merge
+
+Every one of V1 to V9 is fixed on its repro. The two older bugs are fixed too. The attacks found only low items, listed below.
+
+## The repros on 0024fd4
+
+| finding | result |
+|---|---|
+| V1 | Heading on the first of three abstract paragraphs gives `\section{First abs words.}` and then `\begin{abstract}` holding the other two. The PDF reads "1 First abs words. / Abstract / Second… / Third…" |
+| `\qedhere` | A one-paragraph proof becomes a heading without `\qedhere` |
+| V2 | Enter ×2 then Backspace ×2, and Enter ×3 then Backspace ×3, leave the source as it was. "Z", Enter ×2, Ctrl+Z ×2 keeps "Z" |
+| V3 | Shift+Left or Shift+Up after Enter selects the empty paragraph's mark. Backspace then leaves the source as it was |
+| V9 | After a new Enter, Ctrl+Y no longer brings back an older undone step |
+| V8 | Enter, Up, "x", Backspace ×2 leaves the source as it was. The next letter follows "words." with no space |
+| `\noindent` join | Backspace at a `\noindent` paragraph after `% note` gives `words.\n% note\nSecond`: the comment is kept and the words stay apart |
+| V4 | `\textbf{\emph{bold}}` + Ctrl+B + X gives `\textbf{\emph{bold}}\emph{X}` |
+| V5 | A second "My  Library.bib" joins as `My-Library-2.bib`. Reopening is an undo step, and one Ctrl+Z gives the old content |
+| V6 | `\input chap1`, `\input{"a b"}` and `{a b}` resolve. `\subfile{sections/s1}` in `chapters/one.tex` reads `chapters/sections/s1.tex`. `paper/main.tex`'s `\input{intro}` reads `paper/intro.tex` |
+| V6, `\iffalse` | `\include` inside `\iffalse` is skipped, including when a nested `\ifx` or a `\newif` conditional sits inside it. `\else` and an `\iffalse` with no `\fi` are handled. `\iffalsex` is not mistaken for `\iffalse` |
+| E11 to E18, `\intertext`, history | Unchanged from verification 1 (`enter.py`, `undo1.py`, `split*.py`, `bib*.py`, `verb.py`, `ctrlb.py`, `bibopen.py`, `hist2.py`, `inter.py`) |
+
+## The counted Enters under attack (`ghost2.py`)
+
+- Enter ×2, then Up, then Down keeps the count: two Backspaces leave the source as it was.
+- Clicking into the two-line empty paragraph and typing writes one paragraph.
+- Enter ×2 then Delete deletes the next paragraph's first letter, as Word does.
+- With three nested wrappers, `\textbf{\emph{\underline{deep}}}`:
+  - Ctrl+B gives `\emph{\underline{X}}` after the whole chain.
+  - Ctrl+I gives `\underline{Y}` inside the bold.
+  - Ctrl+U gives `W` inside the italic.
+
+  Each drops only its own format, as Word does.
+
+## Findings (all low)
+
+**W1. The resolver can pick a file TeX would not read.** (`fr2.mjs`)
+- With both a file `intro` (no extension) and `intro.tex`, it picks `intro`. TeX tries `intro.tex` first.
+- Its last-guess rule (a file of that name anywhere in the project) reads files TeX would not find:
+  - `intro/intro.tex` for `\input{intro}`;
+  - `shared/defs.tex` for `../shared/defs` from a main file at the root, which points above the project.
+
+  The page then draws a chapter the PDF lacks. This guess is the deliberate last resort.
+- `\input chap1` is followed by the scans but not by the model: the parser gives `\input` the single letter "c". The page and the scans still differ there.
+
+**W2. The empty paragraph is forgotten once the caret leaves it.**
+- After Enter ×2, Down (or a click elsewhere), then Up, the empty paragraphs are gone. A Backspace then does Word's ordinary join of two paragraphs.
+- In Word the empty paragraphs would still be there.
+- This is the same design that verification 1 accepted for a click away.
+
+**W3. Redo and selection do not fully follow the counted Enters.**
+- Ctrl+Z after Enter ×2 takes one Enter, but Ctrl+Y does not bring it back.
+- Shift+Left ×2 selects `​\n`. Backspace then takes one Enter, not two, and a copy of that selection would carry a zero-width space.
+- After Enter ×3, Up, "x", one Ctrl+Z takes the "x" and all three Enters, where Word keeps the three empty paragraphs.
+
+**W4. Ctrl+B at the end of a word inside a longer bold run still takes the bold off the whole run.**
+- `\textbf{deep tail}` with the caret after "deep", then Ctrl+B, then X, gives `deepX tail`.
+- `\textbf{\emph{deep} tail}` gives `\emph{deepX} tail`.
+- This is the same on main's build. The fixes cover a caret at the wrapper's end only, not the word rule in general (the review's note on `src/cmd/font.js:170`).
+
+## Suites on 0024fd4 (with dist/tex)
+
+- dogfood.py: 155/155
+- browser.py: 202 passed, 0 failed
+- styles.py: 428 passed, 0 failed
+- history.py: 40/40
+
+## Merge of main (912a109)
+
+- Main at d8b4dc8 (PRs 88, 90 and 97) was merged into this branch.
+- Two conflicts, both resolved by keeping both sides:
+  - `AGENTS.md`: main's new ux.py row stands beside this branch's dogfood.py row.
+  - `src/app.js`: this branch's top-level constants and main's focus helpers, which sit just before `class App`.
+- On the merged build:
+  - npm test: exit 0.
+  - browser.py: 202 passed, 0 failed.
+  - dogfood.py: 155/155.
+  - tabs.py: 156 passed, 0 failed.
+  - ux.py first_visit focus_rules: 34 passed, 0 failed.
