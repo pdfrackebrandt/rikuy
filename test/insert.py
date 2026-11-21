@@ -333,6 +333,11 @@ def clipboard(page):
     load_doc(page, W('Alpha \\textbf{beta} gamma.\n\nDelta.'))
     select_text(page, 'eta'); page.keyboard.press('Control+c'); click_text(page, 'Delta', 5); page.keyboard.press('Control+v'); page.wait_for_timeout(300)
     check('clipboard: letters copied from a bold word paste bold', src(page) == W('Alpha \\textbf{beta} gamma.\n\nDelta\\textbf{eta}.'), src(page))
+    # moved inside the same italic phrase they take no second \emph, which would print them upright
+    load_doc(page, W('An \\emph{italic phrase with words inside} here.'))
+    select_text(page, 'words '); page.keyboard.press('Control+x'); page.wait_for_timeout(250)
+    click_text(page, 'phrase', 0); page.keyboard.press('Control+v'); page.wait_for_timeout(300)
+    check('clipboard: words cut and pasted inside the same \\emph stay in it once', src(page) == W('An \\emph{italic words phrase with inside} here.'), src(page))
 
 
 def once(page, doc, at, cmd, want, label):

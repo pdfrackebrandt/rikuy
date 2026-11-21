@@ -2259,11 +2259,26 @@ class App {
   // what Copy puts on the clipboard as LaTeX: words copied from inside a format
   // (\textbf{qu|ick|}) keep it, as Word's copy keeps a bold word bold (they were pasted plain):
   // the wrappers around them, outermost first, go round the words copied
+  // (copyKept: the words and the wrappers put round them, for a paste where the same kinds of
+  // format are around the place already: they go, or \emph{.. \emph{words}..} prints upright)
   copyLatex(c) {
     const src = this.src(c.f), t = this.selectionLatex(c);
+    this.copyKept = null;
     if (!isBalanced(src, c.a, c.b) || this.texAt(c.f, c.a)) return t;
-    const W = chainAt(src, c.a, c.b).map((x) => x.W).filter((w) => w.is <= c.a && c.b <= w.ie);
-    return W.map((w) => src.slice(w.s, w.is)).join('') + t + W.reverse().map((w) => src.slice(w.ie, w.e)).join('');
+    const X = chainAt(src, c.a, c.b).filter((x) => x.W.is <= c.a && c.b <= x.W.ie);
+    if (!X.length) return t;
+    const wraps = X.map((x) => ({ group: x.group, open: src.slice(x.W.s, x.W.is), close: src.slice(x.W.ie, x.W.e) }));
+    this.copyKept = { inner: t, wraps };
+    return wraps.map((w) => w.open).join('') + t + [...wraps].reverse().map((w) => w.close).join('');
+  }
+  // the copied LaTeX for a paste at p of file f: the wrappers copyLatex added that the place has
+  // already, taken off
+  pasteKept(latex, f, p) {
+    const K = this.lastCopy && this.lastCopy.kept;
+    if (!K || !latex || latex !== K.wraps.map((w) => w.open).join('') + K.inner + [...K.wraps].reverse().map((w) => w.close).join('')) return latex;
+    const here = new Set(chainAt(this.src(f), p, p).map((x) => x.group));
+    const keep = K.wraps.filter((w) => !here.has(w.group));
+    return keep.map((w) => w.open).join('') + K.inner + [...keep].reverse().map((w) => w.close).join('');
   }
   selectionLatex(c) {
     const src = this.src(c.f);
@@ -2287,9 +2302,7 @@ class App {
     e.clipboardData.setData('text/plain', plain);
     try { e.clipboardData.setData('text/x-galley-latex', latex); } catch (err) { /* ignore */ }
     try { e.clipboardData.setData('text/html', selectionHTML(getSelection(), (el) => this.mathML(el))); } catch (err) { /* plain text still works */ }
-    this.lastCopy = { plain, latex };
-    // (text copied after the formatting: Ctrl+Shift+V pastes it again, src/cmd/font.js pasteFormat)
-    this.fmtCopy = null;
+    this.lastCopy = { plain, latex, kept: this.copyKept };
     if (cut) {
       const whole = this.wholeDoc();
       if (whole) { this.replaceBody(whole, '', 'cut'); return; }
@@ -2353,7 +2366,7 @@ class App {
     const at = edits.length && edits[0].s >= c.a ? edits[0].s : c.a;
     // (landing in a LaTeX paragraph from a selection that started outside it: as source)
     const raw = this.texAt(c.f, at);
-    let t = raw ? (latex || plain).replace(/\r\n?/g, '\n') : latex || rich();
+    let t = raw ? (latex || plain).replace(/\r\n?/g, '\n') : this.pasteKept(latex, c.f, at) || rich();
     if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!raw && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
     const removedBefore = edits.filter((ed) => ed.e <= at).reduce((s, ed) => s + (ed.e - ed.s), 0);
