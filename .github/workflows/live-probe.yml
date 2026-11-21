@@ -5,7 +5,7 @@
 name: Live check probe
 on:
   pull_request:
-    paths: ['.github/workflows/live-probe.yml']
+    paths: ['.github/workflows/live-probe.yml', 'dev/live_check.py']
 permissions:
   contents: read
   actions: read
