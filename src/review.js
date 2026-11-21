@@ -586,7 +586,7 @@ export const review = {
     // a version of this project kept under another main document (File, Main document): the
     // project's mark (a stranger's, shell escape restricted or allowed) goes with it, the stricter
     // of it and the one kept there
-    if (v.name === this.name && v.main !== this.main) { const [here, there] = await Promise.all([this.linkInfo(), this.markOf(v.name, v.main)]); this.carryLink(here, v.main, there); }
+    if (v.name === this.name && v.main !== this.main) { const [here, there] = await Promise.all([this.linkInfo(), this.markOf(v.name, v.main)]); this.carryLink(here, v.main, there, true); }
     this.files = new Map(files);
     this.main = v.main;
     this.name = v.name;
