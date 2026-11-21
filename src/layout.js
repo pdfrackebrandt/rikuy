@@ -351,6 +351,8 @@ export class Layout {
     for (const [k, f] of frags) this.hostFor(k).appendChild(f);
     // (R1) \hfill, \dotfill and \hrulefill to the margin, as TeX stretches them
     for (const it of todo) if (it.el.querySelector('.a-sp.fill')) fillLines(it.el);
+    // (\intertext's groups of rows on one set of columns)
+    for (const it of todo) if (it.el.classList.contains('dm') && it.el.querySelector(':scope > .intertext')) alignRows(it.el);
     // (R1) a tabbing's fields at its stops: those of the last line that set them before
     tabStops(todo, this.stops || (this.stops = new Map()));
     const ffrag = document.createDocumentFragment();
@@ -1170,6 +1172,25 @@ function tabStops(items, stops) {
 // the width it had.
 // (one column: the page's, or a landscape page's (R1), where a wrapped figure stands as on any page)
 const oneCol = (k) => k === 1 || k === 'L';
+
+// amsmath's \intertext keeps one set of columns across it: TeX lines the = signs of the rows
+// after the words up with those before. Each group of rows is drawn as a display of its own
+// (src/render.js), centred alone, so their = signs stood apart: each group is made as wide on
+// each side of its first alignment point as the widest group is there (in ems, so a zoom keeps it).
+function alignRows(el) {
+  const gs = [...el.querySelectorAll(':scope > .dm-rows')].map((g) => g.querySelector('.mtable')).filter(Boolean);
+  if (gs.length < 2) return;
+  for (const t of gs) { t.style.marginLeft = ''; t.style.marginRight = ''; }
+  const m = gs.map((t) => {
+    const l = t.querySelector(':scope > .col-align-l');
+    if (!l) return null;
+    const r = t.getBoundingClientRect(), x = l.getBoundingClientRect().left;
+    return { t, L: x - r.left, R: r.right - x, em: parseFloat(getComputedStyle(t).fontSize) || 16 };
+  });
+  if (m.some((x) => !x)) return;
+  const L = Math.max(...m.map((x) => x.L)), R = Math.max(...m.map((x) => x.R));
+  for (const x of m) { x.t.style.marginLeft = (L - x.L) / x.em + 'em'; x.t.style.marginRight = (R - x.R) / x.em + 'em'; }
+}
 
 function fillLines(el) {
   // (a stranger's paragraph of thousands of fills: the first 200 measured, the rest as they were)

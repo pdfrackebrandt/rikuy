@@ -324,9 +324,12 @@ def quote_style(page):
     check('Normal on one with no blank line around it leaves a paragraph of its own', src(page) == WRAP('Before.\n\nSaid here.\n\nAfter.'), body(page))
     load_doc(page, WRAP('\\begin{quote}\nOne.\n\nTwo.\n\\end{quote}')); click_text(page, 'Two', 1); state(page)
     t = page.evaluate(TILES)
-    check('a quote of two paragraphs shows as Quote: Normal takes the environment off both, LaTeX takes it as a whole, no heading holds it', t == ['p', 'section-', 'subsection-', 'subsubsection-', 'latex', 'quote*'], t)
+    check('a quote of two paragraphs shows as Quote: Normal takes the environment off both, LaTeX takes it as a whole, a heading takes the caret\'s paragraph out of it (dogfood)', t == ['p', 'section', 'subsection', 'subsubsection', 'latex', 'quote*'], t)
     style(page, 'p')
     check('Normal on it: the two paragraphs, byte for byte as before the quote', body(page) == 'One.\n\nTwo.', body(page))
+    load_doc(page, WRAP('\\begin{quote}\nOne.\n\nTwo.\n\\end{quote}')); click_text(page, 'Two', 1); state(page)
+    style(page, 'section')
+    check('Heading 1 on its second paragraph: the quote ends before it, the heading alone', body(page) == '\\begin{quote}\nOne.\n\\end{quote}\n\n\\section{Two.}', body(page))
 
 
 
