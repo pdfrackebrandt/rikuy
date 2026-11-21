@@ -1,6 +1,8 @@
 // Word's animated caret: on the typeset page the caret glides to its new place (100 ms, easing
-// both ways) as Word 365's does, as a character is typed, a key moves it or a click puts it
-// elsewhere in view; a jump out of view is a jump. File › Options › Animated caret turns it off
+// both ways) as Word 365's does, as a key moves it or a click puts it elsewhere in view; a jump
+// out of view is a jump. As a character is typed or deleted it moves at once: a glide then cost
+// each key a frame of Chromium's Event Timing (dev/bench/sample, 240 keys: a median of 32 ms
+// gliding against 24 with the caret jumping or off), what INP takes, for a move of one letter. File › Options › Animated caret turns it off
 // (src/cmd/motion.js); so do Animations off, the system's reduced motion and forced colours, where
 // the browser's own caret is the right one.
 //
@@ -31,7 +33,9 @@ export function installCaret(app) {
   let el = null, raf = 0, shown = false, last = null, h0 = 0, composing = false, blinkT = 0, lit = true;
   // a key's time to its paint, smoothed; the key not yet seen painted
   let keyAt = 0, lag = 0;
-  const stats = { glides: 0, jumps: 0, slow: 0 };
+  const stats = { glides: 0, jumps: 0, slow: 0, typed: 0 };
+  // (when a key last changed the text: the move it makes is a jump)
+  let typedAt = -1e9;
   // (ms: a key that took longer to show stops the glide; test/motion.py moves it to test both ways)
   const ctl = { slow: 40 };
   const wanted = () => motionMode() === 'full' && motionSettings().caret && !fc.matches;
@@ -99,9 +103,9 @@ export function installCaret(app) {
     const top = desk.scrollTop, bottom = top + desk.clientHeight;
     const seen = (yy) => yy + h > top && yy < bottom;
     const moved = !last || last.x !== x || last.y !== y;
-    const slow = lag > ctl.slow;
-    const glide = shown && last && seen(last.y) && seen(y) && !slow;
-    if (moved) { if (glide) stats.glides++; else { stats.jumps++; if (slow) stats.slow++; } }
+    const slow = lag > ctl.slow, typed = performance.now() - typedAt < 250;
+    const glide = shown && last && seen(last.y) && seen(y) && !slow && !typed;
+    if (moved) { if (glide) stats.glides++; else { stats.jumps++; if (slow) stats.slow++; else if (typed) stats.typed++; } }
     el.classList.toggle('rk-jump', !glide);
     if (h !== h0) { el.style.height = h + 'px'; h0 = h; }
     if (moved) el.style.transform = 'translate(' + x + 'px,' + y + 'px)';
@@ -121,7 +125,10 @@ export function installCaret(app) {
   const soon = () => { if (!raf) raf = requestAnimationFrame(() => after.port2.postMessage(0)); };
 
   document.addEventListener('selectionchange', soon);
-  pages.addEventListener('keydown', (e) => { if (!keyAt && !/^(Shift|Control|Alt|Meta|CapsLock)$/.test(e.key)) keyAt = e.timeStamp || performance.now(); }, true);
+  pages.addEventListener('keydown', (e) => {
+    if (!keyAt && !/^(Shift|Control|Alt|Meta|CapsLock)$/.test(e.key)) keyAt = e.timeStamp || performance.now();
+    if ((e.key.length === 1 && !e.ctrlKey && !e.metaKey) || /^(Backspace|Delete|Enter|Tab)$/.test(e.key)) typedAt = performance.now();
+  }, true);
   pages.addEventListener('focus', soon);
   pages.addEventListener('blur', soon);
   pages.addEventListener('input', soon);

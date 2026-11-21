@@ -3616,7 +3616,9 @@ Tests:
     and structure: 19 and 1 new), `test/motion.py` 66 checks. Typing on `dev/bench/sample`, where
     the caret glides (`dev/bench_typing.py --doc sample`, 240 keys each): input to next paint
     26.0 ms median with the caret on, 25.8 off, 23.9 for main; Event Timing's median 32 against
-    24 and 24.
+    24 and 24, and 24 with the caret on but never gliding: the glide cost a frame. So a character
+    typed or deleted moves the caret at once and moves by keys or clicks glide; then 24.1, 23.7 and
+    24.2 ms, Event Timing 24, 24 and 24.
 
 ## Open tasks
 

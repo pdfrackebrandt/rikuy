@@ -227,14 +227,18 @@ def caret(page):
     # (the glide steps aside where keys take over 40 ms to show; a loaded test machine can be that
     # slow on any page, so the limit is set apart here, and its own rule checked below)
     ev(page, 'window.rikuy.caret.slow = 1e9')
-    n = mark(page)
-    page.keyboard.type('ab'); r = since(page, n, 300)
+    n = mark(page); s0 = ev(page, '({ ...window.rikuy.caret.stats })')
+    page.keyboard.type('ab'); r = since(page, n, 300); s1 = ev(page, '({ ...window.rikuy.caret.stats })')
     b = caret_box(page)
     tr = [x for x in r if x['id'] == 'transition:transform' and 'rk-caret' in x['cls']]
-    check('the animated caret glides as a character is typed: a transform transition of 100 ms, easing both ways', tr and all(x['duration'] == 100 and x['easing'].replace(' ', '') == T['standard'].replace(' ', '') for x in tr), r)
+    check('as a character is typed the caret moves at once, no glide (a glide cost each key a frame of Event Timing on dev/bench/sample)', not tr and s1['typed'] > s0['typed'] and s1['glides'] == s0['glides'], (r, s0, s1))
     check('and stands where the browser\'s caret would (the range\'s own rect, within a pixel)', b and not b['hidden'] and abs(b['x'] - b['rx']) <= 1 and abs(b['y'] - b['ry']) <= 1 and abs(b['h'] - b['rh']) <= 1, b)
     check('the browser\'s own caret is transparent meanwhile, not twice drawn', b and b['mode'] == 'custom' and b['cc'] in ('rgba(0, 0, 0, 0)', 'transparent'), b)
-    page.keyboard.press('ArrowRight'); page.keyboard.press('ArrowRight'); page.wait_for_timeout(250)
+    page.wait_for_timeout(300)
+    n = mark(page)
+    page.keyboard.press('ArrowRight'); page.keyboard.press('ArrowRight'); r = since(page, n, 250)
+    tr = [x for x in r if x['id'] == 'transition:transform' and 'rk-caret' in x['cls']]
+    check('a key that moves it glides it: a transform transition of 100 ms, easing both ways', tr and all(x['duration'] == 100 and x['easing'].replace(' ', '') == T['standard'].replace(' ', '') for x in tr), r)
     b2 = caret_box(page)
     check('the arrow keys move it, and it lands on the new place', b2 and b2['x'] > b['x'] and abs(b2['x'] - b2['rx']) <= 1, (b, b2))
     flips = ev(page, '''() => new Promise((done) => { const c = document.querySelector('.rk-caret'), t = []; const o = new MutationObserver(() => t.push([performance.now(), c.style.opacity]));
