@@ -746,6 +746,10 @@ export function installWordTyping(mf, opts) {
     // AltGr (Windows: Ctrl+Alt) and Option (Mac) type characters such as { [ | \ on many layouts
     const altGr = !!(e.getModifierState && e.getModifierState('AltGraph'));
     const shortcut = e.metaKey || (e.ctrlKey && !altGr) || (e.altKey && !altGr && /^[A-Za-z0-9]$/.test(k));
+    // Ctrl+Enter (or Shift+Enter) with \text{if still open: the argument ends, then the new row
+    // below, as without one (verification of eb14945, V5: the display became an align, no row)
+    const rowKey = k === 'Enter' && !e.altKey && ((e.ctrlKey || e.metaKey) !== e.shiftKey);
+    if (arg && rowKey) argDone();
     if (arg) {
       // (a chord ends the argument first, as Enter does, then does what it does: Ctrl+Enter's new
       // row came in as an insertion the input listener below took for the person's, review N1)
