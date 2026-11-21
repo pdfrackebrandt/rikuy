@@ -70,7 +70,12 @@ figure by construction.
    their descriptions (never the document's own script; a hand written widget becomes its
    picture), a Content Security Policy that allows exactly Rikuy's scripts by their hashes, and an
    "Open in Rikuy" link (`#share=`, the project's text files). One file, about 1 MB, no request
-   out; it works on a phone with no sideways scroll.
+   out; it works on a phone with no sideways scroll. A `#share=` link (Share, and this one)
+   carries each graph's file as its description alone (`src/share.js` packShare,
+   `src/graph.js` graphShort and graphWhole: only a file graphHtml writes again byte for byte;
+   one edited by hand travels whole), and the reader's Rikuy writes the file and draws its
+   picture again: the sample's link is 5,600 characters, not 43,000. The sample's graph file is
+   written where the sample is read (`build.mjs`), so the page's copy is the one the page writes.
 6. **Prominence**: Interactive graph is the second large button of Insert's Illustrations;
    Graph this is in the search box, the Equation tab and the equation's menu; Help, Interactive
    graphs and Learn Rikuy name them; `llms.txt` describes all of it; README's first lines lead with
