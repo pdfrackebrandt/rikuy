@@ -183,7 +183,8 @@ export class PdfView {
     if (!p) return false;
     const k = p.box.clientHeight / p.h1;
     const top = p.box.getBoundingClientRect().top - this.host.getBoundingClientRect().top + this.host.scrollTop + hit.y * k;
-    this.host.scrollTo({ top: Math.max(0, top - this.host.clientHeight / 3), behavior: 'smooth' });
+    // (no glide where the person asked for less motion)
+    this.host.scrollTo({ top: Math.max(0, top - this.host.clientHeight / 3), behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     const m = document.createElement('div');
     m.className = 'pdf-mark';
     m.style.top = (hit.y - hit.h) * k + 'px';

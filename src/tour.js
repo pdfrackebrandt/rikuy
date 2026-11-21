@@ -28,7 +28,7 @@ Click the equation to edit it as in Word: \verb|a/b| makes a fraction, \verb|\al
   f(x) = A \sin(\omega x)\, e^{-x/5}
   \label{eq:wave}
 \end{equation}
-Show LaTeX turns it into its source where it stands, as Word's Linear does: click the equation and press Ctrl+Shift+=, or put the caret in any paragraph and press Shift+F9 (or Show LaTeX in the right click menu). Edit the LaTeX there; Esc shows it typeset again.
+Show LaTeX turns it into its source where it stands, as Word's Linear does: click the equation and press Ctrl+Shift+=, or put the caret in any paragraph and press Shift+F9 (or Show LaTeX in the right click menu). Edit the LaTeX there; Esc shows it typeset again. Right click it and choose Graph this: it becomes a live graph below, $A$ and $\omega$ on sliders.
 
 \section{A live graph}
 Figure~\ref{fig:wave} draws equation~\eqref{eq:wave}. Drag its sliders: on this page the graph is live. In the PDF, as in any \TeX{} anywhere, it is the picture \texttt{figures/wave.pdf}, the curve at $A = 1$ and $\omega = 2$. Press PDF below to see it.

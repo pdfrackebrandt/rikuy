@@ -53,6 +53,7 @@ def run():
         base_src = src(page)
         link = share_link(page, 'Pedro', 'Copy link')
         check('share makes a link to this page with the document in it', link.startswith('https://rikuy.test/#share=1.'), link[:80])
+        # (the sample's live graph travels as its description, not its 85 kB file: CI on ab27d09)
         check('the link is short for the whole sample', len(link) < 12000, len(link))
 
         # ---- the coauthor: a browser that has never seen the document
@@ -62,6 +63,11 @@ def run():
         page2.wait_for_function('window.rikuy && document.body.classList.contains("guest")', timeout=20000)
         page2.wait_for_timeout(400)
         check('the coauthor sees the document', src(page2) == base_src)
+        # the graph's file written again from its description, as the sender has it, and its
+        # picture drawn again for TeX (no link carries pictures)
+        G = 'async () => { await window.rikuy.graphRefresh(); const f = window.rikuy.files.get("graphs/saving.html"); return [f, window.rikuy.assetBlobs.has("graphs/saving.pgf")]; }'
+        mine, theirs = page.evaluate(G), page2.evaluate(G)
+        check('and the live graph: its file written again from the description the link carries, byte for byte the sender\'s, its picture drawn again', mine[0] and theirs[0] == mine[0] and theirs[1], (len(mine[0] or ''), len(theirs[0] or ''), theirs[1]))
         check('and a line saying who shared it', 'Pedro shared this document' in page2.inner_text('#guest'))
         check('the source pane stays closed for them', 'src-on' not in (page2.get_attribute('body', 'class') or ''))
         check('and the sample and New document stay out of their way', not page2.is_visible('#b-sample') and not page2.is_visible('#b-new'))
