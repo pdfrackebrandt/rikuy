@@ -246,6 +246,15 @@ export const methods = {
 
   // Bold, Italic, Underline and the rest: on or off where the caret is
   fmtToggle(group, o = {}) {
+    // A caret at the end of a wrapper's words (Ctrl+B, "bold", Ctrl+B): Word ends the format for
+    // what is typed next and leaves the word as it is. It took \textbf off the whole word, and
+    // " after" went in plain beside a plain "bold". The caret goes after the wrapper's brace (the
+    // page shows it at the same spot: restoreCaret keeps the place), the text unchanged.
+    const at = this.ribbonAt(), c = at && at.c;
+    if (!o.force && c && !c.ghost && c.collapsed && c.f != null && !this.texHere() && !(this.wholeDoc && this.wholeDoc()) && !this.blockCells(at)) {
+      const t = this.src(c.f), W = F.around(t, c.a, c.a, group);
+      if (W && W.is < c.a && c.a === W.ie && W.e === W.ie + 1 && t[W.ie] === '}') { this.restoreCaret({ f: c.f, p: W.e, bias: -1 }); this.ribbonSoon && this.ribbonSoon(); return true; }
+    }
     return this.fmtCommit([(t, a, b, x) => {
       // (a block of cells: on in every cell takes it off all of them, else all of them get it,
       // as Word chooses for the block as a whole)
