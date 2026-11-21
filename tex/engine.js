@@ -959,6 +959,31 @@ function biberAssets() {
   }
   return biberP;
 }
+// BusyTeX's XML::LibXML was built without Perl's UTF-8 support (HAVE_UTF8): every string it
+// gives back holds UTF-8 bytes that Perl reads as Latin-1 letters. biber reads its table of LaTeX
+// accents (recode_data.xml) and the .bcf through it, so {\'e} in a .bib came out as e and the
+// two bytes of U+0301 written again as UTF-8, which pdfLaTeX refuses ("Unicode character U+0081").
+// This module, loaded before biber, decodes what those methods return, as a desktop's does.
+const BIBER_UTF8 = `package RikuyUTF8;
+use strict;
+use warnings;
+require XML::LibXML;
+no strict 'refs';
+no warnings 'redefine';
+for my $m (qw(Node::textContent Node::findvalue Node::nodeName Node::nodeValue Node::to_literal
+              Node::string_value Text::data Attr::value Attr::getValue Element::getAttribute
+              Element::getAttributeNS Literal::value)) {
+  my $name = 'XML::LibXML::' . $m;
+  next unless defined &{$name};
+  my $orig = \\&{$name};
+  *{$name} = sub {
+    my @r = wantarray ? $orig->(@_) : (scalar $orig->(@_));
+    for (@r) { utf8::decode($_) if defined $_ && !ref $_ && !utf8::is_utf8($_) }
+    return wantarray ? @r : $r[0];
+  };
+}
+1;
+`;
 async function runBiber(cwd, base, files, sub) {
   let log = '';
   try {
@@ -986,7 +1011,9 @@ async function runBiber(cwd, base, files, sub) {
       B.FS.writeFile(p, f.data);
     }
     let code = 0;
-    try { code = B.callMain(['/opt/perl-wasm/bin/biber', '--output-format=bbl', '--outfile=' + base + '.bbl', '--nolog', base + '.bcf']); }
+    mk('/home/web_user/rikuy-perl');
+    B.FS.writeFile('/home/web_user/rikuy-perl/RikuyUTF8.pm', BIBER_UTF8);
+    try { code = B.callMain(['-I/home/web_user/rikuy-perl', '-MRikuyUTF8', '/opt/perl-wasm/bin/biber', '--output-format=bbl', '--outfile=' + base + '.bbl', '--nolog', base + '.bcf']); }
     catch (e) { code = e && typeof e.status === 'number' ? e.status : 1; }
     const out = work + '/' + base + '.bbl';
     let bbl = null;
