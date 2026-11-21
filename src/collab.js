@@ -360,9 +360,16 @@ export const collab = {
     if (this.noIdb) return this.markOf(name, main);
     const k = name + '|' + main;
     this.linkCache = this.linkCache || new Map();
+    const before = this.linkCache.get(k);
     let stored;
     try { stored = (await kvGet('link:' + k)) || null; } catch (e) { return this.markOf(name, main); }
-    const v = stricterMark(this.linkCache.has(k) ? this.linkCache.get(k) : null, stored);
+    const held = this.linkCache.has(k) ? this.linkCache.get(k) : null;
+    // Another import's mark in storage (another tab's archive, its own id): this tab's text is not
+    // that tab's, so its Allow is refused until the text is (adoptOtherTab, or a reload; X2). Taking
+    // the id into the tab's copy here made a tab that only compiled look up to date. (A mark this
+    // tab wrote while storage was read is not another tab's: its copy changed meanwhile then.)
+    if (held && held === before && stored && stored.id !== held.id) (this.markStale = this.markStale || new Set()).add(k);
+    const v = stricterMark(held, stored);
     this.linkCache.set(k, v);
     return v;
   },

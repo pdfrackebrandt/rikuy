@@ -204,6 +204,12 @@ def marks():
         r = git('Switched to dev', [['paper.tex', MINE], ['fig.png', 'x'], ['x.sty', EVIL]])
         check('marks: a pull that changes pictures only keeps an Allow; one that adds a .sty, or a branch that renames main.tex, takes it back', pics['se'] is True and pics['mark']['allowed'] is True
               and 'restricted again' in (sty or '') and restricted(f) and r['key'] == 'pullrepo|paper.tex' and restricted(r), (pics, sty, f, r))
+        # X1: a file outside TeX's text kinds (run.py) changed to other bytes of the same size takes it back too
+        page.evaluate("async (fs) => { await window.rikuy.openRepoFiles('pyrepo', new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)]))); }", [['main.tex', MINE], ['run.py', 'print("hello")\n']]); page.wait_for_timeout(300)
+        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        same = git('Pulled', [['main.tex', MINE], ['run.py', 'print("hello")\n']])
+        f = git('Pulled', [['main.tex', MINE], ['run.py', 'import os;os.E\n']])
+        check('marks: a pull that changes run.py to other bytes of the same size takes the Allow back (X1)', same['se'] is True and same['mark']['allowed'] is True and restricted(f), (same, f))
         # W2: tabs A and B on one .zip project; an archive dropped in A marks it anew; Allow in B, which
         # still shows the text from before, is refused, and A compiles restricted
         PAPER = '\\documentclass{article}\n\\usepackage{defs}\n\\begin{document}\nTheirs.\n\\end{document}\n'
@@ -229,6 +235,23 @@ def marks():
         page.bring_to_front()
         a = page.evaluate(FLAGS)
         check('marks: with that text brought in, Allow there works, and this tab stays restricted until its own Allow', 'write18' in page2.evaluate("window.rikuy.files.get('defs.sty')") and b1['se'] is True and b1['untrusted'] is False and restricted(a), (b1, a))
+        page2.close()
+        # X2: the same with typing in B that is not saved yet, so B brings in nothing: B compiles
+        # (restricted), and its Allow is still refused; storage keeps the restriction for A's archive
+        put('proj2.zip', zipped({'main.tex': PAPER, 'defs.sty': '\\ProvidesPackage{defs}\n'}), 'main.tex')
+        page.evaluate('window.rikuy.persist()'); page.wait_for_timeout(400)
+        page2 = page.context.new_page()
+        page2.goto(page.url); page2.wait_for_function('window.rikuy && window.rikuy.model', timeout=30000); page2.wait_for_timeout(800); page2.evaluate(STUB)
+        page.bring_to_front(); page.set_input_files('#fileinput', path)
+        page.wait_for_function("() => (window.rikuy.files.get('defs.sty') || '').includes('write18')", timeout=10000); page.wait_for_timeout(300)
+        page.evaluate('window.rikuy.persist()'); page.wait_for_timeout(400)
+        page2.bring_to_front(); page2.evaluate('window.rikuy.unsaved = true'); page2.evaluate('window.rikuy.adoptOtherTab()'); page2.wait_for_timeout(300)
+        b = page2.evaluate(FLAGS)
+        page2.evaluate("document.getElementById('toast').hidden = true; window.rikuy.allowShellHere()"); page2.wait_for_timeout(400)
+        said = page2.inner_text('#toast') if page2.is_visible('#toast') else ''
+        stored = page2.evaluate("""() => new Promise((res) => { const r = indexedDB.open('galley'); r.onsuccess = () => { const q = r.result.transaction('kv').objectStore('kv').get('link:proj2|main.tex'); q.onsuccess = () => { res(q.result ? q.result.allowed : null); r.result.close(); }; }; })""")
+        check('marks: a tab that compiled but did not bring in the other tab\'s text still has its Allow refused (X2)', restricted(b) and 'write18' not in page2.evaluate("window.rikuy.files.get('defs.sty')")
+              and 'changed in another tab' in said and stored is False, (b, said[:100], stored))
         page2.close()
         # W1: a mark storage did not keep (a write refused as when it is full; the database deleted by
         # another tab) is kept by the tab, and said

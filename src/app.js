@@ -4155,9 +4155,23 @@ class App {
     // TeX or a program it starts can read as code, not a picture (as a dropped .zip's zipCode).
     // An Allow given to a repository's earlier files does not cover them, as it does not cover a
     // dropped archive's: a clone allowed once compiled every later pull with full shell escape.
+    // Every such file is compared byte for byte (a run.py padded to its old size kept the Allow,
+    // X1); only while the project is allowed, the one case where it matters.
     const code = (n) => !/\.(png|jpe?g|gif|webp|pdf)$/i.test(n);
-    const codeChanged = main !== was || [...new Set([...texts.keys(), ...this.files.keys()])].some((n) => code(n) && texts.get(n) !== this.files.get(n))
-      || [...new Set([...extra.keys(), ...this.extra.keys()])].some((n) => code(n) && (!extra.has(n) || !this.extra.has(n) || extra.get(n).size !== this.extra.get(n).size));
+    const sameBytes = async (blob, bytes) => {
+      if (!blob || !bytes || blob.size !== bytes.length) return false;
+      const a = new Uint8Array(await blob.arrayBuffer());
+      for (let i = 0; i < a.length; i++) if (a[i] !== bytes[i]) return false;
+      return true;
+    };
+    const changedCode = async () => {
+      for (const n of new Set([...texts.keys(), ...this.files.keys()])) if (code(n) && texts.get(n) !== this.files.get(n)) return true;
+      for (const [n, b] of [...this.extra, ...this.assetBlobs]) if (code(n) && !texts.has(n) && !(await sameBytes(b, files.get(n)))) return true;
+      for (const n of files.keys()) if (code(n) && !texts.has(n) && !this.extra.has(n) && !this.assetBlobs.has(n)) return true;
+      return false;
+    };
+    const held = origin ? null : await this.linkInfo();
+    const codeChanged = !origin && (main !== was || (!!held && !!held.allowed && await changedCode()));
     for (const u of this.assets.values()) URL.revokeObjectURL(u);
     this.assets.clear(); this.assetBlobs.clear();
     this.files = texts; this.orig = orig; this.extra = extra;
