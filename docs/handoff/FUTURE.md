@@ -17,7 +17,8 @@ day; check again before adopting anything below.
 
 ## Where app.css switches to the tokens
 
-Items 1 and 6 (but `.flash`) are done (commit 322527b, over PRs 79, 83 and 84): every element's
+Items 1 and 6 are done (commit 322527b, over PRs 79, 83 and 84; 6's highlights and busy
+indicators after PR 92's review): every element's
 computed colours, shadow, caret colour and transitions were the same before and after, in light,
 dark, both forced themes and Dark page. What PR 86 and PR 90 bring follows the same way once they
 merge; items 2 to 5 change pixels and want the UX review's eye (the interface rules' C5 and C9,
@@ -48,10 +49,10 @@ and a screenshot diff of every tab in light, dark and forced colours.
 6. Transitions and animations of app.css: `.nv-tog svg` and `.fold-tg svg` (.12s), `.w-src`,
    `.w-edit` (.12s), `.focus-x` (.15s) are set to the tokens by motion.css today; write them
    with the tokens in app.css and drop motion.css's overrides. `.pdf-prog span` animated its
-   width (a size, rule M3): motion.css stops it; make the bar a `scaleX` transform. `.flash`
-   animates a background (1.2 s), `#rb-pdf[aria-busy] svg` (`rb-busy`, .9 s), `.pdf-prog.busy`
-   (`pdfbusy`, 1.1 s) and `.pdf-mark` (1.6 s) are indicators and highlights, outside M1's steps:
-   `.flash` should become an opacity animation of a pseudo element.
+   width (a size, rule M3): motion.css stops it; make the bar a `scaleX` transform. Done: where
+   something landed is `flash()` of motion.js (a wash beside the text, held `--rk-hold`, faded
+   in the slow duration, opacity only), and the busy pulse and sweep (`--rk-loop`) and SyncTeX's
+   mark (`--rk-hold`, then slow) are in motion.css, still with Animations off and reduced motion.
 
 ## What to adopt next, and when
 

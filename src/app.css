@@ -504,9 +504,7 @@ body.file-open #rp-file .rf-back span { display: inline !important; }
 .rb.rb-dl1 .rb-dl #rb-dl-menu { display: inline-flex; }
 .rb-lab { font-size: 12px; color: var(--mute); margin-right: 4px; }
 /* the PDF being made: its arrow pulses (the name stays as wide as it was) */
-#rb-pdf[aria-busy="true"] svg { animation: rb-busy .9s ease-in-out infinite alternate; }
-@keyframes rb-busy { from { opacity: 1; } to { opacity: .25; } }
-@media (prefers-reduced-motion: reduce) { #rb-pdf[aria-busy="true"] svg { animation: none; opacity: .5; } }
+/* (its pulse while busy: src/motion.css, on the motion tokens) */
 /* the LaTeX download keeps live graphs live: a mark says so when the document has some */
 #b-save.live { padding-left: 13px; }
 #b-save.live::before { content: ""; position: absolute; top: 50%; left: 4px; width: 4px; height: 16px; margin-top: -8px; border-radius: 2px; background: #2E9E6B; }
@@ -562,8 +560,7 @@ body.pdf-on #pdfpane { display: flex; }
 @media (max-width: 1280px) { .pdf-shell { font-size: 0; gap: 0; } .pdf-shell::after { content: 'Shell'; font-size: 11.5px; margin-left: 3px; } }
 .pdf-prog { height: 3px; background: color-mix(in srgb, var(--blue) 18%, transparent); flex: none; overflow: hidden; }
 .pdf-prog span { display: block; height: 100%; width: 0; background: var(--blue); }
-.pdf-prog.busy span { width: 35% !important; animation: pdfbusy 1.1s ease-in-out infinite; }
-@keyframes pdfbusy { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+/* (busy, its sweep: src/motion.css) */
 .pdf-msg { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); padding: 8px 12px; font: 12.5px/1.45 var(--font-ui); background: color-mix(in srgb, var(--warn) 10%, var(--panel)); color: var(--ink-ui); cursor: pointer; flex: none; }
 .pdf-msg.ok { background: var(--panel); cursor: default; color: var(--mute); }
 .pdf-msg b { color: var(--warn); font-weight: 600; }
@@ -571,8 +568,7 @@ body.pdf-on #pdfpane { display: flex; }
 .pdf-pages { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .pdf-page { position: relative; background: #fff; box-shadow: var(--shadow); flex: none; cursor: pointer; }
 .pdf-page canvas { display: block; }
-.pdf-mark { position: absolute; left: 0; right: 0; background: color-mix(in srgb, var(--blue) 22%, transparent); border-left: 3px solid var(--blue); pointer-events: none; animation: pdfmark 1.6s ease-out forwards; }
-@keyframes pdfmark { 0%, 60% { opacity: 1; } 100% { opacity: 0; } }
+.pdf-mark { position: absolute; left: 0; right: 0; background: color-mix(in srgb, var(--blue) 22%, transparent); border-left: 3px solid var(--blue); pointer-events: none; }
 .pdf-empty { padding: 28px 16px; font: 13.5px/1.5 var(--font-ui); color: var(--ink-ui); max-width: 440px; margin: 0 auto; }
 .pdf-empty p { margin: 0; }
 .pdf-empty b { color: var(--ink-ui); font-weight: 600; }
@@ -617,7 +613,9 @@ body.pdf-on #pdfpane { display: flex; }
 /* pages centre by their auto margins, not align-items: a page zoomed wider than the window then
    overflows to the right, where it scrolls, instead of losing its left side off screen */
 #pages { outline: none; caret-color: var(--rk-color-caret); display: flex; flex-direction: column; align-items: flex-start; gap: 22px; }
-.page { margin: 0 auto; position: relative; width: var(--pw); height: var(--ph); background: var(--paper); color: var(--ink); box-shadow: var(--shadow); flex: none; content-visibility: auto; contain-intrinsic-size: auto var(--pw) auto var(--ph); contain: layout style paint; }
+.page { margin: 0 auto; position: relative; width: var(--pw); height: var(--ph); background: var(--paper); color: var(--ink); box-shadow: var(--shadow); flex: none; contain: layout style paint; }
+/* (only the pages near the view drawn, in a document too big to draw whole: App.lazyPages) */
+#pages.lazy .page { content-visibility: auto; contain-intrinsic-size: auto var(--pw) auto var(--ph); }
 .pb { position: absolute; left: var(--ml); top: var(--mt); width: var(--tw); height: var(--th); display: flex; flex-direction: column; }
 .flow { font-size: var(--fs); line-height: var(--lh); text-align: justify; text-wrap: pretty; hyphens: auto; -webkit-hyphens: auto; font-kerning: normal; font-variant-ligatures: common-ligatures; overflow-wrap: break-word; }
 .folio { position: absolute; left: var(--ml); width: var(--tw); top: calc(var(--mt) + var(--th) + var(--footskip) - var(--fs)); text-align: center; font-size: var(--fs); line-height: 1; user-select: none; }
@@ -879,8 +877,6 @@ body.pdf-on #pdfpane { display: flex; }
 .lg-sc { font-variant: small-caps; text-transform: lowercase; }
 .lg-rev { display: inline-block; transform: scaleX(-1); vertical-align: -.22em; margin: 0 -.06em; }
 .mac { }
-.flash { animation: flash 1.2s ease-out; }
-@keyframes flash { 0% { background: rgba(43, 116, 176, .28); } 100% { background: transparent; } }
 .ghostp { outline: 1px dashed rgba(43, 116, 176, .45); outline-offset: 2px; min-height: var(--lh); }
 #pages.stale { opacity: .45; }
 /* the caret's hint, on the white page (dark page below). #3E4C59 on white is past 7:1;
@@ -1105,9 +1101,6 @@ body.dropping .dropzone { display: grid; }
 }
 /* (the name is back on a phone: with Save and Copy source gone from the bar, it fits at 360px) */
 @container (max-width: 119px) { .title-name { display: none; } }
-@media (prefers-reduced-motion: reduce) {
-  .flash { animation: none; }
-}
 
 /* unsaved-zip marker on the Save button */
 #b-save { position: relative; }
@@ -1246,7 +1239,6 @@ body.nav-on.nav-wide #nav { width: 340px; }
   .page { box-shadow: none !important; margin: 0 !important; break-after: page; break-inside: avoid; content-visibility: visible !important; contain: none !important; }
   .page:last-child { break-after: auto; }
   .has-err, .ghostp { outline: none !important; }
-  .flash { animation: none !important; }
 }
 
 /* sharing and comments (src/collab.js) */
@@ -1438,7 +1430,7 @@ body.guest #b-new, body.guest #b-sample { display: none; }
 .nv-page:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .nv-pg { position: relative; overflow: hidden; background: #fff; border-radius: 2px; box-shadow: 0 1px 4px rgba(0, 0, 0, .2); pointer-events: none; }
 .nv-pgc { position: absolute; left: 0; top: 0; transform-origin: 0 0; padding: 0 !important; pointer-events: none; }
-.nv-pgc .page { margin: 0; box-shadow: none; content-visibility: visible; }
+.nv-pgc .page { margin: 0; box-shadow: none; }
 /* the Outline view: the panel wide enough for the text under the headings */
 body.nav-on.nav-outline #nav { width: 460px; }
 @media (max-width: 860px) { body.nav-on.nav-outline #nav { width: min(94vw, 460px); } }
@@ -1582,10 +1574,6 @@ body.nav-on.nav-outline #nav { width: 460px; }
 .split-view { flex: 1 1 50%; min-height: 0; overflow: auto; position: relative; background: inherit; outline: none; }
 .split-view .split-pages { display: flex; flex-direction: column; align-items: flex-start; gap: 22px; cursor: text; }
 .split-view:focus-visible { box-shadow: inset 0 0 0 2px var(--blue); }
-/* (G2) Update Table and Update Index: the list flashes where it stands, rebuilt */
-@keyframes rk-updated { from { background-color: rgba(43, 116, 176, .22); } to { background-color: transparent; } }
-#pages .rk-updated { animation: rk-updated 1.3s ease-out; }
-@media (prefers-reduced-motion: reduce) { #pages .rk-updated { animation: none; outline: 2px solid rgba(43, 116, 176, .5); } }
 /* (G2) the equation in Word's linear format, a text to type in */
 .pop textarea.pop-lin { font: 15px/1.5 var(--font-doc, serif); }
 .pop .pop-lin-note { font-size: 12px; color: var(--mute); margin: 2px 0 4px; }
@@ -2466,7 +2454,6 @@ html.pic-drag, html.pic-drag body { touch-action: none; overscroll-behavior: non
 .it.en-enotez .en-n { position: absolute; inset-inline-end: 100%; padding-inline-end: .35em; white-space: nowrap; }
 .it.en-endnotes { text-indent: 1.8em; }
 .it.en-endnotes .en-n { font-size: .72em; vertical-align: .62em; line-height: 0; padding-inline-end: .1em; }
-.atom.a-en.flash, .a-fn.flash, .it.en-e.flash { background: color-mix(in srgb, var(--blue) 25%, transparent); }
 /* the dialogs: lists to pick from, the Link dialog's choice of target, a source's fields */
 .pop.pop-refs { width: min(500px, calc(100vw - 16px)); }
 .pop-refs .refs-list { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; padding: 3px; }
@@ -2639,7 +2626,7 @@ html.pic-moving, html.pic-moving * { cursor: grabbing !important; }
 @media (pointer: coarse) { .fold-tg { width: 44px; height: 44px; } .fold-tg svg { width: 18px; height: 18px; } }
 /* Web Layout: one sheet as wide as the window, no foot, no header, footer or page numbers */
 body.pg-web #pages { gap: 0; }
-body.pg-web .page { height: auto; min-height: 60vh; box-shadow: 0 0 0 1px var(--line); content-visibility: visible; contain: layout style; }
+body.pg-web .page { height: auto; min-height: 60vh; box-shadow: 0 0 0 1px var(--line); contain: layout style; }
 body.pg-web .page + .page { border-top: 1px dashed #9AA6B2; }
 body.pg-web .pb { position: relative; left: auto; top: auto; margin: var(--mt) var(--ml); height: auto; }
 body.pg-web .page .hd, body.pg-web .page .ft, body.pg-web .page .folio, body.pg-web .page .lnum { display: none !important; }
