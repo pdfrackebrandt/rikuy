@@ -318,3 +318,20 @@ Every finding from E11 to E18, and the Ctrl+B issue seen in passing, is fixed on
   - browser.py: 202 passed, 0 failed.
   - dogfood.py: 124/124.
   - tabs.py: 156 passed, 0 failed.
+
+## Fixes of the verification's findings (36f89ec to 8a42876)
+
+| finding | commit | what changed |
+|---|---|---|
+| V1 | a785796 | On an abstract's first paragraph the heading goes before `\begin{abstract}` and the rest stays in it. The PDF has "Abstract" once |
+| V2, V3, V9 | 5ce086f | The empty paragraph counts its Enters, and Backspace, Delete or Undo takes one each. A selection over it with no words (Shift+Left, Shift+Up) keeps it, and Backspace takes it alone. Enter that shows one clears Redo |
+| V8 | d3c4d05 | No space is written where a blank line still stands beside what Backspace deletes |
+| V4 | 379204e | Ctrl+B steps out through the closing braces of wrappers inside the bold and opens them again: `\textbf{\emph{bold}}\emph{X}` |
+| V5 | c952c03 | A .bib keeps the name it came under (`orig.from`). The same file opened again replaces its file; another gets `My-Library-2.bib`. Text files opened over one are said replaced |
+| V6 | 36f89ec | One resolver (`src/scan.js` `resolveIn`) for the scans and the model: the main file's folder, then the reader's (first for `\subfile`, `\subimport`), then the root, then a name anywhere. `\iffalse` is skipped; `\input chap1` and `\input{"a b"}` are followed |
+| V7 | 0b24be8 | U+200B to U+200F, U+202A to U+202E, U+2066 to U+2069 and U+FEFF dropped; `CON_`; at most 200 bytes |
+| on main | d3c4d05, a785796 | Backspace at a `\noindent` paragraph after a comment keeps the comment and a space. A proof made a heading drops `\qedhere` |
+| CI's L8 | 2a186af | `论文` exports as `论文.md`; a name of only refused signs and unseen marks as `paper.md` |
+
+- Tests: `dogfood.py review3` (31 checks; 7/29 on 119e23f's build, every finding failing at least once), `test/bib.test.mjs` V6 (5 failing on 119e23f), `test/styles.test.mjs` (the abstract's first case, `\qedhere`).
+- On 8a42876's build with `dist/tex`: npm test exit 0; browser.py 202 passed, 0 failed; dogfood.py 155/155; styles.py 428 passed, 0 failed; font.py 309 passed, 0 failed; history.py 40/40; refs.py 293 checks, 0 failed; file.py 101 checks, 0 failed. `node test/native.test.mjs` 43 passed, `node test/incremental.test.mjs` 35 passed. No corpus clone on this machine: `npm run test:corpus` was not run.
