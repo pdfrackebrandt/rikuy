@@ -241,7 +241,8 @@ export const methods = {
     });
   },
 
-  viewPlaceInSource(spot) {
+  // (noFocus: the cursor placed and shown, the focus left where it is: the Source button's)
+  viewPlaceInSource(spot, noFocus) {
     const f = spot.f, p = spot.p != null ? spot.p : this.lineStartAt(f, spot.line);
     if (!this.files.has(f) || !this.cm) return;
     if ((this.srcFile || this.main) !== f) this.showSrcFile(f);
@@ -249,7 +250,7 @@ export const methods = {
     this.cm.refresh();
     doc.setCursor(pos);
     this.cm.scrollIntoView({ line: pos.line, ch: pos.ch }, Math.round(this.cm.getScrollInfo().clientHeight / 3));
-    this.cm.focus();
+    if (!noFocus) this.cm.focus();
   },
 
   // The PDF at the spot: now when it is current, else once TeX has made the new one

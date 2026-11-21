@@ -67,6 +67,7 @@ const TEXREAD = 'galley.texread.v1';
 const CDN = {
   cm: 'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.js',
   cmTex: 'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/stex/stex.js',
+  cmBrackets: 'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/matchbrackets.js',
   zip: 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
   ml: 'https://cdn.jsdelivr.net/npm/mathlive@0.110.0/mathlive.min.js',
   chem: 'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/mhchem.min.js'
@@ -78,6 +79,7 @@ const CDN = {
 const SRI = {
   [CDN.cm]: 'sha384-/WlgLpnUCi+5eS6SnLPKTwRY0l8X4TxBIroMKS0KpFjlFoST+ZbSMKqTpgS24m8i',
   [CDN.cmTex]: 'sha384-tab09zZeKEC2HRX/8GcAyeUuP7KBvb9DKKK4wegfZ/qW7tMcwh14TRJ0o6woQ9M0',
+  [CDN.cmBrackets]: 'sha384-VTfea43jk3cts7Fd5DbskOZKCo1P+X4qCWSv0+oIhMKaSymJL4+KZ9eC6VzkZbab',
   [CDN.zip]: 'sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG',
   [CDN.ml]: 'sha384-5IN6K0kiaz8MufrTGBvPCP3oDeMjmwe+DDTvuyQLNv6gc634FpKbQfllonjHJPmy',
   [CDN.chem]: 'sha384-fB8BH//9nBzROkMUsu/Dr35jWHIbnKesUo9rW0hfEgw8mZGnkAyBAjKX9F98OVuo'
@@ -1413,7 +1415,8 @@ class App {
     }
     // (Ctrl+P is Print, src/cmd/page.js: from a field or the source too)
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p' && !e.defaultPrevented) { e.preventDefault(); this.runCommand('print'); }
-    if (mod && e.key === '\\') { e.preventDefault(); this.toggleSource(); }
+    // (by the keys, the caret goes along both ways and the focus with it: Word's Alt+F9 does the same)
+    if (mod && e.key === '\\') { e.preventDefault(); this.toggleSource(undefined, { keys: true }); }
     if (mod && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); this.toggleNav(); }
     if (e.key === 'Escape') { if (this.pop) { this.closePop(); e.preventDefault(); } this.disarm(); }
     // Ctrl and + / - / 0 zoom the document where the document is what is being read: on the
@@ -3590,10 +3593,18 @@ class App {
   }
 
   // ---- source pane -----------------------------------------------------------------
-  async toggleSource(force) {
+  // o.keys: opened by its key from the page, the source's cursor goes where the page's caret is
+  // and the focus with it; closed by its key from the source, the page's caret goes where the
+  // source's cursor was (it opened at line 1 and left the focus on the page, and closing dropped
+  // the focus to nowhere)
+  async toggleSource(force, o = {}) {
     // (in the LaTeX or PDF view across the window, src/cmd/view.js: back to the page, the source beside it)
     if (this.leaveView() && force == null) force = true;
     const on = force ?? !document.body.classList.contains('src-on');
+    const was = document.body.classList.contains('src-on');
+    const pageAt = on && !was ? this.caretNow() : null;
+    const srcAt = !on && was && o.keys && this.cm && this.cm.hasFocus() ? { f: this.srcFile || this.main, p: this.cm.getDoc().indexFromPos(this.cm.getDoc().getCursor()) } : null;
+    if (srcAt && this.srcRebuild.pending()) this.srcRebuild.flush();
     if (on && document.body.classList.contains('pdf-on')) this.togglePdf(false);
     document.body.classList.toggle('src-on', on);
     $('#b-src').setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -3602,9 +3613,11 @@ class App {
     if (on) {
       await this.ensureCM();
       this.showSrcFile(this.srcFile || this.main);
-      this.revealCaret();
+      if (pageAt && !pageAt.ghost && pageAt.f != null && this.cm) this.viewPlaceInSource({ f: pageAt.f, p: pageAt.a }, !o.keys);
+      else this.revealCaret();
     }
     setTimeout(() => { if (this.computePx()) this.relayout(true); }, 30);
+    if (srcAt) this.viewPlaceOnPage(srcAt);
   }
 
   async ensureCM() {
@@ -3614,14 +3627,20 @@ class App {
       try {
         await loadScript(CDN.cm);
         await loadScript(CDN.cmTex);
+        // (the bracket that matches the one at the cursor, lit: a missing brace is LaTeX's commonest
+        // slip; without it the source still works)
+        await loadScript(CDN.cmBrackets).catch(() => {});
         this.cm = window.CodeMirror(host, {
-          value: '', mode: 'stex', lineNumbers: true, lineWrapping: true, indentUnit: 2, tabSize: 2,
+          value: '', mode: 'stex', lineNumbers: true, lineWrapping: true, indentUnit: 2, tabSize: 2, matchBrackets: true,
           extraKeys: {
             'Ctrl-Z': () => this.undo(), 'Cmd-Z': () => this.undo(), 'Shift-Ctrl-Z': () => this.redo(), 'Shift-Cmd-Z': () => this.redo(), 'Ctrl-Y': () => this.redo(),
             // (Ctrl+S is the page's own shortcut, heard here too: a second one saved every file twice)
             // Tab indents in the source, so a keyboard that tabbed in stayed caught here, typing tabs
             // into the file: Escape, then Tab or Shift+Tab, moves on to the next control
-            'Esc': () => { this.cmTabOut = true; }
+            'Esc': () => { this.cmTabOut = true; },
+            // Find and Replace in the source: the dialog with In LaTeX source ticked, the words
+            // selected here as what to find (Ctrl+F was the browser's find bar)
+            'Ctrl-F': () => this.srcFind('find'), 'Cmd-F': () => this.srcFind('find'), 'Ctrl-H': () => this.srcFind('replace'), 'Cmd-Alt-F': () => this.srcFind('replace')
           }
         });
         this.cm.on('keydown', (cm, e) => {
@@ -4143,7 +4162,8 @@ class App {
     this.reveal(c.f, c.a, focusSrc);
   }
 
-  async reveal(f, p, focusSrc) {
+  // (end: the characters to p..end selected in the source, without its focus: a hit of Find)
+  async reveal(f, p, focusSrc, end) {
     if (!document.body.classList.contains('src-on')) await this.toggleSource(true);
     await this.ensureCM();
     if ((this.srcFile || this.main) !== f) this.showSrcFile(f);
@@ -4154,7 +4174,8 @@ class App {
       this.syncLine && this.cm.removeLineClass(this.syncLine, 'background', 'cm-sync');
       this.syncLine = this.cm.addLineClass(pos.line, 'background', 'cm-sync');
       this.cm.scrollIntoView({ line: pos.line, ch: pos.ch }, 120);
-      if (focusSrc) { this.cm.focus(); doc.setCursor(pos); }
+      if (end != null) doc.setSelection(pos, doc.posFromIndex(end), { scroll: false });
+      if (focusSrc) { this.cm.focus(); if (end == null) doc.setCursor(pos); }
     } else if (this.cmFallback && focusSrc) { this.cmFallback.focus(); this.cmFallback.setSelectionRange(p, p); }
   }
 

@@ -421,6 +421,19 @@ export const methods = {
     this.findViews();
   },
   // the hit in view, about a third down the window
+  // Ctrl+F and Ctrl+H in the source pane: the dialog searching the files themselves, the words
+  // selected there as what to find; its hits are selected in the source, and closing it gives the
+  // source back the focus (findShow, closeFindDialog)
+  srcFind(tab) {
+    const fs = this.findState(), cm = this.cm;
+    const sel = cm ? cm.getSelection() : '';
+    fs.fromSrc = true;
+    fs.o.source = true;
+    openFindDialog(this, tab);
+    const D = this.fr;
+    if (sel && sel.length <= 80 && !/\n/.test(sel)) { D.q.value = sel; this.findSet({ q: sel }); }
+    D.q.focus(); D.q.select();
+  },
   findShow(h) {
     if (!h) return;
     // (a hit under a collapsed heading: the heading opens, as Word's does)
@@ -432,12 +445,12 @@ export const methods = {
       if (r.top < D.top + 40 || r.bottom > D.bottom - 40) this.desk.scrollTop += r.top - D.top - D.height / 3;
       this.findDialogAside(rs[0].getBoundingClientRect());
       const pane = $('#srcpane');
-      if (h.src && document.body.classList.contains('src-on') && pane) this.reveal(h.f, h.s, false);
+      if (h.src && document.body.classList.contains('src-on') && pane) this.reveal(h.f, h.s, false, h.e);
       return;
     }
     if (h.eq) return;
     // (a hit in the preamble, or in a file the page does not show: the source pane shows it)
-    if (h.src) this.reveal(h.f, h.s, false);
+    if (h.src) this.reveal(h.f, h.s, false, h.e);
   },
   // the Find and Replace dialog moved off the hit it shows, as Word moves its own: below the
   // hit, or above it where there is no room (not on a phone, where it is a sheet at the foot)

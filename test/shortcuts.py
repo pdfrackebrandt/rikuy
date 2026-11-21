@@ -393,6 +393,40 @@ def paste_format(page):
     check('nothing on the clipboard: Ctrl+Shift+V deletes nothing', src(page) == DOC, src(page)[60:260])
 
 
+def cm_state(page):
+    return page.evaluate("""(() => { const g = window.rikuy, cm = g.cm; if (!cm) return null; const d = cm.getDoc();
+      return { focus: cm.hasFocus(), at: d.indexFromPos(d.getCursor()), sel: d.getSelection(), shown: document.body.classList.contains('src-on') }; })()""")
+
+
+def source_pane(page):
+    """Ctrl+\\ as Word's Alt+F9: the source opens at the caret's character with the focus in it,
+    and closing it from there puts the page's caret at the source's cursor (it opened at line 1 with
+    the focus left on the page, and closing dropped the focus); Ctrl+F in the source is Find and
+    Replace In LaTeX source, its hit selected there, Escape back to the source; matching brackets lit."""
+    load_doc(page, DOC); click_text(page, 'Third paragraph', 5)
+    key(page, 'Control+Backslash', 700)
+    st = cm_state(page)
+    check('Ctrl+\\ opens the source at the caret\'s character, the focus in it', st and st['shown'] and st['focus'] and st['at'] == DOC.index('Third paragraph') + 5, st)
+    page.keyboard.type('Q'); page.wait_for_timeout(200)
+    key(page, 'Control+Backslash', 500)
+    page.keyboard.type('W'); page.wait_for_timeout(300)
+    check('Ctrl+\\ from the source closes it, the caret on the page where the cursor was: the next letter follows', 'ThirdQW paragraph' in src(page) and not cm_state(page)['shown'], src(page)[100:200])
+    load_doc(page, DOC); click_text(page, 'Fourth paragraph', 0)
+    key(page, 'Control+Backslash', 700)
+    key(page, 'Control+Shift+ArrowRight', 150)
+    key(page, 'Control+f', 400)
+    d = page.get_by_role('dialog', name='Find and Replace', exact=True)
+    q = d.get_by_label('Find what', exact=True)
+    check('Ctrl+F in the source: Find and Replace, In LaTeX source ticked, the word selected there to find', d.count() == 1 and d.get_by_label('In LaTeX source', exact=True).is_checked() and q.input_value() == 'Fourth', q.input_value() if d.count() else None)
+    key(page, 'Enter', 300); key(page, 'Escape', 300)
+    st = cm_state(page)
+    check('Escape gives the source the focus back, the hit selected in it', st['focus'] and st['sel'] == 'Fourth', st)
+    page.evaluate("(() => { const d = window.rikuy.cm.getDoc(); d.setCursor(d.posFromIndex(window.rikuy.cm.getValue().indexOf('{article}'))); })()"); page.wait_for_timeout(150)
+    lit = page.evaluate("document.querySelectorAll('#srcpane .CodeMirror-matchingbracket').length")
+    check('the bracket at the cursor and its match are lit', lit == 2, lit)
+    key(page, 'Control+Backslash', 300)
+
+
 def tips_and_help(page, mac=False, tag=''):
     title = page.evaluate("document.getElementById('rb-b') ? document.getElementById('rb-b').title : [...document.querySelectorAll('#ribbon [data-cmd=bold]')].map((b) => b.title)[0]")
     check(tag + 'the Bold button\'s tooltip names its key' + (' as a Mac does (\u2318B)' if mac else ' (Ctrl+B)'), ('\u2318B' if mac else 'Ctrl+B') in (title or ''), title)
@@ -472,7 +506,7 @@ def run():
     only = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (paragraphs, references, finding, views, typing, fields, headings, tables, files, caret_keys, paste_format):
+        for f in (paragraphs, references, finding, views, typing, fields, headings, tables, files, caret_keys, paste_format, source_pane):
             if only and f.__name__ not in only: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
