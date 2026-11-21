@@ -99,7 +99,12 @@ def first_visit(page, w):
     if touch:
         check(f'on a phone the first visit leaves the keyboard down: the page has no focus ({w})', page.evaluate("document.activeElement.id") != 'pages' and src(page) == before)
         return
-    check(f'the first visit has the caret at the start of the first paragraph: a key typed lands there ({w})', src(page) != before and '\\begin{abstract}\nZYou are reading' in src(page), src(page)[:0] or [l for l in src(page).splitlines() if 'Z' in l][:2])
+    # (Word's caret at the start of the document's first text: in the sample that is the abstract's
+    # first paragraph, after the title and the live graph above it, which the caret passes over)
+    first = before.split('\\begin{abstract}\n', 1)[1].split('\n', 1)[0]
+    check(f'the first visit has the caret at the start of the first paragraph (the abstract\'s, after the title and the graph): a key typed lands there ({w})',
+          src(page) != before and src(page) == before.replace('\\begin{abstract}\n' + first, '\\begin{abstract}\nZ' + first, 1) and first.startswith('The graph above is live'),
+          src(page)[:0] or [l for l in src(page).splitlines() if 'Z' in l][:2])
     check(f'and the page did not scroll to it ({w})', page.evaluate("document.getElementById('desk').scrollTop") == top)
     page.keyboard.press('Control+z'); page.wait_for_timeout(200)
     check(f'one Undo takes it back ({w})', src(page) == before)

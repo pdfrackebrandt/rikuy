@@ -1095,7 +1095,8 @@ class App {
   }
 
   // As Word opens a document with the caret at its start, so the first keys type: at the start
-  // of the first paragraph, without scrolling. Not on a touch screen, where focusing the page
+  // of the first paragraph, without scrolling (the first text: a figure before it, as the
+  // sample's live graph is, is no place to type). Not on a touch screen, where focusing the page
   // brings up the on-screen keyboard before anyone asked to type; not where something else
   // already has the focus (a link's guest bar, a dialog).
   placeInitialCaret() {
