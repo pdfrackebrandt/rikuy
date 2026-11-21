@@ -113,6 +113,13 @@ function build(app) {
   d.addEventListener('mousedown', (e) => { if (!e.target.closest('input, select, label')) e.preventDefault(); });
   d.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeFindDialog(app); }
+    // Tab goes round the dialog's controls, as Word's: past Find Next it left for the window's
+    // top bar, where Escape no longer closed the dialog (the page is a click or Escape away)
+    if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      const all = [...d.querySelectorAll('button, input, select, textarea, [tabindex]')].filter((x) => !x.disabled && x.tabIndex >= 0 && x.offsetParent);
+      const i = all.indexOf(document.activeElement);
+      if (all.length && (e.shiftKey ? i === 0 : i === all.length - 1)) { e.preventDefault(); all[e.shiftKey ? all.length - 1 : 0].focus(); }
+    }
   });
   tabs.addEventListener('click', (e) => { const t = e.target.closest('[role=tab]'); if (t) selectTab(app, t.dataset.tab, true); });
   tabs.addEventListener('keydown', (e) => {

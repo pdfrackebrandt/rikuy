@@ -811,13 +811,21 @@ export const methods = {
   // carries it: the paragraphs painted take it (a heading, a quote, a theorem, Normal), in the
   // same step. A double click keeps it armed until Escape or another press of the button.
   formatPainter(sticky) {
-    if (this.fpaint) { this.fpaint = null; document.body.classList.remove('fpainting'); return true; }
     const at = this.ribbonAt(), c = at && at.c;
+    // pressed again where it was armed: off, as the button's second press; from another place it
+    // copies that place's formatting, as Word's Ctrl+Shift+C does each time (a second Ctrl+Shift+C
+    // elsewhere turned it off, and Ctrl+Shift+V then pasted the first place's)
+    if (this.fpaint) {
+      const A = this.fpaint.at;
+      if (!c || c.ghost || !A || (A.f === c.f && A.a === c.a && A.b === c.b)) { this.fpaint = null; document.body.classList.remove('fpainting'); return true; }
+    }
     if (!c || c.ghost) return false;
     const fmts = F.formatsAt(this.src(c.f), c.a, c.b);
     const sel = getSelection();
     // (where it was armed: the selection there is no place to paint, see the touch screen's rest below)
-    this.fpaint = { fmts, sticky: !!sticky, from: sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null, style: this.fpStyleAt(at) };
+    this.fpaint = { fmts, sticky: !!sticky, from: sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null, style: this.fpStyleAt(at), at: { f: c.f, a: c.a, b: c.b } };
+    // (kept for Ctrl+Shift+V, Word's Paste Formatting, until text is copied: pasteFormat)
+    this.fmtCopy = { fmts, style: this.fpaint.style };
     document.body.classList.add('fpainting');
     if (!fmts.length && !this.fpaint.style) this.toast('The caret is in plain text: the next selection is made plain.', 2400);
     return true;
@@ -869,6 +877,16 @@ export const methods = {
     if (!P0.sticky) { this.fpaint = null; document.body.classList.remove('fpainting'); }
     this.ribbonSync();
     return ok;
+  },
+  // Word's Ctrl+Shift+V: the formatting Ctrl+Shift+C (or the Format Painter) copied, on the
+  // selection or the caret's word, as the painter's one press; the copy stays for the next
+  // Ctrl+Shift+V, and a painter left armed by Ctrl+Shift+C is used up by it
+  pasteFormat() {
+    const K = this.fmtCopy, at = this.ribbonAt();
+    if (!K || !at || !at.c || at.c.ghost) return false;
+    this.fpaint = { fmts: K.fmts, style: K.style, sticky: false, from: null };
+    this.paintFormat();
+    return true;
   },
   // the words selected before a style was given to their paragraph, selected again where the
   // step moved them: the style writes around the words and not in them, so they are found in what

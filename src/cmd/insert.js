@@ -634,7 +634,12 @@ Object.assign(methods, {
     const row = mk('div', 'gd-btns');
     row.append(mk('span', 'grow'), ok);
     p.append(list, row);
+    // (the keys go to the dialog, as Word's: the arrows choose, Enter is OK; they went on to the
+    // page, where Enter broke the paragraph and the clipboard was never pasted)
+    list.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); ok.click(); } });
     this.positionPop();
+    const first = list.querySelector('input:checked');
+    if (first) first.focus();
   },
 
   // ---- files ----

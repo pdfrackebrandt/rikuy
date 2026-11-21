@@ -14,6 +14,7 @@ import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
 import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
+import { chainAt } from './charfmt.js';
 import { findProblems, missingFigures } from './problems.js';
 import { WidgetLayer } from './widget.js';
 import { APP, appInit, asset as appAsset, registerApp, takeLaunches, takeShared, warmTeX } from './pwa.js';
@@ -26,7 +27,7 @@ const PLACEHOLDER_EPS = '%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 320 240\n0.
 import { texToPlain, shortAuthors, entryYear } from './bib.js';
 import { kvGet, kvPut, kvDel, kvSwap, decodeText, encodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
 import { changes, spacingOnly } from './diff.js';
-import { TeXEngine, parseTeXLog } from './tex.js';
+import { TeXEngine, parseTeXLog, issueText } from './tex.js';
 import { PdfView } from './pdfview.js';
 import { collab, installCollab } from './collab.js';
 import { word, installWord, isDocx } from './word.js';
@@ -1393,6 +1394,9 @@ class App {
   onGlobalKey(e) {
     const mod = isMac ? e.metaKey : e.ctrlKey;
     this.plainPaste = !!(mod && e.shiftKey && e.key.toLowerCase() === 'v');
+    // Word's Ctrl+Shift+V after Ctrl+Shift+C pastes the formatting copied, not the clipboard's
+    // text (which replaced the words selected); after a Ctrl+C it is the text alone, as before
+    if (this.plainPaste && !e.altKey && this.fmtCopy && e.target === this.root && this.pasteFormat()) { e.preventDefault(); this.plainPaste = false; return; }
     // (Ctrl+S is Save as Word's: kept in this browser, said; Save As, F12, downloads: src/cmd/file.js)
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); this.runCommand('save'); }
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); $('#fileinput').click(); }
@@ -1440,6 +1444,12 @@ class App {
       // collapses to the top of the page: Ctrl+A then Ctrl+C copied nothing and Delete did nothing
       if (k === 'a' && !e.shiftKey) { e.preventDefault(); this.selectAllText(); return; }
     }
+    // Word's Ctrl+Down and Ctrl+Up (Windows' and Linux's; a Mac's Cmd+arrows go to the document's
+    // ends): the browser's own keeps the caret's column into the next block and could land
+    // inside a display formula there, which opened its editor
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !isMac && e.ctrlKey && !e.altKey && !e.metaKey) {
+      if (this.paraJump(e.key === 'ArrowDown' ? 1 : -1, e.shiftKey)) { e.preventDefault(); return; }
+    }
     if (e.key === 'Tab') {
       const n = getSelection().anchorNode;
       const el = n && (n.nodeType === 1 ? n : n.parentElement);
@@ -1482,6 +1492,34 @@ class App {
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); this.codeOpen(); return; }
     }
     if (this.armed && !['Shift', 'Control', 'Meta', 'Alt'].includes(e.key)) this.disarm();
+  }
+  // The caret to the start of the next paragraph (dir 1) or to the start of this one, the one
+  // before when it is there already (dir -1), as Word's Ctrl+Down and Ctrl+Up; extend: the
+  // selection grows to the paragraph's end (or start) instead. A paragraph is a block of text on
+  // the page or a table's cell; a display formula, a picture and the rest of a paragraph a page
+  // cut are passed over. false where the caret is in none of them (a footnote at the page's foot):
+  // the browser's own move then.
+  paraJump(dir, extend) {
+    const sel = getSelection();
+    if (!sel.rangeCount || !this.root.contains(sel.focusNode)) return false;
+    const texts = (el) => [...el.querySelectorAll('span.t')].filter((s) => !s.classList.contains('gh') && !s.closest('.atom') && s.firstChild && s.firstChild.nodeType === 3);
+    const stops = [...this.root.querySelectorAll('.it, td')].filter((el) => !(el.classList.contains('it') && (el.classList.contains('atom') || el.classList.contains('split-b') || el.querySelector('td'))) && texts(el).length);
+    const here = stops.reduce((k, el, i) => (el.contains(sel.focusNode) ? i : k), -1);
+    if (here < 0) return false;
+    const start = (el) => { const t = texts(el)[0].firstChild; return [t, 0]; };
+    const end = (el) => { const l = texts(el), t = l[l.length - 1].lastChild || l[l.length - 1].firstChild; return [t, t.length]; };
+    const cmp = ([n, o]) => { const r = document.createRange(); r.setStart(n, o); try { return r.comparePoint(sel.focusNode, sel.focusOffset); } catch (err) { return 0; } };
+    let to;
+    if (dir > 0) {
+      if (extend) to = cmp(end(stops[here])) < 0 ? end(stops[here]) : stops[here + 1] ? end(stops[here + 1]) : null;
+      else to = stops[here + 1] ? start(stops[here + 1]) : end(stops[here]);
+    } else to = cmp(start(stops[here])) > 0 ? start(stops[here]) : stops[here - 1] ? start(stops[here - 1]) : start(stops[here]);
+    if (!to) return true;
+    if (extend) sel.extend(to[0], to[1]);
+    else sel.collapse(to[0], to[1]);
+    const el = to[0].parentElement;
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+    return true;
   }
   codeOpen() {
     const el = this.armed && this.armed.el, info = el && atomOfEl(el);
@@ -1849,9 +1887,12 @@ class App {
       const itemText = src.slice(+cmdE + base, +ie + base);
       if (!itemText.trim() && c.collapsed) {
         // exit the list: remove empty item, continue after the list
-        const s = +is + base, e = +ie + base;
+        const s = +is + base, e0 = +ie + base;
+        // (the empty item's line goes and one line break stays: \end{itemize} was glued to the
+        // item before it, "\item Fourth\end{itemize}")
+        const nl = src.lastIndexOf('\n', e0 - 1), e = nl >= s ? nl : e0;
         let s2 = s; while (s2 > 0 && (src[s2 - 1] === ' ' || src[s2 - 1] === '\t')) s2--;
-        if (src[s2 - 1] === '\n') s2--;
+        if (src[s2 - 1] === '\n' && nl >= s) s2--;
         const listEnd = +le + base;
         const removed = e - s2;
         const ins = '\n\n';
@@ -2198,6 +2239,15 @@ class App {
   }
 
   // ---- clipboard ------------------------------------------------------------------
+  // what Copy puts on the clipboard as LaTeX: words copied from inside a format
+  // (\textbf{qu|ick|}) keep it, as Word's copy keeps a bold word bold (they were pasted plain):
+  // the wrappers around them, outermost first, go round the words copied
+  copyLatex(c) {
+    const src = this.src(c.f), t = this.selectionLatex(c);
+    if (!isBalanced(src, c.a, c.b) || this.texAt(c.f, c.a)) return t;
+    const W = chainAt(src, c.a, c.b).map((x) => x.W).filter((w) => w.is <= c.a && c.b <= w.ie);
+    return W.map((w) => src.slice(w.s, w.is)).join('') + t + W.reverse().map((w) => src.slice(w.ie, w.e)).join('');
+  }
   selectionLatex(c) {
     const src = this.src(c.f);
     if (isBalanced(src, c.a, c.b)) return src.slice(c.a, c.b);
@@ -2215,12 +2265,14 @@ class App {
     const c = this.caretNow();
     if (!c || c.collapsed) return;
     e.preventDefault();
-    const latex = this.selectionLatex(c);
+    const latex = this.copyLatex(c);
     const plain = getSelection().toString().replace(/\u200B/g, '');
     e.clipboardData.setData('text/plain', plain);
     try { e.clipboardData.setData('text/x-galley-latex', latex); } catch (err) { /* ignore */ }
     try { e.clipboardData.setData('text/html', selectionHTML(getSelection(), (el) => this.mathML(el))); } catch (err) { /* plain text still works */ }
     this.lastCopy = { plain, latex };
+    // (text copied after the formatting: Ctrl+Shift+V pastes it again, src/cmd/font.js pasteFormat)
+    this.fmtCopy = null;
     if (cut) {
       const whole = this.wholeDoc();
       if (whole) { this.replaceBody(whole, '', 'cut'); return; }
@@ -2248,6 +2300,8 @@ class App {
     let latex = '';
     try { latex = dt.getData('text/x-galley-latex') || ''; } catch (err) { latex = ''; }
     if (!latex && this.lastCopy && plain === this.lastCopy.plain) latex = this.lastCopy.latex;
+    // an empty clipboard pastes nothing: the words selected stay (they were deleted)
+    if (!plain && !html && !latex) return;
     const c = this.caretNow();
     if (!c) return;
     // in LaTeX the source goes in as it is: the source of what was copied on the page, else the text
@@ -4965,7 +5019,7 @@ class App {
         const f = known || this.main;
         const line = known ? x.line : null;
         const p = line ? lineStart(this.src(f), line) : 0;
-        return { sev: x.sev, f, p, line, msg: x.msg + (x.ctx ? ' (at ' + x.ctx.trim().slice(0, 60) + ')' : ''), key: 'tex:' + x.msg, tex: true };
+        return { sev: x.sev, f, p, line, msg: issueText(x, line ? this.src(f).slice(p).split('\n', 1)[0] : ''), key: 'tex:' + x.msg, tex: true };
       });
       this.problemsSoon();
       const errs = this.texIssues.filter((x) => x.sev === 'error').length;
