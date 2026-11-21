@@ -746,9 +746,10 @@ body.pdf-on #pdfpane { display: flex; }
 .flt { text-indent: 0; }
 .fp { margin: .2em 0; text-indent: 0; }
 .cap { display: table; margin: .7em auto 0; text-align: justify; text-indent: 0; hyphens: auto; }
-.flt-table .cap { margin: 0 auto .6em; }
+/* a table's caption where its \caption stands, as TeX prints it: above the tabular when written
+   before it, below when after (Insert Table writes it after); it was always drawn above */
 .flt-table { display: flex; flex-direction: column; }
-.flt-table .cap { order: -1; }
+.flt-table .cap:first-child { margin: 0 auto .6em; }
 .tabw { overflow-x: auto; text-indent: 0; }
 .tab { border-collapse: collapse; margin: .1em auto; text-align: left; line-height: 1.2; }
 .tab td { padding: .18em .6em; vertical-align: baseline; }
