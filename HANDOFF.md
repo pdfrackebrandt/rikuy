@@ -25,7 +25,7 @@ Overleaf user), 97 and 98 (two flaky checks fixed). Their reviews are in `docs/r
 |---|---|---|---|
 | Power users: keys, Overleaf typing, pickers, quick open, the typing queue | 87, `power-keys` | verified over six rounds (`docs/reviews/POWER-KEYS.md` on the branch). Head 90815ba. On it the `editor` and `tex` checks failed: `test/agent.py`'s Equation click, which its author was fixing | merge main, get `editor` and `tex` green, merge |
 | This file | 89, `handoff-1120b` | rewritten now | merge when Pedro or the next agent has read it, then start the next handoff branch from main |
-| R6, the arXiv corpus: run 4 | branch `arxiv-shards` (pull request being opened) | 5 of the 8 shards hit the 6 hour limit | open the PR (shorter shards or more of them), classify the finished shards; rates into PLAN.md task 16, README.md, tex/README.md; add `sourcesanspro`, `foekfont`, cbfonts' `grmn`; 1502.01027 |
+| R6, the arXiv corpus: run 4 | 99, `arxiv-shards` | run 4 (44766248361) partial: no shard ran past a document's limit; five spent 5 h 50 min downloading the desktop TeX Live from a slowed mirror. The PR downloads it once into the cache, adds hard limits per document and per shard, and keeps a partial merge off `arxiv-results`; partial numbers in PLAN task 16; reviewed twice (`docs/reviews/ARXIV-SHARDS.md`), every finding fixed | verify, merge; dispatch arXiv corpus with `sources_from_run=44077385415`; classify; rates into PLAN.md task 16, README.md, tex/README.md; add `sourcesanspro`, `foekfont`, cbfonts' `grmn`; 1502.01027 |
 
 Pedro's to do (his accounts): the WAF rate rule on `/git/` (docs/HOSTING.md step 9, one time);
 the git proxy is live. Optional `RIKUY_GIT_HOSTS`.

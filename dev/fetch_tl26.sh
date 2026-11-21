@@ -6,36 +6,56 @@
 # /opt/tl26); then dev/tl26_setup.py makes it runnable there. Nothing outside those folders
 # changes. Rerunnable; arguments name the setup steps to rerun (default all). Needs curl,
 # sha256sum/sha512sum, dpkg-deb, python3, perl (for updmap).
+# TL26_DEBS_ONLY=1: only download and check the packages into $RIKUY_WORK/s26/debs (the arXiv
+# workflow does that once and hands the folder to its shards through the Actions cache).
 set -eu
 WORK=${RIKUY_WORK:-/tmp/eng}
 TL=${TL26:-/opt/tl26}
 ARCHIVE=http://archive.ubuntu.com/ubuntu
 MIRROR=${UBUNTU_MIRROR:-$ARCHIVE}
-# a transfer that breaks off or stalls is tried again, then asked of the archive itself
-dl() { curl -fL --retry 4 --retry-all-errors --retry-delay 5 --connect-timeout 30 --speed-limit 1024 --speed-time 60 -sS -o "$2" "$1"; }
+# A transfer that breaks off or slows to a trickle is cut and taken up where it stopped, six
+# tries of at most 20 minutes each; then the archive itself is asked. The floor was 1 KB/s with
+# no cap on a try: in run 44766248361 the eight shards pulled 2.5 GB each from the mirror at
+# once, texlive-fonts-extra (673 MB) came at a few KB/s, and five shards spent their whole
+# 5 h 50 min in this loop without compiling a paper.
+dl() {
+  n=0
+  while [ "$n" -lt 6 ]; do
+    curl -fL -C - --connect-timeout 30 --speed-limit 65536 --speed-time 60 --max-time 1200 -sS -o "$2" "$1" && return 0
+    n=$((n + 1)); sleep 5
+  done
+  return 1
+}
 HERE=$(cd "$(dirname "$0")" && pwd)
 S="$WORK/s26"
-mkdir -p "$S/debs" "$S/x" "$TL"
+mkdir -p "$S/debs" "$S/x"
+[ -n "${TL26_DEBS_ONLY:-}" ] || mkdir -p "$TL"
 grep -v '^#' "$HERE/tl26-packages.txt" | while read -r name pool hash; do
   f="$S/debs/${pool##*/}"
   algo=${hash%%:*}; sum=${hash#*:}
   if ! { [ -f "$f" ] && echo "$sum  $f" | ${algo}sum -c --status; }; then
     good() { [ -f "$f.part" ] && echo "$sum  $f.part" | ${algo}sum -c --status; }
-    # (a mirror that answers with other bytes counts as one that failed)
-    if dl "$MIRROR/$pool" "$f.part"; then got=1; else got=; fi
-    if ! { [ -n "$got" ] && good; } && [ "$MIRROR" != "$ARCHIVE" ]; then
-      if dl "$ARCHIVE/$pool" "$f.part"; then got=1; else got=; fi
+    # The archive goes on from a transfer the mirror broke off (the hash decides at the end),
+    # then once more from nothing: a part holding other bytes (a mirror's error page, a stale
+    # part of an earlier run) would otherwise be resumed on every run and never be whole.
+    ok=
+    if dl "$MIRROR/$pool" "$f.part" && good; then ok=1
+    elif dl "$ARCHIVE/$pool" "$f.part" && good; then ok=1
+    else
+      rm -f "$f.part"
+      if dl "$ARCHIVE/$pool" "$f.part" && good; then ok=1; fi
     fi
-    [ -n "$got" ] || { echo "fetch_tl26: cannot download $pool" >&2; exit 1; }
-    good || { echo "fetch_tl26: hash mismatch for $pool" >&2; exit 1; }
+    [ -n "$ok" ] || { rm -f "$f.part"; echo "fetch_tl26: cannot download $pool, or not with its hash" >&2; exit 1; }
     mv "$f.part" "$f"
   fi
+  [ -z "${TL26_DEBS_ONLY:-}" ] || continue
   if [ ! -d "$S/x/$name" ]; then
     rm -rf "${S:?}/x/$name.tmp" && mkdir -p "$S/x/$name.tmp"
     dpkg-deb -x "$f" "$S/x/$name.tmp" && mv "$S/x/$name.tmp" "$S/x/$name"
     cp -al --remove-destination "$S/x/$name/." "$TL/"
   fi
 done
+if [ -n "${TL26_DEBS_ONLY:-}" ]; then echo "TeX Live 2026's packages ready in $S/debs"; exit 0; fi
 TL26="$TL" python3 "$HERE/tl26_setup.py" "$@"  # all steps, or the ones named (tl26_setup.py)
 mkdir -p "$TL/home/config"
 cp "$S/x/libpaper2/etc/paperspecs" "$TL/home/config/paperspecs"

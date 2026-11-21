@@ -4,10 +4,19 @@
 #   sources   choose the sample (dev/arxiv_corpus.py, seeded) unless dev/arxiv-ids.txt exists,
 #             download the papers at one request per 3 s, keep them in the Actions cache
 #   rikuy     build dist/ as PLAN.md's Building section does
+#   desktop   download the desktop TeX Live 2026's packages once (2.5 GB, dev/fetch_tl26.sh) into
+#             the Actions cache, keyed by dev/tl26-packages.txt, so later runs never ask Ubuntu's
+#             mirror for them. Run 44766248361 had each shard download them: the mirror slowed
+#             to a few KB/s, and five of eight shards spent their 5 h 50 min there.
 #   shard     8 jobs, each compiling an eighth of the papers with Rikuy (corpus_full.py) and
-#             with a desktop TeX Live 2026 (pdfcompare.py), both inside dev/sandbox.sh
+#             with a desktop TeX Live 2026 (pdfcompare.py), both inside dev/sandbox.sh, each
+#             within a budget counted from the job's start (COMPILE_UNTIL, COMPARE_UNTIL): a
+#             paper that does not fit gets a row saying so, and the rows go up before the
+#             job's limit (timeout-minutes, 350)
 #   collect   commit the identifiers, the compile results and the comparison to the branch
-#             arxiv-results; the sources are never committed
+#             arxiv-results; the sources are never committed. It commits nothing when no shard
+#             left a row, and a partial run with fewer papers than the merge already there goes
+#             to arxiv-results-partial-<run> instead, the full merge staying
 # With from_run set to an earlier run of this workflow, only collect runs, on that run's shard
 # files: a fix to the merge does not cost the 20 runner hours again (artifacts last 90 days).
 # With sources_from_run set, the same papers as that run's are compiled again: its sample
@@ -34,9 +43,20 @@ on:
 # pinned by hash (dev/arxiv-requirements.txt).
 permissions:
   contents: read
+# one run at a time: two would race on the packages' cache entry and on arxiv-results
+concurrency:
+  group: arxiv-corpus
+  cancel-in-progress: false
 env:
   SHARDS: 8
   SDE: '1700000000'
+  # minutes after a shard starts by which Rikuy's compiles, then the desktop's, are done; a
+  # document has at most 330 s in Rikuy and 900 s on the desktop (corpus_full.py, pdfcompare.py),
+  # so the comparison ends by minute 335 and the rows are uploaded before minute 350. A paper
+  # can stop the scripts that keep these times (it runs as their user), so each step is also
+  # killed from outside, as root, five minutes after its deadline
+  COMPILE_UNTIL: '210'
+  COMPARE_UNTIL: '335'
 jobs:
   sources:
     if: inputs.from_run == ''
@@ -112,8 +132,44 @@ jobs:
         with:
           path: dist
           key: rikuy-dist-${{ github.run_id }}
+  desktop:
+    if: inputs.from_run == ''
+    runs-on: ubuntu-24.04
+    # each package gets six tries of at most 20 minutes (fetch_tl26.sh); a run whose mirror is
+    # this slow stops here instead of in eight shards
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: The packages' folder
+        run: sudo mkdir -p /mnt/eng/s26/debs && sudo chown -R "$USER" /mnt/eng
+      # whether the entry is there, without downloading its 2.5 GB
+      - id: debs
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /mnt/eng/s26/debs
+          key: tl26-debs-${{ hashFiles('dev/tl26-packages.txt') }}
+          lookup-only: true
+      - name: Download and check the packages
+        if: steps.debs.outputs.cache-hit != 'true'
+        run: RIKUY_WORK=/mnt/eng TL26_DEBS_ONLY=1 UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu sh dev/fetch_tl26.sh
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: steps.debs.outputs.cache-hit != 'true'
+        with:
+          path: /mnt/eng/s26/debs
+          key: tl26-debs-${{ hashFiles('dev/tl26-packages.txt') }}
+      # a failed upload is only a warning to cache/save: the job fails here instead
+      - name: Check the entry was saved
+        if: steps.debs.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /mnt/eng/s26/debs
+          key: tl26-debs-${{ hashFiles('dev/tl26-packages.txt') }}
+          lookup-only: true
+          fail-on-cache-miss: true
   shard:
-    needs: [sources, rikuy]
+    needs: [sources, rikuy, desktop]
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     env:
@@ -123,6 +179,8 @@ jobs:
       matrix:
         k: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
+      - name: The budget's start
+        run: echo "SHARD_START=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -140,6 +198,15 @@ jobs:
           path: dist
           key: rikuy-dist-${{ github.run_id }}
           fail-on-cache-miss: true
+      - name: The packages' folder
+        run: sudo mkdir -p /mnt/eng/s26/debs && sudo chown -R "$USER" /mnt/eng
+      # the desktop job's download; fetch_tl26.sh checks every package's hash again before it
+      # unpacks it, and fetches any that is missing or different (all of them when the entry
+      # was evicted meanwhile: slower, the step's limit below, but no shard lost to it)
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /mnt/eng/s26/debs
+          key: tl26-debs-${{ hashFiles('dev/tl26-packages.txt') }}
       # What the sandbox sees: /mnt/corpus/py (Python), pw (Chromium), rikuy (dev/, test/,
       # tex/tex-smoke.html, dist/), arxiv (the sources) and /mnt/tl26, read only. Rikuy's step
       # writes only /mnt/corpus/home and out; its results then move to rikuy-out, which the
@@ -147,6 +214,7 @@ jobs:
       # on the desktop gets a copy of /mnt/tl26/home (TEXMFVAR, TEXMFHOME, its HOME), warmed by
       # three trusted documents and read only after, so no paper's files reach the next paper.
       - name: Chromium, poppler and the desktop TeX Live 2026
+        timeout-minutes: 150
         env:
           PLAYWRIGHT_BROWSERS_PATH: /mnt/corpus/pw
         run: |
@@ -158,6 +226,7 @@ jobs:
           # the packages' folder and the TeX Live made of hard links to it share one file system
           RIKUY_WORK=/mnt/eng UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu sh dev/fetch_tl26.sh
       - name: The sandbox, and a check that it holds
+        id: sandbox
         run: |
           mkdir -p /mnt/corpus/rikuy/tex
           cp -r dev test dist /mnt/corpus/rikuy/ && cp tex/tex-smoke.html /mnt/corpus/rikuy/tex/
@@ -177,47 +246,75 @@ jobs:
             sh -c 'mkdir -p /tmp/w && cp /mnt/corpus/warm.tex /tmp/w/ && cd /tmp/w && for e in -pdf -pdfxe -pdflua; do /mnt/corpus/rikuy/dev/tl26.sh latexmk $e -interaction=nonstopmode warm.tex > /dev/null || exit 1; rm -f warm.pdf; done' \
             || { echo "warming the desktop TeX Live failed" >&2; exit 1; }
           sudo chown -R -h root:root /mnt/tl26/home && sudo chmod -R a+rX,go-w /mnt/tl26/home
-      # the two steps that run what the papers ask for; nothing they leave running outlives them
+      # The two steps that run what the papers ask for; nothing they leave running outlives them.
+      # The budget stops each script in time; timeout, as root, kills sandbox.sh's unshare five
+      # minutes after the deadline in case a paper stopped the script (kill -STOP, same user),
+      # and unshare --kill-child takes the whole namespace with it.
       - name: Compile with Rikuy
+        timeout-minutes: 240
         run: |
-          sudo sh dev/sandbox.sh corpus -w /mnt/corpus/home -w /mnt/corpus/out \
+          deadline=$((${SHARD_START:?} + COMPILE_UNTIL * 60))
+          left=$((deadline + 300 - $(date +%s))); [ "$left" -gt 0 ] || left=1
+          sudo timeout -k 30 "$left" sh dev/sandbox.sh corpus -w /mnt/corpus/home -w /mnt/corpus/out \
             PATH=/mnt/corpus/py/bin:/usr/bin:/bin HOME=/mnt/corpus/home LANG=C.UTF-8 \
             PLAYWRIGHT_BROWSERS_PATH=/mnt/corpus/pw SDE="$SDE" SHARD="${{ matrix.k }}/$SHARDS" \
+            DEADLINE="$deadline" \
             CORPUS_LIST=/mnt/corpus/rikuy/dev/arxiv-ids.txt CORPUS_REPO=/mnt/corpus/arxiv RIKUY_DIST=/mnt/corpus/rikuy/dist PDF_DIR=/mnt/corpus/out/pdf \
             python3 /mnt/corpus/rikuy/dev/corpus_full.py "/mnt/corpus/out/arxiv-results-${{ matrix.k }}.jsonl"
       # Rikuy's results and PDFs out of the papers' reach: the desktop's step runs what they ask
       # for, and could otherwise rewrite what it is compared with (the step before has ended, and
       # with it every process it started)
       - name: Keep Rikuy's results
+        id: keep
         if: always()
         run: |
+          # the step before may have been stopped by its time limit rather than ended: nothing it
+          # ran outlives it into the comparison, which now runs after it either way
+          sudo pkill -KILL -u corpus || true
           sudo install -d -o root -g root -m 755 /mnt/corpus/rikuy-out
           for f in /mnt/corpus/out/arxiv-results-${{ matrix.k }}.jsonl /mnt/corpus/out/pdf; do
             if [ -e "$f" ] && [ ! -L "$f" ]; then sudo mv -- "$f" /mnt/corpus/rikuy-out/; fi
           done
           sudo chown -R -h root:root /mnt/corpus/rikuy-out && sudo chmod -R a+rX,go-w /mnt/corpus/rikuy-out
-      - name: Compare with the desktop TeX Live
+      # Rikuy's rows go up now: whatever happens to the comparison, they are kept (collect reads
+      # arxiv-results-*.jsonl from every arxiv-shard-* artifact)
+      - name: Take Rikuy's results out
+        if: always()
         run: |
-          sudo sh dev/sandbox.sh corpus -w /mnt/corpus/home -w /mnt/corpus/out2 \
+          f=/mnt/corpus/rikuy-out/arxiv-results-${{ matrix.k }}.jsonl
+          if [ -f "$f" ] && [ ! -L "$f" ]; then cp -- "$f" .; fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: arxiv-shard-${{ matrix.k }}-rikuy
+          path: arxiv-results-${{ matrix.k }}.jsonl
+      # also after Rikuy's step failed or ran out of time: the rows it wrote are compared
+      - name: Compare with the desktop TeX Live
+        if: ${{ !cancelled() && steps.sandbox.outcome == 'success' && steps.keep.outcome == 'success' }}
+        run: |
+          deadline=$((${SHARD_START:?} + COMPARE_UNTIL * 60))
+          left=$((deadline + 300 - $(date +%s))); [ "$left" -gt 0 ] || left=1
+          sudo timeout -k 30 "$left" sh dev/sandbox.sh corpus -w /mnt/corpus/home -w /mnt/corpus/out2 \
             PATH=/mnt/corpus/py/bin:/usr/bin:/bin HOME=/mnt/corpus/home LANG=C.UTF-8 \
+            DEADLINE="$deadline" \
             TL26=/mnt/tl26 TL26_HOME_TEMPLATE=/mnt/tl26/home SDE="$SDE" CORPUS_LIST=/mnt/corpus/rikuy/dev/arxiv-ids.txt CORPUS_REPO=/mnt/corpus/arxiv \
             python3 /mnt/corpus/rikuy/dev/pdfcompare.py "/mnt/corpus/rikuy-out/arxiv-results-${{ matrix.k }}.jsonl" /mnt/corpus/rikuy-out/pdf \
               "/mnt/corpus/out2/arxiv-pdfcompare-${{ matrix.k }}.jsonl"
       # the results are the papers' output: only regular files are taken, never a link they made
-      - name: Take the results out
+      - name: Take the comparison out
         if: always()
         run: |
-          for f in /mnt/corpus/rikuy-out/arxiv-results-${{ matrix.k }}.jsonl /mnt/corpus/out2/arxiv-pdfcompare-${{ matrix.k }}.jsonl; do
-            if [ -f "$f" ] && [ ! -L "$f" ]; then cp -- "$f" .; fi
-          done
+          f=/mnt/corpus/out2/arxiv-pdfcompare-${{ matrix.k }}.jsonl
+          if [ -f "$f" ] && [ ! -L "$f" ]; then cp -- "$f" .; fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: arxiv-shard-${{ matrix.k }}
-          path: arxiv-*-${{ matrix.k }}.jsonl
+          path: arxiv-pdfcompare-${{ matrix.k }}.jsonl
   collect:
     needs: shard
-    if: always()
+    # not when the shards were skipped (a job before them failed): there is nothing to merge
+    if: always() && (inputs.from_run != '' || needs.shard.result != 'skipped')
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -243,11 +340,25 @@ jobs:
       - name: Merge and commit to arxiv-results
         run: |
           cp shards/arxiv-ids/arxiv-ids.txt dev/arxiv-ids.txt
-          # the shard files come from jobs that ran the papers: rows are checked, not trusted
-          python3 -I dev/arxiv_collect.py dev/arxiv-ids.txt shards dev
+          # The merge there now, which a partial run with fewer rows does not replace. Only a
+          # branch that is not there means no merge before; any other failure stops the job, or
+          # a network blip would let a partial run replace a complete one.
+          mkdir -p "$RUNNER_TEMP/previous"
+          st=0; git ls-remote --exit-code --heads origin arxiv-results > /dev/null || st=$?
+          case "$st" in
+            0) git fetch -q origin arxiv-results
+               for k in results pdfcompare; do git show "FETCH_HEAD:dev/arxiv-$k.jsonl" > "$RUNNER_TEMP/previous/arxiv-$k.jsonl"; done ;;
+            2) echo "no arxiv-results yet" ;;
+            *) echo "cannot tell whether arxiv-results exists (git ls-remote: $st)" >&2; exit 1 ;;
+          esac
+          # The shard files come from jobs that ran the papers: rows are checked, not trusted.
+          # 1: no result row, nothing is committed; 2: the compiles or the comparisons partial and
+          # fewer than in the merge there, which stays, this one going to a branch of its own.
+          st=0; python3 -I dev/arxiv_collect.py dev/arxiv-ids.txt shards dev "$RUNNER_TEMP/previous" || st=$?
+          case "$st" in 0) branch=arxiv-results ;; 2) branch="arxiv-results-partial-$RUN" ;; *) exit 1 ;; esac
           git config user.name "github-actions[bot]"
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git checkout -b arxiv-results
+          git checkout -b "$branch"
           git add dev/arxiv-ids.txt dev/arxiv-results.jsonl dev/arxiv-pdfcompare.jsonl
           git commit -m "arXiv corpus: identifiers, Rikuy's results and the comparison with TeX Live 2026 (run $RUN)"
-          git push -f origin arxiv-results
+          git push -f origin "$branch"

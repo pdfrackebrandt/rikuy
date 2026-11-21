@@ -47,7 +47,10 @@ exec unshare --mount --propagation private --pid --fork --kill-child --mount-pro
     mount -o remount,bind,ro "$m"
   done
   for d in /home /root /run; do mount -t tmpfs -o ro,nosuid,nodev,noexec,size=4k,mode=755 tmpfs "$d"; done
-  for d in /tmp /var/tmp /dev/shm; do mount -t tmpfs -o nosuid,nodev,mode=1777 tmpfs "$d"; done
+  # sized: a paper printing without end (pdfcompare.py keeps the output of a program in /tmp)
+  # fills its own tmpfs, not the memory of the runner
+  mount -t tmpfs -o nosuid,nodev,mode=1777,size=4g tmpfs /tmp
+  for d in /var/tmp /dev/shm; do mount -t tmpfs -o nosuid,nodev,mode=1777,size=1g tmpfs "$d"; done
   [ ! -d /dev/mqueue ] || mount -t mqueue -o nosuid,nodev,noexec mqueue /dev/mqueue
   # Xvfb (pdfcompare.py) needs this folder made by root
   mkdir -m 1777 /tmp/.X11-unix
