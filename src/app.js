@@ -4977,8 +4977,15 @@ class App {
     // (a file name as Word suggests one: letters of any script, digits and spaces kept, only what
     // a file system refuses taken out; "Política Económica" came out Pol-tica-Econ-mica, and a
     // title in Chinese as paper; review E17)
-    n = n.normalize('NFC').replace(/[\\/:*?"<>|\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').replace(/^[\s.]+|[\s.]+$/g, '');
-    return [...n].slice(0, 100).join('').replace(/[\s.]+$/, '') || 'paper';
+    // (and what other programs trip on, review V7: the marks that turn text's direction or join
+    // letters unseen, which can make "fdp.exe" read as "exe.pdf"; Windows' device names, which no
+    // file there may have even with an extension, CON.pdf; at most 200 bytes of UTF-8, cut
+    // between characters, so the name with its extension stays under the 255 of ext4 and APFS)
+    n = n.normalize('NFC').replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]+/g, '').replace(/[\\/:*?"<>|\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').replace(/^[\s.]+|[\s.]+$/g, '');
+    let out = '', bytes = 0;
+    for (const ch of [...n].slice(0, 100)) { const k = new TextEncoder().encode(ch).length; if (bytes + k > 200) break; out += ch; bytes += k; }
+    out = out.replace(/[\s.]+$/, '').replace(/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?=\.|$)/i, '$1_');
+    return out || 'paper';
   }
   // a blank article to type into; the open project stays under Review, Versions
   async newDocument() {
