@@ -627,3 +627,15 @@ formula typed with `$`. W1 to W7 are fixed.
   - V4: no stray break after `\]`.
   - V6 paste mixes are right, money with arithmetic included.
 - **Suites:** power.py 187/187. browser.py 201/201 on rerun; the first run is X3.
+
+## Fixes after the verification of befd04a (author)
+
+| finding | commit | what changed |
+|---|---|---|
+| X1 | 1151806, b5c0ea6 | the field's input listener took a value equal to the box's first one for stale, so Backspace could not empty a formula; Backspace in an empty `$` formula takes it away with every step it made (no undo step, the caret where the `$` was). b5c0ea6 compares the field as `fromField` reads it (`fieldValue`): 1151806's comparison by MathLive's latex lost a `)` typed over a waiting one |
+| X2 | 5377094, fbb35a2 | the word after `$5 ` waits beside the formula: the page keeps `$5$`, the hint reads "$5 each: a price at the next space or mark; $ keeps a formula." |
+| X3 | 0a771e7 | the guard against MathLive's late focus holds always, not only after a hand over: the focus comes to the field from the box by a press, Tab or the page's own call |
+| eqtab | (this commit's parent) | `packages`' case takes the symbol out with one Backspace; a second now takes the empty formula away |
+
+On the final build: power.py 201, browser.py 201 twice, mathfield.py 19, eqtab.py 159 (158 and
+the case above, now 6 of 6 in `packages`), docgaps.py equation parts 19, wordmath.py 84, `npm test` green.
