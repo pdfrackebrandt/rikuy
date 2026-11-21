@@ -1095,7 +1095,8 @@ class App {
   }
 
   // As Word opens a document with the caret at its start, so the first keys type: at the start
-  // of the first paragraph, without scrolling. Not on a touch screen, where focusing the page
+  // of the first paragraph, without scrolling (the first text: a figure before it, as the
+  // sample's live graph is, is no place to type). Not on a touch screen, where focusing the page
   // brings up the on-screen keyboard before anyone asked to type; not where something else
   // already has the focus (a link's guest bar, a dialog).
   placeInitialCaret() {
@@ -4530,7 +4531,9 @@ class App {
     let shift = 0;
     // graphicx once, after the last \usepackage line, as a package for an equation's symbol is
     // added (src/preamble.js); graphics, loaded by hand, does as well
-    const others = d ? this.preambleOthers() : [];
+    // (rikuy.sty loads graphicx for its live figures, but a document whose graphs go keeps its
+    // pictures: they get graphicx of their own, so rikuy.sty does not count here)
+    const others = d ? this.preambleOthers().filter((t) => !/\\ProvidesPackage\{rikuy\}/.test(t)) : [];
     if (d && !hasPackage(main, 'graphics', d.at, others)) {
       const add = usePackage(main, 'graphicx', null, { end: d.at, others });
       for (const x of add) edits.push({ f: this.main, ...x });
