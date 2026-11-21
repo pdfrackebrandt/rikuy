@@ -10,7 +10,9 @@ import { TOOLS, ARGS, asks, personOnly, documentModel, changesBetween, runnable,
 import { command } from '../src/commands.js';
 import '../src/cmd/index.js';
 import { buildModel } from '../src/model.js';
-import { graphHtml, TEMPLATES } from '../src/graph.js';
+import { graphHtml, TEMPLATES, template } from '../src/graph.js';
+import { graphName } from '../src/a11y.js';
+import { graphData } from '../src/agent.js';
 import { llms, llmsFull } from '../build/app.mjs';
 
 let n = 0;
@@ -95,7 +97,7 @@ ok('inputs checked against their schemas, in words (review L2)', () => {
   assert.equal(validate(T('edit_source'), { start: 1.5, text: '' }), 'input.start must be a whole number.');
   assert.equal(validate(T('undo'), { steps: 2, extra: 1 }), 'input has no "extra": it takes steps, step.');
   assert.equal(validate(T('compile'), { x: 1 }), 'input has no "x": it takes nothing.');
-  assert.equal(validate(T('insert_graph'), { spec: { kind: 'pie' } }), 'input.spec.kind must be one of "function", "data", "curve", "dist".');
+  assert.equal(validate(T('insert_graph'), { spec: { kind: 'pie' } }), 'input.spec.kind must be one of "function", "data", "curve", "implicit", "phase", "dist".');
 });
 
 ok('what an edit takes out: the words that go, not those kept inside new markup', () => {
@@ -201,6 +203,15 @@ ok('an interactive graph: its widget, picture, kind, formulas and sliders', () =
   assert.equal(g.graph.kind, 'function'); assert.deepEqual(g.graph.formulas, ['a sin(b x)']);
   assert.deepEqual(g.graph.sliders.map((q) => q.name), ['a', 'b']);
   assert.match(tex.slice(g.start, g.end), /^\\rikuywidget\[/);
+});
+
+ok('every kind of graph said in words and given as data: implicit and phase too (the merge of PR 88: the Ramsey template threw)', () => {
+  for (const t of TEMPLATES) { const g = template(t.id); assert.ok(graphName(g).startsWith('Interactive graph'), t.id); assert.equal(graphData(g).kind, g.kind); }
+  const r = template('ramsey');
+  assert.match(graphName(r), /dk\/dt = k\^α − δ k − c|dk\/dt = k\^α - δ k - c/);
+  assert.deepEqual(graphData(r).vars, ['k', 'c']); assert.equal(graphData(r).phase.dy, r.phase.dy);
+  const b = template('budget');
+  assert.equal(b.kind, 'implicit'); assert.deepEqual(graphData(b).equations, b.eq); assert.ok(graphName(b).includes(b.eq[0]));
 });
 
 ok('what changed: one range a file, text out and in, files made and gone', () => {
