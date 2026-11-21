@@ -3777,6 +3777,70 @@ Tests:
     Now `get` waits as arXiv asks and tries again, and `sources_from_run` compiles an earlier
     run's sample again (its sources from that run's cache, or fetched again where gone), so a
     third run measures the fix on the second run's 998 papers.
+
+    Fourth run, 44766248361 (2026-11-20, main 84f0dd5, `sources_from_run` 44077385415), partial:
+    three of eight shards. Shards 1, 3 and 4 finished in 1 h 23 min to 1 h 32 min; shards 0, 2, 5, 6
+    and 7 were cancelled at the job's 350 minute limit without compiling a paper: all five were
+    still in their first step, downloading the desktop TeX Live's 453 Ubuntu packages (2.5 GB a
+    shard, eight shards at once, texlive-fonts-extra alone 673 MB). The mirror had slowed to a few
+    KB/s; curl's floor was 1 KB/s and a try had no cap, so shard 6's log shows nothing between a
+    failed transfer at 16:34 and the next at 20:44, and a curl was still running in each of the five
+    at the cancel. The finished shards spent 59 min in that step (5 to 7 min in the first two runs,
+    twice 23 and 24); their compiles took 13 to 17 min and the comparisons 9 to 15. Nothing hung
+    past a document's limit (3 papers stopped at 240 s, as before). Collect merged 375 of the 998
+    papers without saying the rest were missing. Fixed: a `desktop` job downloads the packages once
+    into the Actions cache, keyed by `dev/tl26-packages.txt`, and the shards restore them (a later
+    run asks the mirror for nothing; `fetch_tl26.sh` still checks every hash); `fetch_tl26.sh` takes
+    a broken transfer up where it stopped, with a floor of 64 KB/s and six tries of at most 20 min,
+    the archive after the mirror; each shard has a budget counted from its start (Rikuy's compiles
+    until minute 210, the comparison until 335, the job's limit 350), no document starts that could
+    run past it and each one left gets a row with the error `budget`; every document has a hard
+    limit covering every process it starts (`dev/doclimit.py`: Rikuy's 240 s for TeX and 90 s more,
+    after which a watchdog kills Chromium and a new browser starts; the desktop's 900 s, latexmk's
+    600 of them, each program in a session of its own, and once a document is done every process it
+    left is killed, a daemon that left its session too: pdfcompare.py's
+    `subprocess.run(timeout=600)` killed latexmk alone and then waited on the pipe a program the
+    paper started kept open); the comparison runs on the rows Rikuy's step wrote even when that step
+    failed; and `arxiv_collect.py` counts the papers without a row and those left for lack of time.
+    Evidence: `test/arxiv_limits.py` (13, in `npm test`; its daemon, background job, budget and
+    browser cases fail with the sweep or the budget taken out), `test/arxiv_collect.py` 6/6, three
+    papers through corpus_full.py (one looping TeX stopped at its limit, the next compiled in the
+    same session), `actionlint`.
+    The partial run's numbers, shards 1, 3 and 4 only (375 papers, every eighth paper from three
+    offsets): Rikuy compiled 361 (96.3 %), the desktop 361; of the desktop's 361 Rikuy compiled
+    361 (100 %); 339 of the 361 matched (93.9 %); median compile 2.3 s, 90th percentile 7.8 s. The
+    second run on the same 375 papers: 361, 361, 332 matched (92.0 %): 13 of its mismatches match
+    now (10 a bibliography that printed [?] or ?, the .bbl fix; 3 a page count, 2011.06158,
+    2101.01047, 2303.00056), and 6 of its matches differ now. Classified:
+    - 0 fail in Rikuy alone. The second run's two, `sourcesanspro.sty` (2412.05099) and
+      `foekfont.sty` (2407.02273), are in the shards that never compiled; the tree is unchanged,
+      so they are still missing.
+    - 14 fail on both: 9 load a journal's class or package arXiv supplies beyond TeX Live (aa.cls
+      2, mn2e.cls 2, aastex.cls, svjour3.cls, jheppub.sty, acl.sty, and slashbox.sty, gone from
+      TeX Live); 2 stop under TeX Live 2026 (a U+FFFD in the source, "Not in outer par mode"); 3
+      ran past 240 s (1903.00895, 2211.03835, 2310.05154, the same three as in the second run,
+      their trails TeX passes again and again and a biber run; pdfcompare.py does not compile a
+      row without a result on the desktop). No file of TeX Live's tree is missing in any failure;
+      in papers that compiled, "not found" names only biblatex-dm.cfg (5, optional) and the
+      papers' own missing figures.
+    - 22 mismatches, 17 of them the bibliography's: 4 print [?] where the desktop prints numbers
+      (2405.04320, 2601.03656 and 2609.06483 after a bibtex run ending with errors; 1907.02003
+      without a bibtex run); 4 the other way, the desktop printing ? where Rikuy prints the
+      references (1704.02934, 2111.06004, 2409.00542, 2506.06493; the second and third matched in
+      the second run, both sides printing ?); 3 print an accent as "Ì" and a combining mark where
+      the desktop prints ö, á, ü (2304.00169, 2401.01960, 2605.01984: bibtex's .bbl from a .bib
+      with combining characters, as in the second run); 4 matched in the second run and now
+      print another bibliography than latexmk's (numbered [9] against [1], IEEEtran's dash for a
+      repeated author, a year, 43 pages against 40: 2110.03074, 2110.00158, 2410.00188,
+      2005.04818): the .bbl rule chose otherwise than latexmk, and which side prints the paper's
+      bibliography needs the PDFs (the workflow keeps none); 2
+      are the desktop's (2304.04535 prints an older biblatex's .bbl as text, "author3hash=...";
+      2310.05363 drops the journal macro "A&A" Rikuy prints). The other 5: 2 break lines
+      elsewhere ("di-mension", "correc-ted"), 1509.06023 orders a subscript and a superscript the
+      other way in the text layer, 1502.01027 prints the hook name "begindocument/before", and
+      2202.05036 lacks cbfonts' `grmn` (cbfonts is in `build_tree.py`'s DROP, 72 MB), as before.
+    Next: once the fix is merged, dispatch the workflow again with `sources_from_run`
+    44077385415 for the whole 998.
 66. **Everything that computes, in C or C++ for WebAssembly.** Planned, not started: asked for by
     the owner on 2026-11-20 ("even where the gain is small", after the UI and UX work).
     `docs/handoff/CPP-PLAN.md` has the inventory of `src/` and `tex/` by module, the batches B0 to
