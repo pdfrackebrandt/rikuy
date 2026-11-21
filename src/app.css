@@ -743,6 +743,7 @@ body.pdf-on #pdfpane { display: flex; }
 .mloading { color: #555; background: #F1F3F5; }
 
 /* floats and tables */
+.dm .intertext { text-align: left; text-indent: 0; margin: .4em 0; }
 .flt { text-indent: 0; }
 .fp { margin: .2em 0; text-indent: 0; }
 .cap { display: table; margin: .7em auto 0; text-align: justify; text-indent: 0; hyphens: auto; }
