@@ -329,9 +329,12 @@ def export(page):
     ev(page, '() => window.rikuy.runCommand("export-as", "markdown")'); page.wait_for_function('!window.rikuy.wordBusy', timeout=120000)
     md = ev(page, '(async () => (await window.rikuy.lastExport.blob.text()))()')
     check('M1: the Markdown has none of Word\'s anchors', 'Some words here' in md and '{#Rk' not in md and '[Some' not in md, md[:200])
-    ev(page, "window.rikuy.name = '\u8bba\u6587'")
-    ev(page, '() => window.rikuy.runCommand("export-as", "markdown")'); page.wait_for_function('!window.rikuy.wordBusy', timeout=120000)
-    check('L8: a name in another script alone: paper.md, never a hidden .md', ev(page, 'window.rikuy.lastExport.name') == 'paper.md', ev(page, 'window.rikuy.lastExport.name'))
+    # (a name in another script keeps its letters, review E17; one of only signs a file system
+    # refuses and marks nobody sees comes to paper.md, never a hidden .md)
+    for name, want in (('\u8bba\u6587', '\u8bba\u6587.md'), ('\u202e\u200b/:*', 'paper.md')):
+        ev(page, '(n) => { window.rikuy.name = n; }', name)
+        ev(page, '() => window.rikuy.runCommand("export-as", "markdown")'); page.wait_for_function('!window.rikuy.wordBusy', timeout=120000)
+        check('L8: the name ' + repr(name) + ' exports as ' + want + ', never a hidden .md', ev(page, 'window.rikuy.lastExport.name') == want, ev(page, 'window.rikuy.lastExport.name'))
 
 
 def phones(p):
