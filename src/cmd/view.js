@@ -174,7 +174,7 @@ export const methods = {
         cls().add('view-pdf');
         this.viewPdfSpot = null;
         if (cls().contains('src-on')) await this.toggleSource(false);
-        const fresh = !!this.lastPdf && this.lastPdfSig === this.textSigNow();
+        const fresh = !!this.lastPdf && this.lastPdfSig === this.pdfSigNow();
         this.togglePdf(true, fresh);
         if (!fresh) this.pdfSay('Updating the PDF…');
         if (spot) this.viewPlaceInPdf(spot);

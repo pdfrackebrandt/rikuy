@@ -223,6 +223,13 @@ def api(p):
         check('TeX\'s errors come as problems with their file and line, and are said in "PDF status"', len(errs) == 1 and 'Undefined control sequence' in errs[0]['message'] and errs[0]['file'] == 'main.tex' and errs[0]['line'] == 7
               and '1 error' in r2['said'] and 'Undefined control sequence' in r2['said'], r2)
         page.evaluate('(t) => window.rikuy.api.setSource(t)', DOC)
+        # the engine is part of what a PDF was made from: with the preview closed, a compile right
+        # after the TeX engine menu changed gave back the last engine's PDF as this one's
+        r3 = page.evaluate('''async () => { const a = window.rikuy.api, sel = document.getElementById('pdf-engine'); const one = await a.compile();
+          sel.value = 'xelatex'; sel.dispatchEvent(new Event('change')); const two = await a.compile();
+          sel.value = 'auto'; sel.dispatchEvent(new Event('change')); const three = await a.compile();
+          return [one.engine, two.engine, two.ok, three.engine]; }''')
+        check('api.compile after the engine menu changed compiles with that engine, and with Auto again after', r3 == ['pdflatex', 'xelatex', True, 'pdflatex'], r3)
     else:
         print('SKIP a real PDF from api.compile: no TeX tree in %s (tex/tree.wasm); it runs where dist/tex is built' % DIST)
         check('with no TeX to run, api.compile resolves with ok false, no PDF and the reason as a problem', shape and r['ok'] is False and r['pdf' if 'pdf' in r else 'kind'] is None and r['n'] == 0 and r['pages'] == 0 and r['engine'] is None

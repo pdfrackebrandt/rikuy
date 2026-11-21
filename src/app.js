@@ -31,7 +31,7 @@ import { kvGet, kvPut, kvDel, kvSwap, decodeText, encodeText, snapAdd, snapAll, 
 import { changes, spacingOnly } from './diff.js';
 import { TeXEngine, parseTeXLog, issueText } from './tex.js';
 import { PdfView } from './pdfview.js';
-import { collab, installCollab } from './collab.js';
+import { collab, installCollab, cleanProjectName } from './collab.js';
 import { word, installWord, isDocx } from './word.js';
 import { ribbon } from './ribbon.js';
 import { nav } from './nav.js';
@@ -50,7 +50,7 @@ import { methods as helpPaneMethods } from './ui/helppane.js';
 import { installDock } from './ui/dock.js';
 import { installKeys } from './keys.js';
 import * as kit from './ui/kit.js';
-import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
+import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass, pickMain } from './preamble.js';
 import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, titleInfo } from './styles.js';
 import { eolAt } from './blockenv.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
@@ -388,6 +388,13 @@ function fromField(v, st) {
   return lines.join(' \\\\\n');
 }
 
+// The text of the latexmkrc that came with a project (Overleaf's and arXiv's archives carry one),
+// for the document it names; '' when there is none.
+async function latexmkrcText(extra) {
+  // (its first 64 KB: a stranger's archive may hold a huge one)
+  for (const [n, b] of extra) if (/^\.?latexmkrc$/i.test(n)) { try { return (typeof b === 'string' ? b : await b.slice(0, 65536).text()).slice(0, 65536); } catch (e) { return ''; } }
+  return '';
+}
 // What the equation field is given, set as math. MathLive's setValue inserts in the mode at its
 // caret, and after a value whose caret ends in \text{...} every later value went in as one text
 // run: the LaTeX box's `a \text{s.t.} c` showed as \text{a \textbackslash text...}, and the next
@@ -816,8 +823,7 @@ class App {
   }
 
   async allowWidgets() {
-    const v = await this.linkInfo();
-    if (v && !v.widgets) { v.widgets = true; if (!this.noIdb) kvPut('link:' + this.name + '|' + this.main, v).catch(() => {}); }
+    await this.allowMark('widgets');
     this.forceRender = true;
     this.rebuild(this.caretNow());
   }
@@ -1418,7 +1424,7 @@ class App {
       // ticking it on a document that came in a link allows shell escape for that document only
       const li = this.linkCache && this.linkCache.get(this.name + '|' + this.main);
       if (e.target.checked && li && !li.allowed) { if (this.prefs.shellEscape === false) { this.prefs.shellEscape = true; store(PREFS, this.prefs); } this.allowShellHere(); return; }
-      this.prefs.shellEscape = e.target.checked; store(PREFS, this.prefs); if (document.body.classList.contains('pdf-on')) this.compilePdf({ clean: true });
+      this.prefs.shellEscape = e.target.checked; store(PREFS, this.prefs); if (document.body.classList.contains('pdf-on')) this.compilePdf({ clean: true }); else this.pdfStale = true;
     });
     this.syncEngineMenu();
     $('#pdf-msg').addEventListener('click', () => { if (this.texIssues.some((x) => x.sev !== 'info')) this.toggleNav(true, 'problems'); });
@@ -4244,8 +4250,8 @@ class App {
       try {
         await this.snapshot('Before switching to ' + v, { force: true });
         const files = await G.switchBranch(dir, v);
-        await this.loadGitFiles(files, 'Switched to ' + v);
-        this.toast('Switched to ' + v + '.');
+        const note = await this.loadGitFiles(files, 'Switched to ' + v);
+        this.toast('Switched to ' + v + '.' + note, note ? 9000 : undefined);
       } catch (e) { this.toast(this.gitError(e), 8000); }
       this.gitRefresh();
     };
@@ -4360,13 +4366,15 @@ class App {
         if (!(await saveUrl())) { url.focus(); return; }
         if (st.length) { this.toast('Commit your ' + st.length + ' change' + (st.length === 1 ? '' : 's') + ' first: pull merges into the last commit.', 7000); msg.focus(); return; }
         busy(b, 'Pulling…');
+        let pulled = '';
         try {
           const o = opts();
           await G.pull(dir, o, this.gitAuthor().name ? this.gitAuthor() : { name: 'Rikuy', email: 'rikuy@localhost' });
           kept(o);
-          await this.loadGitFiles(await G.workingFiles(dir), 'Pulled');
+          pulled = await this.loadGitFiles(await G.workingFiles(dir), 'Pulled');
         } catch (err) { fail(b, err); return; }
         done(b); this.gitRefresh();
+        if (pulled) this.toast(pulled.trim(), 9000);
       }, 'git pull (fetch and merge)'),
       mkBtn('Push', async (e) => {
         const b = e.currentTarget;
@@ -4448,7 +4456,7 @@ class App {
       const proxy = keepGitProxy(this.prefs, prox.value.trim()); store(PREFS, this.prefs);
       const o = { token: t, remote: u, corsProxy: proxy, depth: 200, accepted: legacy.chosen() };
       o.onAccepted = () => { o.accepted = true; };
-      const name = /git\.overleaf\.com/.test(u) ? 'overleaf-' + u.split('/').pop().slice(0, 6) : u.replace(/\.git$/, '').split('/').pop() || 'paper';
+      const name = await this.cloneName(u);
       b.disabled = true; b.textContent = 'Cloning…';
       try {
         const files = await G.clone(G.dirFor(name), u, o);
@@ -4514,17 +4522,49 @@ class App {
       else if (IMG_EXT.test(n) || /\.(pdf|eps)$/i.test(n)) blobs.set(n, new Blob([b]));
       else extra.set(n, new Blob([b]));
     }
+    // (a pull or a branch without the main file: the document it has, or the one its latexmkrc names)
+    const was = this.main;
+    const main = texts.has(was) ? was : pickMain(texts, await latexmkrcText(extra)) || was;
+    // The project's mark goes to its new main file, the stricter of it and the one kept there,
+    // as on File, Main document (review I2): unmarked there, a pull or a branch that renamed
+    // main.tex compiled a cloned repository with full shell escape. Read before anything changes.
+    const [mark, there] = !origin && main !== was ? await Promise.all([this.linkInfo(), this.markOf(this.name, main)]) : [];
+    // Whether the pull or the branch brought other code: a .tex, .sty, .cls, .bib or any file
+    // TeX or a program it starts can read as code, not a picture (as a dropped .zip's zipCode).
+    // An Allow given to a repository's earlier files does not cover them, as it does not cover a
+    // dropped archive's: a clone allowed once compiled every later pull with full shell escape.
+    // Every such file is compared byte for byte (a run.py padded to its old size kept the Allow,
+    // X1); only while the project is allowed, the one case where it matters.
+    const code = (n) => !/\.(png|jpe?g|gif|webp|pdf)$/i.test(n);
+    const sameBytes = async (blob, bytes) => {
+      if (!blob || !bytes || blob.size !== bytes.length) return false;
+      const a = new Uint8Array(await blob.arrayBuffer());
+      for (let i = 0; i < a.length; i++) if (a[i] !== bytes[i]) return false;
+      return true;
+    };
+    const changedCode = async () => {
+      for (const n of new Set([...texts.keys(), ...this.files.keys()])) if (code(n) && texts.get(n) !== this.files.get(n)) return true;
+      for (const [n, b] of [...this.extra, ...this.assetBlobs]) if (code(n) && !texts.has(n) && !(await sameBytes(b, files.get(n)))) return true;
+      for (const n of files.keys()) if (code(n) && !texts.has(n) && !this.extra.has(n) && !this.assetBlobs.has(n)) return true;
+      return false;
+    };
+    const held = origin ? null : await this.linkInfo();
+    const codeChanged = !origin && (main !== was || (!!held && !!held.allowed && await changedCode()));
     for (const u of this.assets.values()) URL.revokeObjectURL(u);
     this.assets.clear(); this.assetBlobs.clear();
     this.files = texts; this.orig = orig; this.extra = extra;
     for (const [n, b] of blobs) this.addAsset(n, b);
-    if (!this.files.has(this.main)) {
-      const docs = [...texts.entries()].filter(([n, t]) => /\.tex$/i.test(n) && /\\documentclass/.test(t));
-      this.main = (docs.find(([n]) => /(^|\/)main\.tex$/i.test(n)) || docs[0] || [this.main])[0];
-    }
+    this.main = main;
     // a cloned repository is someone else's content: its shell escape is restricted until the
     // owner allows more, marked before anything below can start a compile
     if (origin) this.markFromLink('', this.name, this.main, origin);
+    else if (main !== was) this.carryLink(mark, main, there);
+    let note = '';
+    const now = !origin && codeChanged && this.linkCache && this.linkCache.get(this.name + '|' + this.main);
+    if (now && now.allowed) {
+      this.markFromLink(now.by || '', this.name, this.main, now.origin || 'git');
+      note = ' Shell escape, allowed for this repository before, is restricted again: its TeX files changed. Allow it in the PDF pane if you trust them.';
+    }
     this.binaryDirty = true; this.forceRender = true;
     this.hist = []; this.redoStack = []; this.updateUndoUI();
     this.srcFile = this.main;
@@ -4536,6 +4576,14 @@ class App {
     this.lastSig = null;
     this.snapshot(label);
     this.resetPdf();
+    return note;
+  }
+
+  // A clone's project name, from its address, and one of its own: github.com/x/thesis cloned beside
+  // one's own thesis took its name, its versions and the marks kept under it, so an Allow given to
+  // one's own document there reached the clone (V1)
+  async cloneName(u) {
+    return this.freeProjectName(cleanProjectName(/git\.overleaf\.com/.test(u) ? 'overleaf-' + u.split('/').pop().slice(0, 6) : u.replace(/\.git$/, '').split('/').pop(), 'paper'));
   }
 
   async openRepoFiles(name, files) {
@@ -4752,7 +4800,11 @@ class App {
           let total = 0;
           for (const n of Object.keys(z.files)) total += (z.files[n]._data && z.files[n]._data.uncompressedSize) || 0;
           if (total > MAX_ZIP) throw new Error('it would unpack to ' + fmtMB(total) + ', more than this page can hold');
-          const names = Object.keys(z.files).filter((n) => !z.files[n].dir && !/(^|\/)(__MACOSX|\.)/.test(n));
+          // (a hidden file is left out, a Mac's or an editor's, but not the two kinds a LaTeX
+          // project needs: latexmk's .latexmkrc, and a .keep or .gitkeep that is there only so its
+          // folder exists, as \tikzexternalize[prefix=figures/] needs figures/ to write into)
+          const hidden = (n) => /(^|\/)(__MACOSX|\.(?!(?:latexmkrc|keep|gitkeep)$))/.test(n);
+          const names = Object.keys(z.files).filter((n) => !z.files[n].dir && !hidden(n));
           if (!names.length) unread.push(file.name + ' has no files in it.');
           const prefix = commonDir(names);
           for (const n of Object.keys(z.files)) {
@@ -4763,6 +4815,8 @@ class App {
           for (const n of names) {
             const rel = cleanPath(n.slice(prefix.length));
             if (rel === null) { skipped.push(n); continue; }
+            // (again on the name as cleanPath made it, \ read as /: figs\.htaccess is figs/.htaccess, review N6)
+            if (hidden(rel)) continue;
             if (TEXT_EXT.test(rel)) {
               const bytes = await z.files[n].async('uint8array');
               const d = decodeText(bytes);
@@ -4948,15 +5002,23 @@ class App {
     for (const [n, b] of blobs) this.addAsset(n, b);
     this.binaryDirty = true;
     this.zipDirty = false;
-    const docs = [...texts.entries()].filter(([n, t]) => /\.tex$/i.test(n) && /\\documentclass/.test(t) && /\\begin\s*\{document\}/.test(t));
-    const pick = docs.find(([n]) => /(^|\/)main\.tex$/i.test(n)) || docs.sort((x, y) => x[0].split('/').length - y[0].split('/').length)[0] || [onlyTex[0]];
-    this.main = pick[0];
-    this.name = zipName || this.main.replace(/\.tex$/i, '').split('/').pop();
+    // (a subfiles chapter compiles alone too, but the document is the one it names: never it
+    // first; a latexmkrc that names the document is followed, as latexmk does)
+    this.main = pickMain(texts, await latexmkrcText(extra)) || onlyTex[0];
     // A .zip or a project with a git history is content from someone else, like a share link:
     // its shell escape is restricted (the worker runs only TeX Live's safe programs, keeps no
     // LuaTeX font cache and is let go after) until the owner allows more. Loose .tex/.bib files
     // the user opened are their own and stay unrestricted.
-    if (from || zipCode() || gitFiles.has('.git/HEAD')) this.markFromLink('', this.name, this.main, from || (gitFiles.has('.git/HEAD') ? 'git' : 'zip'));
+    const theirs = !!(from || zipCode() || gitFiles.has('.git/HEAD'));
+    // Such a project opens under a name this browser does not keep yet, as a share link does
+    // (review I1): a stranger's thesis.zip opened under the name of the user's own thesis shared
+    // its versions, and the marks kept per name and main file met the user's own there.
+    // (no | in it: a .zip named thesis|talk.zip read as another split of the same key)
+    const want = cleanProjectName(zipName || this.main.replace(/\.tex$/i, '').split('/').pop());
+    const name = theirs ? await this.freeProjectName(want) : want;
+    this.name = name;
+    const renamed = name !== want ? ' This browser keeps a project named ' + want + ', so this one is ' + name + '.' : '';
+    if (theirs) this.markFromLink('', this.name, this.main, from || (gitFiles.has('.git/HEAD') ? 'git' : 'zip'));
     this.hist = []; this.redoStack = []; this.updateUndoUI();
     this.forceRender = true;
     this.srcFile = this.main;
@@ -4982,7 +5044,7 @@ class App {
         }
       } catch (e) { gitNote = ' Its .git folder could not be read: ' + e.message + '.'; }
     }
-    this.toast('Opened ' + this.main + (texts.size > 1 ? ' and ' + (texts.size - 1) + ' more file' + (texts.size > 2 ? 's' : '') : '') + '.' + (missing.length ? ' Not found: ' + missing.join(', ') + '.' : '') + gitNote + (prev && prev !== this.name ? ' ' + prev + ' is kept under Review, Versions.' : '') + skipNote, skipNote ? 10000 : 7000);
+    this.toast('Opened ' + this.main + (texts.size > 1 ? ' and ' + (texts.size - 1) + ' more file' + (texts.size > 2 ? 's' : '') : '') + '.' + renamed + (missing.length ? ' Not found: ' + missing.join(', ') + '.' : '') + gitNote + (prev && prev !== this.name ? ' ' + prev + ' is kept under Review, Versions.' : '') + skipNote, skipNote ? 10000 : 7000);
   }
 
   // Where a block of its own (a picture, a table) goes: after the paragraph, list or table the
@@ -5133,9 +5195,16 @@ class App {
     try { cur = await kvGet('project'); } catch (e) { return; }
     if (!cur || !cur.files || cur.t === this.savedT || this.unsaved) return;
     if (cur.name !== this.name || cur.main !== this.main) return;
+    // (that tab may have marked the project a stranger's since this one read its mark, as an
+    // archive dropped there does: read again before its text is drawn and compiled here, V2)
+    await this.freshMark();
+    if (cur.name !== this.name || cur.main !== this.main || this.unsaved) return;
+    this.syncEngineMenu();
     const edits = [];
     for (const [n, t] of cur.files) { const was = this.files.get(n); if (was !== t) edits.push({ f: n, s: 0, e: was == null ? 0 : was.length, t }); }
     this.savedT = cur.t;
+    // (this tab has that tab's text now: its Allow is no longer refused, see allowMark)
+    if (this.markStale) this.markStale.delete(this.name + '|' + this.main);
     if (!edits.length) return;
     this.closePop(true);
     this.closeGroup();
@@ -5361,15 +5430,23 @@ class App {
   }
 
   // Where TeX sees a project file: relative to the main file's folder.
+  // (a file beside the main file's folder is ../ from it: talk/slides.tex reads ../style/defs)
   texPath(f) {
     const dir = this.main.includes('/') ? this.main.slice(0, this.main.lastIndexOf('/') + 1) : '';
-    return dir && f.startsWith(dir) ? f.slice(dir.length) : f;
+    if (!dir || f.startsWith(dir)) return f.slice(dir.length);
+    const up = dir.split('/').filter(Boolean), parts = f.split('/');
+    let k = 0;
+    while (k < up.length && k < parts.length - 1 && up[k] === parts[k]) k++;
+    return '../'.repeat(up.length - k) + parts.slice(k).join('/');
   }
   fromTexPath(p) {
     if (!p) return this.main;
     const dir = this.main.includes('/') ? this.main.slice(0, this.main.lastIndexOf('/') + 1) : '';
     const clean = p.replace(/^\.\//, '');
-    for (const c of [dir + clean, clean, dir + clean + '.tex', clean + '.tex']) if (this.files.has(c)) return c;
+    // (TeX names a file from the main file's folder: ../sections/intro.tex from talk/)
+    const norm = (t) => { const out = []; for (const x of t.split('/')) { if (x === '..') out.pop(); else if (x && x !== '.') out.push(x); } return out.join('/'); };
+    const rel = norm(dir + clean), own = norm(clean);
+    for (const c of [rel, rel + '.tex', own, own + '.tex', dir + clean, clean, dir + clean + '.tex', clean + '.tex']) if (this.files.has(c)) return c;
     for (const k of this.files.keys()) if (k.endsWith('/' + clean)) return k;
     return null;
   }
@@ -5443,7 +5520,8 @@ class App {
     const gen = this.pdfGen || 0;
     const st = $('#pdf-status'), bar = $('#pdf-prog'), msg = $('#pdf-msg');
     let said = ''; // how the run ended, for the "PDF status" line
-    const sig = textSig(this.main, [...this.files.entries()]);
+    // (the text and engine as the run starts; the shell escape mode once the project's mark is read)
+    let sig = this.pdfSigNow();
     // (what decides the PDF's sheet in the source compiled: the sheet TeX gives it is the page's)
     const mediaKey = this.model && this.model.opts.page ? this.model.opts.page.mediaKey : null;
     // a long TeX run gets a clock and a Stop button; one that never ends is stopped after
@@ -5470,8 +5548,10 @@ class App {
       $('#pdfpane').setAttribute('aria-busy', 'true');
       this.pdfWait('TeX is getting ready. The first time, it downloads the engine, which takes a moment.');
       // a document that came in a link compiles restricted, and the worker keeps nothing of it
-      const li = await this.linkInfo();
+      // (read again from storage: another tab may have marked it since, V2)
+      const li = await this.freshMark();
       const untrusted = !!(li && !li.allowed);
+      sig = sig.slice(0, sig.lastIndexOf('|') + 1) + this.shellMode(li);
       this.syncEngineMenu();
       // The packs this project's last compile read, handed to the worker to load together before
       // TeX starts. Without them TeX asks for each when it first opens a file from it, one after
@@ -5569,7 +5649,7 @@ class App {
       const again = this.compileAgain;
       this.compileAgain = false;
       if (again && document.body.classList.contains('pdf-on')) this.compilePdf({ clean: again === 'clean' });
-      else if (textSig(this.main, [...this.files.entries()]) !== sig) this.pdfSoon();
+      else if (this.pdfSigNow() !== sig) this.pdfSoon();
     }
   }
 
@@ -5579,7 +5659,7 @@ class App {
   async compileResult() {
     const idle = async () => { while (this.compiling) await new Promise((r) => setTimeout(r, 100)); };
     await idle();
-    const fresh = !!this.lastPdf && this.lastPdfSig === this.textSigNow() && !!this.lastCompile && this.lastCompile.ok;
+    const fresh = !!this.lastPdf && this.lastPdfSig === this.pdfSigNow() && !!this.lastCompile && this.lastCompile.ok;
     if (!fresh) { this.pdfPane(); await this.compilePdf(); await idle(); }
     const c = this.lastCompile || { ok: false, failed: 'another document was opened while TeX ran' };
     const ok = !!c.ok && !!this.lastPdf;
@@ -5601,6 +5681,7 @@ class App {
     store(PREFS, this.prefs);
     this.syncEngineMenu();
     if (document.body.classList.contains('pdf-on')) this.compilePdf({ clean: true });
+    else this.pdfStale = true;
   }
   syncEngineMenu() {
     const sel = $('#pdf-engine');
@@ -6049,6 +6130,13 @@ App.prototype.insertFromPalette = function (k) {
 // a link opened from a command (Help's) as one in a document is: web and mail addresses only
 App.prototype.openLink = openLink;
 App.prototype.textSigNow = function () { return textSig(this.main, [...this.files.entries()]); };
+// what the PDF was made from: the text and the engine chosen, so a PDF from another engine is not
+// taken as this one's (rikuy.api.compile and Download PDF right after the engine was changed)
+App.prototype.pdfSigNow = function (li) { return this.textSigNow() + '|' + this.engineChoice() + '|' + this.shellMode(li); };
+// how shell escape runs for the open project: restricted (a stranger's, not allowed), on or off;
+// part of what a PDF was made from, as the engine is: after Allow, or Shell escape ticked, with
+// the preview closed, api.compile, Download PDF and Print gave the restricted PDF as this one's
+App.prototype.shellMode = function (li = this.linkCache && this.linkCache.get(this.name + '|' + this.main)) { return li && !li.allowed ? 'restricted' : this.prefs.shellEscape !== false ? 'shell' : 'no shell'; };
 // the Word worker's files, asked for as the page asks for its other files (src/word.js)
 App.prototype.assetUrl = asset;
 
