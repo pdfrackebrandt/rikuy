@@ -29,8 +29,12 @@ export function plainOf(inl, max = 2000) {
 }
 
 // a formula's LaTeX as a name: its \label and \tag taken out, its white space one space
-export function mathText(tex) {
-  return String(tex || '').replace(/\\label\s*\{[^{}]*\}/g, '').replace(/\\(?:tag|notag|nonumber)\*?\s*(?:\{[^{}]*\})?/g, '').replace(/\s+/g, ' ').trim();
+export function mathText(tex, env) {
+  let t = String(tex || '');
+  // (the model draws a numbered alignment as its starred form with \tag: said as written, so a
+  // copy of it keeps its numbers)
+  if (env && /^[A-Za-z]+$/.test(env)) t = t.split('\\begin{' + env + '*}').join('\\begin{' + env + '}').split('\\end{' + env + '*}').join('\\end{' + env + '}');
+  return t.replace(/\\label\s*\{[^{}]*\}/g, '').replace(/\\(?:tag|notag|nonumber)\*?\s*(?:\{[^{}]*\})?/g, '').replace(/\s+/g, ' ').trim();
 }
 const numbers = (tags) => (tags && tags.length ? (tags.length === 1 ? 'Equation (' + tags[0] + ')' : 'Equations ' + tags.slice(0, -1).map((t) => '(' + t + ')').join(', ') + ' and (' + tags[tags.length - 1] + ')') : '');
 
@@ -38,7 +42,7 @@ const numbers = (tags) => (tags && tags.length ? (tags.length === 1 ? 'Equation 
 export function displayMath(el, it) {
   el.setAttribute('role', 'math');
   const n = numbers(it.tags);
-  el.setAttribute('aria-label', (n ? n + ': ' : '') + mathText(it.tex).slice(0, 4000));
+  el.setAttribute('aria-label', (n ? n + ': ' : '') + mathText(it.tex, it.env).slice(0, 4000));
 }
 
 // an object in a line of text, as the renderer draws it (src/render.js atomEl)

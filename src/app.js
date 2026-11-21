@@ -46,7 +46,7 @@ import { installFileView } from './ui/fileview.js';
 import { methods as helpPaneMethods } from './ui/helppane.js';
 import { installDock } from './ui/dock.js';
 import { installKeys } from './keys.js';
-import { installMotion } from './motion.js';
+import { installMotion, flash } from './motion.js';
 import { installCaret } from './caret.js';
 import { installWebMcp } from './webmcp.js';
 import { TOOLS, agentTools, callTool as callAgentTool, describeCommand } from './agent.js';
@@ -2452,8 +2452,7 @@ class App {
         const sel = getSelection();
         this.root.focus({ preventScroll: true });
         sel.collapse(last.firstChild, last.firstChild.data.length);
-        f.classList.add('flash');
-        setTimeout(() => f.classList.remove('flash'), 900);
+        flash(f);
         this.scrollToCaret();
         return;
       }
@@ -3532,7 +3531,7 @@ class App {
       const i = segOfSpan(span);
       if (!i || i.seg.f !== f) continue;
       const x = boundary(i.B, i.seg, i.o), y = boundary(i.B, i.seg, i.o + i.len);
-      if (y > a && x < b) { span.classList.add('flash'); setTimeout(() => span.classList.remove('flash'), 1400); }
+      if (y > a && x < b) flash(span, { inline: true });
     }
   }
 
@@ -4119,8 +4118,7 @@ class App {
     const it = el.closest('.it') || el;
     const R = it.getBoundingClientRect(), D = this.desk.getBoundingClientRect();
     if (R.top < D.top + 30 || R.bottom > D.bottom - 30) this.desk.scrollTop += R.top - D.top - D.height / 3;
-    it.classList.remove('flash'); void it.offsetWidth; it.classList.add('flash');
-    setTimeout(() => it.classList.remove('flash'), 900);
+    flash(it);
   }
 
   dragGutter(e) {
@@ -5505,7 +5503,7 @@ function agentApi(app) {
     // one tool by its name: its result, or { error } in plain words (never throws)
     callTool(name, input) { return callAgentTool(app, T(), name, input); },
     // the document as data: sections, formulas, figures, graphs, citations, labels, problems...
-    getDocument(include) { return call('get_document', include ? { include } : {}); },
+    getDocument(include) { return call('get_document', Array.isArray(include) ? { include } : include && typeof include === 'object' ? include : {}); },
     // the caret (start) or a selection (start to end) at a place of a file's source
     select(file, start, end) { return call('select', { file, start, end }); },
     // a command, as run() does, saying what it changed: { ran, changed, undoSteps, selection }
@@ -5514,8 +5512,8 @@ function agentApi(app) {
     editSource(edit) { return call('edit_source', edit); },
     // an interactive graph after the caret's paragraph
     insertGraph(spec, caption) { return call('insert_graph', { spec, caption }); },
-    // the last steps of the history back
-    undo(steps) { return call('undo', steps ? { steps } : {}); }
+    // the agent's own last edit back: a number of steps, or the step an edit returned
+    undo(steps) { return call('undo', typeof steps === 'string' ? { step: steps } : steps && typeof steps === 'object' ? steps : steps ? { steps } : {}); }
   });
 }
 
@@ -5528,7 +5526,8 @@ App.prototype.insertFromPalette = function (k) {
   if (c && x) this.runPalette(x, c.ghost ? null : { f: c.f, a: c.a, b: c.b }, c.ghost ? this.ghost : null);
 };
 // a link opened from a command (Help's) as one in a document is: web and mail addresses only
-App.prototype.openLink = openLink;
+// (an agent's tool never opens one: src/agent.js PERSON, and this for what that list misses)
+App.prototype.openLink = function (u) { if (this.agentDepth) { this.toast('An AI agent asked to open a link; only you open links.'); return false; } return openLink(u); };
 App.prototype.textSigNow = function () { return textSig(this.main, [...this.files.entries()]); };
 // the Word worker's files, asked for as the page asks for its other files (src/word.js)
 App.prototype.assetUrl = asset;
