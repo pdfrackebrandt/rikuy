@@ -412,6 +412,16 @@ group('a Word file\'s tracked changes: the layer of who wrote what made in one p
     const want = oneByOne(base, steps), got = authorSteps(base, steps);
     assert.deepStrictEqual(got.segs, want, JSON.stringify({ base, steps }));
     assert.strictEqual(got.cut, 0);
+    // (the page's step, src/review.js rvAuthorStep, the same in one pass, by words or as one span; N3)
+    for (const fine of [true, false]) {
+      let segs = [], loop = [], prev = base;
+      for (const st of steps) {
+        segs = layerStep(segs, prev, st.tex, st.who, fine);
+        for (const x of editSpans(prev, st.tex, fine)) loop = authorEdit(loop, x.s, x.e, x.n, st.who, prev.slice(x.s, x.e));
+        prev = st.tex;
+      }
+      assert.deepStrictEqual(segs, loop, JSON.stringify({ fine, base, steps }));
+    }
     // (their starts and ends rise together, which the halving of byAuthor takes for granted)
     for (let i = 1; i < want.length; i++) assert.ok(want[i].s >= want[i - 1].s && want[i].e >= want[i - 1].e, JSON.stringify(want));
   }
