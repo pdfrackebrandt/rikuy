@@ -3600,11 +3600,13 @@ class App {
     // number ($1 - \alpha$, $0 < x < 1$, $2 x$): the keys after the space decide (verification of
     // eb14945, V1; of 5446132, W6, W7). The space waits (pend, the number as typed; a % or \% after
     // it waits as the number does, $5% now). A sign, <, =, a backslash, a digit, a brace, ^, _, $
-    // or Enter keeps the formula, the space in it. A letter starts a word, which goes into the
-    // formula while it may still be one: $ right after the word ($2 x$) keeps the formula; a space
-    // or a sentence's mark after it, Enter, Esc or the box closing makes the price, written with
-    // the word in one step ($5 each, $5 each.). Backspace takes the space back. Text from an input
-    // method or a dead key after the space is a word, never a variable (W5).
+    // or Enter keeps the formula, the space in it. A letter starts a word, which waits beside the
+    // formula, said in the box's hint and never drawn in it ($5each$ in math italics until the
+    // space; befd04a's X2): $ right after the word ($2 x$) puts it in the formula and keeps the
+    // formula; a space or a sentence's mark after it, Enter, Esc or the box closing makes the
+    // price, written with the word in one step ($5 each, $5 each.). Backspace takes back the word's
+    // letters, then the space. Text from an input method or a dead key after the space is a word,
+    // never a variable (W5).
     let pend = null, word = '', priced = false;
     const PRICE = /^\d+([.,]\d+)?(\\?%)?[.,;:!?)]?$/;
     const priceText = (more) => '\\$' + pend.replace(/(^|[^\\])%/g, '$1\\%') + ' ' + more;
@@ -3624,6 +3626,11 @@ class App {
       else this.commit([{ f: base.f, s: base.a, e: base.b, t }], { f: base.f, p: base.a + t.length }, 'type');
       return true;
     };
+    const hint0 = hint.textContent;
+    const wait = () => {
+      hint.textContent = pend === null ? hint0 : '$' + pend + ' ' + word + (word ? ': a price at the next space or mark; $ keeps a formula.' : ': a price if a word follows.');
+      hint.classList.toggle('wait', pend !== null);
+    };
     // k: a key's name, or with data a character that came with no key
     const priceKey = (k, inBox, data) => {
       if (!k || o.closer) return false;
@@ -3632,32 +3639,26 @@ class App {
         // (keys typed into the field whose input event is still to come)
         if (this.pop && this.pop.pullField) this.pop.pullField();
         if (!PRICE.test(ta.value)) return false;
-        pend = ta.value; word = '';
+        pend = ta.value; word = ''; wait();
         return true;
       }
       const ch = data ? k[0] : k.length === 1 ? k : null;
       // (Shift, Caps Lock, an input method's Process and the like come before what they make)
       if (!ch && !/^(Enter|Escape|Tab|Delete|Backspace|Arrow|Home|End|Page)/.test(k)) return false;
-      const letter = !!ch && /^\p{L}$/u.test(ch);
-      if (!word) {
-        if (k === ' ') return true;
-        if (k === 'Backspace') { pend = null; return true; }
-        if (!letter) pend = null;
-        else word = ch;
-        if (inBox && ch && ch !== '$') ta.setRangeText(' ', ta.selectionStart, ta.selectionEnd, 'end');
-        return false;
+      if (ch && /^\p{L}$/u.test(ch)) { word += ch; wait(); return true; }
+      if (k === 'Backspace') { if (word) word = word.slice(0, -1); else pend = null; wait(); return true; }
+      if (word && ch && /^[ .,;:!?)'"]$/.test(ch)) return makePrice(word + ch);
+      if (word && /^(Enter|Escape|Tab)$/.test(k)) return makePrice(word);
+      if (!word && k === ' ') return true;
+      // (anything else keeps the formula, the space and the word in it: in the box as typed, in the
+      // field the word alone, which sets no space)
+      const more = word ? ' ' + word : ch && ch !== '$' && inBox ? ' ' : '';
+      pend = null; word = ''; wait();
+      if (more) {
+        if (inBox) ta.setRangeText(more, ta.selectionStart, ta.selectionEnd, 'end');
+        else ta.value += more;
+        ta.dispatchEvent(new Event('input'));
       }
-      if (letter) { word += ch; return false; }
-      if (k === 'Backspace') {
-        if (word.length > 1) { word = word.slice(0, -1); return false; }
-        // (the word's last letter, and with it the space it was given in the box: the space waits again)
-        word = '';
-        if (inBox) { ta.setRangeText('', Math.max(0, ta.selectionStart - 2), ta.selectionStart, 'end'); ta.dispatchEvent(new Event('input')); return true; }
-        return false;
-      }
-      if (ch && /^[ .,;:!?)'"]$/.test(ch)) return makePrice(word + ch);
-      if (/^(Enter|Escape|Tab)$/.test(k)) return makePrice(word);
-      pend = null; word = '';
       return false;
     };
     // (X1) Backspace in an empty formula takes the formula away, as Word's does an equation's

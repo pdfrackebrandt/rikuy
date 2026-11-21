@@ -178,6 +178,22 @@ def dollars(page):
     xy = page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('Next')); const b = s.getBoundingClientRect(); return [b.left + 2, b.top + b.height / 2]; })()")
     page.mouse.click(xy[0], xy[1]); page.wait_for_timeout(400)
     check('dollars: $5 each then a click away is a price', 'gamma. Costs \\$5 each\n' in src(page), src(page)[60:130])
+    # (verification of befd04a, X2) while the word after "$5 " is typed, the page keeps $5$ and the
+    # box says what the word waits for, the word with its space, never $5each$ in math italics
+    for width in (1400, 390):
+        page.set_viewport_size({'width': width, 'height': 1000})
+        fresh(page, MATH)
+        click_text(page, 'gamma.', 6)
+        for ch in ' costs $5 each': page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 60)
+        page.wait_for_timeout(500)
+        s = src(page)
+        h = page.evaluate("(() => { const P = window.rikuy.pop; const e = P && P.el.querySelector('.hint'); if (!e) return null; const r = e.getBoundingClientRect(); return [e.textContent, r.width > 0 && r.right <= innerWidth + 1]; })()")
+        f = page.evaluate("(() => { const t = window.rikuy.pop && window.rikuy.pop.el.querySelector('textarea'); return t && t.value; })()")
+        check('dollars: "$5 each" being typed at %d px: the page keeps $5$, the box 5, its hint says "$5 each" and what it waits for' % width,
+              'gamma. Costs $5$\n' in s and '5each' not in s and f == '5' and h and h[0].startswith('$5 each:') and h[1], (s[60:120], f, h))
+        key(page, 'Escape', 400)
+        check('dollars: and Esc then makes the price at %d px' % width, 'gamma. Costs \\$5 each\n' in src(page), src(page)[60:120])
+    page.set_viewport_size({'width': 1400, 'height': 1000})
     # (verification of befd04a, X1) Backspace deletes a formula's last character, then the formula,
     # as Word's does an equation: no stray \$, no undo step left for it, the caret where the $ was
     for typed_, n in ((' costs $x', 2), (' costs $ab+1', 5), (' costs $5', 2), (' costs $5 each', 7)):
