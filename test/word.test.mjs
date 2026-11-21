@@ -2101,4 +2101,11 @@ await ok('a file\'s tracked changes: the layer made off the page, its changes ea
   assert.ok(/tracked changes in the file were accepted: reading them as changes to review failed/.test(f.tex) && f.warnings.some((w) => /were accepted/.test(w)), f.tex.slice(0, 300));
 });
 
+await ok('no statement after a closing brace on its line in the Word code: a newline lost (review N4, src/word.js)', () => {
+  for (const f of ['word.js', 'wordast.js', 'wordsync.js', 'wordjobs.js', 'wordworker.js', 'docx.js', 'wordnotes.js', 'wordbidi.js', 'authors.js', 'review.js']) {
+    const bad = fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8').split('\n').map((l, i) => [i + 1, l]).filter(([, l]) => /\}\s{2,}(const|let|var|if|for|return|this)\b/.test(l));
+    assert.deepEqual(bad, [], f);
+  }
+});
+
 console.log('word: ' + n + ' groups of checks passed');
