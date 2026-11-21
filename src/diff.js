@@ -126,19 +126,25 @@ export function changes(a, b, f) {
   }
   return out;
 }
-// Hunks with only blank lines between them as one: a blank line is a poor anchor, and where one
-// paragraph was joined to the next and another split (a Word file's tracked changes, each its
-// author's) the lines' diff pairs the wrong paragraphs, by blank lines, and lists the join as text
-// put in at one place and taken out at another, which no author's step made; the words' diff
-// over the block finds the paragraph break that went and the one that came. (Small blocks only:
-// past 2000 characters the words' diff could pass MAXD and give the block as one replacement.)
+// Hunks with only blank lines between them as one, where the words' diff over the block changes
+// fewer characters than over each: a blank line is a poor anchor, and where one paragraph was
+// joined to the next and another split (a Word file's tracked changes, each its author's) the
+// lines' diff pairs the wrong paragraphs, by blank lines, and lists the join as text put in at
+// one place and taken out at another, which no author's step made; over the block the words'
+// diff finds the paragraph break that went and the one that came. (Edits that the lines' diff
+// pairs well stay as they were; and small blocks only: past 2000 characters the words' diff
+// could pass MAXD and give the block as one replacement.)
+const cost = (h) => { if (h.cost == null) { h.cost = 0; for (const [op, v] of wordDiff(h.a, h.b)) if (op !== ' ') h.cost += v.length; } return h.cost; };
 function joinBlank(H, a, b) {
   const out = [];
   for (const h of H) {
     const L = out[out.length - 1];
     const gap = L ? a.slice(L.as + L.a.length, h.as) : null;
-    if (L && /^\s+$/.test(gap) && gap.length <= 8 && h.as + h.a.length - L.as + h.be - L.bs <= 2000) out[out.length - 1] = { a: a.slice(L.as, h.as + h.a.length), b: b.slice(L.bs, h.be), as: L.as, bs: L.bs, be: h.be, line: L.line };
-    else out.push(h);
+    if (L && /^\s+$/.test(gap) && gap.length <= 8 && h.as + h.a.length - L.as + h.be - L.bs <= 2000) {
+      const M = { a: a.slice(L.as, h.as + h.a.length), b: b.slice(L.bs, h.be), as: L.as, bs: L.bs, be: h.be, line: L.line };
+      if (cost(M) < cost(L) + cost(h)) { out[out.length - 1] = M; continue; }
+    }
+    out.push(h);
   }
   return out;
 }

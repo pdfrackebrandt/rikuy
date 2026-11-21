@@ -430,6 +430,12 @@ group('a Word file\'s tracked changes: the layer of who wrote what made in one p
   // (a word changed is the word replaced: its old letters a mark, its new ones a range)
   const rs = A.segs.filter((g) => g.e > g.s).slice(-2).map((g) => g.who + ':' + now.slice(g.s, g.e));
   assert.deepStrictEqual(rs, ['Ana:w20998x', 'Bo:w20999x']);
+  // (hunks with blank lines between them are one only where that changes fewer characters: a
+  // join and a split near each other, not two edits the lines' diff pairs well)
+  const J = changes('x\n\nFirst para\n\nsecond para joined.\n\nThird para split here.\n\ny\n', 'x\n\nFirst para second para joined.\n\nThird para split\n\nhere.\n\ny\n', 'f');
+  assert.deepStrictEqual(J.map((c) => [c.a, c.b]), [['\n\n', ' '], [' ', '\n\n']]);
+  const T = 'The first has some words.\n\nThe second has more words.\n% comment (Ana): Is it?\n\nEnd.\n';
+  assert.deepStrictEqual(changes(T, T.replace('some', 'some good').replace('more words', 'words'), 'f').map((c) => [c.a, c.b]), [['', 'good '], ['more ', '']]);
   // the changes listed by author, each its own, in a time the page does not feel
   const t1 = Date.now();
   const list = [];
