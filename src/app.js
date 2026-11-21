@@ -390,8 +390,9 @@ const MATH_VALUE = { silenceNotifications: true, mode: 'math', format: 'latex' }
 
 // What stands before a paragraph's first word when the caret there is at its start: a blank line,
 // or the line of a \begin{...} (the document, a quote, a theorem with its [title]), a heading or
-// \maketitle (src/app.js enter)
-const PARA_START = /(?:\n[ \t]*\n|\\begin\s*\{[^{}\n]*\}(?:\[[^\]\n]*\])?[ \t]*\n|\\(?:part|chapter|section|subsection|subsubsection|paragraph)\*?\s*\{[^\n]*\}[ \t]*\n|\\maketitle[ \t]*\n)[ \t]*$/;
+// \maketitle; then any comment lines and a \noindent, which belong to the paragraph below them
+// (group 1: the new paragraph goes before them, src/app.js enter)
+const PARA_START = /(?:\n[ \t]*\n|\\begin\s*\{[^{}\n]*\}(?:\[[^\]\n]*\])?[ \t]*\n|\\(?:part|chapter|section|subsection|subsubsection|paragraph)\*?\s*\{[^\n]*\}[ \t]*\n|\\maketitle[ \t]*\n)((?:[ \t]*%[^\n]*\n)*[ \t]*(?:\\noindent(?![A-Za-z])[ \t]*(?:\n[ \t]*)?)?)$/;
 
 class App {
   constructor() {
@@ -1257,6 +1258,8 @@ class App {
     // (src/review.js: an Accept's base back; the step's edit absorbed as it was when made)
     if (h.base0) this.rvBaseStep(h, true);
     this.rvStep = h;
+    // (an empty paragraph Enter showed is a step of its own: takeBackGhost)
+    if (this.takeBackGhost('undo')) return;
     const c = h.caretBefore || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].del.length } : null);
     this.rebuild(c);
     this.pushToSource();
@@ -1700,7 +1703,6 @@ class App {
     if (c && c.ghost) {
       // the spaces typed so far in a line or a paragraph to come in LaTeX go one by one
       if (/Backward/.test(type) && this.ghost.pend) { this.ghost.pend = this.ghost.pend.slice(0, -1); this.paintGhost(); return; }
-      if (/Backward/.test(type) && !this.ghost.sticky) { const g = this.ghost; this.removeGhost(); this.restoreCaret({ f: g.f, p: g.pos, bias: g.tex === 'before' ? 1 : -1 }); }
       return;
     }
     const whole = this.wholeDoc();
@@ -1730,6 +1732,8 @@ class App {
           const open = /\\(?:part|chapter|(?:sub){0,2}section|(?:sub)?paragraph)\*?\s*(?:\[[^\]]*\]\s*)?\{\s*$/.exec(src.slice(from, c.a));
           const close = /^\s*\}/.exec(src.slice(c.a, c.a + 400));
           if (open && close) {
+    // (an empty paragraph Enter showed: takeBackGhost)
+    if (this.takeBackGhost(/Backward/.test(type) ? 'back' : 'del')) return;
             this.commit([{ f: c.f, s: from + open.index, e: c.a + close[0].length, t: '' }], { f: c.f, p: from + open.index, bias: -1 }, 'del');
             return;
           }
@@ -1926,9 +1930,10 @@ class App {
     // paragraph, which LaTeX has not, and each Enter piled blank lines up in the source (twelve
     // Enters, twelve). The empty paragraph shows above it, to type in (Up), the caret staying, as
     // Word's does; nothing is written until it is.
-    if (c.collapsed && !w.close && itemEl && kind === 'p' && PARA_START.test(src.slice(Math.max(0, w.p - 400), w.p))) {
+    const ps = c.collapsed && !w.close && itemEl && kind === 'p' ? PARA_START.exec(src.slice(Math.max(0, w.p - 400), w.p)) : null;
+    if (ps) {
       const keep = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-      this.showGhost(itemEl, f, w.p, { before: true });
+      this.showGhost(itemEl, f, w.p - ps[1].length, { before: true });
       if (keep) { sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true; if (this.ghost) this.ghost.keepAt = keep; }
       return;
     }
@@ -2022,6 +2027,38 @@ class App {
   }
 
   // ---- LaTeX paragraphs (src/styles.js) ----------------------------------------------
+  // the caret where Enter at a paragraph's start left it, the empty paragraph showing above it
+  ghostKept() {
+    const k = this.ghost && this.ghost.keepAt, sel = getSelection();
+    return !!k && sel.rangeCount > 0 && sel.isCollapsed && sel.anchorNode === k.startContainer && sel.anchorOffset === k.startOffset;
+  }
+  // The one rule for taking back an empty paragraph Enter showed (enter, showGhost). It wrote
+  // nothing, so until something is typed in it, it is Enter's whole effect, and Backspace, Delete
+  // and Undo take it away and do nothing else, as Word's Enter then Backspace or Ctrl+Z gives
+  // back exactly what was there. Before, Backspace acted on the caret Enter had left at the next
+  // paragraph's start and deleted the blank line before it, joining two paragraphs; Undo undid
+  // the edit made before the Enter. how: 'back' (Backspace), 'del' (Delete) or 'undo'. True
+  // where it took one away.
+  takeBackGhost(how) {
+    const g = this.ghost;
+    // (the blank page's own paragraph is no Enter's)
+    if (!g || g.sticky) return false;
+    const inIt = this.root.contains(getSelection().anchorNode) && g.el.contains(getSelection().anchorNode);
+    const kept = this.ghostKept();
+    if (how !== 'undo') {
+      // Backspace and Delete in it, or Backspace at the caret Enter left below it; spaces
+      // waiting in a line to come go one by one first (deleteInput)
+      if (g.pend || !(inIt || (kept && how === 'back'))) return false;
+      // (Delete in the empty paragraph above a paragraph: the caret goes to that paragraph's start)
+      if (how === 'del' && !(g.before || g.tex === 'before')) return false;
+    }
+    this.removeGhost();
+    if (kept) { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(g.keepAt); this.ourSel = true; }
+    // (Backspace in it ends at the paragraph above, Delete and Undo at the place it stood for)
+    else this.restoreCaret({ f: g.f, p: g.pos, bias: g.tex === 'before' || (how !== 'back' && (g.before || how === 'del')) ? 1 : -1 });
+    this.ribbonSoon();
+    return true;
+  }
   // A LaTeX paragraph's box on the page is its source, character for character: what is typed,
   // pasted or deleted there is written as it is, never escaped. What needs care is the blank
   // line: TeX ends a paragraph there, and with it the mark's reach, so what came after it would
@@ -2406,7 +2443,7 @@ class App {
     const sel = getSelection();
     const inRoot = sel.rangeCount && this.root.contains(sel.anchorNode);
     // (an empty paragraph Enter showed above the caret stays while the caret is where Enter left it)
-    const kept = this.ghost && this.ghost.keepAt && sel.anchorNode === this.ghost.keepAt.startContainer && sel.anchorOffset === this.ghost.keepAt.startOffset;
+    const kept = this.ghostKept();
     if (this.ghost && !this.ghost.sticky && !kept && !(inRoot && this.ghost.el.contains(sel.anchorNode))) {
       // keep ghost while focus is in the popover; drop otherwise
       if (!this.pop) this.removeGhost();
