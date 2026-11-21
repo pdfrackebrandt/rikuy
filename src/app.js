@@ -14,6 +14,7 @@ import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
 import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
+import { mapPos } from './wrap.js';
 import { findProblems, missingFigures } from './problems.js';
 import { WidgetLayer } from './widget.js';
 import { APP, appInit, asset as appAsset, registerApp, takeLaunches, takeShared, warmTeX } from './pwa.js';
@@ -1138,6 +1139,8 @@ class App {
       if (apart) win.set(f, { pre: list[list.length - 1].s, suf: text.length - list[0].e });
       for (const ed of list) text = text.slice(0, ed.s) + ed.t + text.slice(ed.e);
       this.files.set(f, text);
+      // (the document's last selection, where a command acts with no caret on the page, moves too)
+      if (this.rbLast && this.rbLast.f === f && this.rbLast.text === before.get(f)) this.restMove(f, list, text);
     }
     // (the blocks shown as LaTeX move with these edits, src/cmd/view.js; typing ends Repeat's turn)
     this.viewMap(byFile, before);
@@ -4412,6 +4415,8 @@ class App {
       // (a file opened over another is a step of its own: typing before it and after it are two undos)
       this.closeGroup();
       for (const [n, t] of texts) this.files.set(n, t);
+      // (an opened file: no last selection of the one it replaced)
+      this.rbLast = null;
       for (const [n, o] of orig) this.orig.set(n, o);
       for (const [n, b] of blobs) this.addAsset(n, b);
       for (const [n, b] of extra) this.extra.set(n, b);
@@ -5460,8 +5465,17 @@ function agentApi(app) {
       flush();
       const main = app.src(app.main), d = diff(main, text);
       if (!d) return;
+      // (a caret on the page moves with the edit, as with any edit made around it: left where the
+      // old page had it, the page drawn again would put it at another place, and a command run
+      // later with no caret would act there)
+      // (one whose words the edit took away is gone: no caret then, and the document's end stands
+      // for it, src/ribbon.js)
+      const ed = { s: d.s, e: d.s + d.del.length, t: d.ins }, c = app.caretNow();
+      const gone = c && !c.ghost && c.f === app.main && ((ed.s < c.a && ed.e > c.a) || (ed.s < c.b && ed.e > c.b));
+      const caret = c && !c.ghost && c.f === app.main && !gone ? (c.collapsed ? { f: c.f, p: mapPos([ed], c.p, 1), bias: 1 } : { f: c.f, p: mapPos([ed], c.a, 1), selA: mapPos([ed], c.a, 1), selB: mapPos([ed], c.b, -1) }) : null;
+      if (gone) { getSelection().removeAllRanges(); app.rbLast = null; }
       app.closeGroup();
-      app.commit([{ f: app.main, s: d.s, e: d.s + d.del.length, t: d.ins }], null, 'api');
+      app.commit([{ f: app.main, ...ed }], caret, 'api');
       app.closeGroup();
       if (app.src(app.main) !== text) throw new Error('The source could not be changed.');
     },
