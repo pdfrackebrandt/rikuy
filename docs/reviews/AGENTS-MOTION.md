@@ -95,3 +95,33 @@ Fix:
   - Reduced motion is opacity only, 100 ms.
   - Motion costs 0.27 to 0.41 ms a key.
   - The custom caret matched the range's position at line ends and at 150 % zoom.
+
+## Response (the author, Claude)
+
+Each finding, what changed and the test that failed before (`test/agent.test.mjs`, `test/agent.py`
+review and structure, `test/motion.py` aim, touch and highlights). The browser checks were run on
+the build before the fixes (`RIKUY_DIST`): 13 of the 15 review checks it could reach failed there,
+and every new unit group but the unchanged ones.
+
+| finding | fix | test |
+|---|---|---|
+| H1 | No tool performs what leaves the page or the document: `PERSON` in `src/agent.js` (downloads, Save As, Export, Print, Share, Download with Markup, Open Link, Report a problem, For AI agents, Ask Grok, Ask Claude, Open, Recent, New, the sample). run_command answers `personOnly` with where the person presses it; Share opens its panel. `App.openLink` opens nothing while a tool runs. The question, the file's head and llms.txt call the modal what it is, a speed bump that a DevTools-driven agent can press; agents are told never to answer it, hosts to confirm destructiveHint calls. Text the page does not show is said to reach the agent. | agent.py review: H1 (4 checks), agent.test.mjs person only and llms.txt |
+| H2 | Every page is drawn: `.page` has no `content-visibility` but past 250,000 elements (`#pages.lazy`, `App.lazyPages`), since drawing 1.3 million elements whole (500 formulas of 120 terms) crashed the renderer; the class comes on before the layout and goes after it. Measured on `dev/bench/long`, all pages drawn against `auto`: first render 343 against 209 ms, a zoom 238 against 190, a jump across the document 9.3 against 3.5 ms (median), layout and style 1 to 2 ms a key by Chromium's own counters (layout 87 and 97 ms against 63 and 91 over 16 keys; style 56 and 70 against 45 and 41), keydown to paint medians 55 and 56 against 51 and 67 (a loaded two core machine). | agent.py structure: CDP `getFullAXTree` on dev/bench/long as loaded has every formula and heading the page has (11, 43; with `auto` 1 and 4); review: the big document lazy, the tab alive |
+| M1 | Allow answers a pointer press on it, or Enter on it once it has been in front 500 ms; any key in the question and the focus reaching Allow restart the wait; Space never answers; "Don't allow" has the focus first. | agent.py review M1 (2) |
+| M2 | What the agent's edits took out in the last two minutes adds up (`lostChars`: the words that go; markup around kept words counts nothing); past 200 edit_source asks first, and a command that took that much without asking asks after with the change on the page ("Keep" or "Undo it"); the agent's own undo gives its count back. | agent.py review M2 (2), agent.test.mjs lostChars |
+| M3 | paste, paste-text, paste-latex and paste-special ask, naming the clipboard. | agent.py review M3, agent.test.mjs asking |
+| M4 | Every edit returns `step`; undo takes `step` or `steps` and refuses, changing nothing, unless the top of the history is the agent's own. | agent.py review M4 (2) |
+| M5 | `EXAMPLES` from the registry in run_command's description and llms.txt; a test checks every id the tools and guides quote as one to run. | agent.test.mjs examples |
+| M6 | thebibliography's `\bibitem`: key, label, text, place. | agent.test.mjs thebibliography |
+| M7 | `include ?? PARTS`; an include of page parts gives those alone. | agent.test.mjs include, agent.py review M7 |
+| M8 | select refuses where the caret did not land in the file asked. | agent.py review M8 |
+| M9 | No enum in the descriptors (under 12 KB); list_commands id and name, 100 at a time with total and `page.next`, full entries for a query or detail; get_document's outline and counts by default, `from` and `limit` on every list, the whole under 100,000 characters (the page made smaller to fit). | agent.py webmcp, review M9 (2) |
+| M10 | consequentialHint on none (nothing a tool does leaves the page or outlasts Undo); destructiveHint on run_command, edit_source, set_source, undo. | agent.test.mjs hints |
+| L1 | save-as is the person's (with every download). | agent.py review H1 |
+| L2 | Inputs and a command's arguments checked against their schemas, errors in words. | agent.test.mjs schemas, agent.py review L2 |
+| L3 | A numbered align is said as `align`, in get_document and the formula's name. | agent.test.mjs align |
+| L4 | The pointer moving onto a sliding ribbon panel ends the slide; a tab a finger opens only fades. | motion.py aim (8 of 8 on the button), touch |
+| L5 | `dev/bench_typing.py --doc sample`, where the caret glides. | numbers below |
+| L6 | Where something landed is `flash()` (a wash beside the text, opacity, `--rk-hold` then slow); the pulse, sweep and SyncTeX's mark on `--rk-loop` and `--rk-hold`, still with Animations off. | motion.py highlights (4) |
+| L7 | llms.txt and the tools' descriptions say hidden text reaches the agent. | agent.test.mjs llms.txt |
+| L8 | On `document.modelContext` an error is thrown. | agent.py review L8 |
