@@ -3131,15 +3131,17 @@ class App {
     // (the field as the box last set it: MathLive sends its input event a task after the change,
     // so one for keys typed before the box took over came after it and wrote the field's reading
     // of the box back over the box)
-    let given = mf.getValue('latex');
+    // (as fromField reads it, fieldValue: a closing bracket typed over the field's waiting one
+    // changes that, not the latex MathLive gives, and was lost; X3's run)
+    let given = fieldValue(mf);
     const pull = () => {
-      const cur = mf.getValue('latex');
+      const cur = fieldValue(mf);
       if (cur === given) return;
       // (taken: a later event for this same value is stale, one for a deletion is not; with given
       // left at the box's last value, the field emptied by Backspace matched it and the box kept
       // the last character, X1)
       given = cur;
-      const tex = fromField(fieldValue(mf), st);
+      const tex = fromField(cur, st);
       if (tex === ta.value) return;
       fromMf = true;
       ta.value = tex;
@@ -3154,7 +3156,7 @@ class App {
       // (mode math: without it MathLive reads a whole value in the mode at its caret, text just
       // after a \text{…}, and a display made one of rows got its LaTeX as words; V5)
       if (mf.getValue('latex') !== st.latex) mf.setValue(st.latex, { silenceNotifications: true, mode: 'math' });
-      given = mf.getValue('latex');
+      given = fieldValue(mf);
       st.ml = fieldRows(modelValue(mf), st.multi, D);
     };
     // MathLive focuses its keyboard sink 60 ms after the field takes the focus, whatever happened
