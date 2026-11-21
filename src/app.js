@@ -56,6 +56,8 @@ import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
 import { scriptNeeds, scriptLines, addScriptSetup, scriptName, scriptSetup, MORE } from './scripts.js';
+// the character formats that carry a value (src/charfmt.js CHAR_KINDS): one is not another of its kind
+const VALUED = new Set(['color', 'highlight', 'shading', 'size', 'family', 'spacing', 'scale', 'position', 'border', 'enclose']);
 
 const PX_PER_PT = 96 / 72.27;
 // Rikuy was called Galley at first; the keys of what a browser keeps keep that name, so
@@ -2286,8 +2288,12 @@ class App {
   pasteKept(latex, f, p) {
     const K = this.lastCopy && this.lastCopy.kept;
     if (!K || !latex || latex !== K.wraps.map((w) => w.open).join('') + K.inner + [...K.wraps].reverse().map((w) => w.close).join('')) return latex;
-    const here = new Set(chainAt(this.src(f), p, p).map((x) => x.group));
-    const keep = K.wraps.filter((w) => !here.has(w.group));
+    // (a format with a value, a size, a family, a colour, goes only where the place has the same one:
+    // {\Large big} pasted into {\small ..} stays large, as Word's paste keeps the copied look; a
+    // format that is on or off goes where the place has it on)
+    const src = this.src(f), same = (t) => t.replace(/\s+/g, ' ').trim();
+    const here = chainAt(src, p, p).map((x) => ({ group: x.group, open: same(src.slice(x.W.s, x.W.is)) }));
+    const keep = K.wraps.filter((w) => !here.some((h) => h.group === w.group && (!VALUED.has(w.group) || h.open === same(w.open))));
     return keep.map((w) => w.open).join('') + K.inner + [...keep].reverse().map((w) => w.close).join('');
   }
   selectionLatex(c) {
