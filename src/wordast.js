@@ -220,7 +220,13 @@ class Walker {
     // only a document with right to left text in it, or a wrapper that sets a direction
     if (this.bidi) doc = bidiDoc(doc, new Map(this.anchors.filter((A) => A.dir).map((A) => [A.id, A.dir])), this.rtl);
     const deg = [...this.degraded.entries()].map(([k, n]) => k + (n > 1 ? ' (' + n + ')' : ''));
-    return { doc, anchors: this.anchors.map(packAnchor), atoms: this.atoms, images: [...this.images], warnings: this.warnings, degraded: deg, comments: this.ncomments, rtl: this.rtl, bullets: this.lists };
+    // The anchors in the order Word has them: the abstract goes into the title block, before the
+    // body, so blocks between \maketitle and the abstract (the opening document's live graph)
+    // come after it there; listed in source order, an unchanged round trip read them as moved
+    let anchors = this.anchors;
+    const R = this.absRange, m = this.metaEnd ?? 0;
+    if (R && R[0] > m) anchors = [...anchors.slice(0, m), ...anchors.slice(R[0], R[1]), ...anchors.slice(m, R[0]), ...anchors.slice(R[1])];
+    return { doc, anchors: anchors.map(packAnchor), atoms: this.atoms, images: [...this.images], warnings: this.warnings, degraded: deg, comments: this.ncomments, rtl: this.rtl, bullets: this.lists };
   }
 
   plainMath(tex) {
@@ -485,12 +491,13 @@ class Walker {
     const au = (it.authors || []).filter((a) => a.length).map((a) => ({ t: 'MetaInlines', c: this.wrap('author', it.f, null, null, () => this.inl(a, fns)) }));
     if (au.length) this.meta.author = { t: 'MetaList', c: au };
     if (it.date && it.date.length) this.meta.date = { t: 'MetaInlines', c: this.wrap('date', it.f, null, null, () => this.inl(it.date, fns)) };
+    this.metaEnd = this.anchors.length;
   }
 
   abstract(items, u) {
-    const blocks = [];
+    const blocks = [], a0 = this.anchors.length;
     for (const it of items) blocks.push(...this.item(it, { ...u, items: [it] }));
-    if (blocks.length) this.meta.abstract = { t: 'MetaBlocks', c: blocks };
+    if (blocks.length) { this.meta.abstract = { t: 'MetaBlocks', c: blocks }; this.absRange = [a0, this.anchors.length]; }
   }
 
   refs(it) {

@@ -53,6 +53,12 @@
 //             copy inside Claude (agents, test/agent.py)
 //   args      the JSON schema of the arguments run takes in place of its dialog's fields (an
 //             agent's run_command, rikuy.api.run; src/agent.js keeps those written before as ARGS)
+//   dialog    true: it opens a dialog; the right click menu writes "…" after its name, as Word's
+//             menus do (UI-PRINCIPLES.md C11), and only after such a command's
+//   menuName  the right click menu's words for it, Word's there ("Font…" for Font Settings): the
+//             start of its name, so the words shown are in its accessible name (WCAG 2.5.3),
+//             which stays its name
+//   submenu   true: its run opens a menu (the right click menu marks it with › and aria-haspopup)
 //
 // A module of src/cmd/ is loaded by the build too, under node (build/app.mjs writes llms.txt and
 // controls.json from the registry): nothing in it may touch the page (document, window, navigator)

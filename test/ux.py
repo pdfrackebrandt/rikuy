@@ -99,7 +99,12 @@ def first_visit(page, w):
     if touch:
         check(f'on a phone the first visit leaves the keyboard down: the page has no focus ({w})', page.evaluate("document.activeElement.id") != 'pages' and src(page) == before)
         return
-    check(f'the first visit has the caret at the start of the first paragraph: a key typed lands there ({w})', src(page) != before and '\\begin{abstract}\nZYou are reading' in src(page), src(page)[:0] or [l for l in src(page).splitlines() if 'Z' in l][:2])
+    # (Word's caret at the start of the document's first text: in the sample that is the abstract's
+    # first paragraph, after the title and the live graph above it, which the caret passes over)
+    first = before.split('\\begin{abstract}\n', 1)[1].split('\n', 1)[0]
+    check(f'the first visit has the caret at the start of the first paragraph (the abstract\'s, after the title and the graph): a key typed lands there ({w})',
+          src(page) != before and src(page) == before.replace('\\begin{abstract}\n' + first, '\\begin{abstract}\nZ' + first, 1) and first.startswith('The graph above is live'),
+          src(page)[:0] or [l for l in src(page).splitlines() if 'Z' in l][:2])
     check(f'and the page did not scroll to it ({w})', page.evaluate("document.getElementById('desk').scrollTop") == top)
     page.keyboard.press('Control+z'); page.wait_for_timeout(200)
     check(f'one Undo takes it back ({w})', src(page) == before)
@@ -386,7 +391,13 @@ def first_comment(page, w):
     touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
     load_doc(page, DOC)
     select_text(page, 'bold word')
-    run_cmd(page, 'comment-new')
+    run_cmd(page, 'comment-new'); page.wait_for_timeout(300)
+    TEXT = "document.activeElement.matches('input[type=text], input:not([type]), textarea')"
+    if touch:
+        # (under a finger the box opens with no field focused, so the phone's keyboard does not
+        # cover it; a tap on the name brings it)
+        check(f'on a phone the comment opens with no text field focused ({w})', not page.evaluate(TEXT))
+        page.locator('.pop-comment .share-name').tap(); page.wait_for_timeout(150)
     first = page.evaluate("document.activeElement.getAttribute('aria-label')")
     check(f'the first comment\'s box starts at the name ({w})', first == 'Your name, shown with your comments and changes', first)
     page.locator('.pop-comment textarea').fill('Is this the right word?')
@@ -398,7 +409,10 @@ def first_comment(page, w):
     check(f'Enter in the name box goes on to the comment ({w})', page.evaluate("document.activeElement.tagName") == 'TEXTAREA' and not page.evaluate("document.querySelector('.cm-hint').checkVisibility()"))
     page.keyboard.press('Control+Enter'); page.wait_for_timeout(300)
     check(f'Ctrl+Enter sends it into the source ({w})', 'Ana' in src(page) and 'Is this the right word?' in src(page), src(page)[-200:])
-    run_cmd(page, 'comment-new')
+    run_cmd(page, 'comment-new'); page.wait_for_timeout(300)
+    if touch:
+        check(f'on a phone the next one too opens with no text field focused ({w})', not page.evaluate(TEXT))
+        page.locator('.pop-comment textarea').tap(); page.wait_for_timeout(150)
     check(f'the next comment starts at the comment, the name known ({w})', page.evaluate("document.activeElement.tagName") == 'TEXTAREA' and page.locator('.pop-comment .share-name').count() == 0)
     page.keyboard.press('Escape')
 
@@ -673,7 +687,7 @@ def widen(p):
 KIND = """(sel) => { const P = document.querySelector(sel); if (!P) return null; const vis = (e) => e.checkVisibility() && e.getBoundingClientRect().height > 0;
   const h = (q) => [...new Set([...P.querySelectorAll(q)].filter(vis).map((e) => Math.round(e.getBoundingClientRect().height)))].sort();
   const t = P.querySelector('.pop-h, .stp-h, .fr-head, .help-pane-h'), x = P.querySelector('.pop-x'), cs = t ? getComputedStyle(t) : null;
-  return { btn: h('.btn'), field: h('input[type=text], input[type=number], input:not([type]), select'), radius: getComputedStyle(P).borderTopLeftRadius,
+  return { btn: h('.btn'), field: h(':is(input[type=text], input[type=number], input:not([type]), select):not(.nf *), .nf'), radius: getComputedStyle(P).borderTopLeftRadius,
            title: cs ? [cs.fontSize, cs.fontWeight, cs.lineHeight] : null, close: x && vis(x) ? [Math.round(x.getBoundingClientRect().width), Math.round(x.getBoundingClientRect().height)] : null }; }"""
 
 
@@ -741,7 +755,498 @@ def consistency(page, w):
         check(f'the Styles pane and Find and Replace: buttons 32 px, the same title style ({w})', sp['btn'] and fr['btn'] and all(abs(x - 32) <= 1 for x in sp['btn'] + fr['btn']) and tuple(sp['title']) == tuple(fr['title']) == ('14px', '600', '20px') and fr['radius'] == '8px', (sp, fr))
 
 
+KINDS = """(sel) => { const P = document.querySelector(sel); if (!P) return null; const vis = (e) => e.checkVisibility() && e.getBoundingClientRect().height > 0;
+  const R = (e) => e.getBoundingClientRect(), nm = (e) => (e.getAttribute('aria-label') || e.textContent || e.className).trim().slice(0, 16);
+  return { btns: [...P.querySelectorAll('.btn')].filter(vis).map((e) => [nm(e), Math.round(R(e).width), Math.round(R(e).height), e.scrollWidth > e.clientWidth + 1]),
+    fields: [...P.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), select, textarea, .nf')].filter(vis).filter((e) => !e.parentElement.closest('.nf') && (e.tagName !== 'TEXTAREA' || e.rows === 1)).map((e) => [e.tagName + ' ' + nm(e), Math.round(R(e).height), getComputedStyle(e).borderTopLeftRadius]),
+    cropped: [...P.querySelectorAll('.nf input, .nf select')].filter(vis).filter((e) => Math.abs(R(e).height - R(e.closest('.nf')).height) > 1).map((e) => nm(e) + ' ' + Math.round(R(e).height) + ' in ' + Math.round(R(e.closest('.nf')).height)),
+    tabs: [...P.querySelectorAll('[role=tab]')].filter(vis).map((e) => [nm(e), Math.round(R(e).height)]),
+    rows: [...P.querySelectorAll('label')].filter(vis).filter((l) => l.querySelector('input[type=checkbox], input[type=radio]') && !l.querySelector('input[type=text], select, textarea')).map((e) => [nm(e), Math.round(R(e).height)]) }; }"""
+
+
+def dialog_kinds(page, w):
+    """Inside every dialog, one height per kind (UI-PRINCIPLES.md C1, C9, T1, T2; the verification
+    of 0a6ef7b): buttons whole and 32 px (44 under a finger, and at least as wide), single line fields
+    32 px with 4 px corners, a dialog's tabs as tall as its buttons, a check box's row at least 24 px
+    (44 under a finger), the Symbols grid's cell ringed when the keys reach it."""
+    touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
+    H = 44 if touch else 32
+    load_doc(page, DOC)
+    seen = {}
+    LIST = '\\documentclass{article}\n\\usepackage{enumitem}\n\\begin{document}\n\\begin{enumerate}\n\\item One\n\\item Two\n\\end{enumerate}\n\\end{document}\n'
+    for cmd in ('font-dialog', 'paragraph-settings', 'page-setup', 'insert-table-dialog', 'share', 'properties', 'autocorrect-options', 'more-symbols', 'word-count', 'check-accessibility', 'find-replace',
+                'list-indents', 'list-value', 'number-define', 'bullet-define', 'multilevel-define'):
+        # (the list dialogs in a list: their number fields are the kinds the others lack)
+        if cmd == 'list-indents':
+            load_doc(page, LIST)
+        click_text(page, 'Two' if cmd.startswith(('list-', 'number-', 'bullet-', 'multilevel-')) else 'Second paragraph', 1 if cmd.startswith(('list-', 'number-', 'bullet-', 'multilevel-')) else 3)
+        if cmd == 'find-replace':
+            page.keyboard.press('Control+h'); page.wait_for_timeout(300)
+            seen[cmd] = page.evaluate(KINDS, '#fr')
+        else:
+            run_cmd(page, cmd); page.wait_for_timeout(300)
+            seen[cmd] = page.evaluate(KINDS, 'body > .pop')
+        if cmd == 'more-symbols' and not touch:
+            for _ in range(4):
+                page.keyboard.press('Tab'); page.wait_for_timeout(60)
+                if page.evaluate("document.activeElement.matches('.sym-b')"):
+                    break
+            ring = page.evaluate("(() => { const a = document.activeElement, c = getComputedStyle(a); return [a.className, c.outlineStyle, c.outlineWidth]; })()")
+            check(f'a cell of the Symbols grid reached by Tab has its ring, an outline ({w})', ring[0] == 'sym-b' and ring[1] != 'none' and float(ring[2][:-2]) >= 2, ring)
+        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    missing = [k for k, v in seen.items() if not v]
+    check(f'the sixteen dialogs open ({w})', not missing and len(seen) == 16, missing)
+    bad = {k: [b for b in v['btns'] if abs(b[2] - H) > 1 or b[3] or (touch and b[1] < 44)] for k, v in seen.items() if v}
+    bad = {k: v for k, v in bad.items() if v}
+    check(f'every dialog button whole, {H} px tall{" and at least 44 wide" if touch else ""} ({w})', not bad, bad)
+    badf = {k: [f for f in v['fields'] if abs(f[1] - H) > 1 or f[2] != '4px'] + v['cropped'] for k, v in seen.items() if v}
+    badf = {k: v for k, v in badf.items() if v}
+    check(f'every single line field {H} px tall with 4 px corners, a number field\'s input and unit as tall as its box ({w})', not badf, badf)
+    badt = {k: [t for t in v['tabs'] if abs(t[1] - H) > 1] for k, v in seen.items() if v}
+    badt = {k: v for k, v in badt.items() if v}
+    check(f'a dialog\'s tabs as tall as its buttons, {H} px ({w})', not badt and any(v and v['tabs'] for v in seen.values()), badt)
+    R = 44 if touch else 24
+    badr = {k: [r for r in v['rows'] if r[1] < R] for k, v in seen.items() if v}
+    badr = {k: v for k, v in badr.items() if v}
+    check(f'every check box\'s and radio button\'s row at least {R} px ({w})', not badr and any(v and v['rows'] for v in seen.values()), badr)
+
+
+CONTRAST = """(el) => { const rgb = (c) => (c.match(/[\\d.]+/g) || []).map(Number);
+  const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  let bg = null; for (let e = el; e; e = e.parentElement) { const c = rgb(getComputedStyle(e).backgroundColor); if (c.length === 3 || (c.length === 4 && c[3] > 0.9)) { bg = c.slice(0, 3); break; } }
+  const fg = rgb(getComputedStyle(el).color).slice(0, 3), a = lum(fg), b = lum(bg || [255, 255, 255]);
+  return Math.round((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) * 100) / 100; }"""
+
+
+def contrast(page, w):
+    """Text on the accent blue and in the search box's list reads at 4.5:1 or more (WCAG 1.4.3,
+    UI-PRINCIPLES.md D1), light and dark: the primary buttons of the dialogs (OK, Apply, Copy
+    link, Find Next) and a phone's selected search result."""
+    touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
+    load_doc(page, DOC)
+    got = {}
+    for cmd, name in (('paragraph-settings', 'OK'), ('insert-table-dialog', 'OK'), ('properties', 'Apply'), ('share', 'Copy link'), ('find-replace', 'Find Next')):
+        click_text(page, 'Second paragraph', 3)
+        if cmd == 'find-replace':
+            page.keyboard.press('Control+h')
+        else:
+            run_cmd(page, cmd)
+        page.wait_for_timeout(300)
+        h = page.evaluate_handle("(n) => [...document.querySelectorAll('body > .pop .btn, #fr .btn')].find((b) => b.offsetParent && b.textContent.trim() === n)", name)
+        got[cmd + ' ' + name] = page.evaluate(CONTRAST, h) if page.evaluate('(h) => !!h', h) else None
+        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    check(f'the dialogs\' primary buttons read at 4.5:1 or more ({w})', all(v and v >= 4.5 for v in got.values()), got)
+    page.locator('#bar .srch input').click() if not touch else page.tap('#bar .srch input')
+    page.keyboard.type('word count'); page.wait_for_timeout(400)
+    h = page.evaluate_handle("document.querySelector('.srch-opt.on .srch-n') || document.querySelector('.srch-opt.on')")
+    c = page.evaluate(CONTRAST, h) if page.evaluate('(h) => !!h', h) else None
+    check(f'the selected search result reads at 4.5:1 or more ({w})', c and c >= 4.5, c)
+    page.keyboard.press('Escape')
+
+
+
+def focus_rules(page, w):
+    """UI-PRINCIPLES.md N7, N8 and C13 with the verification of 0a6ef7b: a dialog opened by a press
+    on the ribbon or from the search box takes the focus (its first control; under a finger never a
+    text field); Tab goes round inside it; opened by the keys from a control, Esc gives that
+    control the focus back; one dialog at a time; File's Back shows its ring only when the keys
+    opened File."""
+    touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
+    load_doc(page, DOC)
+    where = "(() => { const a = document.activeElement; return [!!(a && a.closest('body > .pop')), a.tagName, (a.getAttribute('aria-label') || a.textContent || '').trim().slice(0, 20)]; })()"
+    click_text(page, 'Second paragraph', 3)
+    open_tab(page, 'Review', touch)
+    (page.tap if touch else page.click)('#rr-a11y'); page.wait_for_timeout(400)
+    a = page.evaluate(where)
+    check(f'Check accessibility from the ribbon takes the focus into its dialog ({w})', a[0] and (not touch or a[1] != 'INPUT'), a)
+    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    if touch:
+        # (under a finger no dialog opens into a text field, not even one it focuses itself: the
+        # phone's keyboard came up over it; the review of PR 90 found seven)
+        typing = {}
+        for cmd in ('page-setup', 'insert-table-dialog', 'properties', 'share', 'bookmark', 'replace', 'comment-new'):
+            if cmd == 'comment-new':
+                select_text(page, 'bold word')
+            else:
+                click_text(page, 'Second paragraph', 3)
+            run_cmd(page, cmd); page.wait_for_timeout(500)
+            f = page.evaluate("(() => { const a = document.activeElement; return [!!a.closest('.pop, #fr'), a.matches('input:not([type]), input[type=text], input[type=search], input[type=number], textarea, [contenteditable]'), a.getAttribute('aria-label') || a.textContent.trim().slice(0, 20)]; })()")
+            if not f[0] or f[1]:
+                typing[cmd] = f
+            page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        check(f'seven dialogs open on a phone with the focus in them, never in a text field ({w})', not typing, typing)
+        # (but a field the command names takes it on every device, as Word's: Indent Left opens the
+        # Paragraph dialog at its Left field; table.py checks Alt Text's Description)
+        click_text(page, 'Second paragraph', 3)
+        run_cmd(page, 'indent-left'); page.wait_for_timeout(500)
+        f = page.evaluate("(() => { const a = document.activeElement; return [!!a.closest('.pop'), a.tagName, a.hasAttribute('data-named'), a.getAttribute('aria-label')]; })()")
+        check(f'on a phone a dialog opened at the field its command names (Indent Left) has the focus in that field ({w})', f[0] and f[1] == 'INPUT' and f[2], f)
+        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    if not touch:
+        page.click('#bar .srch input'); page.keyboard.type('AutoCorrect Options'); page.wait_for_timeout(300); page.keyboard.press('Enter'); page.wait_for_timeout(400)
+        a = page.evaluate(where)
+        check(f'AutoCorrect Options from the search box takes the focus into its dialog ({w})', a[0], a)
+        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        click_text(page, 'Second paragraph', 3); run_cmd(page, 'word-count'); page.wait_for_timeout(300)
+        walk = []
+        for _ in range(7):
+            page.keyboard.press('Tab'); page.wait_for_timeout(40)
+            walk.append(page.evaluate(where))
+        check(f'Tab goes round inside Word Count, never out of it ({w})', all(x[0] for x in walk), walk)
+        page.keyboard.press('Shift+Tab'); page.wait_for_timeout(40)
+        check(f'and Shift+Tab too ({w})', page.evaluate(where)[0])
+        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        # opened by the keys from a control of the ribbon: Esc gives the page its caret back, as Word's
+        # ribbon does once its command has run (tabs.py's Frontier by keys; N7's opener is the page)
+        click_text(page, 'Second paragraph', 3)
+        page.focus('#rr-a11y'); page.keyboard.press('Enter'); page.wait_for_timeout(400)
+        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        back = page.evaluate("document.activeElement.id")
+        page.keyboard.type('Q'); page.wait_for_timeout(200)
+        check(f'a dialog opened by the keys from a ribbon button gives the page its caret back, as Word ({w})', back == 'pages' and 'SecQond' in src(page), (back, src(page)[-60:]))
+        # a dialog opened from another by the keys (Paragraph's Tabs…) gives back what that one would:
+        # the caret, and the next key lands there (it went to the ribbon's launcher, the key lost)
+        load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
+        page.keyboard.press('Shift+F10'); page.wait_for_timeout(300)
+        page.get_by_role('menuitem', name='Paragraph Settings', exact=True).focus(); page.keyboard.press('Enter'); page.wait_for_timeout(400)
+        for _ in range(30):
+            if page.evaluate("document.activeElement.textContent.trim() === 'Tabs…'"):
+                break
+            page.keyboard.press('Tab'); page.wait_for_timeout(30)
+        page.keyboard.press('Enter'); page.wait_for_timeout(400)
+        nested = page.evaluate("(document.querySelector('body > .pop #pop-title') || {}).textContent || ''")
+        page.keyboard.press('Escape'); page.wait_for_timeout(300); page.keyboard.type('Z'); page.wait_for_timeout(300)
+        check(f'Paragraph, then Tabs… by the keys, then Esc: the next key lands at the caret ({w})', nested == 'Tabs' and 'SecZond paragraph' in src(page), (nested, src(page)[-60:]))
+        # one dialog at a time (N8)
+        click_text(page, 'Second paragraph', 3); run_cmd(page, 'font-dialog'); run_cmd(page, 'paragraph-settings'); page.wait_for_timeout(300)
+        n = page.evaluate("[...document.querySelectorAll('[role=dialog], [aria-modal=true]')].filter((d) => d.checkVisibility() && !d.closest('[hidden]') && d.getBoundingClientRect().width > 0).map((d) => d.id || d.className.slice(0, 30))")
+        check(f'one dialog at a time: a second replaces the first ({w})', len(n) == 1, n)
+        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        # Back's ring: none after a press on File, shown after Alt, F
+        # (the ring as drawn: the browser's :focus-visible guess for a focus the code moves differs
+        # between Chromium's versions; the press is a real one, so the last input is the mouse)
+        page.get_by_role('tab', name='File').hover(); page.get_by_role('tab', name='File').click(); page.wait_for_timeout(400)
+        r1 = page.evaluate("[document.activeElement.id, getComputedStyle(document.activeElement).outlineStyle]")
+        page.keyboard.press('Escape'); page.wait_for_timeout(300)
+        click_text(page, 'Second paragraph', 3)
+        page.keyboard.press('Alt'); page.wait_for_timeout(150); page.keyboard.press('f'); page.wait_for_timeout(400)
+        r2 = page.evaluate("[document.activeElement.id, getComputedStyle(document.activeElement).outlineStyle]")
+        check(f'File\'s Back: no ring after a press on File, a ring after Alt, F ({w})', r1 == ['rf-back', 'none'] and r2[0] == 'rf-back' and r2[1] != 'none', (r1, r2))
+        page.keyboard.press('Escape')
+
+
+
+BAR = """(() => [...document.querySelectorAll('#bar button, #bar input')].filter((e) => e.offsetParent && e.getClientRects().length).map((e) => { const r = e.getBoundingClientRect(); return [e.id || e.className.slice(0, 12), Math.round(r.left), Math.round(r.right), Math.round(r.width), Math.round(r.height)]; }).sort((a, b) => a[1] - b[1]))()"""
+
+
+def bar_room(p):
+    """A phone's top bar at 390, 360 and 320 px with touch (UI-PRINCIPLES.md T1, T3, L7): every
+    target 44 by 44 px, 8 px between two of them, none off the screen or over another (Search ran
+    10 px into Share at 320 px); Redo, gone below 380 px, is in the menu panel by name; and a
+    window 320 px wide, mouse or finger, scrolls neither way (WCAG 1.4.10)."""
+    for width, touch in ((390, True), (360, True), (320, True), (320, False)):
+        browser, page, errors = open_page(p, width=width, height=700, touch=touch, layout='mobile')
+        page.wait_for_timeout(600)
+        w = f'{width} px{", touch" if touch else ""}'
+        sw = page.evaluate('[document.documentElement.scrollWidth, document.body.scrollWidth]')
+        check(f'nothing wider than the window ({w})', max(sw) <= width, sw)
+        if touch:
+            bar = page.evaluate(BAR)
+            gaps = [b[1] - a[2] for a, b in zip(bar, bar[1:])]
+            check(f'the bar\'s targets 44 by 44 px, 8 px apart, inside the screen ({w})', all(b[3] >= 44 and b[4] >= 44 for b in bar) and all(g >= 8 for g in gaps) and bar[0][1] >= 0 and bar[-1][2] <= width, (bar, gaps))
+            if width < 380:
+                page.tap('#b-nav'); page.wait_for_timeout(400)
+                check(f'Redo, not on the bar, is in the menu panel by name ({w})', page.get_by_role('menuitem', name='Redo', exact=True).count() == 1)
+        check(f'no console errors (bar_room, {w})', not errors, errors[:3])
+        browser.close()
+
+
+
+def tap_alternatives(page, w):
+    """Every drag has a single press alternative (UI-PRINCIPLES.md T5, WCAG 2.5.7): a double click
+    on a ruler's indent marker opens the Paragraph dialog, on a margin marker Page setup, as Word's
+    ruler does, and their tooltips say so; a picture's handles and Crop's bars have Height, Width
+    and Crop by Numbers."""
+    load_doc(page, DOC)
+    run_cmd(page, 'ruler') if not page.evaluate('!!window.rikuy.prefs.ruler') else None
+    click_text(page, 'Second paragraph', 3); page.wait_for_timeout(400)
+    got = {}
+    for k in ('left', 'first', 'ml', 'mt'):
+        loc = page.locator(f'#ruler .ru-mk.ru-{k}, #vruler .ru-mk.ru-{k}').first
+        if not loc.count() or not loc.is_visible():
+            got[k] = None
+            continue
+        title = loc.get_attribute('title') or ''
+        # (where view.py presses them: a margin's marker lies under the indents' at its edge)
+        r = loc.bounding_box()
+        x = r['x'] + 3 if k == 'ml' else r['x'] + r['width'] / 2
+        y = r['y'] + 2 if k == 'mt' else r['y'] + r['height'] / 2
+        page.mouse.dblclick(x, y); page.wait_for_timeout(400)
+        got[k] = [page.evaluate("(document.querySelector('body > .pop #pop-title') || {}).textContent || ''"), title]
+        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        click_text(page, 'Second paragraph', 3)
+    ok = got.get('left') and got['left'][0] == 'Paragraph' and got.get('first') and got['first'][0] == 'Paragraph' and got.get('ml') and got['ml'][0].startswith('Page') and 'double click' in got['left'][1] and 'Page setup' in got['ml'][1]
+    # (the margin's grey part, 40 px out of the text, and 5 px out beside the indent markers: Page
+    # setup, as Word's ruler; it did nothing there, and Paragraph beside the markers)
+    for dx in (40, 5):
+        xy = page.evaluate("(dx) => { const R = window.rikuy.ru, S = R.S, t = R.track.getBoundingClientRect(), h = R.hr.getBoundingClientRect(); return [t.left + S.ml * S.px - dx, h.top + h.height / 2]; }", dx)
+        page.mouse.dblclick(xy[0], xy[1]); page.wait_for_timeout(400)
+        got['margin %d px' % dx] = page.evaluate("(document.querySelector('body > .pop #pop-title') || {}).textContent || ''")
+        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        click_text(page, 'Second paragraph', 3)
+    ok = ok and all(got['margin %d px' % dx].startswith('Page') for dx in (40, 5))
+    check(f'a ruler marker double clicked opens its dialog: an indent the Paragraph dialog, a margin Page setup, as its tooltip says ({w})', ok, got)
+    # (Picture Format's Height and Width are number fields, as Word's; Crop's arrow has Crop by Numbers)
+    import json
+    ctl = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist', 'controls.json')))['controls']
+    have = {x['command']: x['role'] for x in ctl if x.get('command') in ('picture-height', 'picture-width', 'picture-crop')}
+    crop = page.evaluate("(window.rikuy.commandMenu ? window.rikuy.commandMenu('picture-crop') : null)")
+    check(f'a picture\'s handles have Height and Width as number fields, Crop a button ({w})', have == {'picture-height': 'spinbutton', 'picture-width': 'spinbutton', 'picture-crop': 'button'}, (have, crop))
+
+
+
+MOTION = """(() => { const out = { kf: {}, tr: [] }; const walk = (rules, media) => { for (const r of rules) {
+  if (r instanceof CSSKeyframesRule) { const props = new Set(); for (const f of r.cssRules) for (let i = 0; i < f.style.length; i++) props.add(f.style[i]); out.kf[r.name] = [...props]; }
+  else if (r instanceof CSSMediaRule) walk(r.cssRules, r.conditionText);
+  else if (r.style && r.style.transitionProperty && !['unset', 'none', 'initial'].includes(r.style.transitionProperty)) out.tr.push([r.selectorText, r.style.transitionProperty, r.style.transitionDuration, media || '']); } };
+  for (const s of document.styleSheets) { try { walk(s.cssRules, ''); } catch (e) {} } return out; })()"""
+
+
+def motion(page, w):
+    """Motion as UI-PRINCIPLES.md M1 to M3 ask: animations and transitions move only opacity and
+    transform (the jump's mark is a still one now, the PDF's progress no longer animates its
+    width), transitions last 50 to 300 ms in steps of 50 (three ran 120 ms); with reduced motion
+    asked for, the PDF's busy bar stands still, the outline's triangles turn at once and the PDF
+    pane does not glide. (CodeMirror's own blink is the source editor's caret.)"""
+    m = page.evaluate(MOTION)
+    # (scale, translate and rotate are transform's own properties: motion.css's dialog scales by one)
+    TF = {'opacity', 'transform', 'scale', 'translate', 'rotate'}
+    kf = {k: v for k, v in m['kf'].items() if k != 'blink' and not set(v) <= TF}
+    check(f'every animation moves opacity or transform only ({w})', not kf and m['kf'], kf or m['kf'])
+    ok = lambda d: all(x.strip().endswith('ms') and int(float(x.strip()[:-2])) % 50 == 0 and 50 <= float(x.strip()[:-2]) <= 300 or x.strip().endswith('s') and not x.strip().endswith('ms') and round(float(x.strip()[:-1]) * 1000) % 50 == 0 and 0.05 <= float(x.strip()[:-1]) <= 0.3 for x in d.split(','))
+    bad = [t for t in m['tr'] if not set(x.strip() for x in t[1].split(',')) <= TF or not ok(t[2])]
+    check(f'every transition moves opacity or transform, in 50 to 300 ms by steps of 50 ({w})', not bad, bad)
+    page.emulate_media(reduced_motion='reduce')
+    load_doc(page, DOC)
+    r = page.evaluate("""(() => { const p = document.createElement('div'); p.className = 'pdf-prog busy'; const s = document.createElement('span'); p.append(s); document.body.append(p);
+      const t = document.createElement('button'); t.className = 'nv-tog'; t.innerHTML = '<svg></svg>'; document.body.append(t);
+      const out = [getComputedStyle(s).animationName, getComputedStyle(t.querySelector('svg')).transitionDuration]; p.remove(); t.remove(); return out; })()""")
+    check(f'with reduced motion the PDF\'s busy bar stands still and the outline\'s triangles turn at once ({w})', r == ['none', '0s'], r)
+    page.emulate_media(reduced_motion='no-preference')
+
+
+
+MENU_DOC = ('\\documentclass{article}\n\\begin{document}\n\\section{Opening}\nFirst paragraph here, with a bold word.\n\n'
+            'Second paragraph here.\n\\end{document}\n')
+SMALL = {'a', 'an', 'and', 'as', 'at', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to'}
+
+
+def menus(page, w):
+    """The right click menu as UI-PRINCIPLES.md C9, C11, C13 and P2 and the review of PR 90 ask: 8 px
+    corners, items with 4 px; every item's words capitalised (but the small ones inside), four at
+    most, the start of its accessible name, "…" on exactly the items that open a dialog and › on
+    those that open a menu (each pressed to see); Show LaTeX, Show in Source and Next Tab Stop at the
+    end under one line, a heading's expand and collapse in one Expand/Collapse; the shortcuts in one
+    column at the right; the keys' ring an outline, none on a menu a press opened."""
+    seen = {}
+    for ctx, word in (('text', 'Second paragraph'), ('heading', 'Opening')):
+        load_doc(page, MENU_DOC); click_text(page, word, 2)
+        page.keyboard.press('Shift+F10'); page.wait_for_timeout(300)
+        m = page.evaluate("""(() => { const m = document.querySelector('.pop-ctx'); if (!m) return null; const R = (e) => e.getBoundingClientRect(); const a = document.activeElement;
+          return { radius: getComputedStyle(m).borderTopLeftRadius, ring: [a.matches('.pop-ctx [role^=menuitem]'), getComputedStyle(a).outlineStyle],
+            items: [...m.querySelectorAll('[role^=menuitem]:not(.mi-hint)')].map((i) => [i.getAttribute('aria-label'), (i.querySelector('.mi-n') || {}).textContent || '', i.getAttribute('aria-disabled') === 'true', getComputedStyle(i).borderTopLeftRadius, i.getAttribute('aria-haspopup') === 'menu' && !!i.querySelector('.mi-sub')]),
+            groups: [...m.children].reduce((g, e) => { if (e.getAttribute('role') === 'separator') g.push([]); else if (!e.classList.contains('mi-hint')) g[g.length - 1].push(e.getAttribute('aria-label')); return g; }, [[]]).filter((x) => x.length),
+            keys: [...m.querySelectorAll('.mi-k')].map((k) => { const n = k.parentElement.querySelector('.mi-n'), r = document.createRange(); r.selectNodeContents(n); return [Math.round(R(k).right), Math.round(r.getBoundingClientRect().right), Math.round(R(k).left)]; }) }; })()""")
+        page.keyboard.press('Escape'); page.wait_for_timeout(100)
+        seen[ctx] = m
+        dlg = {}
+        sub = {}
+        for name, label, off, _, popup in (m or {}).get('items', []):
+            # (Synonyms' menu comes when the thesaurus answers, after any Esc: its › is read below)
+            if off or name in ('Paste', 'Cut', 'Copy', 'Ask Claude', 'Synonyms'):
+                continue
+            load_doc(page, MENU_DOC); click_text(page, word, 2)
+            page.keyboard.press('Shift+F10'); page.wait_for_timeout(250)
+            page.locator('.pop-ctx [role^=menuitem]').and_(page.get_by_label(name, exact=True)).first.click(timeout=3000); page.wait_for_timeout(300)
+            dlg[label] = page.evaluate("!!document.querySelector('body > .pop.pop-dlg') || !!(document.getElementById('fr') && document.getElementById('fr').offsetParent)")
+            sub[label] = [popup, page.evaluate("!!document.querySelector('body > .pop[role=menu]')")]
+            page.keyboard.press('Escape'); page.wait_for_timeout(100)
+            # (Show in Source opens the source pane, which keeps the focus: closed for the next)
+            if page.evaluate("document.body.classList.contains('src-on')"):
+                page.evaluate("window.rikuy.toggleSource()"); page.wait_for_timeout(150)
+        wrong = {k: v for k, v in dlg.items() if k.endswith('…') != v}
+        check(f'"…" on exactly the items that open a dialog, in the {ctx} menu ({w})', dlg and not wrong, wrong or dlg)
+        wrong = {k: v for k, v in sub.items() if v[0] != v[1]}
+        syn = [x[4] for x in (m or {}).get('items', []) if x[0] == 'Synonyms']
+        check(f'› and aria-haspopup on exactly the items that open a menu, in the {ctx} menu ({w})', not wrong and (ctx != 'heading' or any(v[1] for v in sub.values())) and syn == [True], (wrong or sub, syn))
+        # (the menu ends with where the LaTeX is and Next Tab Stop, under one line; a heading's
+        # expand and collapse in one item, Expand/Collapse, as Word's)
+        tail = m['groups'][-1] if m and m['groups'] else []
+        names = [x[0] for x in m['items']] if m else []
+        check(f'the {ctx} menu ends with Show LaTeX, Show in Source and Next Tab Stop under one line{", Expand/Collapse one item" if ctx == "heading" else ""} ({w})',
+              tail and set(tail) <= {'Show LaTeX', 'Show in source', 'Next tab stop'} and 'Show LaTeX' in tail and (ctx != 'heading' or ('Expand/Collapse' in names and not any(n in names for n in ('Collapse heading', 'Expand heading', 'Expand all headings', 'Collapse all headings')))), m and m['groups'])
+    bad = []
+    for ctx, m in seen.items():
+        for name, label, off, rad, _ in (m or {}).get('items', []):
+            words = label.rstrip('…').split()
+            # (four words at most, but for a command whose own name is longer: its name is its
+            # accessible name, and the words shown must be in it, WCAG 2.5.3)
+            inname = name.lower().startswith(label.rstrip('…').lower())
+            if (len(words) > 4 and label.lower() != name.lower()) or not inname or any(not (x[0].isupper() or not x[0].isalpha() or (i and x in SMALL)) for i, x in enumerate(words)) or rad != '4px':
+                bad.append((ctx, label, name, rad))
+    check(f'every item\'s words capitalised, four at most, the start of its accessible name, 4 px corners ({w})', seen and all(seen.values()) and not bad, bad)
+    check(f'the menus have 8 px corners and the keys\' ring is an outline ({w})', all(m['radius'] == '8px' and m['ring'][0] and m['ring'][1] != 'none' for m in seen.values()), {k: (m['radius'], m['ring']) for k, m in seen.items()})
+    # (a menu opened by a press: no ring until a key moves in it)
+    load_doc(page, MENU_DOC); click_text(page, 'Second paragraph', 3)
+    r = page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('Second')); const b = s.getBoundingClientRect(); return [b.left + 10, b.top + b.height / 2]; })()")
+    # (the ring as drawn, not the browser's :focus-visible guess, which differs between Chromium's
+    # versions for a focus the code moves; a real move and press first, so the last input is the mouse)
+    page.mouse.move(r[0] + 2, r[1] + 2); page.mouse.click(r[0], r[1], button='right'); page.wait_for_timeout(300)
+    mr = page.evaluate("(() => { const a = document.activeElement; return [a.matches('.pop-ctx [role^=menuitem]'), getComputedStyle(a).outlineStyle]; })()")
+    page.keyboard.press('ArrowDown'); page.wait_for_timeout(100)
+    kr = page.evaluate("getComputedStyle(document.activeElement).outlineStyle")
+    page.keyboard.press('Escape')
+    check(f'a menu opened by a right click shows no ring on its first item; a key brings it ({w})', mr[0] and mr[1] == 'none' and kr != 'none', (mr, kr))
+    check(f'the shortcuts in one column at the right, after the names ({w})', all(m['keys'] and max(x[0] for x in m['keys']) - min(x[0] for x in m['keys']) <= 1 and all(x[2] >= x[1] + 8 for x in m['keys']) for m in seen.values()), {k: m['keys'] for k, m in seen.items()})
+
+
+
+def empty_panes(page, w):
+    """An empty pane or list says in one sentence what belongs there and offers the one command
+    that puts it there (UI-PRINCIPLES.md N5): the Navigation pane's headings, Apply Heading 1, which
+    makes the caret's paragraph a heading; File's Recent list, Open a file."""
+    load_doc(page, '\\documentclass{article}\n\\begin{document}\nJust one paragraph of plain words.\n\\end{document}\n')
+    click_text(page, 'one paragraph', 2)
+    run_cmd(page, 'navigation-pane'); page.wait_for_timeout(400)
+    e = page.evaluate("(() => { const e = [...document.querySelectorAll('#nav .nav-empty')].find((x) => x.offsetParent); if (!e) return null; const t = e.innerText.trim().split('\\n').filter(Boolean); return { lines: t, buttons: [...e.querySelectorAll('button')].map((b) => b.textContent.trim()) }; })()")
+    one = lambda t: t and len([x for x in t[0].split('. ') if x]) == 1 and '\\' not in t[0]
+    check(f'the empty Navigation pane: one sentence, no LaTeX in it, one button ({w})', e and one(e['lines']) and e['buttons'] == ['Apply Heading 1'], e)
+    if e and e['buttons']:
+        page.locator('#nav .nav-empty button').click(); page.wait_for_timeout(500)
+        check(f'which makes the caret\'s paragraph a heading, listed there ({w})', '\\section{Just one paragraph' in src(page) and page.evaluate("[...document.querySelectorAll('#nav .nv-row, #nav [role=treeitem]')].some((r) => r.offsetParent && r.textContent.includes('Just one'))"), src(page)[-120:])
+    open_tab(page, 'File', page.evaluate("matchMedia('(pointer: coarse)').matches")); page.wait_for_timeout(500)
+    r = page.evaluate("(() => { const p = document.querySelector('.rf-none'); return p && p.offsetParent ? [p.textContent, [...p.parentElement.querySelectorAll('button')].filter((b) => b.offsetParent).map((b) => b.textContent.trim())] : null; })()")
+    check(f'File\'s empty Recent list: one sentence and Open a file ({w})', r and one([r[0]]) and r[1] == ['Open a file'], r)
+    if r:
+        with page.expect_file_chooser(timeout=3000) as fc:
+            page.click('#rf-none-open')
+        check(f'Open there asks for a file ({w})', fc.value is not None)
+    page.keyboard.press('Escape')
+
+
+
+SIGHT = """(() => { const a = document.activeElement, r = a.getBoundingClientRect(), vv = window.visualViewport; let top = vv.offsetTop, bottom = vv.offsetTop + vv.height;
+  for (let e = a.parentElement; e && e !== document.body; e = e.parentElement) { if (/auto|scroll|hidden/.test(getComputedStyle(e).overflowY)) { const q = e.getBoundingClientRect(); top = Math.max(top, q.top); bottom = Math.min(bottom, q.bottom); } }
+  return [a.getAttribute('aria-label') || a.tagName, Math.round(r.top), Math.round(r.bottom), Math.round(top), Math.round(bottom)]; })()"""
+
+
+def keyboard_room(page, w):
+    """The on-screen keyboard never hides the field it types into (UI-PRINCIPLES.md T6, WCAG
+    2.4.11): a dialog's lowest field focused, then the window shrunk by a keyboard's height (430 of
+    800 px left): the field is still inside the window and inside every box that scrolls round it."""
+    width = page.viewport_size['width']
+    for cmd in ('page-setup', 'properties', 'share'):
+        page.set_viewport_size({'width': width, 'height': 800}); page.wait_for_timeout(200)
+        load_doc(page, DOC); run_cmd(page, cmd); page.wait_for_timeout(400)
+        page.locator('body > .pop input:not([type=checkbox]):not([type=radio])').last.focus(); page.wait_for_timeout(250)
+        page.set_viewport_size({'width': width, 'height': 430}); page.wait_for_timeout(500)
+        r = page.evaluate(SIGHT)
+        check(f'{cmd}: its last field, focused, stays in sight above a keyboard ({w})', r[1] >= r[3] - 1 and r[2] <= r[4] + 1, r)
+        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    page.set_viewport_size({'width': width, 'height': 820})
+
+
+
+SPACING = "*:not(#pages *):not(#pages) { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p:not(#pages *) { margin-bottom: 2em !important; }"
+CUT = """(sel) => { const out = []; for (const root of document.querySelectorAll(sel)) for (const e of [root, ...root.querySelectorAll('*')]) {
+  if (!e.checkVisibility || !e.checkVisibility() || !e.textContent.trim() || e.matches('.sr, .sr *')) continue; const c = getComputedStyle(e);
+  const y = /hidden|clip/.test(c.overflowY) && e.scrollHeight > e.clientHeight + 1, x = /hidden|clip/.test(c.overflowX) && e.scrollWidth > e.clientWidth + 1 && c.textOverflow !== 'ellipsis';
+  if (y || x) out.push([(e.id || e.className || e.tagName).toString().slice(0, 24), e.textContent.trim().slice(0, 24), e.scrollWidth + 'x' + e.scrollHeight, e.clientWidth + 'x' + e.clientHeight]); }
+  return out.slice(0, 12); }"""
+
+
+def text_spacing(page, w):
+    """WCAG 1.4.12 (UI-PRINCIPLES.md L8): with lines 1.5 apart, paragraphs 2 em apart, letters
+    0.12 em and words 0.16 em, no text of the bar, the status bar, the dialogs, File or the Styles
+    pane is cut off (a word the status bar shortens with "…" where it is short of room is its
+    design at any spacing, and screen reader text is hidden on purpose)."""
+    touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
+    load_doc(page, DOC)
+    page.add_style_tag(content=SPACING); page.wait_for_timeout(300)
+    cut = {'bar and status bar': page.evaluate(CUT, '#bar, #status')}
+    for cmd in ('font-dialog', 'paragraph-settings', 'page-setup', 'insert-table-dialog', 'share', 'properties', 'word-count', 'autocorrect-options'):
+        click_text(page, 'Second paragraph', 3); run_cmd(page, cmd); page.wait_for_timeout(300)
+        cut[cmd] = page.evaluate(CUT, 'body > .pop')
+        page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    open_tab(page, 'File', touch); page.wait_for_timeout(400)
+    cut['File'] = page.evaluate(CUT, '#rp-file')
+    page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    if not touch:
+        run_cmd(page, 'styles-pane'); page.wait_for_timeout(300)
+        cut['Styles pane'] = page.evaluate(CUT, '#stylespane')
+    cut = {k: v for k, v in cut.items() if v}
+    check(f'with WCAG\'s text spacing nothing of the bar, the status bar, eight dialogs, File or the Styles pane is cut off ({w})', not cut, cut)
+
+
+
+TARGET_GAPS = """(sel) => { const T = [...document.querySelectorAll(sel)].filter((e) => e.checkVisibility() && e.getBoundingClientRect().width > 0 && !e.closest('[inert]'));
+  const R = T.map((e) => [e, e.getBoundingClientRect()]); const bad = [];
+  for (let i = 0; i < R.length; i++) for (let j = i + 1; j < R.length; j++) { const [a, p] = R[i], [b, q] = R[j]; if (a.contains(b) || b.contains(a)) continue;
+    const dx = Math.max(0, Math.max(p.left, q.left) - Math.min(p.right, q.right)), dy = Math.max(0, Math.max(p.top, q.top) - Math.min(p.bottom, q.bottom));
+    if (Math.max(dx, dy) < 8) bad.push([(a.id || a.getAttribute('aria-label') || a.textContent.trim()).slice(0, 16), (b.id || b.getAttribute('aria-label') || b.textContent.trim()).slice(0, 16), Math.round(Math.max(dx, dy))]); }
+  return bad.slice(0, 14); }"""
+TARGETS = 'button, input:not([type=hidden]):not(.nf *), select:not(.nf *), .nf, textarea, a[href], [role=tab], label:has(input[type=checkbox]), label:has(input[type=radio])'
+
+
+def target_gaps(page, w):
+    """8 px between any two targets under a finger (UI-PRINCIPLES.md T3, Google's rule): the status
+    bar, and the Paragraph, Insert Table, Share, Word Count, Page setup, Font, AutoCorrect Options,
+    Symbols, Find and Replace and Bookmark dialogs (the views, a dialog's tabs and the Paragraph
+    dialog's fields were 2 px apart; the review of PR 90 found 3 to 6 px in the last five)."""
+    load_doc(page, DOC)
+    bad = {'status bar': page.evaluate(TARGET_GAPS, '#status :is(%s)' % TARGETS)}
+    for cmd in ('paragraph-settings', 'insert-table-dialog', 'share', 'word-count', 'page-setup', 'font-dialog', 'autocorrect-options', 'more-symbols', 'replace', 'bookmark'):
+        click_text(page, 'Second paragraph', 3)
+        run_cmd(page, cmd); page.wait_for_timeout(300)
+        root = '#fr' if cmd == 'replace' else 'body > .pop'
+        bad[cmd] = page.evaluate(TARGET_GAPS, root + ' :is(%s)' % TARGETS)
+        if not page.evaluate("(r) => !!document.querySelector(r) && document.querySelector(r).checkVisibility()", root):
+            bad[cmd] = 'did not open'
+        page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    bad = {k: v for k, v in bad.items() if v}
+    check(f'every two targets 8 px apart in the status bar and ten dialogs ({w})', not bad and len(bad) == 0, bad)
+
+
+
+def tooltips(page, w):
+    """Every tooltip of the bar, the status bar and File's Home says the control's name first,
+    then its keys where it has some, then what it does (UI-PRINCIPLES.md C14): the template's own
+    titles had the description alone ("Show the PDF as TeX makes it, beside the page", without
+    Ctrl+F2). Native tooltips: Esc and the pointer are the browser's (WCAG 1.4.13 leaves them to it)."""
+    load_doc(page, DOC)
+    open_tab(page, 'File'); page.wait_for_timeout(400)
+    tips = page.evaluate("""(() => { const reg = window.rikuy.cmds.commands(), byEl = new Map(reg.filter((c) => c.static && c.el).map((c) => [c.el, c]));
+      return [...document.querySelectorAll('#bar button, #bar input, #status button, #status input, #rf-home button')].filter((e) => e.checkVisibility() && !['st-lang', 'st-track', 'st-words'].includes(e.id)).map((e) => { const c = byEl.get(e.id);
+        return [e.id || e.className, c ? c.name : e.getAttribute('aria-label'), e.title, c ? !!((c.keys || []).length + (c.keysElsewhere || []).length) : false]; }); })()""")
+    # (its keys right after the name, then a colon and the sentence: "Open (Ctrl+O): open …")
+    bad = [t for t in tips if not t[2].lower().startswith((t[1] or '').lower()) or len(t[2]) <= len(t[1] or '') + 3 or (t[3] and not t[2].startswith(t[1] + ' (')) or ': ' not in t[2]]
+    check(f'every tooltip of the bar, the status bar and File\'s Home: its name, its keys, what it does ({w})', tips and not bad and not page.evaluate("!!document.querySelector('[role=tooltip]')"), bad)
+    page.keyboard.press('Escape')
+
+
 PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
+         'bar_room': (bar_room, None),
+         'motion': (motion, [(1366, False)]),
+         'tooltips': (tooltips, [(1366, False)]),
+         'target_gaps': (target_gaps, [(390, False), (360, True)]),
+         'text_spacing': (text_spacing, [(1366, False), (900, True), (390, False)]),
+         'keyboard_room': (keyboard_room, [(390, False), (360, True)]),
+         'empty_panes': (empty_panes, [(1366, False), (1920, True)]),
+         'menus': (menus, [(1366, False), (1920, True)]),
+         'tap_alternatives': (tap_alternatives, [(1366, False), (1920, True)]),
+         'focus_rules': (focus_rules, [(1366, False), (1920, True), (390, False)]),
+         'contrast': (contrast, [(1366, False), (1366, True), (390, False), (390, True)]),
+         'dialog_kinds': (dialog_kinds, [(1366, False), (1920, True), (390, False), (360, True)]),
          'verify_lows': (verify_lows, [(1366, False), (1920, True)]), 'widen': (widen, None),
          'place_kept': (place_kept, [(1366, False), (390, False)]),
          'lows': (lows, [(390, False), (768, False), (1024, True)]),
