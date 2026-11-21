@@ -613,7 +613,9 @@ body.pdf-on #pdfpane { display: flex; }
 /* pages centre by their auto margins, not align-items: a page zoomed wider than the window then
    overflows to the right, where it scrolls, instead of losing its left side off screen */
 #pages { outline: none; caret-color: var(--rk-color-caret); display: flex; flex-direction: column; align-items: flex-start; gap: 22px; }
-.page { margin: 0 auto; position: relative; width: var(--pw); height: var(--ph); background: var(--paper); color: var(--ink); box-shadow: var(--shadow); flex: none; content-visibility: auto; contain-intrinsic-size: auto var(--pw) auto var(--ph); contain: layout style paint; }
+.page { margin: 0 auto; position: relative; width: var(--pw); height: var(--ph); background: var(--paper); color: var(--ink); box-shadow: var(--shadow); flex: none; contain: layout style paint; }
+/* (only the pages near the view drawn, in a document too big to draw whole: App.lazyPages) */
+#pages.lazy .page { content-visibility: auto; contain-intrinsic-size: auto var(--pw) auto var(--ph); }
 .pb { position: absolute; left: var(--ml); top: var(--mt); width: var(--tw); height: var(--th); display: flex; flex-direction: column; }
 .flow { font-size: var(--fs); line-height: var(--lh); text-align: justify; text-wrap: pretty; hyphens: auto; -webkit-hyphens: auto; font-kerning: normal; font-variant-ligatures: common-ligatures; overflow-wrap: break-word; }
 .folio { position: absolute; left: var(--ml); width: var(--tw); top: calc(var(--mt) + var(--th) + var(--footskip) - var(--fs)); text-align: center; font-size: var(--fs); line-height: 1; user-select: none; }
@@ -1428,7 +1430,7 @@ body.guest #b-new, body.guest #b-sample { display: none; }
 .nv-page:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .nv-pg { position: relative; overflow: hidden; background: #fff; border-radius: 2px; box-shadow: 0 1px 4px rgba(0, 0, 0, .2); pointer-events: none; }
 .nv-pgc { position: absolute; left: 0; top: 0; transform-origin: 0 0; padding: 0 !important; pointer-events: none; }
-.nv-pgc .page { margin: 0; box-shadow: none; content-visibility: visible; }
+.nv-pgc .page { margin: 0; box-shadow: none; }
 /* the Outline view: the panel wide enough for the text under the headings */
 body.nav-on.nav-outline #nav { width: 460px; }
 @media (max-width: 860px) { body.nav-on.nav-outline #nav { width: min(94vw, 460px); } }
@@ -2624,7 +2626,7 @@ html.pic-moving, html.pic-moving * { cursor: grabbing !important; }
 @media (pointer: coarse) { .fold-tg { width: 44px; height: 44px; } .fold-tg svg { width: 18px; height: 18px; } }
 /* Web Layout: one sheet as wide as the window, no foot, no header, footer or page numbers */
 body.pg-web #pages { gap: 0; }
-body.pg-web .page { height: auto; min-height: 60vh; box-shadow: 0 0 0 1px var(--line); content-visibility: visible; contain: layout style; }
+body.pg-web .page { height: auto; min-height: 60vh; box-shadow: 0 0 0 1px var(--line); contain: layout style; }
 body.pg-web .page + .page { border-top: 1px dashed #9AA6B2; }
 body.pg-web .pb { position: relative; left: auto; top: auto; margin: var(--mt) var(--ml); height: auto; }
 body.pg-web .page .hd, body.pg-web .page .ft, body.pg-web .page .folio, body.pg-web .page .lnum { display: none !important; }

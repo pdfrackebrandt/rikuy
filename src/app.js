@@ -686,6 +686,8 @@ class App {
     this.layout.opts = model.opts;
     // (the text under a collapsed heading is left out of the page's view: src/cmd/find.js)
     this.foldFilter(items);
+    // (every page drawn, or only those near the view in a document too big for that)
+    this.lazyPages(items);
     this.layout.measure(items, fns);
     const plan = this.layout.plan(items);
     this.layout.apply(plan);
@@ -5524,6 +5526,23 @@ joinMethods(App.prototype, { 'src/collab.js': collab, 'src/word.js': word, 'src/
 App.prototype.insertFromPalette = function (k) {
   const c = this.caretNow(), x = paletteItems().find((y) => y.k === k);
   if (c && x) this.runPalette(x, c.ghost ? null : { f: c.f, a: c.a, b: c.b }, c.ghost ? this.ghost : null);
+};
+// Every page is drawn, so Chromium's accessibility tree, which leaves out what it does not draw
+// (content-visibility: auto), has the whole document for screen readers and agents: on
+// dev/bench/long 11 of 11 formulas and 43 of 43 headings, against 0 and 2 when only the pages
+// near the view were drawn, for 130 ms more on its first render and 1 to 2 ms of layout and style
+// a key. A document so big that drawing it whole could take the tab down (500 formulas of 120
+// terms each, 1.3 million elements, crashed Chromium's renderer) has only the pages near the view
+// drawn, as before (#pages.lazy). The items' elements are counted at most every two seconds while
+// their number stays the same: one walk in the browser, under a millisecond for a long paper.
+const LAZY = 250000;
+App.prototype.lazyPages = function (items) {
+  const now = performance.now();
+  if (this.lazyAt != null && items.length === this.lazyItems && now - this.lazyAt < 2000) return;
+  this.lazyAt = now; this.lazyItems = items.length;
+  let n = 0;
+  for (const it of items) if (it.el) { n += it.el.getElementsByTagName('*').length; if (n > LAZY) break; }
+  this.root.classList.toggle('lazy', n > LAZY);
 };
 // a link opened from a command (Help's) as one in a document is: web and mail addresses only
 // (an agent's tool never opens one: src/agent.js PERSON, and this for what that list misses)
