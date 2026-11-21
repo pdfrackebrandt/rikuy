@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import { buildModel, colorValue } from '../src/model.js';
 import { buildWordDoc, expandMath, unpackRuns, wordColor, listStyle, uncolor } from '../src/wordast.js';
 import { createPandoc } from '../src/pandoc.js';
-import { exportDocx, readDocx, docxToLatex } from '../src/wordjobs.js';
+import { exportDocx, readDocx, docxToLatex, openDocx } from '../src/wordjobs.js';
 import { checkData, planImport, unpackRead, rebase, textHunks, mathPatch, stripNumbers, safeMath } from '../src/wordsync.js';
 import { unzip, zip, extract, parseXml, readRikuyPart, text, badZip64 } from '../src/docx.js';
 import { isBalanced } from '../src/parser.js';
@@ -662,7 +662,7 @@ await ok('a Word file of what pandoc alone loses: nothing goes without a word, a
   const said = r.warnings.join(' ');
   // (the header is kept now, as fancyhdr's: task 44)
   assert.ok(t.slice(0, t.indexOf('\\begin{document}')).includes('\\usepackage{fancyhdr}\n') && t.includes('\\fancyhead[L]{Draft: do not cite}'), 'the header');
-  for (const s of ['Armenian: Հայ', '1 chart', '1 Word comment came in', '2 tracked changes in the file were accepted', 'Endnotes are footnotes', 'table of contents is LaTeX', '2 equations typed with a number'])
+  for (const s of ['Armenian: Հայ', '1 chart', '1 Word comment came in', '2 tracked changes in the file came in as changes to accept or reject', 'Endnotes are footnotes', 'table of contents is LaTeX', '2 equations typed with a number'])
     assert.ok(said.includes(s), s + '\n' + said);
   assert.ok(t.startsWith('% Opened from a Word file by Rikuy.\n% - Not kept: 3 characters pdfLaTeX has no font'));
   // and the page reads it: a title, the contents, a page break, three floats, no raw source
@@ -1943,6 +1943,39 @@ await ok('R1: art and styled page borders, the title and author in a header, a p
   assert.ok(back.includes('\\usetikzlibrary{decorations.markings}') && /\\path\[postaction=\{decorate\},decoration=\{markings,mark=between positions 0 and [\d.]+ step [\d.]+ with \{\\fill\[pageborder\] \(90:/.test(back) && back.includes("\\definecolor{pageborder}{HTML}{FF0000}"), preambleOf(back));
   assert.ok(back.includes('\\fancyhead[L]{My Title}') && back.includes('\\fancyhead[R]{Ann Author}'), preambleOf(back));
   assert.ok(back.includes('\\begin{nolinenumbers}\nNot numbered.\n\\end{nolinenumbers}'), bodyOf(back));
+});
+
+// Track Changes both ways: Rikuy's changes waiting go to Word as w:ins and w:del with their
+// authors and the date; a .docx's tracked changes come in as changes waiting (Track Changes' base
+// the text with them rejected, each its author's), where they came in accepted before
+await ok('changes waiting go to Word as tracked changes with their authors; a file\'s tracked changes come back as the steps they were', async () => {
+  const now = doc('The quick red fox jumps over the very lazy dog.\n\nSecond paragraph stays.\n');
+  const files = new Map([['main.tex', now]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const at = (w) => now.indexOf(w);
+  const changes = [{ f: 'main.tex', s: at('red'), e: at('red') + 3, del: 'brown', who: 'Ana Pérez' }, { f: 'main.tex', s: at('very '), e: at('very ') + 5, del: '', who: 'Bo' }];
+  const W = buildWordDoc(m, files, { now: 0, main: 'main.tex', changes });
+  assert.equal(W.tracked, 2);
+  const E = exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources: {}, bibs: [], citeproc: false, project: { name: 'Paper', main: 'main.tex', files: [...files] } });
+  const d = text(unzip(E.docx).get('word/document.xml'));
+  assert.match(d, /<w:del w:id="\d+" w:author="Ana Pérez" w:date="\d{4}-\d\d-\d\dT[\d:]+Z"><w:r><w:delText xml:space="preserve">brown<\/w:delText><\/w:r><\/w:del>/);
+  assert.match(d, /<w:ins w:id="\d+" w:author="Ana Pérez" w:date="\d{4}-\d\d-\d\dT[\d:]+Z">(?:(?!<\/w:ins>)[\s\S])*>red<\/w:t>/);
+  assert.match(d, /<w:ins w:id="\d+" w:author="Bo" w:date="\d{4}-\d\d-\d\dT[\d:]+Z">(?:(?!<\/w:ins>)[\s\S])*>very <\/w:t>/);
+  assert.ok(!/rkIns/.test(d), 'no mark of Rikuy\'s own is left');
+  // what Word reads: the text as it is now (the round trip's own reading counts insertions only)
+  assert.ok(extract(unzip(E.docx)).regions.size > 0);
+  // the same file opened as a stranger's: the text now, the base with both changes rejected, and
+  // the step of each author in the order their changes stand
+  const r = openDocx(P, E.docx, 'tracked.docx');
+  assert.ok(r.tex.includes('The quick red fox jumps over the very lazy dog.'), r.tex);
+  assert.ok(r.tracked && r.tracked.base.includes('The quick brown fox jumps over the lazy dog.'), r.tracked && r.tracked.base);
+  assert.deepEqual(r.tracked.authors, ['Ana Pérez', 'Bo']);
+  assert.equal(r.tracked.steps.length, 2);
+  assert.ok(r.tracked.steps[0].who === 'Ana Pérez' && r.tracked.steps[0].tex.includes('The quick red fox jumps over the lazy dog.'), r.tracked.steps[0].tex);
+  assert.ok(r.tracked.steps[1].who === 'Bo' && r.tracked.steps[1].tex === r.tex);
+  // a file without tracked changes has no steps
+  const plain = openDocx(P, exportFiles(new Map([['main.tex', now]])).docx, 'plain.docx');
+  assert.equal(plain.tracked, undefined);
 });
 
 console.log('word: ' + n + ' groups of checks passed');

@@ -732,24 +732,38 @@ export const methods = {
   // comments as todonotes' \todo: what Word prints with markup. A change is marked only where
   // its old and new words are plain text (no brace, backslash, dollar, percent, ampersand or
   // paragraph break), so the copy compiles; the others are in it as they are now.
+  // The changes waiting whose old and new words are plain text in prose (no brace, backslash,
+  // dollar, percent, ampersand or paragraph break; only where the page has prose, the words
+  // spelling reads: never the preamble, a label, a citation key, math or a command's argument),
+  // in file f or in every file: those a copy with markup (here) or a Word file (src/word.js)
+  // can mark as changes; the others are in them as they are now
+  plainChanges(f) {
+    const PLAIN = /^[^\\{}$%&#^_~\n]*$/;
+    const prose = new Map();
+    const proseOf = (g) => {
+      if (prose.has(g)) return prose.get(g);
+      const now = this.src(g), P = new Uint8Array(now.length + 1);
+      if (this.model) for (const r of proseRuns(this.model, { code: true })) {
+        if (r.f !== g) continue;
+        const off = r.off || 0;
+        for (let k = 0; k < r.text.length; k++) { const a = r.map[2 * k], b = r.map[2 * k + 1]; if (a >= 0) for (let x = a + off; x < b + off && x < P.length; x++) P[x] = 1; }
+      }
+      const begin = g === this.main ? now.search(/\\begin\s*\{document\}/) : -1;
+      const v = { now, P, begin, ok: g !== this.main || begin >= 0 };
+      prose.set(g, v);
+      return v;
+    };
+    const inProse = (c) => {
+      const { now, P, begin, ok } = proseOf(c.f);
+      if (!ok || c.bs <= begin) return false;
+      if (c.be > c.bs) { for (let x = c.bs; x < c.be; x++) if (!P[x] && /\S/.test(now[x])) return false; return true; }
+      return !!(P[c.bs - 1] || P[c.bs]);
+    };
+    return this.realChanges().filter((c) => (f == null ? /\.tex$/i.test(c.f) : c.f === f) && PLAIN.test(c.a) && PLAIN.test(c.b) && inProse(c));
+  },
   markupCopy() {
     const f = this.main, now = this.src(f);
-    const PLAIN = /^[^\\{}$%&#^_~\n]*$/;
-    // (only where the page has prose, the words spelling reads: never the preamble, a label, a
-    // citation key, math or a command's argument; there a change is in the copy as it is now)
-    const prose = new Uint8Array(now.length + 1);
-    if (this.model) for (const r of proseRuns(this.model, { code: true })) {
-      if (r.f !== f) continue;
-      const off = r.off || 0;
-      for (let k = 0; k < r.text.length; k++) { const a = r.map[2 * k], b = r.map[2 * k + 1]; if (a >= 0) for (let x = a + off; x < b + off && x < prose.length; x++) prose[x] = 1; }
-    }
-    const begin = now.search(/\\begin\s*\{document\}/);
-    const inProse = (c) => {
-      if (begin < 0 || c.bs <= begin) return false;
-      if (c.be > c.bs) { for (let x = c.bs; x < c.be; x++) if (!prose[x] && /\S/.test(now[x])) return false; return true; }
-      return !!(prose[c.bs - 1] || prose[c.bs]);
-    };
-    const list = this.realChanges().filter((c) => c.f === f && PLAIN.test(c.a) && PLAIN.test(c.b) && inProse(c)).sort((a, b) => b.bs - a.bs);
+    const list = this.plainChanges(f).sort((a, b) => b.bs - a.bs);
     let t = now;
     for (const c of list) {
       const m = !c.a ? '\\added{' + c.b + '}' : !c.b ? '\\deleted{' + c.a + '}' : '\\replaced{' + c.b + '}{' + c.a + '}';
