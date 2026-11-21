@@ -67,16 +67,16 @@ register(
     icon: ICON.indent, keysElsewhere: ['Tab'], menu: { list: 26 },
     when: (app, at) => inList(app, at) ? !!app.levelCan(at, 1) : enabled(app, 'paragraph-indent', at), whyNot: (app, at) => inList(app, at) ? app.levelWhy(at) : 'In a list, the item one level down; a paragraph\'s own indent is the Paragraph dialog\'s.',
     run: (app, args, at) => inList(app, at) ? app.listLevel(1) : runCmd(app, 'paragraph-indent', args, at) },
-  { id: 'list-level', name: 'Change List Level', title: 'Change List Level: the item at another level of its list', synonyms: ['List level', 'Outline level of a list item'], menu: { list: 30 },
+  { id: 'list-level', name: 'Change List Level', submenu: true, title: 'Change List Level: the item at another level of its list', synonyms: ['List level', 'Outline level of a list item'], menu: { list: 30 },
     when: (app, at) => !!inList(app, at) && (!!app.levelCan(at, 1) || !!app.levelCan(at, -1)), whyNot: () => 'Put the caret in a list item that has an item before it, or in a nested one.',
     run: (app, args) => (args && args.level ? app.listLevelTo(args.level) : app.openListMenu('level')) },
   { id: 'list-restart', name: 'Restart at 1', title: 'Restart at 1: the numbering starts again at this item', synonyms: ['Restart numbering', 'New list'], menu: { list: 40 },
     when: (app, at) => { const I = numbered(app, at); return !!I && (I.k > 0 || !!I.fmt.resume || I.fmt.start !== 1); }, whyNot: () => 'The item is the first of a list that starts at 1.', run: (app) => app.listRestart() },
   { id: 'list-continue', name: 'Continue Numbering', title: 'Continue Numbering: the list goes on from the numbered list before it (enumitem\'s resume)', synonyms: ['Resume numbering', 'Continue list'], menu: { list: 41 },
     when: (app, at) => { const I = numbered(app, at); return !!I && !I.fmt.resume && app.listBefore(I) && !['short', 'beamer', 'paralist'].includes(app.listMech()); }, whyNot: () => 'Put the caret in a numbered list that has one before it.', on: (app, at) => { const I = numbered(app, at); return I ? !!I.fmt.resume : null; }, run: (app) => app.listResume(true) },
-  { id: 'list-value', name: 'Set Numbering Value', title: 'Set Numbering Value: the number this list starts at, or continue the one before', synonyms: ['Start at', 'Starting number', 'Numbering value'], menu: { list: 42 },
+  { id: 'list-value', name: 'Set Numbering Value', dialog: true, title: 'Set Numbering Value: the number this list starts at, or continue the one before', synonyms: ['Start at', 'Starting number', 'Numbering value'], menu: { list: 42 },
     when: (app, at) => !!numbered(app, at), whyNot: () => 'Put the caret in a numbered list.', run: (app, args) => (args && args.value != null ? app.listStart(+args.value) : openValueDialog(app)) },
-  { id: 'list-spacing', name: 'List spacing', title: 'The space between the list\'s items: LaTeX\'s own, none between them, none at all, or your own', synonyms: ['Space between items', 'Compact list', 'nosep', 'itemsep'], menu: { list: 50 },
+  { id: 'list-spacing', name: 'List spacing', submenu: true, title: 'The space between the list\'s items: LaTeX\'s own, none between them, none at all, or your own', synonyms: ['Space between items', 'Compact list', 'nosep', 'itemsep'], menu: { list: 50 },
     when: (app, at) => !!inList(app, at) && inList(app, at).L.editable, whyNot: () => 'Put the caret in a list.',
     run: (app, args) => (args && 'sep' in args ? app.listSpacing(args.sep) : app.openListMenu('spacing')) },
   { id: 'bullet-define', name: 'Define New Bullet', title: 'Define New Bullet: any symbol, character or LaTeX as the list\'s bullet', synonyms: ['Custom bullet', 'Bullet symbol'],
@@ -86,7 +86,7 @@ register(
     when: (app, at) => { const I = listOf(app, at); return !!I && (!I.L || I.L.kind !== 'desc') && app.listMech() !== 'beamer'; }, whyNot: (app, at) => app.listMech() === 'beamer' ? 'Beamer sets bullets in its theme.' : why(app, at),
     run: (app, args) => (args && args.file ? app.bulletPicture(args.file, args.blob || null) : openPictureBulletDialog(app)) },
   // (R2) Adjust List Indents: where the text and the label start (enumitem's leftmargin, labelwidth, labelsep)
-  { id: 'list-indents', name: 'Adjust List Indents', title: 'Adjust List Indents: where the list\'s text starts, the label\'s width and the space after it (enumitem\'s leftmargin, labelwidth and labelsep)', synonyms: ['List indents', 'leftmargin', 'labelsep', 'labelwidth', 'Text indent', 'Bullet position', 'Number position'], menu: { list: 55 },
+  { id: 'list-indents', name: 'Adjust List Indents', dialog: true, title: 'Adjust List Indents: where the list\'s text starts, the label\'s width and the space after it (enumitem\'s leftmargin, labelwidth and labelsep)', synonyms: ['List indents', 'leftmargin', 'labelsep', 'labelwidth', 'Text indent', 'Bullet position', 'Number position'], menu: { list: 55 },
     when: (app, at) => { const I = inList(app, at); return !!I && I.L.editable && app.listMech() === 'enumitem'; },
     whyNot: (app, at) => (inList(app, at) && app.listMech() !== 'enumitem' ? 'This document labels its lists with ' + (app.listMech() === 'beamer' ? 'beamer\'s own' : 'the enumerate package or paralist') + ', beside which enumitem\'s indents would break its lists: set \\leftmargin in the source.' : 'Put the caret in a list.'),
     run: (app, args) => (args && INDENT_KEYS.some((k) => k in args) ? app.listIndents(args) : openIndentsDialog(app)) },
@@ -99,7 +99,7 @@ register(
   { id: 'description-list', name: 'Description list', title: 'Description list: each item a term in bold and its description', synonyms: ['Definition list', 'Glossary list', 'description'], kind: 'toggle', menu: { list: 15 },
     when: can('description'), whyNot: why, on: isOn('description'), run: (app) => app.toggleList('description'),
     palette: { k: 'description', d: 'Description list', order: 135, t: { open: '\n\n\\begin{description}\n  \\item[', close: '] \n\\end{description}\n\n' }, block: true } },
-  { id: 'sort', name: 'Sort', order: 50, title: 'Sort: the list\'s items, or the selected paragraphs, by their text, a number or a date', synonyms: ['Sort Text', 'Sort list', 'Sort paragraphs', 'Alphabetize'], tab: 'home', group: 'paragraph', el: 'rb-sort',
+  { id: 'sort', name: 'Sort', dialog: true, order: 50, title: 'Sort: the list\'s items, or the selected paragraphs, by their text, a number or a date', synonyms: ['Sort Text', 'Sort list', 'Sort paragraphs', 'Alphabetize'], tab: 'home', group: 'paragraph', el: 'rb-sort',
     icon: ICON.sort, menu: { list: 60 }, when: (app, at) => !!app.sortTarget(at), whyNot: () => 'Put the caret in a list, or select two paragraphs or more.', run: (app, args) => (args && args.order ? app.listSort(args) : openSortDialog(app)) }
 );
 

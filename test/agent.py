@@ -164,8 +164,12 @@ def api(p):
     page.evaluate('''() => window.rikuy.openFiles([new File([Uint8Array.from('%s'.match(/../g).map((h) => parseInt(h, 16)))], 'dot.png', { type: 'image/png' })])''' % PNG)
     page.wait_for_function('window.rikuy.assetBlobs.has("dot.png")', timeout=5000)
     files = page.evaluate('rikuy.api.getFiles()')
-    check('api.getFiles gives each text file with its text and a picture with its size', [sorted(f) for f in files] == [['name', 'text'], ['name', 'text'], ['bytes', 'name']]
-          and [f['name'] for f in files] == ['main.tex', 'refs.bib', 'dot.png'] and files[0]['text'] == src(page) and files[1]['text'] == src(page, 'refs.bib') and files[2]['bytes'] == len(PNG) // 2, [(f['name'], f.get('bytes')) for f in files])
+    # (the opening document's live graph brings its own text files, rikuy.sty and graphs/saving.html,
+    # and its picture once it is drawn: each in the shape its kind has)
+    by = {f['name']: f for f in files}
+    check('api.getFiles gives each text file with its text and a picture with its size', all(sorted(f) == (['bytes', 'name'] if re.search(r'\.(png|jpe?g|pdf|pgf)$', f['name']) else ['name', 'text']) for f in files)
+          and [f['name'] for f in files][:2] == ['main.tex', 'refs.bib'] and {'rikuy.sty', 'graphs/saving.html', 'dot.png'} <= set(by)
+          and by['main.tex']['text'] == src(page) and by['refs.bib']['text'] == src(page, 'refs.bib') and by['dot.png']['bytes'] == len(PNG) // 2, [(f['name'], f.get('bytes')) for f in files])
     before = [src(page), page.evaluate('rikuy.hist.length')]
     check('the sample needs no script set up: api.needs is [] and api.setUpScripts resolves to null, changing nothing',
           page.evaluate('rikuy.api.needs()') == [] and page.evaluate('rikuy.api.setUpScripts()') is None and [src(page), page.evaluate('rikuy.hist.length')] == before)
@@ -1238,7 +1242,7 @@ def structure(p):
     fig = doc.get_by_role('figure', name='Table 1: Shortcuts. On a Mac, use Cmd for Ctrl.', exact=True)
     check('the table float is a figure named by its caption, with its table inside', fig.count() == 1 and fig.get_by_role('table').count() == 1)
     cite = doc.get_by_role('link', name='Knuth (1984)', exact=True)
-    ref = doc.get_by_role('link', name='(1)', exact=True)
+    ref = doc.get_by_role('link', name='(1)', exact=True).first  # (the abstract's and the round trip's)
     check('a citation is a link said to be a citation, described by its keys; a cross reference a link to its label', cite.get_attribute('aria-roledescription') == 'citation' and cite.get_attribute('aria-description') == 'cites knuth1984'
           and ref.get_attribute('aria-roledescription') == 'cross reference' and ref.get_attribute('aria-description') == 'to eq:bellman')
     check("a footnote mark is a link \"Footnote 1\"; the title's author and date are paragraphs", doc.get_by_role('link', name='Footnote 1', exact=True).count() == 1 and doc.get_by_role('paragraph').filter(has_text='Rikuy').count() >= 1)

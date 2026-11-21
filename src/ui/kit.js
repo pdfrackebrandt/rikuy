@@ -86,6 +86,8 @@ export function openMenu(app, at, items, o = {}) {
     a.setAttribute('role', it.checked === undefined ? 'menuitem' : it.radio ? 'menuitemradio' : 'menuitemcheckbox');
     if (it.checked !== undefined) a.setAttribute('aria-checked', it.checked ? 'true' : 'false');
     a.setAttribute('aria-label', it.name);
+    // (an item that opens a menu of its own says so, and shows ›, as Word's do)
+    if (it.submenu) a.setAttribute('aria-haspopup', 'menu');
     // (keys named in a menu as this computer has them: ⌘X on a Mac)
     if (it.title) a.title = keysInText(it.title, macUA());
     if (it.id) a.id = it.id;
@@ -95,6 +97,7 @@ export function openMenu(app, at, items, o = {}) {
     else if (it.swatch) { const g = el('i', 'mi-sw'); g.setAttribute('aria-hidden', 'true'); if (/^[0-9A-Fa-f]{6}$/.test(it.swatch)) g.style.background = '#' + it.swatch; a.append(g); }
     if ((it.label ?? it.name) !== '') a.append(el('span', 'mi-n', it.label ?? it.name));
     if (it.keys) { const k = el('span', 'mi-k', keysInText(it.keys, macUA())); k.setAttribute('aria-hidden', 'true'); a.append(k); }
+    if (it.submenu) { const k = el('span', 'mi-k mi-sub', '›'); k.setAttribute('aria-hidden', 'true'); a.append(k); }
     if (it.disabled) a.setAttribute('aria-disabled', 'true');
     if (it.disabled && it.why) {
       a.dataset.reach = '1';
@@ -113,7 +116,9 @@ export function openMenu(app, at, items, o = {}) {
   if (p.lastChild && p.lastChild.getAttribute('role') === 'separator') p.lastChild.remove();
   if (items.some((it) => it && it.disabled && it.why)) { note = el('div', 'mi-why'); note.setAttribute('aria-hidden', 'true'); note.hidden = true; p.append(note); }
   app.positionPop();
-  if (o.focus !== false) { const first = p.querySelector('[role^=menuitem]:not([aria-disabled])'); if (first) first.focus(); }
+  // (o.ring false: opened by a press, its first item has the focus without the keys' ring, as
+  // Word highlights nothing until a key moves in it)
+  if (o.focus !== false) { const first = p.querySelector('[role^=menuitem]:not([aria-disabled])'); if (first) first.focus({ focusVisible: o.ring !== false }); }
   return p;
 }
 
