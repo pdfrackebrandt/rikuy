@@ -305,3 +305,16 @@ the next sentence goes into the equation.**
 - Not this branch's, and the same on base: a price, `costs $5 each`, becomes `$5each$`. `$$`, which
   was a dollar sign, is now a display (`pay $$ now` gives `\[ now \]`), with `$` then a space as
   the new dollar sign. That is Overleaf's behaviour, but people who learned the old hint lose it.
+
+## Fixes after the verification of 2308408 (author)
+
+| finding | commit | what changed |
+|---|---|---|
+| N1 | 0a411ee | the field's input listener takes trusted input only; a Ctrl, Alt or Meta chord ends an open `\text{` or `\mathbb{` first, as Enter does; `\in\mathbb{R}` typed in one go starts the second command |
+| N2 | 0a411ee | a LaTeX box the field handed over to keeps the field's keys in a display: Enter done, Ctrl+Enter a new row (the display made align, or `\\` inside an environment the box holds) |
+| lows | 0a411ee | Go to File finds Print by its name from three letters, after the files; Esc in the insert list writes `\textbackslash{}sec`, never a command; `$5 ` is a price (`\$5`) |
+| `$$` | e144b5f | `$$` writes `\$` at once; a letter or a backslash next takes it back and opens a display |
+| live cases | ed4f37a, f0f20be | keyless characters go through the field's rules; the caret after a formula ending its line stays in that line; a display never inside a command's argument; after a display, a new line in its paragraph, a second Enter a new paragraph, no extra blank lines |
+
+Each with checks in `test/power.py` (147 in all, `accept` the live cases typed as keys and as
+insertText) that fail on the commit before.
