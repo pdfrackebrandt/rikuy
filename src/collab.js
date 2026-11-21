@@ -240,6 +240,13 @@ export const collab = {
     this.linkCache.set(k, v);
     if (!this.noIdb) kvPut('link:' + k, v).catch(() => {});
   },
+  // the mark of the project (mark: linkInfo's, or null) under another of its main files
+  carryLink(mark, main) {
+    const k = this.name + '|' + main, v = mark ? { ...mark } : null;
+    this.linkCache = this.linkCache || new Map();
+    this.linkCache.set(k, v);
+    if (!this.noIdb) (v ? kvPut('link:' + k, v) : kvDel('link:' + k)).catch(() => {});
+  },
   // the sample and a new document hold nothing of a stranger's: a mark left under their name
   // (by an archive dropped on the sample, or a link to a document of that name) goes
   clearLink(name = this.name, main = this.main) {

@@ -583,6 +583,9 @@ export const review = {
     await this.snapshot('Before opening ' + v.name, { force: !this.lastSig });
     await this.stashBinary();
     await this.loadBinary(v.name, v.main);
+    // a version of this project kept under another main document (File, Main document): the
+    // project's mark (a stranger's, shell escape restricted or allowed) is the one it has now
+    if (v.name === this.name && v.main !== this.main) this.carryLink(await this.linkInfo(), v.main);
     this.files = new Map(files);
     this.main = v.main;
     this.name = v.name;
