@@ -125,3 +125,82 @@ and every new unit group but the unchanged ones.
 | L6 | Where something landed is `flash()` (a wash beside the text, opacity, `--rk-hold` then slow); the pulse, sweep and SyncTeX's mark on `--rk-loop` and `--rk-hold`, still with Animations off. | motion.py highlights (4) |
 | L7 | llms.txt and the tools' descriptions say hidden text reaches the agent. | agent.test.mjs llms.txt |
 | L8 | On `document.modelContext` an error is thrown. | agent.py review L8 |
+
+## Verification of the response (the reviewer, Claude) at 7656574
+
+The worktree was at 7656574, built with `npm run build`, with `dist/tex` copied from `/home/claude/wt-tree/dist/tex` (cp -a, the build's own worker files kept). Main was a954bc6, built into `/tmp/review-motion-out/dist-main`. Every browser run went through `/tmp/rk-heavy` except the deletion budget run, which mostly waits out two minute windows. The scripts and their JSON are in `/tmp/review-motion-out/` (`verify.py`, `h2.py`, `h2type.py`, `cycle.mjs`, `m6.mjs`, `motion_rev2.py`).
+
+**Verdict: fix N1 first, then merge.** N1 is small: the tool promises to refuse the preamble, and a command then corrupts it. N2 and N3 can be follow-ups.
+
+### Suites
+
+| suite | result |
+|---|---|
+| `test/motion.py` | 67 of 67 |
+| `test/ux.py` | 328 of 328 |
+| `test/tabs.py` | 156 of 156 |
+| `test/pdf.py` (with `dist/tex`) | 23 of 23 |
+| `test/agent.py` | 192 of 192 |
+| `node test/agent.test.mjs` | 17 groups |
+
+### Each finding, tried against
+
+| finding | verdict | what was tried |
+|---|---|---|
+| H1 | holds, as a speed bump | `run_command save-as` answers `personOnly` and nothing downloads. A CDP click on Allow 600 ms after `set_source` still approves. So does a script focusing Allow followed by a CDP Enter 700 ms later. Both are the agent driving input, which the dialog, the file's head and llms.txt now say. A script's synthetic Enter, pointerdown, click (detail 1) and `click()` after focus are refused. A CDP click at once is refused (the arm). |
+| H2 | fixed | **dev/bench/long:** CDP `getFullAXTree` has 11 of 11 formulas and 43 of 43 headings (main: 0 and 2). **dev/bench/long ×7 (281 pages, 27,510 elements, under LAZY):** 77 formulas and 301 headings, not lazy. Its cost is N3. |
+| M1 | fixed; one residual by design | Refused: Tab, b, Space; Tab, b, Enter at once; a CDP click at once. Approved: Tab, then a pause of 700 ms, then Enter. That is the keyboard's way to answer, and a person who pauses after Tab and then presses Enter would answer too. |
+| M2 | fixed for deletions; N2 for what is hidden | **Asked:** 199 character pieces at the 2nd piece. **Asked:** one replace of the whole document with two words changed everywhere. **Asked after:** a `cut` of 300 characters by command, "Keep the AI agent's change?"; Undo it restored the source byte for byte. **Not asked:** 199, then 199 again after two minutes. That is by design: about 100 characters a minute stay silent. |
+| M3 | fixed | With clipboard-read granted, `paste-text` asks; refused, the clipboard's text is not in the source. |
+| M4 | fixed | After an agent edit, the person typed. `undo {steps: 1}` and `undo {step}` were both refused with the "document changed after your edit" error, and both texts stayed. Once the person pressed Ctrl+Z on their own typing, `undo {step}` brought the source back byte for byte. |
+| M5 | fixed | The examples come from `EXAMPLES` (bold, style-heading2, bullets, table), and the unit test checks them. |
+| M6 | fixed | thebibliography with `\bibitem{solow}` and `\bibitem[Romer(1990)]{romer}` gives keys, labels and text, with `start` at each `\bibitem`. |
+| M7 | fixed | `include: []` gives only `main` and `words`; page parts alone give those alone. |
+| M8 | partly fixed: see N1 | A file not `\input` is refused. |
+| M9 | fixed | Descriptors are 10.6 KB (were 18.2). `list_commands` with no query is 5.1 KB (was 121). get_document with no arguments is 311 bytes. |
+| M10 | fixed | consequentialHint is set on none; destructiveHint on the four tools that take text out. |
+| L1, L2 | fixed | save-as is personOnly. `table {rows: "many"}` gets "args.rows must be a whole number." |
+| L3 | fixed | A numbered align is said as `\begin{align} … \end{align}`. |
+| L4 | fixed | The same press 40 ms after opening Insert landed on its button 7 of 8 times (was 5). The eighth, Picture, hits the control's own file input, as it does at rest. |
+| L5 | fixed (the author's numbers) | motion.py checks the glide on keys that move the caret and none on typed characters. |
+| L6 | fixed | No duration in app.css or motion.css is off the tokens. The busy pulse, the sweep and SyncTeX's mark stop with Animations off. |
+| L7, L8 | fixed | The descriptions say hidden text reaches the agent; an error is thrown (seen as a rejection). |
+| `\include` cycles | holds | Each file is read once, and nothing hangs: `\include{main}` in main 34 ms, a↔b 2 ms, an `\input` chain 200 deep 38 ms (200 sections), each file inputting the next twice 22 deep 9 ms. No warning names the cycle. |
+
+### New findings
+
+- **N1 (Medium): select into the preamble is not refused, and a command then edits inside `\documentclass`.**
+  - Repro (`verify.py misc`): `select {start: 5}` on `\documentclass{article}…` returned `selection {file: main.tex, start: 5}`. The description says "the preamble … is refused".
+  - `run_command bold` then changed `[5, 5, "\textbf{}"]`, which gives `\docu\textbf{}mentclass{article}`.
+  - Cause: M8's fix compares only the file (`src/agent.js` select). `caretNow()` reports the place that was asked for even where the page shows nothing.
+  - Fix: refuse when `start` is before the main file's `preambleEnd`, or when the DOM selection after `restoreCaret` is not in a block whose source range holds `start`. Add an agent.py review check that select at 5 is refused and that bold after it changes nothing.
+- **N2 (Low): text commented out counts as nothing taken out.**
+  - One `edit_source` replacing the whole document with every paragraph's line prefixed by `%` asked nothing, and the page and PDF lose the whole body.
+  - The same with `\iffalse` and `\fi` inserted around the body (two inserts, no question).
+  - `lostChars` diffs the source's words, and the commented words are still there. One Undo takes it back, as for any edit.
+  - Fix: diff the text with comments made spaces (`scan.js`), and let the ask-after path also look at the model's words dropping.
+- **N3 (Low; large documents, mostly from before this PR): every page drawn below LAZY makes a 281 page document heavy.** Measured on dev/bench/long ×7, this build against main a954bc6 (content-visibility auto):
+
+  | measure | this build | main a954bc6 |
+  |---|---|---|
+  | layout objects | 40,368 | 3,086 |
+  | JS heap | 42.7 MB | 41.8 MB |
+  | first render, 2 runs | 2.1 and 1.9 s | 3.4 and 1.4 s (noisy) |
+  | CDP `getFullAXTree` | 4.7 s, 51,752 nodes | 0.2 s, 3,914 nodes, incomplete |
+
+  - Typing there is already 0.6 to 0.7 s a key in both builds. `bench_typing.py` on it: median 686 ms and p95 2002 here, 568 and 1094 for main; that includes everything merged since a954bc6, not H2 alone.
+  - An A/B inside this build, all pages drawn against content-visibility auto (keys 250 ms apart, so they queue): median 1750 against 1639 ms, p95 6125 against 5390. H2 adds about 7 % and 14 %.
+  - Not a blocker. Typing on long documents should be its own task. LAZY could count pages as well as elements.
+
+### What held up
+
+- The defences against page scripts and document text: synthetic events, presses inside the arm and keys while typing are all refused.
+- The deletion budget across calls, and the question after a command.
+- `undo` refusing to take the person's work.
+- personOnly for everything that leaves the page.
+- Schema errors in words.
+- Paging and the token budget.
+- The bibliography and include fixes.
+- Every formula and heading in Chromium's tree.
+- Motion's tokens and the ribbon press.
+- Every suite above passes.
