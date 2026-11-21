@@ -1,0 +1,71 @@
+# What every job with browser suites runs before them (ci.yml's editor jobs, tex.yml's tex job): the
+# pinned pip packages and Playwright's headless Chromium with the system packages it needs, the
+# browsers and pip's downloads taken from caches when an earlier run left them.
+name: Playwright's headless Chromium
+description: pip packages, Playwright's headless shell and its system packages, the downloads cached
+inputs:
+  playwright:
+    description: Playwright's version, pinned; the browsers' cache is keyed by it
+    required: true
+  packages:
+    description: the other pip packages, pinned
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    # the browsers Playwright downloads belong to its version and the system it runs on; pip's
+    # downloads to the Python and the pinned packages
+    - name: The caches' keys
+      id: keys
+      shell: bash
+      env:
+        PW: ${{ inputs.playwright }}
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        . /etc/os-release
+        py=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+        echo "browsers=playwright-$PW-shell-$ID$VERSION_ID-$(uname -m)" >> "$GITHUB_OUTPUT"
+        echo "pip=pip-$ID$VERSION_ID-py$py-$(printf '%s %s' "$PW" "$PACKAGES" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+    - name: pip's downloads from an earlier run
+      id: pip
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.cache/pip
+        key: ${{ steps.keys.outputs.pip }}
+    - name: Playwright's browsers from an earlier run
+      id: browsers
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ steps.keys.outputs.browsers }}
+    - name: pip packages, the headless shell and its system packages
+      shell: bash
+      env:
+        PW: ${{ inputs.playwright }}
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        # (PACKAGES split into words on purpose: one pinned package each)
+        # shellcheck disable=SC2086
+        python3 -m pip install "playwright==$PW" $PACKAGES
+        # apt rebuilds man-db's index of manual pages after every install (3 to 4 s); nothing here reads it
+        sudo rm -f /var/lib/man-db/auto-update
+        # the headless shell alone: the browser every suite launches (headless, no channel), so the
+        # full Chromium was downloaded for nothing; its system packages are Chromium's whole set,
+        # fonts included, as before (both are Playwright's "chromium" group). A cached shell is found
+        # and not fetched again.
+        python3 -m playwright install --with-deps --only-shell chromium
+    # saved as soon as they are here, not at the end of a job that passed: a job cancelled by a
+    # newer push or failed by a test still leaves them for the next run
+    - name: pip's downloads for the next run
+      if: steps.pip.outputs.cache-hit != 'true'
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.cache/pip
+        key: ${{ steps.keys.outputs.pip }}
+    - name: Playwright's browsers for the next run
+      if: steps.browsers.outputs.cache-hit != 'true'
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ steps.keys.outputs.browsers }}
