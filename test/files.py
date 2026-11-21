@@ -343,6 +343,7 @@ try:
             'talk/slides.tex': talk,
             'main.tex': '\\documentclass{article}\n\\usepackage{style/defs}\n\\usepackage{subfiles}\n\\begin{document}\nThe paper, $\\regime{1}$.\n\\subfile{sections/ch}\n\\end{document}\n',
             'style/defs.sty': '\\ProvidesPackage{defs}\n\\newcommand{\\regime}[1]{\\mathcal{R}_{#1}}\n',
+            'sections/part.tex': 'A part the talk reads.\n\\nosuchmacro here\n',
             'figures/fig.png': PNG}))
         check('an Overleaf .zip with a paper, a talk and a chapter opens the paper', page.evaluate('window.rikuy.main') == 'main.tex')
         items = page.evaluate("window.rikuy.cmds.command('main-document').menuItems(window.rikuy).map((x) => [x.name, x.checked])")
@@ -363,6 +364,16 @@ try:
         if TREE:
             r = page.evaluate("async () => { const r = await window.rikuy.api.compile(); return { ok: r.ok, engine: r.engine, pages: r.pages, errs: r.problems.filter((x) => x.severity === 'error').map((x) => x.message) }; }")
             check('the talk compiles from its folder, ../style and ../figures found', r['ok'] and r['pages'] >= 1 and not r['errs'], r)
+            # a file beside the talk's folder, as TeX names it (../sections/part.tex): its error and a
+            # click in the PDF lead to that file, not to the talk
+            page.evaluate("() => window.rikuy.api.setSource(window.rikuy.api.getSource().replace('\\\\end{frame}\\n\\\\end{document}', '\\\\end{frame}\\n\\\\begin{frame}\\n\\\\input{../sections/part}\\n\\\\end{frame}\\n\\\\end{document}'))")
+            r = page.evaluate("async () => { const r = await window.rikuy.api.compile(); return r.problems.filter((x) => x.severity === 'error').map((x) => [x.message.slice(0, 40), x.file, x.line]); }")
+            check('an error in ../sections/part.tex points at that file and line', any(f == 'sections/part.tex' and l == 2 and 'Undefined control' in m for m, f, l in r), r)
+            hit = page.evaluate('''async () => { const g = window.rikuy, v = g.pdfView, s = await v.whenSync(); if (!s) return null;
+              const w = s.where(g.texPath('sections/part.tex'), 1);
+              const h = w && s.at(w.page, w.x + 2, w.y - 2); return { w: !!w, file: h && g.fromTexPath(h.file) }; }''')
+            check('SyncTeX finds it from the page and leads back to it from the PDF', hit and hit['w'] and hit['file'] == 'sections/part.tex', hit)
+            page.evaluate("() => window.rikuy.api.setSource(window.rikuy.api.getSource().replace('\\\\begin{frame}\\n\\\\input{../sections/part}\\n\\\\end{frame}\\n', ''))")
         page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
         page.evaluate("window.rikuy.runCommand('main-document', 'main.tex')")
         page.wait_for_function("window.rikuy.main === 'main.tex'", timeout=5000); page.wait_for_timeout(300)
