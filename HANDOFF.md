@@ -21,7 +21,7 @@ work below are in `docs/reviews/` (RIBBON-TABS, UX-2, SHORTCUTS, SECURITY-2, CPP
 | Security S2 to S5 and the git proxy | 81, `sec-followups` | SECURITY-2.md's last verification: merge | merge when green; then L6 (the proxy's byte cap costs Worker CPU on big clones) |
 | Word's gaps: objects (contextual tabs, picture corrections in C, Selection Pane, Arrange) | 83, `word-gaps-objects` | done; hostile review running | review, fixes, merge main after 78, renumber its PLAN task 68 (84 also has a 68), merge |
 | Word's gaps: document (Table Properties, Formula, Header & Footer tab, Split, UnicodeMath) | 84, `word-gaps-doc` | done; hostile review running | the same |
-| R6, the arXiv corpus | 85, `arxiv-resume` | run 3 (44728716263) stopped on arXiv's 429; this PR waits it out and reruns run 2's sample | merge; dispatch arXiv corpus with `sources_from_run=44077385415`; classify; rates into PLAN.md's table, README.md, tex/README.md; add `sourcesanspro`, `foekfont`, cbfonts' `grmn` to the tree; 1502.01027 printing "begindocument/b..." |
+| R6, the arXiv corpus | 99, `arxiv-shards` | run 4 (44766248361) partial: five shards spent 5 h 50 min downloading the desktop TeX Live from a slowed mirror; this PR downloads it once into the cache, adds hard limits per document and per shard; partial numbers in PLAN task 16 | merge; dispatch arXiv corpus with `sources_from_run=44077385415`; classify; rates into PLAN.md's table, README.md, tex/README.md; add `sourcesanspro`, `foekfont`, cbfonts' `grmn` to the tree; 1502.01027 printing "begindocument/b..." |
 | C and C++, B0 | 82, merged | B0 done | B1 to B3 after the UI work |
 
 Pedro's to do (needs his accounts): a WAF rate rule on `/git/` (docs/HOSTING.md step 9) before
