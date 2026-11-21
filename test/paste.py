@@ -1,5 +1,5 @@
 """Paste from Word, Google Docs, web pages, spreadsheets and chat assistants."""
-import os, sys, traceback
+import os, re, sys, traceback
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import open_page, check, results, src, click_text
 from playwright.sync_api import sync_playwright
@@ -61,8 +61,12 @@ try:
         at = s.find('Rikuy escapes special characters for you.') + len('Rikuy escapes special characters for you.')
         want = ''.join('\n\n\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{%s}\n\\end{center}' % n for n in reversed(pasted))
         check('each is placed in the text after the paragraph the caret was in', s[at:].startswith(want + '\n\n') or s[at:].startswith(''.join('\n\n\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{%s}\n\\end{center}' % n for n in pasted) + '\n\n'), s[at:at + 260])
-        check('graphicx joins the preamble once, after the other packages', s.count('\\usepackage{graphicx}') == 1 and '\\usepackage{hyperref}\n\\usepackage{graphicx}\n' in s, s[:300])
-        check('the pictures show on the page and the message says they were placed', page.evaluate('document.querySelectorAll("#pages img").length') == 2 and 'placed it in the text' in page.inner_text('#toast'), page.inner_text('#toast'))
+        # (after the last \\usepackage line, rikuy.sty's for the opening document's live graph, which
+        # loads graphicx itself: the pictures get their own, and keep it if the graph goes)
+        last = re.findall(r'\\usepackage(?:\[[^\]]*\])?\{[^}]*\}\n', base[:base.index('\\begin{document}')])[-1]
+        check('graphicx joins the preamble once, after the other packages', s.count('\\usepackage{graphicx}') == 1 and last + '\\usepackage{graphicx}\n' in s, s[:420])
+        # (the opening graph's box holds its picture too, hidden while the graph runs: class wfb)
+        check('the pictures show on the page and the message says they were placed', page.evaluate('document.querySelectorAll("#pages img:not(.wfb)").length') == 2 and 'placed it in the text' in page.inner_text('#toast'), page.inner_text('#toast'))
         page.keyboard.press('Control+z'); page.wait_for_timeout(300)
         one = src(page).count('\\includegraphics')
         page.keyboard.press('Control+z'); page.wait_for_timeout(300)

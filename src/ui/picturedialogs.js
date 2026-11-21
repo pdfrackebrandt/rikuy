@@ -59,7 +59,9 @@ function place(app, p) {
 function finish(app, p, ok, focus) {
   p.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && e.target.matches('input:not([type=checkbox]):not([type=radio]), select')) { e.preventDefault(); ok(); } });
   place(app, p);
-  const first = (focus && p.querySelector(focus)) || p.querySelector('textarea, input, select');
+  const named = focus && p.querySelector(focus), first = named || p.querySelector('textarea, input, select');
+  // (a field the command named keeps the focus on a phone too, src/app.js makePop)
+  if (named) named.dataset.named = '';
   if (first) { first.focus(); if (first.select) first.select(); }
 }
 
@@ -144,7 +146,7 @@ export function sizeDialog(app, focus) {
     buttons(app, ok, () => back(app, keep)));
   if (!h.P.keyval) for (const x of [w, hh, ang, cl, cr, ct, cb]) x.disabled = true;
   finish(app, p, ok, { width: '.pd-len', height: '.pd-len:nth-of-type(1)', crop: '.pd-crop input', angle: '[aria-label=Rotation]', place: 'select' }[focus] || null);
-  if (focus === 'height') hh.focus();
+  if (focus === 'height') { hh.dataset.named = ''; hh.focus(); }
 }
 
 // ---- Format Picture: Corrections, Color and Transparency in numbers (src/cmd/picfx.js) -------------
