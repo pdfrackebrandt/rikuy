@@ -339,6 +339,17 @@ def clipboard(page):
     select_text(page, 'words '); page.keyboard.press('Control+x'); page.wait_for_timeout(250)
     click_text(page, 'phrase', 0); page.keyboard.press('Control+v'); page.wait_for_timeout(300)
     check('clipboard: words cut and pasted inside the same \\emph stay in it once', src(page) == W('An \\emph{italic words phrase with inside} here.'), src(page))
+    # a format with a value goes only where the place has the same one: a size into another size,
+    # a family into another family keep theirs, as Word's paste keeps the copied look; the same
+    # size or colour is not put twice
+    for doc, sel, at, off, want, label in [
+            ('A {\\Large big words} and {\\small small text here}.', 'big', 'small text', 6, 'A {\\Large big words} and {\\small small {\\Large big}text here}.', 'a size into another size'),
+            ('A \\textsf{sans word} and \\textrm{roman text here}.', 'sans', 'roman text', 6, 'A \\textsf{sans word} and \\textrm{roman \\textsf{sans}text here}.', 'a family into another family'),
+            ('A {\\Large big words} and {\\Large large text here}.', 'big', 'large text', 6, 'A {\\Large big words} and {\\Large large bigtext here}.', 'a size into the same size'),
+            ('A \\textcolor{red}{red words} and \\textcolor{red}{more red here}.', 'words', 'more red', 5, 'A \\textcolor{red}{red words} and \\textcolor{red}{more wordsred here}.', 'a colour into the same colour')]:
+        load_doc(page, W(doc)); page.wait_for_timeout(150)
+        select_text(page, sel); page.keyboard.press('Control+c'); click_text(page, at, off); page.keyboard.press('Control+v'); page.wait_for_timeout(300)
+        check('clipboard: ' + label + ' (review M5)', src(page) == W(want), src(page))
 
 
 def once(page, doc, at, cmd, want, label):

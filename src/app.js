@@ -56,6 +56,8 @@ import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
 import { scriptNeeds, scriptLines, addScriptSetup, scriptName, scriptSetup, MORE } from './scripts.js';
+// the character formats that carry a value (src/charfmt.js CHAR_KINDS): one is not another of its kind
+const VALUED = new Set(['color', 'highlight', 'shading', 'size', 'family', 'spacing', 'scale', 'position', 'border', 'enclose']);
 
 const PX_PER_PT = 96 / 72.27;
 // Rikuy was called Galley at first; the keys of what a browser keeps keep that name, so
@@ -384,6 +386,12 @@ function fromField(v, st) {
   });
   return lines.join(' \\\\\n');
 }
+
+// What stands before a paragraph's first word when the caret there is at its start: a blank line,
+// or the line of a \begin{...} (the document, a quote, a theorem with its [title]), a heading or
+// \maketitle; then any comment lines and a \noindent, which belong to the paragraph below them
+// (group 1: the new paragraph goes before them, src/app.js enter)
+const PARA_START = /(?:\n[ \t]*\n|\\begin\s*\{[^{}\n]*\}(?:\[[^\]\n]*\])?[ \t]*\n|\\(?:part|chapter|section|subsection|subsubsection|paragraph)\*?\s*\{[^\n]*\}[ \t]*\n|\\maketitle[ \t]*\n)((?:[ \t]*%[^\n]*\n)*[ \t]*(?:\\noindent(?![A-Za-z])[ \t]*(?:\n[ \t]*)?)?)$/;
 
 class App {
   constructor() {
@@ -1930,17 +1938,21 @@ class App {
     }
     // at its start, as Word's: an empty paragraph above it, the caret staying with the words (Up
     // goes into it, and what is typed there is a paragraph of its own); it wrote blank lines
-    // into the source, which LaTeX reads as nothing, and Up then skipped to the block before
-    const head = c.collapsed && itemEl && !itemEl.classList.contains('split-b') && !itemEl.classList.contains('tex') ? itemEl.querySelector('span.t:not(.gh)') : null;
-    const p0 = head && head.firstChild ? posFromDom(head.firstChild, 0, this.root) : null;
-    if (p0 && !p0.ghost && p0.f === f && p0.p === p && kind === 'p') {
-      this.showGhost(itemEl, f, p, { before: true });
+    // into the source, which LaTeX reads as nothing, and Up then skipped to the block before.
+    // Only where the source has a paragraph's start before the caret (PARA_START, as
+    // dogfood-econ has it): words after a display or a list with no blank line are the same
+    // paragraph, and Enter there makes them a new one; a paragraph that starts with a formula is
+    // at its start too (review M6)
+    const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
+    const ps = c.collapsed && !w.close && itemEl && kind === 'p' && !itemEl.classList.contains('tex') ? PARA_START.exec(src.slice(Math.max(0, w.p - 400), w.p)) : null;
+    if (ps) {
+      const keep = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+      this.showGhost(itemEl, f, w.p - ps[1].length, { before: true });
       this.ghost.below = itemEl;
       this.ourSel = true;
-      getSelection().collapse(head.firstChild, 0);
+      if (keep) { sel.removeAllRanges(); sel.addRange(keep); }
       return;
     }
-    const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
     const ins = w.close + '\n\n' + w.open;
     // a break moved before a wrapper leaves the caret at the start of its text, still inside it
     this.commit([...edits, { f, s: w.p, e: w.p, t: ins }], { f, p: Math.max(w.p, p) + ins.length, bias: 1 }, 'enter');
@@ -2286,8 +2298,12 @@ class App {
   pasteKept(latex, f, p) {
     const K = this.lastCopy && this.lastCopy.kept;
     if (!K || !latex || latex !== K.wraps.map((w) => w.open).join('') + K.inner + [...K.wraps].reverse().map((w) => w.close).join('')) return latex;
-    const here = new Set(chainAt(this.src(f), p, p).map((x) => x.group));
-    const keep = K.wraps.filter((w) => !here.has(w.group));
+    // (a format with a value, a size, a family, a colour, goes only where the place has the same one:
+    // {\Large big} pasted into {\small ..} stays large, as Word's paste keeps the copied look; a
+    // format that is on or off goes where the place has it on)
+    const src = this.src(f), same = (t) => t.replace(/\s+/g, ' ').trim();
+    const here = chainAt(src, p, p).map((x) => ({ group: x.group, open: same(src.slice(x.W.s, x.W.is)) }));
+    const keep = K.wraps.filter((w) => !here.some((h) => h.group === w.group && (!VALUED.has(w.group) || h.open === same(w.open))));
     return keep.map((w) => w.open).join('') + K.inner + [...keep].reverse().map((w) => w.close).join('');
   }
   selectionLatex(c) {

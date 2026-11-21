@@ -815,14 +815,22 @@ class Walker {
     const list = this.o.changes || [];
     if (!list.length) return;
     const date = new Date(this.o.now || Date.now()).toISOString().replace(/\.\d+Z$/, 'Z');
-    const chars = (f, test) => {
-      const out = [];
-      for (const A of this.anchors) {
-        if (A.f !== f) continue;
-        for (let i = 0; i < A.text.length; i++) { const s = A.map[2 * i], e = A.map[2 * i + 1]; if (s >= 0 && test(s, e)) out.push([s, e]); }
-      }
-      return out.sort((x, y) => x[0] - y[0]);
+    // (each file's drawn characters once, [s, e, anchor] in the order of their places, and the
+    // last to end at each place; a change then finds its own by halving: read again for every
+    // change, 3000 changes on a 287 KB paper took 14 s)
+    const idx = new Map();
+    const index = (f) => {
+      if (idx.has(f)) return idx.get(f);
+      const S = [];
+      this.anchors.forEach((A, k) => { if (A.f === f) for (let i = 0; i < A.text.length; i++) { const s = A.map[2 * i]; if (s >= 0) S.push([s, A.map[2 * i + 1], k]); } });
+      S.sort((x, y) => x[0] - y[0]);
+      const E = new Map();
+      for (const x of S) E.set(x[1], x);
+      const I = { S, E };
+      idx.set(f, I);
+      return I;
     };
+    const from = (S, p) => { let lo = 0, hi = S.length; while (lo < hi) { const m = (lo + hi) >> 1; if (S[m][0] < p) lo = m + 1; else hi = m; } return lo; };
     const put = (key, side, x) => { const m = marks.get(key) || {}; m[side] = [...(m[side] || []), { t: 'RawInline', c: ['openxml', x] }]; marks.set(key, m); };
     let id = 9000;
     this.tracked = 0;
@@ -831,17 +839,30 @@ class Walker {
       // Word refuses a file with one)
       const ok = (t) => String(t).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '');
       const who = xmlEsc(ok(c.who || 'Rikuy').slice(0, 200)).replace(/"/g, '&quot;'), att = ' w:author="' + who + '" w:date="' + date + '"';
+      const { S, E } = index(c.f), i0 = from(S, c.s);
       let done = false;
       if (c.del) {
-        const xml = '<w:del w:id="' + id++ + '"' + att + '><w:r><w:delText xml:space="preserve">' + xmlEsc(ok(c.del)) + '</w:delText></w:r></w:del>';
-        const at = chars(c.f, (s) => s >= c.s && s <= c.s + 2)[0], before = !at && chars(c.f, (s, e) => e === c.s).pop();
-        if (at) { put(c.f + ':' + at[0], 'start', xml); done = true; } else if (before) { put(c.f + ':' + before[1] + ':end', 'end', xml); done = true; }
+        // (the deleted words as the page shows them, its dashes and quotes, as the text around them goes)
+        const xml = '<w:del w:id="' + id++ + '"' + att + '><w:r><w:delText xml:space="preserve">' + xmlEsc(ok(texToPlain(c.del))) + '</w:delText></w:r></w:del>';
+        // where its words stood: before the character there, else after the one that ends there,
+        // else before one a character or two on in the same block, else after one that ends a
+        // character or two before (never the next paragraph's first: past the end of a heading
+        // or a paragraph the next character in the source is the next block's)
+        const exact = i0 < S.length && S[i0][0] === c.s ? S[i0] : null, before = !exact && E.get(c.s);
+        let at = exact, end = before || null;
+        if (!at && !end) {
+          const prev = i0 > 0 ? S[i0 - 1] : null, next = i0 < S.length && S[i0][0] <= c.s + 2 ? S[i0] : null;
+          if (next && (!prev || prev[2] === next[2])) at = next;
+          else if (prev && prev[1] >= c.s - 2 && prev[1] <= c.s) end = prev;
+        }
+        if (at) { put(c.f + ':' + at[0], 'start', xml); done = true; } else if (end) { put(c.f + ':' + end[1] + ':end', 'end', xml); done = true; }
       }
       if (c.e > c.s) {
-        const cs = chars(c.f, (s, e) => s >= c.s && e <= c.e);
-        if (cs.length) {
-          put(c.f + ':' + cs[0][0], 'start', '<w:rkIns w:id="' + id++ + '"' + att + '/>');
-          put(c.f + ':' + cs[cs.length - 1][1] + ':end', 'end', '<w:rkInsEnd/>');
+        let a = null, b = null;
+        for (let i = i0; i < S.length && S[i][0] <= c.e; i++) if (S[i][1] <= c.e) { if (!a) a = S[i]; b = S[i]; }
+        if (a) {
+          put(c.f + ':' + a[0], 'start', '<w:rkIns w:id="' + id++ + '"' + att + '/>');
+          put(c.f + ':' + b[1] + ':end', 'end', '<w:rkInsEnd/>');
           done = true;
         }
       }
