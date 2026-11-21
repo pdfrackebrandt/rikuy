@@ -20,7 +20,7 @@ import path from 'path';
 import zlib from 'zlib';
 import crypto from 'crypto';
 import { build } from 'esbuild';
-import { appPage, appFiles, finishApp, cleanApp, controlsJson } from './build/app.mjs';
+import { appPage, appFiles, finishApp, cleanApp, controlsJson, WIDGET_RULE } from './build/app.mjs';
 import { WIDGET_SHELL } from './src/widget.js';
 
 const root = path.dirname(new URL(import.meta.url).pathname);
@@ -118,10 +118,10 @@ if (SPELL_ON) {
   SPELL = { worker: named('spell', 'js', workerJs).name, wasm: named('hunspell', 'wasm', wasm), dicts, thes, grammar: { worker: named('grammar', 'js', grammarJs).name, wasm: named('harper', 'wasm', hw) } };
 }
 // Live figures on the hosted page run in a document of their own (src/widget.js WIDGET_SHELL), beside
-// the page as widget-<the first 16 hex digits of its SHA-256>.html, served with the widgets' policy
-// (build/app.mjs headers) and cached for good; the artifact's copy runs them in srcdoc frames,
-// which its host's policy allows
-const WIDGET_FILE = APP ? 'widget-' + crypto.createHash('sha256').update(WIDGET_SHELL).digest('hex').slice(0, 16) + '.html' : '';
+// the page as widget-<the first 16 hex digits of the SHA-256 of it and its headers' rule>.html, served
+// with the widgets' policy (build/app.mjs WIDGET_RULE) and cached for good, so a change to either
+// gives it a new name; the artifact's copy runs them in srcdoc frames, which its host's policy allows
+const WIDGET_FILE = APP ? 'widget-' + crypto.createHash('sha256').update(WIDGET_SHELL + '\n' + WIDGET_RULE).digest('hex').slice(0, 16) + '.html' : '';
 // its address without .html: Cloudflare Pages answers a .html file's name with a redirect to the
 // name without it (and serves the file there), and the frame, the service worker's install and
 // the HTTP cache must all name the one address that answers 200

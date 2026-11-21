@@ -1060,6 +1060,11 @@ export const HSTS = 'max-age=31536000';
 // The live figures' document (src/widget.js, WIDGET_SHELL): the page's policy taken away and the
 // widgets' own put in its place (Pages applies the rules in order, and a detached header set
 // again in the same rule keeps the new value), and it may be framed by the page alone.
+// The widget document's own rule, also hashed into its name (build.mjs WIDGET_FILE): it is cached
+// for good under that name, headers and all, so a change to these headers must change the name, or
+// a browser keeps the old headers for a year (as browsers that met the document while PR 81's
+// rule was lost keep it with the page's policy, which stops every live figure)
+export const WIDGET_RULE = '/widget-*\n' + ['! Content-Security-Policy', '! X-Frame-Options', 'Content-Security-Policy: ' + WIDGET_POLICY, 'Cache-Control: public, max-age=31536000, immutable'].map((x) => '  ' + x).join('\n') + '\n';
 export function headers(hashes) {
   const NO_CACHE = 'no-cache';
   const FOREVER = 'public, max-age=31536000, immutable';
@@ -1071,7 +1076,7 @@ export function headers(hashes) {
     // pattern, so the widget document's cache time sits here and not in the list below; with it
     // there, from PR 81 on, the hosted widget document kept the page's policy and X-Frame-Options,
     // and no live figure ran: dev/live_check.py failed every deployment since)
-    + rule('/widget-*', '! Content-Security-Policy', '! X-Frame-Options', 'Content-Security-Policy: ' + WIDGET_POLICY, 'Cache-Control: ' + FOREVER)
+    + WIDGET_RULE
     // (the page runs only if its inline script is byte for byte the one whose hash the policy
     // names: no-transform asks Cloudflare's edge, and anything between, to change none of it,
     // e.g. Email Address Obfuscation, which a zone has on by default; deploy.yml checks the live
