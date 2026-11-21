@@ -11,7 +11,7 @@ export const BLOCKS = new Map();
 let blockSeq = 1;
 let itemSeq = 1;
 
-const KATEX_DEFAULT_MACROS = {
+export const KATEX_DEFAULT_MACROS = {
   '\\mathbbm': '\\mathbb', '\\mathds': '\\mathbb', '\\bbm': '\\mathbb', '\\nicefrac': '\\frac',
   '\\eqqcolon': '=\\vcentcolon', '\\T': '^{\\top}', '\\middlebar': '\\middle|',
   // \mleft ... \mright (mleftright package): brackets without the extra space before them
