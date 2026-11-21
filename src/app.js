@@ -3030,19 +3030,26 @@ class App {
       return null;
     }
     let fromMf = false;
-    mf.addEventListener('input', () => {
+    // (the field as the box last set it: MathLive sends its input event a task after the change,
+    // so one for keys typed before the box took over came after it and wrote the field's reading
+    // of the box back over the box)
+    let given = mf.getValue('latex');
+    const pull = () => {
+      if (mf.getValue('latex') === given) return;
       const tex = fromField(fieldValue(mf), st);
       if (tex === ta.value) return;
       fromMf = true;
       ta.value = tex;
       ta.dispatchEvent(new Event('input'));
       fromMf = false;
-    });
+    };
+    mf.addEventListener('input', pull);
     const sync = () => {
       if (fromMf) return;
       st = toField(ta.value, opts.display, opts.env(), D);
       st.same = same;
       if (mf.getValue('latex') !== st.latex) mf.setValue(st.latex, { silenceNotifications: true });
+      given = mf.getValue('latex');
       st.ml = fieldRows(modelValue(mf), st.multi, D);
     };
     ta.addEventListener('input', sync);
@@ -3050,6 +3057,19 @@ class App {
       const t = e.clipboardData && e.clipboardData.getData('text/plain');
       const inner = t ? unwrapMath(t) : null;
       if (inner == null) return;
+    // MathLive focuses its keyboard sink 60 ms after the field takes the focus, whatever happened
+    // since: a hand over to the box sooner than that (dictation as the field opens, or a busy
+    // page that runs the timer late) lost the box's focus to the field, and the next keys went
+    // into the formula (\text{if}\} on CI). After a hand over (handed) the focus comes back to
+    // the field from the box only by a press on the field or Tab; any other goes back to the box.
+    let handed = false, backOk = false;
+    mf.addEventListener('pointerdown', () => { backOk = true; }, true);
+    ta.addEventListener('keydown', (e) => { if (e.key === 'Tab') backOk = true; });
+    mf.addEventListener('focusin', (e) => {
+      if (!handed || e.relatedTarget !== ta || !ta.isConnected) return;
+      if (backOk) { backOk = false; handed = false; return; }
+      queueMicrotask(() => ta.focus({ preventScroll: true }));
+    });
       e.preventDefault(); e.stopImmediatePropagation();
       mf.insert(D.toField(inner), { format: 'latex', insertionMode: 'replaceSelection', selectionMode: 'after', mode: 'math' });
       mf.dispatchEvent(new Event('input'));
@@ -3081,6 +3101,9 @@ class App {
         ta.setRangeText(more, at, at, 'end');
         ta.dispatchEvent(new Event('input'));
       }
+        // (keys typed into the field whose input event is still to come: in the box first)
+        pull();
+        handed = true; backOk = false;
     });
     mf.addEventListener('keydown', (e) => {
       if (wt.active() || mf.mode === 'latex') return;

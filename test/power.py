@@ -206,6 +206,21 @@ def latex(page):
         page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
+    # (CI on 5994e31: \text{if}\}) dictation as the field opens, before MathLive's late focus of
+    # its keyboard and its late input event: the keys typed into the field, the dictation and the
+    # keys after it all kept, in the \text
+    bad = []
+    for _ in range(6):
+        page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+        load_doc(page, MATH)
+        click_text(page, 'gamma.', 6)
+        key(page, 'Enter'); key(page, 'Alt+Equal', 20)
+        page.keyboard.type('x=1\\text{'); cdp.send('Input.insertText', {'text': 'if '}); page.wait_for_timeout(250)
+        page.keyboard.type('}+y', delay=15); page.wait_for_timeout(500)
+        s = src(page); body = ''.join(s[s.find('\\begin{equation}'):s.find('\\end{equation}')].split())
+        if 'x=1\\text{if}+y' not in body: bad.append(body)
+        key(page, 'Escape', 300)
+    check('latex: dictation in \\text{…} as the field opens keeps every key, six times over', not bad, bad)
         key(page, 'Enter'); key(page, 'Alt+Equal', 600)
         page.keyboard.type('x=1\\text{', delay=15); page.wait_for_timeout(200)
         cdp.send('Input.imeSetComposition', {'text': 'ひ', 'selectionStart': 1, 'selectionEnd': 1}); page.wait_for_timeout(150); cdp.send('Input.insertText', {'text': '日本'})
