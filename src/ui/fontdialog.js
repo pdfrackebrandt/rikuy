@@ -237,7 +237,9 @@ export function openFontDialog(app) {
     applyFont(app, S, W);
     app.ribbonSync();
   });
-  p.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'SELECT') { e.preventDefault(); ok.click(); } });
+  // (Enter on a list is OK too, as in the Paragraph dialog and Word's: the dialog opens with the
+  // focus on the font's list, where Enter did nothing)
+  p.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.altKey && e.target.tagName !== 'BUTTON') { e.preventDefault(); ok.click(); } });
   app.positionPop();
   fam.focus();
   return true;
