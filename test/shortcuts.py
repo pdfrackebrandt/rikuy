@@ -526,6 +526,17 @@ def lows(page):
     page.keyboard.type('New one.'); page.wait_for_timeout(300)
     check('Up goes into the empty paragraph above: what is typed there is a paragraph of its own', 'New one.\n\nThird paragraph here.' in src(page), src(page)[100:220])
     undo(page)
+    # (review M6) only where the source has a paragraph's start before the caret: words after a
+    # display or a list with no blank line are the same paragraph, and Enter makes them a new one;
+    # a paragraph that starts with a formula is at its start too, and nothing is written there
+    W = lambda b: '\\documentclass{article}\n\\begin{document}\n' + b + '\n\\end{document}\n'
+    for body, at, label in [('Some text\n\\[ x \\]\ncontinued here.', 'continued here', 'a display'),
+                            ('\\begin{itemize}\n\\item One\n\\end{itemize}\ncontinued here.', 'continued here', 'a list')]:
+        load_doc(page, W(body)); click_text(page, at, 0); key(page, 'Enter', 250)
+        check('Enter at words after ' + label + ' with no blank line makes them a paragraph of their own (review M6)', src(page) == W(body.replace('continued', '\n\ncontinued')), src(page)[40:140])
+    body = 'First one.\n\n$x$ is a variable here.'
+    load_doc(page, W(body)); click_text(page, 'is a variable', 0); key(page, 'Home', 150); key(page, 'Enter', 250)
+    check('Enter at a paragraph that starts with a formula writes nothing yet (review M6)', src(page) == W(body), src(page)[40:140])
     load_doc(page, DOC); click_text(page, 'Third paragraph', 5); page.keyboard.type('Q'); page.wait_for_timeout(200)
     undo(page); key(page, 'Control+Home', 150); key(page, 'Shift+F5', 200)
     c = caret(page)
