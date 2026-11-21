@@ -279,7 +279,7 @@ export function closeFindDialog(app) {
   const keep = app.navOpen && app.navOpen('outline') && app.nv && app.nv.q.value;
   // (opened from the source pane: back there, the hit shown selected in it)
   const h = fs.hits[fs.cur], fromSrc = fs.fromSrc && app.cm && document.body.classList.contains('src-on');
-  fs.fromSrc = false;
+  if (fs.fromSrc) { fs.o.source = !!fs.srcWas; fs.fromSrc = false; }
   if (fromSrc) { if (D.tab !== 'goto' && h && h.src) app.reveal(h.f, h.s, true, h.e); else app.cm.focus(); }
   else if (D.tab !== 'goto' && h) app.findSelectCur(); else app.ribbonBack();
   if (!keep) app.findClear();

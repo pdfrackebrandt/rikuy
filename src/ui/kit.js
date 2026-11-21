@@ -298,10 +298,12 @@ export function installAccessKeys() {
       return;
     }
     if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-    const m = /^Key([A-Z])$/.exec(e.code || '');
+    // (the letter the key types on this keyboard, as Word reads it: Z on a German keyboard is the
+    // key US layouts call Y; the key's place only where it types no letter)
+    const m = /^[a-z]$/i.test(e.key || '') ? e.key.toLowerCase() : ((/^Key([A-Z])$/.exec(e.code || '') || [])[1] || '').toLowerCase();
     const d = m && dlg();
     if (!d) return;
-    const el = [...d.querySelectorAll('[data-ak="' + m[1].toLowerCase() + '"]')].find(shown);
+    const el = [...d.querySelectorAll('[data-ak="' + m + '"]')].find(shown);
     if (!el) return;
     e.preventDefault(); e.stopImmediatePropagation();
     el.focus();

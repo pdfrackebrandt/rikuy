@@ -427,6 +427,9 @@ export const methods = {
   srcFind(tab) {
     const fs = this.findState(), cm = this.cm;
     const sel = cm ? cm.getSelection() : '';
+    // (the box ticked for this search; closed, it is as it was: the page's next Ctrl+F searched
+    // the source)
+    if (!fs.fromSrc) fs.srcWas = !!fs.o.source;
     fs.fromSrc = true;
     fs.o.source = true;
     openFindDialog(this, tab);
