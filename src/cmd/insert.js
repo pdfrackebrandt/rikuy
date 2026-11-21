@@ -469,8 +469,9 @@ register(
     ] },
   { id: 'paste-text', name: 'Keep Text Only', title: 'Paste the words alone (Ctrl+Shift+V)', keysElsewhere: ['Ctrl+Shift+V'], synonyms: ['Paste as plain text', 'Paste unformatted'], whyNot: () => PASTE_WHY, run: (app) => app.pasteFrom('text') },
   { id: 'paste-latex', name: 'Paste as LaTeX source', title: 'Paste the clipboard\'s text as LaTeX, unescaped', synonyms: ['Paste LaTeX', 'Paste source'], whyNot: () => PASTE_WHY, run: (app) => app.pasteFrom('latex') },
-  // (Word for Mac's Cmd+Control+V; Cmd+Option+V is the Mac's own move of a file)
-  { id: 'paste-special', name: 'Paste Special', title: 'Paste in the form chosen (Ctrl+Alt+V)', keys: ['Ctrl+Alt+V'], mac: { 'Ctrl+Alt+V': 'Ctrl+Control+V' }, synonyms: ['Paste options'], whyNot: () => PASTE_WHY, run: (app) => app.pasteSpecial() }
+  // (Ctrl+Alt+V is Paste Formatting, as in Microsoft 365's Word, which keeps Paste Special in the
+  // Paste menu; Word for Mac's Cmd+Control+V stays)
+  { id: 'paste-special', name: 'Paste Special', title: 'Paste in the form chosen', keysMac: ['Ctrl+Control+V'], synonyms: ['Paste options'], whyNot: () => PASTE_WHY, run: (app) => app.pasteSpecial() }
 );
 
 // ---- symbols and special characters (I44, I45) ---------------------------------------------------
@@ -740,7 +741,12 @@ Object.assign(methods, {
     const row = mk('div', 'gd-btns');
     row.append(mk('span', 'grow'), ok);
     p.append(list, row);
+    // (the keys go to the dialog, as Word's: the arrows choose, Enter is OK; they went on to the
+    // page, where Enter broke the paragraph and the clipboard was never pasted)
+    list.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); ok.click(); } });
     this.positionPop();
+    const first = list.querySelector('input:checked');
+    if (first) first.focus();
   },
 
   // ---- files ----

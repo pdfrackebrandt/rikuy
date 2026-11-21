@@ -3009,6 +3009,8 @@ html[data-input="pointer"] :is(button, [role=tab], [role=menuitem], [role=menuit
 /* File's column: its commands one height, with the corners of every other control */
 body.file-open #rp-file .rb-tb .btn { height: 32px; min-height: 32px; border-radius: 4px; box-sizing: border-box; }
 @media (pointer: coarse) { body.file-open #rp-file .rb-tb .btn { height: auto; min-height: 44px; } }
+/* a dialog's access keys (src/ui/kit.js accessKeys): underlined while Alt is held, as Word's */
+body.ak-on [role=dialog] .ak { text-decoration: underline; text-underline-offset: 2px; }
 /* Inside dialogs, one height per kind again (the verification of 0a6ef7b): a dialog's tabs as its
    buttons, 32 px (44 under a finger); a check box's or a radio button's row at least 24 px, the
    size WCAG asks of any target (44 under a finger); single line fields 32 px exactly; and a phone's

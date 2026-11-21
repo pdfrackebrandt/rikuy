@@ -34,7 +34,7 @@ defineGroup('color', { write: 'textcolor', cmds: ['textcolor'], decls: ['color']
 defineGroup('highlight', { write: 'hl', cmds: ['hl'] });
 defineGroup('shading', { write: 'colorbox', cmds: ['colorbox'] });
 defineGroup('size', { write: 'large', cmds: [], decls: [...SIZES, 'fontsize'] });
-defineGroup('family', { write: 'textsf', cmds: ['textrm', 'textsf', 'texttt'], decls: ['rmfamily', 'sffamily', 'ttfamily', 'rm', 'sf', 'tt', 'fontfamily', 'fontspec'] });
+defineGroup('family', { write: 'textsf', cmds: ['textrm', 'textsf', 'texttt'], decls: ['rmfamily', 'sffamily', 'ttfamily', 'rm', 'sf', 'tt', 'fontfamily', 'fontspec', 'usefont'] });
 defineGroup('spacing', { write: 'textls', cmds: ['textls'] });
 defineGroup('scale', { write: 'scalebox', cmds: ['scalebox'] });
 defineGroup('position', { write: 'raisebox', cmds: ['raisebox'] });
@@ -86,11 +86,12 @@ const OLD_HL = '\\DeclareRobustCommand{\\hl}{\\bgroup\\markoverwith{\\textcolor{
 
 // ---- the forms src/wrap.js does not read --------------------------------------------------------
 // A declaration with arguments before its text, {\color{red} ...}, {\fontsize{14}{17}\selectfont
-// ...}, {\fontfamily{ppl}\selectfont ...}, {\fontspec{TeX Gyre Pagella} ...}, and a command with an
+// ...}, {\fontfamily{ppl}\selectfont ...}, {\fontspec{TeX Gyre Pagella} ...}, {\usefont{T1}{phv}{m}{n}
+// ...} (encoding, family, series, shape: no \selectfont after it), and a command with an
 // option after its arguments, \scalebox{1.2}[1]{...}, \raisebox{2pt}[0pt]{...}: read here, the
 // rest by src/wrap.js. A wrapper read here has extra: true and comes off by unwrapAny, the rest
 // by src/wrap.js's unwrapEdits.
-export const DECL_LEAD = { color: 1, fontsize: 2, fontfamily: 1, fontspec: 1 };
+export const DECL_LEAD = { color: 1, fontsize: 2, fontfamily: 1, fontspec: 1, usefont: 4 };
 const OPT2 = new Set(['scalebox', 'raisebox']);
 const isExtra = (n) => !!DECL_LEAD[n] || OPT2.has(n);
 const sp = (t, i) => { for (let n = 0; n < 200 && i < t.length && (t[i] === ' ' || t[i] === '\t' || (t[i] === '\n' && t[i + 1] !== '\n')); n++) i++; return i; };
@@ -1205,7 +1206,7 @@ export function familyOf(W) {
   if (!W) return null;
   const G = { textrm: 'serif', rmfamily: 'serif', rm: 'serif', textsf: 'sans', sffamily: 'sans', sf: 'sans', texttt: 'mono', ttfamily: 'mono', tt: 'mono' }[W.cmd];
   if (G) return G;
-  const v = (W.args || [])[0];
+  const v = (W.args || [])[W.cmd === 'usefont' ? 1 : 0];
   const F = FONTS.find((x) => (W.cmd === 'fontspec' ? x.spec === v : x.family === v));
   return F ? F.id : null;
 }

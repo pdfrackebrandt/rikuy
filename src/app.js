@@ -15,6 +15,7 @@ import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
 import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
+import { chainAt } from './charfmt.js';
 import { mapPos } from './wrap.js';
 import { findProblems, missingFigures } from './problems.js';
 import { WidgetLayer } from './widget.js';
@@ -28,7 +29,7 @@ const PLACEHOLDER_EPS = '%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 320 240\n0.
 import { texToPlain, shortAuthors, entryYear, parseBib } from './bib.js';
 import { kvGet, kvPut, kvDel, kvSwap, decodeText, encodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
 import { changes, spacingOnly } from './diff.js';
-import { TeXEngine, parseTeXLog } from './tex.js';
+import { TeXEngine, parseTeXLog, issueText } from './tex.js';
 import { PdfView } from './pdfview.js';
 import { collab, installCollab } from './collab.js';
 import { word, installWord, isDocx } from './word.js';
@@ -58,6 +59,8 @@ import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
 import { scriptNeeds, scriptLines, addScriptSetup, scriptName, scriptSetup, MORE } from './scripts.js';
+// the character formats that carry a value (src/charfmt.js CHAR_KINDS): one is not another of its kind
+const VALUED = new Set(['color', 'highlight', 'shading', 'size', 'family', 'spacing', 'scale', 'position', 'border', 'enclose']);
 
 const PX_PER_PT = 96 / 72.27;
 // Rikuy was called Galley at first; the keys of what a browser keeps keep that name, so
@@ -69,6 +72,7 @@ const TEXREAD = 'galley.texread.v1';
 const CDN = {
   cm: 'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.js',
   cmTex: 'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/stex/stex.js',
+  cmBrackets: 'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/matchbrackets.js',
   zip: 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
   ml: 'https://cdn.jsdelivr.net/npm/mathlive@0.110.0/mathlive.min.js',
   chem: 'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/mhchem.min.js'
@@ -80,6 +84,7 @@ const CDN = {
 const SRI = {
   [CDN.cm]: 'sha384-/WlgLpnUCi+5eS6SnLPKTwRY0l8X4TxBIroMKS0KpFjlFoST+ZbSMKqTpgS24m8i',
   [CDN.cmTex]: 'sha384-tab09zZeKEC2HRX/8GcAyeUuP7KBvb9DKKK4wegfZ/qW7tMcwh14TRJ0o6woQ9M0',
+  [CDN.cmBrackets]: 'sha384-VTfea43jk3cts7Fd5DbskOZKCo1P+X4qCWSv0+oIhMKaSymJL4+KZ9eC6VzkZbab',
   [CDN.zip]: 'sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG',
   [CDN.ml]: 'sha384-5IN6K0kiaz8MufrTGBvPCP3oDeMjmwe+DDTvuyQLNv6gc634FpKbQfllonjHJPmy',
   [CDN.chem]: 'sha384-fB8BH//9nBzROkMUsu/Dr35jWHIbnKesUo9rW0hfEgw8mZGnkAyBAjKX9F98OVuo'
@@ -1198,7 +1203,9 @@ class App {
   // brings up the on-screen keyboard before anyone asked to type; not where something else
   // already has the focus (a link's guest bar, a dialog).
   placeInitialCaret() {
-    const first = this.root.querySelector('.it.p span.t');
+    // (a document of headings alone: the first heading's words; there was no caret, and the first
+    // keys after a reload typed nothing)
+    const first = this.root.querySelector('.it.p span.t:not(.gh)') || this.root.querySelector('.it:not(.atom) span.t:not(.gh)');
     if (!first || !first.firstChild || window.innerWidth < 700 || matchMedia('(pointer: coarse)').matches) return;
     const a = document.activeElement;
     if (a && a !== document.body && a !== this.root) return;
@@ -1579,7 +1586,8 @@ class App {
     }
     // (Ctrl+P is Go to File, src/cmd/find.js, whose first line is Print: from a field or the source too)
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p' && !e.defaultPrevented) { e.preventDefault(); this.runCommand('go-to-file'); }
-    if (mod && e.key === '\\') { e.preventDefault(); this.toggleSource(); }
+    // (by the keys, the caret goes along both ways and the focus with it: Word's Alt+F9 does the same)
+    if (mod && e.key === '\\') { e.preventDefault(); this.toggleSource(undefined, { keys: true }); }
     if (mod && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); this.toggleNav(); }
     if (e.key === 'Escape') { if (this.pop) { this.closePop(); e.preventDefault(); } this.disarm(); }
     // Ctrl and + / - / 0 zoom the document where the document is what is being read: on the
@@ -1626,6 +1634,12 @@ class App {
     // (Esc then Tab as one gesture: an Esc long before, a press since, and Tab stays on the page)
     const tabOut = !!this.tabOut && performance.now() - this.tabOut < 2000;
     if (e.key !== 'Shift') this.tabOut = 0;
+    // Word's Ctrl+Down and Ctrl+Up (Word for Mac's Cmd+Down and Cmd+Up): the browser's own keeps
+    // the caret's column into the next block and could land inside a display formula there,
+    // which opened its editor
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.altKey) {
+      if (this.paraJump(e.key === 'ArrowDown' ? 1 : -1, e.shiftKey)) { e.preventDefault(); return; }
+    }
     if (e.key === 'Tab') {
       const n = getSelection().anchorNode;
       const el = n && (n.nodeType === 1 ? n : n.parentElement);
@@ -1682,6 +1696,41 @@ class App {
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); this.codeOpen(); return; }
     }
     if (this.armed && !['Shift', 'Control', 'Meta', 'Alt'].includes(e.key)) this.disarm();
+  }
+  // The caret to the start of the next paragraph (dir 1) or to the start of this one, the one
+  // before when it is there already (dir -1), as Word's Ctrl+Down and Ctrl+Up; extend: the
+  // selection grows to the paragraph's end (or start) instead. A paragraph is the text of a block
+  // on the page, a table's cell or its caption; a display formula and a picture are passed over,
+  // and a paragraph a page cuts is one. false where the caret is in none of them (a footnote at
+  // the page's foot): the browser's own move then.
+  paraJump(dir, extend) {
+    const sel = getSelection();
+    if (!sel.rangeCount || !this.root.contains(sel.focusNode)) return false;
+    const spans = [...this.root.querySelectorAll('.it span.t')].filter((s) => !s.classList.contains('gh') && !s.closest('.atom') && s.firstChild && s.firstChild.nodeType === 3);
+    // (each span's paragraph: its cell, else its block; the rest of a block a page cut joins it)
+    const stops = [];
+    for (const sp of spans) {
+      const it = sp.closest('.it'), key = sp.closest('td') || it, L = stops[stops.length - 1];
+      if (L && (L.key === key || (key === it && it.classList.contains('split-b') && L.key.classList && L.key.classList.contains('it') && L.key.dataset.b === it.dataset.b))) L.texts.push(sp);
+      else stops.push({ key, texts: [sp] });
+    }
+    let here = stops.findIndex((st) => st.texts.some((sp) => sp.contains(sel.focusNode)));
+    if (here < 0 && sel.focusNode.nodeType === 1) here = stops.findIndex((st) => sel.focusNode.contains(st.texts[0]));
+    if (here < 0) return false;
+    const start = (st) => [st.texts[0].firstChild, 0];
+    const end = (st) => { const l = st.texts[st.texts.length - 1], t = l.lastChild || l.firstChild; return [t, t.length]; };
+    const cmp = ([n, o]) => { const r = document.createRange(); r.setStart(n, o); try { return r.comparePoint(sel.focusNode, sel.focusOffset); } catch (err) { return 0; } };
+    let to;
+    if (dir > 0) {
+      if (extend) to = cmp(end(stops[here])) < 0 ? end(stops[here]) : stops[here + 1] ? end(stops[here + 1]) : null;
+      else to = stops[here + 1] ? start(stops[here + 1]) : end(stops[here]);
+    } else to = cmp(start(stops[here])) > 0 ? start(stops[here]) : stops[here - 1] ? start(stops[here - 1]) : start(stops[here]);
+    if (!to) return true;
+    if (extend) sel.extend(to[0], to[1]);
+    else sel.collapse(to[0], to[1]);
+    const el = to[0].parentElement;
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+    return true;
   }
   codeOpen() {
     const el = this.armed && this.armed.el, info = el && atomOfEl(el);
@@ -2127,21 +2176,27 @@ class App {
       const itemText = src.slice(+cmdE + base, +ie + base);
       if (!itemText.trim() && c.collapsed) {
         // exit the list: remove empty item, continue after the list
-        const s = +is + base, e = +ie + base;
+        const s = +is + base, e0 = +ie + base;
+        // (the empty item's line goes and one line break stays: \end{itemize} was glued to the
+        // item before it, "\item Fourth\end{itemize}")
+        // (a file whose lines end in CR LF keeps them so: the break kept, and the two written)
+        const nl = src.lastIndexOf('\n', e0 - 1), e = nl >= s ? (src[nl - 1] === '\r' && nl - 1 >= s ? nl - 1 : nl) : e0;
         let s2 = s; while (s2 > 0 && (src[s2 - 1] === ' ' || src[s2 - 1] === '\t')) s2--;
-        if (src[s2 - 1] === '\n') s2--;
+        if (src[s2 - 1] === '\n' && nl >= s) { s2--; if (src[s2 - 1] === '\r') s2--; }
         const listEnd = +le + base;
         const removed = e - s2;
-        const ins = '\n\n';
+        const NL = /\r\n/.test(src) ? '\r\n' : '\n';
+        const ins = NL + NL;
         this.commit([{ f, s: s2, e, t: '' }, { f, s: listEnd, e: listEnd, t: ins }], { f, p: listEnd - removed + ins.length, bias: 1 }, 'enter');
         return;
       }
-      const t = '\n' + (lkind === 'desc' ? '\\item[] ' : '\\item ');
+      const NL = /\r\n/.test(src) ? '\r\n' : '\n';
+      const t = NL + (lkind === 'desc' ? '\\item[] ' : '\\item ');
       // indent like the current item line
       let ls2 = +is + base; let ind = '';
       while (ls2 > 0 && (src[ls2 - 1] === ' ' || src[ls2 - 1] === '\t')) { ind = src[ls2 - 1] + ind; ls2--; }
       const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
-      const ins = w.close + '\n' + ind + t.slice(1) + w.open;
+      const ins = w.close + NL + ind + t.slice(NL.length) + w.open;
       this.commit([...edits, { f, s: w.p, e: w.p, t: ins }], { f, p: Math.max(w.p, p) + ins.length, bias: 1 }, 'enter');
       return;
     }
@@ -2564,6 +2619,34 @@ class App {
   }
 
   // ---- clipboard ------------------------------------------------------------------
+  // what Copy puts on the clipboard as LaTeX: words copied from inside a format
+  // (\textbf{qu|ick|}) keep it, as Word's copy keeps a bold word bold (they were pasted plain):
+  // the wrappers around them, outermost first, go round the words copied
+  // (copyKept: the words and the wrappers put round them, for a paste where the same kinds of
+  // format are around the place already: they go, or \emph{.. \emph{words}..} prints upright)
+  copyLatex(c) {
+    const src = this.src(c.f), t = this.selectionLatex(c);
+    this.copyKept = null;
+    if (!isBalanced(src, c.a, c.b) || this.texAt(c.f, c.a)) return t;
+    const X = chainAt(src, c.a, c.b).filter((x) => x.W.is <= c.a && c.b <= x.W.ie);
+    if (!X.length) return t;
+    const wraps = X.map((x) => ({ group: x.group, open: src.slice(x.W.s, x.W.is), close: src.slice(x.W.ie, x.W.e) }));
+    this.copyKept = { inner: t, wraps };
+    return wraps.map((w) => w.open).join('') + t + [...wraps].reverse().map((w) => w.close).join('');
+  }
+  // the copied LaTeX for a paste at p of file f: the wrappers copyLatex added that the place has
+  // already, taken off
+  pasteKept(latex, f, p) {
+    const K = this.lastCopy && this.lastCopy.kept;
+    if (!K || !latex || latex !== K.wraps.map((w) => w.open).join('') + K.inner + [...K.wraps].reverse().map((w) => w.close).join('')) return latex;
+    // (a format with a value, a size, a family, a colour, goes only where the place has the same one:
+    // {\Large big} pasted into {\small ..} stays large, as Word's paste keeps the copied look; a
+    // format that is on or off goes where the place has it on)
+    const src = this.src(f), same = (t) => t.replace(/\s+/g, ' ').trim();
+    const here = chainAt(src, p, p).map((x) => ({ group: x.group, open: same(src.slice(x.W.s, x.W.is)) }));
+    const keep = K.wraps.filter((w) => !here.some((h) => h.group === w.group && (!VALUED.has(w.group) || h.open === same(w.open))));
+    return keep.map((w) => w.open).join('') + K.inner + [...keep].reverse().map((w) => w.close).join('');
+  }
   selectionLatex(c) {
     const src = this.src(c.f);
     if (isBalanced(src, c.a, c.b)) return src.slice(c.a, c.b);
@@ -2581,12 +2664,12 @@ class App {
     const c = this.caretNow();
     if (!c || c.collapsed) return;
     e.preventDefault();
-    const latex = this.selectionLatex(c);
+    const latex = this.copyLatex(c);
     const plain = getSelection().toString().replace(/\u200B/g, '');
     e.clipboardData.setData('text/plain', plain);
     try { e.clipboardData.setData('text/x-galley-latex', latex); } catch (err) { /* ignore */ }
     try { e.clipboardData.setData('text/html', selectionHTML(getSelection(), (el) => this.mathML(el))); } catch (err) { /* plain text still works */ }
-    this.lastCopy = { plain, latex };
+    this.lastCopy = { plain, latex, kept: this.copyKept };
     if (cut) {
       const whole = this.wholeDoc();
       if (whole) { this.replaceBody(whole, '', 'cut'); return; }
@@ -2616,6 +2699,11 @@ class App {
     let latex = '';
     try { latex = dt.getData('text/x-galley-latex') || ''; } catch (err) { latex = ''; }
     if (!latex && this.lastCopy && plain === this.lastCopy.plain) latex = this.lastCopy.latex;
+    // an empty clipboard pastes nothing: the words selected stay (they were deleted)
+    if (!plain && !html && !latex) return;
+    // (Ctrl+Shift+V, Keep Text Only: the words alone, also of what was copied here, which came with
+    // its formatting's LaTeX)
+    if (plainOnly) latex = '';
     const c = this.caretNow();
     if (!c) return;
     // in LaTeX the source goes in as it is: the source of what was copied on the page, else the text
@@ -2651,7 +2739,7 @@ class App {
     const at = edits.length && edits[0].s >= c.a ? edits[0].s : c.a;
     // (landing in a LaTeX paragraph from a selection that started outside it: as source)
     const raw = this.texAt(c.f, at);
-    let t = raw ? (latex || plain).replace(/\r\n?/g, '\n') : latex || rich();
+    let t = raw ? (latex || plain).replace(/\r\n?/g, '\n') : this.pasteKept(latex, c.f, at) || rich();
     if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!raw && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
     const removedBefore = edits.filter((ed) => ed.e <= at).reduce((s, ed) => s + (ed.e - ed.s), 0);
@@ -4661,10 +4749,18 @@ class App {
   }
 
   // ---- source pane -----------------------------------------------------------------
-  async toggleSource(force) {
+  // o.keys: opened by its key from the page, the source's cursor goes where the page's caret is
+  // and the focus with it; closed by its key from the source, the page's caret goes where the
+  // source's cursor was (it opened at line 1 and left the focus on the page, and closing dropped
+  // the focus to nowhere)
+  async toggleSource(force, o = {}) {
     // (in the LaTeX or PDF view across the window, src/cmd/view.js: back to the page, the source beside it)
     if (this.leaveView() && force == null) force = true;
     const on = force ?? !document.body.classList.contains('src-on');
+    const was = document.body.classList.contains('src-on');
+    const pageAt = on && !was ? this.caretNow() : null;
+    const srcAt = !on && was && o.keys && this.cm && this.cm.hasFocus() ? { f: this.srcFile || this.main, p: this.cm.getDoc().indexFromPos(this.cm.getDoc().getCursor()) } : null;
+    if (srcAt && this.srcRebuild.pending()) this.srcRebuild.flush();
     if (on && document.body.classList.contains('pdf-on')) this.togglePdf(false);
     document.body.classList.toggle('src-on', on);
     $('#b-src').setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -4673,9 +4769,11 @@ class App {
     if (on) {
       await this.ensureCM();
       this.showSrcFile(this.srcFile || this.main);
-      this.revealCaret();
+      if (pageAt && !pageAt.ghost && pageAt.f != null && this.cm) this.viewPlaceInSource({ f: pageAt.f, p: pageAt.a }, !o.keys);
+      else this.revealCaret();
     }
     setTimeout(() => { if (this.computePx()) this.relayout(true); }, 30);
+    if (srcAt) this.viewPlaceOnPage(srcAt);
   }
 
   async ensureCM() {
@@ -4685,14 +4783,20 @@ class App {
       try {
         await loadScript(CDN.cm);
         await loadScript(CDN.cmTex);
+        // (the bracket that matches the one at the cursor, lit: a missing brace is LaTeX's commonest
+        // slip; without it the source still works)
+        await loadScript(CDN.cmBrackets).catch(() => {});
         this.cm = window.CodeMirror(host, {
-          value: '', mode: 'stex', lineNumbers: true, lineWrapping: true, indentUnit: 2, tabSize: 2,
+          value: '', mode: 'stex', lineNumbers: true, lineWrapping: true, indentUnit: 2, tabSize: 2, matchBrackets: true,
           extraKeys: {
             'Ctrl-Z': () => this.undo(), 'Cmd-Z': () => this.undo(), 'Shift-Ctrl-Z': () => this.redo(), 'Shift-Cmd-Z': () => this.redo(), 'Ctrl-Y': () => this.redo(),
             // (Ctrl+S is the page's own shortcut, heard here too: a second one saved every file twice)
             // Tab indents in the source, so a keyboard that tabbed in stayed caught here, typing tabs
             // into the file: Escape, then Tab or Shift+Tab, moves on to the next control
-            'Esc': () => { this.cmTabOut = true; }
+            'Esc': () => { this.cmTabOut = true; },
+            // Find and Replace in the source: the dialog with In LaTeX source ticked, the words
+            // selected here as what to find (Ctrl+F was the browser's find bar)
+            'Ctrl-F': () => this.srcFind('find'), 'Cmd-F': () => this.srcFind('find'), 'Ctrl-H': () => this.srcFind('replace'), 'Cmd-Alt-F': () => this.srcFind('replace')
           }
         });
         this.cm.on('keydown', (cm, e) => {
@@ -5214,7 +5318,8 @@ class App {
     this.reveal(c.f, c.a, focusSrc);
   }
 
-  async reveal(f, p, focusSrc) {
+  // (end: the characters to p..end selected in the source, without its focus: a hit of Find)
+  async reveal(f, p, focusSrc, end) {
     if (!document.body.classList.contains('src-on')) await this.toggleSource(true);
     await this.ensureCM();
     if ((this.srcFile || this.main) !== f) this.showSrcFile(f);
@@ -5225,7 +5330,8 @@ class App {
       this.syncLine && this.cm.removeLineClass(this.syncLine, 'background', 'cm-sync');
       this.syncLine = this.cm.addLineClass(pos.line, 'background', 'cm-sync');
       this.cm.scrollIntoView({ line: pos.line, ch: pos.ch }, 120);
-      if (focusSrc) { this.cm.focus(); doc.setCursor(pos); }
+      if (end != null) doc.setSelection(pos, doc.posFromIndex(end), { scroll: false });
+      if (focusSrc) { this.cm.focus(); if (end == null) doc.setCursor(pos); }
     } else if (this.cmFallback && focusSrc) { this.cmFallback.focus(); this.cmFallback.setSelectionRange(p, p); }
   }
 
@@ -6161,7 +6267,7 @@ class App {
         const f = known || this.main;
         const line = known ? x.line : null;
         const p = line ? lineStart(this.src(f), line) : 0;
-        return { sev: x.sev, f, p, line, msg: x.msg + (x.ctx ? ' (at ' + x.ctx.trim().slice(0, 60) + ')' : ''), key: 'tex:' + x.msg, tex: true };
+        return { sev: x.sev, f, p, line, msg: issueText(x, line ? this.src(f).slice(p).split('\n', 1)[0] : ''), key: 'tex:' + x.msg, tex: true };
       });
       this.problemsSoon();
       const errs = this.texIssues.filter((x) => x.sev === 'error').length;
@@ -6759,6 +6865,8 @@ window.rikuy = app;
 installCollab(app);
 installWord(app);
 installRibbon(app);
+// (Alt and a dialog's letter, before the keys of the commands: src/ui/kit.js)
+kit.installAccessKeys();
 installKeys(app, isMac, (id, at) => app.runCommand(id, null, at));
 installSearch(app);
 installMenu(app);
