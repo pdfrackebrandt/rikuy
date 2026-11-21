@@ -870,6 +870,13 @@ def focus_rules(page, w):
                 typing[cmd] = f
             page.keyboard.press('Escape'); page.wait_for_timeout(150)
         check(f'seven dialogs open on a phone with the focus in them, never in a text field ({w})', not typing, typing)
+        # (but a field the command names takes it on every device, as Word's: Indent Left opens the
+        # Paragraph dialog at its Left field; table.py checks Alt Text's Description)
+        click_text(page, 'Second paragraph', 3)
+        run_cmd(page, 'indent-left'); page.wait_for_timeout(500)
+        f = page.evaluate("(() => { const a = document.activeElement; return [!!a.closest('.pop'), a.tagName, a.hasAttribute('data-named'), a.getAttribute('aria-label')]; })()")
+        check(f'on a phone a dialog opened at the field its command names (Indent Left) has the focus in that field ({w})', f[0] and f[1] == 'INPUT' and f[2], f)
+        page.keyboard.press('Escape'); page.wait_for_timeout(150)
     if not touch:
         page.click('#bar .srch input'); page.keyboard.type('AutoCorrect Options'); page.wait_for_timeout(300); page.keyboard.press('Enter'); page.wait_for_timeout(400)
         a = page.evaluate(where)

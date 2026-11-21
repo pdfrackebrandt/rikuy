@@ -2576,8 +2576,10 @@ class App {
         const a = document.activeElement;
         if (p.contains(a)) {
           // (under a finger a dialog never opens into a text field, even one it focuses itself:
-          // Android's keyboard came up over it; a tap on the field brings it)
-          if (!coarse || !text(a)) return;
+          // Android's keyboard came up over it; a tap on the field brings it. But a field the
+          // command named, data-named (Alt Text opens Table Properties at its Description), keeps
+          // the focus on every device, as Word's)
+          if (!coarse || !text(a) || a.hasAttribute('data-named')) return;
         } else if (a && a !== document.body && a !== this.root && !(a.closest && a.closest('#ribbon, #rb-top, #bar, #status, #nav'))) return;
         // (only from the page or the chrome: a field that took it on purpose keeps it)
         const all = popFocusables(p).filter((x) => !(coarse && text(x)));
