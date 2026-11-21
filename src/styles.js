@@ -169,6 +169,39 @@ export function restyle(src, b, to, p) {
   return { edits, p: b.s + A.length + Math.min(Math.max(p, b.ws), b.we) - b.ws };
 }
 
+// One paragraph of an environment of several (an abstract, a quote, a theorem) made a heading:
+// Word gives the style to that paragraph alone, so the environment ends before it and starts
+// again after it, its other paragraphs kept where they are. b: the environment's block as
+// styleOfBlock reads it ({ v, s, ws, we, e }: the whole of it and its words), p the caret, to the
+// heading's command. The paragraph is the one the caret is in, of plain words; the paragraphs
+// before it keep the \begin (with a theorem's [title]), those after it get a bare one. Returns
+// { edits, p } or { why }.
+export function splitEnvEdits(src, b, to, p) {
+  const name = envOf(b.v), words = src.slice(b.ws, b.we);
+  // the paragraphs: [s, e) of each one's words, apart by blank lines
+  const paras = [];
+  const gap = /[ \t]*\r?\n[ \t]*(?:\r?\n[ \t]*)+/g;
+  let at = 0;
+  for (let m; (m = gap.exec(words));) { paras.push([b.ws + at, b.ws + m.index]); at = m.index + m[0].length; }
+  paras.push([b.ws + at, b.ws + words.length]);
+  if (paras.length < 2) return { why: 'one paragraph' };
+  let k = paras.findIndex(([s, e]) => p >= s && p <= e);
+  if (k < 0) k = paras.findIndex(([s]) => p < s);
+  if (k < 0) k = paras.length - 1;
+  const [ps, pe] = paras[k], text = src.slice(ps, pe);
+  if (!text.trim() || NOT_PLAIN.test(text) || text[0] === '%' || /(^|[^\\])%/.test(text)) return { why: 'This paragraph holds more than words: a heading cannot hold it.' };
+  const eol = eolAt(src, b.s);
+  // before it: the environment ends where its last paragraph ends, or (it was the first) its
+  // \begin line goes
+  const head = k > 0 ? { s: paras[k - 1][1], e: ps, t: eol + '\\end{' + name + '}' + eol + eol } : { s: b.s, e: ps, t: '' };
+  const edits = [head, { s: ps, e: ps, t: '\\' + to + '{' }, { s: pe, e: pe, t: '}' }];
+  if (k < paras.length - 1) edits.push({ s: pe, e: paras[k + 1][0], t: eol + eol + '\\begin{' + name + '}' + eol });
+  else edits.push({ s: pe, e: b.e, t: '' });
+  // the caret where it was in the words, which moved by what went before them
+  const shift = head.t.length - (head.e - head.s) + to.length + 2;
+  return { edits, p: Math.min(Math.max(p, ps), pe) + shift };
+}
+
 // Edits applied to a text, from the end backwards (as App.commit applies them)
 export function applyEdits(src, edits) {
   for (const x of [...edits].sort((u, v) => v.s - u.s || v.e - u.e)) src = src.slice(0, x.s) + x.t + src.slice(x.e);

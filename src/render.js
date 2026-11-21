@@ -332,6 +332,22 @@ export class Renderer {
         el.contentEditable = 'false';
         const r = this.katex(it.tex, true);
         el.innerHTML = r.html;
+        // \intertext's words between the rows, across the display (src/model.js displayMath)
+        if (it.parts && !r.err) {
+          el.replaceChildren();
+          for (const P of it.parts) {
+            const d = document.createElement('div');
+            if (P.tex != null) { d.className = 'dm-rows'; d.innerHTML = this.katex(P.tex, true).html; }
+            else {
+              d.className = 'intertext';
+              for (const [k, bit] of P.text.split(/(\$[^$]*\$)/).entries()) {
+                if (k % 2) { const m = document.createElement('span'); m.innerHTML = this.katex(bit.slice(1, -1), false).html; d.appendChild(m); }
+                else d.appendChild(document.createTextNode(bit.replace(/\\[A-Za-z]+\*?\s*/g, '').replace(/[{}]/g, '').replace(/~/g, '\u00a0')));
+              }
+            }
+            el.appendChild(d);
+          }
+        }
         if (r.err) { el.classList.add('has-err'); el.title = r.err; }
         const idx = B.atoms.length;
         B.atoms.push({ kind: 'math', display: true, f: it.f, s: this.rel(it.s), e: this.rel(it.e), is: this.rel(it.is), ie: this.rel(it.ie), env: it.env, err: r.err });

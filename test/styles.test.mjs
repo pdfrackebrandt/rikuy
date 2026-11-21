@@ -499,4 +499,26 @@ ok('R2 review: Code on one line that fits, nothing OT1 prints otherwise; title p
   assert.ok(!SR2.verbatimRuns('\\begin{Verbatim}\n\\key{a}\n\\end{Verbatim}', 'key'));
 });
 
+ok('Dogfood: a heading on one paragraph of an environment of several splits it around that paragraph, the caret kept', () => {
+  const src = 'x\n\\begin{abstract}\nFirst para.\n\nSecond para.\n\nThird para.\n\\end{abstract}\n\nBody.';
+  const s = src.indexOf('\\begin'), e = src.indexOf('{abstract}', src.indexOf('\\end')) + 10;
+  const b = { v: 'abstract', s, ws: src.indexOf('First'), we: src.indexOf('Third para.') + 11, e };
+  const want = {
+    First: 'x\n\\section{First para.}\n\n\\begin{abstract}\nSecond para.\n\nThird para.\n\\end{abstract}\n\nBody.',
+    Second: 'x\n\\begin{abstract}\nFirst para.\n\\end{abstract}\n\n\\section{Second para.}\n\n\\begin{abstract}\nThird para.\n\\end{abstract}\n\nBody.',
+    Third: 'x\n\\begin{abstract}\nFirst para.\n\nSecond para.\n\\end{abstract}\n\n\\section{Third para.}\n\nBody.'
+  };
+  for (const [w, t] of Object.entries(want)) {
+    const r = SR2.splitEnvEdits(src, b, 'section', src.indexOf(w) + 2);
+    const out = applyEdits(src, r.edits);
+    assert.equal(out, t, w);
+    assert.equal(out.slice(r.p - 2, r.p + 1), w.slice(0, 3), w + ': the caret');
+  }
+  // a paragraph with a display or a footnote cannot be a heading; one paragraph is restyle's
+  const d = src.replace('Second para.', 'Second\\footnote{n} para.');
+  assert.ok(SR2.splitEnvEdits(d, { ...b, we: d.indexOf('Third para.') + 11, e: d.indexOf('{abstract}', d.indexOf('\\end')) + 10 }, 'section', d.indexOf('Second') + 1).why);
+  const one = 'x\n\\begin{quote}\nOnly.\n\\end{quote}';
+  assert.ok(SR2.splitEnvEdits(one, { v: 'quote', s: 2, ws: one.indexOf('Only'), we: one.indexOf('Only') + 5, e: one.length }, 'section', 15).why);
+});
+
 console.log('styles: ' + n + ' groups of checks passed');
