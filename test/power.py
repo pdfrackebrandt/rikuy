@@ -190,6 +190,21 @@ def latex(page):
         s = src(page); body = ''.join(s[s.find('\\begin{equation}'):s.find('\\end{equation}')].split())
         check('latex: ' + how + ' in \\text{…} keeps it in the \\text', ('\\text{' + text.strip() + '}+y') in body, body)
         key(page, 'Escape', 300)
+    # (CI on 5994e31: \text{if}\}) dictation as the field opens, before MathLive's late focus of
+    # its keyboard and its late input event: the keys typed into the field, the dictation and the
+    # keys after it all kept, in the \text
+    bad = []
+    for _ in range(6):
+        page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+        load_doc(page, MATH)
+        click_text(page, 'gamma.', 6)
+        key(page, 'Enter'); key(page, 'Alt+Equal', 20)
+        page.keyboard.type('x=1\\text{'); cdp.send('Input.insertText', {'text': 'if '}); page.wait_for_timeout(250)
+        page.keyboard.type('}+y', delay=15); page.wait_for_timeout(500)
+        s = src(page); body = ''.join(s[s.find('\\begin{equation}'):s.find('\\end{equation}')].split())
+        if 'x=1\\text{if}+y' not in body: bad.append(body)
+        key(page, 'Escape', 300)
+    check('latex: dictation in \\text{…} as the field opens keeps every key, six times over', not bad, bad)
     # what the field cannot hold goes on in its LaTeX box, typed on there
     load_doc(page, MATH)
     click_text(page, 'gamma.', 6)
@@ -228,6 +243,10 @@ def latex(page):
         key(page, 'Control+Enter', 400); page.wait_for_timeout(300)
         s = src(page)
         check('latex: Ctrl+Enter in ' + want[:-2] + '…} ends it, nothing else written', want in s and 'insertText' not in s, s[60:220])
+        # (verification of eb14945, V5) and adds the row, as without the argument open
+        page.keyboard.type('z=2', delay=15); page.wait_for_timeout(300); key(page, 'Enter', 400)
+        s = src(page); b = ''.join(s[s.find('\\begin{align}'):s.find('\\end{align}')].split())
+        check('latex: Ctrl+Enter in ' + want[:-2] + '…} makes a new row, typed on in it', b.startswith('\\begin{align}') and (want + '\\\\z=2') in b, s[60:220])
         key(page, 'Escape', 300)
 
 
