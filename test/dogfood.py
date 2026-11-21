@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from browser import open_page, check, results, src, load_doc, click_text, ROOT
 from playwright.sync_api import sync_playwright
 
-PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo', 'mathpkg', 'intertext', 'envlist', 'replace']
+PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo', 'mathpkg', 'intertext', 'envlist', 'replace', 'review']
 DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
 TEX = os.path.isdir(os.path.join(DIST, 'tex')) and any(n.endswith('.wasm') for n in os.listdir(os.path.join(DIST, 'tex')))
 

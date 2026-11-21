@@ -355,12 +355,16 @@ const TEXT_MATH = Object.fromEntries(('α alpha β beta γ gamma δ delta ε var
   + '∑ sum ∏ prod ∫ int ∈ in ∉ notin ⊂ subset ⊃ supset ⊆ subseteq ⊇ supseteq ∪ cup ∩ cap ∀ forall ∃ exists ∧ wedge ∨ vee ⊕ oplus ⊗ otimes ⊥ perp ∥ parallel ↔ leftrightarrow ⇒ Rightarrow ⇐ Leftarrow '
   + '⇔ Leftrightarrow ↦ mapsto ⟹ implies ⟺ iff ⋯ cdots ℓ ell ℏ hbar ℜ Re ℑ Im ℵ aleph ′ prime ⌊ lfloor ⌋ rfloor ⌈ lceil ⌉ rceil').split(' ').reduce((a, x, i, all) => (i % 2 ? a : [...a, [x, '\\' + all[i + 1]]]), []));
 TEXT_MATH['\u2212'] = '-';
+// (a prime is the formula's ' : $\prime$ printed a large one, review E9)
+TEXT_MATH['\u2032'] = "'";
+TEXT_MATH['\u2033'] = "''";
 let mathForPdf = false;
 // fn run with escapeTeX writing those symbols as formulas (a paste into a document pdfLaTeX
-// compiles: src/app.js onPaste)
-export function withPdfText(pdf, fn) {
+// compiles: src/app.js onPaste). o.greek false: the document sets Greek up for its text already
+// (babel's greek, LGR, textgreek, its own \DeclareUnicodeCharacter): Greek letters stay letters.
+export function withPdfText(pdf, fn, o = {}) {
   const was = mathForPdf;
-  mathForPdf = !!pdf;
+  mathForPdf = pdf ? { greek: o.greek !== false } : false;
   try { return fn(); } finally { mathForPdf = was; }
 }
 
@@ -370,7 +374,7 @@ export function escapeTeX(text, prev = ' ', opts = {}) {
   for (const ch of text) {
     let r = ch;
     if (LIGATURES[ch] && !opts.verbatim) r = LIGATURES[ch];
-    else if (mathForPdf && TEXT_MATH[ch] && !opts.verbatim) r = '$' + TEXT_MATH[ch] + '$';
+    else if (mathForPdf && TEXT_MATH[ch] && !opts.verbatim && (mathForPdf.greek || !/[\u0370-\u03FF]/.test(ch))) r = '$' + TEXT_MATH[ch] + '$';
     else if (ch === '"' && !opts.verbatim) r = /[\s([{—–-]/.test(p) || p === '' ? '``' : "''";
     else if (ch === '“') r = '``';
     else if (ch === '”') r = "''";

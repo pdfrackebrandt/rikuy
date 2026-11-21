@@ -2328,6 +2328,8 @@ class App {
     const o = { prev: src[at0 - 1] || ' ', hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*hyperref/.test(pre), booktabs: /\\usepackage(\[[^\]]*\])?\{[^}]*booktabs/.test(pre), inlineOnly: inline };
     // (a PDF's ligatures as letters; its Greek and symbols as formulas where pdfLaTeX compiles it: escapeTeX)
     const pdfText = !this.textEngine().unicode;
+    // (a preamble that sets Greek up for pdfLaTeX's text: Greek pasted there stays letters)
+    const greekSet = /\\usepackage\s*\[[^\]]*\b(greek|polutonikogreek|LGR)\b[^\]]*\]\s*\{(babel|fontenc)\}|\\usepackage\s*(\[[^\]]*\])?\s*\{[^}]*\b(textgreek|alphabeta|teubner|greektex|lgrx)\b|\\DeclareUnicodeCharacter\s*\{0?3[9AaBbCc][0-9A-Fa-f]\}|\\newunicodechar\s*\{[\u0370-\u03FF]\}/.test(pre);
     const rich = () => withPdfText(pdfText, () => {
       if (plainOnly) return textToTeX(plain, o.prev);
       let t = '';
@@ -2335,7 +2337,7 @@ class App {
       if (!t.trim()) t = plainToTeX(plain, o.prev, o);
       if (inline) t = t.replace(/\s*\n\s*\n\s*/g, ' ').replace(/\n/g, ' ');
       return t;
-    });
+    }, { greek: !greekSet });
     if (c.ghost) { const t = latex || rich(); this.ghostInsert(t, this.pastePackages(t)); return; }
     if (whole) { const t = latex || rich(), pk = this.pastePackages(t); this.replaceBody(whole, t, 'paste'); if (pk.length) this.commit(pk, null, 'paste'); return; }
     const edits = this.deletionEdits(c.f, c.a, c.b);

@@ -148,7 +148,8 @@ try:
         page.keyboard.type('note text')
         s = src(page)
         check('palette inserts footnote and caret inside', 'before\\footnote{note text} input' in s, s[s.find('Main'):][:60])
-        page.keyboard.press('Control+z'); page.keyboard.press('Control+z')
+        # ("text", "note " and the footnote: typing is undone word by word, as Word's)
+        for _ in range(3): page.keyboard.press('Control+z')
         # --- select-first atom deletion
         click_text(page, 'and', 0, nth=0)
         page.evaluate('''() => { const c = document.querySelector('.a-cite'); const r = document.createRange(); r.setStartAfter(c); r.collapse(true); document.getElementById('pages').focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }''')
