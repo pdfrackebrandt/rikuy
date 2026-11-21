@@ -17,6 +17,7 @@ import { usePackages, provides, preambleEnd, stripComments, hasPackage } from '.
 import { applyEdits } from '../styles.js';
 import { mapPos, diffEdit } from '../wrap.js';
 import { parse } from '../parser.js';
+import { filesRead } from '../scan.js';
 import { blockText, compile, hitsIn, hitSource } from '../find.js';
 import * as RS from '../refsrc.js';
 import { openMenu } from '../ui/kit.js';
@@ -169,6 +170,9 @@ register(
 // A working copy of the files one action changes: each set of edits is worked out on the text as
 // the sets before it left it (two edits of one preamble line never overlap), places of interest
 // (the caret) move with them, and commit makes one step of history.
+// \bibliography{names} and biblatex's \addbibresource[options]{name}
+const BIB_CMD = /\\(?:bibliography|addbibresource)\s*(?:\[[^\]]*\])?\s*\{([^{}]*)\}/;
+
 class Work {
   constructor(app) { this.app = app; this.t = new Map(); this.marks = []; }
   src(f) { return this.t.has(f) ? this.t.get(f) : this.app.src(f); }
@@ -203,7 +207,9 @@ class Work {
 }
 
 const eolOf = (t) => (/\r\n/.test(String(t).slice(0, 4000)) ? '\r\n' : '\n');
-const texFiles = (app) => [...app.files.keys()].filter((n) => /\.(tex|ltx)$/i.test(n)).slice(0, 200);
+// the .tex files the main file reads, main first (filesRead: a talk or a letter beside the paper
+// is no part of it, review E16)
+const texFiles = (app) => filesRead(app.files, app.main).slice(0, 200);
 // What the commands' when and on read of the project, once for each text of it: a look at the
 // caret runs every command's, and on a long document (167 KB of preamble, 3000 paragraphs) reading
 // the preamble and every file's body again took 27 to 84 ms a command. The answers are kept while
@@ -551,6 +557,82 @@ export const methods = {
     if (title) { const f = this.main; w.apply(f, RS.bibTitleEdits(w.src(f), title, ch, this.preambleOthers())); }
     void nl;
     return place === 'end' ? w : w.commit(null, 'insert');
+  },
+  // Whether the document names a bibliography file anywhere in the project: \bibliography,
+  // biblatex's \addbibresource, or a hand written thebibliography (review E4: one named in an \input
+  // file was missed, and a second pair went into main.tex, which BibTeX refuses)
+  bibNamed() {
+    const B = this.bibState();
+    if (B.system === 'thebibliography' || (B.biblatex ? B.resources.length > 0 : !!B.bib)) return true;
+    for (const f of filesRead(this.files, this.main)) { const t = this.files.get(f); if (f !== this.main && typeof t === 'string' && BIB_CMD.test(stripComments(t.slice(0, 2e6)))) return true; }
+    return false;
+  },
+  // A .bib of the project as the main file names it: from the main file's folder, where TeX runs
+  // (tex/engine.js), without .bib for \bibliography (review E1: paper/refs.bib was written
+  // \bibliography{paper/refs}, which BibTeX looked for in paper/paper/)
+  bibRel(file, withExt) {
+    const dir = this.main.includes('/') ? this.main.slice(0, this.main.lastIndexOf('/') + 1) : '';
+    let rel = file;
+    if (dir && file.startsWith(dir)) rel = file.slice(dir.length);
+    else if (dir) rel = '../'.repeat(dir.split('/').length - 1) + file;
+    return withExt ? rel : rel.replace(/\.bib$/i, '');
+  },
+  // The .bib files (project paths) the document's \bibliography and \addbibresource name
+  bibFilesNamed() {
+    const out = new Set(), dir = this.main.includes('/') ? this.main.slice(0, this.main.lastIndexOf('/') + 1) : '';
+    const norm = (x) => { const parts = []; for (const q of x.split('/')) { if (q === '..') parts.pop(); else if (q && q !== '.') parts.push(q); } return parts.join('/'); };
+    // (the files the main file reads: review E16)
+    for (const f of filesRead(this.files, this.main)) {
+      const t = this.files.get(f);
+      if (typeof t !== 'string') continue;
+      for (const m of stripComments(t.slice(0, 2e6)).matchAll(new RegExp(BIB_CMD.source, 'g'))) {
+        for (const n of m[1].split(',').map((x) => x.trim()).filter(Boolean)) {
+          const hit = [dir + n, dir + n + '.bib', n, n + '.bib'].map(norm).find((c) => this.files.has(c));
+          if (hit) out.add(hit);
+        }
+      }
+    }
+    return out;
+  },
+  // A key the citation picker took from a .bib the document does not name (bibList): that file
+  // goes into the document's bibliography in the citation's own step (the popover's session), so
+  // one Undo takes both. Where the document names none yet, the lines that print one go in at its
+  // end (\bibliographystyle{plain} or natbib's plainnat and \bibliography; biblatex's
+  // \addbibresource and \printbibliography); where it names some, this one joins them (review E2:
+  // a key from a second .bib printed [?]): \bibliography{a,b}, or another \addbibresource.
+  citeBibFor(file) {
+    const P = this.pop;
+    if (!P || this.bibFilesNamed().has(file)) return;
+    const B = this.bibState(), edits = [];
+    let f = this.main;
+    // (a name BibTeX cannot read is not written: \bibliography{My Library} printed [?] for every
+    // citation. A .bib opened on its own gets a name it can, src/app.js openFiles; review E15)
+    if (!B.biblatex && /[\s{}%#,~\\]/.test(this.bibRel(file))) { this.toast('BibTeX cannot read ' + file + ': a name with spaces or signs. Open it again to add it as ' + file.split('/').pop().replace(/\.bib$/i, '').replace(/[^A-Za-z0-9_.-]+/g, '-') + '.bib.', 9000); return; }
+    if (B.biblatex) {
+      edits.push(...RS.preambleLine(this.src(f), '\\addbibresource{' + this.bibRel(file, true) + '}'));
+      if (!B.print && !this.bibNamed()) edits.push(...RS.endLines(this.src(f), ['\\printbibliography'], ['printindex']));
+    } else {
+      // (the first \bibliography of the files the main file reads, main first: its list takes the
+      // name. Of the whole project's, a beamer talk beside the paper took it, review E16.)
+      const files = filesRead(this.files, this.main);
+      let at = null;
+      for (const g of files) {
+        const t = this.src(g);
+        if (typeof t !== 'string') continue;
+        const m = new RegExp('\\\\bibliography\\s*\\{([^{}]*)\\}').exec(stripComments(t.slice(0, 2e6)));
+        if (m) { at = { g, e: m.index + m[0].length - 1, list: m[1] }; break; }
+      }
+      if (at) { f = at.g; edits.push({ s: at.e, e: at.e, t: (at.list.trim() ? ',' : '') + this.bibRel(file) }); }
+      else if (!this.bibNamed()) edits.push(...RS.endLines(this.src(f), [...(B.styleCall ? [] : ['\\bibliographystyle{' + (B.natbib ? 'plainnat' : 'plain') + '}']), '\\bibliography{' + this.bibRel(file) + '}'], ['printindex']));
+    }
+    if (!edits.length) return;
+    this.commit(edits.map((x) => ({ f, ...x })), null, P.session);
+    // (a line in the preamble moves the citation the popover writes, and where the caret goes back)
+    const R = P.range, grow = (p) => edits.reduce((n, x) => (x.e <= p ? n + x.t.length - (x.e - x.s) : n), 0);
+    if (R && R.f === f) { const d = grow(R.s); R.s += d; R.e += d; }
+    if (P.returnCaret && P.returnCaret.f === f) P.returnCaret = { ...P.returnCaret, p: P.returnCaret.p + grow(P.returnCaret.p) };
+    if (P.anchorPos && P.anchorPos.f === f) P.anchorPos = { ...P.anchorPos, s: P.anchorPos.s + grow(P.anchorPos.s) };
+    this.toast('The bibliography now reads ' + file + '.');
   },
   bibRemove() {
     const B = this.bibState(), spots = this.bodySpots(['bibliography', 'printbibliography', ...(B.biblatex ? [] : ['bibliographystyle'])], true);
