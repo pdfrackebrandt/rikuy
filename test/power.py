@@ -600,10 +600,15 @@ def accept(page):
         body = ''.join(s[i + 16:j].split()) if 0 <= i < j else None
         check('accept: Alt+= on an empty paragraph, LaTeX at full speed: a display equation, as typed' + w,
               body in ('\\frac{\\partialu}{\\partialx_{k}}=\\sum_{i=1}^{n}\\alpha_{i}', '\\frac{\\partialu}{\\partialx_k}=\\sum_{i=1}^n\\alpha_i') and '$' not in s, (body, s[s.find('ends'):][:140]))
-        # (4) after its Enter, the next words in a paragraph of their own
+        # (4) after its Enter, the next words on a line of their own after it, in its paragraph, and
+        # no blank line added; a second Enter, a new paragraph
         typ(page, 'After.', how); page.wait_for_timeout(500)
         s = src(page)
-        check('accept: after Enter closes the display, what is typed is a new paragraph after it' + w, '\\end{equation}\n\nAfter.' in s, s[s.find('\\end{equation}'):][:40])
+        check('accept: after Enter closes the display, what is typed goes on the next line, no blank line added' + w, '\\end{equation}\nAfter.\n\n\\begin{figure}' in s, s[s.find('\\end{equation}'):][:40])
+        fresh(page); click_text(page, 'ends here.', 10); key(page, 'Enter', 100); key(page, 'Alt+Equal', 0)
+        typ(page, 'y=1', how); page.wait_for_timeout(400); key(page, 'Enter', 400); key(page, 'Enter', 200); typ(page, 'Para.', how); page.wait_for_timeout(400)
+        s = src(page)
+        check('accept: a second Enter after the display, a new paragraph' + w, '\\end{equation}\n\nPara.\n\n\\begin{figure}' in s, s[s.find('\\end{equation}'):][:40])
         # (5) a formula at a heading's end, Enter, then End, Enter, Q: Q a paragraph after the heading
         for close in ('Enter', 'Escape'):
             fresh(page); click_text(page, 'How to use it', 13); key(page, 'Alt+Equal', 0)
@@ -623,7 +628,7 @@ def accept(page):
     # a display closed by Esc: the caret after it too; one closed empty goes, leaving no step
     fresh(page); click_text(page, 'ends here.', 10); key(page, 'Enter', 100); key(page, 'Alt+Equal', 400)
     typ(page, 'y=2', 'keys'); page.wait_for_timeout(300); key(page, 'Escape', 400); typ(page, 'Then.', 'keys'); page.wait_for_timeout(300)
-    check('accept: a display closed by Esc, what is typed is a new paragraph after it', '\\end{equation}\n\nThen.' in src(page), src(page)[src(page).find('\\end{equation}'):][:30])
+    check('accept: a display closed by Esc, what is typed goes on the next line', '\\end{equation}\nThen.\n\n' in src(page), src(page)[src(page).find('\\end{equation}'):][:30])
     fresh(page); n = page.evaluate('window.rikuy.hist.length')
     click_text(page, 'ends here.', 10); key(page, 'Enter', 100); key(page, 'Alt+Equal', 400); key(page, 'Escape', 400)
     check('accept: an equation closed empty goes with its environment, leaving no undo step', src(page) == ACC and page.evaluate('window.rikuy.hist.length') == n, (src(page)[100:200], page.evaluate('window.rikuy.hist.length'), n))

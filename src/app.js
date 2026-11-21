@@ -1103,14 +1103,13 @@ class App {
     if (!quiet) this.scrollToCaret();
   }
 
-  // After a display closes (Enter, Esc, a click away), the caret where Word's would be: at the start
-  // of the words that go on after it in its paragraph, or else in a blank paragraph after it. What
-  // was typed next joined the equation's last line (\end{equation}After.). Closed by $$, as typed
-  // in the source, the paragraph goes on after it instead (dollarClosed).
+  // After a display closes (Enter, Esc, a click away), the caret on a new line of its own right
+  // after \end{equation}, in the same paragraph, as math papers go on ("where x is …", drawn below
+  // the equation with no indent); a second Enter there makes a new paragraph. What was typed next
+  // joined the equation's last line (\end{equation}After.). Closed by $$, as typed in the source,
+  // the line goes on after it instead (dollarClosed).
   caretAfterDisplay(rc) {
-    const src = this.src(rc.f), m = /^[ \t]*(\r?\n)?[ \t]*/.exec(src.slice(rc.p)), q = rc.p + m[0].length;
-    if (q < src.length && !/^(\r?\n|\\(begin|end|\[|item)\b|\\\[|%)/.test(src.slice(q))) { this.restoreCaret({ f: rc.f, p: q, bias: 1 }); return; }
-    this.ghostAt(rc.f, rc.p);
+    this.ghostAt(rc.f, rc.p, null, true);
   }
 
   scrollToCaret() {
@@ -1935,6 +1934,8 @@ class App {
   enter(soft) {
     const c = this.caretNow();
     if (!c) return;
+    // (a second Enter on the line after a display: a new paragraph there)
+    if (c.ghost && this.ghost.line && !this.ghost.pend) { this.ghost.line = false; this.ghost.el.classList.add('ind'); return; }
     if (c.ghost) { if (this.ghost.tex) this.texGhostEnter(); else this.ghostLeaveEnv(); return; }
     const T = this.texHere();
     if (T && c.f === T.f) { this.texEnter(T, c); return; }
@@ -2041,7 +2042,7 @@ class App {
   showGhost(afterEl, f, pos, o = {}) {
     this.removeGhost();
     const g = document.createElement('div');
-    g.className = 'it p ghostp' + (afterEl.classList.contains('ind') || afterEl.classList.contains('p') || afterEl.classList.contains('tex') ? ' ind' : '') + (o.style === 'latex' ? ' tex' : isEnvStyle(o.style) ? ' quote' : '');
+    g.className = 'it p ghostp' + (!o.line && (afterEl.classList.contains('ind') || afterEl.classList.contains('p') || afterEl.classList.contains('tex')) ? ' ind' : '') + (o.style === 'latex' ? ' tex' : isEnvStyle(o.style) ? ' quote' : '');
     g.dataset.ctx = 'p';
     // the new paragraph runs the way the one above it does
     if (afterEl.dir === 'rtl' || afterEl.dir === 'ltr') g.dir = afterEl.dir;
@@ -2050,7 +2051,8 @@ class App {
     s.textContent = '\u200B';
     g.appendChild(s);
     if (o.before) afterEl.before(g); else afterEl.after(g);
-    this.ghost = { el: g, f, pos, before: !!o.before, style: o.style || null, pend: '' };
+    // (line: a line of the paragraph above, after a display, written after a line break alone)
+    this.ghost = { el: g, f, pos, before: !!o.before, style: o.style || null, pend: '', line: !!o.line };
     const sel = getSelection();
     this.ourSel = true;
     sel.collapse(s.firstChild, 1);
@@ -2097,8 +2099,8 @@ class App {
     let nlB = 0; for (let k = g.pos - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
     let nlA = 0; for (let k = g.pos; k < src.length && /\s/.test(src[k]); k++) if (src[k] === '\n') nlA++;
     // no blank lines at the very start or end of a file: there is no paragraph to keep apart
-    const pre = g.pos === 0 ? '' : '\n'.repeat(Math.max(0, 2 - nlB));
-    const post = g.pos >= src.length ? '' : '\n'.repeat(Math.max(0, 2 - nlA));
+    const pre = g.pos === 0 ? '' : '\n'.repeat(Math.max(0, (g.line ? 1 : 2) - nlB));
+    const post = g.pos >= src.length ? '' : '\n'.repeat(Math.max(0, (g.line ? 1 : 2) - nlA));
     this.removeGhost();
     this.commit([{ f: g.f, s: g.pos, e: g.pos, t: pre + open + tex + close + post }], { f: g.f, p: g.pos + pre.length + open.length + tex.length, bias: -1 }, 'type');
   }
@@ -2300,7 +2302,7 @@ class App {
   }
   // a blank paragraph for pos, after the block of the page that ends before it (before the one
   // that starts after it, where none does)
-  ghostAt(f, pos, style) {
+  ghostAt(f, pos, style, line) {
     let prev = null, next = null;
     for (const B of this.renderer.blocks) {
       if (B.f !== f || !B.items.length) continue;
@@ -2309,7 +2311,7 @@ class App {
     }
     const els = (B) => [...this.root.querySelectorAll('.it[data-b="' + B.id + '"]')];
     const at = prev ? els(prev).pop() : next ? els(next)[0] : null;
-    if (at) this.showGhost(at, f, pos, { before: !prev, style });
+    if (at) this.showGhost(at, f, pos, { before: !prev, style, line });
   }
 
   onCompStart() {
@@ -3534,7 +3536,10 @@ class App {
     }
     // (a file written with CRLF keeps them; a kind of amsmath's brings it, in the same step)
     const nl = eolAt(this.src(c.f), c.a);
-    const t = (env === '\\[' ? nl + '\\[' + nl + '  ' + nl + '\\]' : nl + '\\begin{' + env + '}' + nl + '  ' + nl + '\\end{' + env + '}') + nl;
+    // (a line break before and after it only where none is: one after it, before the blank line
+    // that was there, made two blank lines)
+    const S0 = this.src(c.f), lead = /\n[ \t]*$/.test(S0.slice(0, c.a)) ? '' : nl, tail = /^[ \t]*\r?\n/.test(S0.slice(c.a)) ? '' : nl;
+    const t = lead + (env === '\\[' ? '\\[' + nl + '  ' + nl + '\\]' : '\\begin{' + env + '}' + nl + '  ' + nl + '\\end{' + env + '}') + tail;
     const pk = this.eqKindPkgs(env);
     // (the history as it is before the equation: given up empty, it goes back to this)
     this.closeGroup();
@@ -3542,7 +3547,7 @@ class App {
     const a0 = c.a;
     c = { f: c.f, a: c.a + pk.filter((x) => x.f === c.f && x.e <= c.a).reduce((n, x) => n + x.t.length - (x.e - x.s), 0) };
     this.commit([{ f: c.f, s: a0, e: a0, t }, ...pk], { f: c.f, p: c.a + t.length }, 'insert');
-    const el = this.findAtomEl({ f: c.f, s: c.a + nl.length, kind: 'math' });
+    const el = this.findAtomEl({ f: c.f, s: c.a + lead.length, kind: 'math' });
     if (el) { const info = atomOfEl(el); if (info) { this.openMath(el, info); this.eqTab(); } }
     // closed with nothing typed, the equation goes again: it stayed as an empty environment,
     // which prints a number beside nothing
