@@ -211,5 +211,19 @@ const ap = (t, ed) => { for (const x of [...ed].sort((a, b) => b.s - a.s || b.e 
   check('E16: a \\bibliographystyle in a talk beside the paper sets nothing of it', m.opts.bibstyle !== 'unsrt', m.opts.bibstyle);
 }
 
+// ---- review V6: names resolved as TeX and subfiles do, by the scans and the page alike
+{
+  const D = (b) => '\\documentclass{article}\n\\begin{document}\n' + b + '\n\\end{document}\n';
+  const fr = (files, main = 'main.tex') => JSON.stringify(filesRead(new Map(Object.entries(files)), main));
+  check('V6: \\subfile from the subfile\'s own folder', fr({ 'main.tex': D('\\subfile{chapters/one}'), 'chapters/one.tex': '\\subfile{sections/s1}', 'chapters/sections/s1.tex': 's', 'sections/s1.tex': 'WRONG' }) === '["main.tex","chapters/one.tex","chapters/sections/s1.tex"]');
+  check('V6: \\input from the main file\'s folder before a file of that name elsewhere', fr({ 'slides/intro.tex': 'S', 'paper/main.tex': D('\\input{intro}'), 'paper/intro.tex': 'P' }, 'paper/main.tex') === '["paper/main.tex","paper/intro.tex"]');
+  check('V6: nothing in \\iffalse is read, what follows its \\else is', fr({ 'main.tex': D('\\iffalse\n\\include{old}\\ifx a b\\fi\n\\else\\input{y}\\fi'), 'old.tex': 'o', 'y.tex': 'y' }) === '["main.tex","y.tex"]');
+  check('V6: \\input chap1 and \\input{"a b"}', fr({ 'main.tex': D('\\input chap1\n\\input{"a b"}'), 'chap1.tex': 'c', 'a b.tex': 'x' }) === '["main.tex","chap1.tex","a b.tex"]');
+  // the page's model reads the same file
+  const m = buildModel({ files: new Map([['slides/intro.tex', 'Slides words.'], ['paper/main.tex', D('\\input{intro}')], ['paper/intro.tex', 'Paper words.']]), main: 'paper/main.tex' });
+  const shown = JSON.stringify(m.blocks), words = shown.includes('Paper words.') && !shown.includes('Slides words.');
+  check('V6: the page reads paper/intro.tex too', words);
+}
+
 console.log(`bib.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

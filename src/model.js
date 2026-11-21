@@ -2,7 +2,7 @@
 // numbering, cross references and citations resolved. Every editable
 // character keeps a pointer to its exact source range.
 import { parse, scanUserSigs, CHARS, ACCENTS, splitRows, MATH_BUDGET } from './parser.js';
-import { filesRead } from './scan.js';
+import { filesRead, resolveIn } from './scan.js';
 import { refsSetup, readIndexArg, indexKey, istRight } from './refsrc.js';
 import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bib.js';
 import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
@@ -866,7 +866,7 @@ class Builder {
       if (nd.t === 'group') this.preWalk(nd.nodes, c, own);
       else if (nd.t === 'env' && !nd.raw && nd.nodes) this.preWalk(nd.nodes, c, own);
       else if (nd.t !== 'cmd') continue;
-      else if (nd.name === 'input' && nd.args[0]) this.preFile(this.resolveFile(this.argText(c, nd.args[0])), own);
+      else if (nd.name === 'input' && nd.args[0]) this.preFile(this.resolveFile(this.argText(c, nd.args[0]), c.f), own);
       else if (!own) this.preCmd(nd, c);
       else if (nd.name === 'definecolor') this.defColor(nd, c);
       else if (nd.name === 'usepackage' || nd.name === 'RequirePackage') {
@@ -1100,7 +1100,7 @@ class Builder {
       for (const nd of ns) {
         if (nd.t === 'cmd') {
           if (nd.name === 'input' || nd.name === 'include' || nd.name === 'subfile') {
-            const f = this.resolveFile(this.argText(c, nd.args[0]));
+            const f = this.resolveFile(this.argText(c, nd.args[0]), c.f, nd.name === 'subfile');
             if (f && !this.included.has('defs:' + f)) {
               this.included.add('defs:' + f);
               walk(this.parseFile(f), { f, src: this.files.get(f), pm: null });
@@ -1198,14 +1198,10 @@ class Builder {
     }
   }
 
-  resolveFile(name) {
-    name = (name || '').trim();
-    if (!name) return null;
-    const cands = [name, name + '.tex', name.replace(/^\.\//, ''), name.replace(/^\.\//, '') + '.tex'];
-    for (const c of cands) if (this.files.has(c)) return c;
-    const base = name.split('/').pop();
-    for (const [k] of this.files) if (k.endsWith('/' + base) || k.endsWith('/' + base + '.tex') || k === base + '.tex') return k;
-    return null;
+  // from: the file whose \input, \include or \subfile (sub) names it; the rule the project-wide
+  // scans follow too (src/scan.js resolveIn), so the page and they read the same files
+  resolveFile(name, from, sub) {
+    return resolveIn(this.files, name, this.project.main, from, sub);
   }
 
   // ---- direction -------------------------------------------------------------
@@ -1630,7 +1626,7 @@ class Builder {
         const name = nd.name;
         if (name === 'input' || name === 'include' || name === 'subfile') {
           flushPara();
-          const f = this.resolveFile(this.argText(ctx, nd.args[0]));
+          const f = this.resolveFile(this.argText(ctx, nd.args[0]), ctx.f, name === 'subfile');
           if (f && !this.included.has(f)) {
             this.included.add(f);
             const sub = { f, src: this.files.get(f), pm: null };
