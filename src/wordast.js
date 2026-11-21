@@ -203,10 +203,12 @@ class Walker {
   }
 
   run() {
-    // pass 1 finds the text each anchor holds; pass 2 places comments on the words they quote
+    // pass 1 finds the text each anchor holds; pass 2 places comments on the words they quote,
+    // and the changes waiting as Word's tracked changes (trackMarks)
     this.blocks = this.walk();
-    if (this.o.comments !== false) {
-      const marks = this.commentMarks();
+    if (this.o.comments !== false || (this.o.changes && this.o.changes.length)) {
+      const marks = this.o.comments !== false ? this.commentMarks() : new Map();
+      this.trackMarks(marks);
       if (marks.size) {
         this.cmarks = marks;
         this.anchors = []; this.atoms = []; this.images = new Set(); this.warnings = []; this.degraded = new Map(); this.n = 0; this.meta = {}; this.lists = [];
@@ -220,7 +222,7 @@ class Walker {
     // only a document with right to left text in it, or a wrapper that sets a direction
     if (this.bidi) doc = bidiDoc(doc, new Map(this.anchors.filter((A) => A.dir).map((A) => [A.id, A.dir])), this.rtl);
     const deg = [...this.degraded.entries()].map(([k, n]) => k + (n > 1 ? ' (' + n + ')' : ''));
-    return { doc, anchors: this.anchors.map(packAnchor), atoms: this.atoms, images: [...this.images], warnings: this.warnings, degraded: deg, comments: this.ncomments, rtl: this.rtl, bullets: this.lists };
+    return { doc, anchors: this.anchors.map(packAnchor), atoms: this.atoms, images: [...this.images], warnings: this.warnings, degraded: deg, comments: this.ncomments, rtl: this.rtl, bullets: this.lists, tracked: this.tracked || 0 };
   }
 
   plainMath(tex) {
@@ -803,6 +805,48 @@ class Walker {
       }
     }
     return marks;
+  }
+  // The changes waiting (opts.changes: [{ f, s, e, del, who }], the words now at [s, e) inserted
+  // and the words del deleted at s, in plain prose: src/cmd/review.js plainChanges) as Word's
+  // tracked changes, each its author's, dated now: a deletion is its runs in a w:del where its
+  // words stood, an insertion its runs between two marks that src/wordjobs.js trackedRuns makes a
+  // w:ins. A change whose words the page does not draw stays as the text is now.
+  trackMarks(marks) {
+    const list = this.o.changes || [];
+    if (!list.length) return;
+    const date = new Date(this.o.now || Date.now()).toISOString().replace(/\.\d+Z$/, 'Z');
+    const chars = (f, test) => {
+      const out = [];
+      for (const A of this.anchors) {
+        if (A.f !== f) continue;
+        for (let i = 0; i < A.text.length; i++) { const s = A.map[2 * i], e = A.map[2 * i + 1]; if (s >= 0 && test(s, e)) out.push([s, e]); }
+      }
+      return out.sort((x, y) => x[0] - y[0]);
+    };
+    const put = (key, side, x) => { const m = marks.get(key) || {}; m[side] = [...(m[side] || []), { t: 'RawInline', c: ['openxml', x] }]; marks.set(key, m); };
+    let id = 9000;
+    this.tracked = 0;
+    for (const c of list) {
+      // (characters XML 1.0 does not allow, which a name from another's Word file may hold, go:
+      // Word refuses a file with one)
+      const ok = (t) => String(t).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '');
+      const who = xmlEsc(ok(c.who || 'Rikuy').slice(0, 200)).replace(/"/g, '&quot;'), att = ' w:author="' + who + '" w:date="' + date + '"';
+      let done = false;
+      if (c.del) {
+        const xml = '<w:del w:id="' + id++ + '"' + att + '><w:r><w:delText xml:space="preserve">' + xmlEsc(ok(c.del)) + '</w:delText></w:r></w:del>';
+        const at = chars(c.f, (s) => s >= c.s && s <= c.s + 2)[0], before = !at && chars(c.f, (s, e) => e === c.s).pop();
+        if (at) { put(c.f + ':' + at[0], 'start', xml); done = true; } else if (before) { put(c.f + ':' + before[1] + ':end', 'end', xml); done = true; }
+      }
+      if (c.e > c.s) {
+        const cs = chars(c.f, (s, e) => s >= c.s && e <= c.e);
+        if (cs.length) {
+          put(c.f + ':' + cs[0][0], 'start', '<w:rkIns w:id="' + id++ + '"' + att + '/>');
+          put(c.f + ':' + cs[cs.length - 1][1] + ':end', 'end', '<w:rkInsEnd/>');
+          done = true;
+        }
+      }
+      if (done) this.tracked++;
+    }
   }
   // the source offsets of the first and last character of the quoted words on line [as, ae)
   locate(f, as, ae, quote) {
