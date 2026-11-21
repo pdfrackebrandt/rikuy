@@ -1,7 +1,7 @@
 // What the Word worker does, given a pandoc (src/pandoc.js): write a project's page as .docx with
 // Rikuy's part in it, read an edited .docx back, open a stranger's .docx as LaTeX. Kept apart from
 // the worker's messaging so the node tests run the same code.
-import { unzip, zip, extract, addRikuyPart, readRikuyPart, mathDocx, mathFromJson, text, premark, decode, mark, MARKS, LIMITS } from './docx.js';
+import { unzip, zip, extract, addRikuyPart, readRikuyPart, mathDocx, mathFromJson, text, premark, decode, mark, MARKS, LIMITS, trackAuthors, rejectBy } from './docx.js';
 import { alignRuns, exportData, allObjs, safeMath } from './wordsync.js';
 import { commentEdit } from './share.js';
 import { isBalanced } from './parser.js';
@@ -26,6 +26,23 @@ export function mathTeX(P, objs) {
 
 // req: { doc (pandoc JSON), anchors (packAnchor's), atoms, resources: {name: bytes|string},
 //        bibs: [names], csl: name|null, citeproc, toc, project: { name, main, files: [[n, t]], sig } }
+// The changes waiting as Word's tracked changes (src/wordast.js trackMarks): the runs between an
+// insertion's two marks put in a w:ins with its author and date, and any mark left without its
+// pair (words the page drew apart) taken out, so the file is always Word's own XML
+export function trackedRuns(docx) {
+  const parts = unzip(docx);
+  let changed = false;
+  for (const name of ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml']) {
+    if (!parts.has(name)) continue;
+    const x = text(parts.get(name));
+    if (!x.includes('<w:rkIns')) continue;
+    const y = x.replace(/<w:rkIns( [^>]*)\/>((?:(?!<w:rkIns |<\/w:p>)[\s\S])*?)<w:rkInsEnd\/>/g, '<w:ins$1>$2</w:ins>').replace(/<w:rkIns [^>]*\/>|<w:rkInsEnd\/>/g, '');
+    parts.set(name, new TextEncoder().encode(y));
+    changed = true;
+  }
+  return changed ? zip(parts) : docx;
+}
+
 export function exportDocx(P, req) {
   const opts = { from: 'json', to: 'docx', 'output-file': 'out.docx' };
   if (req.citeproc && req.bibs && req.bibs.length) { opts.citeproc = true; opts.bibliography = req.bibs; if (req.csl) opts.csl = req.csl; }
@@ -33,7 +50,7 @@ export function exportDocx(P, req) {
   const r = P.convert(opts, JSON.stringify(req.doc), req.resources || {});
   if (!r.files['out.docx']) throw new Error('pandoc wrote no Word file: ' + (r.stderr || '').trim().slice(0, 300));
   const mainTex = (req.project.files.find(([f]) => f === req.project.main) || [])[1];
-  const made = styled(r.files['out.docx'], !!(req.doc.meta && req.doc.meta.dir && req.doc.meta.dir.c === 'rtl'), typeof mainTex === 'string' ? { ...scriptSetup(mainTex), mainTex } : {});
+  const made = styled(trackedRuns(r.files['out.docx']), !!(req.doc.meta && req.doc.meta.dir && req.doc.meta.dir.c === 'rtl'), typeof mainTex === 'string' ? { ...scriptSetup(mainTex), mainTex } : {});
   // (R3) a table's shading, turned words and alt text, which pandoc's table has no field for
   const tx = tableExtras(req.doc);
   const made2 = tx.length ? tablesOut(made, tx) : made;
@@ -1127,12 +1144,33 @@ function formulaLines(tex, fx, N) {
   }
   return tex;
 }
-export function docxToLatex(P, bytes, name) {
+// A stranger's .docx as a new project: its LaTeX with every tracked change accepted, and where it
+// holds some, the steps they came by: the text with all of them rejected (Track Changes' base,
+// src/word.js) and, author by author, the text with theirs accepted too, so that each change on
+// the page is its author's (they came in accepted, and no one could review them)
+const MAX_TRACK_AUTHORS = 6;
+export function openDocx(P, bytes, name) {
+  const r = docxToLatex(P, bytes, name);
+  let who = [];
+  try { who = trackAuthors(unzip(bytes)); } catch (e) { who = []; }
+  if (!who.length) return r;
+  const k = Math.min(who.length, MAX_TRACK_AUTHORS);
+  const base = docxToLatex(P, bytes, name, { track: 'reject' }).tex;
+  const steps = [];
+  for (let i = 1; i < k; i++) steps.push({ who: who[i - 1], tex: docxToLatex(P, bytes, name, { reject: who.slice(i) }).tex });
+  steps.push({ who: who.slice(k - 1).join(', '), tex: r.tex });
+  return { ...r, tracked: { base, steps, authors: who } };
+}
+
+// o.track: 'accept' (the default) or 'reject', what pandoc does with the tracked changes;
+// o.reject: the people whose changes are rejected first (src/docx.js rejectBy)
+export function docxToLatex(P, bytes, name, o = {}) {
   // the zip pandoc reads is the one rebuilt from what passed the checks
-  const parts = unzip(bytes);
+  let parts = unzip(bytes);
+  if (o.reject && o.reject.length) parts = rejectBy(parts, o.reject);
   // (R4: Word's endnotes marked, so they come back as \endnote and not as footnotes)
   const ens = markEndnotes(parts);
-  const opts = { from: 'docx+citations', to: 'json', 'input-files': ['in.docx'], 'extract-media': 'media', 'track-changes': 'accept' };
+  const opts = { from: 'docx+citations', to: 'json', 'input-files': ['in.docx'], 'extract-media': 'media', 'track-changes': o.track === 'reject' ? 'reject' : 'accept' };
   let info = null, r = null;
   try {
     const pre = premark(parts);
@@ -1337,7 +1375,7 @@ export function docxToLatex(P, bytes, name) {
   if (/\\footnote\{\}/.test(out)) lost.push('the text of a footnote (its part of the file could not be read)');
   if (lost.length) notes.push('Not kept: ' + lost.join('; ') + '.');
   if (N.comments) notes.push(s(N.comments, 'Word comment') + ' came in as ' + (N.comments === 1 ? 'a comment' : 'comments') + ' under ' + (N.comments === 1 ? 'its' : 'their') + ' text.');
-  if (info && info.tracked) notes.push(s(info.tracked, 'tracked change') + ' in the file ' + (info.tracked === 1 ? 'was' : 'were') + ' accepted.');
+  if (info && info.tracked) notes.push(s(info.tracked, 'tracked change') + ' in the file came in as changes to accept or reject (Review).');
   if (info && info.endnotes) notes.push('Endnotes are footnotes here.');
   if (EN && EN.foot) notes.push(s(EN.foot, 'endnote') + ' with a table, a list or another block ' + (EN.foot === 1 ? 'is a footnote' : 'are footnotes') + ' here, every block kept: an endnote holds paragraphs alone.');
   if (N.toc) notes.push('The table of contents is LaTeX\'s own now.');

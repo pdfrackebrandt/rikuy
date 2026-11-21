@@ -341,6 +341,28 @@ try:
         check('the page shows it without error chips', page.evaluate("document.querySelectorAll('#pages .a-chip.err').length") == 0, page.evaluate("[...document.querySelectorAll('#pages .a-chip.err')].map(x => x.textContent)"))
         check('a project from a Word file compiles with restricted shell escape', page.evaluate("(window.rikuy.linkCache.get(window.rikuy.name + '|' + window.rikuy.main) || {}).origin") == 'docx')
 
+        # ---- tracked changes both ways: a file's come in as changes waiting, each its author's
+        # (they came in accepted, so no one could review them), and changes waiting go out as
+        # Word's own, w:ins and w:del with their authors ----
+        P0 = parts(fx)
+        d = P0['word/document.xml'].decode()
+        d = d.replace('<w:r><w:t>First finding</w:t></w:r>', '<w:r><w:t xml:space="preserve">First </w:t></w:r><w:del w:id="801" w:author="Ana" w:date="2026-11-01T10:00:00Z"><w:r><w:delText>finding</w:delText></w:r></w:del><w:ins w:id="802" w:author="Ana" w:date="2026-11-01T10:00:00Z"><w:r><w:t>result</w:t></w:r></w:ins>', 1)
+        d = d.replace('<w:r><w:t>Second finding</w:t></w:r>', '<w:r><w:t xml:space="preserve">Second </w:t></w:r><w:ins w:id="803" w:author="Bo" w:date="2026-11-02T10:00:00Z"><w:r><w:t xml:space="preserve">big </w:t></w:r></w:ins><w:r><w:t>finding</w:t></w:r>', 1)
+        P0['word/document.xml'] = d.encode()
+        ftr = make_zip(os.path.join(TMP, 'Tracked.docx'), P0)
+        open_file(page, ftr)
+        t = src(page)
+        ch = page.evaluate("window.rikuy.realChanges().map((c) => [window.rikuy.rvName(c.who), c.a, c.b])")
+        check('a .docx\'s tracked changes come in waiting, each its author\'s: Ana\'s finding to result, Bo\'s big', '\\item First result' in t and '\\item Second big finding' in t
+              and ['Ana', 'finding', 'result'] in ch and ['Bo', '', 'big '] in ch and len(ch) == 2, ch)
+        check('they are marked on the page, as Word shows them', page.evaluate("document.querySelectorAll('#pages .chg-ins, #pages [class*=chg-ins], #pages ins').length") > 0 or page.evaluate("document.querySelectorAll('#pages [class*=chg]').length") > 0)
+        page.evaluate("window.rikuy.rejectChanges(window.rikuy.realChanges().filter((c) => window.rikuy.rvName(c.who) === 'Bo'))"); page.wait_for_timeout(300)
+        check('rejecting Bo\'s takes his word out, Ana\'s stays waiting', '\\item Second finding' in src(page) and '\\item First result' in src(page) and len(page.evaluate("window.rikuy.realChanges()")) == 1, src(page)[src(page).find('First'):][:80])
+        out_tr = save_docx(page, os.path.join(TMP, 'tracked-out.docx'))
+        dd = parts(out_tr)['word/document.xml'].decode()
+        check('and it goes out to Word as Ana\'s tracked change: w:del of finding, w:ins of result', re.search(r'<w:del w:id="\d+" w:author="Ana" w:date="[^"]+"><w:r><w:delText xml:space="preserve">finding</w:delText>', dd) is not None
+              and re.search(r'<w:ins w:id="\d+" w:author="Ana" w:date="[^"]+">(?:(?!</w:ins>).)*>result</w:t>', dd, re.S) is not None and 'rkIns' not in dd, re.findall(r'<w:(?:ins|del) [^>]*>', dd)[:4])
+
         # ---- what pandoc alone loses: kept where LaTeX has it, said where it has not ----
         fx2 = os.path.join(TMP, 'Reform.docx')
         open(fx2, 'wb').write(word_fixture.make_rich())
