@@ -14,6 +14,7 @@ import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
 import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
+import { chainAt } from './charfmt.js';
 import { findProblems, missingFigures } from './problems.js';
 import { WidgetLayer } from './widget.js';
 import { APP, appInit, asset as appAsset, registerApp, takeLaunches, takeShared, warmTeX } from './pwa.js';
@@ -2235,6 +2236,15 @@ class App {
   }
 
   // ---- clipboard ------------------------------------------------------------------
+  // what Copy puts on the clipboard as LaTeX: words copied from inside a format
+  // (\textbf{qu|ick|}) keep it, as Word's copy keeps a bold word bold (they were pasted plain):
+  // the wrappers around them, outermost first, go round the words copied
+  copyLatex(c) {
+    const src = this.src(c.f), t = this.selectionLatex(c);
+    if (!isBalanced(src, c.a, c.b) || this.texAt(c.f, c.a)) return t;
+    const W = chainAt(src, c.a, c.b).map((x) => x.W).filter((w) => w.is <= c.a && c.b <= w.ie);
+    return W.map((w) => src.slice(w.s, w.is)).join('') + t + W.reverse().map((w) => src.slice(w.ie, w.e)).join('');
+  }
   selectionLatex(c) {
     const src = this.src(c.f);
     if (isBalanced(src, c.a, c.b)) return src.slice(c.a, c.b);
@@ -2252,7 +2262,7 @@ class App {
     const c = this.caretNow();
     if (!c || c.collapsed) return;
     e.preventDefault();
-    const latex = this.selectionLatex(c);
+    const latex = this.copyLatex(c);
     const plain = getSelection().toString().replace(/\u200B/g, '');
     e.clipboardData.setData('text/plain', plain);
     try { e.clipboardData.setData('text/x-galley-latex', latex); } catch (err) { /* ignore */ }
