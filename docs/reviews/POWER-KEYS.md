@@ -567,3 +567,63 @@ Each with checks in `test/power.py` (187 in all) that fail on 14522ac's build. S
 files built from the intended text (no zero context hunks). On the merged build: power.py 187,
 browser.py 201, mathfield.py 19, paste.py 25, eqtab.py 159 (with `dist/tex`), wordmath.py 84,
 tabs.py 156, ux.py focus_rules dialogs 42, `npm test` green.
+
+
+## Verification of befd04a
+
+Reviewer: Claude, hostile, time-boxed, in a fresh worktree at befd04a, `npm run build`. I reran
+`v4.py` and `v4b.py` and wrote `v5.py`, `v5b.py` and `v5c.py` (`/tmp/review-power-out/scripts/`).
+
+**Verdict: fix first, one regression.** Backspace can no longer delete the last character of a
+formula typed with `$`. W1 to W7 are fixed.
+
+### Fix first
+
+**X1 (Medium-High, regression): Backspace stops at the last character of a `$` formula.**
+- Repro (`v5c.py`): ` costs $ab+1`, then Backspace four times. The field (`#pop-field`, which has
+  the focus) goes `ab+`, `ab`, `a`, `a`; Esc then writes `$a$`.
+- `$5` and `$x` cannot be erased by Backspace at all. On a954bc6 the same keys empty the formula.
+- Backspacing through a pending price hits the same wall: `$5 each` goes `5eac`, `5ea`, `5e`, `5`,
+  then stops; Esc writes `$5$`.
+- Word's Backspace in an equation deletes its last character and then the equation.
+
+### Low
+
+- **X2, the visible change:** while `$5 each` is typed, the formula box shows `5each` and the page
+  draws `$5each$` in math italic until the space. The hint still reads "Enter or $ to insert. $ at
+  once is a dollar sign, or a display when a letter follows." Nothing says it may become a price,
+  so for four keys a Word user sees their price as a strange formula, which then snaps to
+  `\$5 each`. Not blocking, but worth a look:
+  - show the waiting word as text, with its space (`$5 each`, dimmed, "a price at the next space or
+    mark; $ keeps a formula");
+  - or keep the field's preview at `5` until it is decided.
+- **X3:** browser.py's first run under load failed 12 checks. The cascade began at "math popover
+  edits source live" (the edit lost `\gamma`). A rerun passed 201 of 201. It looks like the late
+  focus race in `attachField`, which may still show in CI when the machine is busy.
+
+### W1 to W7: fixed
+
+| finding | result |
+|---|---|
+| W1 | `\href` text and `\parbox` give `$x^2$ z`. `X` and `p{}` cells give `\[x^2\] z` with no stray `\$`. `l`/`c` cells give `$x^2$`. |
+| W2 | One keyless `x=1\text{if }+y` gives `x=1\text{if }+y` at 1x and 4x CPU. |
+| W3 | Clicking the field after the hand-over keeps `x=\begin{aligned}a&=b\end{aligned}` in the box. |
+| W4 | Keyless `5 each` followed by Esc gives `\$5 each`. With a `$` right after, the same insert gives `$5each$`, as typed keys would. |
+| W5 | `\$5 日本lan`, `\$5 élan`: the space is kept. |
+| W6 | `$2 x$` gives `$2x$`. `$5 x$` gives `$5x$`. `$5 x y` then Esc, or a space, gives `\$5 x y`. |
+| W7 | `$5\% now` and `$5% now` give `\$5\% now`. |
+
+### Also held
+
+- **Undo across the price conversion** of `costs $5 each and more`:
+  1. ` and more` is taken back;
+  2. then `\$5 each` goes in one step;
+  3. then the start comes back.
+  
+  Redo restores the whole sentence.
+- **Once it is a price,** Backspace on the page deletes normally (`\$5 e`).
+- **The v4 set:**
+  - V1 math stays math.
+  - V4: no stray break after `\]`.
+  - V6 paste mixes are right, money with arithmetic included.
+- **Suites:** power.py 187/187. browser.py 201/201 on rerun; the first run is X3.
