@@ -34,7 +34,7 @@ How to read it:
 | Ctrl+F2, Ctrl+Alt+I | | Print Preview | `preview` (the PDF beside the page) | added |
 | Ctrl+X, Ctrl+C, Ctrl+V | | Cut, Copy, Paste | `cut`, `copy`, `paste` | works |
 | Ctrl+Shift+V | | Paste text only | `paste-text` | works |
-| Ctrl+Alt+V | Cmd+Control+V | Paste Special (older Word; Word 365's page: paste formatting) | `paste-special` | works; Mac's chord added |
+| Ctrl+Alt+V | Cmd+Control+V | Paste Special (older Word); Paste Formatting in Microsoft 365, which moved it here from Ctrl+Shift+V when that became Paste Text Only | `paste-special`, the dialog taking the keys (arrows, Enter) | works as older Word; formatting is copied and pasted by the Format Painter (Ctrl+Shift+C, then the words selected) |
 | Ctrl+Alt+C | | Copy formatting (Word 365); © (older Word) | `insert-copyright`; copy formatting is `format-painter`, Ctrl+Shift+C | other: © as older Word |
 | Ctrl+Z, Ctrl+Y | | Undo, Redo | `undo`, `redo` | works |
 | F4 | | Repeat | `repeat` | works |

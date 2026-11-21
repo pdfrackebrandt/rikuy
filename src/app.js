@@ -1401,9 +1401,6 @@ class App {
   onGlobalKey(e) {
     const mod = isMac ? e.metaKey : e.ctrlKey;
     this.plainPaste = !!(mod && e.shiftKey && e.key.toLowerCase() === 'v');
-    // Word's Ctrl+Shift+V after Ctrl+Shift+C pastes the formatting copied, not the clipboard's
-    // text (which replaced the words selected); after a Ctrl+C it is the text alone, as before
-    if (this.plainPaste && !e.altKey && this.fmtCopy && e.target === this.root && this.pasteFormat()) { e.preventDefault(); this.plainPaste = false; return; }
     // (Ctrl+S is Save as Word's: kept in this browser, said; Save As, F12, downloads: src/cmd/file.js)
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); this.runCommand('save'); }
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); $('#fileinput').click(); }
@@ -2322,6 +2319,9 @@ class App {
     if (!latex && this.lastCopy && plain === this.lastCopy.plain) latex = this.lastCopy.latex;
     // an empty clipboard pastes nothing: the words selected stay (they were deleted)
     if (!plain && !html && !latex) return;
+    // (Ctrl+Shift+V, Keep Text Only: the words alone, also of what was copied here, which came with
+    // its formatting's LaTeX)
+    if (plainOnly) latex = '';
     const c = this.caretNow();
     if (!c) return;
     // in LaTeX the source goes in as it is: the source of what was copied on the page, else the text

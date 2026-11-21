@@ -366,28 +366,36 @@ def caret_keys(page):
     check('Ctrl+Shift+Down selects to the paragraph\'s end', selected(page) == 'agraph is here and it runs on with words enough to stand above the formula.', selected(page))
 
 
+def paint_up(page):
+    # (a press that lets go on the page: where the Format Painter paints)
+    page.evaluate("window.rikuy.root.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))"); page.wait_for_timeout(250)
+
+
 def paste_format(page):
-    """Word's Ctrl+Shift+C and Ctrl+Shift+V: the formatting copied and pasted on other words, again
-    and again, as one step each (Ctrl+Shift+V pasted the clipboard's text over the words selected, or
-    deleted them when the clipboard was empty); with no formatting copied, an empty clipboard
-    deletes nothing."""
+    """Ctrl+Shift+V is Keep Text Only always, as Microsoft 365's Word and Rikuy's own tooltips have
+    it: after Ctrl+Shift+C too (it painted the copied formatting and pasted nothing, review W1),
+    and for words copied here with their formatting (W3); an empty clipboard deletes nothing.
+    Ctrl+Shift+C arms the Format Painter; again elsewhere it copies that place's formatting; a
+    press after a double click's painting turns it off (it armed it again, W4)."""
+    page.context.grant_permissions(['clipboard-read', 'clipboard-write'])
     bold = DOC.replace('First paragraph', '\\textbf{First} paragraph')
     load_doc(page, bold); click_text(page, 'First', 2); key(page, 'Control+Shift+C', 150)
-    select_text(page, 'Third'); h0 = page.evaluate('window.rikuy.hist.length'); key(page, 'Control+Shift+V', 300)
-    one = bold.replace('Third paragraph', '\\textbf{Third} paragraph')
-    check('Ctrl+Shift+V pastes the formatting Ctrl+Shift+C copied, as one step', src(page) == one and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page)[60:260])
-    select_text(page, 'Fourth'); key(page, 'Control+Shift+V', 300)
-    check('and again on other words', src(page) == one.replace('Fourth paragraph', '\\textbf{Fourth} paragraph'), src(page)[60:300])
-    undo(page); undo(page)
-    check('two undos give the bytes back', src(page) == bold, src(page)[60:200])
-    # Ctrl+Shift+C again elsewhere copies that place's formatting (it turned the first copy off)
+    page.evaluate("navigator.clipboard.writeText('Pasted words')"); page.wait_for_timeout(100)
+    select_text(page, 'Third'); key(page, 'Control+Shift+V', 300)
+    check('after Ctrl+Shift+C, Ctrl+Shift+V still pastes the clipboard\'s text, plain', src(page) == bold.replace('Third paragraph', 'Pasted words paragraph'), src(page)[60:260])
+    key(page, 'Escape', 100)
+    load_doc(page, bold); select_text(page, 'irs'); key(page, 'Control+c', 150); select_text(page, 'Third'); key(page, 'Control+Shift+V', 300)
+    check('letters copied from a bold word, pasted by Ctrl+Shift+V: the letters alone', src(page) == bold.replace('Third paragraph', 'irs paragraph'), src(page)[60:260])
+    # Ctrl+Shift+C again elsewhere copies that place's formatting, painted by the next selection
     both = bold.replace('Third paragraph', '\\emph{Third} paragraph')
     load_doc(page, both); click_text(page, 'First', 2); key(page, 'Control+Shift+C', 150); click_text(page, 'Third', 2); key(page, 'Control+Shift+C', 150)
-    select_text(page, 'Fourth'); key(page, 'Control+Shift+V', 300)
+    select_text(page, 'Fourth'); paint_up(page)
     check('a second Ctrl+Shift+C elsewhere copies that formatting instead', src(page) == both.replace('Fourth paragraph', '\\emph{Fourth} paragraph'), src(page)[60:300])
-    page.context.grant_permissions(['clipboard-read', 'clipboard-write'])
-    load_doc(page, DOC); select_text(page, 'Fourth'); key(page, 'Control+c', 150); select_text(page, 'Third'); key(page, 'Control+Shift+V', 300)
-    check('text copied since: Ctrl+Shift+V pastes it, the words alone', src(page) == DOC.replace('Third paragraph', 'Fourth paragraph'), src(page)[60:260])
+    # kept on by a double click, the painter's button turns it off after painting
+    load_doc(page, bold); click_text(page, 'First', 2); page.evaluate('window.rikuy.formatPainter(true)')
+    select_text(page, 'Fourth'); paint_up(page)
+    page.evaluate("window.rikuy.runCommand('format-painter')"); page.wait_for_timeout(150)
+    check('a double click\'s painter: painted, then its button turns it off', '\\textbf{Fourth}' in src(page) and not page.evaluate('!!window.rikuy.fpaint'), page.evaluate('window.rikuy.fpaint && window.rikuy.fpaint.sticky'))
     page.evaluate("navigator.clipboard.writeText('')"); page.wait_for_timeout(100)
     load_doc(page, DOC); select_text(page, 'Third'); key(page, 'Control+Shift+V', 300)
     check('nothing on the clipboard: Ctrl+Shift+V deletes nothing', src(page) == DOC, src(page)[60:260])
