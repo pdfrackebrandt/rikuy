@@ -118,11 +118,13 @@ button { font: inherit; color: inherit; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 [hidden] { display: none !important; }
 
-/* ---- bar: a light blue title band. Quick Access at the left, the name and the search in the middle ---- */
-#bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 4px 10px; min-height: 56px; background: var(--bar); color: var(--bar-ink); border-bottom: 0; flex: none; position: relative; }
+/* ---- bar: a light blue title band, one row as Word's: Quick Access at the left, the name and the
+   search side by side in the middle (stacked, they made the band 56 px, a third taller than Word's) ---- */
+#bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 0 10px; min-height: 40px; background: var(--bar); color: var(--bar-ink); border-bottom: 0; flex: none; position: relative; }
 .bar-left, .title-end { display: flex; align-items: center; gap: 2px; min-width: 0; flex: none; }
-.title-mid { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; }
-.title-name { display: flex; align-items: baseline; justify-content: center; gap: 8px; max-width: 100%; min-width: 0; }
+.title-mid { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 14px; min-width: 0; }
+/* (the name keeps its width up to half the middle; the search gives way first, down to its 140 px) */
+.title-name { display: flex; align-items: baseline; justify-content: center; gap: 8px; flex: 0 0 auto; max-width: 50%; min-width: 0; }
 .qat { display: flex; align-items: center; gap: 0; }
 .brand { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: none; padding: 0 6px; }
 .mark { font-family: var(--font-doc); font-style: italic; font-size: 18px; letter-spacing: .01em; color: var(--bar-ink); }
@@ -164,7 +166,7 @@ body.has-ai .ai-only { display: inline-flex !important; }
 
 /* ---- the search box in the bar (Alt+Q): any command by its name ---- */
 #bar { position: relative; }
-.srch { position: relative; width: min(420px, 100%); min-width: 0; display: flex; align-items: center; container-type: inline-size; }
+.srch { position: relative; flex: 0 1 380px; width: min(380px, 100%); min-width: 140px; display: flex; align-items: center; container-type: inline-size; }
 .srch > svg { position: absolute; left: 9px; top: 50%; width: 16px; height: 16px; margin-top: -8px; fill: none; stroke: var(--bar-mute); stroke-width: 1px; stroke-linecap: round; pointer-events: none; }
 .srch input { width: 100%; height: 28px; box-sizing: border-box; padding: 0 48px 0 32px; border: 1px solid var(--bar-line); border-radius: 4px; background: var(--bar-field); color: var(--ink-ui); font: 12px var(--font-ui); }
 /* the chord, so the box reads as command search and not as Find in the document */
