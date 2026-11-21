@@ -60,9 +60,10 @@ jobs:
       # the versions the tests last passed with; pypdf lets frontier.py read its printed PDF back,
       # python-docx lets word.py write and edit Word files as Word users' tools do
       - name: Playwright and Chromium
-        run: |
-          python3 -m pip install playwright==1.56.0 pypdf==5.9.0 python-docx==1.2.0
-          python3 -m playwright install --with-deps chromium
+        uses: ./.github/actions/playwright
+        with:
+          playwright: '1.56.0'
+          packages: pypdf==5.9.0 python-docx==1.2.0
       # every test must pass; a test that cannot run here is left out, never run with `|| true`
       - name: Typing on the page
         run: npm run test:browser
@@ -146,9 +147,10 @@ jobs:
       # the versions the tests last passed with; pypdf lets frontier.py read its printed PDF back,
       # python-docx lets word.py write and edit Word files as Word users' tools do
       - name: Playwright and Chromium
-        run: |
-          python3 -m pip install playwright==1.56.0 pypdf==5.9.0 python-docx==1.2.0
-          python3 -m playwright install --with-deps chromium
+        uses: ./.github/actions/playwright
+        with:
+          playwright: '1.56.0'
+          packages: pypdf==5.9.0 python-docx==1.2.0
       # every test must pass; a test that cannot run here is left out, never run with `|| true`
       # its PDF of every format needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: Home's Font group, the Format Painter and the Font dialog
