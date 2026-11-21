@@ -382,13 +382,13 @@ function fromField(v, st) {
 }
 
 // whether the last thing the person did was a key or a press (a dialog's opener reached by the
-// keys gets the focus back; one pressed gives it to the page). It is also html.keys, which the
+// keys gets the focus back; one pressed gives it to the page). It is also html.rk-keys, which the
 // focus rings follow where the code moves the focus (a menu's first item, File's Back): the
 // browser's own guess, :focus-visible, differs between Chromium's versions there
 let lastKeys = false;
 const keysLast = () => lastKeys;
 if (typeof document !== 'undefined') {
-  const set = (on) => { lastKeys = on; document.documentElement.classList.toggle('keys', on); };
+  const set = (on) => { lastKeys = on; document.documentElement.classList.toggle('rk-keys', on); };
   document.addEventListener('keydown', (e) => { if (!['Shift', 'Control', 'Meta'].includes(e.key)) set(true); }, true);
   document.addEventListener('pointerdown', () => set(false), true);
 }
