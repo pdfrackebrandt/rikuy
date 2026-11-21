@@ -1679,6 +1679,9 @@ class App {
 
   insertText(data, range) {
     if (!data) return;
+    // (typed over the mark of the empty paragraph Enter showed: that paragraph goes, and the
+    // letters go where Enter left the caret, as Word's; ghostOver)
+    if (!range && this.ghostOver()) this.takeBackGhost('back');
     const whole = range ? null : this.wholeDoc();
     if (whole) { this.replaceBody(whole, escapeTeX(data, ' '), 'replace'); return; }
     const c = this.caretNow();
@@ -1897,6 +1900,10 @@ class App {
   enter(soft) {
     const c = this.caretNow();
     if (!c) return;
+    // A second Enter where the first left the caret at a paragraph's start: a second empty
+    // paragraph above it, as Word's, and one Backspace or Undo takes one away (review V2). The
+    // first was shown again in its place, so a second Backspace joined the two paragraphs.
+    if (!soft && this.ghost && this.ghost.keepAt && this.ghostKept()) { this.ghost.n = (this.ghost.n || 1) + 1; this.ghostLines(); this.enterAct(); return; }
     if (c.ghost) { if (this.ghost.tex) this.texGhostEnter(); return; }
     const T = this.texHere();
     if (T && c.f === T.f) { this.texEnter(T, c); return; }
@@ -1921,14 +1928,14 @@ class App {
       // Enter in the title, an author or the date starts the text below them, after \maketitle
       // (it did nothing, so a document with a title alone had no way to its first paragraph)
       const B = itemEl && BLOCKS.get(+itemEl.dataset.b);
-      if (B) this.showGhost(itemEl, B.f, B.e);
+      if (B) { this.showGhost(itemEl, B.f, B.e); this.enterAct(); }
       return;
     }
     if (kind === 'h') {
       const B = itemEl && BLOCKS.get(+itemEl.dataset.b);
       // the \label on the heading's next line stays with the heading: the new paragraph goes after it
       const lab = B && /^\s*\\label\s*\{[^}]*\}/.exec(src.slice(B.e));
-      if (B) this.showGhost(itemEl, f, B.e + (lab ? lab[0].length : 0));
+      if (B) { this.showGhost(itemEl, f, B.e + (lab ? lab[0].length : 0)); this.enterAct(); }
       return;
     }
     if (kind === 'li' && itemEl && itemEl.dataset.li) {
@@ -1959,6 +1966,7 @@ class App {
     // Paragraph: at end -> ghost paragraph; otherwise split
     if (c.collapsed && itemEl && this.atItemEnd(itemEl, sel)) {
       this.showGhost(itemEl, f, p);
+      this.enterAct();
       return;
     }
     const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
@@ -1971,6 +1979,7 @@ class App {
       const keep = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
       this.showGhost(itemEl, f, w.p - ps[1].length, { before: true });
       if (keep) { sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true; if (this.ghost) this.ghost.keepAt = keep; }
+      this.enterAct();
       return;
     }
     const ins = w.close + '\n\n' + w.open;
@@ -2035,6 +2044,22 @@ class App {
     const k = this.ghost && this.ghost.keepAt, sel = getSelection();
     return !!k && sel.rangeCount > 0 && sel.isCollapsed && sel.anchorNode === k.startContainer && sel.anchorOffset === k.startOffset;
   }
+  // From that caret into the empty paragraph above it (Shift+Left, Shift+Up): its mark selected,
+  // as Word's, which Backspace or Delete takes away alone (review V3). The empty paragraph went
+  // as the selection left the caret, and the Backspace after it joined the two paragraphs.
+  // (Chromium gives the selection's ends as places in the page's blocks, not in their text: a
+  // selection over it and no words is that one)
+  ghostOver() {
+    const g = this.ghost, sel = getSelection();
+    if (!g || !g.keepAt || !g.el.isConnected || !sel.rangeCount || sel.isCollapsed || !this.root.contains(sel.anchorNode)) return false;
+    const r = sel.getRangeAt(0);
+    return r.intersectsNode(g.el) && !r.toString().replace(/[\u200B\s]/g, '');
+  }
+  // one empty paragraph per Enter (enter): those after the first as lines above it
+  ghostLines() { const g = this.ghost; if (g) g.el.style.paddingTop = g.n > 1 ? 'calc(' + (g.n - 1) + ' * var(--lh))' : ''; }
+  // Enter that showed an empty paragraph is an action, as typing is: nothing is left to redo
+  // after it, as in Word (review V9: Ctrl+Y brought back an edit undone before the Enter)
+  enterAct() { if (this.redoStack.length) { this.redoStack = []; this.updateUndoUI(); } this.lastAct = null; }
   // The one rule for taking back an empty paragraph Enter showed (enter, showGhost). It wrote
   // nothing, so until something is typed in it, it is Enter's whole effect, and Backspace, Delete
   // and Undo take it away and do nothing else, as Word's Enter then Backspace or Ctrl+Z gives
@@ -2047,16 +2072,24 @@ class App {
     // (the blank page's own paragraph is no Enter's)
     if (!g || g.sticky) return false;
     const inIt = this.root.contains(getSelection().anchorNode) && g.el.contains(getSelection().anchorNode);
-    const kept = this.ghostKept();
+    const kept = this.ghostKept(), over = !kept && this.ghostOver();
     if (how !== 'undo') {
-      // Backspace and Delete in it, or Backspace at the caret Enter left below it; spaces
-      // waiting in a line to come go one by one first (deleteInput)
-      if (g.pend || !(inIt || (kept && how === 'back'))) return false;
+      // Backspace and Delete in it or on its selected mark, or Backspace at the caret Enter left
+      // below it; spaces waiting in a line to come go one by one first (deleteInput)
+      if (g.pend || !(inIt || over || (kept && how === 'back'))) return false;
       // (Delete in the empty paragraph above a paragraph: the caret goes to that paragraph's start)
       if (how === 'del' && !(g.before || g.tex === 'before')) return false;
     }
+    const back = () => { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(g.keepAt); this.ourSel = true; };
+    // (of several Enters' empty paragraphs, one goes: review V2)
+    if (g.n > 1 && !g.pend) {
+      g.n--; this.ghostLines();
+      if (over) back();
+      this.ribbonSoon();
+      return true;
+    }
     this.removeGhost();
-    if (kept) { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(g.keepAt); this.ourSel = true; }
+    if (kept || over) back();
     // (Backspace in it ends at the paragraph above, Delete and Undo at the place it stood for)
     else this.restoreCaret({ f: g.f, p: g.pos, bias: g.tex === 'before' || (how !== 'back' && (g.before || how === 'del')) ? 1 : -1 });
     this.ribbonSoon();
@@ -2479,7 +2512,7 @@ class App {
     const sel = getSelection();
     const inRoot = sel.rangeCount && this.root.contains(sel.anchorNode);
     // (an empty paragraph Enter showed above the caret stays while the caret is where Enter left it)
-    const kept = this.ghostKept();
+    const kept = this.ghostKept() || this.ghostOver();
     if (this.ghost && !this.ghost.sticky && !kept && !(inRoot && this.ghost.el.contains(sel.anchorNode))) {
       // keep ghost while focus is in the popover; drop otherwise
       if (!this.pop) this.removeGhost();
