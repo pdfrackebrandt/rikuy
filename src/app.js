@@ -387,6 +387,11 @@ function fromField(v, st) {
 // key typed in the field wrote that run back into the source.
 const MATH_VALUE = { silenceNotifications: true, mode: 'math', format: 'latex' };
 
+// What stands before a paragraph's first word when the caret there is at its start: a blank line,
+// or the line of a \begin{...} (the document, a quote, a theorem with its [title]), a heading or
+// \maketitle (src/app.js enter)
+const PARA_START = /(?:\n[ \t]*\n|\\begin\s*\{[^{}\n]*\}(?:\[[^\]\n]*\])?[ \t]*\n|\\(?:part|chapter|section|subsection|subsubsection|paragraph)\*?\s*\{[^\n]*\}[ \t]*\n|\\maketitle[ \t]*\n)[ \t]*$/;
+
 class App {
   constructor() {
     this.files = new Map();
@@ -1886,6 +1891,16 @@ class App {
       return;
     }
     const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
+    // At a paragraph's start, where a blank line already stands before it: Word makes an empty
+    // paragraph, which LaTeX has not, and each Enter piled blank lines up in the source (twelve
+    // Enters, twelve). The empty paragraph shows above it, to type in (Up), the caret staying, as
+    // Word's does; nothing is written until it is.
+    if (c.collapsed && !w.close && itemEl && kind === 'p' && PARA_START.test(src.slice(Math.max(0, w.p - 400), w.p))) {
+      const keep = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+      this.showGhost(itemEl, f, w.p, { before: true });
+      if (keep) { sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true; if (this.ghost) this.ghost.keepAt = keep; }
+      return;
+    }
     const ins = w.close + '\n\n' + w.open;
     // a break moved before a wrapper leaves the caret at the start of its text, still inside it
     this.commit([...edits, { f, s: w.p, e: w.p, t: ins }], { f, p: Math.max(w.p, p) + ins.length, bias: 1 }, 'enter');
@@ -2354,7 +2369,9 @@ class App {
   onSelChange() {
     const sel = getSelection();
     const inRoot = sel.rangeCount && this.root.contains(sel.anchorNode);
-    if (this.ghost && !this.ghost.sticky && !(inRoot && this.ghost.el.contains(sel.anchorNode))) {
+    // (an empty paragraph Enter showed above the caret stays while the caret is where Enter left it)
+    const kept = this.ghost && this.ghost.keepAt && sel.anchorNode === this.ghost.keepAt.startContainer && sel.anchorOffset === this.ghost.keepAt.startOffset;
+    if (this.ghost && !this.ghost.sticky && !kept && !(inRoot && this.ghost.el.contains(sel.anchorNode))) {
       // keep ghost while focus is in the popover; drop otherwise
       if (!this.pop) this.removeGhost();
     }
