@@ -7,7 +7,7 @@
 // across files), two sections or paragraphs swapped and moved with the space between them kept,
 // a new heading's edit; and a person's own pattern bounded in time.
 import assert from 'node:assert/strict';
-import { compile, expand, hitsIn, runsWith, context, hitsInSource, joinRanges, labelsIn, labelPreview, gapKind, hasParaMark, SEP, PARA, PMARK, FMT } from '../src/find.js';
+import { compile, expand, caseLike, hitsIn, runsWith, context, hitsInSource, joinRanges, labelsIn, labelPreview, gapKind, hasParaMark, SEP, PARA, PMARK, FMT } from '../src/find.js';
 import { headingAt, sectionRange, under, promoteEdits, swapEdit, moveEdits, newHeading, eolOf, foldItems, matchFold, foldEntry } from '../src/outline.js';
 import { applyEdits } from '../src/styles.js';
 
@@ -391,6 +391,17 @@ Para \label{lone}
   assert.deepEqual(P.lone, { text: '' });
   assert.deepEqual(P['eq:d'], { math: 'x = 1' });
   assert.deepEqual(labelPreview('', 0, 'section'), { text: '' });
+});
+
+ok('Dogfood: Replace without Match case keeps the case of what it replaces, as Word\'s', () => {
+  assert.equal(caseLike('Utility', 'welfare'), 'Welfare');
+  assert.equal(caseLike('utility', 'welfare'), 'welfare');
+  assert.equal(caseLike('UTILITY', 'welfare'), 'WELFARE');
+  assert.equal(caseLike('Utility', 'social welfare'), 'Social welfare');
+  assert.equal(caseLike('Utility', 'GDP'), 'GDP');
+  assert.equal(caseLike('A', 'the'), 'The');
+  assert.equal(caseLike('Über', 'éte'), 'Éte');
+  assert.equal(caseLike('42', 'x'), 'x');
 });
 
 console.log('find: ' + n + ' groups of checks passed');

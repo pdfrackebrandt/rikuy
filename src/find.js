@@ -127,6 +127,19 @@ function wildcards(q, pm = PARA_MARK) {
 const PARA_MARK = '\\r?\\n[ \\t]*\\r?\\n';
 const PAGE_MARK = '\\u2029';
 // whether a query (not a regular expression) has Word's ^p in it, the ^^ of a caret aside
+// Replace without Match case, as Word's: a replacement typed in small letters takes the case of
+// what it replaces, "Utility" giving "Welfare" and "UTILITY" "WELFARE"; one with a capital of its
+// own is written as typed. ("Utility is ordinal", replaced, began a sentence with "welfare".)
+export function caseLike(found, rep) {
+  if (!rep || /\p{Lu}/u.test(rep) || !/\p{L}/u.test(rep)) return rep;
+  const letters = String(found).replace(/[^\p{L}]/gu, '');
+  if (!letters) return rep;
+  if (letters.length > 1 && letters === letters.toUpperCase() && letters !== letters.toLowerCase()) return rep.toUpperCase();
+  const first = letters[0];
+  if (first !== first.toLowerCase()) { const i = rep.search(/\p{L}/u); return rep.slice(0, i) + rep[i].toUpperCase() + rep.slice(i + 1); }
+  return rep;
+}
+
 export function hasParaMark(q) {
   for (let i = 0; i < q.length - 1; i++) {
     if (q[i] !== '^') continue;
