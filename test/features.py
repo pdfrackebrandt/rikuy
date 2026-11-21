@@ -86,7 +86,10 @@ try:
         page.reload()
         page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=15000)
         check('document persists across reload', 'MainX text' in src(page))
-        page.keyboard.press('Control+z')
+        # (Undo's steps are kept with it: the X typed before the reload goes, and Redo puts it back)
+        page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+        check('undo after the reload takes the X typed before it', 'MainX text' not in src(page) and 'Main text' in src(page))
+        page.keyboard.press('Control+y'); page.wait_for_timeout(200)
         # --- Ask Claude
         click_text(page, 'MainX text before input', 0)
         select_text(page, 'MainX text before input')
@@ -145,7 +148,8 @@ try:
         page.keyboard.type('note text')
         s = src(page)
         check('palette inserts footnote and caret inside', 'before\\footnote{note text} input' in s, s[s.find('Main'):][:60])
-        page.keyboard.press('Control+z'); page.keyboard.press('Control+z')
+        # ("text", "note " and the footnote: typing is undone word by word, as Word's)
+        for _ in range(3): page.keyboard.press('Control+z')
         # --- select-first atom deletion
         click_text(page, 'and', 0, nth=0)
         page.evaluate('''() => { const c = document.querySelector('.a-cite'); const r = document.createRange(); r.setStartAfter(c); r.collapse(true); document.getElementById('pages').focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }''')

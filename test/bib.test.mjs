@@ -5,6 +5,7 @@
 import { parseBib, bibSpans, bibEntryText, bibFieldEdits, bibDeleteEdit, bibAppendEdit, bibEscape, bibKey, texToPlain, typedInto } from '../src/bib.js';
 import * as R from '../src/refsrc.js';
 import { buildModel } from '../src/model.js';
+import { filesRead } from '../src/scan.js';
 
 let pass = 0, fail = 0;
 const check = (name, ok, detail) => { if (ok) pass++; else { fail++; console.log('FAIL', name, detail === undefined ? '' : JSON.stringify(detail).slice(0, 400)); } };
@@ -158,6 +159,70 @@ const ap = (t, ed) => { for (const x of [...ed].sort((a, b) => b.s - a.s || b.e 
   check('V6: alpha has no natbib form: nothing written', R.bibStyleEdits(NB, 'alpha').length === 0);
   const SC = NB.replace('\\begin{document}', '\\setcitestyle{numbers}\n\\begin{document}');
   check('V7: \\setcitestyle{numbers} read, and taken off for an author and year style', R.bibSetup(SC).numbers === true && ap(SC, R.bibStyleEdits(SC, 'abbrvnat')) === NB.replace('{plainnat}', '{abbrvnat}'), ap(SC, R.bibStyleEdits(SC, 'abbrvnat')));
+}
+
+// ---- the page's numbers as BibTeX's: \bibliographystyle read where it stands, at the body's end
+{
+  const bib = '@article{mirrlees1971, author={Mirrlees, James A.}, title={An Exploration}, journal={RES}, year={1971}}\n@article{chetty2012, author={Chetty, Raj}, title={Bounds}, journal={Econometrica}, year={2012}}\n';
+  const nums = (style, pre = '') => {
+    const src = '\\documentclass{article}\n' + pre + '\\begin{document}\nFirst \\cite{mirrlees1971}, then \\cite{chetty2012}.\n' + (style ? '\\bibliographystyle{' + style + '}\n' : '') + '\\bibliography{refs}\n\\end{document}\n';
+    const files = new Map([['main.tex', src], ['refs.bib', bib]]);
+    // (twice, as the page builds: the citations' numbers come from the build before)
+    const m1 = buildModel({ files, main: 'main.tex' }), m = buildModel({ files, main: 'main.tex', prev: m1 });
+    const refs = m.blocks.flatMap((b) => b.items || []).find((x) => x.type === 'refs');
+    return { sort: m.opts.sort, list: refs ? refs.entries.map((x) => x.key + ' ' + x.label).join('; ') : null };
+  };
+  const u = nums('unsrt');
+  check('Dogfood: \\bibliographystyle{unsrt} at the body\'s end lists in citation order, as the PDF', u.sort === false && /^mirrlees1971 \[1\]; chetty2012 \[2\]$/.test(u.list || ''), u);
+  const pl = nums('plain');
+  check('Dogfood: plain lists by author', pl.sort === true && /^chetty2012 \[1\]; mirrlees1971 \[2\]$/.test(pl.list || ''), pl);
+  const c = nums('', '%\\bibliographystyle{unsrt}\n');
+  check('Dogfood: a \\bibliographystyle in a comment is not read', c.sort === true, c);
+  // (review E6) verbatim and \iffalse are not read; the first one counts, as BibTeX's first
+  // \bibstyle; IEEEtran numbers in citation order; one in an \input file; biblatex's sorting=none
+  const order = (main, extra = {}) => {
+    const files = new Map([['main.tex', main], ['refs.bib', bib], ...Object.entries(extra)]);
+    const m1 = buildModel({ files, main: 'main.tex' }), m = buildModel({ files, main: 'main.tex', prev: m1 });
+    const refs = m.blocks.flatMap((b) => b.items || []).find((x) => x.type === 'refs');
+    return refs ? refs.entries.map((x) => x.key).join(' ') : '';
+  };
+  const body = (tail, pre = '') => '\\documentclass{article}\n' + pre + '\\begin{document}\nFirst \\cite{mirrlees1971}, then \\cite{chetty2012}.\n' + tail + '\n\\end{document}\n';
+  const CIT = 'mirrlees1971 chetty2012', AUT = 'chetty2012 mirrlees1971';
+  check('E6: a \\bibliographystyle in verbatim is not read', order(body('\\begin{verbatim}\n\\bibliographystyle{unsrt}\n\\end{verbatim}\n\\bibliographystyle{plain}\n\\bibliography{refs}')) === AUT);
+  check('E6: nor one in \\iffalse', order(body('\\iffalse\n\\bibliographystyle{unsrt}\n\\fi\n\\bibliographystyle{plain}\n\\bibliography{refs}')) === AUT);
+  check('E6: the first one counts, as BibTeX\'s', order(body('\\bibliographystyle{unsrt}\n\\bibliographystyle{plain}\n\\bibliography{refs}')) === CIT);
+  check('E6: IEEEtran numbers in citation order', order(body('\\bibliographystyle{IEEEtran}\n\\bibliography{refs}')) === CIT);
+  check('E6: a style in an \\input file is read', order(body('\\input{back}'), { 'back.tex': '\\bibliographystyle{unsrt}\n\\bibliography{refs}\n' }) === CIT);
+  check('E6: biblatex sorting=none', order(body('\\printbibliography', '\\usepackage[sorting=none]{biblatex}\n\\addbibresource{refs.bib}\n')) === CIT, order(body('\\printbibliography', '\\usepackage[sorting=none]{biblatex}\n\\addbibresource{refs.bib}\n')));
+  check('E6: biblatex numeric sorts by author', order(body('\\printbibliography', '\\usepackage{biblatex}\n\\addbibresource{refs.bib}\n')) === AUT);
+}
+
+// ---- review E16: the project-wide scans read only the files the main file reads, in order
+{
+  const files = new Map([
+    ['paper/main.tex', '\\documentclass{article}\n\\begin{document}\n\\input{intro}\n% \\input{old}\n\\include{chapters/two}\n\\subfile{appendix}\n\\import{sec/}{three}\n\\end{document}\n'],
+    ['paper/intro.tex', 'Intro. \\input{inner}'], ['paper/inner.tex', 'x'], ['paper/old.tex', 'old'],
+    ['paper/chapters/two.tex', 'two'], ['paper/appendix.tex', 'app'], ['paper/sec/three.tex', 'three'],
+    ['slides.tex', '\\documentclass{beamer}\\bibliographystyle{unsrt}\\bibliography{talk}'], ['refs.bib', '']
+  ]);
+  const got = filesRead(files, 'paper/main.tex');
+  check('E16: the files the main file reads, in reading order, none in a comment or beside it', JSON.stringify(got) === JSON.stringify(['paper/main.tex', 'paper/intro.tex', 'paper/inner.tex', 'paper/chapters/two.tex', 'paper/appendix.tex', 'paper/sec/three.tex']), got);
+  const m = buildModel({ files: new Map([['main.tex', '\\documentclass{article}\n\\begin{document}\nA \\cite{b} \\cite{a}.\n\\bibliography{refs}\n\\end{document}\n'], ['slides.tex', files.get('slides.tex')], ['refs.bib', '@misc{a, author={Aa, A}, title={T}, year={2001}}\n@misc{b, author={Bb, B}, title={T}, year={2002}}\n']]), main: 'main.tex' });
+  check('E16: a \\bibliographystyle in a talk beside the paper sets nothing of it', m.opts.bibstyle !== 'unsrt', m.opts.bibstyle);
+}
+
+// ---- review V6: names resolved as TeX and subfiles do, by the scans and the page alike
+{
+  const D = (b) => '\\documentclass{article}\n\\begin{document}\n' + b + '\n\\end{document}\n';
+  const fr = (files, main = 'main.tex') => JSON.stringify(filesRead(new Map(Object.entries(files)), main));
+  check('V6: \\subfile from the subfile\'s own folder', fr({ 'main.tex': D('\\subfile{chapters/one}'), 'chapters/one.tex': '\\subfile{sections/s1}', 'chapters/sections/s1.tex': 's', 'sections/s1.tex': 'WRONG' }) === '["main.tex","chapters/one.tex","chapters/sections/s1.tex"]');
+  check('V6: \\input from the main file\'s folder before a file of that name elsewhere', fr({ 'slides/intro.tex': 'S', 'paper/main.tex': D('\\input{intro}'), 'paper/intro.tex': 'P' }, 'paper/main.tex') === '["paper/main.tex","paper/intro.tex"]');
+  check('V6: nothing in \\iffalse is read, what follows its \\else is', fr({ 'main.tex': D('\\iffalse\n\\include{old}\\ifx a b\\fi\n\\else\\input{y}\\fi'), 'old.tex': 'o', 'y.tex': 'y' }) === '["main.tex","y.tex"]');
+  check('V6: \\input chap1 and \\input{"a b"}', fr({ 'main.tex': D('\\input chap1\n\\input{"a b"}'), 'chap1.tex': 'c', 'a b.tex': 'x' }) === '["main.tex","chap1.tex","a b.tex"]');
+  // the page's model reads the same file
+  const m = buildModel({ files: new Map([['slides/intro.tex', 'Slides words.'], ['paper/main.tex', D('\\input{intro}')], ['paper/intro.tex', 'Paper words.']]), main: 'paper/main.tex' });
+  const shown = JSON.stringify(m.blocks), words = shown.includes('Paper words.') && !shown.includes('Slides words.');
+  check('V6: the page reads paper/intro.tex too', words);
 }
 
 console.log(`bib.test: ${pass} passed, ${fail} failed`);
