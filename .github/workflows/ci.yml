@@ -134,5 +134,7 @@ jobs:
       # every script of test/ in a shard of the editor or named with where it runs, every part of a
       # suite split by part in one shard, ci.yml's matrix as the list has it (the editor gate
       # checks it again, with the shards' records)
-      - name: The editor's shards against test/ and ci.yml
-        run: python3 dev/ci_shards.py check
+      - name: The editor's shards against test/ and ci.yml, the TeX side's against tex.yml
+        run: |
+          python3 dev/ci_shards.py check
+          python3 dev/ci_shards.py --list .github/tex-shards.json check

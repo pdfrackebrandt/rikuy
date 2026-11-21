@@ -1,6 +1,7 @@
-"""Balance the editor's shards (.github/ci-shards.json and ci.yml's matrix) by measured times.
+"""Balance the shards of a list (.github/ci-shards.json and ci.yml's matrix, or with --list
+.github/tex-shards.json and tex.yml's) by measured times.
 
-  python3 dev/ci_balance.py [--runs N] [--run ID]... [--records DIR] [--shards K] [--write]
+  python3 dev/ci_balance.py [--list LIST] [--runs N] [--run ID]... [--records DIR] [--shards K] [--write]
 
 Each command of the list keeps a p95, in seconds. --runs N first takes them from main's last N
 successful CI runs (pushes), --run ID from one run (repeatable), both from the line dev/ci_shards.py
@@ -14,9 +15,8 @@ its commands' p95s) rounded up: a shard over its budget fails rather than waits.
 it prints the plan; with it, it rewrites the list and ci.yml's matrix."""
 import argparse, glob, json, math, os, re, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ci_shards import CI, LIST, MATRIX_RE, check, load, matrix_text
-
-WORKFLOW, JOB = 'ci.yml', 'editor shard '
+import ci_shards
+from ci_shards import check, load, matrix_text, workflow
 
 
 def dump(spec):
@@ -46,14 +46,14 @@ def gh(path):
 LINE_RE = re.compile(r'^\S+ (python3 .+?): exit (\d+), ([\d.]+) s, ', re.M)
 
 
-def times_from_runs(ids):
+def times_from_runs(ids, job):
     """Each command's seconds in these CI runs, read from the shards' logs (the line ci_shards.py
     prints after each command), so only the API is needed, not the artifacts' storage."""
     by = {}
     for rid in ids:
         jobs = json.loads(gh('repos/{owner}/{repo}/actions/runs/%s/jobs?per_page=100' % rid))['jobs']
         for j in jobs:
-            if not j['name'].startswith(JOB) or j['conclusion'] != 'success':
+            if not j['name'].startswith(job + ' ') or j['conclusion'] != 'success':
                 continue
             for cmd, code, sec in LINE_RE.findall(gh('repos/{owner}/{repo}/actions/jobs/%d/logs' % j['id'])):
                 if code == '0':
@@ -61,8 +61,8 @@ def times_from_runs(ids):
     return by
 
 
-def main_runs(n):
-    runs = json.loads(gh('repos/{owner}/{repo}/actions/workflows/%s/runs?branch=main&event=push&status=success&per_page=%d' % (WORKFLOW, n)))
+def main_runs(n, wf):
+    runs = json.loads(gh('repos/{owner}/{repo}/actions/workflows/%s/runs?branch=main&event=push&status=success&per_page=%d' % (os.path.basename(wf), n)))
     return [r['id'] for r in runs['workflow_runs']]
 
 
@@ -91,17 +91,20 @@ def deal(cmds, k):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--runs', type=int, help="main's last N successful CI runs (pushes)")
+    ap.add_argument('--list', help='the list: .github/ci-shards.json (the default) or .github/tex-shards.json')
+    ap.add_argument('--runs', type=int, help="main's last N successful runs (pushes) of the list's workflow")
     ap.add_argument('--run', action='append', default=[], help='a CI run by its id (any branch); repeatable')
     ap.add_argument('--records', help='a folder of ci-shard-*.json records')
     ap.add_argument('--shards', type=int)
     ap.add_argument('--write', action='store_true')
     a = ap.parse_args()
+    if a.list:
+        ci_shards.LIST = os.path.abspath(a.list)
     spec = load()
     cmds = [c for s in spec['shards'] for c in s['commands']]
-    ids = a.run + (main_runs(a.runs) if a.runs else [])
+    ids = a.run + (main_runs(a.runs, workflow(spec)) if a.runs else [])
     if a.records or ids:
-        seen = times(a.records) if a.records else times_from_runs(ids)
+        seen = times(a.records) if a.records else times_from_runs(ids, spec.get('job', 'editor shard'))
         for c in cmds:
             xs = seen.get(' '.join(c['argv']))
             if xs:
@@ -119,13 +122,13 @@ def main():
         print('shard %s: %4.0f s, timeout %d min: %s' % (s['name'], s['p95_seconds'], s['minutes'], ', '.join(' '.join(c['argv'][1:]) for c in s['commands'])))
     if not a.write:
         return
-    with open(LIST, 'w', encoding='utf8') as f:
+    with open(ci_shards.LIST, 'w', encoding='utf8') as f:
         f.write(dump(spec))
-    text = open(CI, encoding='utf8').read()
-    m = MATRIX_RE.search(text)
+    text = open(workflow(spec), encoding='utf8').read()
+    m = ci_shards.matrix_re().search(text)
     if not m:
-        sys.exit('ci.yml has no matrix written by dev/ci_balance.py')
-    with open(CI, 'w', encoding='utf8') as f:
+        sys.exit('%s has no matrix written by dev/ci_balance.py' % workflow(spec))
+    with open(workflow(spec), 'w', encoding='utf8') as f:
         f.write(text[:m.start(2)] + matrix_text(spec) + text[m.end(2):])
     bad = check(spec)
     for b in bad:

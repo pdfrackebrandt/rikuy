@@ -1,5 +1,7 @@
 {
  "about": "The editor's browser suites in shards: dev/ci_shards.py runs a shard and gates them, dev/ci_balance.py deals the commands to shards by their p95 (seconds) from main's records. Every command runs in test/.",
+ "workflow": ".github/workflows/ci.yml",
+ "job": "editor shard",
  "setup_seconds": 80,
  "split": {
   "ux.py": "PARTS",
@@ -8,10 +10,10 @@
   "consistency.py": "--schemes"
  },
  "elsewhere": {
-  "engines.py": {"file": ".github/workflows/tex.yml"},
-  "pdf.py": {"file": ".github/workflows/tex.yml"},
-  "csp.py": {"file": ".github/workflows/tex.yml"},
-  "preamble.py": {"file": ".github/workflows/tex.yml"},
+  "engines.py": {"file": ".github/tex-shards.json"},
+  "pdf.py": {"file": ".github/tex-shards.json"},
+  "csp.py": {"file": ".github/tex-shards.json"},
+  "preamble.py": {"file": ".github/tex-shards.json"},
   "arxiv_unpack.py": {"file": "package.json"},
   "arxiv_collect.py": {"file": "package.json"},
   "arxiv_limits.py": {"file": "package.json"},

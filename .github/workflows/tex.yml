@@ -1,81 +1,23 @@
 # The TeX side, which ci.yml leaves out: build dist/tex as PLAN.md's Building section does (about
 # 3 GB of downloads, every one checked by hash, from GitHub and Ubuntu's archive, which the machine
 # Rikuy is developed on cannot reach), check it byte for byte against dev/dist-manifest.txt, then
-# run the tests that compile with TeX in the page: test/engines.py, test/pdf.py and the offline
-# compile of test/offline.py. The built
-# dist/ is kept as a workflow artifact for a week: deploy.yml publishes it to Cloudflare Pages once
-# this run has passed. Runs on every push to main (dist/tex comes from a cache when the tree's
-# inputs are unchanged, so the tree is built once per set of inputs, never twice per push), on
-# pull requests that touch the TeX side, and by hand.
+# run the tests that compile with TeX in the page (.github/tex-shards.json: engines.py, pdf.py,
+# the offline compile of offline.py and the compile parts of the editor's suites), in shards side
+# by side. The built dist/ is kept as a workflow artifact for a week: deploy.yml publishes it to
+# Cloudflare Pages once this run has passed. Runs on every push to main (dist/tex comes from a
+# cache when the tree's inputs are unchanged, so the tree is built once per set of inputs, never
+# twice per push), on every pull request (its jobs run only when the pull request changes a path
+# of .github/tex-shards.json; the gate, tex, always answers), and by hand.
 name: TeX
 on:
   # every push to main: deploy.yml deploys the dist/ this run keeps, so a change to the page alone
   # needs a run too; the tree itself is built only when its inputs changed (the cache below)
   push:
     branches: [main]
+  # every pull request, so the gate below always reports: the paths that need TeX are in
+  # .github/tex-shards.json, read by the changes job (a paths filter here would leave a required
+  # check waiting for ever on a pull request that touches none of them)
   pull_request:
-    paths:
-      - 'tex/**'
-      - 'inputs/**'
-      - 'build.mjs'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'src/pdfview.js'
-      - 'src/tex.js'
-      - 'src/sw.js'
-      - 'src/pwa.js'
-      - 'build/app.mjs'
-      - 'test/offline.py'
-      - 'test/pages.py'
-      - 'dev/dist-manifest.txt'
-      - 'test/engines.py'
-      - 'test/pdf.py'
-      - 'src/ribbon.js'
-      - 'test/ribbon.py'
-      - 'test/agent.py'
-      - 'test/font.py'
-      - 'src/cmd/font.js'
-      - 'src/charfmt.js'
-      - 'test/preamble.py'
-      - 'test/find.py'
-      - 'test/outline.py'
-      - 'test/table.py'
-      - 'test/styles.py'
-      - 'src/styles.js'
-      - 'src/looks.js'
-      - 'src/cmd/styles.js'
-      - 'src/table.js'
-      - 'src/cmd/table.js'
-      - 'test/page.py'
-      - 'test/view.py'
-      - 'test/file.py'
-      - 'src/cmd/view.js'
-      - 'src/cmd/file.js'
-      - 'src/tour.js'
-      - 'src/layout.js'
-      - 'src/pagesrc.js'
-      - 'test/lists.py'
-      - 'src/lists.js'
-      - 'test/para.py'
-      - 'src/cmd/para.js'
-      - 'src/parasrc.js'
-      - 'test/picture.py'
-      - 'test/objects.py'
-      - 'src/objfmt.js'
-      - 'src/picfx.js'
-      - 'src/cmd/objects.js'
-      - 'src/cmd/picfx.js'
-      - 'src/picture.js'
-      - 'src/cmd/picture.js'
-      - 'src/drawing.js'
-      - 'test/refs.py'
-      - 'src/refsrc.js'
-      - 'src/cmd/refs.js'
-      - 'src/bib.js'
-      - 'test/serve.py'
-      - 'test/browser.py'
-      - '.github/workflows/tex.yml'
-      - '.github/actions/playwright/**'
   workflow_dispatch:
 permissions:
   contents: read
@@ -85,13 +27,144 @@ concurrency:
   group: tex-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  tex:
+  # Whether this run needs TeX: always on main and by hand; on a pull request when one of its
+  # files matches a path of .github/tex-shards.json (the files as GitHub lists them for the pull
+  # request, the same list a paths filter reads)
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      need: ${{ steps.need.outputs.need }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github
+            dev/ci_shards.py
+          sparse-checkout-cone-mode: false
+      - name: Does this run need TeX
+        id: need
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then echo "need=true" >> "$GITHUB_OUTPUT"; echo "a $EVENT: TeX runs"; exit 0; fi
+          gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/files.txt"
+          n=$(wc -l < "$RUNNER_TEMP/files.txt")
+          echo "$n files changed"
+          # GitHub lists at most 3000 files of a pull request: with that many, run TeX rather than guess
+          if [ "$n" -ge 3000 ]; then echo "need=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          python3 dev/ci_shards.py --list .github/tex-shards.json changed "$RUNNER_TEMP/files.txt" >> "$GITHUB_OUTPUT"
+  # dist/tex for this commit, in the cache under its inputs' key before any shard starts: an
+  # earlier run's when there is one (only looked up, not fetched), else the nearest earlier tree
+  # when it is byte for byte this one, else built. Saved as soon as the manifest check passes, not
+  # at the end of a job that passed: a run cancelled by a newer push or failed by a test keeps it.
+  tree:
+    needs: changes
+    if: needs.changes.outputs.need == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    outputs:
+      key: ${{ steps.key.outputs.key }}
     env:
       RIKUY_WORK: /mnt/eng
       # Azure's copy of Ubuntu's archive, next to the runner; same paths, same hashes
       UBUNTU_MIRROR: http://azure.archive.ubuntu.com/ubuntu
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      # the tree is a function of tex/, inputs/ and the npm packages (Pyodide's wheels), and the
+      # manifest check holds it
+      - name: The tree's key
+        id: key
+        run: echo "key=dist-tex-${{ hashFiles('tex/**', 'inputs/**', 'package-lock.json', 'dev/dist-manifest.txt') }}" >> "$GITHUB_OUTPUT"
+      - name: The TeX tree of an earlier run with the same inputs
+        id: exact
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: dist/tex
+          key: ${{ steps.key.outputs.key }}
+          lookup-only: true
+      # Without that run, the nearest earlier tree: most changes to those inputs (a page package
+      # in package-lock.json, a file of tex/ the tree does not take) leave the tree as it was, and
+      # rebuilding it costs about two hours of downloads and builds; it is kept only when it is
+      # byte for byte the tree the manifest lists
+      - name: The nearest earlier tree
+        if: steps.exact.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: dist/tex
+          key: ${{ steps.key.outputs.key }}
+          restore-keys: dist-tex-
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: steps.exact.outputs.cache-hit != 'true'
+        with:
+          node-version: '22'
+          cache: npm
+      # a Python of its own: pip does not install into Ubuntu 24.04's system Python
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        if: steps.exact.outputs.cache-hit != 'true'
+        with:
+          python-version: '3.13'
+      - name: Tools
+        if: steps.exact.outputs.cache-hit != 'true'
+        run: |
+          npm ci --omit=dev
+          # fetch_inputs.sh unpacks busytex with lz4; the other two as the tests have them
+          python3 -m pip install lz4==4.4.4 pypdf==5.9.0 numpy==2.3.4
+          # the work folder holds about 10 GB; the runner's second disk has room
+          sudo mkdir -p /mnt/eng && sudo chown "$USER" /mnt/eng
+          df -h / /mnt
+      # a tree from other inputs is kept only if the page's build over it gives exactly the files
+      # the manifest lists (the same check as below); otherwise it goes and the tree is built
+      - name: The nearest tree, if it is the one these inputs make
+        id: near
+        if: steps.exact.outputs.cache-hit != 'true'
+        run: |
+          if [ -d dist/tex ] && node build.mjs >/dev/null && (cd dist/tex && find . -type f | sort | xargs sha256sum | diff -q ../../dev/dist-manifest.txt - >/dev/null); then
+            echo "same=true" >> "$GITHUB_OUTPUT"; echo "the nearest tree is this one: kept"
+          else
+            rm -rf dist/tex; echo "no tree, or another one: built below"
+          fi
+      - name: Build inputs
+        if: steps.exact.outputs.cache-hit != 'true' && steps.near.outputs.same != 'true'
+        run: sh tex/fetch_inputs.sh
+      - name: Build the tree and its packs
+        if: steps.exact.outputs.cache-hit != 'true' && steps.near.outputs.same != 'true'
+        run: python3 tex/build_tree.py tree && python3 tex/build_tree.py packs
+      - name: dist/tex as dev/dist-manifest.txt lists it
+        if: steps.exact.outputs.cache-hit != 'true'
+        run: node build.mjs && cd dist/tex && find . -type f | sort | xargs sha256sum | diff ../../dev/dist-manifest.txt -
+      - name: The tree for the shards and the next runs
+        if: steps.exact.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: dist/tex
+          key: ${{ steps.key.outputs.key }}
+  # The suites, in shards side by side (.github/tex-shards.json, dealt by dev/ci_balance.py from
+  # main's measured times); each takes the tree from the cache, builds the page over it, checks it
+  # against the manifest and runs its commands, every one even after a failure, leaving a record.
+  # Each shard's limit is 1.5 times its measured p95: a shard over its budget fails.
+  tex-shard:
+    name: tex shard ${{ matrix.shard }}
+    needs: tree
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # shards: written by dev/ci_balance.py from .github/tex-shards.json
+        include:
+          - {shard: 1, minutes: 15}
+          - {shard: 2, minutes: 15}
+          - {shard: 3, minutes: 15}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -104,104 +177,28 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.13'
-      # dist/tex built by an earlier run from the same inputs: the tree is a function of tex/,
-      # inputs/ and the npm packages (Pyodide's wheels), and the manifest check below holds it.
-      # Without that run, the nearest earlier tree: most changes to those inputs (a page package
-      # in package-lock.json, a file of tex/ the tree does not take) leave the tree as it was,
-      # and rebuilding it costs about two hours of downloads and builds; the next step keeps it
-      # only when it is byte for byte the tree the manifest lists, and the post step saves it
-      # under this run's key
-      - name: The TeX tree of an earlier run with the same inputs, or the nearest
-        id: tree
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - name: The TeX tree the tree job left
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: dist/tex
-          key: dist-tex-${{ hashFiles('tex/**', 'inputs/**', 'package-lock.json', 'dev/dist-manifest.txt') }}
-          restore-keys: dist-tex-
+          key: ${{ needs.tree.outputs.key }}
+          fail-on-cache-miss: true
       - run: npm ci --omit=dev
       - name: Playwright and Chromium
         uses: ./.github/actions/playwright
         with:
           playwright: '1.56.0'
           packages: lz4==4.4.4 pypdf==5.9.0 numpy==2.3.4
+      # page.py reads the PDF's words and their positions with pdftotext -bbox
       - name: Tools
-        run: |
-          # page.py reads the PDF's words and their positions with pdftotext -bbox
-          sudo apt-get install -y --no-install-recommends poppler-utils
-          # the work folder holds about 10 GB; the runner's second disk has room
-          sudo mkdir -p /mnt/eng && sudo chown "$USER" /mnt/eng
-          df -h / /mnt
-      # a tree from other inputs is kept only if the page's build over it gives exactly the files
-      # the manifest lists (the same check as below); otherwise it goes and the tree is built
-      - name: The nearest tree, if it is the one these inputs make
-        id: near
-        if: steps.tree.outputs.cache-hit != 'true'
-        run: |
-          if [ -d dist/tex ] && node build.mjs >/dev/null && (cd dist/tex && find . -type f | sort | xargs sha256sum | diff -q ../../dev/dist-manifest.txt - >/dev/null); then
-            echo "same=true" >> "$GITHUB_OUTPUT"; echo "the nearest tree is this one: kept"
-          else
-            rm -rf dist/tex; echo "no tree, or another one: built below"
-          fi
-      - name: Build inputs
-        if: steps.tree.outputs.cache-hit != 'true' && steps.near.outputs.same != 'true'
-        run: sh tex/fetch_inputs.sh
-      - name: Build the tree and its packs
-        if: steps.tree.outputs.cache-hit != 'true' && steps.near.outputs.same != 'true'
-        run: python3 tex/build_tree.py tree && python3 tex/build_tree.py packs
+        run: sudo apt-get install -y --no-install-recommends poppler-utils
       - name: Build the page
         run: node build.mjs && du -sh dist dist/tex
       - name: dist/tex as dev/dist-manifest.txt lists it
         run: cd dist/tex && find . -type f | sort | xargs sha256sum | diff ../../dev/dist-manifest.txt -
-      # every test must pass; a test that cannot run here is left out, never run with `|| true`
-      - name: Engines and shell escape in the page
-        run: npm run test:engines
-      - name: pdfLaTeX in the PDF pane, under the host's policy
-        run: cd test && python3 pdf.py
-      - name: The installed app, Make available offline, then a compile with no network
-        run: cd test && python3 offline.py
-      - name: A whole session under the hosted policy (three engines, asy, minted, biber, Word, spelling, grammar, a live figure), nothing refused
-        run: cd test && python3 csp.py
-      - name: The ribbon, with Download PDF compiling and saving the file
-        run: cd test && python3 ribbon.py
-      - name: Rikuy as an agent meets it, with rikuy.api.compile making a real PDF
-        run: cd test && python3 agent.py
-      - name: The preamble's format gives the pass an ordinary compile gives
-        run: cd test && python3 preamble.py
-      - name: Find and Replace, then the PDF has the text replaced
-        run: cd test && python3 find.py
-      - name: The outline, then the PDF has the heading at the level it was given
-        run: cd test && python3 outline.py
-      - name: Tables, every construct the table commands write compiled in the page
-        run: cd test && python3 table.py reviewed verified compiled
-      - name: The page's set up in TeX's PDF (paper size, header, line numbers) and Print
-        run: cd test && python3 page.py compile_pdf
-      - name: Every format of the Font group compiles in the page
-        run: cd test && python3 font.py compiles
-      - name: Lists, then every kind Rikuy writes compiles with pdfLaTeX, XeLaTeX and LuaLaTeX and prints the page's labels
-        run: cd test && python3 lists.py
-      - name: The Equation tab (what it writes compiled on the three engines)
-        run: cd test && python3 eqtab.py
-      - name: Paragraphs, then the PDF sets each word where the page draws it
-        run: cd test && python3 para.py
-      - name: Styles, every heading, environment, look and style Rikuy writes compiled in the page with pdfLaTeX and LuaLaTeX
-        run: cd test && python3 styles.py compile_all
-      - name: Pictures and objects compiled in the page, the picture's box in the PDF against the page's
-        run: cd test && python3 picture.py compiled
-      - name: Objects formatted after they are in, and pictures corrected, compiled on pdfLaTeX, XeLaTeX and LuaLaTeX
-        run: cd test && python3 objects.py compiled pictures_compiled
-      - name: An interactive graph compiles on pdfLaTeX, XeLaTeX and LuaLaTeX with its picture
-        run: cd test && python3 insert.py graph_compiles
-      - name: The graphs' PGF pictures on pdfLaTeX, XeLaTeX and LuaLaTeX, TeX's picture against the live figure in pixels
-        run: cd test && python3 graphs.py compiles
-      - name: The PDF view by SyncTeX both ways, and Learn Rikuy compiled in the page
-        run: cd test && python3 view.py views help_tab
-      - name: Every template of File, New compiles in the page, and a tagged PDF
-        run: cd test && python3 file.py new_docs accessibility
-      - name: Review, and the copy with markup (changes, todonotes) compiled in the page
-        run: cd test && python3 review.py
-      - name: References (contents, lists, notes, sources, the bibliography, captions, cross references, the index, links) compiled with pdfLaTeX, XeLaTeX and LuaLaTeX, biblatex with biber
-        run: cd test && python3 refs.py compiled
+      # the dist/ deploy.yml publishes once the whole run passed: one shard keeps it
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: matrix.shard == 1
         with:
           name: rikuy-dist
           path: dist
@@ -211,3 +208,55 @@ jobs:
           retention-days: ${{ github.ref == 'refs/heads/main' && 7 || 1 }}
           # the packs are compressed already
           compression-level: 0
+      # every test must pass; a test that cannot run here is left out, never run with `|| true`
+      - name: The shard's suites, as .github/tex-shards.json lists them
+        run: python3 dev/ci_shards.py --list .github/tex-shards.json run "$SHARD" "$RUNNER_TEMP/tex-shard-$SHARD.json"
+        env:
+          SHARD: ${{ matrix.shard }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ !cancelled() }}
+        with:
+          name: tex-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/tex-shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: ${{ github.ref == 'refs/heads/main' && 30 || 3 }}
+  # The gate, on every run, so it can be a required check: it passes when this pull request needs
+  # no TeX (no changed file matches a path of .github/tex-shards.json), and otherwise only when the
+  # tree and every shard passed and the shards' records are the list's commands, each run and
+  # passed on this commit.
+  tex:
+    needs: [changes, tree, tex-shard]
+    # always(), not !cancelled(): a cancelled run must end this gate red, never skipped (GitHub
+    # counts a skipped job as passing a required check)
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Whether TeX had to run
+        id: need
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          NEED: ${{ needs.changes.outputs.need }}
+          TREE: ${{ needs.tree.result }}
+        run: |
+          [ "$CHANGES" = success ] || { echo "::error::the changes job ended $CHANGES"; exit 1; }
+          if [ "$NEED" = false ]; then echo "this pull request changes no path of .github/tex-shards.json: TeX did not need to run"; exit 0; fi
+          [ "$NEED" = true ] || { echo "::error::the changes job said neither true nor false: '$NEED'"; exit 1; }
+          [ "$TREE" = success ] || { echo "::error::the tree job ended $TREE"; exit 1; }
+          echo "run=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        if: steps.need.outputs.run == 'true'
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: steps.need.outputs.run == 'true'
+        with:
+          pattern: tex-shard-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/shards
+      - name: Every shard passed, and together they ran every command of the list
+        if: steps.need.outputs.run == 'true'
+        run: python3 dev/ci_shards.py --list .github/tex-shards.json gate "$RUNNER_TEMP/shards"
+        env:
+          SHARDS_RESULT: ${{ needs.tex-shard.result }}
