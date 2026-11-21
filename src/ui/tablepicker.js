@@ -88,6 +88,9 @@ function finish(app, p, ok) {
   app.positionPop();
   const first = p.querySelector('input, select, [role=grid]');
   if (first) first.focus();
+  // (its value selected, as Word's dialogs and a Tab into a field have it: 3 typed at once is 3,
+  // not the 23 a caret after the 2 made)
+  if (first && first.matches('input[type=number], input[type=text]')) first.select();
 }
 
 // ---- the grid of sizes -------------------------------------------------------------------------
@@ -312,7 +315,8 @@ export function propertiesDialog(app, focus) {
   p.append(tabs, P1, P2, P3, P4, P5, buttons(app, ok));
   pick(focus === 'alt' ? 'alt' : 'table');
   finish(app, p, ok);
-  if (focus === 'alt') alt.focus();
+  // (the field the command named: a phone's keyboard comes up for it too, src/app.js makePop)
+  if (focus === 'alt') { alt.dataset.named = ''; alt.focus(); }
 }
 // a share of the line as written: 100 % is \linewidth, 80 % 0.8\linewidth
 const shareText = (pct) => (Math.abs(pct - 100) < 1e-9 ? '\\linewidth' : String(Math.round(pct) / 100).replace(/^0(?=\.)/, '0') + '\\linewidth');

@@ -124,7 +124,7 @@ register(
     title: 'More Font Effects: small caps, all caps, double strikethrough, border, shading, enclosed characters, ruby', synonyms: ['Effects', 'Text effects'],
     when: can, whyNot: () => WHY, run: (app) => app.moreMenu() },
   // (Word's launcher at the group's corner: here More Font Effects' last item, the right click menu and Ctrl+D)
-  { id: 'font-dialog', name: 'Font Settings', keys: ['Ctrl+D'],
+  { id: 'font-dialog', name: 'Font Settings', dialog: true, menuName: 'Font', keys: ['Ctrl+D'],
     title: 'Font… (Ctrl+D): every character format in one dialog, with a preview, and the spacing, scale and position of letters', synonyms: ['Font dialog', 'Font…', 'Character spacing', 'Advanced font'],
     menu: { selection: 80, text: 80 }, when: can, whyNot: () => WHY, run: (app) => openFontDialog(app) },
 
@@ -250,6 +250,35 @@ export const methods = {
 
   // Bold, Italic, Underline and the rest: on or off where the caret is
   fmtToggle(group, o = {}) {
+    // A caret at the end of a wrapper's words (Ctrl+B, "bold", Ctrl+B): Word ends the format for
+    // what is typed next and leaves the word as it is. It took \textbf off the whole word, and
+    // " after" went in plain beside a plain "bold". The caret goes after the wrapper's brace (the
+    // page shows it at the same spot: restoreCaret keeps the place), the text unchanged.
+    // Through wrappers inside it that end there too (\textbf{\emph{bold}}: the caret is before
+    // \emph's brace; it took the bold off, review V4): those go on for what is typed next, opened
+    // again after the bold, the caret in them, as Ctrl+B on a caret opens an empty \textbf{}.
+    const at = this.ribbonAt(), c = at && at.c;
+    if (!o.force && c && !c.ghost && c.collapsed && c.f != null && !this.texHere() && !(this.wholeDoc && this.wholeDoc()) && !this.blockCells(at)) {
+      const t = this.src(c.f), W = F.around(t, c.a, c.a, group);
+      if (W && W.is < c.a && W.e === W.ie + 1 && t[W.ie] === '}' && /^\}*$/.test(t.slice(c.a, W.ie))) {
+        if (c.a === W.ie) { this.restoreCaret({ f: c.f, p: W.e, bias: -1 }); this.ribbonSoon && this.ribbonSoon(); return true; }
+        // (each brace between closes a group opened inside the bold: its command, outermost first)
+        const opens = [];
+        for (let j = c.a; j < W.ie; j++) {
+          let d = 0, k = j - 1;
+          for (; k >= W.is; k--) { if (t[k - 1] === '\\') continue; if (t[k] === '}') d++; else if (t[k] === '{' && !d--) break; }
+          const m = k >= W.is ? /\\[A-Za-z]+$/.exec(t.slice(Math.max(W.is, k - 40), k)) : null;
+          if (!m) { opens.length = 0; break; }
+          opens.unshift(m[0] + '{');
+        }
+        if (opens.length) {
+          const ins = opens.join('') + '}'.repeat(opens.length);
+          this.commit([{ f: c.f, s: W.e, e: W.e, t: ins }], { f: c.f, p: W.e + opens.join('').length, bias: -1 }, 'format');
+        } else this.restoreCaret({ f: c.f, p: W.e, bias: -1 });
+        this.ribbonSoon && this.ribbonSoon();
+        return true;
+      }
+    }
     return this.fmtCommit([(t, a, b, x) => {
       // (a block of cells: on in every cell takes it off all of them, else all of them get it,
       // as Word chooses for the block as a whole)

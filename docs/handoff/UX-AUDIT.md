@@ -212,6 +212,35 @@ Tooltips added where there was none or a stale one: New document, Load the sampl
 `ux.py consistency` measures all of it at 1366 and 1920 px (light and dark) and at 390 and 360 px
 with touch, and fails on the old sizes (20 of its checks did before this pass).
 
+### 13. The verification of 0a6ef7b and UI-PRINCIPLES.md, outside the ribbon (branch `ux-consistency-2`)
+
+Each a commit with its part of `test/ux.py`, which fails on the code before it:
+
+| finding or rule | was | now | part |
+|---|---|---|---|
+| R2: AutoCorrect's Add at 360 px; Insert Table's Cancel and OK on touch | 44 by 64 px; 32 px wide, "Cancel" spilling | whole, 44 px tall and at least as wide (a phone's bar rule kept out of dialogs) | `dialog_kinds` |
+| fields in Properties, the comment, Share's name, AutoCorrect, Symbols' search | 36 px, 6 px corners | 32 px (44 under a finger), 4 px; a number field's box is the field | `dialog_kinds` |
+| tabs inside Paragraph, Find and Replace, Symbols; check box and radio rows | 29 to 31 px; 18 to 19 px | 32 px (44); at least 24 px (44) | `dialog_kinds` |
+| Symbols' cell focused by Tab | no outline | a 2 px outline | `dialog_kinds` |
+| dark mode's primary buttons; the selected search result | white on #6AAEE3, 2.4:1; white on pale blue, 1.25:1 | #0B1621 on the blue (about 7.5:1); the window's ink | `contrast` |
+| Check accessibility from the ribbon, AutoCorrect Options from the search box (N7) | the focus stayed in the page | the dialog takes it (its first control; under a finger never a text field) | `focus_rules` |
+| Tab from Word Count's Close | walked out of the dialog | goes round inside it, Shift+Tab too | `focus_rules` |
+| a dialog opened by the keys from a ribbon button (N7) | the focus went to the page | back to that button; one opened by a press gives the page its caret | `focus_rules` |
+| Back's ring after a press on File | shown | only when the keys opened File | `focus_rules` |
+| R3: the phone's bar at 320 px (T3) | Search 10 px into Share; gaps of 0 to 2 px | 8 px apart; under 380 px Redo in the menu panel, the zoom 44 px | `bar_room` |
+| the ruler's markers (T5) | a drag or the arrow keys only | a double click opens the Paragraph dialog or Page setup, as Word's | `tap_alternatives` |
+| motion (M1 to M3) | background fades, a width transition, 120 ms transitions | opacity and transform only, 50 ms steps; reduced motion: nothing moves | `motion` |
+| the right click menu (C11, C13, P2) | "Show in source", "Font Settings" with no "…", a box shadow ring | capitalised, four words at most, "…" on the items that open a dialog (the registry's `dialog`), an outline ring | `menus` |
+| empty panes (N5) | Navigation: two sentences with \section in them | one sentence and Apply Heading 1; File's Recent: one sentence and Open a file | `empty_panes` |
+| the on-screen keyboard (T6) | a dialog's lower field left under it | scrolled into sight inside every box round it | `keyboard_room` |
+| targets under a finger (T3) | status bar views, a dialog's tabs and rows 2 to 6 px apart | 8 px | `target_gaps` |
+| tooltips of the bar, the status bar, File's Home (C14) | the description alone, some without keys | name, keys, what it does | `tooltips` |
+| text spacing (L8) | held | kept by a check | `text_spacing` |
+
+Left as they are: tooltips stay the browser's own (`title`), which WCAG 1.4.13 leaves to it; the
+ribbon's tooltips, galleries (C4) and File's column (drawn by the ribbon) are the ribbon agent's;
+the status bar shortens its words with "…" where it is short of room, at any spacing.
+
 ## Findings for other agents
 
 ### Ribbon tabs (`src/ribbon/`, the ribbon's CSS)

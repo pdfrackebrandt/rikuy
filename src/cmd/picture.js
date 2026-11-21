@@ -113,11 +113,11 @@ register(
     run: (app, args) => (args && 'weight' in args ? app.picOp((src, Q) => X.borderSet(src, Q, { weight: args.weight ? String(args.weight).replace(/[^0-9.a-z]/g, '').slice(0, 12) : null })) : app.picBorderMenu('weight')) }),
   P('picture-border-color', 'Border Color', { menu: { picture: 93 }, title: 'Picture Border\'s colour (\\color{…} before the \\fbox, xcolor)', synonyms: ['Outline color', 'Border colour', 'Frame colour'],
     run: (app, args) => (args && 'color' in args ? app.picBorderColor(args.color) : app.picBorderMenu('color')) }),
-  P('picture-caption', 'Insert Caption', { title: 'Insert Caption: a numbered caption under the picture ("Figure 1"): \\caption in a figure, \\captionof{figure} in line with text', tab: 'picture-format', group: 'styles', order: 20, icon: ICON.caption, label: 'Caption',
+  P('picture-caption', 'Insert Caption', { dialog: true, title: 'Insert Caption: a numbered caption under the picture ("Figure 1"): \\caption in a figure, \\captionof{figure} in line with text', tab: 'picture-format', group: 'styles', order: 20, icon: ICON.caption, label: 'Caption',
     synonyms: ['Caption', 'Figure caption', 'Title of figure'], menu: { picture: 50 }, run: (app) => app.picCaption() }),
 
   // ---- Accessibility -------------------------------------------------------------------------------
-  P('picture-alt', 'Alt Text', { title: 'Alt Text: what the picture shows, for people who cannot see it (\\includegraphics[alt={…}], read by tagged PDF and Word), or Mark as decorative', tab: 'picture-format', group: 'accessibility', order: 10, icon: ICON.alt, label: 'Alt Text',
+  P('picture-alt', 'Alt Text', { dialog: true, title: 'Alt Text: what the picture shows, for people who cannot see it (\\includegraphics[alt={…}], read by tagged PDF and Word), or Mark as decorative', tab: 'picture-format', group: 'accessibility', order: 10, icon: ICON.alt, label: 'Alt Text',
     synonyms: ['Alternative text', 'Edit Alt Text', 'Description', 'Accessibility', 'Decorative'], menu: { picture: 60 }, run: (app, args) => (args ? app.picSetAlt(args.text, args.decorative) : altDialog(app)) }),
 
   // ---- Arrange (also on Layout) -----------------------------------------------------------------
@@ -153,7 +153,7 @@ register(
     synonyms: ['Picture width', 'Shape width', 'Size'], when: keyed, render: (app) => app.picField('width'), sync: (app, at) => app.picFieldSync('width', at), run: (app, args) => (args ? app.picResize(args) : sizeDialog(app, 'width')) }),
   P('picture-lock', 'Lock Aspect Ratio', { title: 'Lock Aspect Ratio: the picture keeps its shape (one of width and height); off, both are written and each can change alone', tab: 'picture-format', group: 'size', order: 40, kind: 'toggle', icon: ICON.lock,
     synonyms: ['Keep aspect ratio', 'keepaspectratio', 'Proportions'], when: keyed, on: (app, at) => { const h = pic(app, at); return h ? app.picLocked(h) : null; }, run: (app) => app.picToggleLock() }),
-  P('picture-size', 'Size and Position', { title: 'Size and Position…: width, height, scale, rotation, crop and where the picture stands, in one dialog', tab: 'picture-format', group: 'size', order: 50, icon: ICON.size,
+  P('picture-size', 'Size and Position', { dialog: true, title: 'Size and Position…: width, height, scale, rotation, crop and where the picture stands, in one dialog', tab: 'picture-format', group: 'size', order: 50, icon: ICON.size,
     synonyms: ['Layout', 'More layout options', 'More rotation options', 'Format picture', 'Picture size'], when: keyed, menu: { picture: 20 }, run: (app, args) => (args ? app.picSizeApply(args) : sizeDialog(app)) }),
   P('picture-source', 'Show Picture Source', { title: 'The \\includegraphics line, to edit as LaTeX (Enter on the picture does the same)', menu: { picture: 90 }, synonyms: ['Edit source'],
     run: (app) => { const h = app.picHere(); if (!h) return false; const info = atomOfEl(h.el); app.disarm(); app.openAtom(h.el, info); return true; } })

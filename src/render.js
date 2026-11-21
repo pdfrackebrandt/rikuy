@@ -332,6 +332,22 @@ export class Renderer {
         el.contentEditable = 'false';
         const r = this.katex(it.tex, true);
         el.innerHTML = r.html;
+        // \intertext's words between the rows, across the display (src/model.js displayMath)
+        if (it.parts && !r.err) {
+          el.replaceChildren();
+          for (const P of it.parts) {
+            const d = document.createElement('div');
+            if (P.tex != null) { d.className = 'dm-rows'; d.innerHTML = this.katex(P.tex, true).html; }
+            else {
+              d.className = 'intertext';
+              for (const [k, bit] of P.text.split(/(\$[^$]*\$)/).entries()) {
+                if (k % 2) { const m = document.createElement('span'); m.innerHTML = this.katex(bit.slice(1, -1), false).html; d.appendChild(m); }
+                else d.appendChild(document.createTextNode(bit.replace(/\\[A-Za-z]+\*?\s*/g, '').replace(/[{}]/g, '').replace(/~/g, '\u00a0')));
+              }
+            }
+            el.appendChild(d);
+          }
+        }
         if (r.err) { el.classList.add('has-err'); el.title = r.err; }
         const idx = B.atoms.length;
         B.atoms.push({ kind: 'math', display: true, f: it.f, s: this.rel(it.s), e: this.rel(it.e), is: this.rel(it.is), ie: this.rel(it.ie), env: it.env, err: r.err });
@@ -927,7 +943,8 @@ export class Renderer {
       case 'widget': {
         // A live figure. This box keeps the widget's place and size in the text; the widget runs
         // in a frame laid over it (src/widget.js), which outlives this box being drawn again.
-        const fb = this.app.assetURL(x.fallback);
+        // (a graph's PGF picture is TeX's: the page shows Rikuy's own drawing of the graph instead)
+        const fb = /\.pgf$/i.test(x.fallback) ? (x.wfile && this.app.graphPictureURL ? this.app.graphPictureURL(x.wfile) : null) : this.app.assetURL(x.fallback);
         const html = x.wfile ? this.app.files.get(x.wfile) : null;
         if (html != null && !this.app.widgetsAllowed()) {
           // from someone else and not allowed yet: the fallback, and a button over it (WidgetLayer)

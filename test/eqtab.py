@@ -291,14 +291,22 @@ def context_menu(page):
     page.mouse.click(box['x'] + 4, box['y'] + 5, button='right'); page.wait_for_timeout(250)
     m = page.get_by_role('menu', name='Context menu', exact=True)
     names = m.get_by_role('menuitem').evaluate_all('(xs) => xs.map((x) => x.getAttribute("aria-label"))')
-    check('a right click on a formula in the line: its menu, with what applies to it (no number, no label)', names == ['Edit equation', 'Change to display', 'Copy as LaTeX', 'Copy for Word', 'Save as new equation', 'Right click again for the browser\'s menu'], names)
+    # Graph this (src/cmd/graphs.js, menu: { equation: 2 }) stands in every equation's menu, after Edit
+    # equation: it graphs what it can and says in words why not otherwise
+    check('a right click on a formula in the line: its menu, with what applies to it (no number, no label)', names == ['Edit equation', 'Graph this', 'Change to display', 'Copy as LaTeX', 'Copy for Word', 'Save as new equation', 'Right click again for the browser\'s menu'], names)
     m.get_by_role('menuitem', name='Change to display', exact=True).click(); page.wait_for_timeout(300)
     check('its Change to display writes the display', 'Some text \\begin{equation}\n  x+1\n\\end{equation} here.' in src(page), src(page)[-120:])
     page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
     box = page.locator('.it.dm').first.bounding_box()
     page.mouse.click(box['x'] + box['width'] / 2, box['y'] + 6, button='right'); page.wait_for_timeout(250)
     names = m.get_by_role('menuitem').evaluate_all('(xs) => xs.map((x) => x.getAttribute("aria-label"))')
-    check('on a numbered display: Change to inline, Change to unnumbered, Add label, and the copies', all(n in names for n in ('Change to inline', 'Change to unnumbered', 'Add label', 'Copy as LaTeX', 'Copy for Word')) and 'Change to display' not in names and 'Change to numbered' not in names, names)
+    check('on a numbered display: Graph this, Change to inline, Change to unnumbered, Add label, and the copies', all(n in names for n in ('Graph this', 'Change to inline', 'Change to unnumbered', 'Add label', 'Copy as LaTeX', 'Copy for Word')) and 'Change to display' not in names and 'Change to numbered' not in names, names)
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    # and only there: a right click on the words around them has no Graph this
+    tb = page.get_by_text('After.', exact=False).last.bounding_box()
+    page.mouse.click(tb['x'] + 6, tb['y'] + tb['height'] / 2, button='right'); page.wait_for_timeout(250)
+    tnames = m.get_by_role('menuitem').evaluate_all('(xs) => xs.map((x) => x.getAttribute("aria-label"))') if m.count() else []
+    check('a right click on plain words: its menu, without Graph this', len(tnames) > 0 and 'Graph this' not in tnames and 'Edit equation' not in tnames, tnames)
     page.keyboard.press('Escape'); page.wait_for_timeout(100)
     page.keyboard.down('Shift'); page.mouse.click(box['x'] + box['width'] / 2, box['y'] + 6, button='right'); page.keyboard.up('Shift'); page.wait_for_timeout(250)
     check('Shift with the right click gives the browser\'s menu, not Rikuy\'s', m.count() == 0)
@@ -765,8 +773,8 @@ def phone(p):
         shot('longpress')
         nofield = not page.evaluate('!!document.querySelector(".pop-math")')
         if m.count(): m.get_by_role('menuitem', name='Change to display', exact=True).tap(); page.wait_for_timeout(350)
-        check('%s: a long press on a formula opens its menu, in the screen, 44 px items, no field and no "right click again" line; its Change to display works by a tap' % tag,
-              names == ['Edit equation', 'Change to display', 'Copy as LaTeX', 'Copy for Word', 'Save as new equation'] and nofield and FITS(g) and g['small'] == 0
+        check('%s: a long press on a formula opens its menu (Graph this among its items), in the screen, 44 px items, no field and no "right click again" line; its Change to display works by a tap' % tag,
+              names == ['Edit equation', 'Graph this', 'Change to display', 'Copy as LaTeX', 'Copy for Word', 'Save as new equation'] and nofield and FITS(g) and g['small'] == 0
               and 'Some text \\begin{equation}\n  x+1\n\\end{equation} here.' in src(page), (names, nofield, g, src(page)[-100:]))
         page.evaluate('window.rikuy.closePop(true)'); page.wait_for_timeout(100)
         bx = page.locator('.it.dm').last.bounding_box()

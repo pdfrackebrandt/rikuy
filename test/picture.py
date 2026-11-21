@@ -601,6 +601,9 @@ def phones(p):
             if url.startswith('https://rikuy.test/'):
                 path = url[len('https://rikuy.test/'):].split('?')[0]
                 f = os.path.join(DIST, path)
+                # (a page file at its address without .html, as Pages serves it: the widget document of the
+                # opening document's live graph; else the page itself answered, which refuses to be framed)
+                if path and not os.path.isfile(f) and os.path.isfile(f + '.html'): f, path = f + '.html', path + '.html'
                 if path and os.path.isfile(f):
                     return route.fulfill(status=200, content_type='text/javascript' if path.endswith(('.js', '.mjs')) else 'text/html; charset=utf-8' if path.endswith('.html') else 'application/octet-stream', headers=B.policy(DIST, '/' + path), body=open(f, 'rb').read())
                 return route.fulfill(status=200, content_type='text/html; charset=utf-8', headers=B.policy(DIST, '/'), body=doc)
