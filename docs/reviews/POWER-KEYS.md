@@ -639,3 +639,41 @@ formula typed with `$`. W1 to W7 are fixed.
 
 On the final build: power.py 201, browser.py 201 twice, mathfield.py 19, eqtab.py 159 (158 and
 the case above, now 6 of 6 in `packages`), docgaps.py equation parts 19, wordmath.py 84, `npm test` green.
+
+
+## Verification of 35d4bb4
+
+Reviewer: Claude, hostile, time-boxed, in a fresh worktree at 35d4bb4, `npm run build`. I reran
+`v5b.py` and `v5c.py` and wrote `v6.py` (`/tmp/review-power-out/scripts/`).
+
+**Verdict: merge.** X1 to X3 are fixed, and nothing new turned up.
+
+### X1: Backspace
+
+- **`v5b`/`v5c`:** `$5`, `$x` and `$ab+1` delete down to empty. The next Backspace removes the
+  formula with the caret where `$` was, and the one after deletes on the page as usual.
+  - Through a pending price (`$5 e`): `5` (the word goes), `5` (the waiting space goes), empty,
+    removed.
+- **`\frac{a}{b}`:** `\frac{a}{}`, then `a` (the fraction is unwrapped), then empty, then removed.
+- **`\left( x \right)`:** `(x`, `(`, empty, removed. The brackets close correctly, as b5c0ea6 meant.
+- **`\mathbb{R}` picked from the Equation tab** (`eqInsert`): one Backspace empties it, the next
+  removes it.
+- **After removal:**
+  - typing goes where the `$` was (`z Q.`);
+  - Undo takes back the `Q`, then the typing before the formula;
+  - none of the formula's steps come back, as stated.
+- **Backspace after Esc** (`$x+1$` written): the first press selects the formula and does not
+  reopen it, the second deletes it, the third deletes the space before it. That is Word's
+  two-step delete.
+
+### X2: the price's look
+
+- At 360 px with touch, ` costs $5 ea` shows `$5 ea: a price at the next space or mark; $ keeps a
+  formula.` beside the formula. It sits inside the popover (19 to 341 px of 360) and is not
+  clipped (`/tmp/review-power-out/v6-phone360.png`).
+- `ch ` then gives `\$5 each .`.
+- The waiting word is now readable as a price, which answers the confusion found at befd04a.
+
+### X3: focus and load
+
+- browser.py ran three times in a row on a shared, busy machine: 201/201 each time.
