@@ -451,3 +451,33 @@ export function defineOnce(src, name, text, o = {}) {
   const nl = eolOf(src);
   return [{ s, e: s, t: (pre + text + '\n').replace(/\r?\n/g, nl) }];
 }
+
+// The project's documents, the files TeX can compile on their own (a .tex with \documentclass and
+// \begin{document}, comments aside), as Overleaf's Main document menu lists them: a paper, its
+// slides, a letter. A subfiles chapter (\documentclass[../main.tex]{subfiles}) compiles alone
+// too, so it is one, after the others. files: [name, text] pairs or a Map; gives names, the
+// project's own documents first, the shallower first, else in the order given.
+export function projectDocs(files) {
+  const out = [];
+  let k = 0;
+  for (const [n, t] of files) {
+    if (!/\.tex$/i.test(n) || typeof t !== 'string' || preambleEnd(t) < 0) continue;
+    const c = docClass(t);
+    if (c) out.push({ n, sub: c.name === 'subfiles' ? 1 : 0, depth: n.split('/').length, k: k++ });
+  }
+  return out.sort((a, b) => a.sub - b.sub || a.depth - b.depth || a.k - b.k).map((x) => x.n);
+}
+// The document a project opens with: main.tex where it is one, else the one latexmk would make
+// (@default_files in a latexmkrc that came with it), else the first of projectDocs.
+export function pickMain(files, latexmkrc) {
+  const docs = projectDocs(files);
+  const main = docs.find((n) => /(^|\/)main\.tex$/i.test(n));
+  if (main) return main;
+  const m = /@default_files\s*=\s*\(\s*['"]([^'"]+)['"]/.exec(String(latexmkrc || '').replace(/#.*$/gm, ''));
+  if (m) {
+    const want = m[1].replace(/^\.\//, '');
+    const hit = docs.find((n) => n === want || n === want + '.tex');
+    if (hit) return hit;
+  }
+  return docs[0] || null;
+}
