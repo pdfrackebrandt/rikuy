@@ -48,7 +48,7 @@ import { installDock } from './ui/dock.js';
 import { installKeys } from './keys.js';
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
-import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf } from './styles.js';
+import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, titleInfo } from './styles.js';
 import { eolAt } from './blockenv.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
@@ -387,6 +387,11 @@ function fromField(v, st) {
 // key typed in the field wrote that run back into the source.
 const MATH_VALUE = { silenceNotifications: true, mode: 'math', format: 'latex' };
 
+// What stands before a paragraph's first word when the caret there is at its start: a blank line,
+// or the line of a \begin{...} (the document, a quote, a theorem with its [title]), a heading or
+// \maketitle (src/app.js enter)
+const PARA_START = /(?:\n[ \t]*\n|\\begin\s*\{[^{}\n]*\}(?:\[[^\]\n]*\])?[ \t]*\n|\\(?:part|chapter|section|subsection|subsubsection|paragraph)\*?\s*\{[^\n]*\}[ \t]*\n|\\maketitle[ \t]*\n)[ \t]*$/;
+
 class App {
   constructor() {
     this.files = new Map();
@@ -485,6 +490,15 @@ class App {
       this.main = saved.main || this.files.keys().next().value;
       this.name = saved.name || this.main;
       this.zipDirty = !!saved.zipDirty;
+      // (Undo's steps, written with this very copy of the project: historyKept)
+      try {
+        const H = await kvGet('history');
+        if (H && H.t === saved.t && H.name === this.name && H.main === this.main && Array.isArray(H.hist)) {
+          const live = (x) => ({ ...x, open: false, before: null, win: null, after: null });
+          this.hist = H.hist.map(live);
+          this.redoStack = (H.redo || []).map(live);
+        }
+      } catch (e) { /* the text loads without them */ }
       try {
         const bin = await kvGet('binary');
         if (bin) {
@@ -496,6 +510,7 @@ class App {
     } else this.loadSample();
     this.bindUI();
     this.applyPrefs();
+    this.updateUndoUI();
     // the installed app (hosted build only): its service worker, updates, the offline marks
     if (__RIKUY_APP__ && appInit().on) registerApp(this);
     await this.waitForKaTeX();
@@ -1174,7 +1189,13 @@ class App {
     const now = Date.now();
     const top = this.hist[this.hist.length - 1];
     const contiguous = top && top.caretAfter && cb && top.caretAfter.f === cb.f && Math.abs(top.caretAfter.p - cb.p) <= 2;
-    if (top && top.open && kind && top.kind === kind && now - top.time < 2000 && (kind !== 'type' && kind !== 'del' || contiguous)) {
+    // Typing is undone word by word, as Word's: a step ends where a word ends and the next one
+    // begins, and at a new paragraph. A heading's words and the paragraph typed after it, or a
+    // sentence of 40 words, went in one Ctrl+Z.
+    const typed = kind === 'type' && top && files.length === 1 ? files[0].ins : null;
+    const prev = typed != null ? (this.files.get(files[0].f) || '')[files[0].s - 1] || '' : '';
+    const newWord = typed != null && (/\n/.test(typed) || (/\s/.test(prev) && /^\S/.test(typed)));
+    if (top && top.open && kind && top.kind === kind && now - top.time < 2000 && (kind !== 'type' && kind !== 'del' || contiguous) && !newWord) {
       // (what every edit of the step left alone is the least of what each left alone, for the files
       // nothing changed between its commits: src/editor.js stepJoin)
       stepJoin(top, before, (f) => this.files.get(f), win);
@@ -1194,6 +1215,26 @@ class App {
   }
 
   closeGroup() { const top = this.hist[this.hist.length - 1]; if (top) { top.open = false; top.before = null; top.win = null; top.after = null; } }
+
+  // The undo and redo steps as IndexedDB keeps them across a reload: what each changed and where
+  // the caret was, the newest first back to a step that holds pictures or Track Changes' base
+  // (kept in memory only), at most 2 MB of text. Word loses its undo when the file closes; a
+  // browser tab is closed by accident, and the steps are small.
+  historyKept(meta) {
+    const keep = (list) => {
+      const out = [];
+      let size = 0;
+      for (let i = list.length - 1; i >= 0; i--) {
+        const h = list[i];
+        if ((h.blobs && h.blobs.length) || h.base0 || h.base1) break;
+        size += h.files.reduce((n, d) => n + d.del.length + d.ins.length + 40, 0);
+        if (size > 2e6) break;
+        out.unshift({ kind: h.kind, files: h.files.map((d) => ({ f: d.f, s: d.s, del: d.del, ins: d.ins, ...(d.made ? { made: true } : {}) })), caretBefore: h.caretBefore || null, caretAfter: h.caretAfter || null, time: h.time, abs: h.abs });
+      }
+      return out;
+    };
+    return { t: meta.t, name: meta.name, main: meta.main, hist: keep(this.hist), redo: keep(this.redoStack) };
+  }
 
   undo() {
     // (nothing stays selected across a change of the text: its offsets would be stale)
@@ -1879,6 +1920,16 @@ class App {
       return;
     }
     const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
+    // At a paragraph's start, where a blank line already stands before it: Word makes an empty
+    // paragraph, which LaTeX has not, and each Enter piled blank lines up in the source (twelve
+    // Enters, twelve). The empty paragraph shows above it, to type in (Up), the caret staying, as
+    // Word's does; nothing is written until it is.
+    if (c.collapsed && !w.close && itemEl && kind === 'p' && PARA_START.test(src.slice(Math.max(0, w.p - 400), w.p))) {
+      const keep = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+      this.showGhost(itemEl, f, w.p, { before: true });
+      if (keep) { sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true; if (this.ghost) this.ghost.keepAt = keep; }
+      return;
+    }
     const ins = w.close + '\n\n' + w.open;
     // a break moved before a wrapper leaves the caret at the start of its text, still inside it
     this.commit([...edits, { f, s: w.p, e: w.p, t: ins }], { f, p: Math.max(w.p, p) + ins.length, bias: 1 }, 'enter');
@@ -2347,7 +2398,9 @@ class App {
   onSelChange() {
     const sel = getSelection();
     const inRoot = sel.rangeCount && this.root.contains(sel.anchorNode);
-    if (this.ghost && !this.ghost.sticky && !(inRoot && this.ghost.el.contains(sel.anchorNode))) {
+    // (an empty paragraph Enter showed above the caret stays while the caret is where Enter left it)
+    const kept = this.ghost && this.ghost.keepAt && sel.anchorNode === this.ghost.keepAt.startContainer && sel.anchorOffset === this.ghost.keepAt.startOffset;
+    if (this.ghost && !this.ghost.sticky && !kept && !(inRoot && this.ghost.el.contains(sel.anchorNode))) {
       // keep ghost while focus is in the popover; drop otherwise
       if (!this.pop) this.removeGhost();
     }
@@ -4647,6 +4700,9 @@ class App {
     const prevT = this.savedT;
     this.savedT = meta.t;
     const jobs = [kvSwap('project', meta).then((cur) => { if (cur && cur.files && cur.t !== prevT) return this.keepOtherTab(cur); })];
+    // Undo's history goes with the text it undoes, under the same time, so a reload can still undo
+    // (init reads it only where the project it was written with is the one it loads)
+    jobs.push(kvPut('history', this.historyKept(meta)).catch(() => {}));
     if (this.binaryDirty) {
       this.binaryDirty = false;
       jobs.push(kvPut('binary', {
@@ -4699,6 +4755,21 @@ class App {
       setTimeout(() => { this.confirmReset = false; }, 5000);
       return;
     }
+  }
+  // The name a download takes: the document's, or for a new one still called Untitled, its title
+  // as the page prints it, as Word offers a new file's first line ("Optimal Taxation under
+  // Political Turnover.pdf", not Untitled.pdf). The project keeps its name: storage, versions,
+  // the engine chosen and git are kept under it.
+  fileBase() {
+    let n = this.name || '';
+    if (/^Untitled( \d+)?$/.test(n)) {
+      const T = titleInfo(this.src(this.main) || '');
+      if (T && T.title) {
+        const t = texToPlain(this.src(this.main).slice(T.title.is, T.title.ie).replace(/\\thanks\s*\{[^{}]*\}/g, '').replace(/\\\\(\[[^\]]*\])?/g, ' ')).replace(/[{}]/g, '').replace(/\s+/g, ' ').trim();
+        if (t) n = t;
+      }
+    }
+    return n.replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '').slice(0, 100).replace(/[-.]+$/, '') || 'paper';
   }
   // a blank article to type into; the open project stays under Review, Versions
   async newDocument() {
@@ -4779,7 +4850,7 @@ class App {
       } else {
         blob = await this.zipBlob();
         withGit = blob.withGit;
-        fname = (this.name || 'paper').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') + '.zip';
+        fname = this.fileBase() + '.zip';
       }
       if (D) await D.save({ filename: fname, data: blob });
       else {
@@ -5163,7 +5234,7 @@ class App {
 
   async downloadPdf() {
     if (!this.lastPdf) return;
-    const fname = (this.name || 'paper').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') + '.pdf';
+    const fname = this.fileBase() + '.pdf';
     const blob = new Blob([this.lastPdf], { type: 'application/pdf' });
     try {
       if (this.caps.downloads) await this.caps.downloads.save({ filename: fname, data: blob });
@@ -5244,7 +5315,7 @@ class App {
       '<div class="sheet" lang="' + (sheet.lang || 'en') + '" style="' + (sheet.getAttribute('style') || '').replace(/"/g, '&quot;') + '"' + (sheet.dataset.font ? ' data-font="' + sheet.dataset.font + '"' : '') + '>' + clone.outerHTML + '</div>' +
       '<script>addEventListener("load",function(){setTimeout(function(){print()},500)})<\/script></body></html>';
     const blob = new Blob([html], { type: 'text/html' });
-    const fname = (this.name || 'paper').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') + '-print.html';
+    const fname = this.fileBase() + '-print.html';
     try {
       if (this.caps.downloads) await this.caps.downloads.save({ filename: fname, data: blob });
       else {

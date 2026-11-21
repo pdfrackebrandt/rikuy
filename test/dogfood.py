@@ -7,14 +7,20 @@ caption drawn where its \\caption stands; the citation picker offering a .bib th
 name yet, and writing its bibliography in the same step; text pasted from a PDF (ligatures, Greek)
 that pdfLaTeX can set. Where dist/tex exists, what they write compiles with no error.
 
+Round two: a heading on one paragraph of an abstract of several splits the abstract around it; a
+new document's downloads are named by its title; typing is undone word by word and a heading apart
+from the paragraph after it; Enter at a paragraph's start writes no blank lines (an empty
+paragraph shows above, to type in); Undo works after a reload.
+
   python3 dogfood.py [part ...]   parts: formula arrows textfield styles table caption cite paste
+                                  split filename undo_words enter reload_undo
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import open_page, check, results, src, load_doc, click_text, ROOT
 from playwright.sync_api import sync_playwright
 
-PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste']
+PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo']
 DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
 TEX = os.path.isdir(os.path.join(DIST, 'tex')) and any(n.endswith('.wasm') for n in os.listdir(os.path.join(DIST, 'tex')))
 
@@ -202,6 +208,92 @@ def paste(page):
     put('Rule τ ≤ ε, ﬁxed.')
     s = src(page)
     check('paste: a fontspec document keeps τ, ≤ and ε', 'Rule τ ≤ ε, fixed.' in s, s[40:200])
+
+
+def split(page):
+    k = page.keyboard
+    doc = DOC.replace('Agent income here.', '\\begin{abstract}\nFirst para.\n\nSecond para.\n\nThird para.\n\\end{abstract}')
+    load_doc(page, doc)
+    click_text(page, 'Second para.', 3)
+    k.press('Control+Alt+1'); page.wait_for_timeout(300)
+    s = src(page)
+    check('split: Heading 1 on the middle paragraph of an abstract splits it around that paragraph', '\\begin{abstract}\nFirst para.\n\\end{abstract}\n\n\\section{Second para.}\n\n\\begin{abstract}\nThird para.\n\\end{abstract}' in s, s)
+    k.type('X'); page.wait_for_timeout(200)
+    check('split: the caret stays in the words', '\\section{SecXond para.}' in src(page), src(page)[40:140])
+    k.press('Control+z'); page.wait_for_timeout(200); k.press('Control+z'); page.wait_for_timeout(300)
+    check('split: undo gives the source back byte for byte', src(page) == doc, src(page))
+    click_text(page, 'Third para.', 1)
+    k.press('Control+Alt+2'); page.wait_for_timeout(300)
+    check('split: on the last paragraph the abstract ends before it', '\\begin{abstract}\nFirst para.\n\nSecond para.\n\\end{abstract}\n\n\\subsection{Third para.}\n\nSecond paragraph.' in src(page), src(page))
+    compiles(page, 'split')
+
+
+def filename(page):
+    k = page.keyboard
+    page.get_by_text('New document', exact=True).click(); page.wait_for_timeout(600)
+    k.type('Optimal Taxation: a Note', delay=10)
+    k.press('Control+Shift+S'); page.wait_for_timeout(200); k.type('Title'); page.wait_for_timeout(200); k.press('Enter'); page.wait_for_timeout(400)
+    check('filename: the project is still Untitled', page.evaluate("window.rikuy.name").startswith('Untitled'), page.evaluate("window.rikuy.name"))
+    check('filename: downloads take the title', page.evaluate("window.rikuy.fileBase()") == 'Optimal-Taxation-a-Note', page.evaluate("window.rikuy.fileBase()"))
+    if TEX:
+        with page.expect_download(timeout=90000) as d:
+            from browser import download
+            download(page, 'rb-pdf')
+        check('filename: Download PDF is Optimal-Taxation-a-Note.pdf', d.value.suggested_filename == 'Optimal-Taxation-a-Note.pdf', d.value.suggested_filename)
+    # a document of its own name keeps it
+    page.evaluate("window.rikuy.name = 'My paper'")
+    check('filename: a named document keeps its name', page.evaluate("window.rikuy.fileBase()") == 'My-paper', page.evaluate("window.rikuy.fileBase()"))
+
+
+def undo_words(page):
+    k = page.keyboard
+    doc = DOC
+    load_doc(page, doc)
+    click_text(page, 'Second paragraph.', 17)
+    k.press('Enter'); k.press('Control+Alt+1'); k.type('Model', delay=15); k.press('Enter')
+    k.type('Consider an economy.', delay=15); page.wait_for_timeout(300)
+    steps = []
+    for _ in range(6):
+        k.press('Control+z'); page.wait_for_timeout(150); steps.append(src(page))
+    want = ['Consider an \n', 'Consider \n', '\\section{Model}\n\\end', '\\section{}\n\\end', 'Second paragraph.\n\\end']
+    check('undo_words: typing is undone word by word, the heading apart from the paragraph after it', all(w in steps[i] for i, w in enumerate(want)), [x[60:] for x in steps])
+    check('undo_words: and back to the start byte for byte', steps[4] == doc, steps[4])
+
+
+def enter(page):
+    k = page.keyboard
+    load_doc(page, DOC)
+    click_text(page, 'Second paragraph.', 0)
+    for _ in range(4): k.press('Enter')
+    page.wait_for_timeout(300)
+    check('enter: Enter at a paragraph\'s start writes no blank lines', src(page) == DOC, src(page))
+    check('enter: an empty paragraph shows above it', page.evaluate("!!document.querySelector('#pages .ghostp')"))
+    k.type('Z'); page.wait_for_timeout(300)
+    check('enter: the caret stayed at the paragraph\'s start, as Word\'s', 'ZSecond paragraph.' in src(page), src(page))
+    load_doc(page, DOC)
+    click_text(page, 'Second paragraph.', 0)
+    k.press('Enter'); k.press('ArrowUp'); k.type('New one.', delay=10); page.wait_for_timeout(300)
+    check('enter: Up types in the empty paragraph', 'Agent income here.\n\nNew one.\n\nSecond paragraph.' in src(page), src(page))
+    load_doc(page, DOC)
+    click_text(page, 'Second paragraph.', 7)
+    for _ in range(3): k.press('Enter')
+    page.wait_for_timeout(300)
+    check('enter: three Enters in a paragraph split it once', 'Second \n\nparagraph.' in src(page) and '\n\n\n' not in src(page), src(page))
+
+
+def reload_undo(page):
+    k = page.keyboard
+    load_doc(page, DOC)
+    page.evaluate("window.rikuy.persist()"); page.wait_for_timeout(400)
+    click_text(page, 'Agent income here.', 18)
+    k.type(' More words.', delay=15); page.wait_for_timeout(2500)
+    before = src(page)
+    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); page.wait_for_timeout(400)
+    check('reload_undo: the text is back', src(page) == before, src(page))
+    k.press('Control+z'); page.wait_for_timeout(300)
+    check('reload_undo: Undo after a reload takes the last word', 'More \n' in src(page) and 'words.' not in src(page), src(page))
+    k.press('Control+y'); page.wait_for_timeout(300)
+    check('reload_undo: and Redo puts it back', src(page) == before, src(page))
 
 
 with sync_playwright() as p:
