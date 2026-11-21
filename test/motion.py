@@ -11,7 +11,7 @@ motion: opacity alone, 100 ms, nothing leaving, the browser's caret. Animations 
 Options): nothing. A click or a key during an animation acts at once. Motion's own callbacks
 never come near a long task, and toasts and menus make none. Typing on dev/bench/long: input to
 next paint with the animated caret on and off, alternating, the same within noise.
-Usage: python3 motion.py [tokens surfaces leaving views pdf caret clicks aim touch reduced off cost latency shots]
+Usage: python3 motion.py [tokens surfaces leaving views pdf caret clicks aim highlights touch reduced off cost latency shots]
 (shots: stills of each animation a third of the way in, and a recording, into $RIKUY_SHOTS,
 default /tmp/motion-shots)"""
 import json, os, statistics, sys, time
@@ -22,10 +22,9 @@ from playwright.sync_api import sync_playwright
 SHOTS = os.environ.get('RIKUY_SHOTS', '/tmp/motion-shots')
 DUR = {'faster': 100, 'fast': 150, 'normal': 200, 'slow': 300}
 ALLOWED = {'opacity', 'translate', 'scale', 'transform'}
-# animations of app.css that are not this task's (busy indicators, the find highlight; listed in
-# docs/handoff/FUTURE.md), and the browser's own isolation of a view transition's two pictures
-# (mix-blend-mode, constant)
-OTHERS = {'flash', 'pdfmark', 'pdfbusy', 'rb-busy', '-ua-mix-blend-mode-plus-lighter'}
+# busy indicators (a loop of --rk-loop, checked in highlights) and the browser's own isolation of a
+# view transition's two pictures (mix-blend-mode, constant)
+OTHERS = {'pdfbusy', 'rb-busy', '-ua-mix-blend-mode-plus-lighter'}
 
 # every animation the page runs, caught each frame (one that lives 100 ms is seen 6 times)
 RECORD = '''() => { if (window.__rec) return; window.__rec = []; const seen = new Set();
@@ -330,6 +329,47 @@ def aim(page):
     page.click('#rt-home'); page.wait_for_timeout(300)
 
 
+BUSY = """() => { if (!document.getElementById('t-busy')) { const d = document.createElement('div'); d.id = 't-busy';
+  d.innerHTML = '<div class="pdf-prog busy"><span></span></div><div class="pdf-mark" style="top:0;height:10px"></div>'; document.body.append(d); }
+  const svg = document.querySelector('#rb-pdf svg'); if (svg) svg.closest('#rb-pdf').setAttribute('aria-busy', 'true');
+  const a = (el) => { if (!el) return null; const c = getComputedStyle(el); return [c.animationName, c.animationDuration, c.animationDelay]; };
+  return { pulse: a(svg), sweep: a(document.querySelector('#t-busy .pdf-prog span')), mark: a(document.querySelector('#t-busy .pdf-mark')) }; }"""
+
+
+def highlights(page):
+    """review L6: where something landed, the busy indicators and SyncTeX's mark, on the tokens, off with Animations off"""
+    load_doc(page, '\\documentclass{article}\n\\begin{document}\n\\section{Alpha}\nText one.\n\n\\section{Beta}\nText two.\n\\end{document}\n')
+    page.wait_for_timeout(300)
+    n = mark(page)
+    ev(page, "(() => { const g = window.rikuy, s = g.files.get(g.main); g.goTo(g.main, s.indexOf('\\\\section{Beta}'), true); })()")
+    page.wait_for_timeout(100)
+    washes = ev(page, "document.querySelectorAll('#desk > .rk-flash').length")
+    flashed = ev(page, "[...document.querySelectorAll('#pages .flash')].map((e) => e.textContent.trim())")
+    r = since(page, n, 1400)
+    f = one(r, 'rk-flash')
+    check('a heading gone to: a wash beside the text (not in the editable page) held, then faded 300 ms, accelerating, opacity alone; nothing animates a background',
+          washes == 1 and flashed and 'Beta' in flashed[0] and shaped(f, 300, tok(page)['accelerate'], {'opacity'}) and not [x for x in r if 'background' in ' '.join(x['props']) or 'background-color' in x['props']]
+          and ev(page, "document.querySelectorAll('.rk-flash').length") == 0, (washes, flashed, r))
+    b = ev(page, BUSY)
+    check('the busy pulse and sweep run --rk-loop (1 s) each way, SyncTeX\'s mark holds --rk-hold (0.9 s) and fades 300 ms',
+          b['sweep'] == ['pdfbusy', '1s', '0s'] and b['mark'] == ['rk-gone', '0.3s', '0.9s'] and (b['pulse'] is None or b['pulse'][:2] == ['rb-busy', '1s']), b)
+    ev(page, "window.rikuy.motion.set({ anim: false })"); page.wait_for_timeout(100)
+    off = ev(page, BUSY)
+    n = mark(page)
+    ev(page, "(() => { const g = window.rikuy, s = g.files.get(g.main); g.goTo(g.main, s.indexOf('\\\\section{Alpha}'), true); })()")
+    page.wait_for_timeout(100)
+    held = ev(page, "document.querySelectorAll('#desk > .rk-flash').length")
+    r = [x for x in since(page, n, 1500) if x['id'] not in OTHERS]
+    check('Animations off: the busy states and the mark still, the wash shown, then gone at once, with nothing animated',
+          off['sweep'][0] == 'none' and off['mark'][0] == 'none' and (off['pulse'] is None or off['pulse'][0] == 'none') and held == 1 and not r and ev(page, "document.querySelectorAll('.rk-flash').length") == 0, (off, held, r))
+    ev(page, "window.rikuy.motion.set({ anim: true })")
+    page.emulate_media(reduced_motion='reduce'); page.wait_for_timeout(200)
+    red = ev(page, BUSY)
+    check('reduced motion: the busy states still, the mark fades in 100 ms', red['sweep'][0] == 'none' and red['mark'][:2] == ['rk-gone', '0.1s'] and (red['pulse'] is None or red['pulse'][0] == 'none'), red)
+    page.emulate_media(reduced_motion='no-preference'); page.wait_for_timeout(200)
+    ev(page, "(() => { document.getElementById('t-busy').remove(); const b = document.querySelector('#rb-pdf'); if (b) b.removeAttribute('aria-busy'); })()")
+
+
 def touch(p):
     """a tab a finger opens fades, without the slide (its next tap comes with no move before it)"""
     browser, page, errors = open_page(p, 1400, 900, motion=True, touch=True)
@@ -517,7 +557,7 @@ def shots(p):
     print('  stills and', out)
 
 
-SECTIONS = [('tokens', tokens), ('surfaces', surfaces), ('leaving', leaving), ('views', views), ('pdf', pdf), ('caret', caret), ('clicks', clicks), ('aim', aim), ('reduced', reduced), ('off', off), ('cost', cost), ('latency', latency)]
+SECTIONS = [('tokens', tokens), ('surfaces', surfaces), ('leaving', leaving), ('views', views), ('pdf', pdf), ('caret', caret), ('clicks', clicks), ('aim', aim), ('highlights', highlights), ('reduced', reduced), ('off', off), ('cost', cost), ('latency', latency)]
 with sync_playwright() as p:
     want = sys.argv[1:]
     browser, page, errors = open_page(p, 1400, 900, motion=True)

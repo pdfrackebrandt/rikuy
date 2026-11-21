@@ -33,7 +33,7 @@ const DEFAULTS = { anim: true, caret: true };
 export const TOKENS = {
   faster: 100, fast: 150, normal: 200, slow: 300,
   decelerate: 'cubic-bezier(0, 0, 0, 1)', accelerate: 'cubic-bezier(1, 0, 1, 1)', standard: 'cubic-bezier(0.33, 0, 0.67, 1)',
-  slide: 8, slidePane: 16, slideBackstage: 24, scaleMenu: 0.98, scaleDialog: 0.96, blink: 1060
+  slide: 8, slidePane: 16, slideBackstage: 24, scaleMenu: 0.98, scaleDialog: 0.96, blink: 1060, hold: 900
 };
 const T = { ...TOKENS };
 
@@ -93,7 +93,8 @@ function readTokens() {
     faster: ms('--rk-duration-faster', TOKENS.faster), fast: ms('--rk-duration-fast', TOKENS.fast), normal: ms('--rk-duration-normal', TOKENS.normal), slow: ms('--rk-duration-slow', TOKENS.slow),
     decelerate: v('--rk-curve-decelerate') || TOKENS.decelerate, accelerate: v('--rk-curve-accelerate') || TOKENS.accelerate, standard: v('--rk-curve-standard') || TOKENS.standard,
     slide: px('--rk-slide', TOKENS.slide), slidePane: px('--rk-slide-pane', TOKENS.slidePane), slideBackstage: px('--rk-slide-backstage', TOKENS.slideBackstage),
-    scaleMenu: num('--rk-scale-menu', TOKENS.scaleMenu), scaleDialog: num('--rk-scale-dialog', TOKENS.scaleDialog), blink: ms('--rk-caret-blink', TOKENS.blink)
+    scaleMenu: num('--rk-scale-menu', TOKENS.scaleMenu), scaleDialog: num('--rk-scale-dialog', TOKENS.scaleDialog), blink: ms('--rk-caret-blink', TOKENS.blink),
+    hold: ms('--rk-hold', TOKENS.hold)
   });
 }
 export const tokens = () => T;
@@ -125,6 +126,32 @@ export function finishAll(pdf = true) {
   for (const a of [...live]) { try { a.finish(); } catch (e) { try { a.cancel(); } catch (e2) { /* gone */ } } }
   if (vt) { try { vt.skipTransition(); } catch (e) { /* done */ } vt = null; }
   if (xf && pdf) dropOverlay();
+}
+
+// Where something landed (a heading gone to, a footnote, a found range): a wash over its boxes,
+// held --rk-hold, then faded in the slow duration, opacity alone (in reduced motion the faster
+// one; with Animations off held, then gone at once). The wash is a box of its own beside the
+// page's text, in #desk (it scrolls with the pages), never inside the editable page; the element
+// itself has the class flash meanwhile, unstyled (what was flashed, for the tests).
+export function flash(el, o = {}) {
+  if (!el || !el.isConnected) return;
+  el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), T.hold + T.slow);
+  const host = el.closest('#desk') || document.body;
+  const H = host.getBoundingClientRect(), dx = host === document.body ? scrollX : host.scrollLeft - host.clientLeft - H.left, dy = host === document.body ? scrollY : host.scrollTop - host.clientTop - H.top;
+  const boxes = (o.inline ? [...el.getClientRects()] : [el.getBoundingClientRect()]).filter((r) => r.width && r.height).slice(0, 24);
+  const m = motionMode();
+  for (const r of boxes) {
+    const w = document.createElement('div');
+    w.className = 'rk-flash';
+    w.setAttribute('aria-hidden', 'true');
+    Object.assign(w.style, { left: r.left + dx + 'px', top: r.top + dy + 'px', width: r.width + 'px', height: r.height + 'px' });
+    host.append(w);
+    if (m === 'off' || typeof w.animate !== 'function') { setTimeout(() => w.remove(), T.hold + T.slow); continue; }
+    const a = w.animate([{ opacity: 1 }, { opacity: 0 }], { id: 'rk-flash', duration: m === 'reduced' ? T.faster : T.slow, delay: T.hold, easing: T.accelerate, fill: 'both' });
+    const gone = () => w.remove();
+    a.addEventListener('finish', gone); a.addEventListener('cancel', gone);
+  }
 }
 
 // A surface that left the page fades out as a copy: the element itself is gone at once (its
