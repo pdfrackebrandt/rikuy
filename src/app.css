@@ -2,33 +2,35 @@
    pane docks on the right; one thin bar above, one status line below.
    Accent is non-repro blue, the colour editors used to mark camera-ready copy. */
 :root {
-  --desk: #DCE1E7;
-  --desk-2: #CDD4DC;
-  --chrome: #F5F7F9;
-  --panel: #FFFFFF;
-  --line: #C4CCD5;
-  --ink-ui: #18212A;
-  --mute: #5A6774;
-  --blue: #2B74B0;
-  --blue-wash: #D7E8F5;
-  --blue-ink: #1D5C91;
+  /* the short names this sheet uses, each a design token of src/tokens.css (light and dark are
+     set there, once): a theme or a brand changes that file alone */
+  --desk: var(--rk-color-desk);
+  --desk-2: var(--rk-color-desk-2);
+  --chrome: var(--rk-color-chrome);
+  --panel: var(--rk-color-panel);
+  --line: var(--rk-color-stroke);
+  --ink-ui: var(--rk-color-fg);
+  --mute: var(--rk-color-fg-2);
+  --blue: var(--rk-color-brand);
+  --blue-wash: var(--rk-color-brand-wash);
+  --blue-ink: var(--rk-color-brand-fg);
   /* the title band: Rikuy's own blue, in the tone of a word processor's title bar */
-  --title: #1A5C99;
+  --title: var(--rk-color-title);
   /* the title bar: a light blue with dark ink, the search box white with a line round it (its
      line 3:1 against the bar and the box, its text 4.5:1; consistency.py measures them) */
   --bar: #DCEAF7; --bar-ink: #13314F; --bar-mute: #3E5470; --bar-field: #FFFFFF; --bar-line: #62778D;
   --bar-hover: rgba(19, 49, 79, .09); --bar-press: rgba(19, 49, 79, .16); --file: #2B74B0;
   --field-line: #7D8A98;
-  --ribbon: #FFFFFF;
-  --tabrow: #F2F4F7;
-  --warn: #B3412C;
-  --ins-ui: #17713F;
-  --del-ui: #B3312A;
-  --paper: #FFFFFF;
-  --ink: #141414;
-  --shadow: 0 1px 2px rgba(20, 32, 44, .18), 0 8px 28px rgba(20, 32, 44, .12);
-  --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ribbon: var(--rk-color-ribbon);
+  --tabrow: var(--rk-color-tabrow);
+  --warn: var(--rk-color-danger);
+  --ins-ui: var(--rk-color-ins);
+  --del-ui: var(--rk-color-del);
+  --paper: var(--rk-color-paper);
+  --ink: var(--rk-color-ink);
+  --shadow: var(--rk-shadow-8);
+  --font-ui: var(--rk-font-ui);
+  --font-mono: var(--rk-font-mono);
   /* Chinese and Arabic in the document's text. The page's own fonts have neither, so the reader's
      system lends them: a Song (Ming) and a Naskh for the text, as the PDF's Fandol Song and Amiri
      are, a Hei for sans serif, a Fang Song for typewriter text. They come after every family the
@@ -89,30 +91,22 @@
 @font-face { font-family: "Paper CJK"; font-style: normal; font-weight: 700; src: local("FandolSong-Bold"), local("Songti SC Bold"), local("STSongti-SC-Bold"), local("Noto Serif CJK SC Bold"), local("NotoSerifCJKsc-Bold"), local("Source Han Serif SC Bold"), local("SourceHanSerifSC-Bold"), local("Source Han Serif CN Bold"), local("SourceHanSerifCN-Bold"); unicode-range: U+2E80-2FDF, U+3000-303F, U+31C0-31EF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F; }
 @font-face { font-family: "Paper CJK"; font-style: italic; font-weight: 400; src: local("FandolKai-Regular"), local("FandolKai"), local("Kaiti SC Regular"), local("STKaitiSC-Regular"), local("KaiTi"), local("STKaiti"), local("KaiTi_GB2312"), local("AR PL UKai CN"), local("AR PL KaitiM GB"), local("TW-Kai"); unicode-range: U+2E80-2FDF, U+3000-303F, U+31C0-31EF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F; }
 @font-face { font-family: "Paper CJK"; font-style: italic; font-weight: 700; src: local("Kaiti SC Bold"), local("STKaitiSC-Bold"), local("FandolKai-Regular"), local("FandolKai"), local("KaiTi"), local("STKaiti"), local("AR PL UKai CN"); unicode-range: U+2E80-2FDF, U+3000-303F, U+31C0-31EF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F; }
+/* (dark: the tokens' dark values, src/tokens.css; here the title bar's and the ink on blue, which are not tokens yet,
+   and what the browser draws itself) */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --desk: #151A20; --desk-2: #0F1318; --chrome: #1B222A; --panel: #1F2730; --line: #2E3843;
-    --ink-ui: #E2E7ED; --mute: #8D9AA8; --blue: #6AAEE3; --blue-wash: #1B3650; --blue-ink: #9CCBF0;
     --on-blue: #0B1621;
-    --title: #143E66; --ribbon: #1F2730; --tabrow: #1B222A;
     --bar: #1C2A3A; --bar-ink: #E2E7ED; --bar-mute: #B4C2D0; --bar-field: #151C24; --bar-line: #7A90A8;
     --bar-hover: rgba(255, 255, 255, .09); --bar-press: rgba(255, 255, 255, .16); --file: #1F64A3;
     --field-line: #75828F;
-    --warn: #E8806B; --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .45);
-    --ins-ui: #6FD39C; --del-ui: #F28B7D;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --desk: #151A20; --desk-2: #0F1318; --chrome: #1B222A; --panel: #1F2730; --line: #2E3843;
-  --ink-ui: #E2E7ED; --mute: #8D9AA8; --blue: #6AAEE3; --blue-wash: #1B3650; --blue-ink: #9CCBF0;
   --on-blue: #0B1621;
-  --title: #143E66; --ribbon: #1F2730; --tabrow: #1B222A;
   --bar: #1C2A3A; --bar-ink: #E2E7ED; --bar-mute: #B4C2D0; --bar-field: #151C24; --bar-line: #7A90A8;
   --bar-hover: rgba(255, 255, 255, .09); --bar-press: rgba(255, 255, 255, .16); --file: #1F64A3;
   --field-line: #75828F;
-  --warn: #E8806B; --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .45);
-  --ins-ui: #6FD39C; --del-ui: #F28B7D;
   color-scheme: dark;
 }
 
@@ -192,12 +186,10 @@ body.has-ai .ai-only { display: inline-flex !important; }
 /* the tabs' row; contextual tabs (a table's, an equation's) in their own colour, after Help */
 .rb-top { display: flex; align-items: flex-end; gap: 2px; height: 28px; padding: 0 6px 0 8px; background: var(--tabrow); flex: none; }
 .rb-tab.on { font-weight: 600; }
-:root { --ctx: #7A3FA8; --tab-on: var(--title); }
+:root { --ctx: var(--rk-color-context); --tab-on: var(--title); }
 /* (the open tab's name in the title band's blue is lost on a dark ribbon: there in the light blue) */
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --tab-on: var(--blue-ink); } }
 :root[data-theme="dark"] { --tab-on: var(--blue-ink); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ctx: #C59BE8; } }
-:root[data-theme="dark"] { --ctx: #C59BE8; }
 .rb-tabs { display: flex; align-items: flex-end; gap: 0; min-width: 0; }
 .rb-tab { position: relative; flex: none; height: 26px; padding: 0 12px; border: 0; border-radius: 4px 4px 0 0; background: transparent; color: var(--mute); font: 500 13px var(--font-ui); cursor: pointer; white-space: nowrap; }
 .rb-tab:hover { color: var(--ink-ui); background: color-mix(in srgb, var(--blue-wash) 50%, transparent); }
@@ -550,9 +542,7 @@ body.file-open #rp-file .rf-back span { display: inline !important; }
 .rb.rb-dl1 .rb-dl #rb-dl-menu { display: inline-flex; }
 .rb-lab { font-size: 12px; color: var(--mute); margin-right: 4px; }
 /* the PDF being made: its arrow pulses (the name stays as wide as it was) */
-#rb-pdf[aria-busy="true"] svg { animation: rb-busy .9s ease-in-out infinite alternate; }
-@keyframes rb-busy { from { opacity: 1; } to { opacity: .25; } }
-@media (prefers-reduced-motion: reduce) { #rb-pdf[aria-busy="true"] svg { animation: none; opacity: .5; } }
+/* (its pulse while busy: src/motion.css, on the motion tokens) */
 /* the LaTeX download keeps live graphs live: a mark says so when the document has some */
 /* The downloads as a group of Word's, with a mouse from 900 px: PDF, Word and LaTeX as small
    buttons one under another in the three rows the laid out groups have, each its own page (the
@@ -631,8 +621,7 @@ body.pdf-on #pdfpane { display: flex; }
 @media (max-width: 1280px) { .pdf-shell { font-size: 0; gap: 0; } .pdf-shell::after { content: 'Shell'; font-size: 11.5px; margin-left: 3px; } }
 .pdf-prog { height: 3px; background: color-mix(in srgb, var(--blue) 18%, transparent); flex: none; overflow: hidden; }
 .pdf-prog span { display: block; height: 100%; width: 0; background: var(--blue); }
-.pdf-prog.busy span { width: 35% !important; animation: pdfbusy 1.1s ease-in-out infinite; }
-@keyframes pdfbusy { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+/* (busy, its sweep: src/motion.css) */
 .pdf-msg { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); padding: 8px 12px; font: 12.5px/1.45 var(--font-ui); background: color-mix(in srgb, var(--warn) 10%, var(--panel)); color: var(--ink-ui); cursor: pointer; flex: none; }
 .pdf-msg.ok { background: var(--panel); cursor: default; color: var(--mute); }
 .pdf-msg b { color: var(--warn); font-weight: 600; }
@@ -640,8 +629,7 @@ body.pdf-on #pdfpane { display: flex; }
 .pdf-pages { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .pdf-page { position: relative; background: #fff; box-shadow: var(--shadow); flex: none; cursor: pointer; }
 .pdf-page canvas { display: block; }
-.pdf-mark { position: absolute; left: 0; right: 0; background: color-mix(in srgb, var(--blue) 22%, transparent); border-left: 3px solid var(--blue); pointer-events: none; animation: pdfmark .3s ease-out 1.3s forwards; }
-@keyframes pdfmark { from { opacity: 1; } to { opacity: 0; } }
+.pdf-mark { position: absolute; left: 0; right: 0; background: color-mix(in srgb, var(--blue) 22%, transparent); border-left: 3px solid var(--blue); pointer-events: none; }
 .pdf-empty { padding: 28px 16px; font: 13.5px/1.5 var(--font-ui); color: var(--ink-ui); max-width: 440px; margin: 0 auto; }
 .pdf-empty p { margin: 0; }
 .pdf-empty b { color: var(--ink-ui); font-weight: 600; }
@@ -687,8 +675,10 @@ body.pdf-on #pdfpane { display: flex; }
 .sheet[data-font="sans"] { --font-doc: "Helvetica Neue", Helvetica, Arial, sans-serif, var(--font-ar-sf), var(--font-he-sf), var(--font-cjk-sf), var(--font-in-sf), var(--font-th-sf), var(--font-si-sf); }
 /* pages centre by their auto margins, not align-items: a page zoomed wider than the window then
    overflows to the right, where it scrolls, instead of losing its left side off screen */
-#pages { outline: none; caret-color: #1E6BAA; display: flex; flex-direction: column; align-items: flex-start; gap: 22px; }
-.page { margin: 0 auto; position: relative; width: var(--pw); height: var(--ph); background: var(--paper); color: var(--ink); box-shadow: var(--shadow); flex: none; content-visibility: auto; contain-intrinsic-size: auto var(--pw) auto var(--ph); contain: layout style paint; }
+#pages { outline: none; caret-color: var(--rk-color-caret); display: flex; flex-direction: column; align-items: flex-start; gap: 22px; }
+.page { margin: 0 auto; position: relative; width: var(--pw); height: var(--ph); background: var(--paper); color: var(--ink); box-shadow: var(--shadow); flex: none; contain: layout style paint; }
+/* (only the pages near the view drawn, in a document too big to draw whole: App.lazyPages) */
+#pages.lazy .page { content-visibility: auto; contain-intrinsic-size: auto var(--pw) auto var(--ph); }
 .pb { position: absolute; left: var(--ml); top: var(--mt); width: var(--tw); height: var(--th); display: flex; flex-direction: column; }
 .flow { font-size: var(--fs); line-height: var(--lh); text-align: justify; text-wrap: pretty; hyphens: auto; -webkit-hyphens: auto; font-kerning: normal; font-variant-ligatures: common-ligatures; overflow-wrap: break-word; }
 .folio { position: absolute; left: var(--ml); width: var(--tw); top: calc(var(--mt) + var(--th) + var(--footskip) - var(--fs)); text-align: center; font-size: var(--fs); line-height: 1; user-select: none; }
@@ -845,7 +835,7 @@ body.pdf-on #pdfpane { display: flex; }
    drawn here, not in the page's text, so it is never selected or copied; its spoken form is
    empty, the paragraph says "LaTeX paragraph" itself. The box keeps its look when the PDF view's
    colours or the dark theme change: it sits on the paper. */
-.it.tex { white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; hyphens: manual; -webkit-hyphens: manual; text-align: left; text-indent: 0 !important; text-wrap: wrap; font-family: var(--font-doc-tt); font-size: .86em; line-height: 1.42; font-variant-ligatures: none; tab-size: 4; color: #1F2933; background: #F4F6F8; border-radius: 4px; box-shadow: inset 2px 0 0 #C6D0DA; padding: .4em .75em .5em .85em; caret-color: #2B74B0; }
+.it.tex { white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; hyphens: manual; -webkit-hyphens: manual; text-align: left; text-indent: 0 !important; text-wrap: wrap; font-family: var(--font-doc-tt); font-size: .86em; line-height: 1.42; font-variant-ligatures: none; tab-size: 4; color: #1F2933; background: #F4F6F8; border-radius: 4px; box-shadow: inset 2px 0 0 #C6D0DA; padding: .4em .75em .5em .85em; caret-color: var(--rk-color-caret-tex); }
 .it.tex::before { content: "LaTeX" / ""; display: block; font: 600 10px/1.2 var(--font-ui); letter-spacing: .05em; color: #56626E; margin-bottom: .35em; white-space: normal; user-select: none; pointer-events: none; }
 .it.tex.split-b::before { content: none; }
 .it.tex.split-a { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
@@ -943,7 +933,7 @@ body.pdf-on #pdfpane { display: flex; }
 .wgate:hover { box-shadow: none; }
 .w-run { pointer-events: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink-ui); font: 500 12px/1.4 var(--font-ui); padding: 4px 10px; cursor: pointer; box-shadow: 0 2px 8px rgba(10, 20, 30, .15); }
 .w-run:hover { border-color: var(--blue); }
-.w-src { position: absolute; top: 4px; right: 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 500 11px/1.4 var(--font-mono); padding: 1px 6px; cursor: pointer; opacity: 0; transition: opacity .1s; }
+.w-src { position: absolute; top: 4px; right: 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 500 11px/1.4 var(--font-mono); padding: 1px 6px; cursor: pointer; opacity: 0; transition: opacity var(--rk-duration-faster) var(--rk-curve-standard); }
 .wbox:hover .w-src, .w-src:focus-visible { opacity: 1; }
 @media (hover: none) { .w-src { opacity: .85; } }
 .a-logo { white-space: nowrap; }
@@ -952,9 +942,6 @@ body.pdf-on #pdfpane { display: flex; }
 .lg-sc { font-variant: small-caps; text-transform: lowercase; }
 .lg-rev { display: inline-block; transform: scaleX(-1); vertical-align: -.22em; margin: 0 -.06em; }
 .mac { }
-/* (the place a jump landed on, marked for as long as the class stays: a still mark, no fade of its
-   background, since only opacity and transform are animated, UI-PRINCIPLES.md M3) */
-.flash { background-color: rgba(43, 116, 176, .22); }
 .ghostp { outline: 1px dashed rgba(43, 116, 176, .45); outline-offset: 2px; min-height: var(--lh); }
 #pages.stale { opacity: .45; }
 /* the caret's hint, on the white page (dark page below). #3E4C59 on white is past 7:1;
@@ -1320,7 +1307,6 @@ body.nav-on.nav-wide #nav { width: 340px; }
   .page { box-shadow: none !important; margin: 0 !important; break-after: page; break-inside: avoid; content-visibility: visible !important; contain: none !important; }
   .page:last-child { break-after: auto; }
   .has-err, .ghostp { outline: none !important; }
-  .flash { background-color: transparent !important; }
 }
 
 /* sharing and comments (src/collab.js) */
@@ -1485,7 +1471,7 @@ body.guest #b-new, body.guest #b-sample { display: none; }
 .nv-row .nav-item[draggable="true"], .nv-txt[draggable="true"] { cursor: pointer; }
 .nv-tog { flex: none; width: 20px; height: 26px; padding: 0; border: 0; background: transparent; color: var(--mute); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .nv-tog.none { cursor: default; }
-.nv-tog svg { width: 11px; height: 11px; fill: currentColor; stroke: none; transform: rotate(90deg); transition: transform .1s; }
+.nv-tog svg { width: 11px; height: 11px; fill: currentColor; stroke: none; transform: rotate(90deg); transition: transform var(--rk-duration-faster) var(--rk-curve-standard); }
 .nv-tog[aria-expanded="false"] svg { transform: none; }
 .nv-tog:hover { color: var(--ink-ui); }
 .nv-txt { flex: 1 1 auto; min-width: 0; text-align: left; border: 0; background: transparent; color: var(--mute); padding: 4px 10px 4px 2px; font: 12.5px/1.4 var(--font-doc, Georgia, serif); cursor: pointer; }
@@ -1513,7 +1499,7 @@ body.guest #b-new, body.guest #b-sample { display: none; }
 .nv-page:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .nv-pg { position: relative; overflow: hidden; background: #fff; border-radius: 2px; box-shadow: 0 1px 4px rgba(0, 0, 0, .2); pointer-events: none; }
 .nv-pgc { position: absolute; left: 0; top: 0; transform-origin: 0 0; padding: 0 !important; pointer-events: none; }
-.nv-pgc .page { margin: 0; box-shadow: none; content-visibility: visible; }
+.nv-pgc .page { margin: 0; box-shadow: none; }
 /* the Outline view: the panel wide enough for the text under the headings */
 body.nav-on.nav-outline #nav { width: 460px; }
 @media (max-width: 860px) { body.nav-on.nav-outline #nav { width: min(94vw, 460px); } }
@@ -1657,10 +1643,6 @@ body.nav-on.nav-outline #nav { width: 460px; }
 .split-view { flex: 1 1 50%; min-height: 0; overflow: auto; position: relative; background: inherit; outline: none; }
 .split-view .split-pages { display: flex; flex-direction: column; align-items: flex-start; gap: 22px; cursor: text; }
 .split-view:focus-visible { box-shadow: inset 0 0 0 2px var(--blue); }
-/* (G2) Update Table and Update Index: the list flashes where it stands, rebuilt */
-/* (a still mark for as long as the class stays, 1.4 s, as .flash: only opacity and transform are
-   animated, UI-PRINCIPLES.md M3) */
-#pages .rk-updated { background-color: rgba(43, 116, 176, .22); }
 /* (G2) the equation in Word's linear format, a text to type in */
 .pop textarea.pop-lin { font: 15px/1.5 var(--font-doc, serif); }
 .pop .pop-lin-note { font-size: 12px; color: var(--mute); margin: 2px 0 4px; }
@@ -2227,13 +2209,13 @@ body.dark-page .page { box-shadow: 0 0 0 1px #343C46, 0 8px 28px rgba(0, 0, 0, .
 body.dark-page .sheet .it.tex { background: #262C33; color: #D9DEE4; box-shadow: inset 2px 0 0 #4B5866; }
 body.dark-page .sheet .it.tex::before { color: #9AA7B4; }
 body.dark-page .sheet .it.tex.texview { background: #1C2C3B; box-shadow: inset 2px 0 0 var(--blue); }
-body.dark-page #pages { caret-color: #8CC4F2; }
+body.dark-page #pages { caret-color: var(--rk-color-caret-dark-page); }
 @media print { body.dark-page .sheet { --paper: #fff; --ink: #141414; } }
 
 /* Focus: the page alone */
 body.focus #bar, body.focus #rb-top, body.focus #ribbon, body.focus #status, body.focus #nav, body.focus #srcpane, body.focus #pdfpane, body.focus #gutter { display: none !important; }
 body.focus #desk { display: block !important; }
-.focus-x { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); right: 14px; z-index: 40; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: 15px; background: var(--chrome); color: var(--mute); font-size: 12.5px; cursor: pointer; opacity: .55; transition: opacity .15s; }
+.focus-x { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); right: 14px; z-index: 40; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: 15px; background: var(--chrome); color: var(--mute); font-size: 12.5px; cursor: pointer; opacity: .55; transition: opacity var(--rk-duration-fast) var(--rk-curve-standard); }
 .focus-x:hover, .focus-x:focus-visible { opacity: 1; color: var(--ink-ui); }
 .focus-x svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 
@@ -2377,7 +2359,7 @@ textarea.gd-in { resize: vertical; line-height: 1.4; }
 }
 /* a graph on the page: Edit graph beside the LaTeX tab, shown as the LaTeX tab is (on a touch
    screen always), at its own size whatever the page's zoom (--ws: the box's scale) */
-.w-edit { position: absolute; top: 4px; right: 54px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 500 11px/1.4 var(--font-ui); padding: 1px 7px; cursor: pointer; opacity: 0; transition: opacity .1s; transform: scale(calc(1 / var(--ws, 1))); transform-origin: top right; }
+.w-edit { position: absolute; top: 4px; right: 54px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 500 11px/1.4 var(--font-ui); padding: 1px 7px; cursor: pointer; opacity: 0; transition: opacity var(--rk-duration-faster) var(--rk-curve-standard); transform: scale(calc(1 / var(--ws, 1))); transform-origin: top right; }
 .wbox:hover .w-edit, .wbox.sel .w-edit, .w-edit:focus-visible { opacity: 1; }
 .wbox .w-src { transform: scale(calc(1 / var(--ws, 1))); transform-origin: top right; }
 /* a graph's two sit above its top edge, outside the figure: inside, they covered the sliders'
@@ -2584,7 +2566,6 @@ html.pic-drag, html.pic-drag body { touch-action: none; overscroll-behavior: non
 .it.en-enotez .en-n { position: absolute; inset-inline-end: 100%; padding-inline-end: .35em; white-space: nowrap; }
 .it.en-endnotes { text-indent: 1.8em; }
 .it.en-endnotes .en-n { font-size: .72em; vertical-align: .62em; line-height: 0; padding-inline-end: .1em; }
-.atom.a-en.flash, .a-fn.flash, .it.en-e.flash { background: color-mix(in srgb, var(--blue) 25%, transparent); }
 /* the dialogs: lists to pick from, the Link dialog's choice of target, a source's fields */
 .pop.pop-refs { width: min(500px, calc(100vw - 16px)); }
 .pop-refs .refs-list { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; padding: 3px; }
@@ -2749,7 +2730,7 @@ html.pic-moving, html.pic-moving * { cursor: grabbing !important; }
 /* the triangles beside the headings: over the page, never in it (src/cmd/find.js foldPaint) */
 .fold-layer { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 2; }
 .fold-tg { position: absolute; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #7A8794; display: grid; place-items: center; cursor: pointer; }
-.fold-tg svg { width: 14px; height: 14px; fill: currentColor; stroke: none; transition: transform .1s; }
+.fold-tg svg { width: 14px; height: 14px; fill: currentColor; stroke: none; transition: transform var(--rk-duration-faster) var(--rk-curve-standard); }
 .fold-tg.shut svg { transform: rotate(-90deg); }
 .fold-tg.shut { color: var(--blue); }
 @media (hover: hover) { .fold-tg:hover { background: var(--blue-wash); color: var(--blue-ink); } body.dark-page .fold-tg:hover { background: #2A3440; } }
@@ -2757,7 +2738,7 @@ html.pic-moving, html.pic-moving * { cursor: grabbing !important; }
 @media (pointer: coarse) { .fold-tg { width: 44px; height: 44px; } .fold-tg svg { width: 18px; height: 18px; } }
 /* Web Layout: one sheet as wide as the window, no foot, no header, footer or page numbers */
 body.pg-web #pages { gap: 0; }
-body.pg-web .page { height: auto; min-height: 60vh; box-shadow: 0 0 0 1px var(--line); content-visibility: visible; contain: layout style; }
+body.pg-web .page { height: auto; min-height: 60vh; box-shadow: 0 0 0 1px var(--line); contain: layout style; }
 body.pg-web .page + .page { border-top: 1px dashed #9AA6B2; }
 body.pg-web .pb { position: relative; left: auto; top: auto; margin: var(--mt) var(--ml); height: auto; }
 body.pg-web .page .hd, body.pg-web .page .ft, body.pg-web .page .folio, body.pg-web .page .lnum { display: none !important; }

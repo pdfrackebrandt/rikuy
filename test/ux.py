@@ -1019,10 +1019,12 @@ def motion(page, w):
     asked for, the PDF's busy bar stands still, the outline's triangles turn at once and the PDF
     pane does not glide. (CodeMirror's own blink is the source editor's caret.)"""
     m = page.evaluate(MOTION)
-    kf = {k: v for k, v in m['kf'].items() if k != 'blink' and not set(v) <= {'opacity', 'transform'}}
+    # (scale, translate and rotate are transform's own properties: motion.css's dialog scales by one)
+    TF = {'opacity', 'transform', 'scale', 'translate', 'rotate'}
+    kf = {k: v for k, v in m['kf'].items() if k != 'blink' and not set(v) <= TF}
     check(f'every animation moves opacity or transform only ({w})', not kf and m['kf'], kf or m['kf'])
     ok = lambda d: all(x.strip().endswith('ms') and int(float(x.strip()[:-2])) % 50 == 0 and 50 <= float(x.strip()[:-2]) <= 300 or x.strip().endswith('s') and not x.strip().endswith('ms') and round(float(x.strip()[:-1]) * 1000) % 50 == 0 and 0.05 <= float(x.strip()[:-1]) <= 0.3 for x in d.split(','))
-    bad = [t for t in m['tr'] if not set(x.strip() for x in t[1].split(',')) <= {'opacity', 'transform'} or not ok(t[2])]
+    bad = [t for t in m['tr'] if not set(x.strip() for x in t[1].split(',')) <= TF or not ok(t[2])]
     check(f'every transition moves opacity or transform, in 50 to 300 ms by steps of 50 ({w})', not bad, bad)
     page.emulate_media(reduced_motion='reduce')
     load_doc(page, DOC)

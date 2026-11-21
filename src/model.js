@@ -297,6 +297,28 @@ const SMART_RESET_RE = /\s*\\smartdiagramset\s*\{\s*set color list=\{red!40,cyan
 const SMART_BACK_RE = /\s*\\smartdiagramset\s*\{(?:[^{}]|\{[^{}]*\})*\}% rikuy: colours back/y;
 function smartEnd(src, e) { SMART_BACK_RE.lastIndex = e; if (SMART_BACK_RE.test(src)) return SMART_BACK_RE.lastIndex; SMART_RESET_RE.lastIndex = e; return SMART_RESET_RE.test(src) ? SMART_RESET_RE.lastIndex : e; }
 
+// An optional argument written as text at the start of nodes ("[a)] Lab", "[\\textbf{b)}] Bold"):
+// { o, s, e, is, ie, nodes } as the parser gives one, taken out of nodes; null when nodes do not
+// start with [ or no ] closes it before a paragraph ends (a par node; LaTeX's first ] outside
+// braces ends it, and a ] inside a group is inside another node).
+function bracketArg(nodes, src) {
+  const n0 = nodes[0];
+  if (!n0 || n0.t !== 'text' || src[n0.s] !== '[') return null;
+  const kids = [];
+  for (let i = 0; i < nodes.length && i < 64; i++) {
+    const n = nodes[i], from = i === 0 ? n0.s + 1 : n.s;
+    if (n.t !== 'text') { if (n.t === 'par') return null; kids.push(n); continue; }
+    // (looked for inside this node only: a stranger's slides with many \item<1>[ and no ] made
+    // every item read to the document's end)
+    const k = src.slice(from, n.e).indexOf(']'), j = k < 0 ? -1 : from + k;
+    if (j < 0) { if (n.e > from) kids.push({ ...n, s: from }); continue; }
+    if (j > from) kids.push({ ...n, s: from, e: j });
+    nodes.splice(0, i + 1, ...(j + 1 < n.e ? [{ ...n, s: j + 1 }] : []));
+    return { o: true, s: n0.s, e: j + 1, is: n0.s + 1, ie: j, nodes: kids };
+  }
+  return null;
+}
+
 export function buildModel(project, hint) {
   if (hint && hint.labels) {
     if (INCR.on) {
@@ -871,10 +893,10 @@ class Builder {
       else if (nd.name === 'definecolor') this.defColor(nd, c);
       else if (nd.name === 'usepackage' || nd.name === 'RequirePackage') {
         for (const p of this.argText(c, nd.args[1]).split(',')) {
-          if (this.files.has(p.trim() + '.sty')) this.preFile(p.trim() + '.sty', true);
+          if (this.styFile(p.trim())) this.preFile(this.styFile(p.trim()), true);
           // (the project's own class or package may load what lays out the page or sets its sheet)
           if (p.trim() === 'geometry') this.geometry(this.argText(c, nd.args[0]));
-          if (!this.files.has(p.trim() + '.sty') && setsMedia(p.trim(), optsOf(this.argText(c, nd.args[0])))) this.opts.media = true;
+          if (!this.styFile(p.trim()) && setsMedia(p.trim(), optsOf(this.argText(c, nd.args[0])))) this.opts.media = true;
         }
       } else if (/^(newcommand|providecommand|newenvironment|DeclareMathOperator|newtheorem|theoremstyle|numberwithin)$/.test(nd.name) &&
         !(nd.def && (nd.def.bs < 0 || /@/.test(c.src.slice(nd.s, nd.def.bs > 0 ? nd.def.bs : nd.e))))) this.defCmd(nd, c);
@@ -965,7 +987,7 @@ class Builder {
             // (sorting=none and the styles that number in citation order: ieee, nature, chem-*, phys)
             if (/\bsorting\s*=\s*none\b/.test(op) || /\bstyle\s*=\s*(ieee|nature|chem-acs|chem-angew|chem-rsc|phys)\b/.test(op) && !/\bsorting\s*=/.test(op)) O.bibUnsorted = true;
           }
-          if (this.files.has(p + '.sty')) this.preFile(p + '.sty', true);
+          if (this.styFile(p)) this.preFile(this.styFile(p), true);
           if (p === 'apacite' || p === 'harvard' || p === 'chicago') { O.natbib = true; O.forceAY = true; }
           if (p === 'setspace') { /* spacing commands handled separately */ }
           if (p === 'floatrow') O.floatAlign = 'center';
@@ -981,7 +1003,7 @@ class Builder {
           if (p === 'geometry') this.geometry(op);
           // what sets the PDF's sheet to LaTeX's paper: without any of it TeX Live's sheet is A4
           // (src/pagesrc.js mediaSet)
-          if (!this.files.has(p + '.sty') && setsMedia(p, optsOf(op))) O.media = true;
+          if (!this.styFile(p) && setsMedia(p, optsOf(op))) O.media = true;
           // (typearea's paper is A4 where the class's options give none)
           if (p === 'typearea' && !O.paperByClass) O.paper = 'a4';
           if (p === 'babel') {
@@ -1196,6 +1218,23 @@ class Builder {
     } else if (nd.name === 'numberwithin') {
       this.within[A(1).trim()] = A(2).trim();
     }
+  }
+
+  // A name as TeX reads it, from the main file's folder (\input{../common/defs} in talk/slides.tex
+  // is common/defs), as the project names it; null for one that leaves the project.
+  fromMain(name) {
+    const main = (this.project && this.project.main) || '';
+    const parts = [];
+    for (const p of (main.slice(0, main.lastIndexOf('/') + 1) + name).split('/')) {
+      if (p === '' || p === '.') continue;
+      if (p === '..') { if (!parts.length) return null; parts.pop(); } else parts.push(p);
+    }
+    return parts.join('/');
+  }
+  // the project's package file \usepackage{name} loads (name.sty from the main file's folder), or null
+  styFile(name) {
+    const rel = name && this.fromMain(name + '.sty');
+    return rel && this.files.has(rel) ? rel : name && this.files.has(name + '.sty') ? name + '.sty' : null;
   }
 
   // from: the file whose \input, \include or \subfile (sub) names it; the rule the project-wide
@@ -2511,6 +2550,21 @@ class Builder {
     for (const n of nd.nodes) {
       if (n.t === 'cmd' && n.name === 'item') { cur = { cmd: n, nodes: [] }; items.push(cur); }
       else if (cur) cur.nodes.push(n);
+    }
+    // beamer's overlay specification (\item<2->, \item<+->[label]) says on which slides an item
+    // shows: the page draws every item and leaves it out of the text, its source untouched
+    if (this.opts.cls === 'beamer') {
+      for (const it of items) {
+        const n = it.nodes[0];
+        const m = n && n.t === 'text' ? /^<[^<>\n]{1,60}>[ \t]*/.exec(ctx.src.slice(n.s, n.e)) : null;
+        if (!m) continue;
+        if (n.s + m[0].length < n.e) it.nodes[0] = { ...n, s: n.s + m[0].length }; else it.nodes.shift();
+        // \item<+->[a)]: the parser reads \item's [label] only right after its name, so after an
+        // overlay it stayed text, drawn as "[a)] Lab" beside a bullet (review N2): made the item's
+        // optional argument here, as the parser makes it
+        const arg = it.cmd.args[0] ? null : bracketArg(it.nodes, ctx.src);
+        if (arg) it.cmd = { ...it.cmd, e: arg.e, args: [arg] };
+      }
     }
     // What labels and numbers it, as TeX reads it (src/lists.js, which the list commands share):
     // its options (enumitem's label=, start=, resume, nosep; the enumerate package's "(a)"), its
