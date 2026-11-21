@@ -31,12 +31,15 @@ def wait_pdf(page, timeout=180):
 # What ended the page, if the run stops part way: the page navigated (nothing a document does may
 # do that) or its renderer crashed (the TeX worker runs in it). Playwright reports both, to a call
 # waiting on the page, as "Execution context was destroyed, most likely because of a navigation":
-# any protocol error that is not the page's own becomes that message (CI on ab27d09)
+# any protocol error that is not the page's own becomes that message (CI on ab27d09). A new
+# document in the page is what counts: framenavigated fires for history.replaceState as well (the
+# page drops a #share= or #tex= from its address so), which keeps the document (review of
+# 2badc1f, I2), so the new document's DOMContentLoaded is what is noted.
 ended = []
 try:
     with sync_playwright() as p:
         browser, page, errors = open_page(p, width=1500, height=950)
-        page.on('framenavigated', lambda f: ended.append('the page navigated to ' + f.url[:120]) if f == page.main_frame else None)
+        page.on('domcontentloaded', lambda pg: ended.append('the page navigated: a new document at ' + pg.url[:120]))
         page.on('crash', lambda: ended.append('the page crashed (its renderer, with the TeX worker in it)'))
         page.click('#b-pdf')
         st = wait_pdf(page)
