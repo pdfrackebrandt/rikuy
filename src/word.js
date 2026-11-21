@@ -9,6 +9,7 @@ import { pageForWord } from './pageword.js';
 import { checkData, planImport, unpackRead } from './wordsync.js';
 import { loadPdfjs } from './pdfview.js';
 import { kvGet, kvPut } from './store.js';
+import { cleanProjectName } from './collab.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const WORD = typeof __RIKUY_WORD__ === 'undefined' ? true : __RIKUY_WORD__;
@@ -245,8 +246,10 @@ export const word = {
   },
 
   async openWordProject(r, fname, note = '') {
-    const name = fname.replace(/\.docx$/i, '').split('/').pop() || 'Word document';
     if (this.base) { await this.snapshot('Before opening another project', { force: !this.lastSig }); await this.stashBinary(); }
+    // (a name of its own, as a .zip gets: a stranger's thesis.docx under the user's own thesis
+    // shared its versions and marks, V1)
+    const name = await this.freeProjectName(cleanProjectName(fname.replace(/\.docx$/i, '').split('/').pop(), 'Word document'));
     const files = new Map([['main.tex', r.tex]]);
     if (r.bib) files.set('references.bib', r.bib);
     // a stranger's Word file is content from someone else, as a .zip is

@@ -17,6 +17,11 @@ const MAX_ADDRESS = 2 * 1024 * 1024;
 
 const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
 
+const importId = () => Date.now().toString(36) + '-' + Array.from(crypto.getRandomValues(new Uint32Array(2)), (x) => x.toString(36)).join('');
+// a project's name from a file's or an address's (no |, as Rename makes sure: this browser keeps a
+// project's records under name|main file; no control characters)
+export const cleanProjectName = (s, dflt = 'Untitled') => String(s || '').replace(/[\u0000-\u001F\u007F|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || dflt;
+
 // Of two marks (a stranger's project: shell escape restricted unless allowed, live figures waiting
 // unless allowed; null for one's own), the one that lets less run: any mark over none, and what
 // each allows only where both allow it. The same object back when it is already the stricter.
@@ -249,9 +254,11 @@ export const collab = {
     }
     return this.linkCache.get(k);
   },
+  // (id: this import's own, kept by the copies carryLink makes under the project's other main
+  // files: an Allow given under one of them lifts only marks of the same import, V1)
   markFromLink(by, name = this.name, main = this.main, origin = 'link') {
     const k = name + '|' + main;
-    const v = { by, t: Date.now(), allowed: false, origin };
+    const v = { by, t: Date.now(), allowed: false, origin, id: importId() };
     this.linkCache = this.linkCache || new Map();
     this.linkCache.set(k, v);
     if (!this.noIdb) kvPut('link:' + k, v).catch(() => {});
@@ -261,8 +268,14 @@ export const collab = {
   // a stranger's document (a version of another project kept under the same name, a branch or a
   // pull that brought another main file), so what the project had here never loosens it: no mark
   // never deletes one there, nor does an Allow given here lift a restriction there (review I1).
-  carryLink(mark, main, there) {
-    const k = this.name + '|' + main, v = stricterMark(mark, there);
+  // fresh: the copy is a mark of its own (an import id of its own): a version opened under the
+  // project's name may hold another import's files (a clone or a .zip opened under that name before
+  // names were kept apart), so an Allow given there must not reach this import's other marks (V1).
+  // File, Main document and a pull keep the id: the files are the same ones.
+  carryLink(mark, main, there, fresh = false) {
+    const k = this.name + '|' + main;
+    let v = stricterMark(mark, there);
+    if (fresh && v && v !== there) v = { ...v, id: importId() };
     this.linkCache = this.linkCache || new Map();
     this.linkCache.set(k, v);
     if (v && v !== there && !this.noIdb) kvPut('link:' + k, v).catch(() => {});
@@ -286,20 +299,55 @@ export const collab = {
   },
   // What the owner allows (shell escape, live figures) is for the project's files as they are
   // now, whichever of its documents is the main one: the marks kept under its other documents
-  // get it too, so switching the main document, which keeps the stricter of two marks, does not
-  // take it back. The mark here, or null when there is none (or another project opened meanwhile).
+  // from the same import (the same id: a .zip, a clone, a link, and the copies carryLink made of
+  // its mark) get it too, so switching the main document, which keeps the stricter of two marks,
+  // does not take it back. A mark of another import kept under the same name (a stranger's
+  // repository cloned under the name of the user's own project before names were kept apart), or
+  // one from before marks had ids, is never lifted by this Allow (V1). The mark here, or null when
+  // there is none (or another project opened meanwhile).
   async allowMark(field) {
     const name = this.name, main = this.main;
     const others = (this.mainDocs ? this.mainDocs() : []).filter((d) => d !== main);
     const marks = await Promise.all([main, ...others].map((d) => this.markOf(name, d)));
-    if (!marks[0] || this.name !== name || this.main !== main) return null;
+    const here = marks[0];
+    if (!here || this.name !== name || this.main !== main) return null;
+    let out = here;
     [main, ...others].forEach((d, i) => {
       const m = marks[i];
-      if (!m || m[field]) return;
-      m[field] = true;
-      if (!this.noIdb) kvPut('link:' + name + '|' + d, m).catch(() => {});
+      if (!m || m[field] || (i && !(here.id && m.id === here.id))) return;
+      // (a new object: a read of storage under way in freshMark sees that the mark changed)
+      const v = { ...m, [field]: true };
+      if (!i) out = v;
+      this.linkCache.set(name + '|' + d, v);
+      if (!this.noIdb) kvPut('link:' + name + '|' + d, v).catch(() => {});
     });
-    return marks[0];
+    return out;
+  },
+  // The mark as storage has it now, read again: another tab of this browser may have marked the
+  // project as holding a stranger's files since this tab read it (an archive dropped there), and
+  // its text comes here (adoptOtherTab) and compiles here (V2). A mark this tab made meanwhile
+  // meets it as carryLink's do: the stricter of the two.
+  async freshMark(name = this.name, main = this.main) {
+    if (this.noIdb) return this.markOf(name, main);
+    const k = name + '|' + main;
+    this.linkCache = this.linkCache || new Map();
+    const before = this.linkCache.get(k);
+    let v;
+    try { v = (await kvGet('link:' + k)) || null; } catch (e) { return this.markOf(name, main); }
+    const now = this.linkCache.get(k);
+    if (now !== before) v = stricterMark(now, v);
+    this.linkCache.set(k, v);
+    return v;
+  },
+  // a name this browser keeps no project under (Review, Versions' and the open one's), as
+  // "thesis (2)": a project from someone else (a .zip, a clone, a Word file) never takes the name
+  // of the user's own, whose marks and versions are kept under it (I1, V1)
+  async freeProjectName(want) {
+    const kept = new Set((await this.allSnaps()).map((v) => v.name));
+    kept.add(this.name);
+    let name = want;
+    for (let k = 2; kept.has(name); k++) name = want + ' (' + k + ')';
+    return name;
   },
   async allowShellHere() {
     if (!(await this.allowMark('allowed'))) return;
