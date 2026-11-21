@@ -4,11 +4,12 @@ import { buildModel, INCR } from './model.js';
 import { Renderer, BLOCKS, esc, widgetCss } from './render.js';
 import { Layout, geometry } from './layout.js';
 import {
-  posFromDom, CaretIndex, segOfSpan, atomOfEl, styOfEl, visibleRanges, escapeTeX, textToTeX,
+  posFromDom, CaretIndex, segOfSpan, atomOfEl, styOfEl, visibleRanges, escapeTeX, textToTeX, withPdfText,
   endsWithControlWord, isBalanced, diff, stepStart, stepJoin, boundary, clusterEdge, sourceEdge, backspaceUnits
 } from './editor.js';
 import { SAMPLE } from './sample.js';
 import { splitRows, parseJS, scanUserSigs, setNativeParse } from './parser.js';
+import { mathNeeds } from './ui/eqtab.js';
 import { installWordTyping, wordShortcuts, makeDialect, classifyMacros, resolveCommand, PACKAGES, WORD_GROUPS, FIELD_MACROS, fieldValue, modelValue } from './wordmath.js';
 import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
@@ -24,7 +25,7 @@ import { APP, appInit, asset as appAsset, registerApp, takeLaunches, takeShared,
 const PLACEHOLDER_PDF = 'JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAzMjAgMjQwXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCA+PiA+PgplbmRvYmoKNCAwIG9iago8PCAvTGVuZ3RoIDUxID4+CnN0cmVhbQowLjg1IGcgMCAwIDMyMCAyNDAgcmUgZiAwLjYgRyAyIHcgMSAxIDMxOCAyMzggcmUgUwplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA1CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDU4IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDIxOSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDUgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjMxOQolJUVPRgo=';
 const PLACEHOLDER_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAAAAACRn/EaAAAACXBIWXMAAAAjAAAAIwHV9BZdAAAADklEQVR42mO4CQQMcAIATFkKLSVMoyAAAAAASUVORK5CYII=';
 const PLACEHOLDER_EPS = '%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 320 240\n0.85 setgray 0 0 320 240 rectfill\n0.6 setgray 2 setlinewidth 1 1 318 238 rectstroke\nshowpage\n';
-import { texToPlain, shortAuthors, entryYear } from './bib.js';
+import { texToPlain, shortAuthors, entryYear, parseBib } from './bib.js';
 import { kvGet, kvPut, kvDel, kvSwap, decodeText, encodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
 import { changes, spacingOnly } from './diff.js';
 import { TeXEngine, parseTeXLog } from './tex.js';
@@ -53,7 +54,7 @@ import { installWebMcp } from './webmcp.js';
 import { TOOLS, agentTools, callTool as callAgentTool, describeCommand } from './agent.js';
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
-import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf } from './styles.js';
+import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, titleInfo } from './styles.js';
 import { eolAt } from './blockenv.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
@@ -386,6 +387,20 @@ function fromField(v, st) {
   return lines.join(' \\\\\n');
 }
 
+// What the equation field is given, set as math. MathLive's setValue inserts in the mode at its
+// caret, and after a value whose caret ends in \text{...} every later value went in as one text
+// run: the LaTeX box's `a \text{s.t.} c` showed as \text{a \textbackslash text...}, and the next
+// key typed in the field wrote that run back into the source.
+const MATH_VALUE = { silenceNotifications: true, mode: 'math', format: 'latex' };
+
+// at most this much of Undo's steps is kept across a reload (App.historyKept)
+const HIST_BYTES = 2e6;
+
+// What stands before a paragraph's first word when the caret there is at its start: a blank line,
+// or the line of a \begin{...} (the document, a quote, a theorem with its [title]), a heading or
+// \maketitle; then any comment lines and a \noindent, which belong to the paragraph below them
+// (group 1: the new paragraph goes before them, src/app.js enter)
+const PARA_START = /(?:\n[ \t]*\n|\\begin\s*\{[^{}\n]*\}(?:\[[^\]\n]*\])?[ \t]*\n|\\(?:part|chapter|section|subsection|subsubsection|paragraph)\*?\s*\{[^\n]*\}[ \t]*\n|\\maketitle[ \t]*\n)((?:[ \t]*%[^\n]*\n)*[ \t]*(?:\\noindent(?![A-Za-z])[ \t]*(?:\n[ \t]*)?)?)$/;
 // whether the last thing the person did was a key or a press, as html.rk-keys: the focus rings
 // follow it where the code moves the focus (a menu's first item, File's Back), since the
 // browser's own guess, :focus-visible, differs between Chromium's versions there
@@ -520,6 +535,15 @@ class App {
       this.main = saved.main || this.files.keys().next().value;
       this.name = saved.name || this.main;
       this.zipDirty = !!saved.zipDirty;
+      // (Undo's steps, written with this very copy of the project: historyKept)
+      try {
+        const H = await kvGet('history');
+        if (H && H.t === (saved.hT ?? saved.t) && H.name === this.name && H.main === this.main && Array.isArray(H.hist)) {
+          const live = (x) => ({ ...x, open: false, before: null, win: null, after: null });
+          this.hist = H.hist.map(live);
+          this.redoStack = (H.redo || []).map(live);
+        }
+      } catch (e) { /* the text loads without them */ }
       try {
         const bin = await kvGet('binary');
         if (bin) {
@@ -531,6 +555,7 @@ class App {
     } else this.loadSample();
     this.bindUI();
     this.applyPrefs();
+    this.updateUndoUI();
     // the installed app (hosted build only): its service worker, updates, the offline marks
     if (__RIKUY_APP__ && appInit().on) registerApp(this);
     await this.waitForKaTeX();
@@ -1215,7 +1240,14 @@ class App {
     const now = Date.now();
     const top = this.hist[this.hist.length - 1];
     const contiguous = top && top.caretAfter && cb && top.caretAfter.f === cb.f && Math.abs(top.caretAfter.p - cb.p) <= 2;
-    if (top && top.open && kind && top.kind === kind && now - top.time < 2000 && (kind !== 'type' && kind !== 'del' || contiguous)) {
+    // Typing is undone word by word, as Word's: a step is a word with the spaces after it (a space
+    // typed first goes with the word after it), and a new paragraph starts one. A heading's words
+    // and the paragraph typed after it, or a sentence of 40 words, went in one Ctrl+Z.
+    const typed = kind === 'type' && top && files.length === 1 ? files[0].ins : null;
+    const prev = typed != null ? (this.files.get(files[0].f) || '')[files[0].s - 1] || '' : '';
+    const had = typed != null ? ((top.files.find((d) => d.f === files[0].f) || {}).ins || '') : '';
+    const newWord = typed != null && (/\n/.test(typed) || (/\s/.test(prev) && /^\S/.test(typed) && /\S/.test(had)));
+    if (top && top.open && kind && top.kind === kind && now - top.time < 2000 && (kind !== 'type' && kind !== 'del' || contiguous) && !newWord) {
       // (what every edit of the step left alone is the least of what each left alone, for the files
       // nothing changed between its commits: src/editor.js stepJoin)
       stepJoin(top, before, (f) => this.files.get(f), win);
@@ -1236,6 +1268,35 @@ class App {
 
   closeGroup() { const top = this.hist[this.hist.length - 1]; if (top) { top.open = false; top.before = null; top.win = null; top.after = null; } }
 
+  // The undo and redo steps as IndexedDB keeps them across a reload: what each changed and where
+  // the caret was, the newest first back to a step that holds pictures or Track Changes' base
+  // (kept in memory only), at most 2 MB in all (HIST_BYTES: a character of text is two bytes,
+  // as a string is held; 2e6 characters were 4 MB). Word loses its undo when the file closes; a
+  // browser tab is closed by accident, and the steps are small.
+  historyKept(meta) {
+    // (Undo's steps first, the newest first; Redo's in what is left)
+    let size = 0;
+    const keep = (list) => {
+      const out = [];
+      for (let i = list.length - 1; i >= 0; i--) {
+        const h = list[i];
+        if ((h.blobs && h.blobs.length) || h.base0 || h.base1) break;
+        const n = h.files.reduce((m, d) => m + 2 * (d.f.length + d.del.length + d.ins.length) + 64, 160);
+        if (size + n > HIST_BYTES) break;
+        size += n;
+        out.unshift({ kind: h.kind, files: h.files.map((d) => ({ f: d.f, s: d.s, del: d.del, ins: d.ins, ...(d.made ? { made: true } : {}) })), caretBefore: h.caretBefore || null, caretAfter: h.caretAfter || null, time: h.time, abs: h.abs });
+      }
+      return out;
+    };
+    return { t: meta.t, name: meta.name, main: meta.main, hist: keep(this.hist), redo: keep(this.redoStack) };
+  }
+  // What the steps are now, cheaply: persist writes them only when this changed (a save came
+  // every few seconds of typing, and wrote up to 2 MB of steps each time)
+  historySig() {
+    const top = (l) => { const h = l[l.length - 1]; return h ? h.time + ':' + h.files.reduce((n, d) => n + d.s + ':' + d.del.length + ':' + d.ins.length + ';', '') : ''; };
+    return [this.name, this.main, this.hist.length, top(this.hist), this.redoStack.length, top(this.redoStack)].join('|');
+  }
+
   undo() {
     // (nothing stays selected across a change of the text: its offsets would be stale)
     this.disarm();
@@ -1243,8 +1304,11 @@ class App {
     // Ctrl+Z right after typing undoes that typing instead of wiping it
     if (this.srcRebuild.pending()) this.srcRebuild.flush();
     this.closePop(true);
+    // (an empty paragraph Enter showed is a step of its own: takeBackGhost)
+    if (this.takeBackGhost('undo')) return;
     const h = this.hist.pop();
     if (!h) { this.toast('Nothing to undo'); return; }
+    if (!this.stepFits(h, true)) return;
     h.open = false; h.before = null; h.win = null; h.after = null;
     const was = new Map(h.files.map((d) => [d.f, this.files.get(d.f) ?? '']));
     for (const d of h.files) { const t = this.files.get(d.f) ?? ''; this.files.set(d.f, t.slice(0, d.s) + d.del + t.slice(d.s + d.ins.length)); if (d.made && !this.files.get(d.f)) this.files.delete(d.f); }
@@ -1268,6 +1332,7 @@ class App {
     const h = this.redoStack.pop();
     // nothing to redo: Ctrl+Y repeats the last command at the caret, as Word's does (src/cmd/view.js)
     if (!h) { if (!this.repeatLast()) this.toast('Nothing to redo'); return; }
+    if (!this.stepFits(h, false)) return;
     const was = new Map(h.files.map((d) => [d.f, this.files.get(d.f) ?? '']));
     for (const d of h.files) { const t = this.files.get(d.f) ?? ''; this.files.set(d.f, t.slice(0, d.s) + d.ins + t.slice(d.s + d.del.length)); }
     for (const b of h.blobs || []) this.setAsset(b.name, b.after);
@@ -1280,6 +1345,25 @@ class App {
     this.pushToSource();
     this.saveSoon();
     this.updateUndoUI();
+  }
+  // A step is applied only to the text it made (undo) or the text it was undone to (redo): each
+  // file's text at its place must be what the step put there. A file replaced outside the
+  // history (opened over by another of its name, before that was a step: openFiles) had its
+  // coauthor's text cut at the old offsets with no word, and since the steps are kept across a
+  // reload (historyKept) for as long as they last. Where one does not fit, every step goes, as
+  // none can be trusted to fit either.
+  stepFits(h, back) {
+    const ok = h.files.every((d) => {
+      if (!this.files.has(d.f)) return !back && !!d.made;
+      const t = this.files.get(d.f), want = back ? d.ins : d.del;
+      return d.s >= 0 && t.slice(d.s, d.s + want.length) === want;
+    });
+    if (ok) return true;
+    // (what is kept across a reload goes at the next save; until then a reload meets this again)
+    this.hist = []; this.redoStack = [];
+    this.updateUndoUI();
+    this.toast('The text changed outside Undo\'s history, so ' + (back ? 'Undo' : 'Redo') + ' would not fit it. The history is cleared; Review, Versions keeps earlier copies.', 8000);
+    return false;
   }
   updateUndoUI() { $('#b-undo').disabled = !this.hist.length; $('#b-redo').disabled = !this.redoStack.length; if ($('#b-undo-x')) $('#b-undo-x').disabled = !this.hist.length; }
 
@@ -1589,14 +1673,19 @@ class App {
     const src = this.src(f);
     const slice = src.slice(a, b);
     if (/^\s+$/.test(slice)) {
-      if ((slice.match(/\n/g) || []).length >= 2) return [{ f, s: a, e: b, t: ' ' }];
+      // (a blank line still on either side, where an empty paragraph's text went: no paragraphs
+      // join, and a space put there stood at the end of the paragraph before; review V8)
+      const apart = /\n[ \t\r]*\n[ \t\r]*$/.test(src.slice(Math.max(0, a - 100), a)) || /^[ \t\r]*\n[ \t\r]*\n/.test(src.slice(b, b + 100));
+      if (!apart && (slice.match(/\n/g) || []).length >= 2) return [{ f, s: a, e: b, t: ' ' }];
       return [{ f, s: a, e: b, t: '' }];
     }
     // Only comment lines between two paragraphs (a note, a review comment): joining them takes
     // out the blank lines alone. The comments are text nobody sees on the page, and the line
-    // break left before them keeps a space between the two paragraphs' words.
-    if (/^(?:\s|%[^\n]*\n)+$/.test(slice) && /\n[ \t]*\n/.test(slice)) {
-      const lines = slice.split('\n');
+    // break left before them keeps a space between the two paragraphs' words. A \noindent that
+    // began the second paragraph goes too: in the middle of one it does nothing. (It was taken
+    // with the comments as any text, and the words met with no space: "words.Second".)
+    if (/^(?:\s|%[^\n]*\n|\\noindent(?![A-Za-z]))+$/.test(slice) && /\n[ \t]*\n/.test(slice)) {
+      const lines = slice.split('\n').map((l) => (/^[ \t]*%/.test(l) ? l : l.replace(/\\noindent(?![A-Za-z])[ \t]*/g, '')));
       // (a LaTeX paragraph's mark goes too: the paragraph it marked joins the one before, as text)
       const mark = (l) => /^[ \t]*%[ \t]*rikuy:[ \t]*latex[ \t]*\r?$/.test(l);
       const kept = lines.filter((l, i) => i === 0 || (i === lines.length - 1 ? !mark(l) : l.trim() !== '' && !mark(l)));
@@ -1638,6 +1727,9 @@ class App {
 
   insertText(data, range) {
     if (!data) return;
+    // (typed over the mark of the empty paragraph Enter showed: that paragraph goes, and the
+    // letters go where Enter left the caret, as Word's; ghostOver)
+    if (!range && this.ghostOver()) this.takeBackGhost('back');
     const whole = range ? null : this.wholeDoc();
     if (whole) { this.replaceBody(whole, escapeTeX(data, ' '), 'replace'); return; }
     const c = this.caretNow();
@@ -1695,10 +1787,11 @@ class App {
 
   deleteInput(type, ranges) {
     const c = this.caretNow();
+    // (an empty paragraph Enter showed: takeBackGhost)
+    if (this.takeBackGhost(/Backward/.test(type) ? 'back' : 'del')) return;
     if (c && c.ghost) {
       // the spaces typed so far in a line or a paragraph to come in LaTeX go one by one
       if (/Backward/.test(type) && this.ghost.pend) { this.ghost.pend = this.ghost.pend.slice(0, -1); this.paintGhost(); return; }
-      if (/Backward/.test(type) && !this.ghost.sticky) { const g = this.ghost; this.removeGhost(); this.restoreCaret({ f: g.f, p: g.pos, bias: g.tex === 'before' ? 1 : -1 }); }
       return;
     }
     const whole = this.wholeDoc();
@@ -1855,6 +1948,10 @@ class App {
   enter(soft) {
     const c = this.caretNow();
     if (!c) return;
+    // A second Enter where the first left the caret at a paragraph's start: a second empty
+    // paragraph above it, as Word's, and one Backspace or Undo takes one away (review V2). The
+    // first was shown again in its place, so a second Backspace joined the two paragraphs.
+    if (!soft && this.ghost && this.ghost.keepAt && this.ghostKept()) { this.ghost.n = (this.ghost.n || 1) + 1; this.ghostLines(); this.enterAct(); return; }
     if (c.ghost) { if (this.ghost.tex) this.texGhostEnter(); return; }
     const T = this.texHere();
     if (T && c.f === T.f) { this.texEnter(T, c); return; }
@@ -1879,14 +1976,14 @@ class App {
       // Enter in the title, an author or the date starts the text below them, after \maketitle
       // (it did nothing, so a document with a title alone had no way to its first paragraph)
       const B = itemEl && BLOCKS.get(+itemEl.dataset.b);
-      if (B) this.showGhost(itemEl, B.f, B.e);
+      if (B) { this.showGhost(itemEl, B.f, B.e); this.enterAct(); }
       return;
     }
     if (kind === 'h') {
       const B = itemEl && BLOCKS.get(+itemEl.dataset.b);
       // the \label on the heading's next line stays with the heading: the new paragraph goes after it
       const lab = B && /^\s*\\label\s*\{[^}]*\}/.exec(src.slice(B.e));
-      if (B) this.showGhost(itemEl, f, B.e + (lab ? lab[0].length : 0));
+      if (B) { this.showGhost(itemEl, f, B.e + (lab ? lab[0].length : 0)); this.enterAct(); }
       return;
     }
     if (kind === 'li' && itemEl && itemEl.dataset.li) {
@@ -1917,9 +2014,22 @@ class App {
     // Paragraph: at end -> ghost paragraph; otherwise split
     if (c.collapsed && itemEl && this.atItemEnd(itemEl, sel)) {
       this.showGhost(itemEl, f, p);
+      this.enterAct();
       return;
     }
     const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
+    // At a paragraph's start, where a blank line already stands before it: Word makes an empty
+    // paragraph, which LaTeX has not, and each Enter piled blank lines up in the source (twelve
+    // Enters, twelve). The empty paragraph shows above it, to type in (Up), the caret staying, as
+    // Word's does; nothing is written until it is.
+    const ps = c.collapsed && !w.close && itemEl && kind === 'p' ? PARA_START.exec(src.slice(Math.max(0, w.p - 400), w.p)) : null;
+    if (ps) {
+      const keep = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+      this.showGhost(itemEl, f, w.p - ps[1].length, { before: true });
+      if (keep) { sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true; if (this.ghost) this.ghost.keepAt = keep; }
+      this.enterAct();
+      return;
+    }
     const ins = w.close + '\n\n' + w.open;
     // a break moved before a wrapper leaves the caret at the start of its text, still inside it
     this.commit([...edits, { f, s: w.p, e: w.p, t: ins }], { f, p: Math.max(w.p, p) + ins.length, bias: 1 }, 'enter');
@@ -1977,9 +2087,66 @@ class App {
     this.scrollToCaret();
   }
   removeGhost() { if (this.ghost) { const g = this.ghost; this.ghost = null; g.el.remove(); if (g.restore) g.restore(); } }
+  // the caret where Enter at a paragraph's start left it, the empty paragraph showing above it
+  ghostKept() {
+    const k = this.ghost && this.ghost.keepAt, sel = getSelection();
+    return !!k && sel.rangeCount > 0 && sel.isCollapsed && sel.anchorNode === k.startContainer && sel.anchorOffset === k.startOffset;
+  }
+  // From that caret into the empty paragraph above it (Shift+Left, Shift+Up): its mark selected,
+  // as Word's, which Backspace or Delete takes away alone (review V3). The empty paragraph went
+  // as the selection left the caret, and the Backspace after it joined the two paragraphs.
+  // (Chromium gives the selection's ends as places in the page's blocks, not in their text: a
+  // selection over it and no words is that one)
+  ghostOver() {
+    const g = this.ghost, sel = getSelection();
+    if (!g || !g.keepAt || !g.el.isConnected || !sel.rangeCount || sel.isCollapsed || !this.root.contains(sel.anchorNode)) return false;
+    const r = sel.getRangeAt(0);
+    return r.intersectsNode(g.el) && !r.toString().replace(/[\u200B\s]/g, '');
+  }
+  // one empty paragraph per Enter (enter): those after the first as lines above it
+  ghostLines() { const g = this.ghost; if (g) g.el.style.paddingTop = g.n > 1 ? 'calc(' + (g.n - 1) + ' * var(--lh))' : ''; }
+  // Enter that showed an empty paragraph is an action, as typing is: nothing is left to redo
+  // after it, as in Word (review V9: Ctrl+Y brought back an edit undone before the Enter)
+  enterAct() { if (this.redoStack.length) { this.redoStack = []; this.updateUndoUI(); } this.lastAct = null; }
+  // The one rule for taking back an empty paragraph Enter showed (enter, showGhost). It wrote
+  // nothing, so until something is typed in it, it is Enter's whole effect, and Backspace, Delete
+  // and Undo take it away and do nothing else, as Word's Enter then Backspace or Ctrl+Z gives
+  // back exactly what was there. Before, Backspace acted on the caret Enter had left at the next
+  // paragraph's start and deleted the blank line before it, joining two paragraphs; Undo undid
+  // the edit made before the Enter. how: 'back' (Backspace), 'del' (Delete) or 'undo'. True
+  // where it took one away.
+  takeBackGhost(how) {
+    const g = this.ghost;
+    // (the blank page's own paragraph is no Enter's)
+    if (!g || g.sticky) return false;
+    const inIt = this.root.contains(getSelection().anchorNode) && g.el.contains(getSelection().anchorNode);
+    const kept = this.ghostKept(), over = !kept && this.ghostOver();
+    if (how !== 'undo') {
+      // Backspace and Delete in it or on its selected mark, or Backspace at the caret Enter left
+      // below it; spaces waiting in a line to come go one by one first (deleteInput)
+      if (g.pend || !(inIt || over || (kept && how === 'back'))) return false;
+      // (Delete in the empty paragraph above a paragraph: the caret goes to that paragraph's start)
+      if (how === 'del' && !(g.before || g.tex === 'before')) return false;
+    }
+    const back = () => { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(g.keepAt); this.ourSel = true; };
+    // (of several Enters' empty paragraphs, one goes: review V2)
+    if (g.n > 1 && !g.pend) {
+      g.n--; this.ghostLines();
+      if (over) back();
+      this.ribbonSoon();
+      return true;
+    }
+    this.removeGhost();
+    if (kept || over) back();
+    // (Backspace in it ends at the paragraph above, Delete and Undo at the place it stood for)
+    else this.restoreCaret({ f: g.f, p: g.pos, bias: g.tex === 'before' || (how !== 'back' && (g.before || how === 'del')) ? 1 : -1 });
+    this.ribbonSoon();
+    return true;
+  }
   // what is typed in the blank paragraph or line is LaTeX source, written as it is
   ghostRaw() { return !!this.ghost && (!!this.ghost.tex || this.ghost.style === 'latex'); }
-  ghostInsert(tex) {
+  // extra: edits of the same step (the packages a paste needs, src/app.js pastePackages)
+  ghostInsert(tex, extra = []) {
     const g = this.ghost;
     if (g.tex) { this.texGhostInsert(tex); return; }
     // Spaces alone after the mark would make a blank line, which marks nothing: they wait in
@@ -2004,7 +2171,8 @@ class App {
     const pre = g.pos === 0 ? '' : '\n'.repeat(Math.max(0, 2 - nlB));
     const post = g.pos >= src.length ? '' : '\n'.repeat(Math.max(0, 2 - nlA));
     this.removeGhost();
-    this.commit([{ f: g.f, s: g.pos, e: g.pos, t: pre + open + tex + close + post }], { f: g.f, p: g.pos + pre.length + open.length + tex.length, bias: -1 }, 'type');
+    const grew = extra.filter((x) => x.f === g.f && x.s <= g.pos).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
+    this.commit([...extra, { f: g.f, s: g.pos, e: g.pos, t: pre + open + tex + close + post }], { f: g.f, p: g.pos + grew + pre.length + open.length + tex.length, bias: -1 }, 'type');
   }
 
   // ---- LaTeX paragraphs (src/styles.js) ----------------------------------------------
@@ -2312,16 +2480,20 @@ class App {
     const inline = inArg || (!whole && !!(el && el.closest && el.closest('td, .it.h, .cap')));
     const pre = this.src(this.main).split(/\\begin\s*\{document\}/)[0];
     const o = { prev: src[at0 - 1] || ' ', hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*hyperref/.test(pre), booktabs: /\\usepackage(\[[^\]]*\])?\{[^}]*booktabs/.test(pre), inlineOnly: inline };
-    const rich = () => {
+    // (a PDF's ligatures as letters; its Greek and symbols as formulas where pdfLaTeX compiles it: escapeTeX)
+    const pdfText = !this.textEngine().unicode;
+    // (a preamble that sets Greek up for pdfLaTeX's text: Greek pasted there stays letters)
+    const greekSet = /\\usepackage\s*\[[^\]]*\b(greek|polutonikogreek|LGR)\b[^\]]*\]\s*\{(babel|fontenc)\}|\\usepackage\s*(\[[^\]]*\])?\s*\{[^}]*\b(textgreek|alphabeta|teubner|greektex|lgrx)\b|\\DeclareUnicodeCharacter\s*\{0?3[9AaBbCc][0-9A-Fa-f]\}|\\newunicodechar\s*\{[\u0370-\u03FF]\}/.test(pre);
+    const rich = () => withPdfText(pdfText, () => {
       if (plainOnly) return textToTeX(plain, o.prev);
       let t = '';
       if (html && /<[a-z]/i.test(html)) { try { t = htmlToTeX(html, o); } catch (err) { t = ''; } }
       if (!t.trim()) t = plainToTeX(plain, o.prev, o);
       if (inline) t = t.replace(/\s*\n\s*\n\s*/g, ' ').replace(/\n/g, ' ');
       return t;
-    };
-    if (c.ghost) { this.ghostInsert(latex || rich()); return; }
-    if (whole) { this.replaceBody(whole, latex || rich(), 'paste'); return; }
+    }, { greek: !greekSet });
+    if (c.ghost) { const t = latex || rich(); this.ghostInsert(t, this.pastePackages(t)); return; }
+    if (whole) { const t = latex || rich(), pk = this.pastePackages(t); this.replaceBody(whole, t, 'paste'); if (pk.length) this.commit(pk, null, 'paste'); return; }
     const edits = this.deletionEdits(c.f, c.a, c.b);
     const at = edits.length && edits[0].s >= c.a ? edits[0].s : c.a;
     // (landing in a LaTeX paragraph from a selection that started outside it: as source)
@@ -2330,7 +2502,8 @@ class App {
     if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!raw && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
     const removedBefore = edits.filter((ed) => ed.e <= at).reduce((s, ed) => s + (ed.e - ed.s), 0);
-    this.commit([...edits, { f: c.f, s: at, e: at, t }], { f: c.f, p: at - removedBefore + t.length }, 'paste');
+    const pk = raw ? [] : this.pastePackages(t), grew = pk.filter((x) => x.f === c.f && x.s <= at).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
+    this.commit([...edits, { f: c.f, s: at, e: at, t }, ...pk], { f: c.f, p: at - removedBefore + t.length + grew }, 'paste');
     // LaTeX source pasted as text got its backslashes escaped: offer to keep it as LaTeX
     if (!latex && !plainOnly && t !== plain && /\\[A-Za-z]+/.test(plain) && /\\textbackslash\{\}|\\\$/.test(t)) {
       const pos = { f: c.f, s: at - removedBefore, len: t.length, raw: plain };
@@ -2386,7 +2559,9 @@ class App {
   onSelChange() {
     const sel = getSelection();
     const inRoot = sel.rangeCount && this.root.contains(sel.anchorNode);
-    if (this.ghost && !this.ghost.sticky && !(inRoot && this.ghost.el.contains(sel.anchorNode))) {
+    // (an empty paragraph Enter showed above the caret stays while the caret is where Enter left it)
+    const kept = this.ghostKept() || this.ghostOver();
+    if (this.ghost && !this.ghost.sticky && !kept && !(inRoot && this.ghost.el.contains(sel.anchorNode))) {
       // keep ghost while focus is in the popover; drop otherwise
       if (!this.pop) this.removeGhost();
     }
@@ -2650,11 +2825,35 @@ class App {
   }
   // force: for a box that would refuse (a formula's text that cannot be written, see
   // openMath) when another popover is opening over it; its text is then written as it is
+  // An arrow out of a formula in the line (attachField's move-out): Right puts the caret after it,
+  // Left before it, as Word's arrows leave an equation. A new formula still empty closes as Esc.
+  // how: 'arrow', 'extend' (Shift with it: the formula selected and the selection on by one
+  // character, as Word's), 'tab' (forward). In a paragraph that runs right to left, Right leaves on
+  // the formula's left, which is its logical start (review E8).
+  leaveMath(d, how = 'arrow') {
+    const P = this.pop;
+    if (!P) return;
+    const it = P.anchor && P.anchor.closest ? P.anchor.closest('.it') : null;
+    const rtl = P.rtl != null ? P.rtl : !!(it && getComputedStyle(it).direction === 'rtl');
+    if (rtl && how !== 'tab') d = d === 'forward' ? 'backward' : 'forward';
+    P.leftBy = d;
+    P.extend = how === 'extend';
+    this.closePop();
+  }
   closePop(silent, force) {
     if (!this.pop) return;
     const P = this.pop;
+    // (the equation field's last keys, which MathLive has not told its input yet: attachField)
+    if (P.pullField) P.pullField();
     if (!force && P.refuse && P.refuse()) return;
     if (P.onClose) { try { P.onClose(); } catch (e) { console.error(e); } }
+    // (left by Left at its start: the caret before the formula, where it stands once written; with
+    // Shift, the formula selected, the selection going on past it)
+    if (P.leftBy && P.anchorPos && P.returnCaret && P.returnCaret.p != null) {
+      const f0 = P.anchorPos.f, s0 = P.anchorPos.s, e0 = P.returnCaret.p;
+      if (P.extend) P.returnCaret = P.leftBy === 'backward' ? { f: f0, selA: e0, selB: s0, extendBy: 'backward' } : { f: f0, selA: s0, selB: e0, extendBy: 'forward' };
+      else if (P.leftBy === 'backward') P.returnCaret = { f: f0, p: s0, bias: -1 };
+    }
     if (P.mathText) { try { this.ensurePackages(P.mathText(), P); } catch (e) { console.error(e); } }
     if (P.wordTyping) P.wordTyping.destroy();
     try { if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) window.mathVirtualKeyboard.hide(); } catch (e) { /* ignore */ }
@@ -2668,7 +2867,10 @@ class App {
     }
     P.el.remove();
     this.closeGroup();
-    if (!silent && P.returnCaret) this.restoreCaret(P.returnCaret);
+    if (!silent && P.returnCaret) {
+      this.restoreCaret(P.returnCaret);
+      if (P.returnCaret.extendBy) try { getSelection().modify('extend', P.returnCaret.extendBy, 'character'); } catch (e) { /* the formula alone stays selected */ }
+    }
     // Opened from a blank paragraph and closed with nothing made, or a document that so far
     // holds only what the popover made (a first formula) and has no text to put the caret in:
     // the caret goes to the blank paragraph, so typing goes on
@@ -2719,8 +2921,25 @@ class App {
 
   // A few Word symbols need a package beyond amsmath and amssymb (\\llbracket needs stmaryrd).
   // Add the \\usepackage line once, in the same undo step as the equation edit.
-  ensurePackages(tex, P) {
+  // The packages what was pasted needs (\mathbb from a chat assistant's formula, amssymb's): in the
+  // paste's own step, so Undo takes them with it. Pasted, \mathbb stopped TeX with "Undefined
+  // control sequence", where the equation field adds the package for it.
+  pastePackages(t) {
+    // (only what stands in formulas: \mathbb in the text is no command of amssymb's)
     const need = new Set();
+    for (const m of String(t).matchAll(/\$\$?((?:[^$\\]|\\[\s\S])+)\$\$?|\\\[([\s\S]*?)\\\]|\\\(([\s\S]*?)\\\)/g)) {
+      const x = m[1] || m[2] || m[3] || '';
+      for (const p of mathNeeds(x)) need.add(p);
+      x.replace(/\\([A-Za-z]+)/g, (q, n) => { if (PACKAGES[n]) need.add(PACKAGES[n]); return q; });
+    }
+    if (!need.size) return [];
+    const f = this.main, src = this.src(f), others = this.preambleOthers();
+    return usePackages(src, [...need].filter((x) => !hasPackage(src, x, undefined, others)), { others }).map((x) => ({ f, ...x }));
+  }
+  ensurePackages(tex, P) {
+    // (amssymb's \mathbb and the like too, as the Equation tab adds them: typed in the field they
+    // were written with no package, and TeX stopped at them)
+    const need = new Set(mathNeeds(tex));
     String(tex).replace(/\\([A-Za-z]+)/g, (m, n) => { if (PACKAGES[n]) need.add(PACKAGES[n]); return m; });
     if (!need.size) return;
     const f = this.main;
@@ -2819,7 +3038,7 @@ class App {
     // read back how the field writes each one so it can be folded back to its name.
     const canon = {};
     for (const [k, d] of Object.entries(ops)) {
-      try { mf.setValue(d, { silenceNotifications: true }); canon[k] = modelValue(mf) || d; } catch (e) { canon[k] = d; }
+      try { mf.setValue(d, MATH_VALUE); canon[k] = modelValue(mf) || d; } catch (e) { canon[k] = d; }
     }
     let fieldMacros = [];
     try { fieldMacros = Object.keys(mf.macros).filter((k) => /^[A-Za-z]+$/.test(k) && !canon[k]); } catch (e) { fieldMacros = Object.keys(plain); }
@@ -2846,7 +3065,7 @@ class App {
     const same = window.katex ? makeSame(window.katex, strMacros, !!opts.display, R.si ? (t) => siInMath(t, R.si.opts, R.si.units, R.si.lang) : null) : null;
     let st = toField(ta.value, opts.display, opts.env(), D);
     st.same = same;
-    mf.setValue(st.latex, { silenceNotifications: true });
+    mf.setValue(st.latex, MATH_VALUE);
     st.ml = fieldRows(modelValue(mf), st.multi, D);
     // A formula the field cannot hold as written (an array with *{n}{c} columns, a command it
     // does not know) would come back changed after the first keystroke: keep it as source.
@@ -2873,7 +3092,7 @@ class App {
       if (fromMf) return;
       st = toField(ta.value, opts.display, opts.env(), D);
       st.same = same;
-      if (mf.getValue('latex') !== st.latex) mf.setValue(st.latex, { silenceNotifications: true });
+      if (mf.getValue('latex') !== st.latex) mf.setValue(st.latex, MATH_VALUE);
       st.ml = fieldRows(modelValue(mf), st.multi, D);
     };
     ta.addEventListener('input', sync);
@@ -2898,11 +3117,50 @@ class App {
       decimalComma,
       baseDepth: () => (st.multi ? 1 : 0)
     });
+    // MathLive tells its input a moment after the key: a formula typed fast and closed at once
+    // (x, Enter) closed the box empty and was lost. What the field holds is read into the LaTeX
+    // box first, whatever closes it.
+    const pull = () => {
+      try {
+        const tex = fromField(fieldValue(mf), st);
+        if (tex !== ta.value) { fromMf = true; ta.value = tex; ta.dispatchEvent(new Event('input')); fromMf = false; }
+      } catch (e) { /* as it was */ }
+    };
+    P.pullField = pull;
     mf.addEventListener('keydown', (e) => {
       if (wt.active() || mf.mode === 'latex') return;
-      if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); opts.onEscape(); }
-      else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) { e.preventDefault(); e.stopImmediatePropagation(); opts.onEnter(); }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); pull(); opts.onEscape(); }
+      else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) { e.preventDefault(); e.stopImmediatePropagation(); pull(); opts.onEnter(); }
     }, true);
+    // Right at a formula's end, Left at its start: the caret leaves it, as Word's does; the words
+    // typed next went into the formula, their spaces lost ($ihasincome$). Only in a formula in the
+    // line: in a display the arrows stay in it.
+    if (opts.onMoveOut) {
+      // The keys that leave a formula: Right and Left (with Shift, the selection goes on out of it,
+      // as Word's), and Tab at its end, which Word takes as leaving forward. Shift+Tab goes on to
+      // the LaTeX box. MathLive sends move-out for all of them, Tab's leap and Shift+Tab's too.
+      let key = null;
+      mf.addEventListener('keydown', (e) => {
+        const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
+        key = plain && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') ? (e.shiftKey ? 'extend' : 'arrow') : plain && e.key === 'Tab' && !e.shiftKey ? 'tab' : null;
+        // (Shift with an arrow at the field's edge sends no move-out: MathLive keeps the selection in)
+        if (key === 'extend' && !wt.active() && mf.mode !== 'latex') {
+          let at = -1, last = -2;
+          try { at = mf.position; last = mf.lastOffset; } catch (x) { /* as MathLive has it */ }
+          const d = e.key === 'ArrowRight' ? (at === last ? 'forward' : null) : (at === 0 ? 'backward' : null);
+          if (d) { e.preventDefault(); e.stopImmediatePropagation(); pull(); setTimeout(() => { if (this.pop === P) opts.onMoveOut(d, 'extend'); }, 0); }
+        }
+      }, true);
+      mf.addEventListener('move-out', (e) => {
+        const d = e.detail && e.detail.direction, how = key;
+        if (!how || (d !== 'forward' && d !== 'backward') || (how === 'tab' && d !== 'forward') || wt.active() || mf.mode === 'latex') return;
+        e.preventDefault();
+        pull();
+        // (after MathLive is done with the key: the field torn down inside its handling threw
+        // "Cannot read properties of undefined (reading 'host')", review E3)
+        setTimeout(() => { if (this.pop === P) opts.onMoveOut(d, how); }, 0);
+      });
+    }
     P.wordTyping = wt;
     P.field = mf;
     if (P.insertTex) this.eqWireField(P, mf, D, ta, () => focusField(mf));
@@ -3068,6 +3326,7 @@ class App {
         P.wordTyping.newRow();
       } : null,
       onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
+      onMoveOut: display ? null : (d, how) => { if (stay()) return; push.flush(); this.leaveMath(d, how); },
       onEscape: () => { push.flush(); this.closePop(); }
     });
   }
@@ -3115,6 +3374,7 @@ class App {
     const canDisplay = this.eqCanDisplayHere(this.ribbonAt());
     const p = this.makePop(null, 'pop-math', 'New inline math');
     this.pop.display = false;
+    { const n = sel.anchorNode, it = n && (n.nodeType === 1 ? n : n.parentElement); const P0 = it && it.closest ? it.closest('.it') : null; this.pop.rtl = !!(P0 && getComputedStyle(P0).direction === 'rtl'); }
     this.pop.eqWhere = { display: canDisplay };
     this.pop.rect = rect && (rect.width || rect.height) ? rect : (sel.anchorNode && sel.anchorNode.parentElement ? sel.anchorNode.parentElement.getBoundingClientRect() : null);
     const ta = document.createElement('textarea');
@@ -3210,6 +3470,7 @@ class App {
       display: false, initial: '', keepFocus: true,
       env: () => '$',
       onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
+      onMoveOut: (d, how) => { if (stay()) return; push.flush(); this.leaveMath(d, how); },
       onEscape: () => { push.flush(); this.closePop(); },
       onKey: (e) => {
         if (e.key === '$' && !ta.value && !ins) {
@@ -3334,7 +3595,20 @@ class App {
 
   bibList() {
     const out = [];
-    for (const [k, e] of this.model.bibEntries) out.push({ key: k, label: shortAuthors(e) + ' ' + entryYear(e), title: texToPlain(e.fields.title || '').replace(/[{}]/g, '') });
+    const item = (k, e, loose) => ({ key: k, label: shortAuthors(e) + ' ' + entryYear(e), title: texToPlain(e.fields.title || '').replace(/[{}]/g, ''), ...(loose ? { loose } : {}) });
+    for (const [k, e] of this.model.bibEntries) out.push(item(k, e));
+    // A .bib the project holds that the document does not name (Open or a drop added it): its
+    // entries are offered too, after the named ones, as Overleaf offers a project's, and a key
+    // picked from one puts that file in the document's bibliography (citeBibFor). The list was
+    // empty, saying no bibliography was loaded, right after the toast that said the .bib was added.
+    if (!this.bibState().thebib) {
+      const named = this.bibFilesNamed(), seen = new Set(out.map((x) => x.key));
+      for (const [n, t] of this.files) {
+        if (!/\.bib$/i.test(n) || typeof t !== 'string' || named.has(n)) continue;
+        try { for (const [k, e] of parseBib(t, n)) if (!seen.has(k)) { seen.add(k); out.push(item(k, e, n)); } } catch (e) { /* a .bib it cannot read */ }
+        if (out.length > 5000) break;
+      }
+    }
     return out;
   }
 
@@ -3396,7 +3670,7 @@ class App {
       for (const h of hits) {
         const b = document.createElement('button'); b.type = 'button'; b.className = 'pitem';
         b.innerHTML = '<b>' + esc(h.label) + '</b><span>' + esc(h.title) + '</span>';
-        b.addEventListener('click', () => { keys.push(h.key); search.value = ''; write(); search.focus(); });
+        b.addEventListener('click', () => { keys.push(h.key); search.value = ''; write(); if (h.loose) this.citeBibFor(h.loose); search.focus(); });
         list.appendChild(b);
       }
     };
@@ -4447,6 +4721,26 @@ class App {
     if (!hasDoc && (!onlyTex.length || (!sample && !zipName))) {
       for (const n of held) { texts.delete(n); orig.delete(n); blobs.delete(n); extra.delete(n); }
       if (!texts.size && !blobs.size && !extra.size) { this.toast('Not opened: this project already has ' + held.join(', ') + '. Open them from a new document.', 9000); return; }
+      // A .bib opened on its own under a name BibTeX cannot read (Zotero exports "My Library.bib":
+      // \bibliography{My Library} found no database, and every citation printed [?]) joins the
+      // project under one it can, My-Library.bib, which the citation picker then writes (review
+      // E15). Opened again, it replaces that file: the name it came under is kept with it
+      // (this.orig's from). Another whose name comes to the same, "My  Library.bib", gets a free
+      // one, My-Library-2.bib: it replaced the first, and the toast said Added (review V5). (One
+      // from an archive keeps the name its document gives it.)
+      const bibRenamed = [];
+      for (const n of [...texts.keys()]) {
+        const base = n.split('/').pop();
+        if (!/\.bib$/i.test(n) || zipAdded.has(n) || /^[A-Za-z0-9_.-]+$/.test(base)) continue;
+        const dir = n.slice(0, n.length - base.length), stem = base.slice(0, -4).replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^[-.]+|-+$/g, '') || 'references';
+        const free = (k) => !texts.has(k) && !this.files.has(k) && !this.assetBlobs.has(k) && !this.extra.has(k);
+        let safe = [...this.orig].find(([k, o]) => o && o.from === n && this.files.has(k) && !texts.has(k))?.[0];
+        if (!safe) { safe = dir + stem + '.bib'; for (let k = 2; !free(safe); k++) safe = dir + stem + '-' + k + '.bib'; }
+        texts.set(safe, texts.get(n)); texts.delete(n);
+        if (orig.has(n)) { orig.set(safe, { ...orig.get(n), from: n }); orig.delete(n); }
+        bibRenamed.push([n, safe]);
+      }
+      const bibNote = bibRenamed.length ? ' ' + bibRenamed.map(([a, b]) => a + ' is ' + b + ' here').join(', ') + ': BibTeX cannot read a name with spaces or signs.' : '';
       // Add to the current project (bib files, images, chapters). A file of the same name is
       // replaced, as an upload to Overleaf replaces it: the version before is kept in History
       // first (opening a .tex with the installed app comes here too, and left no way back).
@@ -4503,9 +4797,15 @@ class App {
         this.markFromLink('', this.name, this.main, from || 'zip');
         if (!from) markNote = was && was.allowed ? ' Shell escape, allowed for this project before, is restricted again: new files from an archive arrived. Allow it in the PDF pane if you trust them.' : ' They came in an archive, so shell escape is restricted for this project until you allow it in the PDF pane.';
       }
-      // (a file opened over another is a step of its own: typing before it and after it are two undos)
+      // (a file opened over another is a step of its own: typing before it and after it are two
+      // undos, and Undo puts the text it replaced back. It was no step, so the steps before it
+      // were applied to the new text at the old offsets: stepFits)
       this.closeGroup();
+      const overText = new Map([...texts.keys()].filter((n) => this.files.has(n) && this.files.get(n) !== texts.get(n)).map((n) => [n, this.files.get(n)]));
+      // (a text file over one of its name is said replaced, not added: review V5)
+      for (const n of texts.keys()) if (this.files.has(n) && !replaced.includes(n)) replaced.push(n);
       for (const [n, t] of texts) this.files.set(n, t);
+      if (overText.size) { this.record(overText, 'open', null, null); this.closeGroup(); }
       // (an opened file: no last selection of the one it replaced)
       this.rbLast = null;
       for (const [n, o] of orig) this.orig.set(n, o);
@@ -4533,7 +4833,7 @@ class App {
       // a few names, then a count: a .zip of fifty pictures filled the screen with their names
       const said = (replaced.length ? few(replaced) + ' replaced' + (placed && !added.length ? ' and placed in the text' : '') + '.' + (added.length ? ' ' : '') : '')
         + (added.length ? 'Added ' + few(added) + ' to the project' + asFig + (placed ? ' and placed ' + (added.length === 1 ? 'it' : 'them') + ' in the text' : '') + '.' : '');
-      this.toast(said + use + heldNote + markNote + skipNote, skipNote || use || heldNote || markNote ? 9000 : undefined);
+      this.toast(said + use + bibNote + heldNote + markNote + skipNote, skipNote || use || bibNote || heldNote || markNote ? 9000 : undefined);
       return;
     }
     // the project open until now stays in this browser; the toast says where, so nobody thinks it gone
@@ -4687,13 +4987,25 @@ class App {
     // this one last read or wrote, that tab's text goes into the versions instead of being lost.
     const prevT = this.savedT;
     this.savedT = meta.t;
-    const jobs = [kvSwap('project', meta).then((cur) => { if (cur && cur.files && cur.t !== prevT) return this.keepOtherTab(cur); })];
+    const jobs = [];
+    // Undo's history goes with the text it undoes, so a reload can still undo: the project names
+    // the time its steps were written under (hT), and init reads them only where that and the
+    // project match. Steps unchanged since the last write are not written again (historySig):
+    // the project names that write's time. A failed write is retried at the next save, and until
+    // then the project names a time no steps have, so none are taken.
+    const sig = this.historySig();
+    if (sig !== this.histSig || !this.histT) {
+      this.histT = meta.t; this.histSig = sig;
+      jobs.push(kvPut('history', this.historyKept(meta)).catch(() => { this.histSig = null; }));
+    }
+    meta.hT = this.histT;
+    jobs.push(kvSwap('project', meta).then((cur) => { if (cur && cur.files && cur.t !== prevT) return this.keepOtherTab(cur); }));
     if (this.binaryDirty) {
       this.binaryDirty = false;
       jobs.push(kvPut('binary', {
         assets: [...this.assetBlobs.entries()],
         extra: [...this.extra.entries()],
-        orig: [...this.orig.entries()].map(([n, o]) => [n, { bytes: o.bytes, enc: o.enc, bom: o.bom }])
+        orig: [...this.orig.entries()].map(([n, o]) => [n, { bytes: o.bytes, enc: o.enc, bom: o.bom, from: o.from }])
       }));
     }
     Promise.all(jobs).then(() => { show(true); try { localStorage.removeItem(STORE); } catch (e) { /* ignore */ } })
@@ -4740,6 +5052,32 @@ class App {
       setTimeout(() => { this.confirmReset = false; }, 5000);
       return;
     }
+  }
+  // The name a download takes: the document's, or for a new one still called Untitled, its title
+  // as the page prints it, as Word offers a new file's first line ("Optimal Taxation under
+  // Political Turnover.pdf", not Untitled.pdf). The project keeps its name: storage, versions,
+  // the engine chosen and git are kept under it.
+  fileBase() {
+    let n = this.name || '';
+    if (/^Untitled( \d+)?$/.test(n)) {
+      const T = titleInfo(this.src(this.main) || '');
+      if (T && T.title) {
+        const t = texToPlain(this.src(this.main).slice(T.title.is, T.title.ie).replace(/\\thanks\s*\{[^{}]*\}/g, '').replace(/\\\\(\[[^\]]*\])?/g, ' ')).replace(/[{}]/g, '').replace(/\s+/g, ' ').trim();
+        if (t) n = t;
+      }
+    }
+    // (a file name as Word suggests one: letters of any script, digits and spaces kept, only what
+    // a file system refuses taken out; "Política Económica" came out Pol-tica-Econ-mica, and a
+    // title in Chinese as paper; review E17)
+    // (and what other programs trip on, review V7: the marks that turn text's direction or join
+    // letters unseen, which can make "fdp.exe" read as "exe.pdf"; Windows' device names, which no
+    // file there may have even with an extension, CON.pdf; at most 200 bytes of UTF-8, cut
+    // between characters, so the name with its extension stays under the 255 of ext4 and APFS)
+    n = n.normalize('NFC').replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]+/g, '').replace(/[\\/:*?"<>|\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').replace(/^[\s.]+|[\s.]+$/g, '');
+    let out = '', bytes = 0;
+    for (const ch of [...n].slice(0, 100)) { const k = new TextEncoder().encode(ch).length; if (bytes + k > 200) break; out += ch; bytes += k; }
+    out = out.replace(/[\s.]+$/, '').replace(/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?=\.|$)/i, '$1_');
+    return out || 'paper';
   }
   // a blank article to type into; the open project stays under Review, Versions
   async newDocument() {
@@ -4820,7 +5158,7 @@ class App {
       } else {
         blob = await this.zipBlob();
         withGit = blob.withGit;
-        fname = (this.name || 'paper').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') + '.zip';
+        fname = this.fileBase() + '.zip';
       }
       if (D) await D.save({ filename: fname, data: blob });
       else {
@@ -5204,7 +5542,7 @@ class App {
 
   async downloadPdf() {
     if (!this.lastPdf) return;
-    const fname = (this.name || 'paper').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') + '.pdf';
+    const fname = this.fileBase() + '.pdf';
     const blob = new Blob([this.lastPdf], { type: 'application/pdf' });
     try {
       if (this.caps.downloads) await this.caps.downloads.save({ filename: fname, data: blob });
@@ -5285,7 +5623,7 @@ class App {
       '<div class="sheet" lang="' + (sheet.lang || 'en') + '" style="' + (sheet.getAttribute('style') || '').replace(/"/g, '&quot;') + '"' + (sheet.dataset.font ? ' data-font="' + sheet.dataset.font + '"' : '') + '>' + clone.outerHTML + '</div>' +
       '<script>addEventListener("load",function(){setTimeout(function(){print()},500)})<\/script></body></html>';
     const blob = new Blob([html], { type: 'text/html' });
-    const fname = (this.name || 'paper').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') + '-print.html';
+    const fname = this.fileBase() + '-print.html';
     try {
       if (this.caps.downloads) await this.caps.downloads.save({ filename: fname, data: blob });
       else {
