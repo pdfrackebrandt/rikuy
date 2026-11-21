@@ -1638,6 +1638,13 @@ class App {
     this.typeQ = null;
     if (q) this.typeIn(q, null);
   }
+  // What came in one insert with no key (dictation, a phone's suggestion bar) after the formula
+  // it began in has closed: on the page, where the caret now is; the second $ of a closing $$
+  // taken as a key would be (W4)
+  typeRest(rest) {
+    if (rest[0] === '$' && this.swallowDollar && performance.now() - this.swallowDollar < 1500) { this.swallowDollar = 0; rest = rest.slice(1); }
+    if (rest && this.caretNow()) this.typeIn(rest, null);
+  }
   typeIn(data, range) {
     const run = this.typedRun, c0 = this.caretNow();
     this.insertText(data, range);
@@ -3065,8 +3072,18 @@ class App {
     let handed = false, backOk = false;
     mf.addEventListener('pointerdown', () => { backOk = true; }, true);
     ta.addEventListener('keydown', (e) => { if (e.key === 'Tab') backOk = true; });
+    // While the box holds what the field cannot show (\begin{ or a brace not yet closed, an
+    // environment not yet ended) the keys stay in the box, a press on the field too: the field's
+    // reading of it replaced the box's text, \begin{ lost and } and & escaped (W3)
+    const boxOnly = () => (P.held && P.held()) || (ta.value.match(/\\begin\s*\{/g) || []).length > (ta.value.match(/\\end\s*\{/g) || []).length;
     mf.addEventListener('focusin', (e) => {
-      if (!handed || e.relatedTarget !== ta || !ta.isConnected) return;
+      if (e.relatedTarget !== ta || !ta.isConnected) return;
+      if (boxOnly()) {
+        if (backOk) { backOk = false; this.toast('The equation field shows this once it is complete: type on in the LaTeX box.'); }
+        queueMicrotask(() => ta.focus({ preventScroll: true }));
+        return;
+      }
+      if (!handed) return;
       if (backOk) { backOk = false; handed = false; return; }
       queueMicrotask(() => ta.focus({ preventScroll: true }));
     });
@@ -3095,6 +3112,9 @@ class App {
       onDollar: opts.onDollar,
       closer: () => this.pop && this.pop.closer,
       onCloser: () => opts.onEnter(),
+      // (W2, W4) what came in one insert after the box took the keys, or after the formula closed
+      boxType: (t) => { ta.setRangeText(t, ta.selectionStart, ta.selectionEnd, 'end'); ta.dispatchEvent(new Event('input')); },
+      afterClose: (rest) => this.typeRest(rest),
       // what the field cannot hold, typed as LaTeX (\begin{aligned}): it goes on in the LaTeX
       // box above, at the caret's place, the field showing what it makes
       toLatex: (more) => {

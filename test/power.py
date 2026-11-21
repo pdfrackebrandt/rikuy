@@ -221,6 +221,26 @@ def latex(page):
         if 'x=1\\text{if}+y' not in body: bad.append(body)
         key(page, 'Escape', 300)
     check('latex: dictation in \\text{…} as the field opens keeps every key, six times over', not bad, bad)
+    # (verification of 5446132) W2: the whole formula in one insert with no key: the rest after
+    # \text{ goes to the LaTeX box as it came
+    page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+    load_doc(page, MATH)
+    click_text(page, 'gamma.', 6)
+    key(page, 'Enter'); key(page, 'Alt+Equal', 800)
+    cdp.send('Input.insertText', {'text': 'x=1\\text{if }+y'}); page.wait_for_timeout(800); key(page, 'Enter', 600)
+    s = src(page); body = ''.join(s[s.find('\\begin{equation}'):s.find('\\end{equation}')].split())
+    check('latex: x=1\\text{if }+y in one insert is written as it came', body == '\\begin{equation}x=1\\text{if}+y', body)
+    # W3: a press on the field while the box holds \begin{ unfinished keeps the keys in the box
+    page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+    load_doc(page, MATH)
+    click_text(page, 'gamma.', 6)
+    key(page, 'Enter'); key(page, 'Alt+Equal', 800)
+    page.keyboard.type('x=\\begin{'); page.wait_for_timeout(200)
+    page.click('#pop-field', timeout=2000); page.wait_for_timeout(200)
+    page.keyboard.type('aligned}a&=b\\end{aligned}'); page.wait_for_timeout(800)
+    box = page.evaluate("(() => { const t = document.querySelector('#pop-tex'); return t && t.value; })()")
+    check('latex: a press on the field with \\begin{ unfinished leaves the keys in the LaTeX box', (box or '').strip() == 'x=\\begin{aligned}a&=b\\end{aligned}' and active(page) == 'pop-tex', (box, active(page)))
+    key(page, 'Escape', 400)
     # what the field cannot hold goes on in its LaTeX box, typed on there
     load_doc(page, MATH)
     click_text(page, 'gamma.', 6)
