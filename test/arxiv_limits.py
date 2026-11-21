@@ -61,6 +61,11 @@ try:
             b2.close()
 except ImportError:
     print('skip the browser case: no Playwright')
+except Exception as e:  # the driver would not start: a machine without the browser case, not a failure here
+    if 'b' in dir() and b:
+        check('the browser case ran to its end', False, str(e)[:300])
+    else:
+        print('skip the browser case:', str(e).split('\n')[0])
 
 check('this process becomes the subreaper of its descendants', doclimit.subreaper())
 
