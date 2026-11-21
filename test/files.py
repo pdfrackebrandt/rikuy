@@ -134,6 +134,49 @@ def marks():
         page.evaluate("window.rikuy.markFromLink('', 'repo', 'c.tex', 'git')")
         f = git('Pulled', [['c.tex', EVIL]])
         check('marks: an Allow given here never lifts a restriction kept under the pull\'s main file', f['key'] == 'repo|c.tex' and restricted(f), f)
+        # V1: a clone and a Word file get a name of their own, as a .zip does
+        put('essay.tex', MINE.encode(), 'essay.tex')
+        n = page.evaluate("async () => window.rikuy.cloneName ? [await window.rikuy.cloneName('https://github.com/x/essay.git'), await window.rikuy.cloneName('https://github.com/x/fresh|repo')] : null")
+        check('marks: a clone beside one\'s own essay gets a name of its own (V1)', n == ['essay (2)', 'fresh repo'], n)
+        page.evaluate("(t) => window.rikuy.openWordProject({ tex: t }, 'essay.docx')", EVIL); page.wait_for_timeout(500)
+        f = page.evaluate(FLAGS)
+        check('marks: so does a Word file (V1)', f['key'] == 'essay (2)|main.tex' and restricted(f), f)
+        # V1: a clone kept under the name of one's own project (as clones were named before): an Allow
+        # given to one's own document there never reaches the clone
+        page.evaluate("(fs) => window.rikuy.loadProject(new Map(fs), 'essay.tex', 'essay', 'Opened')", [['essay.tex', MINE], ['talk/slides.tex', MINE.replace('Mine', 'My talk')]]); page.wait_for_timeout(300)
+        page.evaluate("async (fs) => { await window.rikuy.openRepoFiles('essay', new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)]))); }", [['talk/slides.tex', EVIL]]); page.wait_for_timeout(400)
+        openv('essay', 'essay.tex')
+        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        own = page.evaluate(FLAGS)
+        openv('essay', 'talk/slides.tex')
+        f = page.evaluate(FLAGS)
+        check('marks: Allow on one\'s own document never allows a clone kept under its name (V1)', own['key'] == 'essay|essay.tex' and own['se'] is True and f['key'] == 'essay|talk/slides.tex' and restricted(f), (own, f))
+        # Allow lifts the marks of the same import (the copies Main document made) and no other: not
+        # another import's under the same name, nor one from before marks had ids
+        put('mixed.zip', zipped({'main.tex': MINE, 'b.tex': EVIL, 'c.tex': EVIL, 'd.tex': MINE}), 'main.tex')
+        page.evaluate("window.rikuy.runCommand('main-document', 'd.tex')"); page.wait_for_function("window.rikuy.main === 'd.tex'", timeout=5000)
+        page.evaluate("window.rikuy.runCommand('main-document', 'main.tex')"); page.wait_for_function("window.rikuy.main === 'main.tex'", timeout=5000)
+        page.evaluate("() => { const g = window.rikuy; g.markFromLink('', g.name, 'b.tex', 'git'); g.linkCache.set(g.name + '|c.tex', { by: '', t: 0, allowed: false, origin: 'zip' }); }")
+        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        a = page.evaluate("async () => { const g = window.rikuy; const r = []; for (const m of ['main.tex', 'b.tex', 'c.tex', 'd.tex']) { const v = await g.markOf(g.name, m); r.push(v && v.allowed); } return r; }")
+        check('marks: Allow lifts the same import\'s marks only, not another import\'s or one without an id', a == [True, False, False, True], a)
+        # V2: two tabs on one project; an archive dropped into it in the other tab marks it there, and
+        # this tab, bringing in that tab's text, compiles restricted too
+        PAPER = '\\documentclass{article}\n\\usepackage{defs}\n\\begin{document}\nMine.\n\\end{document}\n'
+        page.evaluate("(fs) => { window.rikuy.loadProject(new Map(fs), 'paper.tex', 'tabs', 'Opened'); window.rikuy.persist(); }", [['paper.tex', PAPER], ['defs.sty', '\\ProvidesPackage{defs}\n']]); page.wait_for_timeout(600)
+        one = page.evaluate(FLAGS)
+        page2 = page.context.new_page()
+        page2.goto(page.url); page2.wait_for_function('window.rikuy && window.rikuy.model', timeout=30000); page2.wait_for_timeout(800); page2.evaluate(STUB)
+        path = os.path.join(TMP, 'defs.zip'); open(path, 'wb').write(zipped({'defs.sty': '\\ProvidesPackage{defs}\n\\immediate\\write18{echo pwned}\n'}))
+        page2.set_input_files('#fileinput', path)
+        page2.wait_for_function("() => (window.rikuy.files.get('defs.sty') || '').includes('write18')", timeout=10000); page2.wait_for_timeout(300)
+        page2.evaluate('window.rikuy.persist()'); page2.wait_for_timeout(500)
+        two = page2.evaluate(FLAGS)
+        page.bring_to_front(); page.evaluate('window.rikuy.adoptOtherTab()'); page.wait_for_timeout(600)
+        f = page.evaluate(FLAGS)
+        check('marks: a tab that brings in another tab\'s archive compiles restricted, as that tab does (V2)', one['key'] == 'tabs|paper.tex' and full(one) and restricted(two)
+              and 'write18' in page.evaluate("window.rikuy.files.get('defs.sty')") and restricted(f), (one, two, f))
+        page2.close()
         # a guest of a shared link who makes another document the main one is still a guest after
         # a reload (N4): the link's record went with the mark
         page.evaluate("""(fs) => window.rikuy.openLinked({ v: 1, name: 'Duo', main: 'main.tex', by: 'Ana', base: 'b0', role: 'coauthor', files: fs })""", [['main.tex', MINE], ['talk/slides.tex', MINE.replace('Mine', 'Talk')]])

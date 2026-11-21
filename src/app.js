@@ -29,7 +29,7 @@ import { kvGet, kvPut, kvDel, kvSwap, decodeText, encodeText, snapAdd, snapAll, 
 import { changes, spacingOnly } from './diff.js';
 import { TeXEngine, parseTeXLog } from './tex.js';
 import { PdfView } from './pdfview.js';
-import { collab, installCollab } from './collab.js';
+import { collab, installCollab, cleanProjectName } from './collab.js';
 import { word, installWord, isDocx } from './word.js';
 import { ribbon } from './ribbon.js';
 import { nav } from './nav.js';
@@ -3991,7 +3991,7 @@ class App {
       const proxy = keepGitProxy(this.prefs, prox.value.trim()); store(PREFS, this.prefs);
       const o = { token: t, remote: u, corsProxy: proxy, depth: 200, accepted: legacy.chosen() };
       o.onAccepted = () => { o.accepted = true; };
-      const name = /git\.overleaf\.com/.test(u) ? 'overleaf-' + u.split('/').pop().slice(0, 6) : u.replace(/\.git$/, '').split('/').pop() || 'paper';
+      const name = await this.cloneName(u);
       b.disabled = true; b.textContent = 'Cloning…';
       try {
         const files = await G.clone(G.dirFor(name), u, o);
@@ -4084,6 +4084,13 @@ class App {
     this.lastSig = null;
     this.snapshot(label);
     this.resetPdf();
+  }
+
+  // A clone's project name, from its address, and one of its own: github.com/x/thesis cloned beside
+  // one's own thesis took its name, its versions and the marks kept under it, so an Allow given to
+  // one's own document there reached the clone (V1)
+  async cloneName(u) {
+    return this.freeProjectName(cleanProjectName(/git\.overleaf\.com/.test(u) ? 'overleaf-' + u.split('/').pop().slice(0, 6) : u.replace(/\.git$/, '').split('/').pop(), 'paper'));
   }
 
   async openRepoFiles(name, files) {
@@ -4485,15 +4492,9 @@ class App {
     // Such a project opens under a name this browser does not keep yet, as a share link does
     // (review I1): a stranger's thesis.zip opened under the name of the user's own thesis shared
     // its versions, and the marks kept per name and main file met the user's own there.
-    // (no | in it, as Rename makes sure: this browser keeps a project's records under name|main file,
-    // and a .zip named thesis|talk.zip read as another split of the same key)
-    const want = (zipName || this.main.replace(/\.tex$/i, '').split('/').pop()).replace(/[\u0000-\u001F\u007F|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Untitled';
-    let name = want;
-    if (theirs) {
-      const kept = new Set((await this.allSnaps()).map((v) => v.name));
-      kept.add(this.name);
-      for (let k = 2; kept.has(name); k++) name = want + ' (' + k + ')';
-    }
+    // (no | in it: a .zip named thesis|talk.zip read as another split of the same key)
+    const want = cleanProjectName(zipName || this.main.replace(/\.tex$/i, '').split('/').pop());
+    const name = theirs ? await this.freeProjectName(want) : want;
     this.name = name;
     const renamed = name !== want ? ' This browser keeps a project named ' + want + ', so this one is ' + name + '.' : '';
     if (theirs) this.markFromLink('', this.name, this.main, from || (gitFiles.has('.git/HEAD') ? 'git' : 'zip'));
@@ -4659,6 +4660,11 @@ class App {
     try { cur = await kvGet('project'); } catch (e) { return; }
     if (!cur || !cur.files || cur.t === this.savedT || this.unsaved) return;
     if (cur.name !== this.name || cur.main !== this.main) return;
+    // (that tab may have marked the project a stranger's since this one read its mark, as an
+    // archive dropped there does: read again before its text is drawn and compiled here, V2)
+    await this.freshMark();
+    if (cur.name !== this.name || cur.main !== this.main || this.unsaved) return;
+    this.syncEngineMenu();
     const edits = [];
     for (const [n, t] of cur.files) { const was = this.files.get(n); if (was !== t) edits.push({ f: n, s: 0, e: was == null ? 0 : was.length, t }); }
     this.savedT = cur.t;
@@ -4979,7 +4985,8 @@ class App {
       $('#pdfpane').setAttribute('aria-busy', 'true');
       this.pdfWait('TeX is getting ready. The first time, it downloads the engine, which takes a moment.');
       // a document that came in a link compiles restricted, and the worker keeps nothing of it
-      const li = await this.linkInfo();
+      // (read again from storage: another tab may have marked it since, V2)
+      const li = await this.freshMark();
       const untrusted = !!(li && !li.allowed);
       sig = sig.slice(0, sig.lastIndexOf('|') + 1) + this.shellMode(li);
       this.syncEngineMenu();
