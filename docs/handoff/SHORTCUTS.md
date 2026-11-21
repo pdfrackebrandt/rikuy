@@ -65,7 +65,7 @@ How to read it:
 | Word | Mac | What it does | Rikuy | Status |
 |---|---|---|---|---|
 | Arrows, Ctrl+Left/Right, Home, End, PgUp, PgDn, Ctrl+Home, Ctrl+End | Option+Left/Right | Move the caret | the browser's caret on the page | works |
-| Ctrl+Up/Down | Cmd+Up/Down | Paragraph up, down | the browser's own caret keys | works as the browser does |
+| Ctrl+Up/Down | Cmd+Up/Down | Paragraph up, down | `paraJump` (src/app.js): the next paragraph's start, this one's or the one before's; Shift extends to a paragraph's end or start; a cell and a caption are paragraphs, display formulas are passed over | added |
 | Shift with each of those | | Select | the browser's | works |
 | Ctrl+PgUp, Ctrl+PgDn | Cmd+PgUp/PgDn | Previous, next page | Go To (F5) a page; the Navigation pane's Pages | browser: switches tabs |
 | Ctrl+Alt+PgUp/PgDn | | Top, bottom of the window | | none worth a key: PgUp and PgDn |
