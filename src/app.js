@@ -1393,6 +1393,9 @@ class App {
   onGlobalKey(e) {
     const mod = isMac ? e.metaKey : e.ctrlKey;
     this.plainPaste = !!(mod && e.shiftKey && e.key.toLowerCase() === 'v');
+    // Word's Ctrl+Shift+V after Ctrl+Shift+C pastes the formatting copied, not the clipboard's
+    // text (which replaced the words selected); after a Ctrl+C it is the text alone, as before
+    if (this.plainPaste && !e.altKey && this.fmtCopy && e.target === this.root && this.pasteFormat()) { e.preventDefault(); this.plainPaste = false; return; }
     // (Ctrl+S is Save as Word's: kept in this browser, said; Save As, F12, downloads: src/cmd/file.js)
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); this.runCommand('save'); }
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); $('#fileinput').click(); }
@@ -2255,6 +2258,8 @@ class App {
     try { e.clipboardData.setData('text/x-galley-latex', latex); } catch (err) { /* ignore */ }
     try { e.clipboardData.setData('text/html', selectionHTML(getSelection(), (el) => this.mathML(el))); } catch (err) { /* plain text still works */ }
     this.lastCopy = { plain, latex };
+    // (text copied after the formatting: Ctrl+Shift+V pastes it again, src/cmd/font.js pasteFormat)
+    this.fmtCopy = null;
     if (cut) {
       const whole = this.wholeDoc();
       if (whole) { this.replaceBody(whole, '', 'cut'); return; }
@@ -2282,6 +2287,8 @@ class App {
     let latex = '';
     try { latex = dt.getData('text/x-galley-latex') || ''; } catch (err) { latex = ''; }
     if (!latex && this.lastCopy && plain === this.lastCopy.plain) latex = this.lastCopy.latex;
+    // an empty clipboard pastes nothing: the words selected stay (they were deleted)
+    if (!plain && !html && !latex) return;
     const c = this.caretNow();
     if (!c) return;
     // in LaTeX the source goes in as it is: the source of what was copied on the page, else the text
