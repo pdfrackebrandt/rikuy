@@ -14,6 +14,7 @@ import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
 import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
+import { mapPos } from './wrap.js';
 import { findProblems, missingFigures } from './problems.js';
 import { WidgetLayer } from './widget.js';
 import { APP, appInit, asset as appAsset, registerApp, takeLaunches, takeShared, warmTeX } from './pwa.js';
@@ -381,14 +382,11 @@ function fromField(v, st) {
   return lines.join(' \\\\\n');
 }
 
-// whether the last thing the person did was a key or a press (a dialog's opener reached by the
-// keys gets the focus back; one pressed gives it to the page). It is also html.rk-keys, which the
-// focus rings follow where the code moves the focus (a menu's first item, File's Back): the
+// whether the last thing the person did was a key or a press, as html.rk-keys: the focus rings
+// follow it where the code moves the focus (a menu's first item, File's Back), since the
 // browser's own guess, :focus-visible, differs between Chromium's versions there
-let lastKeys = false;
-const keysLast = () => lastKeys;
 if (typeof document !== 'undefined') {
-  const set = (on) => { lastKeys = on; document.documentElement.classList.toggle('rk-keys', on); };
+  const set = (on) => { document.documentElement.classList.toggle('rk-keys', on); };
   document.addEventListener('keydown', (e) => { if (!['Shift', 'Control', 'Meta'].includes(e.key)) set(true); }, true);
   document.addEventListener('pointerdown', () => set(false), true);
 }
@@ -1177,6 +1175,8 @@ class App {
       if (apart) win.set(f, { pre: list[list.length - 1].s, suf: text.length - list[0].e });
       for (const ed of list) text = text.slice(0, ed.s) + ed.t + text.slice(ed.e);
       this.files.set(f, text);
+      // (the document's last selection, where a command acts with no caret on the page, moves too)
+      if (this.rbLast && this.rbLast.f === f && this.rbLast.text === before.get(f)) this.restMove(f, list, text);
     }
     // (the blocks shown as LaTeX move with these edits, src/cmd/view.js; typing ends Repeat's turn)
     this.viewMap(byFile, before);
@@ -2546,10 +2546,10 @@ class App {
     // the page's body and the next keys typed nothing. (On a touch screen only when the page had
     // the focus: focusing it there brings up the on-screen keyboard.)
     const at = this.caretNow(), had = document.activeElement;
-    // (a ribbon control the keys reached, Tab or the arrows, is the dialog's opener and gets the
-    // focus back, as UI-PRINCIPLES.md N7 asks; one a press focused keeps the page's place)
-    const keysOnRibbon = !!(had && had.closest && had.closest('#ribbon, #rb-top')) && keysLast();
-    const pageHad = had === this.root || (!matchMedia('(pointer: coarse)').matches && !keysOnRibbon && (!had || had === document.body || !!had.closest('#ribbon, #rb-top')));
+    // (a ribbon control, pressed or reached by the keys, gives the page its caret back, as Word's
+    // ribbon does once its command has run; tabs.py's Frontier by keys. Under File's view, which
+    // covers the page, the command is the opener and gets the focus back)
+    const pageHad = had === this.root || (!matchMedia('(pointer: coarse)').matches && (!had || had === document.body || !!had.closest('#ribbon, #rb-top')));
     const back = hand ? hand.back : at && !at.ghost && !at.crossFile && pageHad ? { c: at.collapsed ? { f: at.f, p: at.p } : { f: at.f, selA: at.a, selB: at.b }, text: this.files.get(at.f) } : null;
     document.body.appendChild(p);
     // (the control it was opened from, by the keys: the focus goes back to it when the page does
@@ -4498,6 +4498,8 @@ class App {
       // (a file opened over another is a step of its own: typing before it and after it are two undos)
       this.closeGroup();
       for (const [n, t] of texts) this.files.set(n, t);
+      // (an opened file: no last selection of the one it replaced)
+      this.rbLast = null;
       for (const [n, o] of orig) this.orig.set(n, o);
       for (const [n, b] of blobs) this.addAsset(n, b);
       for (const [n, b] of extra) this.extra.set(n, b);
@@ -5546,8 +5548,17 @@ function agentApi(app) {
       flush();
       const main = app.src(app.main), d = diff(main, text);
       if (!d) return;
+      // (a caret on the page moves with the edit, as with any edit made around it: left where the
+      // old page had it, the page drawn again would put it at another place, and a command run
+      // later with no caret would act there)
+      // (one whose words the edit took away is gone: no caret then, and the document's end stands
+      // for it, src/ribbon.js)
+      const ed = { s: d.s, e: d.s + d.del.length, t: d.ins }, c = app.caretNow();
+      const gone = c && !c.ghost && c.f === app.main && ((ed.s < c.a && ed.e > c.a) || (ed.s < c.b && ed.e > c.b));
+      const caret = c && !c.ghost && c.f === app.main && !gone ? (c.collapsed ? { f: c.f, p: mapPos([ed], c.p, 1), bias: 1 } : { f: c.f, p: mapPos([ed], c.a, 1), selA: mapPos([ed], c.a, 1), selB: mapPos([ed], c.b, -1) }) : null;
+      if (gone) { getSelection().removeAllRanges(); app.rbLast = null; }
       app.closeGroup();
-      app.commit([{ f: app.main, s: d.s, e: d.s + d.del.length, t: d.ins }], null, 'api');
+      app.commit([{ f: app.main, ...ed }], caret, 'api');
       app.closeGroup();
       if (app.src(app.main) !== text) throw new Error('The source could not be changed.');
     },
