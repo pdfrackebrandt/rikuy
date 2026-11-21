@@ -30,7 +30,9 @@ function fillHome(app) {
   home.replaceChildren();
   const tile = (label, name, title, run, cls) => {
     const b = mk('button', 'rf-tile' + (cls ? ' ' + cls : ''));
-    b.type = 'button'; b.setAttribute('aria-label', name); b.title = title || name;
+    b.type = 'button'; b.setAttribute('aria-label', name);
+    // (its name, then what it is, as every tooltip: UI-PRINCIPLES.md C14)
+    b.title = title ? name + ': ' + (/^[A-Z][a-z]/.test(title) ? title[0].toLowerCase() + title.slice(1) : title) : name;
     b.innerHTML = PAGE;
     b.append(mk('span', 'rf-tile-n', label));
     b.addEventListener('click', run);
@@ -51,11 +53,19 @@ function fillHome(app) {
     const seen = new Map();
     for (const v of all || []) if (v.name && v.name !== app.name && !seen.has(v.name)) seen.set(v.name, v);
     const when = (t) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-    if (!seen.size) { list.append(mk('p', 'rf-none', 'No other documents yet. The ones you make or open here are kept in this browser and listed here.')); return; }
+    if (!seen.size) {
+      // (what belongs here, and the command that brings one, UI-PRINCIPLES.md N5)
+      // (its own name: Open is the bar's, Browse the column's, and a name is in the tree once)
+      const b = mk('button', 'btn ghost', 'Open a file');
+      b.type = 'button'; b.id = 'rf-none-open'; b.title = 'Open a file (Ctrl+O): .tex, .bib, images, an Overleaf .zip or a Word .docx';
+      b.addEventListener('click', () => app.runCommand('open'));
+      list.append(mk('p', 'rf-none', 'No other documents yet: the ones you make or open here are kept in this browser.'), b);
+      return;
+    }
     for (const v of [...seen.values()].slice(0, 15)) {
       const row = mk('div', 'rf-row'); row.setAttribute('role', 'listitem');
       const b = mk('button', 'rf-doc');
-      b.type = 'button'; b.setAttribute('aria-label', 'Open ' + v.name); b.title = 'Open it, as it was ' + when(v.t);
+      b.type = 'button'; b.setAttribute('aria-label', 'Open ' + v.name); b.title = 'Open ' + v.name + ': open it, as it was ' + when(v.t);
       b.append(mk('span', 'rf-doc-n', v.name), mk('span', 'rf-doc-t', when(v.t)));
       b.addEventListener('click', () => app.runCommand('recent', { open: v.name }));
       row.append(b); list.append(row);
@@ -63,7 +73,11 @@ function fillHome(app) {
   }).catch(() => {});
 }
 
+// whether the last thing the person did was a key (File opened by Alt, F or Enter) or a press
+let byKeys = false;
 export function installFileView(app) {
+  document.addEventListener('keydown', () => { byKeys = true; }, true);
+  document.addEventListener('pointerdown', () => { byKeys = false; }, true);
   // (src/ribbon/tabs.js's selectTab calls this as File opens or closes)
   app.fileViewChanged = (on, was) => {
     if (!on) {
@@ -94,7 +108,8 @@ export function installFileView(app) {
     under(true);
     // (a tab of the row keeps it: the arrow keys go along the tabs, as Word's do)
     const back = $('#rf-back'), a = document.activeElement;
-    if (back && !(a && a.closest && a.closest('#rp-file, #rb-top'))) back.focus({ preventScroll: true });
+    // (its ring only when the keys opened the view: a press on File showed it, unasked)
+    if (back && !(a && a.closest && a.closest('#rp-file, #rb-top'))) back.focus({ preventScroll: true, focusVisible: byKeys });
     // the browser's or the phone's Back closes the view, as Word's phone app's does (a page in a
     // frame has its parent's history: none there)
     if (window.top === window && !(history.state && history.state.rikuyFile)) { try { history.pushState({ ...(history.state || {}), rikuyFile: 1 }, ''); } catch (e) { /* refused */ } }

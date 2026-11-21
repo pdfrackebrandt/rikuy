@@ -230,6 +230,8 @@ function selectTab(app, tab, focus) {
   D.pf.setAttribute('aria-labelledby', 'fr-t-' + (tab === 'goto' ? 'find' : tab));
   D.d.classList.toggle('fr-replace', tab === 'replace');
   if (tab === 'goto') { D.label(); if (focus) D.n.focus(); }
+  // (under a finger its tab, not the field: the phone's keyboard would cover the dialog)
+  else if (focus && matchMedia('(pointer: coarse)').matches) D.T[tab].focus();
   else if (focus) { D.q.focus(); D.q.select(); }
 }
 

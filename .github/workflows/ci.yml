@@ -163,6 +163,9 @@ jobs:
       # its compiles on three engines need dist/tex and run in tex.yml
       - name: Insert, interactive graphs, the clipboard, symbols and AutoCorrect
         run: cd test && python3 insert.py
+      # (the live paper, task 70; its compiles and TeX's picture against the live one run in tex.yml)
+      - name: Interactive graphs as the edge, Graph this, the web page with live graphs, speed, phones
+        run: cd test && python3 graphs.py opening graph_this dialog hand_edits upgrade keyboard webpage speed phones
       # their PDF parts (the PDF view by SyncTeX, Learn Rikuy and the templates compiled) need
       # dist/tex and run in tex.yml; here they skip them
       - name: The views (Page, LaTeX, PDF), Show LaTeX, the View and Help tabs, on phones too

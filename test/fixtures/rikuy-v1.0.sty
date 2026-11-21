@@ -1,0 +1,18 @@
+% rikuy.sty: a live figure on Rikuy's typeset page, the same figure as a picture in every TeX.
+%
+%   \rikuywidget[<\includegraphics options>]{<widget .html>}{<fallback image>}
+%
+% TeX (Rikuy's PDF pane, Overleaf, a desktop TeX Live) prints the fallback image with
+% \includegraphics and never opens the widget file. Rikuy's typeset page runs the widget: a self
+% contained HTML file of the project (inline script and style, nothing from the network) in a
+% sandboxed frame as wide as the text. The widget sets the frame's height by sending
+%   parent.postMessage({rikuy: "height", px: <integer>}, "*")
+% Both paths are relative to the main .tex file; keep this file beside it.
+%
+% This file is in the public domain: copy it into any document.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{rikuy}[2026/10/30 v1.0 Live figures in Rikuy, pictures in print]
+\RequirePackage{graphicx}
+% robust, so that it survives a moving argument as \includegraphics does
+\DeclareRobustCommand\rikuywidget[3][]{\includegraphics[#1]{#3}}
+\endinput
