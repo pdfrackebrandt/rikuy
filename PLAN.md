@@ -3752,6 +3752,17 @@ Tests:
     the check); model.test.mjs's .bib checks; scan.test.mjs 8; incremental 35 of 35 and with
     `INCR_FULL=1` 35 of 35; `npm test` green but V4 (flaky, 2 of 3 alone); `history.py` 40 of 40,
     `browser.py` 199 of 199, `page.py long_document` 6 of 6.
+71. **A version's trust mark kept with the version.** Not started (from the second verification of
+    PR 96's security fixes, /tmp/latex-verify2.md). Marks (restricted shell escape, live figures
+    waiting) are kept per project name and main file, and since PR 96 every import (a .zip, a
+    clone, a Word file, a link) opens under a name of its own with an import id in its mark. Left:
+    versions saved before that fix, where a stranger's import and one's own document share a
+    name|main key, share its mark, so an Allow given on one's own document there reaches the
+    stranger's version. Store the mark's id with each version when it is saved; opening or
+    restoring a version whose stored id is not the key's mark's id now (or that has none while the
+    key's mark has none) marks the key restricted again with a new id. Its test: files.py marks,
+    a key shared by an import from before the fix and one's own document.
+
 ## Rules
 
 - No status commits ("Note ...", "Record ...") and no log in this file. One commit per

@@ -193,7 +193,53 @@ def marks():
           const was = document.body.classList.contains('pdf-on'); await g.allowShellHere(); const stale = g.pdfStale, same = g.lastPdfSig === g.pdfSigNow();
           window.__se = []; await g.api.compile(); return { was, stale, same, sent: window.__se.map((x) => x.shellEscape) }; }""")
         check('marks: after Allow with the preview closed, the restricted PDF is stale: api.compile compiles again, with shell escape', r['was'] is False and r['stale'] is True and r['same'] is False and r['sent'] and all(r['sent']), r)
-        check('no page errors (marks)', not errors, errors[:5])
+        # a pull or a branch that brings other TeX files takes an Allow back, as an archive dropped in
+        # does; one that changes pictures only does not
+        page.evaluate("async (fs) => { await window.rikuy.openRepoFiles('pullrepo', new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)]))); }", [['main.tex', MINE]]); page.wait_for_timeout(300)
+        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        pics = git('Pulled', [['main.tex', MINE], ['fig.png', 'x']])
+        sty = page.evaluate("async ([l, fs]) => window.rikuy.loadGitFiles(new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)])), l)", ['Pulled', [['main.tex', MINE], ['fig.png', 'x'], ['x.sty', EVIL]]])
+        f = page.evaluate(FLAGS)
+        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        r = git('Switched to dev', [['paper.tex', MINE], ['fig.png', 'x'], ['x.sty', EVIL]])
+        check('marks: a pull that changes pictures only keeps an Allow; one that adds a .sty, or a branch that renames main.tex, takes it back', pics['se'] is True and pics['mark']['allowed'] is True
+              and 'restricted again' in (sty or '') and restricted(f) and r['key'] == 'pullrepo|paper.tex' and restricted(r), (pics, sty, f, r))
+        # W2: tabs A and B on one .zip project; an archive dropped in A marks it anew; Allow in B, which
+        # still shows the text from before, is refused, and A compiles restricted
+        PAPER = '\\documentclass{article}\n\\usepackage{defs}\n\\begin{document}\nTheirs.\n\\end{document}\n'
+        put('proj.zip', zipped({'main.tex': PAPER, 'defs.sty': '\\ProvidesPackage{defs}\n'}), 'main.tex')
+        page.evaluate('window.rikuy.persist()'); page.wait_for_timeout(400)
+        page2 = page.context.new_page()
+        page2.goto(page.url); page2.wait_for_function('window.rikuy && window.rikuy.model', timeout=30000); page2.wait_for_timeout(800); page2.evaluate(STUB)
+        b0 = page2.evaluate(FLAGS)
+        path = os.path.join(TMP, 'defs.zip'); open(path, 'wb').write(zipped({'defs.sty': '\\ProvidesPackage{defs}\n\\immediate\\write18{echo pwned}\n'}))
+        page.bring_to_front(); page.set_input_files('#fileinput', path)
+        page.wait_for_function("() => (window.rikuy.files.get('defs.sty') || '').includes('write18')", timeout=10000); page.wait_for_timeout(300)
+        page.evaluate('window.rikuy.persist()'); page.wait_for_timeout(400)
+        page2.bring_to_front()
+        page2.evaluate("document.getElementById('toast').hidden = true; window.rikuy.allowShellHere()"); page2.wait_for_timeout(400)
+        said = page2.inner_text('#toast') if page2.is_visible('#toast') else ''
+        page.bring_to_front()
+        a = page.evaluate(FLAGS)
+        check('marks: Allow in a tab showing the text from before another tab\'s archive is refused, and that tab compiles restricted (W2)', b0['key'] == 'proj|main.tex' and restricted(b0)
+              and 'changed in another tab' in said and restricted(a) and 'write18' in page.evaluate("window.rikuy.files.get('defs.sty')"), (b0, said[:120], a))
+        page2.bring_to_front(); page2.evaluate('window.rikuy.adoptOtherTab()'); page2.wait_for_timeout(500)
+        page2.evaluate('window.rikuy.allowShellHere()'); page2.wait_for_timeout(300)
+        b1 = page2.evaluate(FLAGS)
+        page.bring_to_front()
+        a = page.evaluate(FLAGS)
+        check('marks: with that text brought in, Allow there works, and this tab stays restricted until its own Allow', 'write18' in page2.evaluate("window.rikuy.files.get('defs.sty')") and b1['se'] is True and b1['untrusted'] is False and restricted(a), (b1, a))
+        page2.close()
+        # W1: a mark storage did not keep (a write refused as when it is full; the database deleted by
+        # another tab) is kept by the tab, and said
+        page.evaluate("""() => { const put = IDBObjectStore.prototype.put; IDBObjectStore.prototype.put = function (v, k) { if (typeof k === 'string' && k.startsWith('link:')) throw new DOMException('full', 'QuotaExceededError'); return put.call(this, v, k); }; }""")
+        f = put('evil.zip', zipped({'main.tex': EVIL}), 'main.tex')
+        msgs = page.evaluate("window.rikuy.texIssues.map((x) => x.msg).join(' ')")
+        check('marks: a mark storage refused is kept by the tab: restricted, and Problems says it was not kept (W1)', f['key'] == 'evil|main.tex' and restricted(f) and 'did not keep' in msgs, (f, msgs[:300]))
+        page.evaluate("""() => new Promise((r) => { const q = indexedDB.deleteDatabase('galley'); q.onsuccess = q.onerror = q.onblocked = () => r(); setTimeout(r, 3000); })"""); page.wait_for_timeout(500)
+        f = page.evaluate(FLAGS)
+        check('marks: and after another tab deleted the database (W1)', f['key'] == 'evil|main.tex' and restricted(f), f)
+        check('no page errors (marks)', not [e for e in errors if 'QuotaExceeded' not in e and 'full' not in e], errors[:5])
         browser.close()
 
 if sys.argv[1:] == ['marks']:

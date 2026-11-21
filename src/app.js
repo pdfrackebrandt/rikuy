@@ -3872,8 +3872,8 @@ class App {
       try {
         await this.snapshot('Before switching to ' + v, { force: true });
         const files = await G.switchBranch(dir, v);
-        await this.loadGitFiles(files, 'Switched to ' + v);
-        this.toast('Switched to ' + v + '.');
+        const note = await this.loadGitFiles(files, 'Switched to ' + v);
+        this.toast('Switched to ' + v + '.' + note, note ? 9000 : undefined);
       } catch (e) { this.toast(this.gitError(e), 8000); }
       this.gitRefresh();
     };
@@ -3988,13 +3988,15 @@ class App {
         if (!(await saveUrl())) { url.focus(); return; }
         if (st.length) { this.toast('Commit your ' + st.length + ' change' + (st.length === 1 ? '' : 's') + ' first: pull merges into the last commit.', 7000); msg.focus(); return; }
         busy(b, 'Pulling…');
+        let pulled = '';
         try {
           const o = opts();
           await G.pull(dir, o, this.gitAuthor().name ? this.gitAuthor() : { name: 'Rikuy', email: 'rikuy@localhost' });
           kept(o);
-          await this.loadGitFiles(await G.workingFiles(dir), 'Pulled');
+          pulled = await this.loadGitFiles(await G.workingFiles(dir), 'Pulled');
         } catch (err) { fail(b, err); return; }
         done(b); this.gitRefresh();
+        if (pulled) this.toast(pulled.trim(), 9000);
       }, 'git pull (fetch and merge)'),
       mkBtn('Push', async (e) => {
         const b = e.currentTarget;
@@ -4149,6 +4151,13 @@ class App {
     // as on File, Main document (review I2): unmarked there, a pull or a branch that renamed
     // main.tex compiled a cloned repository with full shell escape. Read before anything changes.
     const [mark, there] = !origin && main !== was ? await Promise.all([this.linkInfo(), this.markOf(this.name, main)]) : [];
+    // Whether the pull or the branch brought other code: a .tex, .sty, .cls, .bib or any file
+    // TeX or a program it starts can read as code, not a picture (as a dropped .zip's zipCode).
+    // An Allow given to a repository's earlier files does not cover them, as it does not cover a
+    // dropped archive's: a clone allowed once compiled every later pull with full shell escape.
+    const code = (n) => !/\.(png|jpe?g|gif|webp|pdf)$/i.test(n);
+    const codeChanged = main !== was || [...new Set([...texts.keys(), ...this.files.keys()])].some((n) => code(n) && texts.get(n) !== this.files.get(n))
+      || [...new Set([...extra.keys(), ...this.extra.keys()])].some((n) => code(n) && (!extra.has(n) || !this.extra.has(n) || extra.get(n).size !== this.extra.get(n).size));
     for (const u of this.assets.values()) URL.revokeObjectURL(u);
     this.assets.clear(); this.assetBlobs.clear();
     this.files = texts; this.orig = orig; this.extra = extra;
@@ -4158,6 +4167,12 @@ class App {
     // owner allows more, marked before anything below can start a compile
     if (origin) this.markFromLink('', this.name, this.main, origin);
     else if (main !== was) this.carryLink(mark, main, there);
+    let note = '';
+    const now = !origin && codeChanged && this.linkCache && this.linkCache.get(this.name + '|' + this.main);
+    if (now && now.allowed) {
+      this.markFromLink(now.by || '', this.name, this.main, now.origin || 'git');
+      note = ' Shell escape, allowed for this repository before, is restricted again: its TeX files changed. Allow it in the PDF pane if you trust them.';
+    }
     this.binaryDirty = true; this.forceRender = true;
     this.hist = []; this.redoStack = []; this.updateUndoUI();
     this.srcFile = this.main;
@@ -4169,6 +4184,7 @@ class App {
     this.lastSig = null;
     this.snapshot(label);
     this.resetPdf();
+    return note;
   }
 
   // A clone's project name, from its address, and one of its own: github.com/x/thesis cloned beside
@@ -4755,6 +4771,8 @@ class App {
     const edits = [];
     for (const [n, t] of cur.files) { const was = this.files.get(n); if (was !== t) edits.push({ f: n, s: 0, e: was == null ? 0 : was.length, t }); }
     this.savedT = cur.t;
+    // (this tab has that tab's text now: its Allow is no longer refused, see allowMark)
+    if (this.markStale) this.markStale.delete(this.name + '|' + this.main);
     if (!edits.length) return;
     this.closePop(true);
     this.closeGroup();

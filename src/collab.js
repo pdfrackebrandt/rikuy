@@ -263,7 +263,19 @@ export const collab = {
     const v = { by, t: Date.now(), allowed: false, origin, id: importId() };
     this.linkCache = this.linkCache || new Map();
     this.linkCache.set(k, v);
-    if (!this.noIdb) kvPut('link:' + k, v).catch(() => {});
+    this.keepMark(k, v);
+  },
+  // A mark written to storage. A write refused (storage full, the database deleted by another tab)
+  // is said, here and under Problems at every compile; the tab keeps the mark it holds, since
+  // freshMark never takes storage's word over a restriction held here (W1).
+  keepMark(k, v) {
+    if (this.noIdb) return;
+    kvPut('link:' + k, v).catch((e) => {
+      this.marksNotKept = this.marksNotKept || new Set();
+      if (this.marksNotKept.has(k)) return;
+      this.marksNotKept.add(k);
+      this.toast('This browser\'s storage did not keep the mark that restricts shell escape for ' + k.slice(0, k.lastIndexOf('|')) + ' (' + ((e && (e.name || e.message)) || e) + '). It stays restricted in this tab, but another tab, or this one after a reload, would not know it: free some storage, then open the file again.', 14000);
+    });
   },
   // The mark of the project (mark: linkInfo's, or null) under another of its main files, whose own
   // mark (there: markOf's, read before) it meets: the stricter of the two stays. The key may hold
@@ -280,7 +292,7 @@ export const collab = {
     if (fresh && v && v !== there) v = { ...v, id: importId() };
     this.linkCache = this.linkCache || new Map();
     this.linkCache.set(k, v);
-    if (v && v !== there && !this.noIdb) kvPut('link:' + k, v).catch(() => {});
+    if (v && v !== there) this.keepMark(k, v);
   },
   // A guest's record of the link the document came in (guest mode, Send back), kept under the
   // project's name and main file, goes with it to another of its main files (File, Main document):
@@ -307,12 +319,25 @@ export const collab = {
   // repository cloned under the name of the user's own project before names were kept apart), or
   // one from before marks had ids, is never lifted by this Allow (V1). The mark here, or null when
   // there is none (or another project opened meanwhile).
+  //
+  // Every mark is read from storage again first: another tab of this browser may have marked the
+  // project anew since this one showed it (an archive dropped there, with its own id). Then this
+  // tab, showing the text from before, refuses until it has that text (a reload, or the text
+  // brought in when it gets the focus): its Allow was written over the new restriction, and the
+  // other tab compiled the archive with full shell escape (W2).
   async allowMark(field) {
-    const name = this.name, main = this.main;
+    const name = this.name, main = this.main, k = name + '|' + main;
+    const shown = this.linkCache && this.linkCache.get(k);
     const others = (this.mainDocs ? this.mainDocs() : []).filter((d) => d !== main);
-    const marks = await Promise.all([main, ...others].map((d) => this.markOf(name, d)));
+    const marks = await Promise.all([main, ...others].map((d) => this.freshMark(name, d)));
     const here = marks[0];
     if (!here || this.name !== name || this.main !== main) return null;
+    this.markStale = this.markStale || new Set();
+    if (shown && here.id !== shown.id) this.markStale.add(k);
+    if (this.markStale.has(k)) {
+      this.toast('This document changed in another tab of this browser: new files arrived there, so shell escape is restricted again. Reload this tab to see them before you allow it.', 10000);
+      return null;
+    }
     let out = here;
     [main, ...others].forEach((d, i) => {
       const m = marks[i];
@@ -321,23 +346,23 @@ export const collab = {
       const v = { ...m, [field]: true };
       if (!i) out = v;
       this.linkCache.set(name + '|' + d, v);
-      if (!this.noIdb) kvPut('link:' + name + '|' + d, v).catch(() => {});
+      this.keepMark(name + '|' + d, v);
     });
     return out;
   },
   // The mark as storage has it now, read again: another tab of this browser may have marked the
   // project as holding a stranger's files since this tab read it (an archive dropped there), and
-  // its text comes here (adoptOtherTab) and compiles here (V2). A mark this tab made meanwhile
-  // meets it as carryLink's do: the stricter of the two.
+  // its text comes here (adoptOtherTab) and compiles here (V2). Storage can add a restriction,
+  // never take away one this tab holds (a write refused, or the database deleted by another tab,
+  // left none there and the next compile ran with full shell escape, W1): the stricter of the two.
+  // This tab loosens a mark only by its own Allow.
   async freshMark(name = this.name, main = this.main) {
     if (this.noIdb) return this.markOf(name, main);
     const k = name + '|' + main;
     this.linkCache = this.linkCache || new Map();
-    const before = this.linkCache.get(k);
-    let v;
-    try { v = (await kvGet('link:' + k)) || null; } catch (e) { return this.markOf(name, main); }
-    const now = this.linkCache.get(k);
-    if (now !== before) v = stricterMark(now, v);
+    let stored;
+    try { stored = (await kvGet('link:' + k)) || null; } catch (e) { return this.markOf(name, main); }
+    const v = stricterMark(this.linkCache.has(k) ? this.linkCache.get(k) : null, stored);
     this.linkCache.set(k, v);
     return v;
   },
@@ -364,8 +389,9 @@ export const collab = {
     // a .zip or a git repository is content from someone else just as a link is, so it is
     // restricted the same way; the wording follows how it arrived
     const origin = v && v.origin;
+    const lost = this.marksNotKept && this.marksNotKept.has(this.name + '|' + this.main) ? ' This browser\'s storage did not keep that mark: another tab, or this one after a reload, would not know it.' : '';
     const came = origin === 'zip' ? 'was opened from a .zip file' : origin === 'git' ? 'was cloned from a git repository' : origin === 'share' ? 'was shared to Rikuy from another app' : origin === 'docx' ? 'was opened from a Word file' : origin === 'word' ? 'has edits from a Word file by ' + who : 'came in a link from ' + who;
-    issues.unshift({ sev: 'warn', file: null, line: null, msg: 'Shell escape is restricted: this document ' + came + ', so it runs only the programs TeX Live allows by default. Tick Shell escape if you trust it.' });
+    issues.unshift({ sev: 'warn', file: null, line: null, msg: 'Shell escape is restricted: this document ' + came + ', so it runs only the programs TeX Live allows by default. Tick Shell escape if you trust it.' + lost });
     const k = this.name + '|' + this.main;
     this.restrictNoted = this.restrictNoted || new Set();
     if (this.restrictNoted.has(k)) return;
