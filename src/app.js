@@ -4590,6 +4590,22 @@ class App {
     if (!hasDoc && (!onlyTex.length || (!sample && !zipName))) {
       for (const n of held) { texts.delete(n); orig.delete(n); blobs.delete(n); extra.delete(n); }
       if (!texts.size && !blobs.size && !extra.size) { this.toast('Not opened: this project already has ' + held.join(', ') + '. Open them from a new document.', 9000); return; }
+      // A .bib opened on its own under a name BibTeX cannot read (Zotero exports "My Library.bib":
+      // \bibliography{My Library} found no database, and every citation printed [?]) joins the
+      // project under one it can, My-Library.bib, which the citation picker then writes (review
+      // E15). Opened again, it replaces that file. (One from an archive keeps the name its
+      // document gives it.)
+      const bibRenamed = [];
+      for (const n of [...texts.keys()]) {
+        const base = n.split('/').pop();
+        if (!/\.bib$/i.test(n) || zipAdded.has(n) || /^[A-Za-z0-9_.-]+$/.test(base)) continue;
+        const safe = n.slice(0, n.length - base.length) + ((base.slice(0, -4).replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^[-.]+|-+$/g, '') || 'references') + '.bib');
+        if (texts.has(safe)) continue;
+        texts.set(safe, texts.get(n)); texts.delete(n);
+        if (orig.has(n)) { orig.set(safe, orig.get(n)); orig.delete(n); }
+        bibRenamed.push([n, safe]);
+      }
+      const bibNote = bibRenamed.length ? ' ' + bibRenamed.map(([a, b]) => a + ' is ' + b + ' here').join(', ') + ': BibTeX cannot read a name with spaces or signs.' : '';
       // Add to the current project (bib files, images, chapters). A file of the same name is
       // replaced, as an upload to Overleaf replaces it: the version before is kept in History
       // first (opening a .tex with the installed app comes here too, and left no way back).
@@ -4678,7 +4694,7 @@ class App {
       // a few names, then a count: a .zip of fifty pictures filled the screen with their names
       const said = (replaced.length ? few(replaced) + ' replaced' + (placed && !added.length ? ' and placed in the text' : '') + '.' + (added.length ? ' ' : '') : '')
         + (added.length ? 'Added ' + few(added) + ' to the project' + asFig + (placed ? ' and placed ' + (added.length === 1 ? 'it' : 'them') + ' in the text' : '') + '.' : '');
-      this.toast(said + use + heldNote + markNote + skipNote, skipNote || use || heldNote || markNote ? 9000 : undefined);
+      this.toast(said + use + bibNote + heldNote + markNote + skipNote, skipNote || use || bibNote || heldNote || markNote ? 9000 : undefined);
       return;
     }
     // the project open until now stays in this browser; the toast says where, so nobody thinks it gone

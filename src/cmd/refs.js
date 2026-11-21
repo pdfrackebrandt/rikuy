@@ -604,6 +604,9 @@ export const methods = {
     if (!P || this.bibFilesNamed().has(file)) return;
     const B = this.bibState(), edits = [];
     let f = this.main;
+    // (a name BibTeX cannot read is not written: \bibliography{My Library} printed [?] for every
+    // citation. A .bib opened on its own gets a name it can, src/app.js openFiles; review E15)
+    if (!B.biblatex && /[\s{}%#,~\\]/.test(this.bibRel(file))) { this.toast('BibTeX cannot read ' + file + ': a name with spaces or signs. Open it again to add it as ' + file.split('/').pop().replace(/\.bib$/i, '').replace(/[^A-Za-z0-9_.-]+/g, '-') + '.bib.', 9000); return; }
     if (B.biblatex) {
       edits.push(...RS.preambleLine(this.src(f), '\\addbibresource{' + this.bibRel(file, true) + '}'));
       if (!B.print && !this.bibNamed()) edits.push(...RS.endLines(this.src(f), ['\\printbibliography'], ['printindex']));
