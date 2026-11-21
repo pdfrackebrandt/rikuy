@@ -81,7 +81,8 @@ try:
               "'sha256-" in pol and "'wasm-unsafe-eval'" in pol and "'unsafe-inline'" not in pol.split('script-src')[1].split(';')[0] and "'unsafe-eval'" not in pol, pol)
 
         # typing on the page, the source pane, the math field, the Git panel
-        page.click('.page .it >> nth=1')
+        # (a paragraph of words: the opening document's second block is its graph's, a frame)
+        page.click('.page .it.p:has-text("Click anywhere in this paragraph")')
         page.keyboard.type('Typed under the policy. ')
         page.wait_for_timeout(800)
         check('typing on the page reaches the source', 'Typed under the policy.' in page.evaluate("() => window.rikuy.files.get('main.tex')"))
@@ -162,6 +163,29 @@ try:
         check('a live figure runs and sizes its frame', ok, page.evaluate('() => window.rikuy.widgets ? [window.rikuy.widgets.frames.size, [...window.rikuy.widgets.heights]] : null'))
         page.wait_for_timeout(1500)
         page.screenshot(path=os.path.join(SHOTS, 'csp-session.png'))
+
+        # interactive graphs (task 70): one inserted from a template (its preview in the dialog, its
+        # frame on the page, its PGF picture), Graph this on an equation, the web page with live
+        # graphs exported (KaTeX, the fonts read from the page's own files)
+        page.evaluate("() => { const g = window.rikuy; g.files = new Map([['main.tex', '\\\\documentclass{article}\\n\\\\begin{document}\\nGraphs under the policy.\\n\\\\[ y = A k^{\\\\alpha} \\\\]\\n\\\\end{document}\\n']]); g.main = 'main.tex'; g.hist = []; g.rebuild(); }")
+        page.wait_for_timeout(800)
+        page.locator('#pages .it').first.click(); page.wait_for_timeout(200)
+        page.evaluate('() => window.rikuy.runCommand("insert-interactive-graph", { template: "supply-demand" })')
+        page.wait_for_selector('#gd-ok'); page.wait_for_timeout(1500)
+        page.click('#gd-ok'); page.wait_for_function('() => !document.getElementById("gd-ok")', timeout=20000)
+        page.wait_for_function('() => window.rikuy.widgets && window.rikuy.widgets.frames.size >= 1 && [...window.rikuy.widgets.frames.values()].every((F) => window.rikuy.widgets.heights.has(F.key))', timeout=20000)
+        page.evaluate('() => window.rikuy.graphRefresh()'); page.wait_for_timeout(500)
+        check('an interactive graph runs under the policy and its PGF picture is drawn', page.evaluate('() => [...window.rikuy.assetBlobs.keys()].some((k) => /\\.pgf$/.test(k))'))
+        # (the first graph's hint, "Got it", out of the way of the equation under it)
+        if page.locator('.w-hint button').count(): page.locator('.w-hint button').click(); page.wait_for_timeout(200)
+        eq = page.evaluate_handle("() => [...document.querySelectorAll('#pages [data-a], #pages [data-m]')].find((el) => { const T = window.rikuy.eqInfo(el); return T && T.display; })")
+        eq.as_element().click(button='right')
+        page.get_by_role('menuitem', name='Graph this').click(); page.wait_for_timeout(2500)
+        check('Graph this under the policy', page.evaluate("() => window.rikuy.files.get('main.tex').split('\\\\rikuywidget').length - 1") == 2, page.evaluate("() => window.rikuy.files.get('main.tex')"))
+        page.evaluate('() => window.rikuy.runCommand("export-web-page", { link: true })')
+        page.wait_for_function('() => window.rikuy.lastExport && /\\.html$/.test(window.rikuy.lastExport.name)', timeout=60000)
+        web = page.evaluate('() => window.rikuy.lastExport.blob.text()')
+        check('the web page with live graphs is made under the policy: its frames, KaTeX, the fonts inside', web.count('<iframe class="rk-graph"') == 2 and 'class="katex"' in web and 'Paper Modern Serif' in web and 'url(data:font/woff2' in web, len(web))
 
         time.sleep(1.5)
         reports = [json.loads(r).get('csp-report', r) if r.startswith('{') else r for r in SRV.reports]

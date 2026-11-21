@@ -127,7 +127,7 @@ const at = (o) => sample.get(o.file).slice(o.start, o.end);
 ok('the sample as data: title, authors, date; sections with numbers, labels and places', () => {
   assert.equal(D.title.title, 'Editing in Print');
   assert.deepEqual(D.title.authors, ['Rikuy']);
-  assert.ok(D.title.date);
+  assert.equal(D.title.date, ''); // (the sample's \date{}: a date given, empty)
   const s = D.sections.find((x) => x.title === 'The round trip');
   assert.equal(s.number, '2'); assert.equal(s.level, 1); assert.equal(s.label, 'sec:roundtrip');
   assert.match(at(s), /^\\section\{The round trip\}/);
