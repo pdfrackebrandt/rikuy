@@ -9,7 +9,7 @@
 import { register, command, onInsertText, onInstall } from '../commands.js';
 import { $ } from '../ui/dom.js';
 import { BLOCKS } from '../render.js';
-import { NOT_PLAIN, latexSpot, restyle, startsLine, headLevels, isHeading, ENV_STYLES, THM_STYLES, isEnvStyle, envOf, quoteWords, thmLine, starEdits, applyEdits, numberingEdits, charStyleBody, formatOnlyBegin, thmDefsIn, eolAt, codeSafe, codeBlock, codeText, titleInfo, titlePartAt, titlePartEdits, titleNormalEdits, renameEdits, createsOwn, verbatimRuns, makesCounter } from '../styles.js';
+import { NOT_PLAIN, latexSpot, restyle, splitEnvEdits, startsLine, headLevels, isHeading, ENV_STYLES, THM_STYLES, isEnvStyle, envOf, quoteWords, thmLine, starEdits, applyEdits, numberingEdits, charStyleBody, formatOnlyBegin, thmDefsIn, eolAt, codeSafe, codeBlock, codeText, titleInfo, titlePartAt, titlePartEdits, titleNormalEdits, renameEdits, createsOwn, verbatimRuns, makesCounter } from '../styles.js';
 import { escapeTeX } from '../editor.js';
 import { defines, packageLine, packageOptions, preambleEnd, stripComments } from '../preamble.js';
 import { wrapBlockEdits } from '../blockenv.js';
@@ -37,6 +37,9 @@ export const WHY = {
 // the gallery's tiles: which slot shows which style in this document (Heading 1 is \chapter in a
 // report), and the element each is (Heading 1 to 3 keep the ids they had when they were sections)
 export const SLOT_EL = { p: 'rb-st-p', title: 'rb-st-title', h1: 'rb-st-section', h2: 'rb-st-subsection', h3: 'rb-st-subsubsection', h4: 'rb-st-h4', h5: 'rb-st-h5', h6: 'rb-st-h6', latex: 'rb-st-latex', quote: 'rb-st-quote' };
+// the environments of several paragraphs a heading on one of them splits (splitEnvEdits): no title
+// or counter of their own to print again, and the abstract, which ends before the heading
+const SPLITS = /^(?:quote|quotation|verse|abstract)$/;
 // a name for an environment of the document's own that Rikuy writes in a regular expression
 const SAFE_NAME = /^[A-Za-z]{1,40}$/;
 // classes that have no abstract environment
@@ -318,7 +321,7 @@ export const methods = {
         else for (const k of Object.keys(TITLE_PARTS)) why[k] = 'Give the document a title first (Title on its first paragraph).';
       }
     }
-    return Object.keys(why).length ? { ...st, whyTo: why } : st;
+    return Object.keys(why).length ? { ...st, whyTo: { ...(st.whyTo || {}), ...why } } : st;
   },
   // how many typewriter characters a line of the text holds (cmtt's are .525em wide)
   codeCols() {
@@ -410,9 +413,15 @@ export const methods = {
         else {
           // its paragraphs out of it, or in another environment; one paragraph of plain text may be a heading
           to.add('p'); envs.filter((x) => x !== v).forEach((x) => to.add(x));
-          if (q.one && q.plain) heads.forEach((h) => to.add(h));
+          // (of several paragraphs: the one with the caret, split out of it, splitEnvEdits; only
+          // out of an environment with no title or number of its own, or an abstract, whose
+          // paragraphs after the heading leave it. A theorem or a proof begun again after the
+          // heading printed "Theorem 2." and renumbered every later one, or a second "Proof."
+          // and its square.)
+          if ((q.one && q.plain) || (!q.one && SPLITS.test(q.name))) heads.forEach((h) => to.add(h));
         }
-        return { v, opt: q.opt, to: latex(to), b: { v, s: B.s, ws: q.ws, we: q.we, e: B.e, spot } };
+        const whyTo = !q.one && !SPLITS.test(q.name) ? Object.fromEntries(heads.map((h) => [h, 'A heading cannot stand inside ' + (q.name === 'proof' ? 'a proof' : 'a theorem or the like') + ': TeX would begin it again after the heading, with its title' + (q.name === 'proof' ? '' : ' and a new number') + '. Make the paragraph Normal first, or put the heading before or after it.'])) : null;
+        return { v, opt: q.opt, split: !q.opt && !q.one && SPLITS.test(q.name), to: latex(to), b: { v, s: B.s, ws: q.ws, we: q.we, e: B.e, spot }, ...(whyTo ? { whyTo } : {}) };
       }
     }
     const r = this.plainPara(B, it);
@@ -489,6 +498,7 @@ export const methods = {
     this.closeGroup();
     if (c.ghost) {
       const g = this.ghost, needs = this.styleNeeds(to);
+      this.ghostOutOfEnv(g, to);
       if (to === 'p' || to === 'latex' || (isEnvStyle(to) && !needs.length)) {
         g.style = to === 'p' ? null : to;
         g.pend = '';
@@ -504,6 +514,15 @@ export const methods = {
       return;
     }
     if (cur.many) { this.setManyStyle(cur, to, c); this.closeGroup(); return; }
+    // a heading on one paragraph of an abstract or a quote of several: that paragraph alone, the
+    // environment split around it (Word styles the paragraph, not its neighbours)
+    if (cur.split && (isHeading(to) || to === 'part')) {
+      const f = at.B.f, r = splitEnvEdits(this.src(f), cur.b, to, c.a);
+      if (r.why) { this.toast(r.why); return; }
+      this.commit(r.edits.map((x) => ({ f, ...x })), { f, p: r.p, bias: -1 }, 'block');
+      this.closeGroup();
+      return;
+    }
     const f = at.B.f, r = restyle(this.src(f), cur.b, to, c.a);
     if (!r) return;
     const needs = this.styleNeeds(to), grow = needs.filter((x) => x.f === f && x.s <= cur.b.s).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
@@ -608,6 +627,23 @@ export const methods = {
       if (f === f0 && first != null) caret = { f, p: first, bias: -1 };
     }
     if (edits.length) this.commit(edits, caret || (c && !c.ghost ? { f: c.f, p: c.a, bias: -1 } : null), 'block');
+  },
+  // The blank paragraph after Enter at the end of an abstract, a quote or a proposition stands
+  // inside it. A heading or another environment there is a paragraph of that style alone, as in
+  // Word, where a style replaces the one before: it goes after the \end. Written where it stood,
+  // \section went inside the abstract and a proof inside the proposition, which the PDF shows.
+  ghostOutOfEnv(g, to) {
+    if (!g || g.before || g.style || g.tex || to === 'p' || to === 'latex') return;
+    const K = this.styleCatalog(), src = this.src(g.f);
+    const para = (n) => n !== 'verbatim' && (isEnvStyle(n) || K.all.some((x) => isEnvStyle(x.v) && envOf(x.v) === n));
+    // (every one it stands at the end of, a quote's inside a theorem's too, for a heading, which
+    // belongs at the top level; another environment leaves those up to one of its own name)
+    for (let n = 0; n < 8; n++) {
+      const m = /^\s*\\end\s*\{([A-Za-z]+\*?)\}/.exec(src.slice(g.pos, g.pos + 400));
+      if (!m || m[1] === envOf(to) || !para(m[1])) return;
+      g.pos += m[0].length;
+      if (!isHeading(to) && to !== 'part') return;
+    }
   },
   // a blank paragraph set to an environment that needs a definition: the environment goes in at
   // once, with its definition, the caret inside it

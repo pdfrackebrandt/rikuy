@@ -14,7 +14,7 @@
 import { openQuickOpen } from '../ui/quickopen.js';
 import { register, command, enabled, onInstall } from '../commands.js';
 import { firstKey } from '../keys.js';
-import { compile, expand, hitsIn, hitsInSource, runsWith, blockText, charSrc, hitSource, joinRanges, labelsIn, hasParaMark, pageParaText, paraHitSource, controlWords, inControlWord, PARA, PMARK, FMT, FORMATS, MAX_HITS } from '../find.js';
+import { compile, expand, caseLike, hitsIn, hitsInSource, runsWith, blockText, charSrc, hitSource, joinRanges, labelsIn, hasParaMark, pageParaText, paraHitSource, controlWords, inControlWord, PARA, PMARK, FMT, FORMATS, MAX_HITS } from '../find.js';
 import { headingAt, sectionRange, promoteEdits, swapEdit, moveEdits, newHeading, eolOf, foldItems, foldEntry, matchFold, NAME } from '../outline.js';
 import { absAtom, posFromDom, diff, endsWithControlWord } from '../editor.js';
 import { $, load, store } from '../ui/dom.js';
@@ -482,7 +482,8 @@ export const methods = {
     if (h.st != null && src.slice(h.s, h.e) !== h.st) return null;
     const groups = fs.o.wildcards || fs.o.regex;
     // (in a formula the replacement is LaTeX as it is written: only ^& and the groups are codes)
-    const text = !/[\\^$]/.test(rep) ? rep : h.eq ? expand(rep, h.m || [h.text], { ...(groups ? fs.o : {}), literal: true }) : expandRep(rep, h, fs.o, groups);
+    let text = !/[\\^$]/.test(rep) ? rep : h.eq ? expand(rep, h.m || [h.text], { ...(groups ? fs.o : {}), literal: true }) : expandRep(rep, h, fs.o, groups);
+    if (!fs.o.matchCase && !groups && !h.eq && !h.src && h.text != null) text = caseLike(h.text, text);
     if (h.src) return [{ f: h.f, s: h.s, e: h.e, t: text }];
     const a = h.parts[0][0], b = h.parts[h.parts.length - 1][1];
     // (a hit across a paragraph's end, ^p: each paragraph's part as typing over it takes it away,
