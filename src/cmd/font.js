@@ -96,10 +96,10 @@ register(
     title: 'Clear Character Formatting (Ctrl+Space): bold, italic, colours, sizes and fonts off the selection', synonyms: ['Reset character', 'Plain text'],
     when: can, whyNot: () => WHY, run: (app) => app.clearFormatting(false) },
 
-  { id: 'bold', name: 'Bold', order: 10, title: 'Bold (Ctrl+B)', tab: 'home', group: 'font', el: 'rb-b', kind: 'toggle', glyph: '<b aria-hidden="true">B</b>', keys: ['Ctrl+B'], menu: { selection: 20 },
+  { id: 'bold', name: 'Bold', order: 10, title: 'Bold (Ctrl+B): make the selected text bold', tab: 'home', group: 'font', el: 'rb-b', kind: 'toggle', glyph: '<b aria-hidden="true">B</b>', keys: ['Ctrl+B'], menu: { selection: 20 },
     keysQuiet: ['Ctrl+Shift+B'], synonyms: ['Strong', 'textbf'], when: can, on: on('bold'), run: (app) => app.fmtToggle('bold'),
     palette: { k: 'textbf', d: 'Bold', order: 60, t: { open: '\\textbf{', close: '}' } } },
-  { id: 'italic', name: 'Italic', order: 20, title: 'Italic (Ctrl+I)', tab: 'home', group: 'font', el: 'rb-i', kind: 'toggle', glyph: '<i aria-hidden="true">I</i>', keys: ['Ctrl+I'], menu: { selection: 30 },
+  { id: 'italic', name: 'Italic', order: 20, title: 'Italic (Ctrl+I): make the selected text italic', tab: 'home', group: 'font', el: 'rb-i', kind: 'toggle', glyph: '<i aria-hidden="true">I</i>', keys: ['Ctrl+I'], menu: { selection: 30 },
     keysQuiet: ['Ctrl+Shift+I'], synonyms: ['Emphasis', 'emph', 'textit'], when: can, on: on('italic'), run: (app) => app.fmtToggle('italic'),
     palette: { k: 'emph', d: 'Emphasis', order: 50, t: { open: '\\emph{', close: '}' } } },
   { id: 'underline', name: 'Underline', order: 30, title: 'Underline (Ctrl+U): \\uline, which breaks across lines; the arrow for double, wave, dashed, dotted and a colour', tab: 'home', group: 'font', el: 'rb-u', kind: 'split', glyph: '<u aria-hidden="true">U</u>', keys: ['Ctrl+U'], keysQuiet: ['Ctrl+Shift+U'],
@@ -124,7 +124,7 @@ register(
     title: 'More Font Effects: small caps, all caps, double strikethrough, border, shading, enclosed characters, ruby', synonyms: ['Effects', 'Text effects'],
     when: can, whyNot: () => WHY, run: (app) => app.moreMenu() },
   // (Word's launcher at the group's corner: here More Font Effects' last item, the right click menu and Ctrl+D)
-  { id: 'font-dialog', name: 'Font Settings', keys: ['Ctrl+D'],
+  { id: 'font-dialog', name: 'Font Settings', dialog: true, menuName: 'Font', keys: ['Ctrl+D'],
     title: 'Font… (Ctrl+D): every character format in one dialog, with a preview, and the spacing, scale and position of letters', synonyms: ['Font dialog', 'Font…', 'Character spacing', 'Advanced font'],
     menu: { selection: 80, text: 80 }, when: can, whyNot: () => WHY, run: (app) => openFontDialog(app) },
 
@@ -141,8 +141,12 @@ register(
     when: (app, at) => can(app, at) && !at.c.collapsed, whyNot: () => 'Select the characters the reading goes over.', run: (app) => openRubyDialog(app) },
 
   { id: 'format-painter', name: 'Format Painter', order: 40, tab: 'home', group: 'clipboard', kind: 'toggle', icon: '<path d="M4.5 3.5h9v3.4h-9z"/><path d="M13.5 5.2h2v3.6H9.6v2.7"/><path d="M8.6 11.5h2v5h-2z"/>',
-    title: 'Format Painter (Ctrl+Shift+C): copies the formatting where the caret is to the next text you select (double click: to all until Escape)', synonyms: ['Copy formatting', 'Paste formatting', 'Paint format'], keys: ['Ctrl+Shift+C'],
+    title: 'Format Painter (Ctrl+Shift+C): copies the formatting where the caret is to the next text you select (double click: to all until Escape); Ctrl+Alt+V pastes it on the selection', synonyms: ['Copy formatting', 'Paint format'], keys: ['Ctrl+Shift+C'],
     when: (app, at) => !!app.fpaint || can(app, at), on: (app) => !!app.fpaint, resync: true, run: (app) => app.formatPainter() },
+  // Microsoft 365's Word: Ctrl+Alt+V (Word for Mac's Cmd+Option+V), since Ctrl+Shift+V became
+  // Paste Text Only; Paste Special keeps the Paste menu, as there
+  { id: 'paste-formatting', name: 'Paste Formatting', title: 'Paste Formatting (Ctrl+Alt+V): the formatting Ctrl+Shift+C or the Format Painter copied, on the selection or the caret\'s word', synonyms: ['Paste format', 'Apply formatting', 'Paste formatting only'],
+    keys: ['Ctrl+Alt+V'], when: can, run: (app) => app.pasteFormat() },
 
   { id: 'typewriter', name: 'Typewriter', title: 'Typewriter text: \\texttt', synonyms: ['Monospace', 'Code', 'texttt'], when: can, on: on('mono'), run: (app) => app.fmtToggle('mono'),
     palette: { k: 'texttt', d: 'Typewriter', order: 70, t: { open: '\\texttt{', close: '}' } } }
@@ -246,6 +250,35 @@ export const methods = {
 
   // Bold, Italic, Underline and the rest: on or off where the caret is
   fmtToggle(group, o = {}) {
+    // A caret at the end of a wrapper's words (Ctrl+B, "bold", Ctrl+B): Word ends the format for
+    // what is typed next and leaves the word as it is. It took \textbf off the whole word, and
+    // " after" went in plain beside a plain "bold". The caret goes after the wrapper's brace (the
+    // page shows it at the same spot: restoreCaret keeps the place), the text unchanged.
+    // Through wrappers inside it that end there too (\textbf{\emph{bold}}: the caret is before
+    // \emph's brace; it took the bold off, review V4): those go on for what is typed next, opened
+    // again after the bold, the caret in them, as Ctrl+B on a caret opens an empty \textbf{}.
+    const at = this.ribbonAt(), c = at && at.c;
+    if (!o.force && c && !c.ghost && c.collapsed && c.f != null && !this.texHere() && !(this.wholeDoc && this.wholeDoc()) && !this.blockCells(at)) {
+      const t = this.src(c.f), W = F.around(t, c.a, c.a, group);
+      if (W && W.is < c.a && W.e === W.ie + 1 && t[W.ie] === '}' && /^\}*$/.test(t.slice(c.a, W.ie))) {
+        if (c.a === W.ie) { this.restoreCaret({ f: c.f, p: W.e, bias: -1 }); this.ribbonSoon && this.ribbonSoon(); return true; }
+        // (each brace between closes a group opened inside the bold: its command, outermost first)
+        const opens = [];
+        for (let j = c.a; j < W.ie; j++) {
+          let d = 0, k = j - 1;
+          for (; k >= W.is; k--) { if (t[k - 1] === '\\') continue; if (t[k] === '}') d++; else if (t[k] === '{' && !d--) break; }
+          const m = k >= W.is ? /\\[A-Za-z]+$/.exec(t.slice(Math.max(W.is, k - 40), k)) : null;
+          if (!m) { opens.length = 0; break; }
+          opens.unshift(m[0] + '{');
+        }
+        if (opens.length) {
+          const ins = opens.join('') + '}'.repeat(opens.length);
+          this.commit([{ f: c.f, s: W.e, e: W.e, t: ins }], { f: c.f, p: W.e + opens.join('').length, bias: -1 }, 'format');
+        } else this.restoreCaret({ f: c.f, p: W.e, bias: -1 });
+        this.ribbonSoon && this.ribbonSoon();
+        return true;
+      }
+    }
     return this.fmtCommit([(t, a, b, x) => {
       // (a block of cells: on in every cell takes it off all of them, else all of them get it,
       // as Word chooses for the block as a whole)
@@ -811,13 +844,21 @@ export const methods = {
   // carries it: the paragraphs painted take it (a heading, a quote, a theorem, Normal), in the
   // same step. A double click keeps it armed until Escape or another press of the button.
   formatPainter(sticky) {
-    if (this.fpaint) { this.fpaint = null; document.body.classList.remove('fpainting'); return true; }
     const at = this.ribbonAt(), c = at && at.c;
+    // pressed again where it was armed, or kept on by a double click: off, as the button's second
+    // press; from another place it copies that place's formatting, as Word's Ctrl+Shift+C does each
+    // time (a second Ctrl+Shift+C elsewhere turned it off)
+    if (this.fpaint) {
+      const A = this.fpaint.at;
+      if (this.fpaint.sticky || !c || c.ghost || !A || (A.f === c.f && A.a === c.a && A.b === c.b)) { this.fpaint = null; document.body.classList.remove('fpainting'); return true; }
+    }
     if (!c || c.ghost) return false;
     const fmts = F.formatsAt(this.src(c.f), c.a, c.b);
     const sel = getSelection();
     // (where it was armed: the selection there is no place to paint, see the touch screen's rest below)
-    this.fpaint = { fmts, sticky: !!sticky, from: sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null, style: this.fpStyleAt(at) };
+    this.fpaint = { fmts, sticky: !!sticky, from: sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null, style: this.fpStyleAt(at), at: { f: c.f, a: c.a, b: c.b } };
+    // (kept for Paste Formatting, Ctrl+Alt+V, again and again: pasteFormat)
+    this.fmtCopy = { fmts, style: this.fpaint.style };
     document.body.classList.add('fpainting');
     if (!fmts.length && !this.fpaint.style) this.toast('The caret is in plain text: the next selection is made plain.', 2400);
     return true;
@@ -868,6 +909,20 @@ export const methods = {
     });
     if (!P0.sticky) { this.fpaint = null; document.body.classList.remove('fpainting'); }
     this.ribbonSync();
+    return ok;
+  },
+  // Paste Formatting (Ctrl+Alt+V): the formatting copied by Ctrl+Shift+C or the Format Painter,
+  // on the selection or the caret's word, as one press of the painter (one undo); the copy stays
+  // for the next one, a painter Ctrl+Shift+C armed is put away (a click after would paint again),
+  // one a double click keeps stays. With nothing copied it says so and changes nothing.
+  pasteFormat() {
+    const K = this.fmtCopy, at = this.ribbonAt();
+    if (!K) { this.toast('Copy formatting first: Ctrl+Shift+C where it is, or the Format Painter.', 3600); return false; }
+    if (!at || !at.c || at.c.ghost) return false;
+    const P0 = this.fpaint;
+    this.fpaint = { fmts: K.fmts, style: K.style, sticky: false, from: null };
+    const ok = this.paintFormat();
+    if (P0 && P0.sticky) { this.fpaint = P0; document.body.classList.add('fpainting'); this.ribbonSync(); }
     return ok;
   },
   // the words selected before a style was given to their paragraph, selected again where the

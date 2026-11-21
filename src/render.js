@@ -6,16 +6,22 @@ import { siInMath } from './siunitx.js';
 import { graphicBox, unescapeAlt } from './picture.js';
 import { drawRaw, drawSmart, drawIcon, smartItems } from './drawing.js';
 import { parseKV } from './preamble.js';
+// (what each part says to a screen reader and to an agent reading the accessibility tree)
+import * as A11Y from './a11y.js';
 
 export const BLOCKS = new Map();
 let blockSeq = 1;
 let itemSeq = 1;
 
-const KATEX_DEFAULT_MACROS = {
+export const KATEX_DEFAULT_MACROS = {
   '\\mathbbm': '\\mathbb', '\\mathds': '\\mathbb', '\\bbm': '\\mathbb', '\\nicefrac': '\\frac',
   '\\eqqcolon': '=\\vcentcolon', '\\T': '^{\\top}', '\\middlebar': '\\middle|',
   // \mleft ... \mright (mleftright package): brackets without the extra space before them
   '\\mleft': '\\left', '\\mright': '\\right',
+  // \ensuremath (LaTeX's own): in a formula it is its argument, in text a formula; KaTeX lacks
+  // it, so a package's \newcommand{\R}[1]{\ensuremath{...}} used in $...$ showed as an error
+  // (and, as its argument alone, in \text{in \R}: \mathbb in text mode)
+  '\\ensuremath': '\\TextOrMath{$#1$}{#1}',
   // amsmath and mathdots symbols KaTeX lacks
   '\\iiiint': '\\mathop{\\int\\mkern-9mu\\int\\mkern-9mu\\int\\mkern-9mu\\int}\\nolimits',
   '\\iddots': '\\mathinner{\\mkern1mu\\raisebox{0.1em}{.}\\mkern2mu\\raisebox{0.4em}{.}\\mkern2mu\\raisebox{0.7em}{.}\\mkern1mu}'
@@ -299,6 +305,7 @@ export class Renderer {
           if (it.num) { const l = chr(it.chapLabel + ' ' + it.num, 'chapl'); el.appendChild(l); }
         } else if (it.num) { el.appendChild(chr(it.num, it.numBlock ? 'chapl' : 'secnum')); }
         this.inl(it.inl, el);
+        A11Y.heading(el, it);
         headLook(el, it.look, false);
         // a heading that runs into its paragraph takes no height of its own: drawn over the room
         // its paragraph keeps for it at its first line's start
@@ -324,6 +331,7 @@ export class Renderer {
         for (const au of it.authors) { const s = document.createElement('span'); s.className = 'ttl-au'; this.inl(au, s); a.appendChild(s); }
         el.appendChild(a);
         if (it.date && it.date.length) { const d = div('ttl-d'); this.inl(it.date, d); el.appendChild(d); }
+        A11Y.titleParts(el);
         item.sbEm = 0;
         break;
       }
@@ -332,6 +340,23 @@ export class Renderer {
         el.contentEditable = 'false';
         const r = this.katex(it.tex, true);
         el.innerHTML = r.html;
+        // \intertext's words between the rows, across the display (src/model.js displayMath)
+        if (it.parts && !r.err) {
+          el.replaceChildren();
+          for (const P of it.parts) {
+            const d = document.createElement('div');
+            if (P.tex != null) { d.className = 'dm-rows'; d.innerHTML = this.katex(P.tex, true).html; }
+            else {
+              d.className = 'intertext';
+              for (const [k, bit] of P.text.split(/(\$[^$]*\$)/).entries()) {
+                if (k % 2) { const m = document.createElement('span'); m.innerHTML = this.katex(bit.slice(1, -1), false).html; d.appendChild(m); }
+                else d.appendChild(document.createTextNode(bit.replace(/\\[A-Za-z]+\*?\s*/g, '').replace(/[{}]/g, '').replace(/~/g, '\u00a0')));
+              }
+            }
+            el.appendChild(d);
+          }
+        }
+        A11Y.displayMath(el, it);
         if (r.err) { el.classList.add('has-err'); el.title = r.err; }
         const idx = B.atoms.length;
         B.atoms.push({ kind: 'math', display: true, f: it.f, s: this.rel(it.s), e: this.rel(it.e), is: this.rel(it.is), ie: this.rel(it.ie), env: it.env, err: r.err });
@@ -346,11 +371,14 @@ export class Renderer {
         if (it.depth) { el.classList.add('deep'); el.style.setProperty('--depth', it.depth); }
         // a wrapfigure: its parts as wide as it is (its pictures' \linewidth), until the page wraps
         // text round it (B6); a share of the line, or a length in points
-        const ww = it.wrapW ? cssLength(it.wrapW) : null;
+        // (a width of 0pt is wrapfig's "as wide as what is in it": max-content, measured as drawn)
+        const natural = it.wrapW != null && /^0+(\.0*)?\s*(pt|cm|mm|in|bp|em)?$/.test(String(it.wrapW).trim());
+        const ww = natural ? 'max-content' : it.wrapW ? cssLength(it.wrapW) : null;
         if (ww) { el.classList.add('flt-wrap'); el.style.setProperty('--wrapw', ww); item.wrapSide = it.side || 'r'; }
         const lwWas = this.lineW;
-        if (ww) this.lineW = it.wrapW;
+        if (ww && !natural) this.lineW = it.wrapW;
         for (const p of it.parts) el.appendChild(this.floatPart(p));
+        A11Y.float(el, it);
         this.lineW = lwWas;
         item.isFloat = it.kind !== 'inline';
         if (it.kind === 'inline' && it.parts.length === 1 && it.parts[0].type === 'tabular' && it.parts[0].rows.length > 3) { item.splittable = true; item.rowSplit = true; }
@@ -443,6 +471,7 @@ export class Renderer {
         el.classList.add('h', 'h1', 'refs-h');
         el.contentEditable = 'false';
         el.textContent = it.head;
+        A11Y.sectionHead(el);
         item.keepNext = true;
         item.sbEm = 1.5;
         const region = it.notes ? null : (it.key || 'ix');
@@ -479,6 +508,7 @@ export class Renderer {
         el.classList.add('h', 'h1', 'refs-h');
         el.contentEditable = 'false';
         el.textContent = it.head;
+        A11Y.sectionHead(el);
         item.keepNext = true;
         item.sbEm = 1.5;
         item.extra = it.entries.map((en) => {
@@ -672,6 +702,18 @@ export class Renderer {
       return d;
     }
     if (p.type === 'h') { const d = div('fp'); this.inl(p.inl, d); return d; }
+    if (p.type === 'raw') {
+      // a TikZ picture in a figure: drawn as in the text, selected as there (src/ui/shapes.js)
+      const d = div('fp raw atom al-' + (p.align || 'center'));
+      d.contentEditable = 'false';
+      const whole = p.e - p.s < 20000 ? (this.app.files.get(p.f) || '').slice(p.s, p.e) : '';
+      const pic = whole ? drawRaw(whole) : null;
+      if (pic) { d.classList.add('drawn'); d.appendChild(pic); } else { const h = div('raw-h'); h.textContent = 'tikzpicture'; d.appendChild(h); }
+      const idx = B.atoms.length;
+      B.atoms.push({ kind: 'raw', f: p.f, s: this.rel(p.s), e: this.rel(p.e), is: this.rel(p.is), ie: this.rel(p.ie), name: 'tikzpicture' });
+      d.dataset.a = B.id + '.' + idx;
+      return d;
+    }
     return div('fp');
   }
 
@@ -904,14 +946,17 @@ export class Renderer {
         break;
       }
       case 'smart': {
-        s.appendChild(drawSmart(x.kind, smartItems(x.items || '')));
-        s.title = 'smartdiagram: click to edit its items';
+        s.appendChild(drawSmart(x.kind, smartItems(x.items || ''), document, x.set || ''));
+        s.title = 'SmartArt (smartdiagram): click to select it, double click to edit its items';
+        // (its \smartdiagramset just before it is part of the object: SmartArt Design's colours)
+        rec.ss = this.rel(x.ss != null ? x.ss : x.s); rec.se = this.rel(x.se != null ? x.se : x.e);
         break;
       }
       case 'widget': {
         // A live figure. This box keeps the widget's place and size in the text; the widget runs
         // in a frame laid over it (src/widget.js), which outlives this box being drawn again.
-        const fb = this.app.assetURL(x.fallback);
+        // (a graph's PGF picture is TeX's: the page shows Rikuy's own drawing of the graph instead)
+        const fb = /\.pgf$/i.test(x.fallback) ? (x.wfile && this.app.graphPictureURL ? this.app.graphPictureURL(x.wfile) : null) : this.app.assetURL(x.fallback);
         const html = x.wfile ? this.app.files.get(x.wfile) : null;
         if (html != null && !this.app.widgetsAllowed()) {
           // from someone else and not allowed yet: the fallback, and a button over it (WidgetLayer)
@@ -963,6 +1008,7 @@ export class Renderer {
       }
       default: s.textContent = x.text || '';
     }
+    A11Y.atom(s, x, this.app.files);
     const idx = B.atoms.length;
     B.atoms.push(rec);
     s.dataset.a = B.id + '.' + idx;

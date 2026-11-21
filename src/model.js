@@ -2,6 +2,7 @@
 // numbering, cross references and citations resolved. Every editable
 // character keeps a pointer to its exact source range.
 import { parse, scanUserSigs, CHARS, ACCENTS, splitRows, MATH_BUDGET } from './parser.js';
+import { filesRead, resolveIn } from './scan.js';
 import { refsSetup, readIndexArg, indexKey, istRight } from './refsrc.js';
 import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bib.js';
 import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
@@ -91,7 +92,7 @@ const INVIS = new Set([
   'address', 'shorttitle', 'subtitle', 'keywords_', 'hfil', 'endfirsthead', 'endhead', 'endfoot', 'endlastfoot',
   'tabularnewline_', 'newblock', 'hbox_', 'nobreak', 'printindex', 'makeindex', 'urlstyle', 'listfiles',
   'nonumber', 'notag', 'restoregeometry', 'newgeometry', 'linenumbers', 'nolinenumbers', 'doublespace',
-  'lstset', 'tikzset', 'pgfplotsset', 'setlist', 'crefname', 'Crefname', 'newlength', 'AtBeginDocument',
+  'lstset', 'tikzset', 'pgfplotsset', 'smartdiagramset', 'setlist', 'crefname', 'Crefname', 'newlength', 'AtBeginDocument',
   'AtEndDocument', 'setmainfont', 'setsansfont', 'setmonofont', 'newfontfamily', 'renewbibmacro',
   'DeclareFieldFormat', 'DeclareNameAlias', 'newacronym', 'usetikzlibrary', 'pgfplotstableread', 'tcbuselibrary',
   'SetKwInOut', 'algnewcommand', 'floatname', 'restylefloat', 'newfloat', 'DeclareCaptionFormat', 'setuptoc',
@@ -289,6 +290,35 @@ function csvRows(text, sep) {
   return rows;
 }
 
+// The end of a SmartArt with the line after it that puts smartdiagram's own colours back (SmartArt
+// Design's Change Colors writes it, src/objfmt.js SMART_RESET): the object a selection takes in
+const SMART_RESET_RE = /\s*\\smartdiagramset\s*\{\s*set color list=\{red!40,cyan!40,blue!40,green!40,orange!40,yellow!40,magenta!40,brown!40,violet!40,teal!40\}\s*\}/y;
+// (or any list put back, marked by its comment: the document's own colours of before)
+const SMART_BACK_RE = /\s*\\smartdiagramset\s*\{(?:[^{}]|\{[^{}]*\})*\}% rikuy: colours back/y;
+function smartEnd(src, e) { SMART_BACK_RE.lastIndex = e; if (SMART_BACK_RE.test(src)) return SMART_BACK_RE.lastIndex; SMART_RESET_RE.lastIndex = e; return SMART_RESET_RE.test(src) ? SMART_RESET_RE.lastIndex : e; }
+
+// An optional argument written as text at the start of nodes ("[a)] Lab", "[\\textbf{b)}] Bold"):
+// { o, s, e, is, ie, nodes } as the parser gives one, taken out of nodes; null when nodes do not
+// start with [ or no ] closes it before a paragraph ends (a par node; LaTeX's first ] outside
+// braces ends it, and a ] inside a group is inside another node).
+function bracketArg(nodes, src) {
+  const n0 = nodes[0];
+  if (!n0 || n0.t !== 'text' || src[n0.s] !== '[') return null;
+  const kids = [];
+  for (let i = 0; i < nodes.length && i < 64; i++) {
+    const n = nodes[i], from = i === 0 ? n0.s + 1 : n.s;
+    if (n.t !== 'text') { if (n.t === 'par') return null; kids.push(n); continue; }
+    // (looked for inside this node only: a stranger's slides with many \item<1>[ and no ] made
+    // every item read to the document's end)
+    const k = src.slice(from, n.e).indexOf(']'), j = k < 0 ? -1 : from + k;
+    if (j < 0) { if (n.e > from) kids.push({ ...n, s: from }); continue; }
+    if (j > from) kids.push({ ...n, s: from, e: j });
+    nodes.splice(0, i + 1, ...(j + 1 < n.e ? [{ ...n, s: j + 1 }] : []));
+    return { o: true, s: n0.s, e: j + 1, is: n0.s + 1, ie: j, nodes: kids };
+  }
+  return null;
+}
+
 export function buildModel(project, hint) {
   if (hint && hint.labels) {
     if (INCR.on) {
@@ -343,6 +373,17 @@ const PURE_CMDS = new Set(['textbf', 'textit', 'emph', 'texttt', 'textsc', 'text
 // the names an offset is kept under in a model's units (every numeric field the corpus's models move
 // when text is typed before them; test/incremental.test.mjs finds a missed one)
 export const OFFSET_KEYS = new Set(['s', 'e', 'is', 'ie', 'itemS', 'itemE', 'listS', 'listE', 'cmdE', 'ps', 'pe', 'vs', 've']);
+// .bst files that number references in the order they are cited (review E6: IEEEtran and the
+// others numbered by author on the page and in Word, by citation order in the PDF)
+const UNSORTED_BST = new Set(['unsrt', 'unsrtnat', 'ieeetr', 'unsrt_abbrv', 'IEEEtran', 'IEEEtranN', 'IEEEtranSN', 'elsarticle-num', 'vancouver', 'naturemag', 'nature', 'achemso', 'JHEP', 'utphys', 'apsrev4-2', 'apsrev4-1', 'aipnum4-2', 'unsrturl', 'ieeetr_url', 'plainnat_unsrt', 'abbrvnat_unsrt']);
+// The first \bibliographystyle of a text that is not in a comment, a verbatim block or \iffalse
+function bibStyleIn(t) {
+  if (typeof t !== 'string' || t.indexOf('\\bibliographystyle') < 0) return null;
+  const u = t.slice(0, 2e6).replace(/\\begin\s*\{(verbatim\*?|Verbatim|lstlisting|minted|comment)\}[\s\S]*?\\end\s*\{\1\}/g, ' ').replace(/\\iffalse\b[\s\S]*?\\fi\b/g, ' ').replace(/(^|[^\\])%[^\n]*/g, '$1');
+  const m = /\\bibliographystyle\s*\{([^{}\n]{1,60})\}/.exec(u);
+  return m ? m[1].trim() : null;
+}
+
 const MATH_READS = /\\(?:eqref|ref|cref|Cref|autoref|label|intertext|shortintertext)\b|color/;
 
 function pureNodes(ns, src, macros) {
@@ -825,7 +866,14 @@ class Builder {
     if (O.parindent == null) O.parindent = O.parskip ? 0 : ({ 10: 15, 11: 17, 12: 18 }[O.pt] || (O.ext ? O.ext.pi : 15));
     if (O.natbib && !O.forceNumeric) O.citeStyle = 'authoryear';
     if (O.biblatex) O.citeStyle = O.biblatexStyle === 'authoryear' ? 'authoryear' : 'numeric';
-    if (['unsrt', 'unsrtnat', 'ieeetr', 'unsrt_abbrv'].includes(O.bibstyle)) O.sort = false;
+    // (\bibliographystyle stands at the body's end, where it is read after the citations are
+    // numbered: it is looked for here, in the main file and then the .tex files it reads (filesRead:
+    // not a talk or a letter beside it), the first that is not in a comment, verbatim or \iffalse,
+    // as BibTeX takes the first \bibstyle of the .aux. Under \bibliographystyle{unsrt} there the
+    // page numbered by author and the PDF by citation order.)
+    const bst = bibStyleIn(ctx.src) || filesRead(this.files, ctx.f).filter((n) => n !== ctx.f).map((n) => this.files.get(n)).filter((t) => typeof t === 'string').map((t) => bibStyleIn(t)).find(Boolean);
+    if (bst) O.bibstyle = bst;
+    if (UNSORTED_BST.has(O.bibstyle) || (O.biblatex && O.bibUnsorted)) O.sort = false;
     if (O.natbib && ['plain', 'unsrt', 'abbrv', 'alpha', 'ieeetr', 'siam', 'acm', 'amsplain', 'unsrtnat_num'].includes(O.bibstyle) && !O.forceAY) O.citeStyle = O.forceNumeric ? 'numeric' : O.citeStyle;
   }
 
@@ -840,15 +888,15 @@ class Builder {
       if (nd.t === 'group') this.preWalk(nd.nodes, c, own);
       else if (nd.t === 'env' && !nd.raw && nd.nodes) this.preWalk(nd.nodes, c, own);
       else if (nd.t !== 'cmd') continue;
-      else if (nd.name === 'input' && nd.args[0]) this.preFile(this.resolveFile(this.argText(c, nd.args[0])), own);
+      else if (nd.name === 'input' && nd.args[0]) this.preFile(this.resolveFile(this.argText(c, nd.args[0]), c.f), own);
       else if (!own) this.preCmd(nd, c);
       else if (nd.name === 'definecolor') this.defColor(nd, c);
       else if (nd.name === 'usepackage' || nd.name === 'RequirePackage') {
         for (const p of this.argText(c, nd.args[1]).split(',')) {
-          if (this.files.has(p.trim() + '.sty')) this.preFile(p.trim() + '.sty', true);
+          if (this.styFile(p.trim())) this.preFile(this.styFile(p.trim()), true);
           // (the project's own class or package may load what lays out the page or sets its sheet)
           if (p.trim() === 'geometry') this.geometry(this.argText(c, nd.args[0]));
-          if (!this.files.has(p.trim() + '.sty') && setsMedia(p.trim(), optsOf(this.argText(c, nd.args[0])))) this.opts.media = true;
+          if (!this.styFile(p.trim()) && setsMedia(p.trim(), optsOf(this.argText(c, nd.args[0])))) this.opts.media = true;
         }
       } else if (/^(newcommand|providecommand|newenvironment|DeclareMathOperator|newtheorem|theoremstyle|numberwithin)$/.test(nd.name) &&
         !(nd.def && (nd.def.bs < 0 || /@/.test(c.src.slice(nd.s, nd.def.bs > 0 ? nd.def.bs : nd.e))))) this.defCmd(nd, c);
@@ -936,8 +984,10 @@ class Builder {
             O.biblatexStyle = /style\s*=\s*(authoryear|apa|chicago|ext-authoryear)/.test(op) ? 'authoryear' : 'numeric';
             // natbib=true gives biblatex natbib's \citep and \citet; without it they are undefined
             O.biblatexNatbib = /\bnatbib\b(?!\s*=\s*false)/.test(op);
+            // (sorting=none and the styles that number in citation order: ieee, nature, chem-*, phys)
+            if (/\bsorting\s*=\s*none\b/.test(op) || /\bstyle\s*=\s*(ieee|nature|chem-acs|chem-angew|chem-rsc|phys)\b/.test(op) && !/\bsorting\s*=/.test(op)) O.bibUnsorted = true;
           }
-          if (this.files.has(p + '.sty')) this.preFile(p + '.sty', true);
+          if (this.styFile(p)) this.preFile(this.styFile(p), true);
           if (p === 'apacite' || p === 'harvard' || p === 'chicago') { O.natbib = true; O.forceAY = true; }
           if (p === 'setspace') { /* spacing commands handled separately */ }
           if (p === 'floatrow') O.floatAlign = 'center';
@@ -953,7 +1003,7 @@ class Builder {
           if (p === 'geometry') this.geometry(op);
           // what sets the PDF's sheet to LaTeX's paper: without any of it TeX Live's sheet is A4
           // (src/pagesrc.js mediaSet)
-          if (!this.files.has(p + '.sty') && setsMedia(p, optsOf(op))) O.media = true;
+          if (!this.styFile(p) && setsMedia(p, optsOf(op))) O.media = true;
           // (typearea's paper is A4 where the class's options give none)
           if (p === 'typearea' && !O.paperByClass) O.paper = 'a4';
           if (p === 'babel') {
@@ -1072,7 +1122,7 @@ class Builder {
       for (const nd of ns) {
         if (nd.t === 'cmd') {
           if (nd.name === 'input' || nd.name === 'include' || nd.name === 'subfile') {
-            const f = this.resolveFile(this.argText(c, nd.args[0]));
+            const f = this.resolveFile(this.argText(c, nd.args[0]), c.f, nd.name === 'subfile');
             if (f && !this.included.has('defs:' + f)) {
               this.included.add('defs:' + f);
               walk(this.parseFile(f), { f, src: this.files.get(f), pm: null });
@@ -1170,14 +1220,27 @@ class Builder {
     }
   }
 
-  resolveFile(name) {
-    name = (name || '').trim();
-    if (!name) return null;
-    const cands = [name, name + '.tex', name.replace(/^\.\//, ''), name.replace(/^\.\//, '') + '.tex'];
-    for (const c of cands) if (this.files.has(c)) return c;
-    const base = name.split('/').pop();
-    for (const [k] of this.files) if (k.endsWith('/' + base) || k.endsWith('/' + base + '.tex') || k === base + '.tex') return k;
-    return null;
+  // A name as TeX reads it, from the main file's folder (\input{../common/defs} in talk/slides.tex
+  // is common/defs), as the project names it; null for one that leaves the project.
+  fromMain(name) {
+    const main = (this.project && this.project.main) || '';
+    const parts = [];
+    for (const p of (main.slice(0, main.lastIndexOf('/') + 1) + name).split('/')) {
+      if (p === '' || p === '.') continue;
+      if (p === '..') { if (!parts.length) return null; parts.pop(); } else parts.push(p);
+    }
+    return parts.join('/');
+  }
+  // the project's package file \usepackage{name} loads (name.sty from the main file's folder), or null
+  styFile(name) {
+    const rel = name && this.fromMain(name + '.sty');
+    return rel && this.files.has(rel) ? rel : name && this.files.has(name + '.sty') ? name + '.sty' : null;
+  }
+
+  // from: the file whose \input, \include or \subfile (sub) names it; the rule the project-wide
+  // scans follow too (src/scan.js resolveIn), so the page and they read the same files
+  resolveFile(name, from, sub) {
+    return resolveIn(this.files, name, this.project.main, from, sub);
   }
 
   // ---- direction -------------------------------------------------------------
@@ -1602,7 +1665,7 @@ class Builder {
         const name = nd.name;
         if (name === 'input' || name === 'include' || name === 'subfile') {
           flushPara();
-          const f = this.resolveFile(this.argText(ctx, nd.args[0]));
+          const f = this.resolveFile(this.argText(ctx, nd.args[0]), ctx.f, name === 'subfile');
           if (f && !this.included.has(f)) {
             this.included.add(f);
             const sub = { f, src: this.files.get(f), pm: null };
@@ -2488,6 +2551,21 @@ class Builder {
       if (n.t === 'cmd' && n.name === 'item') { cur = { cmd: n, nodes: [] }; items.push(cur); }
       else if (cur) cur.nodes.push(n);
     }
+    // beamer's overlay specification (\item<2->, \item<+->[label]) says on which slides an item
+    // shows: the page draws every item and leaves it out of the text, its source untouched
+    if (this.opts.cls === 'beamer') {
+      for (const it of items) {
+        const n = it.nodes[0];
+        const m = n && n.t === 'text' ? /^<[^<>\n]{1,60}>[ \t]*/.exec(ctx.src.slice(n.s, n.e)) : null;
+        if (!m) continue;
+        if (n.s + m[0].length < n.e) it.nodes[0] = { ...n, s: n.s + m[0].length }; else it.nodes.shift();
+        // \item<+->[a)]: the parser reads \item's [label] only right after its name, so after an
+        // overlay it stayed text, drawn as "[a)] Lab" beside a bullet (review N2): made the item's
+        // optional argument here, as the parser makes it
+        const arg = it.cmd.args[0] ? null : bracketArg(it.nodes, ctx.src);
+        if (arg) it.cmd = { ...it.cmd, e: arg.e, args: [arg] };
+      }
+    }
     // What labels and numbers it, as TeX reads it (src/lists.js, which the list commands share):
     // its options (enumitem's label=, start=, resume, nosep; the enumerate package's "(a)"), its
     // own set up (\def\labelenumi, \setcounter{enumi}, \setlength{\itemsep}), the preamble's
@@ -2724,6 +2802,9 @@ class Builder {
         if (n.t === 'cmd' && n.name === 'label') { this.label(this.argText(ctx, n.args[0]), ctx); continue; }
         if (n.t === 'env' && n.math) { flushP(); parts.push(this.displayMath(n, ctx, n.name)); continue; }
         if (n.t === 'math' && n.display) { flushP(); parts.push(this.displayMath(n, ctx, null)); continue; }
+        // a TikZ picture in a figure (Shape Format's and Chart Format's Position): drawn as in the
+        // text (src/render.js floatPart), its source box where the page cannot draw it
+        if (n.t === 'env' && n.name === 'tikzpicture' && !ctx.pm) { flushP(); parts.push({ type: 'raw', f: ctx.f, s: n.s, e: n.e, is: n.be, ie: n.es, name: 'tikzpicture', align: align || dflt }); continue; }
         para.push(n);
       }
     };
@@ -2949,6 +3030,15 @@ class Builder {
     const out = [];
     if (multi) {
       const rs = splitRows(inner);
+      // amsmath's \intertext{words} (\shortintertext) at a row's start: a line of text across the
+      // display between its rows, as TeX sets it. KaTeX knows neither, and written as \text{} (as
+      // tex keeps it, for Word and the rest) the words stood inside the row, before its formula.
+      // The rows on each side are drawn as displays of their own, the words between (parts).
+      const inter = new Map();
+      rs.forEach((r, k) => {
+        const m = /^\s*\\(?:short)?intertext\s*\{([^{}]*)\}/.exec(inner.slice(r.s, r.e));
+        if (m) inter.set(k, m[1]);
+      });
       rs.forEach((r, k) => {
         let t = inner.slice(r.s, r.e);
         const info = this.rowInfo(t, ctx);
@@ -2971,7 +3061,19 @@ class Builder {
         tex = '\\begin{alignat*}{' + (m ? m[1] : (nd.args[0] ? this.argText(ctx, nd.args[0]) : '1')) + '}' + out.join('\\\\') + '\\end{alignat*}';
       } else tex = '\\begin{' + envOut + '}' + out.join('\\\\') + '\\end{' + envOut + '}';
       this.use('M' + tags.join(','));
-      return { type: 'math', f: ctx.f, s: nd.s, e: nd.e, is, ie, env, tex, tags };
+      let parts = null;
+      if (inter.size && base !== 'alignat') {
+        parts = [];
+        let from = 0;
+        const cut = (k) => { const t = out[k], w = '\\text{' + inter.get(k) + '}', i = t.indexOf(w); return i >= 0 && !t.slice(0, i).trim() ? t.slice(i + w.length) : null; };
+        const rows = (a, b) => { const g = []; for (let j = a; j < b; j++) { const t = inter.has(j) ? cut(j) : out[j]; if (t == null) return false; if (t.trim()) g.push(t); } if (g.length) parts.push({ tex: '\\begin{' + envOut + '}' + g.join('\\\\') + '\\end{' + envOut + '}' }); return true; };
+        let ok = true;
+        for (const k of [...inter.keys()].sort((x, y) => x - y)) { ok = ok && rows(from, k); parts.push({ text: inter.get(k) }); from = k; }
+        ok = ok && rows(from, out.length);
+        if (!ok) parts = null;
+        else this.use('I' + JSON.stringify([...inter]));
+      }
+      return { type: 'math', f: ctx.f, s: nd.s, e: nd.e, is, ie, env, tex, tags, ...(parts ? { parts } : {}) };
     }
     const info = this.rowInfo(inner, ctx);
     let tag = info.tag;
@@ -3409,7 +3511,10 @@ class Builder {
     if (name === 'smartdiagram' && nd.args.some((x) => x && !x.o)) {
       acc.flush();
       const o = nd.args.find((x) => x && x.o), m = nd.args.filter((x) => x && !x.o).pop();
-      out.push(this.atom(ctx, { k: 'smart', s: nd.s, e: nd.e, kind: o ? this.argText(ctx, o).trim().slice(0, 60) : 'flow diagram', items: ctx.src.slice(m.is, m.ie).slice(0, 4000) }));
+      // (its \smartdiagramset just before it, SmartArt Design's colours: the page draws them; ss is
+      // where it starts, so the object a selection takes in is both)
+      const k0 = ctx.pm ? -1 : ctx.src.lastIndexOf('\\smartdiagramset', nd.s), sm = k0 >= 0 && nd.s - k0 < 2000 ? /\\smartdiagramset\s*\{((?:[^{}]|\{[^{}]*\})*)\}\s*$/y.exec(ctx.src.slice(k0, nd.s)) : null;
+      out.push(this.atom(ctx, { k: 'smart', s: nd.s, e: nd.e, kind: o ? this.argText(ctx, o).trim().slice(0, 60) : 'flow diagram', items: ctx.src.slice(m.is, m.ie).slice(0, 4000), set: sm ? sm[1] : '', ss: sm ? k0 : nd.s, se: ctx.pm ? nd.e : smartEnd(ctx.src, nd.e) }));
       return false;
     }
     // lettrine's \lettrine[options]{T}{his} (Insert › Drop Cap): the letter dropped over its lines,

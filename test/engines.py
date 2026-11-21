@@ -28,9 +28,19 @@ def wait_pdf(page, timeout=180):
     return page.evaluate("document.getElementById('pdf-status').textContent")
 
 
+# What ended the page, if the run stops part way: the page navigated (nothing a document does may
+# do that) or its renderer crashed (the TeX worker runs in it). Playwright reports both, to a call
+# waiting on the page, as "Execution context was destroyed, most likely because of a navigation":
+# any protocol error that is not the page's own becomes that message (CI on ab27d09). A new
+# document in the page is what counts: framenavigated fires for history.replaceState as well (the
+# page drops a #share= or #tex= from its address so), which keeps the document (review of
+# 2badc1f, I2), so the new document's DOMContentLoaded is what is noted.
+ended = []
 try:
     with sync_playwright() as p:
         browser, page, errors = open_page(p, width=1500, height=950)
+        page.on('domcontentloaded', lambda pg: ended.append('the page navigated: a new document at ' + pg.url[:120]))
+        page.on('crash', lambda: ended.append('the page crashed (its renderer, with the TeX worker in it)'))
         page.click('#b-pdf')
         st = wait_pdf(page)
         check('the sample compiles with pdfLaTeX', 'pdfLaTeX' in st and 'page' in st, st)
@@ -184,6 +194,23 @@ try:
         st = wait_pdf(page)
         fonts, text = pdf_fonts_text(page)
         check('a biblatex paper whose .bbl this biblatex cannot read compiles, with biber\'s references', 'page' in st and 'Computers and Typesetting' in text, [st, text[:200]])
+        # accents written as LaTeX in a .bib: biber makes them letters, P{\'e}rez Pérez, as a desktop's
+        # does; BusyTeX's XML::LibXML handed biber its accent table as bytes, so the .bbl held them
+        # encoded twice and pdfLaTeX stopped on "Unicode character U+0081" (tex/engine.js BIBER_UTF8)
+        open_doc(page, [['acc.tex', '\\documentclass{article}\n\\usepackage[T1]{fontenc}\n\\usepackage[backend=biber]{biblatex}\n\\addbibresource{acc.bib}\n\\begin{document}\nSee \\cite{p}.\n\\printbibliography\n\\end{document}\n'],
+                        ['acc.bib', "@article{p, author={P{\\'e}rez, Mar{\\'\\i}a and M{\\\"u}ller, J\u00fcrgen}, title={Hybrid Regimes}, journal={J}, year={2019}}\n"]])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        errs = page.evaluate("window.rikuy.texIssues.filter((x) => x.sev === 'error').map((x) => x.msg)")
+        check('accents written as LaTeX in a .bib come out of biber as letters: no Unicode error, Pérez and María in the PDF', 'page' in st and not errs and 'Pérez' in text and 'María' in text and 'Müller' in text, [st, errs[:2], text[:200]])
+        # a main document in a folder of its own (File, Main document) reading ../refs.bib: biber ran
+        # in a folder of its own with the files' ../ taken off, could not find it and printed [p] (review N5)
+        page.evaluate("""(fs) => { window.rikuy.loadProject(new Map(fs), 'talk/slides.tex', 'biber-folder', 'Opened'); window.rikuy.compilePdf(); }""",
+                      [['talk/slides.tex', '\\documentclass{article}\n\\usepackage[backend=biber]{biblatex}\n\\addbibresource{../refs.bib}\n\\begin{document}\nSee \\cite{p}.\n\\printbibliography\n\\end{document}\n'],
+                       ['refs.bib', '@article{p, author={Perez, A}, title={Regimes in Folders}, journal={J}, year={2019}}\n']])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('biber finds ../refs.bib from a main document in a folder', 'page' in st and 'Regimes in Folders' in text and '[p]' not in text, [st, text[:200]])
 
         open_doc(page, [['main.tex', '\\documentclass{article}\n\\usepackage[scheme=plain]{ctex}\n\\begin{document}\nHello 你好，世界！\\textbf{粗体} \\textit{楷体} 繁體：臺灣。\n\\end{document}\n']])
         st = wait_pdf(page)
@@ -294,11 +321,12 @@ try:
         lc = page.evaluate("window.rikuy.lastCompile")
         probs = page.evaluate("window.rikuy.texIssues.map(x => x.msg)")
         check('without them a paper loading Libertinus gets no PDF, and the result names only those packs, not a missing file', bool(lc) and lc.get('unkeptScripts') is True and not lc.get('ok') and not any('libertinus.sty' in x and 'not found' in x for x in probs), [lc and {k: lc[k] for k in ('unkept', 'unkeptScripts', 'ok')}, probs[:3]])
+        check('nothing a document did navigated the page', not ended, ended)
         browser.close()
 except Exception as e:
     # a run that stops part way has failed, whatever the checks before it said
     traceback.print_exc()
-    check('the run reaches its end', False, e)
+    check('the run reaches its end', False, [str(e)[:300]] + (ended or ['no navigation and no crash of the page was seen']))
 
 bad = [r for r in results if not r[1]]
 print('%d/%d passed' % (len(results) - len(bad), len(results)))

@@ -10,7 +10,7 @@ import { wordEnabled } from '../word.js';
 import { $, mk, load, store } from '../ui/dom.js';
 import { openMenu, dialog } from '../ui/kit.js';
 import { guide } from './help.js';
-import { preambleEnd, lastCall, hasPackage, docClass, stripComments, groupEnd, parseKV, kvEdits } from '../preamble.js';
+import { preambleEnd, lastCall, hasPackage, docClass, stripComments, groupEnd, parseKV, kvEdits, projectDocs } from '../preamble.js';
 import { readProperties, propertyEdits } from '../props.js';
 
 const LIVE_NOTE = 'Graphs are pictures in a PDF or Word file. Download LaTeX to keep them live.';
@@ -29,8 +29,12 @@ const I = {
   props: '<path d="M5 2.5h7l3.5 3.5v11.5H5zM7.5 10h5M7.5 13h3M7.5 7h2"/>',
   a11y: '<circle cx="10" cy="4" r="1.6"/><path d="M4 7.5l6 1 6-1M10 8.5v4l-3 5M10 12.5l3 5"/>',
   export: '<path d="M5 2.5h7l3.5 3.5v11.5H5zM10 8v6M7.5 11.5 10 14l2.5-2.5"/>',
-  dflt: '<path d="M10 2.5l2 4.6 5 .5-3.8 3.3 1.1 4.9L10 13.3l-4.3 2.5 1.1-4.9L3 7.6l5-.5z"/>'
+  dflt: '<path d="M10 2.5l2 4.6 5 .5-3.8 3.3 1.1 4.9L10 13.3l-4.3 2.5 1.1-4.9L3 7.6l5-.5z"/>',
+  main: '<path d="M5 2.5h7l3.5 3.5v11.5H5zM7.5 12l2 2 3.5-4"/>'
 };
+
+// the project's documents, the main one ticked
+const mainItems = (app) => app.mainDocs().map((n) => ({ name: n, radio: true, checked: n === app.main, run: () => app.runCommand('main-document', n) }));
 
 // New from template: skeletons of the classes TeX Live has, each one that compiles as it is
 const TEMPLATES = [
@@ -45,7 +49,7 @@ const TEMPLATES = [
 ];
 
 // Export as: what pandoc writes from the page's AST, as the Word download does
-const EXPORTS = [['html', 'Web page (.html)', 'html'], ['markdown', 'Markdown (.md)', 'md'], ['odt', 'OpenDocument text (.odt)', 'odt'], ['rtf', 'Rich text (.rtf)', 'rtf'], ['epub', 'E-book (.epub)', 'epub'], ['txt', 'Plain text (.txt)', 'txt']];
+const EXPORTS = [['live', 'Web page with live graphs (.html)', 'html'], ['html', 'Web page (.html)', 'html'], ['markdown', 'Markdown (.md)', 'md'], ['odt', 'OpenDocument text (.odt)', 'odt'], ['rtf', 'Rich text (.rtf)', 'rtf'], ['epub', 'E-book (.epub)', 'epub'], ['txt', 'Plain text (.txt)', 'txt']];
 const MIME = { html: 'text/html', md: 'text/markdown', odt: 'application/vnd.oasis.opendocument.text', rtf: 'application/rtf', epub: 'application/epub+zip', txt: 'text/plain' };
 
 register(
@@ -67,7 +71,7 @@ register(
   { id: 'save-as', name: 'Save As', title: 'Save As (F12): the LaTeX on your computer, the .tex or the project as .zip (Download LaTeX)', keys: ['F12'],
     synonyms: ['Save a copy', 'Download', 'Export LaTeX'], when: always, run: (app) => app.runCommand('download-latex') },
   { id: 'open', name: 'Open', el: 'b-open', static: true, place: 'bar', title: 'Open .tex, .bib, images, an Overleaf .zip or a Word .docx (Ctrl+O)', keysElsewhere: ['Ctrl+O'], keys: ['Ctrl+F12', 'Ctrl+Alt+F2'], keyScope: 'app', synonyms: ['Open a file', 'Import'], when: always, run: () => $('#fileinput').click() },
-  { id: 'share', name: 'Share', el: 'b-share', static: true, place: 'bar', title: 'A link anyone can open and type in, or a copy for Overleaf', synonyms: ['Share link', 'Overleaf'], when: always, run: (app) => app.openSharePanel() },
+  { id: 'share', name: 'Share', el: 'b-share', static: true, place: 'bar', title: 'Share a link anyone can open and type in, or send a copy to Overleaf', synonyms: ['Share link', 'Overleaf'], when: always, run: (app) => app.openSharePanel() },
   { id: 'new-document', name: 'New document', el: 'b-new', static: true, place: 'status', title: 'New document: a blank article; this one stays under Review, Versions', synonyms: ['New', 'Blank document'], when: always, run: (app) => app.newDocument() },
   { id: 'load-sample', name: 'Load the sample', el: 'b-sample', static: true, place: 'status', title: 'Load the sample: the document Rikuy opens with, in place of this one (it asks first)', synonyms: ['Sample document', 'Example'], when: always, run: (app) => app.resetToSample() },
 
@@ -90,8 +94,14 @@ register(
   { id: 'check-accessibility', name: 'Check accessibility', order: 20, title: 'What a screen reader would miss: pictures without alt text, skipped heading levels, tables without a header row, no title or language', synonyms: ['Accessibility checker', 'Tagged PDF', 'PDF/UA', 'Alt text'],
     tab: 'file', group: 'info', el: 'rf-a11y', label: 'Check accessibility', icon: I.a11y, also: [{ tab: 'review', group: 'accessibility', el: 'rr-a11y' }],
     when: (app) => !!app.model, run: (app, args) => (args === 'tagging' ? app.addTagging() : app.openAccessibility()) },
+  { id: 'main-document', name: 'Main document', order: 30, title: 'The document TeX compiles and the page shows, as Overleaf\'s Main document: another of the project\'s (its slides, a letter, a chapter alone)',
+    synonyms: ['Main file', 'Root document', 'Set as main', 'Master document', 'Compile another file'],
+    tab: 'file', group: 'info', el: 'rf-main', label: 'Main document', icon: I.main, kind: 'menu', when: (app) => app.mainDocs().length > 1,
+    whyNot: () => 'The project has one document: a .tex file with \\documentclass and \\begin{document}.',
+    menuItems: (app) => mainItems(app),
+    run: (app, args) => (typeof args === 'string' ? app.setMain(args) : app.fileMenu('rf-main', 'Main document', mainItems(app))) },
   // ---- File ▸ Save a copy
-  { id: 'export-as', name: 'Export as', order: 10, title: 'A copy as a web page, Markdown, OpenDocument, rich text, an e-book or plain text (pandoc, as the Word download)', synonyms: ['Save as', 'Export', 'HTML', 'Markdown', 'ODT', 'RTF', 'EPUB', 'Plain text'],
+  { id: 'export-as', name: 'Export as', order: 10, title: 'A copy as a web page with live graphs, a web page, Markdown, OpenDocument, rich text, an e-book or plain text', synonyms: ['Save as', 'Export', 'HTML', 'Markdown', 'ODT', 'RTF', 'EPUB', 'Plain text'],
     tab: 'file', group: 'save', el: 'rf-export', label: 'Export as', icon: I.export, kind: 'menu', when: (app) => !!app.model,
     menuItems: (app) => EXPORTS.map(([id, name]) => ({ name, run: () => app.runCommand('export-as', id) })),
     run: (app, args) => (typeof args === 'string' ? app.exportAs(args) : app.fileMenu('rf-export', 'Export as', EXPORTS.map(([id, name]) => ({ name, run: () => app.runCommand('export-as', id) })))) },
@@ -203,7 +213,7 @@ export const methods = {
   async downloadPdfNow() {
     if (this.pdfBusy) return;
     const b = $('#rb-pdf'), title = b.title;
-    const fresh = () => !!this.lastPdf && this.lastPdfSig === this.textSigNow();
+    const fresh = () => !!this.lastPdf && this.lastPdfSig === this.pdfSigNow();
     if (!fresh() || this.compiling) {
       this.pdfBusy = true;
       // (busy without a longer name: the downloads stay at the row's end over the other groups,
@@ -246,6 +256,35 @@ export const methods = {
       p.append(a);
     }
     this.positionPop();
+  },
+
+  // ---- Main document -------------------------------------------------------------------------
+  mainDocs() { return projectDocs(this.files); },
+  // Another of the project's documents becomes the main one: TeX compiles it, the page shows it,
+  // the source pane opens it. Nothing of the text changes, so no step of history. The mark a
+  // stranger's project carries (shell escape restricted, live figures waiting; kept per project
+  // and main file) goes with it: a .zip's other document is the same stranger's.
+  async setMain(name) {
+    if (name === this.main || !this.mainDocs().includes(name)) return false;
+    const key = this.name + '|' + this.main;
+    // (the stricter of the project's mark and the one kept under the other document: see carryLink)
+    const [mark, there] = await Promise.all([this.linkInfo(), this.markOf(this.name, name)]);
+    // (another project opened while the mark was read: nothing of it is carried there)
+    if (this.name + '|' + this.main !== key || !this.files.has(name)) return false;
+    this.closeGroup();
+    this.carryLink(mark, name, there);
+    this.carryShare(this.main, name);
+    this.main = name;
+    this.srcFile = name;
+    this.forceRender = true;
+    this.desk.scrollTop = 0;
+    this.rebuild();
+    if (this.cm || this.cmFallback) this.showSrcFile(name);
+    this.updateFileTabs();
+    this.resetPdf();
+    this.persist();
+    this.toast(name + ' is the main document now: TeX compiles it and the page shows it.');
+    return true;
   },
 
   // a File tab menu under its button (or, folded or from the search box, under the ribbon)
@@ -520,6 +559,8 @@ export const methods = {
   async exportAs(id) {
     const x = EXPORTS.find((e) => e[0] === id);
     if (!x) return false;
+    // (Rikuy's own page, no pandoc: every copy has it, the claude.ai one too; src/cmd/graphs.js)
+    if (id === 'live') return this.exportWebPage();
     if (!wordEnabled()) { this.wordMissing(); return false; }
     if (this.wordBusy) return false;
     this.wordBusy = true;
@@ -528,7 +569,7 @@ export const methods = {
       const req = await this.wordRequest();
       const res = await this.wordEngine().run('convert', { req, to: id });
       const blob = new Blob([res.bytes], { type: MIME[x[2]] });
-      const fname = ((this.name || '').replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '') || 'paper') + '.' + x[2];
+      const fname = this.fileBase() + '.' + x[2];
       const D = this.caps && this.caps.downloads;
       if (D) await D.save({ filename: fname, data: blob });
       else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }

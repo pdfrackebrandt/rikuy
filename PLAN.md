@@ -3289,7 +3289,15 @@ Tests:
     fields 32 px with 4 px corners (44 under a finger), dialogs and sheets 8 px, one title style
     (14 px semibold), a close button 44 px under a finger, the status bar's words one size and
     its views one height, File's column 32 px, a phone's top bar 44 px (`ux.py consistency`).
-    Open, in the audit: findings for the ribbon tabs agent.
+    Then (branch `ux-consistency-2`, PR 90) the verification of 0a6ef7b and the rest of
+    `UI-PRINCIPLES.md` outside the ribbon, each a commit with its part of `ux.py` (audit section
+    13): one height per kind inside dialogs, number fields one box; dark mode's primary buttons
+    and the search list at 4.5:1; dialogs take the focus, keep Tab inside, give it back to a
+    keyboard opener; the phone's bar 8 px apart at 320 px; the ruler by a double click; motion
+    in opacity and transform only; the right click menu's words, "…" from the registry's
+    `dialog`; empty panes with one sentence and one command; the focused field above the
+    on-screen keyboard; touch targets 8 px apart; tooltips name, keys, description; text spacing.
+    `ux.py` 449 checks. Open, in the audit: findings for the ribbon tabs agent.
 
 66a. **The ribbon's other tabs laid out as Word's.** Done in the code (branch `ribbon-tabs-word`).
     Home was done in PR 75; `src/ribbon/layout.js` now says, for Insert, Design, Layout,
@@ -3497,21 +3505,208 @@ Tests:
     reads their layout first); a `\setlength{\footskip}` after `\geometry{…}` is not read (the
     model takes geometry's); Preferred width Off gives `*{3}{c}` back as `ccc`.
 
+69. **Objects formatted after they are in, as Word does** (branch `word-gaps-objects`). A drawing,
+    a chart or a SmartArt pressed on the page is selected (a frame; a drawing's points keep their
+    handles) and its contextual tabs show and open: **Shape Format** (Insert Shape into the same
+    drawing, Theme Styles, Shape Fill and Shape Outline from Word's colour grid as xcolor's names
+    and tints, Weight, Dashes, Arrows, Edit Text as a `\node` at its middle, Height and Width as
+    `scale=` or `xscale=`/`yscale=`, Bring Forward and Send Backward of one shape a second press
+    selects, Position, Align, Selection Pane), **Chart Design** (Add Chart Element: title, axis
+    titles, legend corner, gridlines, data labels; Change Colors as a `cycle list`; Switch
+    Row/Column; Edit Data; Change Chart Type, each keeping the others) and **Format** (Height,
+    Width, Position, Align), **SmartArt Design** (Add Shape, Text Pane, Right to Left, Change
+    Layout, Change Colors, Reset Graphic) and **Format** (Shape Fill, Shape Outline). Each is a
+    small edit of the object's LaTeX (`src/objfmt.js`), read back by the page's drawing
+    (`src/drawing.js` now draws nodes' words, scales, `draw=none`, dash dot, a chart's title, axis
+    titles, gridlines, data labels, legend corner and colours, a SmartArt's colours and border);
+    smartdiagram's colour lists are global, so a diagram with colours of its own is followed by a
+    line giving the package's back. A double click opens a chart's grid or a SmartArt's Text Pane,
+    Enter too, Delete takes the object off with its center; each has its right click menu and a
+    long press on a phone. **Picture Format's Corrections, Color, Transparency and Compress
+    Pictures** in C: `tex/native/pic/pic.c` over stb_image and stb_image_write (pinned by hash),
+    `sh tex/build_tools.sh pic` into `tex/vendor/pic/rikuy-pic.wasm` (82 KB, standalone, one
+    import, the same bytes from two empty source folders; a `vendor.yml` job), fetched on first
+    use beside the page and checked by SHA-256; a new file beside the picture (its own kept),
+    `\includegraphics` pointed at it and a comment naming the first file and the settings, so every
+    change starts from the first file and Reset Picture goes back; Compress keeps the printed size
+    (pHYs, JFIF density) and says the bytes saved; where the module cannot load, a plain message
+    and nothing changed. **Selection Pane** (Layout, Picture Format and every object's Arrange):
+    every figure, table, picture, drawing, chart, SmartArt and display equation with its caption;
+    go to it, rename its `\label` with every reference in every file, give one a name, hide it on
+    the page alone. **Arrange**: Position (in line, a figure at `[htbp]`/`[t]`/`[b]`/`[p]`/`[h]`/`[H]`,
+    wrapfig at its own width `{0pt}` left or right) and Align (center, flushleft, flushright; in a
+    figure `\centering`, `\raggedleft`) for drawings, charts, SmartArt and pictures; Bring Forward
+    and Send Backward between the shapes of one drawing (Insert Shape puts a shape in it: Word's
+    Group). A TikZ picture in a figure was not drawn on the page: it is now, and selected there.
+    Left out, with no meaning in LaTeX: shape effects, WordArt styles, a SmartArt shape's own
+    colour or size, Quick Layout, 3-D charts, Remove Background, Artistic Effects, Ungroup (a
+    TikZ picture's shapes keep no place of their own outside it), Rotate of a drawing.
+    The hostile review (`docs/reviews/WORD-GAPS-OBJECTS.md`, six High, eight Medium) is answered
+    in its "Fixes for the review": option lists edited in place with their comments and lines,
+    no float in a float, a picture's note its own, names in braces, Compress at the printed size
+    graphicx gives, the work in a worker, one edited file a picture, labels renamed on the
+    parser's tree, hiding kept by label, typed characters escaped, 44 px on phones. Its
+    verification of ff46de0 (N1 to N9) is answered too: Position reads picture.js's one list of
+    floats and boxes (no float in multicols, a tcolorbox or a wraptable; the Position menu greys
+    what cannot apply), Wrap writes `\centering` and keeps a table a table, no wrap in a list, a
+    removed key keeps its neighbour's comment, a rename follows tikzpicture, any `\input` file and
+    the document's own `\figref`, hiding survives the hidden object's own edits, a legend keeps
+    `& % _`, Align's look parses nothing. And its second (U1 to U4): a new float only where every
+    environment round it is known safe (the preamble's own environments read: a `\newtcolorbox`
+    refused, a `\newenvironment` of a quote allowed), language environments wrap, greyed places
+    reached by the arrows with their reason, one `\centering`. And its third (V1): the files the
+    preamble reads are read too, and a theorem's usual name is trusted only where a `\newtheorem`
+    declares it.
+    Evidence: `npm test` green (`objfmt` 24 groups, `picfx` 12, `objlist` 5, `drawing`,
+    `objects`, `commands` 15); `test/objects.py` 292 (with `dist/tex`: everything compiled with
+    pdfLaTeX, XeLaTeX and LuaLaTeX, the shapes' words, chart titles and SmartArt items found in each
+    PDF; edited pictures, one seen through, on the three engines; phones at 390 and 360 px with
+    touch); `tabs.py` 127 (the fold sweep on all 19 tabs, the five new ones among them), `agent.py` 143, `picture.py` 228, `ribbon.py` 195, `test:browser` 199, the corpus model run 716 of 716; screenshots
+    in `/tmp/g1-shots`.
+
+70. **Interactive graphs as Rikuy's edge: the live paper** (branch graphs-edge;
+    `docs/handoff/GRAPHS.md`). One `.tex` typed like Word, printed by real TeX, whose figures
+    are live on the page while the PDF carries the same figure. The opening document leads with
+    a live graph in its abstract (the saving rule k′ = αβk^α that solves its Bellman equation,
+    the 45 degree line, the steady state marked; α and β on sliders), whole in the first screen
+    at 1366 by 768; its TikZ sentence says what the page draws. **Graph this** (`src/graphthis.js`,
+    `src/cmd/graphs.js`; the equation's right click menu, the Equation tab, the search box) reads
+    an equation's LaTeX and inserts a live graph below it in one undo: y = f(x), f(x), a
+    parametric pair, F(x, y) = c, k̇ = f(k) with its rest points, k_{t+1} = g(k_t) against the
+    45 degree line, a pair of time derivatives as a phase portrait round its rest point, two
+    curves of one left side (IS and LM); every other letter a slider, its range from its role and
+    from a value the document gives it; a `\max` or a sum is said, not drawn. New kinds
+    (`src/graph.js`): implicit curves (marching squares), phase portraits (field, nullclines, a
+    Runge–Kutta path from a dragged point), shaded areas with their value (surpluses, integrals),
+    crossings marked with dashed lines and coordinates, the start curves faint while a slider
+    moves; templates for supply and demand, IS–LM, Solow, Ramsey, a budget line with an
+    indifference curve, the normal and t densities, the central limit theorem. **The PDF's
+    figure is vector**: `paint()` runs on a recording context that writes PGF (`.pgf` beside
+    the graph, its labels set in the document's fonts, input by `rikuy.sty` v1.1; no shell
+    escape); an older project's PNG and rikuy.sty v1.0 are renewed on Update in the same undo.
+    **Export as, Web page with live graphs** (`src/webpage.js`): one file, the page's model as
+    HTML (the Word download's tree), KaTeX with its fonts inside, graphs live in sandboxed frames
+    from their descriptions, a policy allowing Rikuy's three scripts by hash, an Open in Rikuy
+    link. The dialog: six kinds and a Template list, formulas' mistakes underlined, its own undo
+    (Ctrl+Z, Ctrl+Y). Every slider by keyboard; a phase portrait's start by the arrow keys; while a
+    slider moves the drawing uses half the samples and grids (full 150 ms after it rests).
+    Interactive graph is the second large button of Illustrations; Help, Learn Rikuy, llms.txt
+    and README lead with it. The security audit's quick profile (notes outside the repository)
+    found two availability problems from a stranger's document, fixed with tests: the values
+    pattern's backtracking on a run of digits, and an implicit graph's unbounded PGF.
+    Evidence: `npm test` green (`test/graphs.test.mjs` 11 groups: the formula language both ways
+    on 2,000 random trees, Graph this on 19 equations (14 drawn, 5 refused with the reason), the kinds against known answers, PGF ASCII
+    and balanced and inside TeX's lengths, the web writer's escaping); `test/graphs.py` 137
+    checks: TeX's PGF picture on pdfLaTeX, XeLaTeX and LuaLaTeX against the live drawing in
+    pixels (mean difference 2.9 to 4.1 of 255, 96 to 100 % of the curves' pixels within 2 px;
+    four templates), a slider frame at a phone's speed (CPU 4 times slower, 390 px; best of
+    three drags): median 3.2 to 5.1 ms, 90th percentile 5.6 to 11.1 ms, the full drawing at rest 3 to
+    10 ms, no long task of the graph's own over 50 ms; `test/csp.py` 25 under the hosted policy (a graph, Graph this and the
+    web page with no refusal); `insert.py` 225 (its pictures PGF now; a graph's file 49 KB in the
+    built page, under its budget of 52); `browser.py` 199; the other suites by CI on the pull
+    request (PR 88). Screenshots in /tmp/graph-shots. Then the polish and the hostile review
+    (`docs/reviews/GRAPHS.md`, two rounds): typeset labels in the paper's faces placed off the
+    curves, equal axes for circles and the 45 degree line (the opening graph above its abstract,
+    the Bellman equation the one its rule solves), supply and demand with P up, crossings of
+    pairs with different left sides marked, poles and areas, economists' notation, the web
+    page's link carrying only what the main file reads (comment lines alone removed; a .bib
+    never); `test/graphs-review.test.mjs` 18 groups, each failing before its fix.
+    Left (task 70's open part): the description in the `.tex` itself (a `rikuygraph`
+    environment); Graph this on systems of more than two equations, on inequalities, on
+    `\hat x` and `\tilde x` (refused), on `\mathbb E_t[\pi_{t+1}]` and other indices with a sign
+    in them beyond y_{t-1} in an AR(1) (refused with the parser's subscript message); the Ramsey
+    saddle path and a phase portrait's rest point marked; the web page's dark mode and font
+    subsets; PGF labels that keep their size whatever width the picture is printed at (a much
+    narrower width than the text's can bring a label onto the plot); an arXiv download without
+    the `graphs/*.html` files TeX never reads; the Open in Rikuy link's length (1.9 MB) tried in
+    Firefox and Safari; from the review's last verification (merge at 549fdb0): Graph this on the textbook IS–LM pair
+    (`Y = C_0 + c(Y − T) + I_0 − br + G, M/P = kY − hr`) starts with c = 1, degenerate, the
+    crossing out of view, while its toast says "marked": say "marked" only when a mark is drawn,
+    and move starting values (c to 0.6, M down) until the crossing is in view, as the linear pairs
+    do (Medium); `\mathbb E_t \pi_{t+1}` refused with the parser's subscript message, where a
+    plain one would do (Low).
+
+71. **Agents first, then motion: WebMCP, the page in the accessibility tree, motion as Fluent 2's,
+    and ready for what comes.** Done in the code (branch `motion-future`, PR 92). *Agents:* one
+    table of ten tools (`src/agent.js`: get_document, get_source, select, list_commands,
+    run_command, edit_source, set_source, insert_graph, compile, undo) serves WebMCP
+    (`src/webmcp.js`: `document.modelContext`, and `navigator.modelContext`'s earlier drafts;
+    nothing where neither exists), `window.rikuy.api` (`tools`, `callTool` and eight named methods
+    beside the ten before) and llms.txt (generated; llms-full.txt lists every command with its one
+    description, the registry's). get_document gives the document as data (sections, formulas
+    with LaTeX, numbers and labels, figures, graphs with formulas and sliders, citations, the
+    bibliography, labels, cross references, footnotes, problems, the PDF, the selection, each
+    with file and offsets; 2.7 ms on `dev/bench/long`). Edits say what changed and their Undo
+    steps; deletions, the whole text replaced, sharing, downloads and links ask the person in a
+    modal dialog only a real press allows (armed after 500 ms), calls that edit run one at a time
+    (as first written; the review below changed it).
+    The page in the accessibility tree (`src/a11y.js`): formulas math named by their LaTeX, floats
+    figures named by their captions, citations and cross references described links, headings
+    with their numbers. Security audit, quick profile: a data file's name climbing out of the
+    project through Table from Data File's arguments, fixed with `cleanPath`; the approval's
+    binding, early clicks and the content hints, fixed. `test/agent.test.mjs` 11 groups (in `npm
+    test`), `test/agent.py` 170 checks (webmcp and structure new). *Motion:* `src/tokens.css`
+    (colour, spacing, radii, type, elevation, motion), `src/motion.css`, `src/motion.js`: ribbon
+    tabs, contextual tabs, File's backstage, menus, flyouts, galleries, the right click menu,
+    dialogs, panes, toasts, the save state, the PDF pane's cross fade (no white flash), the views
+    through View Transitions; transform and opacity only; reduced motion fades 100 ms, File ›
+    Options › Animations off nothing; a press or a key finishes any animation. Word's animated
+    caret (`src/caret.js`, File › Options › Animated caret) glides 100 ms, blinks by a timer, and
+    jumps where keys take over 40 ms to show. `test/motion.py` 59 checks; motion's callbacks at
+    most 4.2 ms; typing on `dev/bench/long`, keydown to next paint, 240 keys alternating
+    (`dev/bench_typing.py`): this build 55.6 ms median and 110 p95, caret off 53.9 and 109, main
+    56.2 and 122; again after the agent work, 200 keys: 46.1 and 85.8, 46.7 and 80.4, 46.6 and
+    71.4 (a loaded two core machine: medians equal, p95 within its noise; there keys took over
+    40 ms to show, so the caret jumped as the browser's does). The feature suites run with motion off
+    (`open_page`'s default; `RIKUY_MOTION=1` runs one with it). *Ready:* `docs/handoff/FUTURE.md`
+    (where app.css switches to the tokens after PRs 79, 86 and 90, what to adopt next and when,
+    and a local MCP server for Claude Code and Desktop over Rikuy's model, with a first sketch).
+    *After the hostile review* (`docs/reviews/AGENTS-MOTION.md`, changes requested at dbb55a0;
+    each fix with a test that failed before). No tool sends the document out of the page, opens
+    another site or another document: run_command answers personOnly with where the person
+    presses it (Share opens its panel), and the page opens no link while a tool runs. The
+    question is a speed bump, said so: an agent driving input through the DevTools protocol can
+    press Allow, so llms.txt and the question tell agents never to, and hosts to confirm
+    destructiveHint calls; consequentialHint is on none. Allow answers a pointer press, or Enter
+    once it has held the focus 500 ms, never Space or a typing person; deletions add up over two
+    minutes (a question past 200 characters, after the edit for a command that took that much);
+    paste asks; undo takes back only the agent's own edits (step); get_document reads
+    thebibliography, honours include, pages and caps its lists (100,000 characters), gives the
+    outline and counts by default; list_commands compact and paged; no enum of 600 ids in the
+    descriptors (under 12 KB); inputs checked against their schemas; errors thrown on
+    document.modelContext. Every page is drawn again (pages were `content-visibility: auto`,
+    which left all but the pages in view out of Chromium's accessibility tree: on
+    `dev/bench/long` 11 of 11 formulas and 43 of 43 headings now, 1 and 4 before), but past
+    250,000 elements (`#pages.lazy`: 500 formulas of 120 terms, 1.3 million elements, crashed
+    the renderer when drawn whole). Its cost on `dev/bench/long`: first render 343 ms against
+    209, a zoom 238 against 190, layout and style 1 to 2 ms a key (Chromium's counters), keydown
+    to paint within noise. A ribbon press during a tab's slide lands where aimed; the highlights,
+    busy indicators and SyncTeX's mark run on the tokens and stop with Animations off.
+    `test/agent.test.mjs` 17 groups, `test/agent.py` 190 checks without `dist/tex` (review
+    and structure: 19 and 1 new), `test/motion.py` 67 checks. Typing on `dev/bench/sample`, where
+    the caret glides (`dev/bench_typing.py --doc sample`, 240 keys each): input to next paint
+    26.0 ms median with the caret on, 25.8 off, 23.9 for main; Event Timing's median 32 against
+    24 and 24, and 24 with the caret on but never gliding: the glide cost a frame. So a character
+    typed or deleted moves the caret at once and moves by keys or clicks glide; then 24.1, 23.7 and
+    24.2 ms, Event Timing 24, 24 and 24.
+
 ## Open tasks
 
 67. **Word's ribbon buttons Rikuy has no command for** (task 66 left them out; task 68 built the
     document's side: what it names is not repeated here). Insert: 3D
     Models, Online Videos, Get Add-ins, WordArt. Draw: the whole tab.
     Design: Effects, Set as Default (File has `set-default`). Insert › Tables: Draw Table, Excel
-    Spreadsheet, Quick Tables in Table's menu. Layout › Arrange: Bring Forward, Send
-    Backward, Selection Pane, Align, Group. References: Research (Search, Researcher). Mailings: the whole tab. Review:
+    Spreadsheet, Quick Tables in Table's menu. Layout › Arrange: Bring Forward and Send Backward
+    of a picture (no meaning: a picture is in the text, not over it; task 69 has them for the
+    shapes of a drawing), Group (task 69: Insert Shape puts a shape in the drawing). References:
+    Research (Search, Researcher). Mailings: the whole tab. Review:
     Translate, Protect (Block Authors, Restrict Editing), Hide Ink, the Tracking group's corner
     arrow (Track Changes Options). View: Immersive Reader, New Window, Macros. Table Layout: the
-    Rows & Columns corner arrow. Picture Format: Remove Background,
-    Corrections, Color, Artistic Effects, Transparency, Compress Pictures, Picture Effects, Picture
-    Layout, the Picture Styles gallery and its corner arrow, Bring Forward, Send Backward, Selection
-    Pane, Align, Group. Equation: Ink Equation. Header & Footer: Link to Previous. Contextual tabs
-    Word has and Rikuy has not: Shape Format, Chart Design and Format, SmartArt Design and Format.
+    Rows & Columns corner arrow. Picture Format: Remove Background, Artistic Effects, Picture
+    Effects, Picture Layout, the Picture Styles gallery and its corner arrow, Bring Forward, Send
+    Backward, Group (Corrections, Color, Transparency, Compress Pictures, Selection Pane and Align:
+    task 69). Equation: Ink Equation. Header & Footer: Link to Previous. (Shape Format, Chart
+    Design and Format, SmartArt Design and Format: task 69.)
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
     papers, every failure classified as in task 2. Needs arxiv.org (see task 3). The owner runs
@@ -3621,6 +3816,17 @@ Tests:
     the check); model.test.mjs's .bib checks; scan.test.mjs 8; incremental 35 of 35 and with
     `INCR_FULL=1` 35 of 35; `npm test` green but V4 (flaky, 2 of 3 alone); `history.py` 40 of 40,
     `browser.py` 199 of 199, `page.py long_document` 6 of 6.
+71. **A version's trust mark kept with the version.** Not started (from the second verification of
+    PR 96's security fixes, /tmp/latex-verify2.md). Marks (restricted shell escape, live figures
+    waiting) are kept per project name and main file, and since PR 96 every import (a .zip, a
+    clone, a Word file, a link) opens under a name of its own with an import id in its mark. Left:
+    versions saved before that fix, where a stranger's import and one's own document share a
+    name|main key, share its mark, so an Allow given on one's own document there reaches the
+    stranger's version. Store the mark's id with each version when it is saved; opening or
+    restoring a version whose stored id is not the key's mark's id now (or that has none while the
+    key's mark has none) marks the key restricted again with a new id. Its test: files.py marks,
+    a key shared by an import from before the fix and one's own document.
+
 ## Rules
 
 - No status commits ("Note ...", "Record ...") and no log in this file. One commit per

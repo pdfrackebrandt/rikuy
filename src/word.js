@@ -9,6 +9,7 @@ import { pageForWord } from './pageword.js';
 import { checkData, planImport, unpackRead } from './wordsync.js';
 import { loadPdfjs } from './pdfview.js';
 import { kvGet, kvPut } from './store.js';
+import { cleanProjectName } from './collab.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const WORD = typeof __RIKUY_WORD__ === 'undefined' ? true : __RIKUY_WORD__;
@@ -19,15 +20,23 @@ const MAX_DOCX = 100e6;
 
 // A numeric citation style of Rikuy's own for pandoc's citeproc (its default is author-date):
 // [1] in the text, the list in citation order
-const NUMERIC_CSL = `<?xml version="1.0" encoding="utf-8"?>
+const NUMERIC_CSL_ANY = `<?xml version="1.0" encoding="utf-8"?>
 <style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0" demote-non-dropping-particle="sort-only">
 <info><title>Rikuy numeric</title><id>rikuy-numeric</id><updated>2026-11-10T00:00:00+00:00</updated></info>
 <macro name="author"><names variable="author"><name initialize-with=". " delimiter=", " and="text"/><substitute><names variable="editor"/></substitute></names></macro>
 <macro name="year"><date variable="issued"><date-part name="year"/></date></macro>
 <citation collapse="citation-number"><sort><key variable="citation-number"/></sort><layout prefix="[" suffix="]" delimiter=", "><text variable="citation-number"/><text variable="locator" prefix=", "/></layout></citation>
-<bibliography second-field-align="flush"><layout suffix="."><text variable="citation-number" prefix="[" suffix="] "/><group delimiter=". "><text macro="author"/><text variable="title"/><text variable="container-title" font-style="italic"/><text variable="publisher"/><text macro="year"/></group></layout></bibliography>
+<bibliography second-field-align="flush">%SORT%<layout suffix="."><text variable="citation-number" prefix="[" suffix="] "/><group delimiter=". "><text macro="author"/><text variable="title"/><text variable="container-title" font-style="italic"/><text variable="publisher"/><text macro="year"/></group></layout></bibliography>
 </style>
 `;
+// (two of it: in citation order, as unsrt and ieeetr number; by author, year and title, as plain,
+// abbrv, alpha and the page number them. Word had citation order alone, so under plain its [1]
+// was another entry than the PDF's and the page's [1].)
+const NUMERIC_CSL = NUMERIC_CSL_ANY.replace('%SORT%', '');
+// (sorted as BibTeX's plain sorts: "van Dijk" under v, its particle kept with the family name;
+// CSL's sort-only took it under D, review E7)
+const NUMERIC_CSL_SORTED = NUMERIC_CSL_ANY.replace('%SORT%', '<sort><key macro="author"/><key macro="year"/><key variable="title"/></sort>').replace('demote-non-dropping-particle="sort-only"', 'demote-non-dropping-particle="never"');
+export const numericCsl = (sorted) => (sorted ? NUMERIC_CSL_SORTED : NUMERIC_CSL);
 
 // ---- the worker ---------------------------------------------------------------------------------
 
@@ -139,7 +148,7 @@ export const word = {
       const res = await this.wordEngine().run('export', { req });
       await this.wordRemember(res.mark);
       const blob = new Blob([res.docx], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-      const fname = ((this.name || '').replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '') || 'paper') + '.docx';
+      const fname = (this.fileBase ? this.fileBase() : 'paper') + '.docx';
       this.lastDocx = { blob, name: fname, degraded: req.degraded, warnings: res.warnings };
       if (D) await D.save({ filename: fname, data: blob });
       else {
@@ -165,7 +174,7 @@ export const word = {
     for (const b of bibs) resources[b] = this.files.get(b);
     let cslName = null;
     if (csl) { cslName = csl; resources[csl] = new Uint8Array(await this.extra.get(csl).arrayBuffer()); }
-    else if (model.opts.citeStyle === 'numeric') { cslName = 'rikuy-numeric.csl'; resources[cslName] = NUMERIC_CSL; }
+    else if (model.opts.citeStyle === 'numeric') { cslName = 'rikuy-numeric.csl'; resources[cslName] = numericCsl(model.opts.sort !== false); }
     const citeproc = bibs.length > 0 && model.cites && model.cites.length > 0;
     const find = (name) => {
       if (!name) return null;
@@ -182,18 +191,28 @@ export const word = {
       if (!k) return null;
       if (/\.eps$/i.test(k)) return null;
       if (/\.pdf$/i.test(k)) { pics.set(k, k.replace(/\.pdf$/i, '.pdf.png')); return k.replace(/\.pdf$/i, '.pdf.png'); }
+      // (an interactive graph's PGF picture: Word gets the graph drawn as a PNG)
+      if (/\.pgf$/i.test(k)) { pics.set(k, k + '.png'); return k + '.png'; }
       pics.set(k, k);
       return k;
     };
-    const W = buildWordDoc(model, this.files, { citeproc, asset, comments: true, main: this.main });
+    // the changes waiting, as Word's tracked changes with their authors (those in plain prose; the
+    // rest go as the text is now, and the Word file says so)
+    const all = this.base && this.realChanges ? this.realChanges() : [];
+    const plain = all.length && this.plainChanges ? this.plainChanges() : [];
+    const changes = plain.map((c) => ({ f: c.f, s: c.bs, e: c.be, del: c.a, who: this.rvName(c.who) }));
+    const W = buildWordDoc(model, this.files, { citeproc, asset, comments: true, main: this.main, changes });
+    const left = all.length - (W.tracked || 0);
+    if (left > 0) W.degraded.push(left + (left === 1 ? ' change' : ' changes') + ' waiting that are not plain words (formatting, equations, commands), as the text is now, not marked as changes');
     for (const [k, out] of pics) {
       try {
         const bytes = new Uint8Array(await this.assetBlobs.get(k).arrayBuffer());
-        resources[out] = /\.pdf$/i.test(k) ? await this.pdfPicture(bytes) : bytes;
+        resources[out] = /\.pdf$/i.test(k) ? await this.pdfPicture(bytes) : /\.pgf$/i.test(k) ? await this.graphPictureBytes(k) : bytes;
+        if (!resources[out]) throw new Error('no picture');
       } catch (e) { W.degraded.push(k + ' (could not be drawn)'); }
     }
     return {
-      doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources, bibs: citeproc ? bibs : [], csl: citeproc ? cslName : null, citeproc,
+      doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources, bibs: citeproc ? bibs : [], csl: citeproc ? cslName : null, citeproc, vonSort: cslName === 'rikuy-numeric.csl' && model.opts.sort !== false,
       bullets: W.bullets,
       toc: W.doc.blocks && model.blocks.some((u) => u.items.some((x) => x.type === 'toc')),
       // the page's set up (task 44): paper, margins, columns, headers and footers, in Word's terms
@@ -245,8 +264,10 @@ export const word = {
   },
 
   async openWordProject(r, fname, note = '') {
-    const name = fname.replace(/\.docx$/i, '').split('/').pop() || 'Word document';
     if (this.base) { await this.snapshot('Before opening another project', { force: !this.lastSig }); await this.stashBinary(); }
+    // (a name of its own, as a .zip gets: a stranger's thesis.docx under the user's own thesis
+    // shared its versions and marks, V1)
+    const name = await this.freeProjectName(cleanProjectName(fname.replace(/\.docx$/i, '').split('/').pop(), 'Word document'));
     const files = new Map([['main.tex', r.tex]]);
     if (r.bib) files.set('references.bib', r.bib);
     // a stranger's Word file is content from someone else, as a .zip is
@@ -254,11 +275,28 @@ export const word = {
     this.loadProject(files, 'main.tex', name, 'Opened from Word');
     for (const [n, b] of Object.entries(r.media || {})) this.addAsset(n, new Blob([b]));
     if (Object.keys(r.media || {}).length) { this.binaryDirty = true; this.forceRender = true; this.rebuild(); this.persist(); }
+    // the file's tracked changes: changes waiting here, each its author's, Track Changes' base the
+    // text with all of them rejected, the layer of who wrote what made in the worker (src/wordjobs.js
+    // openDocx); they came in accepted before
+    const T = r.tracked;
+    let tracked = 0, by = '', cut = '';
+    if (T && typeof T.base === 'string' && Array.isArray(T.segs) && Array.isArray(T.authors)) {
+      this.authors = new Map([['main.tex', T.segs]]);
+      const bf = new Map(this.files);
+      bf.set('main.tex', T.base);
+      this.setBase({ t: Date.now(), label: 'Before the tracked changes in ' + fname, files: bf });
+      tracked = this.realChanges().length;
+      if (tracked) { this.setMarks(true); this.toggleNav(true, 'changes'); }
+      // (a few names, the rest counted: a file reviewed by hundreds would fill the screen)
+      const A = T.authors.map((x) => String(x).slice(0, 80));
+      by = A.length > 4 ? A.slice(0, 3).join(', ') + ' and ' + (A.length - 3) + ' others' : A.length > 1 ? A.slice(0, -1).join(', ') + ' and ' + A[A.length - 1] : A[0] || 'Word';
+      if (T.cut) cut = ' The changes before line ' + T.upto + ' of main.tex are credited to "Word", not to their authors: the file holds more pieces of tracked text than the ' + T.segs.length + ' Rikuy tells apart in a file.';
+    }
     const n = Object.keys(r.media || {}).length;
     // what did not come over, or came differently: said here, and kept at the top of main.tex
     // (src/wordjobs.js), where it stays after the toast is gone
     const said = r.warnings || [];
-    this.toast('Opened ' + fname + ' as LaTeX' + (n ? ', with ' + n + (n === 1 ? ' picture' : ' pictures') + ' in figures/' : '') + (r.bib ? ' and its citations in references.bib' : '') + '.' + (said.length ? ' ' + said.slice(0, 4).join(' ') + (said.length > 4 ? ' The rest is at the top of main.tex.' : '') : '') + note, (note ? 16000 : 9000) + 5000 * Math.min(4, said.length));
+    this.toast('Opened ' + fname + ' as LaTeX' + (n ? ', with ' + n + (n === 1 ? ' picture' : ' pictures') + ' in figures/' : '') + (r.bib ? ' and its citations in references.bib' : '') + '.' + (tracked ? ' Its tracked changes are ' + tracked + (tracked === 1 ? ' change' : ' changes') + ' by ' + by + ', marked on the page to accept or reject under Review.' + cut : '') + (said.length ? ' ' + said.slice(0, 4).join(' ') + (said.length > 4 ? ' The rest is at the top of main.tex.' : '') : '') + note, (note || cut ? 16000 : 9000) + 5000 * Math.min(4, said.length));
   },
 
   // ---- a coauthor's edits come back ----

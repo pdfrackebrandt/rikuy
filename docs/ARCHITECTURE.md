@@ -840,7 +840,7 @@ servers), is unchanged, and the artifact build (`RIKUY_SHARE` set) compiles `src
 - **TeX ahead of the first press** (`warmTeX()` in `src/pwa.js`, `TeXEngine.warm()`). On a first
   visit, once the service worker is in charge and the page is idle, the TeX worker is started:
   it fetches and keeps the engine and the packs every document reads (20 MB), and then the five
-  packs of `WARM_FILES`, what a plain article reads beyond them (4 MB). A press of Preview then
+  packs of `WARM_FILES`, what a plain article reads beyond them and the pgf a live graph's picture loads (5 MB). A press of Preview then
   finds TeX running, or further along. Not where `mayFetchAhead()` says no: without a network,
   with Save-Data on, on a mobile or slow line (`navigator.connection`), on a phone or tablet
   whose browser says nothing about its line, with less than 4 GB of memory. What the worker

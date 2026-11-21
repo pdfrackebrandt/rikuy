@@ -12,6 +12,7 @@
 // tables are edited in their own style, booktabs ones in theirs, and a new table is booktabs.
 
 import { register, onInstall } from '../commands.js';
+import { cleanPath } from '../share.js';
 import * as X from '../table.js';
 import { mapPos } from '../wrap.js';
 import { BLOCKS } from '../render.js';
@@ -141,7 +142,7 @@ register(
     synonyms: ['Move row', 'Row up'], run: (app) => app.tableOp((src, TT, h) => X.moveRow(src, TT, h.r, -1, h.c.a)) }),
   T('table-row-down', 'Move Row Down', { title: 'Move Row Down: the caret\'s row below the one after it (Alt+Shift+\u2193)', keys: ['Alt+Shift+ArrowDown'], keyRank: 1, mac: { 'Alt+Shift+ArrowDown': 'Control+Shift+ArrowDown' },
     synonyms: ['Move row', 'Row down'], run: (app) => app.tableOp((src, TT, h) => X.moveRow(src, TT, h.r, 1, h.c.a)) }),
-  T('table-properties', 'Properties', { title: 'Table Properties…: the table\'s width and alignment, its rows\' height, the column\'s width, the cell\'s vertical alignment', tab: 'table-layout', group: 'table', order: 20, icon: ICON.props, 
+  T('table-properties', 'Properties', { dialog: true, title: 'Table Properties…: the table\'s width and alignment, its rows\' height, the column\'s width, the cell\'s vertical alignment', tab: 'table-layout', group: 'table', order: 20, icon: ICON.props, 
     synonyms: ['Table Properties', 'Table width', 'Column width', 'Row height', 'arraystretch'], menu: { table: 60 }, run: (app, args) => (args ? app.tableProperties(args) : propertiesDialog(app)) }),
   T('table-caption', 'Insert Caption', { title: 'Insert Caption: the table\'s caption (\\caption, numbered "Table 1"), made where there is none, the table put in a float', tab: 'table-layout', group: 'table', order: 30, icon: ICON.caption,
     synonyms: ['Caption', 'Table caption', 'Title of table'], menu: { table: 70 }, run: (app) => app.tableCaption() }),
@@ -480,9 +481,14 @@ export const methods = {
   },
   // Table from Data File: \csvautobooktabular{file} in a table float (csvsimple, booktabs)
   insertDataTable(file, o = {}) {
+    // (a name from arguments, an agent's or a script's, is a project file's name like any other: a
+    // relative path inside the project, never one that climbs out of it, which a zip of the
+    // project would carry to whoever unpacks it; the dialog's names are a picked file's own)
+    const clean = cleanPath(String(file));
+    if (!clean) throw new Error('A data file\'s name must be a path inside the project, such as data.csv or data/table.csv.');
     const { f, p, pre, post } = this.afterBlockPos();
     const nl = '\n';
-    const name = String(file).replace(/[{}\\%#]/g, '');
+    const name = clean.replace(/[{}\\%#]/g, '');
     // (respect all: a value's _ % & $ # are its own characters, as the page shows them, not TeX's)
     const cmd = (o.booktabs === false ? '\\csvautotabular' : '\\csvautobooktabular') + '[respect all' + (o.sep && o.sep !== ',' ? ',separator=' + { ';': 'semicolon', '\t': 'tab', ' ': 'space' }[o.sep] : '') + ']{' + name + '}';
     const text = ['\\begin{table}[h]', '\\centering', cmd, '\\caption{}', '\\end{table}'].join(nl);

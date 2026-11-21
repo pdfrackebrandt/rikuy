@@ -64,8 +64,14 @@ export function colorArg(pick) {
 // false for a check item, undefined for a plain one), radio, disabled, run }], null for a line
 // between them. o.label names the menu; o.cls adds classes; o.focus false leaves the focus where it
 // is (a menu opened by the mouse on the page keeps the caret). Returns the menu's element.
+let whySeq = 0;
 export function openMenu(app, at, items, o = {}) {
   const anchor = at instanceof Element ? at : null;
+  // (a greyed item given its reason, why: it stays in the arrows' reach, as WAI-ARIA's menu and Word
+  // keep it; the reason is its description and the note line under the menu as it is reached,
+  // pointed at or tapped)
+  let note = null;
+  const say = (t) => { if (note) { note.textContent = t || ''; note.hidden = !t; } };
   const p = app.makePop(anchor, 'pop-dl pop-menu ' + (o.cls || ''), null);
   if (!anchor && at) app.pop.rect = at;
   p.setAttribute('role', 'menu');
@@ -80,6 +86,8 @@ export function openMenu(app, at, items, o = {}) {
     a.setAttribute('role', it.checked === undefined ? 'menuitem' : it.radio ? 'menuitemradio' : 'menuitemcheckbox');
     if (it.checked !== undefined) a.setAttribute('aria-checked', it.checked ? 'true' : 'false');
     a.setAttribute('aria-label', it.name);
+    // (an item that opens a menu of its own says so, and shows ›, as Word's do)
+    if (it.submenu) a.setAttribute('aria-haspopup', 'menu');
     // (keys named in a menu as this computer has them: ⌘X on a Mac)
     if (it.title) a.title = keysInText(it.title, macUA());
     if (it.id) a.id = it.id;
@@ -89,15 +97,28 @@ export function openMenu(app, at, items, o = {}) {
     else if (it.swatch) { const g = el('i', 'mi-sw'); g.setAttribute('aria-hidden', 'true'); if (/^[0-9A-Fa-f]{6}$/.test(it.swatch)) g.style.background = '#' + it.swatch; a.append(g); }
     if ((it.label ?? it.name) !== '') a.append(el('span', 'mi-n', it.label ?? it.name));
     if (it.keys) { const k = el('span', 'mi-k', keysInText(it.keys, macUA())); k.setAttribute('aria-hidden', 'true'); a.append(k); }
+    if (it.submenu) { const k = el('span', 'mi-k mi-sub', '›'); k.setAttribute('aria-hidden', 'true'); a.append(k); }
     if (it.disabled) a.setAttribute('aria-disabled', 'true');
+    if (it.disabled && it.why) {
+      a.dataset.reach = '1';
+      const d = el('span', 'mi-whyd', it.why);
+      d.id = 'mi-why-' + (++whySeq); d.hidden = true;
+      a.setAttribute('aria-describedby', d.id);
+      a.append(d);
+      a.addEventListener('focus', () => say(it.why));
+      a.addEventListener('mouseenter', () => say(it.why));
+    } else a.addEventListener('focus', () => say(''));
     // (a press keeps the caret on the page; the keyboard's Enter comes as a click)
     a.addEventListener('mousedown', (e) => e.preventDefault());
-    a.addEventListener('click', () => { if (isOff(a)) return; app.closePop(true); if (it.run) it.run(); });
+    a.addEventListener('click', () => { if (isOff(a)) { if (it.why) say(it.why); return; } app.closePop(true); if (it.run) it.run(); });
     p.append(a);
   }
   if (p.lastChild && p.lastChild.getAttribute('role') === 'separator') p.lastChild.remove();
+  if (items.some((it) => it && it.disabled && it.why)) { note = el('div', 'mi-why'); note.setAttribute('aria-hidden', 'true'); note.hidden = true; p.append(note); }
   app.positionPop();
-  if (o.focus !== false) { const first = p.querySelector('[role^=menuitem]:not([aria-disabled])'); if (first) first.focus(); }
+  // (o.ring false: opened by a press, its first item has the focus without the keys' ring, as
+  // Word highlights nothing until a key moves in it)
+  if (o.focus !== false) { const first = p.querySelector('[role^=menuitem]:not([aria-disabled])'); if (first) first.focus({ focusVisible: o.ring !== false }); }
   return p;
 }
 
@@ -223,4 +244,77 @@ export function dialog(app, o) {
   if (!o.anchor && o.rect) app.pop.rect = o.rect;
   if (o.onClose) app.pop.onClose = o.onClose;
   return p;
+}
+
+// ---- access keys ---------------------------------------------------------------------------------
+// Word's underlined letters in a dialog: Alt and a control's letter presses a button or a tab,
+// ticks a box or puts the focus in a field, while the focus is in that dialog. accessKeys gives
+// the controls of root their letters: { name: 'A' }, a control's name its aria-label or its
+// label's words, or [[element, 'A']] for controls whose name changes. The letters are underlined
+// while Alt is held (installAccessKeys); a letter on a tab not shown belongs to that tab only.
+const AK_CONTROLS = 'button, input, select, textarea, [role=tab]';
+function akLabel(el) {
+  if (el.matches('button, [role=tab]')) return el;
+  return el.closest('label') || (el.id && el.ownerDocument.querySelector('label[for="' + el.id + '"]')) || null;
+}
+function akName(el) {
+  const a = el.getAttribute('aria-label');
+  if (a) return a.trim();
+  const l = akLabel(el);
+  return (l ? l.textContent : el.textContent).trim();
+}
+export function accessKeys(root, keys) {
+  const all = [...root.querySelectorAll(AK_CONTROLS)];
+  const pairs = Array.isArray(keys) ? keys : Object.entries(keys).map(([name, k]) => [all.find((el) => akName(el) === name), k]);
+  for (const [el, k] of pairs) {
+    if (!el) continue;
+    el.dataset.ak = k.toLowerCase();
+    el.setAttribute('aria-keyshortcuts', 'Alt+' + k.toUpperCase());
+  }
+}
+// the letter underlined in the control's label: the first capital that is the letter, else the
+// first word starting with it, else its first place ("Replace _A_ll", "Fi_n_d what")
+function akMark(el) {
+  const l = akLabel(el), k = el.dataset.ak;
+  if (!l || !k || l.querySelector('.ak')) return;
+  const texts = [];
+  const w = document.createTreeWalker(l, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement.closest('select, option, input, textarea, .ak') || (l !== el && el.contains(n)) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+  for (let n = w.nextNode(); n; n = w.nextNode()) texts.push(n);
+  const find = (test) => { for (const n of texts) for (let i = 0; i < n.data.length; i++) if (test(n.data, i)) return [n, i]; return null; };
+  const at = find((s, i) => s[i] === k.toUpperCase()) || find((s, i) => s[i].toLowerCase() === k && (i === 0 || /\s/.test(s[i - 1]))) || find((s, i) => s[i].toLowerCase() === k);
+  if (!at) return;
+  const [n, i] = at, r = document.createRange();
+  r.setStart(n, i); r.setEnd(n, i + 1);
+  const u = document.createElement('span');
+  u.className = 'ak';
+  r.surroundContents(u);
+}
+export function installAccessKeys() {
+  // (not on a Mac: there Option and a letter types a character, é or ©, and Word for Mac's
+  // dialogs have no access keys)
+  if (macUA()) return;
+  const dlg = () => { const a = document.activeElement; return a && a.closest ? a.closest('[role=dialog]') : null; };
+  const shown = (el) => el.getClientRects().length && !el.disabled && !el.closest('[hidden]');
+  const off = () => document.body.classList.remove('ak-on');
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Alt') {
+      const d = dlg();
+      if (d && !e.ctrlKey && !e.metaKey) { for (const el of d.querySelectorAll('[data-ak]')) akMark(el); document.body.classList.add('ak-on'); }
+      return;
+    }
+    if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    // (the letter the key types on this keyboard, as Word reads it: Z on a German keyboard is the
+    // key US layouts call Y; the key's place only where it types no letter)
+    const m = /^[a-z]$/i.test(e.key || '') ? e.key.toLowerCase() : ((/^Key([A-Z])$/.exec(e.code || '') || [])[1] || '').toLowerCase();
+    const d = m && dlg();
+    if (!d) return;
+    const el = [...d.querySelectorAll('[data-ak="' + m + '"]')].find(shown);
+    if (!el) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    el.focus();
+    if (el.matches('button, [role=tab], input[type=checkbox], input[type=radio]')) el.click();
+    else if (el.select && el.matches('input, textarea')) el.select();
+  }, true);
+  document.addEventListener('keyup', (e) => { if (e.key === 'Alt') off(); }, true);
+  addEventListener('blur', off);
 }

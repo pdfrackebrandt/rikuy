@@ -23,6 +23,7 @@ ROUTES = {
     'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.js': os.path.join(NM, 'katex/dist/katex.min.js'),
     'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.js': os.path.join(NM, 'codemirror/lib/codemirror.js'),
     'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/stex/stex.js': os.path.join(NM, 'codemirror/mode/stex/stex.js'),
+    'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/matchbrackets.js': os.path.join(NM, 'codemirror/addon/edit/matchbrackets.js'),
     'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js': os.path.join(NM, 'jszip/dist/jszip.min.js'),
     'https://cdn.jsdelivr.net/npm/mathlive@0.110.0/mathlive.min.js': os.path.join(NM, 'mathlive/mathlive.min.js'),
     'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/mhchem.min.js': os.path.join(NM, 'katex/dist/contrib/mhchem.min.js'),
@@ -62,6 +63,13 @@ def check(name, cond, detail=''):
     return bool(cond)
 
 
+# The setting File › Options › Animations keeps (src/motion.js): the tests of features run with it
+# off, so what they measure (a menu's place, a target's size, a screenshot) is never caught half
+# way through a 150 ms entrance; test/motion.py runs with it on (open_page(motion=True)), and
+# RIKUY_MOTION=1 runs any suite with motion on.
+MOTION_OFF = "try { if (!localStorage.getItem('rikuy.motion.v1')) localStorage.setItem('rikuy.motion.v1', JSON.stringify({ anim: false, caret: false })); } catch (e) {}"
+
+
 # A window under 700 px opens in Mobile View (Web Layout) unless Print Layout was chosen on it. The
 # suites written for a phone's Print Layout (its pages, margins, headers, the sheet's zoom) say so
 # with this script, as a person's tap on Mobile View would: it marks Print Layout chosen when
@@ -70,9 +78,10 @@ PRINT_LAYOUT = '''(() => { try { const k = 'galley.prefs.v1', p = JSON.parse(loc
   if (p.narrowWeb === undefined) { p.narrowWeb = false; localStorage.setItem(k, JSON.stringify(p)); } } catch (e) {} })()'''
 
 
-def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, touch=False, connect=(), layout='print'):
+def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, touch=False, connect=(), layout='print', motion=None):
     # touch: a phone's page (a touch screen, a mobile viewport: pointer coarse, no hover; tap())
     # layout: 'print', a window under 700 px opens in Print Layout; 'mobile', in its default
+    # motion: animations on (True) or off (False); None: off unless RIKUY_MOTION=1
     browser = p.chromium.launch(args=[a for a in os.environ.get('CHROME_ARGS', '').split() if a])
     ctx = browser.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=1, has_touch=touch, is_mobile=touch)
     if layout == 'print' and width < 700:
@@ -105,6 +114,8 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, tou
         return route.abort()
     # on the context, so a second tab (page.context.new_page()) loads the same page and storage
     ctx.route('**/*', handler)
+    if not (motion if motion is not None else os.environ.get('RIKUY_MOTION') == '1'):
+        ctx.add_init_script(MOTION_OFF)
     if init:
         page.add_init_script(init)
     page.goto('https://rikuy.test/')
@@ -333,6 +344,16 @@ def default_macros(page):
     probs = page.evaluate("(window.rikuy.problems || []).filter((x) => /Math error/.test(x.msg)).map((x) => x.msg)")
     n = page.evaluate("document.querySelectorAll('#pages .katex').length")
     check('\\tfrac, \\nicefrac and \\mathbbm render without a math error', not probs and n >= 2, (probs, n))
+    # \ensuremath is LaTeX's own, which KaTeX lacks: a package's macro built on it (an Overleaf
+    # project's macros.sty) showed every formula using it as an error
+    load_doc(page, {'main.tex': '\\documentclass{article}\n\\usepackage{mymacros}\n\\begin{document}\nRegimes $\\regime{1}, \\dots, \\regime{n}$ and \\regime{2} in text.\n\\end{document}\n',
+                    'mymacros.sty': '\\ProvidesPackage{mymacros}\n\\newcommand{\\regime}[1]{\\ensuremath{\\mathcal{R}_{#1}}}\n'})
+    page.wait_for_timeout(600)
+    page.evaluate('window.rikuy.refreshNav()')
+    probs = page.evaluate("(window.rikuy.problems || []).filter((x) => /Math error/.test(x.msg)).map((x) => x.msg)")
+    n = page.evaluate("document.querySelectorAll('#pages .katex').length")
+    bad = page.evaluate("document.querySelectorAll('#pages .katex-error, #pages .merr').length")
+    check('a macro built on \\ensuremath, in a formula and in text, renders without a math error', not probs and not bad and n >= 2, (probs, bad, n))
 
 
 def skipped_args(page):
@@ -794,7 +815,9 @@ def select_all(page):
     check('with the blank paragraph ready for typing', page.evaluate('!!(window.rikuy.ghost && window.rikuy.ghost.sticky)') and page.evaluate('(window.rikuy.caretNow() || {}).ghost === true') and page.evaluate('document.querySelectorAll("#pages .it:not(.ghostp)").length') == 0)
     page.keyboard.type('Fresh start'); wait_src(page, 'Fresh start')
     check('and typing starts the new text', (body() or '').split() == ['Fresh', 'start', '\\end{document}'], body())
-    page.keyboard.press('Control+z'); page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    # ("start", "Fresh " and the deletion: typing is undone word by word, as Word's)
+    for _ in range(3): page.keyboard.press('Control+z')
+    page.wait_for_timeout(300)
     check('undo brings the whole document back byte for byte', src(page) == base)
     click_text(page, 'Click anywhere'); page.keyboard.press('Control+a'); page.keyboard.type('Z'); wait_src(page, '\n\nZ\n\n')
     one = body()
@@ -1122,8 +1145,8 @@ def run():
         page.keyboard.type('New item')
         s11 = src(page)
         check('enter in list adds item', 'between visits.\n  \\item New item' in s11, s11[s11.find('between visits'):][:40])
-        page.keyboard.press('Control+z')
-        page.keyboard.press('Control+z')
+        # (typing is undone word by word, as Word's: the item's Enter, "New ", "item")
+        for _ in range(3): page.keyboard.press('Control+z')
         check('undo list', src(page) == base, src(page)[src(page).find('between visits'):][:40])
 
         # 15. enter at end of paragraph -> ghost, then type
@@ -1132,6 +1155,9 @@ def run():
         page.keyboard.type('Fresh paragraph.')
         s12 = src(page)
         check('ghost paragraph inserts clean source', 'edited by hand.\n\nFresh paragraph.\n\n\\section{Citations' in s12, s12[s12.find('by hand.'):][:60])
+        # (word by word: "Fresh " with its paragraph, then "paragraph.")
+        page.keyboard.press('Control+z')
+        check('undo takes the last word typed', 'edited by hand.\n\nFresh \n' in src(page) or 'edited by hand.\n\nFresh\n' in src(page), src(page)[src(page).find('by hand.'):][:60])
         page.keyboard.press('Control+z')
         check('undo ghost', src(page) == base, src(page)[src(page).find('by hand.'):][:60])
 

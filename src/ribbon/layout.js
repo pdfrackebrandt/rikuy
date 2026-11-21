@@ -24,7 +24,7 @@ export const LAYOUT = {
     pages: ['cover-page S V', 'blank-page S NP', 'page-break S B'],
     // (Insert Table, Convert Text to Table and Table from Data File are in Table's menu, as Word's)
     tables: ['insert-table L T'],
-    illustrations: ['picture L P', 'insert-shapes L SH', 'insert-icons L Y', 'insert-interactive-graph L G', 'insert-smartart S M', 'insert-chart S C', 'insert-screenshot S SC'],
+    illustrations: ['picture L P', 'insert-interactive-graph L G', 'insert-shapes L SH', 'insert-icons L Y', 'insert-smartart S M', 'insert-chart S C', 'insert-screenshot S SC'],
     links: ['link L I', 'bookmark L K', 'cross-reference L RF'],
     comments: ['comment-new L L'],
     headfoot: ['header L H', 'footer L O', 'page-number L NU'],
@@ -39,12 +39,13 @@ export const LAYOUT = {
     setup: ['margins L M', 'orientation L O', 'size L SZ', 'columns L J', 'breaks S B', 'line-numbers S LN', 'hyphenation S H', 'page-setup S -'],
     // (Word's Indent and Spacing: Left over Right, then Before over After)
     paragraph: ['indent-left S IL', 'indent-right S IR', '|', 'spacing-before S SB', 'spacing-after S SA', '|', 'tab-next L TN'],
-    arrange: ['picture-position L PO', 'picture-wrap L TW', 'picture-rotate S AY'],
+    arrange: ['picture-position L PO', 'picture-wrap L TW', 'object-align S AA', 'picture-rotate S AY', 'selection-pane S AP'],
     document: ['doc-class S DC', 'base-size S DS Base font size', 'two-sided S DT']
   },
   references: {
     toc: ['table-of-contents L T', 'toc-add-text S A', 'update-toc S U'],
     footnotes: ['footnote L F', 'endnote S E', 'next-footnote S O', 'show-notes S H', 'footnote-options I -'],
+    research: ['frontier L RS'],
     citations: ['citation L C', 'manage-sources S M', 'citation-style S L', 'bibliography S B', 'add-source S W'],
     captions: ['insert-caption L P', 'table-of-figures S G', 'update-tof S V Update Table', 'cross-reference S RF'],
     index: ['mark-entry L N', 'insert-index S X', 'update-index S D'],
@@ -66,7 +67,7 @@ export const LAYOUT = {
     immersive: ['focus L O'],
     movement: ['page-vertical L V', 'side-to-side L 7'],
     mode: ['dark-page L D'],
-    show: ['ruler S R', 'view-gridlines-page S G', 'navigation-pane S K', 'show-latex S SL', 'show-marks S SM Formatting marks'],
+    show: ['ruler S R', 'view-gridlines-page S G', 'navigation-pane S K', 'show-latex S SL', 'show-marks S SM'],
     zoom: ['zoom-dialog L Q Zoom', 'zoom-100 L J', 'one-page S 1', 'multiple-pages S M', 'page-width S I'],
     window: ['split-view L B']
   },
@@ -90,19 +91,46 @@ export const LAYOUT = {
     data: ['table-sort L SO', 'repeat-header S G Repeat Header Rows', 'table-to-text S V Convert to Text', 'table-formula L SF Formula', 'update-formulas S SU Update Formulas']
   },
   'picture-format': {
-    adjust: ['picture-change S G', 'picture-reset S Q Reset Picture'],
+    adjust: ['picture-corrections L R', 'picture-color L I', 'picture-transparency L TR', 'picture-compress S M', 'picture-change S G', 'picture-reset S Q Reset Picture'],
     styles: ['picture-border S SO', 'picture-caption S N'],
     accessibility: ['picture-alt L AT'],
-    arrange: ['picture-position L PO', 'picture-wrap L TW', 'picture-rotate S AY'],
+    arrange: ['picture-position L PO', 'picture-wrap L TW', 'object-align S AA', 'picture-rotate S AY', 'selection-pane S AP'],
     size: ['picture-crop L C', 'picture-height S H', 'picture-width S W', '|', 'picture-lock I L', 'picture-size I -']
   },
   equation: {
-    tools: ['eq-gallery L E', 'eq-numbered S N', 'eq-display S D'],
+    tools: ['eq-gallery L E', 'eq-numbered S N', 'eq-display S D', 'graph-this L H'],
     conversions: ['eq-convert L CV', 'eq-unicode S K', 'eq-latex-format S X LaTeX', 'eq-normal-text S T', 'show-latex L L'],
     symbols: ['eq-sym-basic S S1 Basic math', 'eq-sym-greek S S2 Greek letters', 'eq-sym-ops S S3 Operators', 'eq-sym-arrows S S4 Arrows', 'eq-sym-relations S S5 Relations',
       'eq-sym-sets S S6 Sets and logic', 'eq-sym-geometry S S7 Geometry'],
     structures: ['eq-fraction L F Fraction', 'eq-script L SC Script', 'eq-radical L R Radical', 'eq-integral L I Integral', 'eq-largeop L O Large Operator', 'eq-bracket L B Bracket',
       'eq-function L U Function', 'eq-accent L A Accent', 'eq-limit L G Limit and Log', 'eq-operator L P Operator', 'eq-matrix L M Matrix']
+  },
+  'shape-format': {
+    insert: ['shape-insert L SI'],
+    styles: ['shape-styles L SS', 'shape-fill S SF', 'shape-outline S SO'],
+    text: ['shape-text L X'],
+    arrange: ['object-position L PO', 'shape-forward S AF', 'shape-backward S AE', 'selection-pane S AP', 'object-align S AA'],
+    size: ['shape-height S H', 'shape-width S W']
+  },
+  'chart-design': {
+    layouts: ['chart-element L A'],
+    styles: ['chart-colors L C'],
+    data: ['chart-switch L W', 'chart-edit-data L D'],
+    type: ['chart-type L Y']
+  },
+  'chart-format': {
+    arrange: ['object-position L PO', 'object-align S AA', 'selection-pane S AP'],
+    size: ['chart-height S H', 'chart-width S W']
+  },
+  'smart-design': {
+    create: ['smart-add S A', 'smart-text-pane S T', 'smart-rtl S R'],
+    layouts: ['smart-layout L L'],
+    styles: ['smart-colors L C'],
+    reset: ['smart-reset L G']
+  },
+  'smart-format': {
+    styles: ['smart-fill S F', 'smart-outline S O'],
+    arrange: ['object-position L PO', 'object-align S AA', 'selection-pane S AP']
   },
   headfoot: {
     headfoot: ['header L H', 'footer L O', 'page-number L NU'],

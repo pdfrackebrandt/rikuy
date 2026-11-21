@@ -10,6 +10,7 @@ import { TABS, groupOf, KEYTIPS } from '../src/ribbon/order.js';
 import { LAYOUT, TIPS, LAUNCH, CHECKS, readLine } from '../src/ribbon/layout.js';
 import { parseChord, chordFor, bindings } from '../src/keys.js';
 import { controls } from '../build/app.mjs';
+import { regrid, regridPath } from '../src/ui/icongrid.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -60,7 +61,7 @@ ok('every chord reads; two commands on one chord differ in rank, or one says whe
   }
   assert.ok(command('style-heading1').keys.includes('Ctrl+Alt+1') && command('style-normal').keys.includes('Ctrl+Alt+0') && command('style-normal').keys.includes('Ctrl+Shift+N') && command('bullets').keys.includes('Ctrl+Shift+L'));
   assert.ok(command('double-underline').keys.includes('Ctrl+Shift+D') && command('clear-paragraph-formatting').keys.includes('Ctrl+Q'));
-  assert.ok(command('format-painter').keys.includes('Ctrl+Shift+C') && command('paste-special').keys.includes('Ctrl+Alt+V'));
+  assert.ok(command('format-painter').keys.includes('Ctrl+Shift+C') && command('paste-formatting').keys.includes('Ctrl+Alt+V') && !(command('paste-special').keys || []).includes('Ctrl+Alt+V'));
   assert.deepEqual(KEYTIPS, { file: 'F', home: 'H', insert: 'N', design: 'G', layout: 'P', references: 'S', review: 'R', view: 'W', help: 'Y2',
     'table-design': 'JT', 'table-layout': 'JL', 'picture-format': 'JP', equation: 'JE', headfoot: 'JH' });
   // (no tab's letters the start of another's: Word waits for the second letter only after J and Y)
@@ -85,7 +86,7 @@ const WORD = [
   ['Ctrl+Alt+C', 'insert-copyright', null], ['Ctrl+Alt+R', 'insert-registered', null], ['Ctrl+Alt+T', 'insert-trademark', null], ['Ctrl+Alt+.', 'insert-ldots'], ['Alt+X', 'unicode-toggle', 'Control+Alt+X'],
   ['Ctrl+\'', 'accent-acute', null], ['Ctrl+`', 'accent-grave', null], ['Ctrl+Shift+^', 'accent-circumflex', null], ['Ctrl+Shift+~', 'accent-tilde', null], ['Ctrl+Shift+:', 'accent-umlaut', null],
   ['Ctrl+Shift+@', 'accent-ring', null], ['Ctrl+Shift+&', 'accent-ligature', null], ['Ctrl+/', 'accent-slash', null], ['Ctrl+Alt+Shift+?', 'insert-iquest', null], ['Ctrl+Alt+Shift+!', 'insert-iexcl', null],
-  ['Ctrl+Alt+V', 'paste-special', 'Ctrl+Control+V'], ['Ctrl+F3', 'spike'], ['Ctrl+Shift+F3', 'spike-insert'], ['F2', 'move-text'], ['Shift+F2', 'copy-text'], ['Alt+F3', 'quick-part-save'],
+  ['Ctrl+Alt+V', 'paste-formatting'], ['Ctrl+F3', 'spike'], ['Ctrl+Shift+F3', 'spike-insert'], ['F2', 'move-text'], ['Shift+F2', 'copy-text'], ['Alt+F3', 'quick-part-save'],
   ['Alt+Shift+D', 'insert-date', 'Control+Shift+D'], ['Alt+Shift+T', 'insert-time', 'Control+Shift+T'], ['Alt+Shift+P', 'insert-page-field', 'Control+Shift+P'], ['Ctrl+F9', 'insert-field'],
   ['Ctrl+K', 'link'], ['Ctrl+Alt+F', 'footnote'], ['Ctrl+Alt+D', 'endnote', 'Ctrl+Alt+E'], ['Alt+Shift+>', 'next-footnote', 'Control+Shift+>'], ['Alt+Shift+<', 'previous-footnote', 'Control+Shift+<'],
   ['Alt+Shift+O', 'toc-add-text', 'Control+Shift+O'], ['Alt+Shift+X', 'mark-entry', 'Control+Shift+X'], ['Alt+Shift+I', 'mark-citation', 'Control+Shift+I'], ['Ctrl+Shift+F5', 'bookmark'],
@@ -109,7 +110,7 @@ ok('Word\'s keys: each bound to its command, on Windows and Linux and on a Mac (
   }
   // Word for Mac's own: Cmd+Option+L spelling, Cmd+Option+A a comment, Control+Shift+M indents, Cmd+G finds again
   const M = bindings(true);
-  for (const [k, id] of [['Ctrl+Alt+L', 'spelling'], ['Ctrl+Alt+A', 'comment-new'], ['Control+Shift+M', 'paragraph-indent'], ['Ctrl+G', 'find-next'], ['Ctrl+8', 'show-marks']]) assert.ok(M.some((b) => b.id === id && b.chord === k), k);
+  for (const [k, id] of [['Ctrl+Alt+L', 'spelling'], ['Ctrl+Alt+A', 'comment-new'], ['Ctrl+Control+V', 'paste-special'], ['Control+Shift+M', 'paragraph-indent'], ['Ctrl+G', 'find-next'], ['Ctrl+8', 'show-marks']]) assert.ok(M.some((b) => b.id === id && b.chord === k), k);
   // Save (Ctrl+S) says the document is kept; Save As (F12) and Download LaTeX download
   assert.ok(command('save').keysElsewhere.includes('Ctrl+S') && !command('download-latex').keysElsewhere && command('save-as').keys.includes('F12'));
   // Word's keys a browser keeps are bound to nothing here
@@ -229,6 +230,20 @@ ok('KeyTips: in each tab every one is unique and none is the start of another (W
     }
     for (const id of Object.keys(TIPS[tab])) assert.ok(command(id) && places(command(id)).some((p) => p.tab === tab), tab + ': ' + id + ' is on the tab');
   }
+});
+
+ok('icons on the grid of their pixels: a line\'s points on the pixels\' middles at 16 and 32 px, a curve\'s handles scaled, an arc\'s flags kept, a filled shape on the pixels\' edges; every icon of the registry drawn so', () => {
+  const ends = (d) => [...d.matchAll(/[MLHVA]([^MLHVACQSTZ]*)/g)].flatMap((m) => m[0][0] === 'A' ? m[1].trim().split(/[ ,]+/).slice(5).map(Number) : m[1].trim().split(/[ ,]+/).map(Number));
+  for (const n of [16, 32]) {
+    const d = regridPath('M3.5 5.5h13M6.5 10h10l-2 3', n / 20, n / 20, (v) => Math.round(v - 0.5) + 0.5);
+    assert.ok(ends(d).every((v) => Math.abs(v % 1) === 0.5), n + ': ' + d);
+  }
+  assert.equal(regridPath('M2 2a3 3 0 0 1 6 0', 0.8, 0.8, (v) => Math.round(v - 0.5) + 0.5), 'M1.5 1.5A2.4 2.4 0 0 1 6.5 1.5');
+  assert.match(regridPath('M2 2C4 4 6 6 8 8', 0.8, 0.8, (v) => Math.round(v - 0.5) + 0.5), /^M1\.5 1\.5C3\.2 3\.2 4\.8 4\.8 6\.5 6\.5$/);
+  assert.match(regrid('<rect x="2" y="2" width="5" height="5" fill="currentColor"/>', 20, 20, 16, 16), /x="2" y="2" width="4" height="4"/);
+  assert.match(regrid('<circle cx="10" cy="10" r="5"/>', 20, 20, 16, 16), /cx="8\.5" cy="8\.5" r="4"/);
+  // every icon the registry draws reads and comes back as a path
+  for (const c of commands()) if (c.icon) for (const n of [16, 32]) { const out = regrid(c.icon, 20, 20, n, n); assert.ok(!/NaN|undefined/.test(out), c.id + ' ' + n + ': ' + out); }
 });
 
 console.log('commands: ' + n + ' groups of checks passed');

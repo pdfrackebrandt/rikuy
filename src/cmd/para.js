@@ -120,7 +120,7 @@ register(
     when: (app, at) => app.paraIndentCan(at, 1), whyNot: (app, at) => app.paraIndentWhy(at, 1), run: (app, args, at) => app.paraIndentStep(1, at) },
   // (Word for Mac's Cmd+8 too)
   { id: 'show-marks', name: 'Show marks', order: 70, tab: 'home', group: 'paragraph', kind: 'toggle', icon: ICON.marks, keys: ['Ctrl+Shift+8'], keysMac: ['Ctrl+8'],
-    also: [{ tab: 'view', group: 'show', name: 'Formatting marks', order: 30 }],
+    also: [{ tab: 'view', group: 'show', order: 30 }],
     title: 'Show marks (Ctrl+Shift+8): ¶ at the end of each paragraph, ↵ at each line break (\\\\), → at each \\hfill, and the space of \\vspace; nothing is written',
     synonyms: ['Show/Hide', 'Show/Hide ¶', 'Formatting marks', 'Pilcrow', 'Paragraph marks', 'Hidden marks'],
     when: (app) => !!app.model, on: (app) => !!app.marksOn, run: (app) => app.toggleMarks() },
@@ -157,7 +157,7 @@ register(
   { id: 'clear-paragraph-formatting', name: 'Clear Paragraph Formatting', keys: ['Ctrl+Q'],
     title: 'Clear Paragraph Formatting (Ctrl+Q): alignment, spacing, indents and breaks off the paragraph',
     synonyms: ['Reset paragraph', 'Clear paragraph'], when: can, whyNot: why, run: (app) => app.paraReset() || (app.toast('Nothing to clear here.'), false) },
-  { id: 'paragraph-settings', name: 'Paragraph Settings', order: 150, tab: 'home', group: 'paragraph', icon: ICON.settings, menu: { text: 92, selection: 92 },
+  { id: 'paragraph-settings', name: 'Paragraph Settings', dialog: true, menuName: 'Paragraph', order: 150, tab: 'home', group: 'paragraph', icon: ICON.settings, menu: { text: 92, selection: 92 },
     title: 'Paragraph…: indents, spacing, line spacing, alignment, page breaks and the whole document\'s settings',
     synonyms: ['Paragraph', 'Paragraph…', 'Paragraph dialog', 'Indents and Spacing', 'Line and Page Breaks'],
     when: (app, at) => can(app, at) || docOK(app), whyNot: why, run: (app, args, at) => app.paraDialog(args, at) },

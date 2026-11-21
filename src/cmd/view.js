@@ -2,15 +2,17 @@
 // status bar (Page, LaTeX, PDF: one at a time, at the same place); Show LaTeX, which turns one
 // block of the page into its source where it stands and back; and the View tab: Read Mode, Print
 // Layout, LaTeX Mode, Draft, Show LaTeX, One page, Multiple pages, Side to Side, Dark page, Focus
-// (Formatting marks there is B2's Show marks). Nothing here writes to the source but what is typed into a block shown as LaTeX.
+// (Show marks there is B2's). Nothing here writes to the source but what is typed into a block shown as LaTeX.
 
-import { register, onInstall } from '../commands.js';
+import { register, onInstall, commands } from '../commands.js';
+import { keyTitle, macUA } from '../keys.js';
 import { $, PREFS, store } from '../ui/dom.js';
 import { openMenu } from '../ui/kit.js';
 import { buildModel } from '../model.js';
 import { hunks } from '../diff.js';
 import { groupOf } from '../ribbon/order.js';
 import { rulerInstall, rulerSync, rulerNarrow } from '../ui/ruler.js';
+import { crossFade } from '../motion.js';
 
 const always = () => true;
 const cls = () => document.body.classList;
@@ -36,11 +38,11 @@ const viewIs = (v) => (app) => (app.view || 'page') === v;
 
 register(
   // (Word's Ctrl+F2 is Print Preview: here the PDF as TeX makes it)
-  { id: 'preview', name: 'Preview', el: 'b-pdf', static: true, place: 'bar', title: 'Show the PDF as TeX makes it, beside the page (Ctrl+F2)', keys: ['Ctrl+F2', 'Ctrl+Alt+I'], keyScope: 'app', synonyms: ['PDF', 'Compile', 'Print Preview'], when: always, run: (app) => app.togglePdf() },
+  { id: 'preview', name: 'Preview', el: 'b-pdf', static: true, place: 'bar', title: 'Preview (Ctrl+F2): show the PDF as TeX makes it, beside the page', keys: ['Ctrl+F2', 'Ctrl+Alt+I'], keyScope: 'app', synonyms: ['PDF', 'Compile', 'Print Preview'], when: always, run: (app) => app.togglePdf() },
   { id: 'source', name: 'Source', el: 'b-src', static: true, place: 'bar', title: 'Show the source beside the page (Ctrl+\\)', keysElsewhere: ['Ctrl+\\'], synonyms: ['LaTeX source', 'Code'], when: always, run: (app) => app.toggleSource() },
-  { id: 'zoom-out', name: 'Zoom out', el: 'b-zout', static: true, place: 'bar', only: 'wide', keysElsewhere: ['Ctrl+-'], when: always, run: (app) => app.setZoom(-1) },
-  { id: 'zoom-fit', name: 'Fit width', el: 'zoomv', static: true, place: 'bar', title: 'Zoom: the page at this percentage of its size; a press fits it to the window\'s width', synonyms: ['Zoom'], when: always, run: (app) => app.setZoom(0) },
-  { id: 'zoom-in', name: 'Zoom in', el: 'b-zin', static: true, place: 'bar', only: 'wide', keysElsewhere: ['Ctrl+='], when: always, run: (app) => app.setZoom(+1) },
+  { id: 'zoom-out', name: 'Zoom out', el: 'b-zout', static: true, place: 'bar', only: 'wide', title: 'Zoom out (Ctrl+-): show the page smaller', keysElsewhere: ['Ctrl+-'], when: always, run: (app) => app.setZoom(-1) },
+  { id: 'zoom-fit', name: 'Fit width', el: 'zoomv', static: true, place: 'bar', title: 'Fit width: fit the page to the window\'s width; the button shows the zoom as a percentage of the page\'s size', synonyms: ['Zoom'], when: always, run: (app) => app.setZoom(0) },
+  { id: 'zoom-in', name: 'Zoom in', el: 'b-zin', static: true, place: 'bar', only: 'wide', title: 'Zoom in (Ctrl+=): show the page larger', keysElsewhere: ['Ctrl+='], when: always, run: (app) => app.setZoom(+1) },
 
   // ---- the status bar: Page · LaTeX · PDF, and the zoom slider (Word's view buttons and slider)
   { id: 'view-page', name: 'Page view', el: 'sv-page', static: true, place: 'status', kind: 'toggle', title: 'Page: the typeset page you type on, at the same place', synonyms: ['Print Layout', 'Typeset page', 'Editing view'],
@@ -57,7 +59,7 @@ register(
     when: always, on: (app) => viewIs('page')(app) && app.webOn(), run: (app) => { const on = !(viewIs('page')(app) && app.webOn()); app.setView('page'); app.setWeb(on); } },
   { id: 'zoom-slider', name: 'Zoom', el: 'st-zoom', role: 'slider', static: true, place: 'status', only: 'wide', title: 'Zoom: drag, or Ctrl and + or -', synonyms: ['Zoom slider', 'Magnification'],
     when: always, run: (app, args) => app.zoomTo((+args || 100) / 100, null) },
-  { id: 'zoom-level', name: 'Zoom level', el: 'st-zoomv', static: true, place: 'status', only: 'wide', title: 'The zoom; a press shows the page at its actual size (Ctrl+0)', when: always, run: (app) => app.zoomTo(1, null) },
+  { id: 'zoom-level', name: 'Zoom level', el: 'st-zoomv', static: true, place: 'status', only: 'wide', title: 'Show the page at its actual size; the button says the zoom (Ctrl+0)', when: always, run: (app) => app.zoomTo(1, null) },
 
   // ---- View ▸ Views
   { id: 'read-mode', name: 'Read Mode', order: 10, title: 'Read Mode: TeX\'s PDF across the window, to read (the status bar\'s PDF)', synonyms: ['Reading view', 'PDF view', 'Full screen reading'],
@@ -117,7 +119,7 @@ register(
 
 // What a step of the history was, for Undo's list (the kinds App.commit is given)
 const KIND = { type: 'Typing', del: 'Delete', enter: 'New paragraph', paste: 'Paste', block: 'Paragraph', restore: 'Restore', reject: 'Reject', merge: 'Merge', 'del-atom': 'Delete',
-  'page-border': 'Page border', style: 'Style', api: 'Script', 'other-tab': 'Another tab', move: 'Move', table: 'Table' };
+  'page-border': 'Page border', style: 'Style', api: 'Script', 'other-tab': 'Another tab', move: 'Move', table: 'Table', open: 'Open file' };
 const kindName = (k) => KIND[k] || (k ? String(k).replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase()).slice(0, 40) : 'Edit');
 
 // commands that only show or move, never write: Repeat skips them
@@ -142,7 +144,9 @@ export const methods = {
   // they were, the PDF or the source beside the page: pressed in another view they go back to the
   // page first (App.toggleSource and togglePdf ask leaveView). A PDF that is current shows at once;
   // one that is not shows while TeX makes the new one, the pane saying so.
-  async setView(v) {
+  // (as a cross fade where the browser has View Transitions: src/motion.js)
+  setView(v) { return crossFade(() => this.setViewNow(v)); },
+  async setViewNow(v) {
     if (!VIEWS.includes(v)) return false;
     const was = this.view || 'page';
     if (v === was) { this.viewSync(); return true; }
@@ -173,7 +177,7 @@ export const methods = {
         cls().add('view-pdf');
         this.viewPdfSpot = null;
         if (cls().contains('src-on')) await this.toggleSource(false);
-        const fresh = !!this.lastPdf && this.lastPdfSig === this.textSigNow();
+        const fresh = !!this.lastPdf && this.lastPdfSig === this.pdfSigNow();
         this.togglePdf(true, fresh);
         if (!fresh) this.pdfSay('Updating the PDF…');
         if (spot) this.viewPlaceInPdf(spot);
@@ -241,7 +245,8 @@ export const methods = {
     });
   },
 
-  viewPlaceInSource(spot) {
+  // (noFocus: the cursor placed and shown, the focus left where it is: the Source button's)
+  viewPlaceInSource(spot, noFocus) {
     const f = spot.f, p = spot.p != null ? spot.p : this.lineStartAt(f, spot.line);
     if (!this.files.has(f) || !this.cm) return;
     if ((this.srcFile || this.main) !== f) this.showSrcFile(f);
@@ -249,7 +254,7 @@ export const methods = {
     this.cm.refresh();
     doc.setCursor(pos);
     this.cm.scrollIntoView({ line: pos.line, ch: pos.ch }, Math.round(this.cm.getScrollInfo().clientHeight / 3));
-    this.cm.focus();
+    if (!noFocus) this.cm.focus();
   },
 
   // The PDF at the spot: now when it is current, else once TeX has made the new one
@@ -556,7 +561,7 @@ export const methods = {
   undoMenu() {
     const steps = this.hist.slice(-12).reverse();
     if (!steps.length) return false;
-    const items = steps.map((h, i) => ({ name: (i ? 'Undo ' + (i + 1) + ' steps, back to: ' : 'Undo: ') + kindName(h.kind), title: new Date(h.time).toLocaleTimeString(), run: () => { for (let k = 0; k <= i; k++) this.undo(); } }));
+    const items = steps.map((h, i) => ({ name: (i ? 'Undo ' + (i + 1) + ' steps, back to: ' : 'Undo: ') + kindName(h.kind), title: new Date(h.time).toLocaleTimeString(), run: () => { this.removeGhost(); for (let k = 0; k <= i; k++) this.undo(); } }));
     // (under the arrow; where the bar hides it, a phone's menu panel pressed it: under the bar)
     const x = $('#b-undo-x'), at = x && x.offsetParent ? x : new DOMRect(8, $('#bar').getBoundingClientRect().bottom, 0, 0);
     openMenu(this, at, items, { label: 'Undo options' });
@@ -577,7 +582,27 @@ function restorePrefs(app) {
   if (!web && (P.pages === 'side' || P.pages === 'grid')) cls().add(P.pages === 'side' ? 'pg-side' : 'pg-grid');
 }
 
+// The bar's and the status bar's tooltips as the ribbon's (UI-PRINCIPLES.md C14): the control's
+// name, its keys, then what it does ("Preview (Ctrl+F2): show the PDF as TeX makes it, beside the
+// page"); the template's own titles had the description alone, some without the keys
+export function barTip(c, mac) {
+  const t = keyTitle(c, c.name, mac), n = c.name, esc = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let d = t, keys = '';
+  // (its keys right after its name, wherever the title had them: Word's "Open (Ctrl+O): …")
+  const lead = t.match(new RegExp('^' + esc + '(?: \\(([^()]*)\\))?: '));
+  if (lead) { keys = lead[1] || ''; d = t.slice(lead[0].length); }
+  const m = d.match(/\s*\(([^()]*)\)\s*$/);
+  if (m && /Ctrl|Alt|Shift|⌘|⌥|⇧|\bF\d/.test(m[1])) { keys = keys || m[1]; d = d.slice(0, m.index); }
+  const head = n + (keys ? ' (' + keys + ')' : '');
+  if (!d.trim() || d.trim() === n) return head;
+  return head + ': ' + (/^[A-Z][a-z]*[\s,.:;]/.test(d) ? d[0].toLowerCase() + d.slice(1) : d);
+}
 onInstall((app) => {
+  for (const c of commands()) {
+    if (!c.static || !c.el || !c.title || !['bar', 'status'].includes(c.place)) continue;
+    const el = document.getElementById(c.el);
+    if (el) el.title = barTip(c, macUA());
+  }
   restorePrefs(app);
   // a window that opened under 700 px (Mobile View) and widens past it takes a wide window's view,
   // where the Mobile View toggle is not; narrowed again, a phone's (N5 of the verification)

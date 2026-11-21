@@ -16,9 +16,9 @@ import fs from 'node:fs';
 import { buildModel, colorValue } from '../src/model.js';
 import { buildWordDoc, expandMath, unpackRuns, wordColor, listStyle, uncolor } from '../src/wordast.js';
 import { createPandoc } from '../src/pandoc.js';
-import { exportDocx, readDocx, docxToLatex } from '../src/wordjobs.js';
+import { exportDocx, readDocx, docxToLatex, openDocx } from '../src/wordjobs.js';
 import { checkData, planImport, unpackRead, rebase, textHunks, mathPatch, stripNumbers, safeMath } from '../src/wordsync.js';
-import { unzip, zip, extract, parseXml, readRikuyPart, text, badZip64 } from '../src/docx.js';
+import { unzip, zip, extract, parseXml, readRikuyPart, text, badZip64, trackAuthors } from '../src/docx.js';
 import { isBalanced } from '../src/parser.js';
 import { scriptNeeds, scriptLines, addScriptSetup, rtlDocument, INDIC } from '../src/scripts.js';
 import { scanDir, resolve } from '../src/wordbidi.js';
@@ -26,6 +26,7 @@ import { zipSync } from 'fflate';
 import { pageForWord } from '../src/pageword.js';
 import { hfPlaces } from '../src/wordpage.js';
 import { graphHtml, template } from '../src/graph.js';
+import { numericCsl } from '../src/word.js';
 
 const P = await createPandoc(fs.readFileSync(new URL('../node_modules/pandoc-wasm/src/pandoc.wasm', import.meta.url)));
 let n = 0;
@@ -662,7 +663,7 @@ await ok('a Word file of what pandoc alone loses: nothing goes without a word, a
   const said = r.warnings.join(' ');
   // (the header is kept now, as fancyhdr's: task 44)
   assert.ok(t.slice(0, t.indexOf('\\begin{document}')).includes('\\usepackage{fancyhdr}\n') && t.includes('\\fancyhead[L]{Draft: do not cite}'), 'the header');
-  for (const s of ['Armenian: Հայ', '1 chart', '1 Word comment came in', '2 tracked changes in the file were accepted', 'Endnotes are footnotes', 'table of contents is LaTeX', '2 equations typed with a number'])
+  for (const s of ['Armenian: Հայ', '1 chart', '1 Word comment came in', '2 tracked changes in the file came in as changes to accept or reject', 'Endnotes are footnotes', 'table of contents is LaTeX', '2 equations typed with a number'])
     assert.ok(said.includes(s), s + '\n' + said);
   assert.ok(t.startsWith('% Opened from a Word file by Rikuy.\n% - Not kept: 3 characters pdfLaTeX has no font'));
   // and the page reads it: a title, the contents, a page break, three floats, no raw source
@@ -1943,6 +1944,189 @@ await ok('R1: art and styled page borders, the title and author in a header, a p
   assert.ok(back.includes('\\usetikzlibrary{decorations.markings}') && /\\path\[postaction=\{decorate\},decoration=\{markings,mark=between positions 0 and [\d.]+ step [\d.]+ with \{\\fill\[pageborder\] \(90:/.test(back) && back.includes("\\definecolor{pageborder}{HTML}{FF0000}"), preambleOf(back));
   assert.ok(back.includes('\\fancyhead[L]{My Title}') && back.includes('\\fancyhead[R]{Ann Author}'), preambleOf(back));
   assert.ok(back.includes('\\begin{nolinenumbers}\nNot numbered.\n\\end{nolinenumbers}'), bodyOf(back));
+});
+
+// Track Changes both ways: Rikuy's changes waiting go to Word as w:ins and w:del with their
+// authors and the date; a .docx's tracked changes come in as changes waiting (Track Changes' base
+// the text with them rejected, each its author's), where they came in accepted before
+await ok('changes waiting go to Word as tracked changes with their authors; a file\'s tracked changes come back as the steps they were', async () => {
+  const now = doc('The quick red fox jumps over the very lazy dog.\n\nSecond paragraph stays.\n');
+  const files = new Map([['main.tex', now]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const at = (w) => now.indexOf(w);
+  const changes = [{ f: 'main.tex', s: at('red'), e: at('red') + 3, del: 'brown', who: 'Ana Pérez' }, { f: 'main.tex', s: at('very '), e: at('very ') + 5, del: '', who: 'Bo' }];
+  const W = buildWordDoc(m, files, { now: 0, main: 'main.tex', changes });
+  assert.equal(W.tracked, 2);
+  const E = exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources: {}, bibs: [], citeproc: false, project: { name: 'Paper', main: 'main.tex', files: [...files] } });
+  const d = text(unzip(E.docx).get('word/document.xml'));
+  assert.match(d, /<w:del w:id="\d+" w:author="Ana Pérez" w:date="\d{4}-\d\d-\d\dT[\d:]+Z"><w:r><w:delText xml:space="preserve">brown<\/w:delText><\/w:r><\/w:del>/);
+  assert.match(d, /<w:ins w:id="\d+" w:author="Ana Pérez" w:date="\d{4}-\d\d-\d\dT[\d:]+Z">(?:(?!<\/w:ins>)[\s\S])*>red<\/w:t>/);
+  assert.match(d, /<w:ins w:id="\d+" w:author="Bo" w:date="\d{4}-\d\d-\d\dT[\d:]+Z">(?:(?!<\/w:ins>)[\s\S])*>very <\/w:t>/);
+  assert.ok(!/rkIns/.test(d), 'no mark of Rikuy\'s own is left');
+  // what Word reads: the text as it is now (the round trip's own reading counts insertions only)
+  assert.ok(extract(unzip(E.docx)).regions.size > 0);
+  // the same file opened as a stranger's: the text now, the base with both changes rejected, and
+  // the step of each author in the order their changes stand
+  const r = openDocx(P, E.docx, 'tracked.docx');
+  assert.ok(r.tex.includes('The quick red fox jumps over the very lazy dog.'), r.tex);
+  assert.ok(r.tracked && r.tracked.base.includes('The quick brown fox jumps over the lazy dog.'), r.tracked && r.tracked.base);
+  assert.deepEqual(r.tracked.authors, ['Ana Pérez', 'Bo']);
+  // (the layer of who wrote what, made from the steps in the worker: red Ana's, very Bo's)
+  const rs = r.tracked.segs.filter((g) => g.e > g.s).map((g) => g.who + ':' + r.tex.slice(g.s, g.e).trim());
+  assert.ok(rs.includes('Ana Pérez:red') && rs.includes('Bo:very') && rs.length === 2, rs.join(' | '));
+  // a name a stranger's file gave, with characters XML does not allow: the Word file stays Word's own
+  const W2 = buildWordDoc(m, files, { now: 0, main: 'main.tex', changes: [{ f: 'main.tex', s: at('red'), e: at('red') + 3, del: 'br\u0001own', who: 'Ev\u0007e "<x>"' }] });
+  const E2 = exportDocx(P, { doc: W2.doc, anchors: W2.anchors, atoms: W2.atoms, resources: {}, bibs: [], citeproc: false, project: { name: 'Paper', main: 'main.tex', files: [...files] } });
+  const d2 = text(unzip(E2.docx).get('word/document.xml'));
+  assert.ok(d2.includes('w:author="Eve &quot;&lt;x&gt;&quot;"') && d2.includes('>brown</w:delText>') && !/[\u0001\u0007]/.test(d2));
+  assert.doesNotThrow(() => parseXml(d2, undefined, true));
+  // a file without tracked changes has no steps
+  const plain = openDocx(P, exportFiles(new Map([['main.tex', now]])).docx, 'plain.docx');
+  assert.equal(plain.tracked, undefined);
+});
+
+// Changes waiting as Word's tracked changes (src/wordast.js trackMarks): a deletion at the end of
+// a heading, an item or a paragraph stays in it, never the next paragraph's start (review M4);
+// the deleted words as the page shows them, dashes and quotes typeset (L2); 3000 changes on a
+// 287 KB paper in a time no one waits for (M3: 13.7 s before)
+await ok('changes waiting go to Word each in its own paragraph, the deleted words typeset, thousands of them at once', async () => {
+  const paras = (d) => d.slice(d.indexOf('<w:body>')).split(/<w:p[ >]/).map((x) => x.replace(/<[^>]+>/g, (t) => (/^<w:del\b/.test(t) ? '[del]' : /^<\/w:del>/.test(t) ? '[/del]' : '')).replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const word = (now, changes) => {
+    const files = new Map([['main.tex', now]]);
+    const W = buildWordDoc(buildModel({ files, main: 'main.tex' }), files, { now: 0, main: 'main.tex', changes });
+    return { W, d: text(unzip(exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources: {}, bibs: [], citeproc: false, project: { name: 'Paper', main: 'main.tex', files: [...files] } }).docx).get('word/document.xml')) };
+  };
+  const del = (now, at, t) => word(now, [{ f: 'main.tex', s: now.indexOf(at), e: now.indexOf(at), del: t, who: 'Ana' }]);
+  let x = del(doc('\\section{Intro}\nBody text here.\n'), '}\nBody', ' words');
+  assert.ok(paras(x.d).includes('1 Intro[del] words[/del]') && paras(x.d).includes('Body text here.'), paras(x.d).join(' | '));
+  x = del(doc('One two\n\nNext paragraph.\n'), '\n\nNext', ' three');
+  assert.ok(paras(x.d).includes('One two[del] three[/del]') && paras(x.d).includes('Next paragraph.'), paras(x.d).join(' | '));
+  x = del(doc('Some \\emph{stress}\n\nNext paragraph.\n'), '\n\nNext', ' here');
+  assert.ok(paras(x.d).some((p) => /^Some stress\[del\] here\[\/del\]$/.test(p)) && paras(x.d).includes('Next paragraph.'), paras(x.d).join(' | '));
+  x = del(doc('\\begin{itemize}\n\\item First\n\\item Second\n\\end{itemize}\n'), '\n\\item Second', ' point');
+  assert.ok(paras(x.d).includes('First[del] point[/del]'), paras(x.d).join(' | '));
+  // (a deletion in the middle stays where it was)
+  x = del(doc('The quick fox.\n'), 'fox', 'brown ');
+  assert.ok(paras(x.d).includes('The quick [del]brown [/del]fox.'), paras(x.d).join(' | '));
+  // (L2)
+  x = del(doc('It is a fact.\n'), 'fact', "``really'' established--and---known ");
+  assert.ok(x.d.includes('<w:delText xml:space="preserve">“really” established–and—known </w:delText>'), x.d.slice(x.d.indexOf('<w:del '), x.d.indexOf('</w:del>')));
+  // (M3)
+  const ps = [];
+  for (let i = 0; i < 3000; i++) ps.push('Paragraph ' + i + ' has some words in it that go on for a while, about eighty characters long here.');
+  const now = doc(ps.join('\n\n'));
+  const files = new Map([['main.tex', now]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const changes = [];
+  for (let i = 0, q = 0; i < 3000; i++) { q = now.indexOf('some', q + 1); changes.push({ f: 'main.tex', s: q, e: q + 4, del: 'many', who: 'Ana' }); }
+  const t0 = Date.now();
+  const W = buildWordDoc(m, files, { now: 0, main: 'main.tex', changes });
+  assert.ok(W.tracked === 3000 && Date.now() - t0 < 4000, W.tracked + ' changes in ' + (Date.now() - t0) + ' ms');
+});
+
+// A file's tracked changes, the cases of the second review of Word's Track Changes: a paragraph
+// one author split is that author's change, so rejecting theirs joins it again (M1); a name in
+// single quotes is read as the one in double quotes, and a name turning the direction of the text
+// after it comes without the characters that turn it (L4, L5)
+const tracked = (b) => edit(exportFiles(new Map([['main.tex', doc('Body.\n')]])).docx, (d) => d.replace(/<w:body>[\s\S]*<\/w:body>/, '<w:body>' + b + '<w:sectPr/></w:body>'));
+const tr = (t) => '<w:r><w:t xml:space="preserve">' + t + '</w:t></w:r>';
+const tp = (...x) => '<w:p>' + x.join('') + '</w:p>';
+const tmark = (kind, who, id) => '<w:pPr><w:rPr><w:' + kind + ' w:id="' + id + '" w:author="' + who + '" w:date="2026-01-01T00:00:00Z"/></w:rPr></w:pPr>';
+const tins = (who, t, id, q = '"') => '<w:ins w:id=' + q + id + q + ' w:author=' + q + who + q + ' w:date="2026-01-01T00:00:00Z">' + tr(t) + '</w:ins>';
+// (Ana joins two paragraphs, a deleted mark; Bo splits one, an inserted mark)
+const joinSplit = tracked('<w:p>' + tmark('del', 'Ana', 5) + tr('First para') + '</w:p>' + tp(tr('second para joined by Ana.')) + tp(tr('A paragraph between.')) + '<w:p>' + tmark('ins', 'Bo', 6) + tr('Third para split') + '</w:p>' + tp(tr('here by Bo.')));
+const inDoc = (t) => t.slice(t.indexOf('\\begin{document}'));
+await ok('a file\'s tracked changes: a paragraph split is its author\'s, rejected with theirs; names in either quotes, without direction marks', async () => {
+  const all = inDoc(docxToLatex(P, joinSplit, 'marks.docx').tex), none = inDoc(docxToLatex(P, joinSplit, 'marks.docx', { track: 'reject' }).tex);
+  assert.ok(all.includes('First para second para') && all.includes('Third para split\n\nhere by Bo.'), all);
+  assert.ok(none.includes('First para\n\nsecond para') && none.includes('Third para split here by Bo.'), none);
+  // (Bo's rejected: his split gone and Ana's join kept, the step Ana's changes make; before, the
+  // split stayed, so it was counted as Ana's and Reject by Bo left it)
+  const ana = inDoc(docxToLatex(P, joinSplit, 'marks.docx', { reject: ['Bo'] }).tex);
+  assert.ok(ana.includes('First para second para') && ana.includes('Third para split here by Bo.'), ana);
+  const bo = inDoc(docxToLatex(P, joinSplit, 'marks.docx', { reject: ['Ana'] }).tex);
+  assert.ok(bo.includes('First para\n\nsecond para') && bo.includes('Third para split\n\nhere by Bo.'), bo);
+  // (L4, L5)
+  const q = tracked(tp(tr('One '), tins('Ana', 'aa ', 1), tr('two '), tins('Bo', 'bb ', 2, "'"), tr('three '), tins('‮Eve⁦', 'cc ', 3), tr('four.')));
+  assert.deepEqual(trackAuthors(unzip(q)), ['Ana', 'Bo', 'Eve']);
+  assert.ok(inDoc(docxToLatex(P, q, 'q.docx', { reject: ['Bo'] }).tex).includes('One aa two three cc four.'));
+});
+// The layer of who wrote what made in the worker (M2): a file with more pieces than it keeps says
+// where its credited changes start; every step's notes at the top the same (L1); the extra
+// readings failing, the file opens as it did before them, its changes accepted, and says so (L6)
+await ok('a file\'s tracked changes: the layer made off the page, its changes each its author\'s, the notes the same in every step, a failure said', async () => {
+  const { byAuthor } = await import('../src/review.js');
+  const { changes } = await import('../src/diff.js');
+  const { MAX_SEGS } = await import('../src/authors.js');
+  const listed = (o) => { const out = []; for (const c of changes(o.tracked.base, o.tex, 'main.tex')) out.push(...byAuthor(c, o.tracked.segs, o.tex)); return out.map((c) => c.who + ':' + JSON.stringify(c.a) + '>' + JSON.stringify(c.b)); };
+  const o = openDocx(P, joinSplit, 'marks.docx');
+  // (the split listed as Bo's, a space made a paragraph break, and the join as Ana's, a break made
+  // a space; before, all three changes were Ana's; and the join was text put in at one place and
+  // taken out at another, the second no one's, until blank lines stopped anchoring the diff)
+  assert.deepEqual(listed(o), ['Ana:"\\n\\n">" "', 'Bo:" ">"\\n\\n"']);
+  const near = openDocx(P, tracked('<w:p>' + tmark('del', 'Ana', 5) + tr('First para') + '</w:p>' + tp(tr('second para joined by Ana.')) + '<w:p>' + tmark('ins', 'Bo', 6) + tr('Third para split') + '</w:p>' + tp(tr('here by Bo.'))), 'near.docx');
+  assert.deepEqual(listed(near), ['Ana:"\\n\\n">" "', 'Bo:" ">"\\n\\n"']);
+  // (L1) the notes at the top are the text's own in the base and in every step: no change in them
+  assert.ok(o.tex.startsWith('% Opened from a Word file by Rikuy.') && o.tracked.base.slice(0, o.tracked.base.indexOf('\\documentclass')) === o.tex.slice(0, o.tex.indexOf('\\documentclass')));
+  assert.ok(o.tracked.segs.every((g) => g.s > o.tex.indexOf('\\begin{document}')), JSON.stringify(o.tracked.segs));
+  const q = openDocx(P, tracked(tp(tr('One '), tins('Ana', 'aa ', 1), tr('two '), tins('Bo', 'bb ', 2, "'"), tr('three '), tins('‮Eve⁦', 'cc ', 3), tr('four.'))), 'q.docx');
+  assert.deepEqual(q.tracked.authors, ['Ana', 'Bo', 'Eve']);
+  assert.deepEqual(listed(q).map((x) => x.replace(/ /g, '')), ['Ana:"">"aa"', 'Bo:"">"bb"', 'Eve:"">"cc"']);
+  // (M2) 12000 insertions by two people, more pieces than the layer keeps (MAX_SEGS): made in the
+  // worker in one pass (on the page, one edit at a time, 3000 stalled it for 1.8 s and 20000 for
+  // a minute); the pieces at the start left out, counted, and the line where the credited ones
+  // start; every change from there on its author's
+  const runs = [];
+  for (let i = 0; i < 400; i++) { const x = []; for (let j = 0; j < 30; j++) x.push(tr('w' + (i * 30 + j) + ' '), tins(j % 2 ? 'Bo' : 'Ana', 'x', 10 + i * 30 + j)); runs.push(tp(...x)); }
+  const H = openDocx(P, tracked(runs.join('')), 'big.docx');
+  assert.ok(H.tracked.cut > 0 && H.tracked.segs.length === MAX_SEGS && H.tracked.upto > 1, H.tracked.cut + ' ' + H.tracked.upto);
+  const upto = H.tex.split('\n').slice(0, H.tracked.upto - 1).join('\n').length;
+  // (before it, one range in the name of changes no author is named for, "Word"; review N1)
+  const credited = H.tracked.segs.find((g) => !g.rest);
+  assert.ok(H.tracked.segs[0].rest && H.tracked.segs[0].who === 'Word' && H.tracked.segs[0].e === credited.s, JSON.stringify(H.tracked.segs.slice(0, 2)));
+  assert.ok(credited.s >= upto && credited.s <= upto + 200, 'upto: the line of the first credited piece');
+  const t0 = Date.now();
+  const L2 = [];
+  for (const c of changes(H.tracked.base, H.tex, 'main.tex')) L2.push(...byAuthor(c, H.tracked.segs, H.tex).map((x) => [x.who, x.bs]));
+  assert.ok(Date.now() - t0 < 5000, 'listing ' + L2.length + ' changes: ' + (Date.now() - t0) + ' ms');
+  const before = L2.filter((x) => x[1] < upto - 200);
+  assert.ok(before.length > 30 && before.every((x) => x[0] === 'Word'), before.length + ' ' + JSON.stringify(before.filter((x) => x[0] !== 'Word').slice(0, 3)));
+  const after = L2.filter((x) => x[1] > upto + 200);
+  assert.ok(after.length > 5000 && after.every((x) => x[0] === 'Ana' || x[0] === 'Bo'), after.length + ' ' + JSON.stringify(after.filter((x) => !/^(Ana|Bo)$/.test(x[0])).slice(0, 3)));
+  // (L6) the extra readings failing: the file opens with its changes accepted, and says so
+  let calls = 0, first = 0;
+  docxToLatex({ ...P, convert: (...a) => { first++; return P.convert(...a); } }, joinSplit, 'marks.docx');
+  const P1 = { ...P, convert: (...a) => { if (++calls > first) throw new Error('out of memory'); return P.convert(...a); } };
+  const f = openDocx(P1, joinSplit, 'marks.docx');
+  assert.ok(!f.tracked && inDoc(f.tex) === inDoc(o.tex), f.tracked);
+  assert.ok(/tracked changes in the file were accepted: reading them as changes to review failed/.test(f.tex) && f.warnings.some((w) => /were accepted/.test(w)), f.tex.slice(0, 300));
+});
+
+await ok('no statement after a closing brace on its line in the Word code: a newline lost (review N4, src/word.js)', () => {
+  for (const f of ['word.js', 'wordast.js', 'wordsync.js', 'wordjobs.js', 'wordworker.js', 'docx.js', 'wordnotes.js', 'wordbidi.js', 'authors.js', 'review.js']) {
+    const bad = fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8').split('\n').map((l, i) => [i + 1, l]).filter(([, l]) => /\}\s{2,}(const|let|var|if|for|return|this)\b/.test(l));
+    assert.deepEqual(bad, [], f);
+  }
+});
+
+await ok('Dogfood: numeric citations in Word numbered as the .bst numbers them: plain by author, unsrt by citation order', () => {
+  const bib = '@article{mirrlees1971, author={Mirrlees, James A.}, title={An Exploration}, journal={RES}, year={1971}}\n@article{chetty2012, author={Chetty, Raj}, title={Bounds}, journal={Econometrica}, year={2012}}\n';
+  for (const [style, mir] of [['plain', '2'], ['unsrt', '1']]) {
+    const src = '\\documentclass{article}\n\\begin{document}\nFirst \\cite{mirrlees1971}, then \\cite{chetty2012}.\n\\bibliographystyle{' + style + '}\n\\bibliography{refs}\n\\end{document}\n';
+    const files = new Map([['main.tex', src], ['refs.bib', bib]]);
+    const m = buildModel({ files, main: 'main.tex' });
+    const W = buildWordDoc(m, files, { citeproc: true, now: 0, main: 'main.tex' });
+    const E = exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources: { 'refs.bib': bib, 'rikuy-numeric.csl': numericCsl(m.opts.sort !== false) }, bibs: ['refs.bib'], csl: 'rikuy-numeric.csl', citeproc: true, project: { name: 'P', main: 'main.tex', files: [...files] } });
+    const d = text(unzip(E.docx).get('word/document.xml')).replace(/<[^>]+>/g, '');
+    assert.ok(d.includes('First [' + mir + '], then [' + (mir === '2' ? '1' : '2') + ']'), style + ': ' + d.slice(0, 200));
+  }  // (review E7) a von name sorted as plain sorts it: van Dijk under v, after Smith
+  const vb = '@article{dijk, author={van Dijk, Jan}, title={D}, journal={J}, year={2001}}\n@article{smith, author={Smith, Ann}, title={S}, journal={J}, year={2002}}\n';
+  const vs = '\\documentclass{article}\n\\begin{document}\nSee \\cite{dijk} and \\cite{smith}.\n\\bibliographystyle{plain}\n\\bibliography{refs}\n\\end{document}\n';
+  const vf = new Map([['main.tex', vs], ['refs.bib', vb]]), vm = buildModel({ files: vf, main: 'main.tex' });
+  const VW = buildWordDoc(vm, vf, { citeproc: true, now: 0, main: 'main.tex' });
+  const VE = exportDocx(P, { doc: VW.doc, anchors: VW.anchors, atoms: VW.atoms, resources: { 'refs.bib': vb, 'rikuy-numeric.csl': numericCsl(true) }, bibs: ['refs.bib'], csl: 'rikuy-numeric.csl', citeproc: true, vonSort: true, project: { name: 'P', main: 'main.tex', files: [...vf] } });
+  const vd = text(unzip(VE.docx).get('word/document.xml')).replace(/<[^>]+>/g, '');
+  assert.ok(vd.includes('See [2] and [1]'), vd.slice(0, 200));
 });
 
 console.log('word: ' + n + ' groups of checks passed');

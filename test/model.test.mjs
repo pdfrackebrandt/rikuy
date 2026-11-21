@@ -110,3 +110,35 @@ if (bad) process.exitCode = 1;
   console.log('bib cache', fails.length ? 'FAIL ' + fails.join('; ') : 'ok');
   if (fails.length) process.exitCode = 1;
 }
+
+// beamer: an item's [label] after its overlay specification (\item<+->[a)]) labels the item, as
+// \item[a)] does; it was drawn as text, "[a)] Lab", beside a bullet (review N2)
+{
+  const fails = [];
+  const show = (inl) => (inl || []).map((x) => x.k === 'seg' ? x.t : x.k === 'sty' || x.k === 'mac' ? show(x.kids) : x.k === 'chr' ? x.text : '').join('');
+  for (const [body, label, text] of [['\\item<+->[a)] Lab', 'a)', 'Lab'], ['\\item<2->[\\textbf{b)}] Bold', 'b)', 'Bold'], ['\\item<+-> [d)] Space', 'd)', 'Space'],
+    ['\\item<3>[f)]\\label{x} After', 'f)', 'After'], ['\\item<1-> Plain [not a label]', '•', 'Plain [not a label]'], ['\\item[c)] Bare', 'c)', 'Bare']]) {
+    const s = '\\documentclass{beamer}\n\\begin{document}\n\\begin{frame}\n\\begin{itemize}\n' + body + '\n\\end{itemize}\n\\end{frame}\n\\end{document}\n';
+    const mb = buildModel({ files: new Map([['main.tex', s]]), main: 'main.tex' });
+    const p = mb.blocks.flatMap((b) => b.items).find((x) => x.type === 'p' && x.label);
+    const got = p ? [show(p.label), show(p.inl).trim()] : null;
+    if (!got || got[0] !== label || got[1] !== text) fails.push(body + ' -> ' + JSON.stringify(got));
+    // the label's place in the source is the brackets' inside, so typing on it edits them
+    else if (label !== '•' && s.slice(p.label[0].is, p.label[0].ie).replace(/\\textbf\{|\}/g, '') !== label) fails.push(body + ' label maps to ' + JSON.stringify(s.slice(p.label[0].is, p.label[0].ie)));
+  }
+  console.log('beamer item labels', fails.length ? 'FAIL ' + fails.join('; ') : 'ok');
+  if (fails.length) process.exitCode = 1;
+}
+
+// \ensuremath in text (\text{in \R}, a package's \newcommand{\R}{\ensuremath{\mathbb{R}}}) is math
+// there, as LaTeX makes it; '{#1}' kept text mode and KaTeX refused \mathbb (review N1)
+{
+  const { KATEX_DEFAULT_MACROS } = await import('../src/render.js');
+  const katex = (await import('katex/dist/katex.mjs')).default;
+  const fails = [];
+  for (const t of ['\\text{area \\ensuremath{\\alpha}}', '\\ensuremath{\\alpha}^2', 'x^\\ensuremath{2}', '\\R^n', '\\text{in \\R}', '\\ensuremath\\alpha']) {
+    try { katex.renderToString(t, { throwOnError: true, macros: { ...KATEX_DEFAULT_MACROS, '\\R': '\\ensuremath{\\mathbb{R}}' } }); } catch (e) { fails.push(t + ': ' + e.message.slice(0, 80)); }
+  }
+  console.log('ensuremath', fails.length ? 'FAIL ' + fails.join('; ') : 'ok');
+  if (fails.length) process.exitCode = 1;
+}

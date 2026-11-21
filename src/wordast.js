@@ -203,10 +203,12 @@ class Walker {
   }
 
   run() {
-    // pass 1 finds the text each anchor holds; pass 2 places comments on the words they quote
+    // pass 1 finds the text each anchor holds; pass 2 places comments on the words they quote,
+    // and the changes waiting as Word's tracked changes (trackMarks)
     this.blocks = this.walk();
-    if (this.o.comments !== false) {
-      const marks = this.commentMarks();
+    if (this.o.comments !== false || (this.o.changes && this.o.changes.length)) {
+      const marks = this.o.comments !== false ? this.commentMarks() : new Map();
+      this.trackMarks(marks);
       if (marks.size) {
         this.cmarks = marks;
         this.anchors = []; this.atoms = []; this.images = new Set(); this.warnings = []; this.degraded = new Map(); this.n = 0; this.meta = {}; this.lists = [];
@@ -220,7 +222,13 @@ class Walker {
     // only a document with right to left text in it, or a wrapper that sets a direction
     if (this.bidi) doc = bidiDoc(doc, new Map(this.anchors.filter((A) => A.dir).map((A) => [A.id, A.dir])), this.rtl);
     const deg = [...this.degraded.entries()].map(([k, n]) => k + (n > 1 ? ' (' + n + ')' : ''));
-    return { doc, anchors: this.anchors.map(packAnchor), atoms: this.atoms, images: [...this.images], warnings: this.warnings, degraded: deg, comments: this.ncomments, rtl: this.rtl, bullets: this.lists };
+    // The anchors in the order Word has them: the abstract goes into the title block, before the
+    // body, so blocks between \maketitle and the abstract (the opening document's live graph)
+    // come after it there; listed in source order, an unchanged round trip read them as moved
+    let anchors = this.anchors;
+    const R = this.absRange, m = this.metaEnd ?? 0;
+    if (R && R[0] > m) anchors = [...anchors.slice(0, m), ...anchors.slice(R[0], R[1]), ...anchors.slice(m, R[0]), ...anchors.slice(R[1])];
+    return { doc, anchors: anchors.map(packAnchor), atoms: this.atoms, images: [...this.images], warnings: this.warnings, degraded: deg, comments: this.ncomments, rtl: this.rtl, bullets: this.lists, tracked: this.tracked || 0 };
   }
 
   plainMath(tex) {
@@ -485,12 +493,13 @@ class Walker {
     const au = (it.authors || []).filter((a) => a.length).map((a) => ({ t: 'MetaInlines', c: this.wrap('author', it.f, null, null, () => this.inl(a, fns)) }));
     if (au.length) this.meta.author = { t: 'MetaList', c: au };
     if (it.date && it.date.length) this.meta.date = { t: 'MetaInlines', c: this.wrap('date', it.f, null, null, () => this.inl(it.date, fns)) };
+    this.metaEnd = this.anchors.length;
   }
 
   abstract(items, u) {
-    const blocks = [];
+    const blocks = [], a0 = this.anchors.length;
     for (const it of items) blocks.push(...this.item(it, { ...u, items: [it] }));
-    if (blocks.length) this.meta.abstract = { t: 'MetaBlocks', c: blocks };
+    if (blocks.length) { this.meta.abstract = { t: 'MetaBlocks', c: blocks }; this.absRange = [a0, this.anchors.length]; }
   }
 
   refs(it) {
@@ -803,6 +812,69 @@ class Walker {
       }
     }
     return marks;
+  }
+  // The changes waiting (opts.changes: [{ f, s, e, del, who }], the words now at [s, e) inserted
+  // and the words del deleted at s, in plain prose: src/cmd/review.js plainChanges) as Word's
+  // tracked changes, each its author's, dated now: a deletion is its runs in a w:del where its
+  // words stood, an insertion its runs between two marks that src/wordjobs.js trackedRuns makes a
+  // w:ins. A change whose words the page does not draw stays as the text is now.
+  trackMarks(marks) {
+    const list = this.o.changes || [];
+    if (!list.length) return;
+    const date = new Date(this.o.now || Date.now()).toISOString().replace(/\.\d+Z$/, 'Z');
+    // (each file's drawn characters once, [s, e, anchor] in the order of their places, and the
+    // last to end at each place; a change then finds its own by halving: read again for every
+    // change, 3000 changes on a 287 KB paper took 14 s)
+    const idx = new Map();
+    const index = (f) => {
+      if (idx.has(f)) return idx.get(f);
+      const S = [];
+      this.anchors.forEach((A, k) => { if (A.f === f) for (let i = 0; i < A.text.length; i++) { const s = A.map[2 * i]; if (s >= 0) S.push([s, A.map[2 * i + 1], k]); } });
+      S.sort((x, y) => x[0] - y[0]);
+      const E = new Map();
+      for (const x of S) E.set(x[1], x);
+      const I = { S, E };
+      idx.set(f, I);
+      return I;
+    };
+    const from = (S, p) => { let lo = 0, hi = S.length; while (lo < hi) { const m = (lo + hi) >> 1; if (S[m][0] < p) lo = m + 1; else hi = m; } return lo; };
+    const put = (key, side, x) => { const m = marks.get(key) || {}; m[side] = [...(m[side] || []), { t: 'RawInline', c: ['openxml', x] }]; marks.set(key, m); };
+    let id = 9000;
+    this.tracked = 0;
+    for (const c of list) {
+      // (characters XML 1.0 does not allow, which a name from another's Word file may hold, go:
+      // Word refuses a file with one)
+      const ok = (t) => String(t).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '');
+      const who = xmlEsc(ok(c.who || 'Rikuy').slice(0, 200)).replace(/"/g, '&quot;'), att = ' w:author="' + who + '" w:date="' + date + '"';
+      const { S, E } = index(c.f), i0 = from(S, c.s);
+      let done = false;
+      if (c.del) {
+        // (the deleted words as the page shows them, its dashes and quotes, as the text around them goes)
+        const xml = '<w:del w:id="' + id++ + '"' + att + '><w:r><w:delText xml:space="preserve">' + xmlEsc(ok(texToPlain(c.del))) + '</w:delText></w:r></w:del>';
+        // where its words stood: before the character there, else after the one that ends there,
+        // else before one a character or two on in the same block, else after one that ends a
+        // character or two before (never the next paragraph's first: past the end of a heading
+        // or a paragraph the next character in the source is the next block's)
+        const exact = i0 < S.length && S[i0][0] === c.s ? S[i0] : null, before = !exact && E.get(c.s);
+        let at = exact, end = before || null;
+        if (!at && !end) {
+          const prev = i0 > 0 ? S[i0 - 1] : null, next = i0 < S.length && S[i0][0] <= c.s + 2 ? S[i0] : null;
+          if (next && (!prev || prev[2] === next[2])) at = next;
+          else if (prev && prev[1] >= c.s - 2 && prev[1] <= c.s) end = prev;
+        }
+        if (at) { put(c.f + ':' + at[0], 'start', xml); done = true; } else if (end) { put(c.f + ':' + end[1] + ':end', 'end', xml); done = true; }
+      }
+      if (c.e > c.s) {
+        let a = null, b = null;
+        for (let i = i0; i < S.length && S[i][0] <= c.e; i++) if (S[i][1] <= c.e) { if (!a) a = S[i]; b = S[i]; }
+        if (a) {
+          put(c.f + ':' + a[0], 'start', '<w:rkIns w:id="' + id++ + '"' + att + '/>');
+          put(c.f + ':' + b[1] + ':end', 'end', '<w:rkInsEnd/>');
+          done = true;
+        }
+      }
+      if (done) this.tracked++;
+    }
   }
   // the source offsets of the first and last character of the quoted words on line [as, ae)
   locate(f, as, ae, quote) {

@@ -6,7 +6,7 @@
 import { dialog } from './kit.js';
 import { mk } from './dom.js';
 import * as X from '../picture.js';
-import { SMART, smartMax } from '../drawing.js';
+import { SMART, smartMax, CAT_OUT, catClean } from '../drawing.js';
 
 const row = (cls, ...kids) => { const d = mk('div', cls); d.append(...kids); return d; };
 function field(name, ctl) {
@@ -59,7 +59,9 @@ function place(app, p) {
 function finish(app, p, ok, focus) {
   p.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && e.target.matches('input:not([type=checkbox]):not([type=radio]), select')) { e.preventDefault(); ok(); } });
   place(app, p);
-  const first = (focus && p.querySelector(focus)) || p.querySelector('textarea, input, select');
+  const named = focus && p.querySelector(focus), first = named || p.querySelector('textarea, input, select');
+  // (a field the command named keeps the focus on a phone too, src/app.js makePop)
+  if (named) named.dataset.named = '';
   if (first) { first.focus(); if (first.select) first.select(); }
 }
 
@@ -144,7 +146,49 @@ export function sizeDialog(app, focus) {
     buttons(app, ok, () => back(app, keep)));
   if (!h.P.keyval) for (const x of [w, hh, ang, cl, cr, ct, cb]) x.disabled = true;
   finish(app, p, ok, { width: '.pd-len', height: '.pd-len:nth-of-type(1)', crop: '.pd-crop input', angle: '[aria-label=Rotation]', place: 'select' }[focus] || null);
-  if (focus === 'height') hh.focus();
+  if (focus === 'height') { hh.dataset.named = ''; hh.focus(); }
+}
+
+// ---- Format Picture: Corrections, Color and Transparency in numbers (src/cmd/picfx.js) -------------
+// Word's percentages; the colour tone in kelvin (6500 K as it is); Reset puts every one back
+const TONE_K = (t) => Math.round(6500 + (t >= 0 ? t * 4700 : t * 1800));
+const K_TONE = (k) => (k >= 6500 ? (k - 6500) / 4700 : (k - 6500) / 1800);
+export function picFxDialog(app) {
+  const o = open(app, 'Format Picture', 'rc-picture-corrections', 'pd-fx');
+  if (!o) return;
+  const S = app.picFxState(o.h).settings;
+  const num = (v) => text(String(v));
+  const f = { sharpen: num(Math.round((S.sharpen || 0) * 100)), brightness: num(Math.round((S.brightness || 0) * 100)), contrast: num(Math.round((S.contrast || 0) * 100)),
+    saturation: num(Math.round((S.saturation ?? 1) * 100)), tone: num(TONE_K(S.tone || 0)), transparency: num(Math.round((S.transparency || 0) * 100)) };
+  const rec = mk('select', 'tb-num');
+  for (const [v, n] of [['', 'No Recolor'], ['gray', 'Grayscale'], ['sepia', 'Sepia'], ['washout', 'Washout'], ['bw', 'Black and White: 50%'], ['tint', 'Tint']]) rec.add(new Option(n, v));
+  rec.value = S.recolor || '';
+  const tint = mk('input', 'tb-num');
+  tint.type = 'color'; tint.value = '#' + (S.tint || '2E75B6').toLowerCase();
+  const settings = () => ({ sharpen: parseFloat(f.sharpen.value) / 100, brightness: parseFloat(f.brightness.value) / 100, contrast: parseFloat(f.contrast.value) / 100,
+    saturation: parseFloat(f.saturation.value) / 100, tone: K_TONE(parseFloat(f.tone.value) || 6500), transparency: parseFloat(f.transparency.value) / 100, recolor: rec.value || null, tint: tint.value });
+  const ok = () => { const st = settings(); back(app, o.keep); app.runCommand('picture-fx-options', st); };
+  const reset = mk('button', 'btn ghost', 'Reset'); reset.type = 'button';
+  reset.addEventListener('click', () => { for (const k of ['sharpen', 'brightness', 'contrast', 'transparency']) f[k].value = '0'; f.saturation.value = '100'; f.tone.value = '6500'; rec.value = ''; });
+  p_append(o.p, [row('tb-sec', mk('div', 'tb-gl', 'Picture Corrections'), field('Sharpness (%)', f.sharpen), field('Brightness (%)', f.brightness), field('Contrast (%)', f.contrast)),
+    row('tb-sec', mk('div', 'tb-gl', 'Picture Color'), field('Saturation (%)', f.saturation), field('Temperature (K)', f.tone), field('Recolor', rec), field('Tint color', tint)),
+    row('tb-sec', mk('div', 'tb-gl', 'Picture Transparency'), field('Transparency (%)', f.transparency),
+      mk('p', 'tb-note', 'Worked into a copy of the picture beside it (its file kept); the line says where it came from. Reset Picture goes back.')), reset, buttons(app, ok, () => back(app, o.keep))]);
+  finish(app, o.p, ok);
+}
+const p_append = (p, kids) => p.append(...kids);
+// Compress Pictures: the resolution, and this picture alone or every one of the document
+export function compressDialog(app) {
+  const h = app.picHere();
+  const b = document.getElementById('rc-picture-compress');
+  const p = dialog(app, { title: 'Compress Pictures', anchor: b && b.offsetParent ? b : h ? h.el : null, rect: app.root.getBoundingClientRect(), cls: 'pop-tb pop-pic pd-compress' });
+  p.style.left = '8px'; p.style.top = '52px';
+  const res = radios('Resolution', [['330', 'HD (330 ppi): good quality for high-definition displays'], ['220', 'Print (220 ppi): excellent quality on most printers and screens'], ['150', 'Web (150 ppi): good for web pages and projectors'], ['96', 'E-mail (96 ppi): minimize document size for sharing']], '150');
+  const only = check('Apply only to this picture', !!h);
+  if (!h) { only.input.disabled = true; only.input.checked = false; }
+  const ok = () => { const v = res.value(), all = !only.input.checked; app.closePop(true); if (h) app.picSelect({ f: h.f, s: h.s }); app.runCommand('picture-compress', { ppi: +v, all }); };
+  p.append(row('tb-sec', only, res, mk('p', 'tb-note', 'Each PNG and JPEG larger than its place needs is written again at that size beside the first (its file kept); the bytes saved are said. TeX places a PDF picture as it is.')), buttons(app, ok, () => { app.closePop(true); if (h) app.picSelect({ f: h.f, s: h.s }); }));
+  finish(app, p, ok);
 }
 
 // ---- Insert's dialogs: SmartArt, Chart, Drop Cap Options ---------------------------------------
@@ -186,20 +230,49 @@ function radios(name, items, value) {
   return g;
 }
 
-export function smartDialog(app) {
-  const p = openAt(app, 'SmartArt', 'rc-insert-smartart', 'pd-smart');
-  const kind = radios('Kind', SMART, SMART[0][0]);
+// edit: a SmartArt selected on the page (SmartArt Design's Text Pane), { kind, items, done(kind, items) }
+export function smartDialog(app, edit) {
+  const p = edit ? dialog(app, { title: 'Text Pane', anchor: objAnchor(app, 'rc-smart-text-pane'), rect: app.root.getBoundingClientRect(), cls: 'pop-tb pop-pic pd-smart' }) : openAt(app, 'SmartArt', 'rc-insert-smartart', 'pd-smart');
+  if (edit) { p.style.left = '8px'; p.style.top = '52px'; }
+  const kinds = edit && !SMART.some((x) => x[0] === edit.kind) ? SMART.concat([[edit.kind, edit.kind, '']]) : SMART;
+  const kind = radios('Kind', kinds, edit ? edit.kind : SMART[0][0]);
   const ta = mk('textarea', 'pd-alt-t');
-  ta.rows = 5; ta.value = 'Plan\nWrite\nSubmit'; ta.setAttribute('aria-label', 'Items, one per line');
+  ta.rows = 5; ta.value = edit ? edit.items.join('\n') : 'Plan\nWrite\nSubmit'; ta.setAttribute('aria-label', 'Items, one per line');
   const ok = () => {
     const k = kind.value(), items = ta.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
     if (items.length > smartMax(k)) { app.toast('At most ' + smartMax(k) + ' items: smartdiagram\'s colours stop there and TeX stops on more.'); return; }
+    if (edit) { app.closePop(true); edit.done(k, items); return; }
     backCaret(app); app.runCommand('insert-smartart', { kind: k, items });
   };
-  p.append(row('tb-sec', kind), row('tb-sec', mk('div', 'tb-gl', 'Items, one per line'), ta, mk('p', 'tb-note', 'Written as \\smartdiagram[kind]{items} (smartdiagram), ten items at most (eleven for Bubbles); click it on the page to edit them.')), buttons(app, ok, () => backCaret(app)));
+  p.append(row('tb-sec', kind), row('tb-sec', mk('div', 'tb-gl', 'Items, one per line'), ta, mk('p', 'tb-note', 'Written as \\smartdiagram[kind]{items} (smartdiagram), ten items at most (eleven for Bubbles); click it on the page to edit them.')), buttons(app, ok, () => (edit ? app.closePop(true) : backCaret(app))));
   place(app, p);
   ta.focus(); ta.select();
   ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); ok(); } });
+}
+
+// The ribbon's button a dialog of a selected object opens under, or the object
+function objAnchor(app, id) { const b = document.getElementById(id); const o = app.objHere && app.objHere(); return b && b.offsetParent ? b : o ? o.el : null; }
+// Words for a selected object (Shape Format's Edit Text, Chart Title): o { title, anchor, label,
+// value, line (one line), note, done(text) }; the object stays selected
+export function wordsDialog(app, o) {
+  const p = dialog(app, { title: o.title, anchor: objAnchor(app, o.anchor), rect: app.root.getBoundingClientRect(), cls: 'pop-tb pop-pic pd-words' });
+  p.style.left = '8px'; p.style.top = '52px';
+  const t = o.line ? text(o.value || '', 'tb-num pd-wide') : mk('textarea', 'pd-alt-t');
+  if (!o.line) { t.rows = 3; t.value = o.value || ''; }
+  t.setAttribute('aria-label', o.label);
+  const ok = () => { app.closePop(true); o.done(t.value); };
+  p.append(row('tb-sec', mk('div', 'tb-gl', o.label), t, mk('p', 'tb-note', o.note || '')), buttons(app, ok, () => app.closePop(true)));
+  if (!o.line) t.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); ok(); } });
+  finish(app, p, ok);
+}
+// Chart Design's Axis Titles: the horizontal and the vertical axis's words, empty for none
+export function axisTitlesDialog(app, o) {
+  const p = dialog(app, { title: 'Axis Titles', anchor: objAnchor(app, 'rc-chart-element'), rect: app.root.getBoundingClientRect(), cls: 'pop-tb pop-pic pd-words' });
+  p.style.left = '8px'; p.style.top = '52px';
+  const x = text(o.x, 'tb-num pd-wide'), y = text(o.y, 'tb-num pd-wide');
+  const ok = () => { app.closePop(true); o.done(x.value, y.value); };
+  p.append(row('tb-sec', field('Horizontal axis title', x), field('Vertical axis title', y), mk('p', 'tb-note', 'Written as xlabel={…} and ylabel={…} on the axis; empty takes one off.')), buttons(app, ok, () => app.closePop(true)));
+  finish(app, p, ok);
 }
 
 // Chart: its kind and a small grid of numbers, Word's own sample data to start with
@@ -228,6 +301,16 @@ export function chartDialog(app, edit) {
     }
     grid.append(tr);
   }
+  // (what a category cannot hold, said as it is typed: pgfplots keeps a category as a symbol's name)
+  const warn = mk('p', 'tb-note pd-catnote');
+  warn.setAttribute('role', 'status'); warn.setAttribute('aria-live', 'polite');
+  const catNote = () => {
+    const bad = cells.slice(1).map((r) => r[0].value.trim()).find((v) => CAT_OUT.test(v));
+    warn.textContent = bad ? 'A category is a name pgfplots keeps: & % $ # _ ^ ~ \\ { } , ( ) [ ] cannot stand in one and are left out ("' + bad.slice(0, 30) + '" is written "' + catClean(bad) + '"). A series\' name keeps them.' : '';
+    warn.hidden = !bad;
+  };
+  grid.addEventListener('input', catNote);
+  catNote();
   const ok = () => {
     const rows = [];
     for (let r = 1; r <= ROWS; r++) if (cells[r][0].value.trim()) rows.push(r);
@@ -243,7 +326,7 @@ export function chartDialog(app, edit) {
     backCaret(app);
     app.runCommand('insert-chart', { kind: k, cats, series });
   };
-  p.append(row('tb-sec', kind), row('tb-sec', mk('div', 'tb-gl', 'Data'), grid, mk('p', 'tb-note', 'Written as a pgfplots axis with its coordinates in the source; click the chart on the page to edit them here again.')), buttons(app, ok, () => backCaret(app)));
+  p.append(row('tb-sec', kind), row('tb-sec', mk('div', 'tb-gl', 'Data'), grid, warn, mk('p', 'tb-note', 'Written as a pgfplots axis with its coordinates in the source; click the chart on the page to edit them here again.')), buttons(app, ok, () => backCaret(app)));
   p.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); ok(); } });
   place(app, p);
   cells[1][0].focus(); cells[1][0].select();

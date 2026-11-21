@@ -91,6 +91,11 @@ export function posFromDom(node, off, root) {
   const kids = el.childNodes;
   if (off > 0 && kids[off - 1]) { const r = lastPos(kids[off - 1]); if (r) return r; }
   if (kids[off]) { const r = firstPos(kids[off]); if (r) return r; }
+  // (a place before a heading's number, which Home and Ctrl+Home give, is the start of the
+  // heading's own words: looking outside the element first sent the keys typed there into the
+  // paragraph before or after it)
+  for (let i = off + 1; i < kids.length; i++) { const r = firstPos(kids[i]); if (r) return r; }
+  for (let i = off - 2; i >= 0; i--) { const r = lastPos(kids[i]); if (r) return r; }
   return before(el, root) || after(el, root);
 }
 
@@ -343,12 +348,39 @@ export function sourceEdge(text, i, dir) {
 // Escaping typed text into LaTeX
 
 const ESC = { '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '%': '\\%', '#': '\\#', '&': '\\&', '_': '\\_', '$': '\\$', '^': '\\textasciicircum{}', '~': '\\textasciitilde{}', ' ': '~', '…': '\\ldots{}' };
+// Text from a PDF holds its typesetter's ligatures (ﬁ, ﬂ) as characters of their own, which no
+// engine's fonts expect in the source: they are their letters. A PDF's or a web page's Greek and
+// math symbols in running text (τ* = 1/(1 + ε)) are characters pdfLaTeX's text fonts do not
+// have ("Unicode character τ (U+03C4) not set up"): pasted into a document pdfLaTeX compiles they
+// are written as the formula a person types, $\tau$. The list is what TeX Live's pdfLaTeX
+// refused here; ±, ×, ÷, ·, µ, °, ¬, the four arrows and … it sets, and they stay.
+const LIGATURES = { '\uFB00': 'ff', '\uFB01': 'fi', '\uFB02': 'fl', '\uFB03': 'ffi', '\uFB04': 'ffl', '\uFB05': 'st', '\uFB06': 'st' };
+const TEXT_MATH = Object.fromEntries(('α alpha β beta γ gamma δ delta ε varepsilon ϵ epsilon ζ zeta η eta θ theta ϑ vartheta ι iota κ kappa λ lambda μ mu ν nu ξ xi π pi ϖ varpi ρ rho ϱ varrho σ sigma ς varsigma τ tau υ upsilon '
+  + 'φ varphi ϕ phi χ chi ψ psi ω omega Γ Gamma Δ Delta Θ Theta Λ Lambda Ξ Xi Π Pi Σ Sigma Υ Upsilon Φ Phi Ψ Psi Ω Omega ≤ le ≥ ge ≠ ne ≈ approx ≡ equiv ∼ sim ∝ propto ≪ ll ≫ gg ∞ infty ∂ partial ∇ nabla '
+  + '∑ sum ∏ prod ∫ int ∈ in ∉ notin ⊂ subset ⊃ supset ⊆ subseteq ⊇ supseteq ∪ cup ∩ cap ∀ forall ∃ exists ∧ wedge ∨ vee ⊕ oplus ⊗ otimes ⊥ perp ∥ parallel ↔ leftrightarrow ⇒ Rightarrow ⇐ Leftarrow '
+  + '⇔ Leftrightarrow ↦ mapsto ⟹ implies ⟺ iff ⋯ cdots ℓ ell ℏ hbar ℜ Re ℑ Im ℵ aleph ′ prime ⌊ lfloor ⌋ rfloor ⌈ lceil ⌉ rceil').split(' ').reduce((a, x, i, all) => (i % 2 ? a : [...a, [x, '\\' + all[i + 1]]]), []));
+TEXT_MATH['\u2212'] = '-';
+// (a prime is the formula's ' : $\prime$ printed a large one, review E9)
+TEXT_MATH['\u2032'] = "'";
+TEXT_MATH['\u2033'] = "''";
+let mathForPdf = false;
+// fn run with escapeTeX writing those symbols as formulas (a paste into a document pdfLaTeX
+// compiles: src/app.js onPaste). o.greek false: the document sets Greek up for its text already
+// (babel's greek, LGR, textgreek, its own \DeclareUnicodeCharacter): Greek letters stay letters.
+export function withPdfText(pdf, fn, o = {}) {
+  const was = mathForPdf;
+  mathForPdf = pdf ? { greek: o.greek !== false } : false;
+  try { return fn(); } finally { mathForPdf = was; }
+}
+
 export function escapeTeX(text, prev = ' ', opts = {}) {
   let out = '';
   let p = prev;
   for (const ch of text) {
     let r = ch;
-    if (ch === '"' && !opts.verbatim) r = /[\s([{—–-]/.test(p) || p === '' ? '``' : "''";
+    if (LIGATURES[ch] && !opts.verbatim) r = LIGATURES[ch];
+    else if (mathForPdf && TEXT_MATH[ch] && !opts.verbatim && (mathForPdf.greek || !/[\u0370-\u03FF]/.test(ch))) r = '$' + TEXT_MATH[ch] + '$';
+    else if (ch === '"' && !opts.verbatim) r = /[\s([{—–-]/.test(p) || p === '' ? '``' : "''";
     else if (ch === '“') r = '``';
     else if (ch === '”') r = "''";
     else if (ch === '‘') r = '`';

@@ -191,14 +191,15 @@ def gallery_widths(page):
             arrows: !!document.getElementById('rb-st-up').offsetParent }; }""")
     print('     widths:', {w: (len(v['tiles']), 'list' if v['list'] else '', 'names' if v['names'] else '', v['h']) for w, v in seen.items()})
     six = ['p', 'section', 'subsection', 'subsubsection', 'latex', 'quote']
-    # (Home's Insert, which the Insert tab has too, is spare: it folds first, so Home's other
-    # groups keep their names, and the gallery its tiles, on a desktop; src/ribbon/order.js. With the
-    # Font group's and the Paragraph group's list commands (B1, B3) the tiles give way below 1600 px,
-    # the names below 1440. Paste and the wider font box (the Word ribbon) give the gallery to the
-    # list below 1280)
-    check('from 1600 to 1920 px Home\'s Insert is folded, the other buttons keep their names, the gallery all six tiles, no paging arrows, no scroll', all(seen[w]['insert'] and seen[w]['names'] and seen[w]['tiles'] == six and not seen[w]['arrows'] and not seen[w]['over'] for w in (1600, 1700, 1760, 1800, 1840, 1920)), {w: (seen[w]['tiles'], seen[w]['names']) for w in (1600, 1920)})
-    # (1536 is wide enough on some machines for all six tiles; 1440 still pages)
-    check('at 1440 px the names stay and the gallery has fewer than six tiles, three or more, LaTeX among them, with the paging arrows', seen[1440]['names'] and 'latex' in seen[1440]['tiles'] and 3 <= len(seen[1440]['tiles']) < 6 and seen[1440]['arrows'] and not seen[1440]['over'], (seen[1440]['tiles'], seen[1440]['names']))
+    # (Home's Insert, which the Insert tab has too, is spare: it folds before the gallery gives up a
+    # tile or a button its name, as Word folds its spare groups first; src/ribbon/order.js. Since
+    # the Word layout's 24 px rows Font and Paragraph are two rows of a fixed width and the groups
+    # stand 2 px from their separators: the six tiles and the names stay down to about 1366 px)
+    check('from 1600 to 1920 px the buttons keep their names, the gallery all six tiles, no paging arrows, no scroll', all(seen[w]['names'] and seen[w]['tiles'] == six and not seen[w]['arrows'] and not seen[w]['over'] for w in (1600, 1700, 1760, 1800, 1840, 1920)), {w: (seen[w]['tiles'], seen[w]['names']) for w in (1600, 1920)})
+    check('wherever the gallery has fewer than six tiles or a button has lost its name, Home\'s spare Insert is folded', all(seen[w]['insert'] for w in seen if seen[w]['tiles'] and (len(seen[w]['tiles']) < 6 or not seen[w]['names'])), {w: (len(seen[w]['tiles']), seen[w]['names'], seen[w]['insert']) for w in seen if seen[w]['tiles']})
+    # (the widest width where the gallery pages: fewer than six tiles)
+    pg = max([w for w in seen if 0 < len(seen[w]['tiles']) < 6] or [1440])
+    check('at the widest width that pages (%d px) the names stay and the gallery has fewer than six tiles, three or more, LaTeX among them, with the paging arrows' % pg, seen[pg]['names'] and 'latex' in seen[pg]['tiles'] and 3 <= len(seen[pg]['tiles']) < 6 and seen[pg]['arrows'] and not seen[pg]['over'], (seen[pg]['tiles'], seen[pg]['names']))
     check('at 1536 px the names stay, LaTeX stays in sight, and there are at least as many tiles as at 1440, the row not scrolling', seen[1536]['names'] and 'latex' in seen[1536]['tiles'] and len(seen[1536]['tiles']) >= len(seen[1440]['tiles']) and not seen[1536]['over'] and (len(seen[1536]['tiles']) >= 6 or seen[1536]['arrows']), (seen[1536]['tiles'], seen[1440]['tiles']))
     check('the gallery stays, three tiles, LaTeX among them, down to 1280 px, the row not scrolling', all(len(seen[w]['tiles']) >= 3 and 'latex' in seen[w]['tiles'] and not seen[w]['over'] for w in (1280, 1300, 1366)), {w: seen[w]['tiles'] for w in (1280, 1366)})
     order = {3: ['p', 'section', 'latex'], 4: ['p', 'section', 'subsection', 'latex'], 5: ['p', 'section', 'subsection', 'subsubsection', 'latex'], 6: six}
@@ -225,7 +226,7 @@ def gallery_paging(page):
     load_doc(page, WRAP('Text here.\n\n\\subsubsection{Deep}\nUnder it.'))
     # (how many tiles fit at a given width depends on the font; find a width that pages by four)
     width = None
-    for w in (1440, 1400, 1366, 1480, 1500, 1520, 1460, 1420, 1380, 1340):
+    for w in (1440, 1400, 1366, 1480, 1500, 1520, 1460, 1420, 1380, 1340, 1320, 1300, 1280, 1260, 1240, 1220, 1200):
         page.set_viewport_size({'width': w, 'height': 900}); page.wait_for_timeout(200)
         if page.evaluate('document.querySelectorAll("#rb-gallery [data-style]:not([hidden])").length') == 4:
             width = w
@@ -276,7 +277,9 @@ def gallery_keys(page):
     seen = []
     for key in ('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight'):
         page.keyboard.press(key); seen.append(page.evaluate('document.activeElement.id'))
-    check('the arrow keys go along the tiles, past the strip\'s disabled arrows to More, the Styles dialog arrow, and on to the folded Insert', seen == ['rb-st-section', 'rb-st-subsection', 'rb-st-subsubsection', 'rb-st-latex', 'rb-st-quote', 'rb-st-more', 'rl-home-styles', 'rg-home-insert'], seen)
+    # (Home's Insert open where the row has room for it, its folded button where not)
+    ins = page.evaluate("(() => { const g = document.querySelector('#rp-home .rb-grp[data-group=insert]'); return g.classList.contains('folded') ? 'rg-home-insert' : [...g.querySelectorAll('button')].find((b) => b.offsetParent).id; })()")
+    check('the arrow keys go along the tiles, past the strip\'s disabled arrows to More, the Styles dialog arrow, and on to Insert (its first button, or its folded one)', seen == ['rb-st-section', 'rb-st-subsection', 'rb-st-subsubsection', 'rb-st-latex', 'rb-st-quote', 'rb-st-more', 'rl-home-styles', ins], (seen, ins))
     page.focus('#rb-st-latex'); page.keyboard.press('Enter'); page.wait_for_timeout(200)
     check('Enter on LaTeX makes the caret\'s paragraph a LaTeX paragraph', body(page).count('% rikuy: latex\nThird paragraph here.') == 1 and boxes(page) == ['Third paragraph here.'], body(page))
     page.focus('#rb-st-quote'); page.keyboard.press(' '); page.wait_for_timeout(200)
@@ -321,9 +324,12 @@ def quote_style(page):
     check('Normal on one with no blank line around it leaves a paragraph of its own', src(page) == WRAP('Before.\n\nSaid here.\n\nAfter.'), body(page))
     load_doc(page, WRAP('\\begin{quote}\nOne.\n\nTwo.\n\\end{quote}')); click_text(page, 'Two', 1); state(page)
     t = page.evaluate(TILES)
-    check('a quote of two paragraphs shows as Quote: Normal takes the environment off both, LaTeX takes it as a whole, no heading holds it', t == ['p', 'section-', 'subsection-', 'subsubsection-', 'latex', 'quote*'], t)
+    check('a quote of two paragraphs shows as Quote: Normal takes the environment off both, LaTeX takes it as a whole, a heading takes the caret\'s paragraph out of it (dogfood)', t == ['p', 'section', 'subsection', 'subsubsection', 'latex', 'quote*'], t)
     style(page, 'p')
     check('Normal on it: the two paragraphs, byte for byte as before the quote', body(page) == 'One.\n\nTwo.', body(page))
+    load_doc(page, WRAP('\\begin{quote}\nOne.\n\nTwo.\n\\end{quote}')); click_text(page, 'Two', 1); state(page)
+    style(page, 'section')
+    check('Heading 1 on its second paragraph: the quote ends before it, the heading alone', body(page) == '\\begin{quote}\nOne.\n\\end{quote}\n\n\\section{Two.}', body(page))
 
 
 
@@ -670,6 +676,9 @@ def open_phone(p, width, height, dark=False):
         if url.startswith('https://rikuy.test/'):
             path = url[len('https://rikuy.test/'):].split('?')[0]
             f = os.path.join(DIST, path)
+            # (a page file at its address without .html, as Pages serves it: the widget document of the
+            # opening document's live graph; else the page itself answered, which refuses to be framed)
+            if path and not os.path.isfile(f) and os.path.isfile(f + '.html'): f, path = f + '.html', path + '.html'
             if path and os.path.isfile(f):
                 ct = 'text/javascript' if path.endswith(('.js', '.mjs')) else 'application/wasm' if path.endswith('.wasm') else 'text/html; charset=utf-8' if path.endswith('.html') else 'application/octet-stream'
                 return route.fulfill(status=200, content_type=ct, headers=policy(DIST, '/' + path), body=open(f, 'rb').read())
