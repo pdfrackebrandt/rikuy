@@ -3657,8 +3657,12 @@ Tests:
     cases typed at full speed as keys and as keyless characters: a formula in a new paragraph, LaTeX
     after Alt+= as a display, the caret after the field closes (a heading's formula, then End,
     Enter), the next line after a display in its paragraph (a second Enter a new one), no display
-    inside a command's argument. `test/power.py` 147 checks, in CI. Open: findings 11, 12, 15 (PR
-    79's areas), L2, L3, L7.
+    inside a command's argument. Its verifications at eb14945 and 5446132 fixed: the price rule
+    decided at the word after the space (`$1 - \alpha$`, `$2 x$` formulas; `$5 each`, `$5% now`
+    prices), `$$` where a display cannot go (an argument, `\href`'s text, a line cell) a formula in
+    the line closed by `$$` as one, keyless and composed text through the field and the LaTeX box
+    (CI's race at 5994e31), Ctrl+Enter in `\text{`, pasted `$..$` given back by money.
+    `test/power.py` 187 checks, in CI. Open: findings 11, 12, 15 (PR 79's areas), L2, L3, L7.
 
 ## Open tasks
 

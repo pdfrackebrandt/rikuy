@@ -552,3 +552,18 @@ counterpart (keyless words) loses text; paste does not.
   | mathfield.py | 19 |
   | paste.py | 25 |
   | eqtab.py | 158 |
+
+## Fixes after the verification of 5446132 (author)
+
+| finding | commit | what changed |
+|---|---|---|
+| W1 | 9f474ff | `blockBase` reads past a command's earlier arguments: `\href`'s text, `\parbox` and `\colorbox` take a formula in the line; any formula opened by `$$` takes its second closing `$`, a display in a `p{}` or `X` cell drawn in the line too |
+| W2, W3 | c3a4440 | one keyless insert goes to the LaTeX box from where `\text{` or `\begin{` handed over, as it came, and on the page from where the formula closed; while the box holds what the field cannot show, a press on the field leaves the keys in the box (a toast says why) |
+| W4 to W7 | e5ecf60 | the price rule decides at the end of the word after the space: a space or a mark, Enter, Esc or a click away make the price, a `$` right after the word the formula (`$2 x$`); `$5%` and `$5\%` wait as the number does; words dictated into a `$` just opened are kept; an input method's or a dead key's text after `$5 ` is the price's word, the space kept |
+| docs | 379ae81 | `docs/handoff/SHORTCUTS.md`'s dollar rules |
+| main | cd236e9 | origin/main merged (PR 88, 90, 97); `src/app.js` and `PLAN.md` conflicts kept both sides |
+
+Each with checks in `test/power.py` (187 in all) that fail on 14522ac's build. Staged as whole
+files built from the intended text (no zero context hunks). On the merged build: power.py 187,
+browser.py 201, mathfield.py 19, paste.py 25, eqtab.py 159 (with `dist/tex`), wordmath.py 84,
+tabs.py 156, ux.py focus_rules dialogs 42, `npm test` green.
