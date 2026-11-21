@@ -1440,6 +1440,12 @@ class App {
       // collapses to the top of the page: Ctrl+A then Ctrl+C copied nothing and Delete did nothing
       if (k === 'a' && !e.shiftKey) { e.preventDefault(); this.selectAllText(); return; }
     }
+    // Word's Ctrl+Down and Ctrl+Up (Windows' and Linux's; a Mac's Cmd+arrows go to the document's
+    // ends): the browser's own keeps the caret's column into the next block and could land
+    // inside a display formula there, which opened its editor
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !isMac && e.ctrlKey && !e.altKey && !e.metaKey) {
+      if (this.paraJump(e.key === 'ArrowDown' ? 1 : -1, e.shiftKey)) { e.preventDefault(); return; }
+    }
     if (e.key === 'Tab') {
       const n = getSelection().anchorNode;
       const el = n && (n.nodeType === 1 ? n : n.parentElement);
@@ -1482,6 +1488,34 @@ class App {
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); this.codeOpen(); return; }
     }
     if (this.armed && !['Shift', 'Control', 'Meta', 'Alt'].includes(e.key)) this.disarm();
+  }
+  // The caret to the start of the next paragraph (dir 1) or to the start of this one, the one
+  // before when it is there already (dir -1), as Word's Ctrl+Down and Ctrl+Up; extend: the
+  // selection grows to the paragraph's end (or start) instead. A paragraph is a block of text on
+  // the page or a table's cell; a display formula, a picture and the rest of a paragraph a page
+  // cut are passed over. false where the caret is in none of them (a footnote at the page's foot):
+  // the browser's own move then.
+  paraJump(dir, extend) {
+    const sel = getSelection();
+    if (!sel.rangeCount || !this.root.contains(sel.focusNode)) return false;
+    const texts = (el) => [...el.querySelectorAll('span.t')].filter((s) => !s.classList.contains('gh') && !s.closest('.atom') && s.firstChild && s.firstChild.nodeType === 3);
+    const stops = [...this.root.querySelectorAll('.it, td')].filter((el) => !(el.classList.contains('it') && (el.classList.contains('atom') || el.classList.contains('split-b') || el.querySelector('td'))) && texts(el).length);
+    const here = stops.reduce((k, el, i) => (el.contains(sel.focusNode) ? i : k), -1);
+    if (here < 0) return false;
+    const start = (el) => { const t = texts(el)[0].firstChild; return [t, 0]; };
+    const end = (el) => { const l = texts(el), t = l[l.length - 1].lastChild || l[l.length - 1].firstChild; return [t, t.length]; };
+    const cmp = ([n, o]) => { const r = document.createRange(); r.setStart(n, o); try { return r.comparePoint(sel.focusNode, sel.focusOffset); } catch (err) { return 0; } };
+    let to;
+    if (dir > 0) {
+      if (extend) to = cmp(end(stops[here])) < 0 ? end(stops[here]) : stops[here + 1] ? end(stops[here + 1]) : null;
+      else to = stops[here + 1] ? start(stops[here + 1]) : end(stops[here]);
+    } else to = cmp(start(stops[here])) > 0 ? start(stops[here]) : stops[here - 1] ? start(stops[here - 1]) : start(stops[here]);
+    if (!to) return true;
+    if (extend) sel.extend(to[0], to[1]);
+    else sel.collapse(to[0], to[1]);
+    const el = to[0].parentElement;
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+    return true;
   }
   codeOpen() {
     const el = this.armed && this.armed.el, info = el && atomOfEl(el);

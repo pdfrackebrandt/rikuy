@@ -334,6 +334,38 @@ def files(page):
     undo(page)
 
 
+EQ = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\\section{Opening}\nFirst paragraph is here and it runs on with words enough to stand above the formula.\n'
+      '\\begin{equation}\na = b + c + d + e + f\n\\end{equation}\nMiddle paragraph text.\n\n\\[ x^2 \\]\n\nLast words.\n\\end{document}\n')
+
+
+def typed_at(page, keys, doc, label, want):
+    """keys pressed on doc (the caret placed first by the caller's place()), then Q typed: Q lands where want says"""
+    page.keyboard.type('Q'); page.wait_for_timeout(200)
+    got = src(page)
+    check(label, want in got and got.replace(want, want.replace('Q', ''), 1) == doc, got[got.find('Q') - 30:got.find('Q') + 30])
+
+
+def caret_keys(page):
+    """Where Word's keys put the caret, as the next letter typed shows: Home and Ctrl+Home on a
+    numbered heading (before its number: the letter went into the paragraph next to it), Ctrl+Down
+    and Ctrl+Up from paragraph to paragraph's start, over a display formula without opening it."""
+    for k, at, want in (('Control+Home', 'Fourth paragraph', '\\section{QOpening}'), ('Home', 'Closing', '\\section{QClosing}'), ('Home', 'Inner', '\\subsection{QInner}')):
+        load_doc(page, DOC); click_text(page, at, 3); key(page, k, 150)
+        typed_at(page, k, DOC, k + ' on a numbered heading: the next letter starts the heading\'s words', want)
+    for k, at, want, label in (('Control+ArrowDown', 'paragraph is here', '\nQMiddle paragraph', 'Ctrl+Down passes over the display formula to the next paragraph\'s start'),
+                               ('Control+ArrowUp', 'paragraph text', '\nQMiddle paragraph', 'Ctrl+Up goes to the start of the caret\'s paragraph'),
+                               ('Control+ArrowUp', 'Last words', '\nQMiddle paragraph', 'Ctrl+Up at a paragraph\'s start goes to the one before, over a formula')):
+        load_doc(page, EQ); click_text(page, at, 0 if at == 'Last words' else 3); key(page, k, 200)
+        opened = page.evaluate('!!window.rikuy.pop')
+        check(label + ', no editor opened', not opened, opened)
+        if opened: close_pop(page)
+        typed_at(page, k, EQ, label + ' (the letter typed there)', want)
+    load_doc(page, EQ); click_text(page, 'paragraph is here', 3); key(page, 'Control+ArrowDown', 150); key(page, 'Control+ArrowDown', 150)
+    typed_at(page, 'Control+ArrowDown', EQ, 'Ctrl+Down twice: the paragraph after the second formula', '\nQLast words')
+    load_doc(page, EQ); click_text(page, 'paragraph is here', 3); key(page, 'Control+Shift+ArrowDown', 150)
+    check('Ctrl+Shift+Down selects to the paragraph\'s end', selected(page) == 'agraph is here and it runs on with words enough to stand above the formula.', selected(page))
+
+
 def tips_and_help(page, mac=False, tag=''):
     title = page.evaluate("document.getElementById('rb-b') ? document.getElementById('rb-b').title : [...document.querySelectorAll('#ribbon [data-cmd=bold]')].map((b) => b.title)[0]")
     check(tag + 'the Bold button\'s tooltip names its key' + (' as a Mac does (\u2318B)' if mac else ' (Ctrl+B)'), ('\u2318B' if mac else 'Ctrl+B') in (title or ''), title)
@@ -413,7 +445,7 @@ def run():
     only = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (paragraphs, references, finding, views, typing, fields, headings, tables, files):
+        for f in (paragraphs, references, finding, views, typing, fields, headings, tables, files, caret_keys):
             if only and f.__name__ not in only: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
