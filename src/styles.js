@@ -141,6 +141,9 @@ export function restyle(src, b, to, p) {
   const env = isEnvStyle(b.v) ? envOf(b.v) : null;
   const quoted = !!env && new RegExp('^\\\\begin\\{' + env.replace('*', '\\*') + '\\}\\r?\\n$').test(src.slice(b.s, b.ws)) && new RegExp('^\\r?\\n\\\\end\\{' + env.replace('*', '\\*') + '\\}$').test(src.slice(b.we, b.e));
   const apart = () => { const pad = blankPads(src, b.s, b.e); return !pad.b && !pad.a; };
+  // (a proof's \qedhere, which puts its square in a display, is an error out of a proof: it goes
+  // with the proof; it went into \section{... \qedhere})
+  const qed = env === 'proof' && !(isEnvStyle(to) && envOf(to) === 'proof') ? [...src.slice(b.ws, b.we).matchAll(/[ \t]*\\qedhere(?![A-Za-z])/g)].map((m) => ({ s: b.ws + m.index, e: b.ws + m.index + m[0].length, t: '' })) : [];
   if (to === 'p') {
     // (LaTeX and an environment take away exactly what they added: the way back is the bytes of before)
     if (b.v === 'latex' || (quoted && apart())) { A = ''; Z = ''; }
@@ -164,8 +167,47 @@ export function restyle(src, b, to, p) {
     if (env) { A = src.slice(b.s, b.ws).replace('{' + env + '}', '{' + name + '}'); Z = src.slice(b.we, b.e).replace(new RegExp('\\{' + env.replace('*', '\\*') + '\\}$'), '{' + name + '}'); }
     else { const nl = eolAt(src, b.s); A = envOpen(name) + nl; Z = nl + envClose(name); }
   } else return null;
-  const edits = [...extra, { s: b.we, e: b.e, t: Z }, { s: b.s, e: b.ws, t: A }].filter((x) => x.s !== x.e || x.t);
-  return { edits, p: b.s + A.length + Math.min(Math.max(p, b.ws), b.we) - b.ws };
+  const edits = [...extra, ...qed, { s: b.we, e: b.e, t: Z }, { s: b.s, e: b.ws, t: A }].filter((x) => x.s !== x.e || x.t);
+  const at = Math.min(Math.max(p, b.ws), b.we);
+  return { edits, p: b.s + A.length + at - b.ws - qed.reduce((n, x) => n + (x.e <= at ? x.e - x.s : 0), 0) };
+}
+
+// One paragraph of an environment of several (a quote, a quotation, a verse, an abstract) made a
+// heading: Word gives the style to that paragraph alone, so the environment ends before it and
+// starts again after it, its other paragraphs kept where they are. An abstract is not begun
+// again (TeX would title it "Abstract" a second time): the paragraphs after the heading leave it.
+// On its first paragraph there is no first title: the abstract begins after the heading, as a
+// quote does, or the heading would take the whole abstract, title and all, away (review V1).
+// A theorem or a proof is never split (src/cmd/styles.js SPLITS): its second part would print
+// its title, and a theorem's a new number. b: the environment's block as styleOfBlock reads it
+// ({ v, s, ws, we, e }: the whole of it and its words), p the caret, to the heading's command.
+// The paragraph is the one the caret is in, of plain words; the paragraphs before it keep the
+// \begin, those after it get a bare one. Returns { edits, p } or { why }.
+export function splitEnvEdits(src, b, to, p) {
+  const name = envOf(b.v), words = src.slice(b.ws, b.we);
+  // the paragraphs: [s, e) of each one's words, apart by blank lines
+  const paras = [];
+  const gap = /[ \t]*\r?\n[ \t]*(?:\r?\n[ \t]*)+/g;
+  let at = 0;
+  for (let m; (m = gap.exec(words));) { paras.push([b.ws + at, b.ws + m.index]); at = m.index + m[0].length; }
+  paras.push([b.ws + at, b.ws + words.length]);
+  if (paras.length < 2) return { why: 'one paragraph' };
+  let k = paras.findIndex(([s, e]) => p >= s && p <= e);
+  if (k < 0) k = paras.findIndex(([s]) => p < s);
+  if (k < 0) k = paras.length - 1;
+  const [ps, pe] = paras[k], text = src.slice(ps, pe);
+  if (!text.trim() || NOT_PLAIN.test(text) || text[0] === '%' || /(^|[^\\])%/.test(text)) return { why: 'This paragraph holds more than words: a heading cannot hold it.' };
+  const eol = eolAt(src, b.s);
+  // before it: the environment ends where its last paragraph ends, or (it was the first) its
+  // \begin line goes
+  const head = k > 0 ? { s: paras[k - 1][1], e: ps, t: eol + '\\end{' + name + '}' + eol + eol } : { s: b.s, e: ps, t: '' };
+  const edits = [head, { s: ps, e: ps, t: '\\' + to + '{' }, { s: pe, e: pe, t: '}' }];
+  if (k === paras.length - 1) edits.push({ s: pe, e: b.e, t: '' });
+  else if (name === 'abstract' && k > 0) edits.push({ s: pe, e: paras[k + 1][0], t: eol + eol }, { s: b.we, e: b.e, t: '' });
+  else edits.push({ s: pe, e: paras[k + 1][0], t: eol + eol + '\\begin{' + name + '}' + eol });
+  // the caret where it was in the words, which moved by what went before them
+  const shift = head.t.length - (head.e - head.s) + to.length + 2;
+  return { edits, p: Math.min(Math.max(p, ps), pe) + shift };
 }
 
 // Edits applied to a text, from the end backwards (as App.commit applies them)

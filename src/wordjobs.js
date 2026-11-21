@@ -24,11 +24,31 @@ export function mathTeX(P, objs) {
   return mathFromJson(r.stdout || '{"blocks":[]}', objs.length);
 }
 
+// BibTeX's plain, abbrv and alpha sort "van Dijk" under v, the von part leading the name; pandoc
+// reads it as a dropping particle, which a CSL style sorts after the family name, under D (review
+// E7). For Rikuy's own sorted numeric style the .bib files go to citeproc as CSL JSON with that
+// part kept with the name, so Word numbers as the PDF and the page do.
+function vonAsBibTeX(P, req) {
+  const resources = { ...(req.resources || {}) }, bibs = [];
+  for (const b of req.bibs) {
+    const t = resources[b];
+    try {
+      const r = P.convert({ from: 'bibtex', to: 'csljson' }, typeof t === 'string' ? t : new TextDecoder().decode(t), {});
+      const list = JSON.parse(r.stdout);
+      for (const it of list) for (const k of ['author', 'editor']) for (const n of it[k] || []) if (n['dropping-particle'] && !n['non-dropping-particle']) { n['non-dropping-particle'] = n['dropping-particle']; delete n['dropping-particle']; }
+      resources[b + '.json'] = JSON.stringify(list);
+      bibs.push(b + '.json');
+    } catch (e) { bibs.push(b); }
+  }
+  return { resources, bibs };
+}
+
 // req: { doc (pandoc JSON), anchors (packAnchor's), atoms, resources: {name: bytes|string},
 //        bibs: [names], csl: name|null, citeproc, toc, project: { name, main, files: [[n, t]], sig } }
 export function exportDocx(P, req) {
   const opts = { from: 'json', to: 'docx', 'output-file': 'out.docx' };
   if (req.citeproc && req.bibs && req.bibs.length) { opts.citeproc = true; opts.bibliography = req.bibs; if (req.csl) opts.csl = req.csl; }
+  if (opts.citeproc && req.vonSort) req = { ...req, ...vonAsBibTeX(P, req) }, opts.bibliography = req.bibs;
   if (req.toc) opts['table-of-contents'] = true;
   const r = P.convert(opts, JSON.stringify(req.doc), req.resources || {});
   if (!r.files['out.docx']) throw new Error('pandoc wrote no Word file: ' + (r.stderr || '').trim().slice(0, 300));
