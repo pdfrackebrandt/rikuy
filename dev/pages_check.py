@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check a built dist/ against Cloudflare Pages' limits before deploying it (.github/workflows/
 deploy.yml), and say what it holds: at most 20,000 files, none over 25 MiB, and a _headers file of
-at most 100 rules with no line over 2,000 characters. Pages refuses a deployment past the first
+at most 100 rules, one per address pattern, with no line over 2,000 characters. Pages refuses a deployment past the first
 two and ignores a _headers file past the last; finding out here is cheaper than a failed upload.
 The hosted build needs index.html, sw.js and _headers (build.mjs without RIKUY_SHARE).
 
@@ -37,6 +37,15 @@ def check(dist):
         rules = [l for l in lines if l.strip() and not l.lstrip().startswith('#') and not l[0].isspace()]
         if len(rules) > MAX_RULES:
             problems.append('_headers has %d rules; Pages reads at most %d' % (len(rules), MAX_RULES))
+        # Pages keeps only the last of two rules with the same address pattern (the hosted widget
+        # document lost its own policy that way, from PR 81 until PR 100), where test/pages.py,
+        # like the documentation's wording, would apply both
+        seen = {}
+        for r in rules:
+            seen[r.strip()] = seen.get(r.strip(), 0) + 1
+        for r, n in seen.items():
+            if n > 1:
+                problems.append('_headers has %d rules for %s; Pages keeps only the last, so make them one' % (n, r))
         for i, l in enumerate(lines, 1):
             if len(l) > MAX_LINE:
                 problems.append('_headers line %d has %d characters; Pages reads at most %d' % (i, len(l), MAX_LINE))

@@ -47,6 +47,8 @@ probs, _, _ = pages_check.check(dist(dict(APP, _headers=''.join('/r%d\n  A: b\n'
 ok('a _headers file of more than 100 rules fails', any('101 rules' in p for p in probs), probs)
 probs, _, _ = pages_check.check(dist(dict(APP, _headers='/*\n  Content-Security-Policy: ' + 'x' * 2000 + '\n')))
 ok('a _headers line over 2,000 characters fails', any('line 2' in p for p in probs), probs)
+probs, _, _ = pages_check.check(dist(dict(APP, _headers='/w-*\n  A: b\n/*\n  C: d\n/w-*\n  E: f\n')))
+ok('two rules for one address pattern fail (Pages keeps only the last)', len(probs) == 1 and '2 rules for /w-*' in probs[0], probs)
 probs, _, _ = pages_check.check(dist({'index.html': 'x', 'rikuy.html': 'x'}))
 ok('the artifact build (no sw.js, no _headers) is not deployed', len(probs) == 2, probs)
 ok('the script exits 1 on a problem', subprocess.run([sys.executable, os.path.join(ROOT, 'dev', 'pages_check.py'), dist({'index.html': 'x'})], stdout=subprocess.DEVNULL).returncode == 1)
@@ -55,6 +57,8 @@ ok('the script exits 1 on a problem', subprocess.run([sys.executable, os.path.jo
 HASH = 'n4bQgYhMfWWaL+qgxVrQFaO/TxsrC4Is0V1sFbDwCgg='
 text = subprocess.run(['node', '--input-type=module', '-e', "import { headers } from './build/app.mjs'; process.stdout.write(headers(['%s']))" % HASH], cwd=ROOT, capture_output=True, text=True, check=True).stdout
 d = dist({'_headers': text})
+pats = [l.strip() for l in text.split('\n') if l.strip() and not l.startswith((' ', '#'))]
+ok('the built _headers has one rule per address pattern', len(pats) == len(set(pats)), [p for p in pats if pats.count(p) > 1])
 H = lambda path: {k.lower(): v for k, v in pages.headers_for(d, path)}
 pol = lambda s: {x.split()[0]: x.split()[1:] for x in s.split(';') if x.strip()}
 hosted = pol(H('/')['content-security-policy'])

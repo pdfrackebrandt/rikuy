@@ -1067,7 +1067,11 @@ export function headers(hashes) {
   return '# Written by build/app.mjs for Cloudflare Pages; see docs/HOSTING.md\n'
     + rule('/*', 'Strict-Transport-Security: ' + HSTS, 'Content-Security-Policy: ' + policy(hashes), 'X-Content-Type-Options: nosniff', 'X-Frame-Options: DENY', 'Referrer-Policy: no-referrer',
       'Permissions-Policy: accelerometer=(), browsing-topics=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), midi=(), payment=(), serial=(), usb=(), xr-spatial-tracking=()')
-    + rule('/widget-*', '! Content-Security-Policy', '! X-Frame-Options', 'Content-Security-Policy: ' + WIDGET_POLICY)
+    // (one rule per address pattern: Pages keeps only the last of two rules with the same
+    // pattern, so the widget document's cache time sits here and not in the list below; with it
+    // there, from PR 81 on, the hosted widget document kept the page's policy and X-Frame-Options,
+    // and no live figure ran: dev/live_check.py failed every deployment since)
+    + rule('/widget-*', '! Content-Security-Policy', '! X-Frame-Options', 'Content-Security-Policy: ' + WIDGET_POLICY, 'Cache-Control: ' + FOREVER)
     // (the page runs only if its inline script is byte for byte the one whose hash the policy
     // names: no-transform asks Cloudflare's edge, and anything between, to change none of it,
     // e.g. Email Address Obfuscation, which a zone has on by default; deploy.yml checks the live
@@ -1080,7 +1084,7 @@ export function headers(hashes) {
     // (text/plain, which a browser shows; it would save a text/markdown file instead of showing it)
     + [['/llms.txt', 'text/plain'], ['/llms-full.txt', 'text/plain'], ['/robots.txt', 'text/plain'], ['/sitemap.xml', 'application/xml']]
       .map(([p, t]) => rule(p, 'Access-Control-Allow-Origin: *', 'Content-Type: ' + t + '; charset=utf-8')).join('')
-    + ['/tex/p-*', '/tex/t-*', '/tex/b-*', '/tex/w-*', '/tex/m-*', '/fonts/*', '/word/pandoc-*', '/core/*', '/spell/*', '/texnames-*', '/widget-*'].map((p) => rule(p, 'Cache-Control: ' + FOREVER)).join('');
+    + ['/tex/p-*', '/tex/t-*', '/tex/b-*', '/tex/w-*', '/tex/m-*', '/fonts/*', '/word/pandoc-*', '/core/*', '/spell/*', '/texnames-*'].map((p) => rule(p, 'Cache-Control: ' + FOREVER)).join('');
 }
 
 // Without a 404.html, Pages answers a missing file with index.html and 200 (it takes the site for
