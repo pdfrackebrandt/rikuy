@@ -960,7 +960,7 @@ def webmcp(p):
     mcp(page, 'select', {'start': j + 1})
     asking(page, 'run_command', {'id': 'delete-table'})
     # (another call meanwhile waits for the question: it cannot move the caret to another table)
-    page.evaluate("() => { window.__moved = document.modelContext.tools.find((t) => t.name === 'select').execute({ start: 0 }, { signal: new AbortController().signal }).then((r) => { window.__movedAt = performance.now(); return r; }); }")
+    page.evaluate("(at) => { window.__moved = document.modelContext.tools.find((t) => t.name === 'select').execute({ start: at }, { signal: new AbortController().signal }).then((r) => { window.__movedAt = performance.now(); return r; }); }", AB_TABLE.index('Before'))
     page.wait_for_timeout(300)
     waited = page.evaluate('!window.__movedAt')
     q = page.get_by_role('dialog', name='Allow the AI agent?').inner_text()
@@ -1138,6 +1138,34 @@ def review(p):
         sn = mcp(page, 'select', {'file': 'notes.tex', 'start': 0})
         sc = mcp(page, 'select', {'file': 'chap.tex', 'start': 0})
         check('M8: select in a file the page does not show refuses, in words; in an \\input file it lands there', 'not on the page' in sn.get('error', '') and sc['selection']['file'] == 'chap.tex', (sn, sc))
+    def n1_preamble():
+        # N1: select into the preamble, or outside every block the page draws, refuses before the caret moves
+        load_doc(page, DOC)
+        page.evaluate('getSelection().removeAllRanges()')
+        s5 = mcp(page, 'select', {'start': 5})
+        tail = mcp(page, 'select', {'start': len(DOC) - 1})
+        b = mcp(page, 'run_command', {'id': 'bold'})
+        check('N1: select at 5 (inside \\documentclass) and after \\end{document} refuse in words; bold after them changes nothing',
+              'not on the page' in s5.get('error', '') and 'not on the page' in tail.get('error', '') and b.get('ran') is False and src(page) == DOC, (s5, tail, b))
+        # (an edit in the preamble leaves no caret there for a command to write in)
+        pe = DOC.index('\\begin{document}')
+        e = mcp(page, 'edit_source', {'start': pe, 'end': pe, 'text': '\\usepackage{xcolor}\n'})
+        b2 = mcp(page, 'run_command', {'id': 'bold'})
+        now = src(page)
+        check('N1: after an edit in the preamble the caret is on the page, and bold then writes nothing in the preamble',
+              e.get('undoSteps') == 1 and e['selection'] and e['selection']['start'] > now.index('\\begin{document}') and now[:now.index('\\begin{document}')] == DOC[:pe] + '\\usepackage{xcolor}\n', (e, b2, now[:160]))
+    def n2_hidden():
+        # N2: text hidden from the page counts as taken out: the body commented out, or \iffalse before it
+        LONG = DOC.replace('Third paragraph here.', 'Alpha ' * 60)
+        load_doc(page, LONG)
+        b0 = LONG.index('\\begin{document}') + len('\\begin{document}\n'); b1 = LONG.index('\\end{document}')
+        commented = LONG[:b0] + ''.join(('%' + l if l else l) + '\n' for l in LONG[b0:b1].split('\n')[:-1]) + LONG[b1:]
+        q1 = quick(page, 'edit_source', {'start': 0, 'end': len(LONG), 'text': commented})
+        q2 = quick(page, 'edit_source', {'start': b0, 'end': b0, 'text': '\\iffalse\n'})
+        q3 = quick(page, 'edit_source', {'start': b0, 'end': b0, 'text': '% a note\n'})
+        check('N2: one edit_source commenting out every line of the body, or \\iffalse put before it, asks first, saying the page and the PDF lose it; refused, nothing changes; a comment line added asks nothing',
+              'from what the page and the PDF show' in q1.get('asked', '') and 'from what the page and the PDF show' in q2.get('asked', '') and q3.get('undoSteps') == 1 and src(page) == LONG[:b0] + '% a note\n' + LONG[b0:], (q1, q2, q3))
+        mcp(page, 'undo', {})
     def m9_cost():
         # M9: what a call costs: list_commands compact and paged, get_document's outline by default, paged and capped
         lc = mcp(page, 'list_commands', {})
@@ -1184,7 +1212,7 @@ def review(p):
         # L8: an error is thrown on document.modelContext, so the browser sees a failed call
         th = mcp(page, 'run_command', {'id': 'no-such-command'})
         check('L8: an error comes back as a thrown Error on document.modelContext (the browser reports the call as failed)', th.get('thrown') is True and 'list_commands' in th['error'], th)
-    for f in (h1_person, h1_m1_question, m2_budget, m3_paste, m4_undo, m8_select, m9_cost, l2_args, l8_thrown):
+    for f in (h1_person, h1_m1_question, m2_budget, m3_paste, m4_undo, m8_select, n1_preamble, n2_hidden, m9_cost, l2_args, l8_thrown):
         try:
             f()
         except Exception as e:  # (one part that breaks does not hide the others)

@@ -6,7 +6,7 @@
 // llms-full.txt saying each tool and each command (one description each, the registry's).
 import assert from 'node:assert/strict';
 import fs from 'fs';
-import { TOOLS, ARGS, asks, personOnly, documentModel, changesBetween, runnable, argsOf, validate, lostChars, EXAMPLES, BIG, pressWhere } from '../src/agent.js';
+import { TOOLS, ARGS, asks, personOnly, documentModel, changesBetween, runnable, argsOf, validate, lostChars, lostShown, shownText, EXAMPLES, BIG, pressWhere } from '../src/agent.js';
 import { command } from '../src/commands.js';
 import '../src/cmd/index.js';
 import { buildModel } from '../src/model.js';
@@ -104,6 +104,20 @@ ok('what an edit takes out: the words that go, not those kept inside new markup'
   assert.equal(lostChars('x'.repeat(300), ''), 300);
   assert.equal(lostChars('the cat sat', 'the dog sat'), 3);
   assert.ok(BIG === 200);
+});
+
+ok('what an edit hides counts as taken out: the body commented out or inside \\iffalse; a comment added, markup or \\iff do not (review N2)', () => {
+  const D = '\\documentclass{article}\n\\begin{document}\nFirst para words here and there.\n\nSecond one is $a \\iff b$ fine.\n\\end{document}\n';
+  const C = D.replace('First', '%First').replace('Second', '% Second');
+  assert.equal(lostShown(D, C), 62);
+  assert.equal(lostShown(C, D), 0);
+  const I = D.replace('First', '\\iffalse\nFirst'), F = I.replace('fine.', 'fine.\\fi ');
+  assert.ok(lostShown(D, I) >= 62 && lostShown(D, F) === 62 && lostShown(I, F) === 0);
+  assert.equal(lostShown(D, D.replace('First', '% note\nFirst')), 0);
+  assert.equal(lostShown(D, D.replace('First para', '\\textbf{First para}')), 0);
+  // (nested conditionals skipped as TeX skips them; \else ends the false branch)
+  assert.equal(shownText('a \\iffalse b \\ifx c \\fi d \\else e \\fi f'), 'a ' + ' '.repeat(29) + ' e \\fi f');
+  assert.equal(shownText('x % c\ny').length, 'x % c\ny'.length);
 });
 
 const sample = new Map([['main.tex', fs.readFileSync(R('sample/main.tex'), 'utf8')], ['refs.bib', fs.readFileSync(R('sample/refs.bib'), 'utf8')]]);
