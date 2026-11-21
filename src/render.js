@@ -943,7 +943,8 @@ export class Renderer {
       case 'widget': {
         // A live figure. This box keeps the widget's place and size in the text; the widget runs
         // in a frame laid over it (src/widget.js), which outlives this box being drawn again.
-        const fb = this.app.assetURL(x.fallback);
+        // (a graph's PGF picture is TeX's: the page shows Rikuy's own drawing of the graph instead)
+        const fb = /\.pgf$/i.test(x.fallback) ? (x.wfile && this.app.graphPictureURL ? this.app.graphPictureURL(x.wfile) : null) : this.app.assetURL(x.fallback);
         const html = x.wfile ? this.app.files.get(x.wfile) : null;
         if (html != null && !this.app.widgetsAllowed()) {
           // from someone else and not allowed yet: the fallback, and a button over it (WidgetLayer)

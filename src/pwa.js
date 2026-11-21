@@ -70,13 +70,16 @@ export const OFFLINE_FOLDERS = [
 ];
 
 // What a plain article reads beyond what the TeX worker loads when it starts, one file for each
-// pack: Computer Modern's italic, typewriter and small math sizes (metrics and outlines), and
-// the TS1 symbols of \thanks and textcomp (the encoding, its metrics, cm-super's outlines).
-// warmTeX keeps the packs holding them (4.4 MB), so the first PDF of the sample, or of a
-// document like it, waits for no download. test/offline.py holds the list to what the sample reads.
+// pack: Computer Modern's italic, typewriter and small math sizes (metrics and outlines), the
+// TS1 symbols of \thanks and textcomp (the encoding, its metrics, cm-super's outlines), and pgf,
+// which rikuy.sty loads for a live graph's PGF picture (the opening document has one: pgf.sty
+// and its modules are in two packs of their own). warmTeX keeps the packs holding them (5.1 MB),
+// so the first PDF of the sample, or of a document like it, waits for no download.
+// test/offline.py holds the list to what the sample reads.
 export const WARM_FILES = [
   'tex/latex/base/ts1enc.def*', 'fonts/tfm/public/cm/cmti10.tfm*', 'fonts/type1/public/amsfonts/cm/cmti10.pfb*',
-  'fonts/tfm/jknappen/ec/tcrm1000.tfm*', 'fonts/type1/public/cm-super/sfrm1000.pfb*'
+  'fonts/tfm/jknappen/ec/tcrm1000.tfm*', 'fonts/type1/public/cm-super/sfrm1000.pfb*',
+  'tex/latex/pgf/basiclayer/pgf.sty*', 'tex/generic/pgf/modules/pgfmoduleshapes.code.tex*'
 ];
 
 // Whether megabytes may be fetched before anyone asked for them: not without a network, not for
