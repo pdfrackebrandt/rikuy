@@ -319,13 +319,14 @@ def aim(page):
     for b in btns:
         page.click('#rt-home'); page.wait_for_timeout(300)
         page.click('#rt-insert', no_wait_after=True); page.wait_for_timeout(40)
-        ran += ev(page, "document.getAnimations().filter((a) => a.id === 'rk-tab' && a.playState === 'running').length")
+        # (the slide held at its start, 8 px off, as a slow frame leaves it: the worst a press meets)
+        ran += ev(page, "(() => { const a = document.getAnimations().filter((a) => a.id === 'rk-tab' && a.playState === 'running'); for (const x of a) { x.pause(); x.currentTime = 0; } return a.length; })()")
         ev(page, 'window.__clicks = []; window.__hold = true')
-        page.mouse.click(b['x'] + b['w'] * 0.2, b['y'] + b['h'] / 2)
+        page.mouse.click(b['x'] + min(b['w'] * 0.2, 5), b['y'] + b['h'] / 2)
         page.wait_for_timeout(200)
         got = ev(page, 'window.__clicks'); ev(page, 'window.__hold = false')
         hits.append((b['id'], got[-1] if got else None))
-    check('a button pressed 40 ms after its tab, at the left fifth of where it ends up, while the tab slides in: the press lands on it, 8 of 8 (review L4)', ran >= 6 and len(hits) == 8 and all(a == g for a, g in hits), (ran, hits))
+    check('a button pressed while its tab slides in, held 8 px off, 5 px inside where it ends up: the press lands on it, 8 of 8 (review L4)', ran >= 6 and len(hits) == 8 and all(a == g for a, g in hits), (ran, hits))
     page.click('#rt-home'); page.wait_for_timeout(300)
 
 
