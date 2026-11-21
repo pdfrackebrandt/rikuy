@@ -44,6 +44,11 @@ const SAME = ('alpha beta gamma delta epsilon varepsilon zeta eta theta vartheta
 
 // Word names that LaTeX spells differently, or that need empty slots (#?). '' means Word's
 // entry is layout glue with no LaTeX counterpart, so it inserts nothing.
+// commands whose argument is letters, not a formula: typed as LaTeX they are written whole at
+// their } (installWordTyping); the field's own box for them lost the font
+const TEXT_ARG = new Set(['text', 'textrm', 'textbf', 'textit', 'textsf', 'texttt', 'textup', 'mbox', 'mathrm', 'mathbf', 'mathbb', 'mathcal',
+  'mathfrak', 'mathit', 'mathsf', 'mathtt', 'mathscr', 'operatorname', 'boldsymbol', 'bm']);
+
 const WORD = {
   // structures
   sqrt: '\\sqrt{#?}', cbrt: '\\sqrt[3]{#?}', qdrt: '\\sqrt[4]{#?}', root: '\\sqrt[#?]{#?}',
@@ -271,6 +276,15 @@ export function resolveCommand(name, macros, dialect) {
   return '\\' + name;
 }
 
+// Whether \name means something only in a formula (\alpha, \frac, \sum, \mathbb, \sin): typed in
+// the text it opens one (the insert list, src/app.js runPalette), as LaTeX takes it nowhere else
+// (\o and \O are the letters ø and Ø in text, \quad and \qquad its spaces, \dots dots in both:
+// a formula for them was wrong, $\o$ an error; review L5)
+export function mathOnly(name) {
+  if (!name || /^(ldots|dots|o|O|quad|qquad|mbox)$/.test(name) || /^text/.test(name)) return false;
+  return SAME.includes(name) || FUNCS.includes(name) || (Object.prototype.hasOwnProperty.call(WORD, name) && WORD[name] !== '') || /^math[a-z]+$/.test(name);
+}
+
 // Every name the typing rules know, with what it inserts (for the help list and tests).
 export function wordTable(dialect) {
   const out = [];
@@ -319,9 +333,9 @@ function patchFenceSpacing(mf) {
   if (fencePatched) return;
   try {
     const keep = mf.getValue('latex');
-    mf.setValue('\\mleft(x\\mright)', { silenceNotifications: true });
+    mf.setValue('\\mleft(x\\mright)', { silenceNotifications: true, mode: 'math' });
     const lr = mf._mathfield.model.atoms.find((a) => a.type === 'leftright');
-    mf.setValue(keep, { silenceNotifications: true });
+    mf.setValue(keep, { silenceNotifications: true, mode: 'math' });
     const proto = lr && Object.getPrototypeOf(lr);
     if (!proto || typeof proto.render !== 'function') return;
     const render = proto.render;
@@ -357,6 +371,12 @@ export function fieldValue(mf) {
 export function installWordTyping(mf, opts) {
   let buf = null; // the command being typed, without the backslash
   let pick = 0;
+  // LaTeX typed as in Overleaf (docs/handoff/POWER-USER.md, 3): a command whose argument is
+  // letters (\mathbb{R}, \text{if }) collects them here and is written whole at its }; the
+  // field's own boxes lost the font, so \mathbb{R} came out as R
+  let arg = null; // { name, text, depth }
+  // the boxes a command's { opened (\frac{a}{b}): } goes to its next box, or out of it
+  let boxes = [];
   const chip = document.createElement('div');
   chip.className = 'wm-chip';
   chip.hidden = true;
@@ -385,6 +405,20 @@ export function installWordTyping(mf, opts) {
     chip.style.top = y + 'px';
   };
   const draw = () => {
+    if (buf == null && arg) {
+      chip.hidden = false;
+      chip.replaceChildren();
+      const head = document.createElement('div');
+      head.className = 'wm-typed';
+      head.textContent = '\\' + arg.name + '{' + arg.text;
+      const hint = document.createElement('div');
+      hint.className = 'wm-hint';
+      hint.textContent = '} ends it';
+      chip.append(head, hint);
+      chip._list = [];
+      place();
+      return;
+    }
     if (buf == null) { chip.hidden = true; return; }
     chip.hidden = false;
     chip.replaceChildren();
@@ -501,7 +535,7 @@ export function installWordTyping(mf, opts) {
     }
     if (!at) return false;
     try { mf.executeCommand('addRowAfter'); } catch (e) { return false; }
-    mf.setValue(mf.getValue('latex'), { silenceNotifications: true });
+    mf.setValue(mf.getValue('latex'), { silenceNotifications: true, mode: 'math' });
     const again = cellAt(pos);
     if (again) goCell(again, at.r + 1, 0);
     changed();
@@ -514,7 +548,7 @@ export function installWordTyping(mf, opts) {
   //   a/b+c      the same for the denominator of a fraction typed with /
   //   (a+b)/c    parentheses around a typed numerator disappear
   const linear = new WeakSet();
-  let groups = []; // open invisible groups, by how many scripts deep they started
+  let groups = []; // open invisible groups: how many scripts deep each started, and whether { opened it
   const LIMIT_PARENT = new Set(['extensible-symbol', 'operator', 'mop']);
   const ENDS_SCRIPT = /^[+\-=<>,;:!)\]}|*]$/;
   const slot = () => {
@@ -531,18 +565,21 @@ export function installWordTyping(mf, opts) {
       if (!script && !denom) return null;
       let depth = 0;
       for (let x = a; x; x = x.parent) if (x.parentBranch === 'superscript' || x.parentBranch === 'subscript' || (x.parentBranch === 'below' && x.parent && x.parent.type === 'genfrac')) depth++;
-      const group = groups.length > 0 && groups[groups.length - 1] === depth;
-      return { p, br, empty, depth, limit: script && LIMIT_PARENT.has(p.type), group, model };
+      const top = groups[groups.length - 1];
+      const group = !!top && top.d === depth;
+      return { p, br, empty, depth, limit: script && LIMIT_PARENT.has(p.type), group, brace: group && top.brace, model };
     } catch (e) { return null; }
   };
   const buildUp = (k) => {
     const s = slot();
     if (!s) return false;
-    if (k === '(' && s.empty) {
-      groups.push(s.depth);
+    // (x_{i=1} as LaTeX writes it: { right after _ or ^ groups as ( does in Word, } closes it,
+    // and a ( inside it is a bracket that shows)
+    if ((k === '(' && s.empty && !s.brace) || (k === '{' && s.empty)) {
+      groups.push({ d: s.depth, brace: k === '{' });
       return true; // swallow the paren: it only groups
     }
-    if (k === ')' && s.group) {
+    if ((k === ')' && s.group && !s.brace) || (k === '}' && s.brace)) {
       groups.pop();
       mf.executeCommand('moveAfterParent');
       return true;
@@ -653,6 +690,53 @@ export function installWordTyping(mf, opts) {
     return false;
   };
 
+  const argDone = () => {
+    const t = arg;
+    arg = null; draw();
+    put('\\' + t.name + '{' + t.text + '}', { selectionMode: 'after' });
+    // (after \text{…} what follows is math again, not more of the text)
+    try { if (mf.mode !== 'math') mf.executeCommand(['switchMode', 'math']); } catch (e) { /* ignore */ }
+  };
+  // the empty box of a command the caret is in (\frac's numerator, \sqrt's radicand): its owner
+  const emptyBox = () => {
+    try {
+      const a = model().at(mf.position), p = a && a.parent;
+      if (!p || p.type === 'root' || typeof a.parentBranch !== 'string') return null;
+      const atoms = typeof p.branch === 'function' ? p.branch(a.parentBranch) || [] : [];
+      return atoms.every((x) => x.type === 'first' || x.type === 'placeholder') ? { owner: p } : null;
+    } catch (e) { return null; }
+  };
+  // (MathLive's moveToNextPlaceholder, with none left, moved the focus out of the field)
+  const BOX_ORDER = ['above', 'below', 'body'];
+  const nextBox = (B) => {
+    const M = model(), from = mf.position;
+    try {
+      let a = M.at(from);
+      while (a && a.parent !== B.owner) a = a.parent;
+      const i = a ? BOX_ORDER.indexOf(a.parentBranch) : -1;
+      for (const name of i < 0 ? [] : BOX_ORDER.slice(i + 1)) {
+        const atoms = typeof B.owner.branch === 'function' ? B.owner.branch(name) : null;
+        const ph = atoms && atoms.find((x) => x.type === 'placeholder');
+        if (!ph || !atoms.every((x) => x.type === 'first' || x.type === 'placeholder')) continue;
+        mf.selection = { ranges: [[M.offsetOf(atoms[0]), M.offsetOf(ph)]], direction: 'forward' };
+        B.open = false;
+        return;
+      }
+    } catch (e) { /* out of it, below */ }
+    boxes.pop();
+    // out of the command, however deep in it the caret is (a script in its last box)
+    mf.position = from;
+    try {
+      for (let i = 0; i < 8; i++) {
+        let x = M.at(mf.position);
+        x = x && x.parent;
+        while (x && x !== B.owner) x = x.parent;
+        if (!x) break;
+        mf.executeCommand('moveAfterParent');
+      }
+    } catch (e) { /* stays where it is */ }
+  };
+
   const onKey = (e) => {
     if (e.isComposing) return;
     afterSlash(); // the fraction from the previous / exists by now
@@ -662,6 +746,34 @@ export function installWordTyping(mf, opts) {
     // AltGr (Windows: Ctrl+Alt) and Option (Mac) type characters such as { [ | \ on many layouts
     const altGr = !!(e.getModifierState && e.getModifierState('AltGraph'));
     const shortcut = e.metaKey || (e.ctrlKey && !altGr) || (e.altKey && !altGr && /^[A-Za-z0-9]$/.test(k));
+    // Ctrl+Enter (or Shift+Enter) with \text{if still open: the argument ends, then the new row
+    // below, as without one (verification of eb14945, V5: the display became an align, no row)
+    const rowKey = k === 'Enter' && !e.altKey && ((e.ctrlKey || e.metaKey) !== e.shiftKey);
+    if (arg && rowKey) argDone();
+    if (arg) {
+      // (a chord ends the argument first, as Enter does, then does what it does: Ctrl+Enter's new
+      // row came in as an insertion the input listener below took for the person's, review N1)
+      if (shortcut || (e.altKey && !altGr)) { argDone(); return; }
+      if ((k === '}' && !arg.depth) || k === 'Enter' || k === 'Tab') { stop(); argDone(); return; }
+      if (k === 'Escape') { stop(); arg = null; draw(); return; }
+      if (k === 'Backspace') {
+        stop();
+        if (!arg.text) { arg = null; draw(); return; }
+        const ch = arg.text.slice(-1);
+        arg.depth += ch === '}' ? 1 : ch === '{' ? -1 : 0;
+        arg.text = arg.text.slice(0, -1);
+        draw();
+        return;
+      }
+      if (k.length === 1) { stop(); arg.depth += k === '{' ? 1 : k === '}' ? -1 : 0; arg.text += k; draw(); }
+      return;
+    }
+    // $x^2$ typed as in Overleaf: the closing $ ends a formula in the line (\$ is a dollar sign)
+    // (onDollar(true) asks whether a $ ends this formula: one in the line, a display opened by $$)
+    // (a command's name being typed, \alpha$, is something in the formula already)
+    if (k === '$' && opts.onDollar && !e.defaultPrevented && !shortcut && buf !== '' && opts.onDollar(true, !!buf)) { stop(); if (buf) commit(); opts.onDollar(false); return; }
+    // \) or \] ends a formula opened by \( or \[, as in the source
+    if (buf === '' && opts.closer && k === opts.closer() && !shortcut) { stop(); buf = null; pick = 0; draw(); opts.onCloser(); return; }
     if (buf != null) {
       if (/^[A-Za-z]$/.test(k) && !shortcut) { stop(); buf += k; pick = 0; draw(); return; }
       if (k === 'Backspace') { stop(); if (buf.length) { buf = buf.slice(0, -1); draw(); } else cancel(); return; }
@@ -670,6 +782,25 @@ export function installWordTyping(mf, opts) {
       if (k === 'ArrowUp') { stop(); pick = Math.max(0, pick - 1); draw(); return; }
       if (k === 'Tab') { stop(); const l = chip._list || []; if (l[pick]) buf = l[pick]; commit(); return; }
       if (k === ' ' || k === 'Enter') { stop(); if (!buf) { cancel(); return; } commit(); return; }
+      // \left( and \right) as LaTeX writes them: one bracket each (\left\{, \left\langle too)
+      if ((buf === 'left' || buf === 'right') && (k === '\\' || k === '.' || k === '|' || OPEN_KEY[k] || CLOSE_KEY[k])) {
+        stop(); buf = k === '\\' ? '' : null; pick = 0; draw();
+        if (k !== '\\' && k !== '.') bracketKey(k);
+        return;
+      }
+      if (k === '{' && buf) {
+        stop();
+        const name = buf, tex = resolveCommand(name, macros(), dialect());
+        buf = null; pick = 0;
+        if (TEXT_ARG.has(name)) { arg = { name, text: '', depth: 0 }; draw(); return; }
+        draw();
+        // what the field cannot hold (\begin{aligned}, a command it does not know) goes on as LaTeX
+        if (!tex || !tex.includes('#?') || tex.includes('\\begin')) { if (opts.toLatex) hand('\\' + name + '{'); return; }
+        put(tex);
+        const b = emptyBox();
+        if (b) boxes.push({ owner: b.owner, open: true });
+        return;
+      }
       if (!buf && k.length === 1 && /[,;:!{}|&%$#_\\/]/.test(k)) {
         stop(); buf = null; draw();
         if (k === '/') put('/'); // \/ is a plain slash, not a fraction
@@ -677,11 +808,14 @@ export function installWordTyping(mf, opts) {
         else put(k === '\\' ? '\\backslash' : '\\' + k);
         return;
       }
+      // (a name ended by the next command's backslash, \in\mathbb{R} as in the source: that
+      // backslash went to the field, which took the rest for LaTeX of its own and dropped it)
+      if (k === '\\' && buf && !shortcut) { stop(); commit(); buf = ''; pick = 0; draw(); return; }
       if (k.length === 1) { commit(); return; } // the symbol itself goes through to the field
       if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(k)) { commit(); return; }
       return;
     }
-    if (/^(Arrow|Home|End|Page|Tab|Escape|Enter)/.test(k)) groups = [];
+    if (/^(Arrow|Home|End|Page|Tab|Escape|Enter)/.test(k)) { groups = []; boxes = []; }
     if (mode === 'latex') return; // MathLive's own command mode keeps its keys
     // Ctrl+Enter, or Shift+Enter as in Word's equations, starts a new row
     if (k === 'Enter' && !e.altKey && ((e.ctrlKey || e.metaKey) !== e.shiftKey)) {
@@ -725,6 +859,10 @@ export function installWordTyping(mf, opts) {
     const converted = trigger && recognize();
     if (k === '\\') { stop(); buf = ''; pick = 0; draw(); return; }
     if (k.length === 1 && buildUp(k)) { stop(); changed(); return; }
+    // a command's boxes as LaTeX fills them: } goes to the next box ({b} of \frac{a}{b}) or out
+    const B = boxes[boxes.length - 1];
+    if (k === '}' && B && B.open) { stop(); nextBox(B); changed(); return; }
+    if (k === '{' && B && !B.open) { const b = emptyBox(); if (b && b.owner === B.owner) { stop(); B.open = true; return; } }
     if (k.length === 1 && /^[()[\]{}|]$/.test(k) && bracketKey(k)) { stop(); return; }
     if (altGr && k.length === 1) { stop(); mf.executeCommand(['typedText', k]); changed(); return; }
     if (k === '/') { slashPending = true; setTimeout(afterSlash, 0); }
@@ -738,7 +876,56 @@ export function installWordTyping(mf, opts) {
     }
   };
   mf.addEventListener('keydown', onKey, true);
+  // An input method, a dead key, dictation or the emoji panel type into the field without the keys
+  // onKey reads: the letters of a command's argument waiting (\text{caf) move to the LaTeX box with
+  // what comes, and the input method goes on in a plain text box; it went into the formula outside
+  // the \text, or before it (review H2)
+  let handed = false;
+  const hand = (t) => { handed = true; opts.toLatex(t); };
+  const toBox = (more) => {
+    const t = arg;
+    arg = null; draw();
+    if (opts.toLatex) hand('\\' + t.name + '{' + t.text + (more || ''));
+    else put('\\' + t.name + '{' + t.text + (more || '') + '}', { selectionMode: 'after' });
+  };
+  mf.addEventListener('compositionstart', () => { if (arg) toBox(''); }, true);
+  // (the person's input only: the field's own, Ctrl+Enter's row, comes untrusted; review N1)
+  // Characters that come with no key of their own (an on-screen keyboard that sends none, dictation,
+  // a script typing at full speed) go through the same rules as typed keys, one by one: \frac{,
+  // $ and the rest went into the field as they stood (\backslash frac\lbrace…). A key the page
+  // saw (sawKey) is the field's as before.
+  let sawKey = null;
+  mf.addEventListener('keydown', (e) => { sawKey = e.isTrusted && e.key.length === 1 ? e.key : null; }, true);
+  mf.addEventListener('keyup', () => { sawKey = null; }, true);
+  mf.addEventListener('beforeinput', (e) => {
+    if (!e.isTrusted || e.isComposing || !/^insert/.test(e.inputType || '')) return;
+    if (arg) { e.preventDefault(); e.stopImmediatePropagation(); toBox(e.data || ''); return; }
+    const data = e.inputType === 'insertText' ? e.data || '' : '';
+    if (!data || (data.length === 1 && data === sawKey)) { sawKey = null; return; }
+    sawKey = null;
+    const keyOf = (ch) => {
+      const k = new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true, composed: true });
+      mf.dispatchEvent(k);
+      return k.defaultPrevented;
+    };
+    // one character the rules leave alone goes in as the field takes it; more, one by one
+    if (data.length === 1) { if (keyOf(data)) { e.preventDefault(); e.stopImmediatePropagation(); } return; }
+    e.preventDefault(); e.stopImmediatePropagation();
+    // (once the LaTeX box has the keys, \text{ or \begin{ handed over, the rest goes there as it
+    // came: x=1\text{if }+y in one insert gave x=1\text{i}f\}+y, the letters after the first
+    // typed into the field again, W2; once the formula has closed, a price's word or its closing
+    // $, the rest goes on the page, W4)
+    handed = false;
+    const chars = [...data];
+    for (let i = 0; i < chars.length; i++) {
+      const rest = () => chars.slice(i).join('');
+      if (arg) { toBox(rest()); return; }
+      if (handed && opts.boxType) { opts.boxType(rest()); return; }
+      if (!mf.isConnected) { if (opts.afterClose) opts.afterClose(rest()); return; }
+      if (!keyOf(chars[i])) { try { mf.executeCommand(['typedText', chars[i]]); } catch (err) { put(chars[i]); } }
+    }
+  }, true);
   mf.addEventListener('pointerdown', () => { groups = []; }, true);
-  mf.addEventListener('blur', () => { if (buf != null) cancel(); });
-  return { active: () => buf != null, newRow, reposition: () => { if (buf != null) place(); }, destroy: () => { chip.remove(); } };
+  mf.addEventListener('blur', () => { if (buf != null) cancel(); if (arg) argDone(); });
+  return { active: () => buf != null || arg != null, newRow, reposition: () => { if (buf != null) place(); }, destroy: () => { chip.remove(); } };
 }

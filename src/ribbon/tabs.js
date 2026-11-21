@@ -342,6 +342,7 @@ export const tabs = {
       this.atRestDo(at, () => {});
     }
     const r = c.run(this, args, at);
+    if (r !== false && this.noteRecent) this.noteRecent(id);
     if (c.resync !== false) { if (r && typeof r.then === 'function') r.then(() => this.ribbonSync(), () => this.ribbonSync()); else this.ribbonSync(); }
     return r === undefined ? true : r;
   },
@@ -725,6 +726,8 @@ export function installRibbon(app) {
 // the ribbon, not in the buttons: their names stay theirs. A key the letters take goes nowhere
 // else (Escape would also let go of a selected picture). On a Mac, F10 alone: Option is how a Mac
 // types é and ©, and Word for Mac has no KeyTips.
+// split buttons whose KeyTip opens the menu, as Word's buttons of that name are menus
+const MENU_FIRST = new Set(['insert-table', 'table']);
 function installKeyTips(app) {
   const list = $('#rb-tabs');
   if (!list) return;
@@ -745,7 +748,7 @@ function installKeyTips(app) {
     for (const c of commands()) for (const p of places(c)) {
       if (p.tab !== tab || !map[c.id]) continue;
       const el = document.getElementById(p.el);
-      if (shown(el) && panel.contains(el)) { out.push({ k: map[c.id], el }); used.add(map[c.id]); }
+      if (shown(el) && panel.contains(el)) { out.push({ k: map[c.id], el, id: c.id }); used.add(map[c.id]); }
     }
     for (const b of panel.querySelectorAll('.rb-launch, .rb-launch-c')) {
       const L = LAUNCH[tab + '/' + b.closest('.rb-grp').dataset.group];
@@ -795,7 +798,10 @@ function installKeyTips(app) {
   };
   const press = (t) => {
     show(false);
-    const el = t.el;
+    let el = t.el;
+    // (Word's Table is a menu: Alt, N, T opens its grid, where Rikuy's button inserts two by two)
+    const x = MENU_FIRST.has(t.id) && document.getElementById(el.id + '-x');
+    if (x && shown(x)) el = x;
     if (el.matches('input, select')) { el.focus(); if (el.select) el.select(); return; }
     if (el.disabled) return;
     el.click();

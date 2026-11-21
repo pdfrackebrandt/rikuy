@@ -11,6 +11,7 @@
 // between the characters too. Replace All is one commit: one undo. "In LaTeX source" searches
 // and replaces the files' own text, commands, labels and math included, the replacement as it is.
 
+import { openQuickOpen } from '../ui/quickopen.js';
 import { register, command, enabled, onInstall } from '../commands.js';
 import { firstKey } from '../keys.js';
 import { compile, expand, caseLike, hitsIn, hitsInSource, runsWith, blockText, charSrc, hitSource, joinRanges, labelsIn, hasParaMark, pageParaText, paraHitSource, controlWords, inControlWord, PARA, PMARK, FMT, FORMATS, MAX_HITS } from '../find.js';
@@ -49,12 +50,16 @@ register(
     icon: '<path d="M4 7.5h9l-2.5-2.5M16 12.5H7l2.5 2.5"/>', keys: ['Ctrl+H'], mac: { 'Ctrl+H': 'Control+H' }, when: () => true, run: (app) => openFindDialog(app, 'replace') },
   { id: 'go-to', name: 'Go To', title: 'Go to a page, a heading, a footnote, an equation, a figure, a table, a comment or a label (Ctrl+G, or F5)', synonyms: ['Go to page', 'Jump to', 'Go to section', 'Go to label'],
     keys: ['Ctrl+G', 'F5'], mac: { 'Ctrl+G': 'Ctrl+Alt+G' }, when: () => true, run: (app) => openFindDialog(app, 'goto') },
+  // VS Code's quick open on Ctrl+P (POWER-USER.md 17): a project's files by a few letters; its first
+  // line is Print, so Ctrl+P then Enter prints as Word's does (src/ui/quickopen.js)
+  { id: 'go-to-file', name: 'Go to File', title: 'Go to a file of the project by a few letters of its name (Ctrl+P; Enter at once prints, as Word\'s Ctrl+P)', synonyms: ['Quick open', 'Open file of the project', 'Switch file', 'Files'],
+    keys: ['Ctrl+P'], keyRank: 1, keyScope: 'app', when: () => true, run: (app) => openQuickOpen(app) },
   // Word's Shift+F4 finds the last words again, without the pane (Cmd+G on a Mac, as everywhere there)
   { id: 'find-next', name: 'Find Next', title: 'Find the words of the last Find again, the next place after the caret (Shift+F4)', synonyms: ['Repeat Find', 'Find again', 'Next result'],
     keys: ['Shift+F4', 'Ctrl+Alt+Y'], keysMac: ['Ctrl+Shift+F4', 'Ctrl+G'], when: () => true, run: (app) => app.findNext() },
   // Word's Shift+F5 (and Ctrl+Alt+Z): back to where the last edits were, the four last in turn
   { id: 'go-back', name: 'Go Back', title: 'The caret back to where you last edited; again, the edit before, among the last four (Shift+F5)', synonyms: ['Last edit', 'Previous edit', 'Last change', 'Where was I'],
-    keys: ['Shift+F5', 'Ctrl+Alt+Z'], when: (app) => !!((app.hist && app.hist.length) || (app.redoStack && app.redoStack.length)), whyNot: () => 'Nothing has been edited yet.', run: (app) => app.goBack() },
+    keys: ['Shift+F5', 'Ctrl+Alt+Z'], when: (app) => !!((app.hist && app.hist.length) || (app.redoStack && app.redoStack.length)) || !!app.followBack || !!app.footnoteHere(), whyNot: () => 'Nothing has been edited yet.', run: (app) => app.goBack() },
   // Word's F8: each press selects more where the caret is: the word, the sentence, the paragraph,
   // the document; Shift+F8 one step back
   { id: 'extend-selection', name: 'Extend Selection', title: 'Select more: the word, then the sentence, the paragraph, the whole document, one step a press (F8)', synonyms: ['Grow selection', 'Expand selection', 'Select word'],
@@ -772,6 +777,13 @@ export const methods = {
   // Go Back: the places of the last edits, newest first; a press the next one of them, again and
   // again while nothing else is edited
   goBack() {
+    // in a footnote typed at the page's foot, Word's Shift+F5 is the way back to its mark first
+    if (this.leaveFootnote()) return true;
+    // after a reference was followed to its label (F12), back to the reference, as VS Code's
+    // Alt+Left; once anything is edited, the places of the edits again
+    const F = this.followBack;
+    this.followBack = null;
+    if (F && F.n === this.hist.length) { this.ribbonBack(); this.restoreCaret(F.back); this.scrollToCaret(); return true; }
     // (an undo is the last edit too, as Word's: the undone step's place first; after an undo
     // Shift+F5 went only to older edits, or did nothing when none was left)
     const R = this.redoStack && this.redoStack[this.redoStack.length - 1], rd = R && R.files && R.files[0];

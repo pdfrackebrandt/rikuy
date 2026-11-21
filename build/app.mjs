@@ -675,6 +675,10 @@ Ctrl is Cmd on a Mac.
   and back; Shift+F10 or the menu key: the right click menu at the caret
 - In a table: Tab the next cell (in the last cell a new row under it), Shift+Tab the cell
   before; Ctrl+Enter a new row under the caret's
+- Tab elsewhere on the page stays on it (a first line indent at a paragraph's start, a gap
+  elsewhere, a list's level in a list); Escape, then Tab, leaves the page for the next control
+- Ctrl+P: Go to File (a project's file by a few letters; Enter at once prints); F12 on a cross
+  reference selected: Go to Label, Shift+F5 back
 - Ctrl+Enter outside a table: a page break (\\newpage on a line of its own, the paragraph cut
   there); Ctrl+Shift+Enter: a column break (\\columnbreak in multicols, \\newpage in a two
   column document)

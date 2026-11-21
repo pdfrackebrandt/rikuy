@@ -3690,6 +3690,44 @@ Tests:
     typed or deleted moves the caret at once and moves by keys or clicks glide; then 24.1, 23.7 and
     24.2 ms, Event Timing 24, 24 and 24.
 
+72. **A power user's keys** (branch power-keys, draft PR 87; `docs/handoff/POWER-USER.md`).
+    The owner's daily work done keys only and timed against Word, Overleaf and VS Code; the 18
+    findings ranked by cost, and the first fourteen fixed: a footnote left by Esc, Shift+F5, Right
+    and Ctrl+End; `$x^2$` and LaTeX typed into the equation field as in the source (braces,
+    `\mathbb`, `\text`, `\left(`, `\begin` carried on in the LaTeX box); Tab kept on the page
+    (first line indent, a gap; Esc then Tab leaves); the reference and citation pickers by the keys
+    with what each label names; Go to Label (F12 on a selected reference, Ctrl+click) and back;
+    Enter and F2 on a selected formula; Ctrl+Shift+= in a new equation; Esc out of Read Mode;
+    KeyTips for Home's Insert group and Table's grid; Alt+Q by letters in order, initials and
+    Recently used; the `\` list's valid LaTeX (figure, align, gather, cases, theorems with their
+    `\newtheorem`, Enter twice out of a theorem); F4 repeating typing; Go to File on Ctrl+P; letters
+    typed while the page builds going in together. Its hostile review
+    (`docs/reviews/POWER-KEYS.md`, changes requested) fixed: F12 is Save As again beside a
+    reference (H1); an input method, dead key or dictation in `\text{` goes on in the LaTeX box
+    (H2); Enter twice leaves only theorem like environments, proof, quote, quotation and verse
+    (H3); Undo, Redo, a paste, a drop, a space and any input but a waiting letter write the queue
+    first (M1); Print listed only while Go to File's box is empty (M3); Escape, then Tab said in the
+    page's description, Help and llms.txt (M4); the pickers and Go to File as a combobox over a
+    listbox with a polite count (M5); `$$x^2$$`, `\(x\)`, `\[x\]` and `\$5` typed as in Overleaf, Esc
+    keeping what the insert list held (M6, L6); a block from the `\` list never inside a heading's
+    or a caption's argument, lists with their `\item`, tabular with columns (M2); Ctrl+End after a
+    closing formula or table (L1); Tab over a selection as Word's (L4); `\o`, `\O`, `\quad` as text
+    (L5). Letters queued within a word, a space ending the run (M1, so a system's autocorrect sees
+    the word): on dev/bench/long, 62 characters 15 ms apart, the page done 527 ms after the last
+    key with the queue and 891 without; at 4x CPU slowdown 3147 and 7312 (`lat3.py`, a busy
+    machine). Its verification at 2308408 (fix first) fixed: Ctrl+Enter with `\text{` open (N1), Enter in
+    the LaTeX box the field handed over to (N2), Print found by name, Esc in the insert list as text,
+    `$5 ` a price, `$$` a dollar sign unless a letter or a backslash follows. And the owner's live
+    cases typed at full speed as keys and as keyless characters: a formula in a new paragraph, LaTeX
+    after Alt+= as a display, the caret after the field closes (a heading's formula, then End,
+    Enter), the next line after a display in its paragraph (a second Enter a new one), no display
+    inside a command's argument. Its verifications at eb14945 and 5446132 fixed: the price rule
+    decided at the word after the space (`$1 - \alpha$`, `$2 x$` formulas; `$5 each`, `$5% now`
+    prices), `$$` where a display cannot go (an argument, `\href`'s text, a line cell) a formula in
+    the line closed by `$$` as one, keyless and composed text through the field and the LaTeX box
+    (CI's race at 5994e31), Ctrl+Enter in `\text{`, pasted `$..$` given back by money.
+    `test/power.py` 206 checks, in CI. Open: findings 11, 12, 15 (PR 79's areas), L2, L3, L7.
+
 ## Open tasks
 
 67. **Word's ribbon buttons Rikuy has no command for** (task 66 left them out; task 68 built the

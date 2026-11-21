@@ -364,6 +364,9 @@ export const methods = {
   blockStyleOf(at) {
     const { c, it, B } = at, none = new Set();
     if (c.ghost) {
+      // (a place the search box kept, in a blank paragraph gone since it took the focus: none;
+      // it threw on every letter typed in the box)
+      if (!this.ghost) return { v: '', to: none };
       // a line to come in a LaTeX paragraph keeps its paragraph's style
       if (this.ghost.tex) return { v: 'latex', to: none, why: WHY.line };
       const K = this.styleCatalog();
@@ -659,7 +662,8 @@ export const methods = {
   // \newtheorem (with its \theoremstyle and amsthm where it has a style of its own), amsthm for
   // proof. None where the preamble, a file it reads or the class defines the environment.
   styleNeeds(to) {
-    const t = THM_STYLES[to];
+    // (Assumption: the insert list's, an economist's, though no style of the gallery)
+    const t = THM_STYLES[to] || (to === 'assumption' ? { name: 'Assumption' } : null);
     if (!t) return [];
     const f = this.main, src = this.src(f), K = this.styleCatalog(), M = this.model;
     const end = preambleEnd(src);
@@ -677,7 +681,7 @@ export const methods = {
     const pre = stripComments(src.slice(0, end));
     const k = pre.lastIndexOf('\\theoremstyle'), last = k < 0 ? null : /^\\theoremstyle\s*\{([^{}]*)\}/.exec(pre.slice(k, k + 200));
     const now = last ? last[1].trim() : 'plain', want = t.style || 'plain';
-    let line = thmLine(to, false);
+    let line = thmLine(to, false, t);
     if (!t.style && now !== 'plain') line = '\\theoremstyle{plain}\n' + line;
     // ntheorem has its own styles: its \newtheorem alone
     if (ntheorem) line = line.replace(/^\\theoremstyle\{[^}]*\}\n/, '');

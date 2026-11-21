@@ -27,10 +27,10 @@ How to read it:
 | Ctrl+O, Ctrl+F12, Ctrl+Alt+F2 | Cmd+O | Open | `open` | Ctrl+O works; Ctrl+F12 and Ctrl+Alt+F2 added (Linux keeps Ctrl+Alt+F2 for its consoles) |
 | Ctrl+N | | New document | `new-document` (File › Blank document, New in the status bar) | browser: Chrome and Firefox open a window; Rikuy installed as an app hears it (app.js) |
 | Ctrl+S, Shift+F12, Alt+Shift+F2 | Cmd+S | Save | `save` (the bar's Save): Rikuy keeps every edit in this browser as you type; Save writes it now and says "Saved in this browser" (in a git repository: where to commit and push). It downloads nothing | changed: Ctrl+S downloaded a file at every press; Shift+F12, Alt+Shift+F2 added |
-| F12 | Cmd+Shift+S | Save As | `save-as`: Download LaTeX (the .tex, or the project as .zip) | added with the caret on the page; anywhere else F12 stays the browser's developer tools (Ctrl+Shift+I opens them too). Cmd+Shift+S is Apply Styles here |
+| F12 | Cmd+Shift+S | Save As | `save-as`: Download LaTeX (the .tex, or the project as .zip) | added with the caret on the page; on a cross reference selected (Shift and an arrow over it) F12 is Go to Label (`go-to-label`, VS Code's Go to Definition; Shift+F5 comes back); anywhere else F12 stays the browser's developer tools (Ctrl+Shift+I opens them too). Cmd+Shift+S is Apply Styles here |
 | Ctrl+W, Ctrl+F4 | Cmd+W | Close | in Rikuy installed as an app, Ctrl+W closes the source or PDF pane when open | browser: a browser tab never gives Ctrl+W to the page; it closes the tab |
 | Alt+F4, Ctrl+F10, Alt+F5 | | Close Word, maximise, restore | | browser/system |
-| Ctrl+P, Ctrl+Shift+F12 | Cmd+P | Print | `print` (Print PDF) | Ctrl+P works; Ctrl+Shift+F12 added |
+| Ctrl+P, Ctrl+Shift+F12 | Cmd+P | Print | `print` (Print PDF) | Ctrl+P opens Go to File (`go-to-file`, VS Code's quick open) with Print as its first line: Ctrl+P, Enter prints, as Word's Ctrl+P, Enter does; Ctrl+Shift+F12 prints at once |
 | Ctrl+F2, Ctrl+Alt+I | | Print Preview | `preview` (the PDF beside the page) | added |
 | Ctrl+X, Ctrl+C, Ctrl+V | | Cut, Copy, Paste | `cut`, `copy`, `paste` | works |
 | Ctrl+Shift+V | | Paste text only | `paste-text` | works |
@@ -229,6 +229,27 @@ How to read it:
 | Ctrl+= (in an equation) | Cmd+= | To professional format | the equation drawn again | works in the field |
 | Arrows, Ctrl+arrows, Home, End, Shift with them | | Move and select in an equation | MathLive's | works |
 | Space after \alpha and the like | | Math AutoCorrect | MathLive's | works |
+
+Dollars, as typed in the source (`src/app.js` `newMath`, `dollarPairTakes`):
+
+- `$x^2$` is a formula in the line; `\$` and a `$` alone before a space are dollar signs.
+- `$5` (or `$5%`, `$5\%`) and a space wait for what comes next: a sign, `<`, `=`, a backslash, a
+  digit, a brace, `^`, `_` or `$` keeps the formula (`$1 - \alpha$`, `$0 < x < 1$`); a word is
+  decided at its end: a space or a sentence's mark after it, Enter, Esc or a click away makes a
+  price (`$5 now` is `\$5 now`, as are `$5. Then`, `$5, then`, `$5% off`), a `$` right after it
+  keeps the formula (`$2 x$`). Text from an input method or a dead key there is a word. Backspace
+  takes the space back.
+- `$$` and a letter or a backslash opens a display (`\[ \]`), closed by `$$`; the words typed
+  after it go on in the same line. Where a display cannot stand (a command's braces: a footnote,
+  a caption, `\textbf{}`, `\href`'s text, `\parbox`; a table cell of an `l`, `c` or `r` column) it is a formula in the line
+  instead, closed by `$$` too. `$$` and anything else is a dollar sign (`$$5` is `\$5`).
+
+Pasted text (`src/paste.js` `withMath`): text from outside Rikuy keeps its math as the source
+writes it, `$..$`, `\(..\)`, `$$..$$` and `\[..\]`, where a pair holds something mathematical;
+money stays money (`costs $5 and $x^2$ here` is `costs \$5 and $x^2$ here`). Where a display
+cannot stand, `$$..$$` is written `$..$`. Rikuy's own copy pastes as the LaTeX it was copied
+from; Ctrl+Shift+V pastes the words alone, every `$` a dollar sign; text whose backslashes were
+escaped offers Paste as LaTeX.
 
 ## Where it lives
 

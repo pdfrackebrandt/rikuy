@@ -435,9 +435,10 @@ def packages(page):
     check('one undo: the formula and the line both go', src(page) == bare, src(page))
     load_doc(page, bare); click_text(page, 'Some text', 4); new_formula(page)
     pick(page, 'Sets and logic', '\\mathbb{R} real numbers'); page.wait_for_timeout(200)
-    page.keyboard.press('Backspace'); page.keyboard.press('Backspace'); page.keyboard.type('x'); page.wait_for_timeout(300); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    page.keyboard.press('Backspace'); page.keyboard.type('x'); page.wait_for_timeout(300); page.keyboard.press('Enter'); page.wait_for_timeout(300)
     # (the line came with the symbol, in its undo step: taken out again, the line stays, as any
-    # line Rikuy added does; undo takes both)
+    # line Rikuy added does; undo takes both. One Backspace: a second, in the field left empty,
+    # takes the formula away, as Word's Backspace does an empty equation, power.py X1)
     check('taken out again before the field closed: the line stays, and undo takes the formula and it', src(page).count('amssymb') == 1 and '$x$' in src(page), src(page))
     while page.evaluate('window.rikuy.hist.length'): page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(100)
     check('and undo step by step gives the document back', src(page) == bare, src(page))

@@ -180,6 +180,7 @@ body.has-ai .ai-only { display: inline-flex !important; }
 .srch-w { color: var(--mute); font-size: 12px; }
 .srch-k { margin-left: auto; padding-left: 16px; color: var(--mute); font: 11.5px var(--font-mono); }
 .srch-none { padding: 8px 10px; color: var(--mute); font-size: 12.5px; white-space: normal; max-width: 300px; }
+.srch-head { padding: 6px 10px 2px; color: var(--mute); font-size: 11.5px; font-weight: 600; }
 
 /* ---- the ribbon: Word's tabs, and under them the open tab's row of groups ---- */
 /* the tabs' row; contextual tabs (a table's, an equation's) in their own colour, after Help */
@@ -1027,6 +1028,9 @@ body.dropping .dropzone { display: grid; }
 .pitem b.mono { font-family: var(--font-mono); font-weight: 500; color: var(--blue-ink); }
 .pitem span { color: var(--mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .pitem:hover, .pitem.on { background: var(--blue-wash); }
+/* what a label names, at the row's end (the reference picker): the heading's words, the equation */
+.pitem .pv-l { margin-left: auto; flex: 0 1 55%; text-align: right; color: var(--ink); }
+.pitem .pv-l .katex { font-size: 1em; }
 .empty { padding: 10px; font-size: 12.5px; color: var(--mute); }
 .notes { flex-wrap: nowrap; }
 .notes input { flex: 1 1 0; min-width: 0; }

@@ -118,7 +118,8 @@ ok('Word\'s keys: each bound to its command, on Windows and Linux and on a Mac (
 });
 
 ok('the insert list keeps its items and their order', () => {
-  assert.deepEqual(paletteItems().map((x) => x.k), ['footnote', 'cite', 'ref', 'eqref', 'emph', 'textbf', 'texttt', 'equation', 'math', 'section', 'subsection', 'itemize', 'enumerate',
+  // (POWER-USER.md 10: align, align*, gather, cases and figure among the formulas)
+  assert.deepEqual(paletteItems().map((x) => x.k), ['footnote', 'cite', 'ref', 'eqref', 'emph', 'textbf', 'texttt', 'equation', 'align', 'align*', 'gather', 'cases', 'figure', 'math', 'section', 'subsection', 'itemize', 'enumerate',
     'description', 'proposition', 'lemma', 'theorem', 'definition', 'assumption', 'proof', 'label', 'url', 'ldots', 'newline',
     // (B11: the interactive graph and Insert › LaTeX's environments, after the items there were)
     'graph', 'center', 'flushleft', 'flushright', 'quote', 'quotation', 'verse', 'verbatim', 'minipage', 'abstract']);
@@ -147,6 +148,22 @@ ok('the search box finds commands by Word\'s names, other names, starts of words
   assert.deepEqual(search(''), []);
   assert.deepEqual(search('zzzz qqqq'), []);
   assert.ok(!search('next styles').some((c) => c.id === 'styles-next'));
+});
+// as a command palette takes them (POWER-USER.md 9): letters in order from a word's first, the
+// initials of the name's words, a digit joined to a word; the commands run last first among
+// matches about as good, never before a whole match
+ok('the search box: letters in order, initials, recent commands first', () => {
+  assert.equal(search('tbl')[0].id, 'table');
+  assert.equal(search('hed 2')[0].id, 'style-heading2');
+  assert.equal(search('heading2')[0].id, 'style-heading2');
+  assert.equal(search('eqn')[0].id, 'equation');
+  assert.equal(search('toc')[0].id, 'table-of-contents');
+  assert.ok(search('xref').some((c) => c.id === 'cross-reference'));
+  // a word's own start still goes first: "bul" is Bulleted list, nothing in "tabular"
+  assert.equal(search('bul')[0].id, 'bullets');
+  assert.equal(search('b')[0].id, 'bold');
+  assert.equal(search('b', { recent: ['borders'] })[0].id, 'borders');
+  assert.equal(search('bold', { recent: ['borders'] })[0].id, 'bold');
 });
 
 ok('the right click menu by context: the particular first, a line between contexts', () => {

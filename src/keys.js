@@ -219,7 +219,7 @@ export const KEPT = [
   { keys: 'F5', word: 'Go To (Shift+F5 Go Back)', here: 'With the caret on the page, Go To and Go Back as in Word; anywhere else the browser reloads. Ctrl+R reloads from the page too, and Rikuy keeps the document either way.' },
   { keys: 'F6', word: 'Next pane', here: 'The browser\'s address bar: Ctrl+F6, as in Word for the web.' },
   { keys: 'F11', word: 'Next field', here: 'Full screen. The page keeps every field up to date: nothing to step through.' },
-  { keys: 'F12', word: 'Save As', here: 'With the caret on the page, the LaTeX downloaded (Download LaTeX); anywhere else the browser\'s developer tools, which Ctrl+Shift+I opens too.' },
+  { keys: 'F12', word: 'Save As', here: 'With the caret on the page, the LaTeX downloaded (Download LaTeX), and on a cross reference selected Go to Label; anywhere else the browser\'s developer tools, which Ctrl+Shift+I opens too.' },
   { keys: 'Ctrl+S', word: 'Save', here: 'Rikuy keeps every edit in this browser as you type: Ctrl+S says so and downloads nothing. A copy on your computer is Save As (F12) or Download LaTeX.' },
   { keys: 'Ctrl+=', word: 'Subscript (Ctrl+Shift+= superscript)', here: 'Zoom, as on every page: subscript is Ctrl+, and superscript Ctrl+.' },
   { keys: 'Ctrl+M', word: 'Indent', here: 'A formula here: Increase Indent, or Tab in a list.', only: 'win' },

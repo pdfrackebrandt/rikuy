@@ -315,7 +315,9 @@ export const methods = {
   },
   showLatexScan(at) {
     let f, a, b;
-    if (this.pop && this.pop.el && this.pop.el.classList.contains('pop-math') && this.pop.anchorPos) ({ f, s: a } = this.pop.anchorPos), b = a;
+    // (the open equation's own block: a place inside it, not its first character, where the
+    // paragraph before it ends too; from a new equation the paragraph before was shown)
+    if (this.pop && this.pop.el && this.pop.el.classList.contains('pop-math') && this.pop.anchorPos) ({ f, s: a } = this.pop.anchorPos), a += 1, b = a;
     else if (at && at.c && !at.c.ghost && at.c.f != null) { f = at.c.f; a = at.c.a; b = at.c.b; }
     else return [];
     const out = [];
@@ -556,6 +558,7 @@ export const methods = {
   repeatLast() {
     const L = this.lastAct;
     if (!L || document.activeElement !== this.root) return false;
+    if (L.text != null) { this.insertText(L.text, null); return true; }
     return this.runCommand(L.id, L.args) !== false;
   },
   undoMenu() {
@@ -647,6 +650,12 @@ onInstall((app) => {
   if (fx) fx.addEventListener('click', () => app.runCommand('focus'));
   // Esc: out of a block shown as LaTeX (the caret's), else out of Focus
   document.addEventListener('keydown', (e) => {
+    // and out of Read Mode, as Word's: the page again at the place read, the caret on it
+    if (e.key === 'Escape' && !e.defaultPrevented && !app.pop && !e.isComposing && app.view === 'pdf' && !(e.target && e.target.closest && e.target.closest('input, textarea, select, [role=dialog], [role=menu], [role=listbox]'))) {
+      e.preventDefault();
+      Promise.resolve(app.setView('page')).then(() => { if (document.activeElement !== app.root) { app.root.focus({ preventScroll: true }); if (!app.caretNow()) app.goToPage(app.currentPage() - 1); } });
+      return;
+    }
     // (only with the caret on the page: Esc in a dialog or a field is theirs)
     if (e.key === 'Escape' && !e.defaultPrevented && !app.pop && !e.isComposing && e.keyCode !== 229 && (document.activeElement === app.root || cls().contains('focus'))) {
       const T = app.texHere && app.texHere();
@@ -658,6 +667,9 @@ onInstall((app) => {
     const mod = /Mac|iPhone|iPad/.test(navigator.platform || '') ? e.metaKey : e.ctrlKey;
     if (mod && e.shiftKey && !e.altKey && e.code === 'Equal' && app.pop && app.pop.el && app.pop.el.classList.contains('pop-math')) {
       e.preventDefault(); e.stopImmediatePropagation();
+      // (a formula not written yet, the first keys of $: its LaTeX box is its linear form)
+      if (!app.pop.anchorPos) { const ta = app.pop.el.querySelector('textarea'); if (ta) ta.focus(); return; }
+      if (app.pop.flush) app.pop.flush();
       app.runCommand('show-latex');
     }
   }, true);

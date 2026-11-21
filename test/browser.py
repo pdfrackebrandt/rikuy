@@ -589,7 +589,9 @@ def popovers(page):
     s = src(page)
     eq = s[s.find('\\begin{equation}'):s.find('\\end{equation}') + 14]
     check('a new equation holds no blank line', re.fullmatch(r'\\begin\{equation\}\n *E=mc\^2\n\\end\{equation\}', eq), repr(eq))
-    check('and what is typed after it goes after \\end{equation}', '\\end{equation}Q' in s, repr(s[s.find('here.'):][:80]))
+    # (on a line of its own after it, in the same paragraph, and no blank line added: the
+    # coordinator's rule for power-keys)
+    check('and what is typed after it goes after \\end{equation}, on the next line', '\\end{equation}\nQ\n\nLast paragraph.' in s, repr(s[s.find('here.'):][:80]))
     undo_all(page)
     click_text(page, 'Last paragraph', 2)
     page.keyboard.press('Control+a')

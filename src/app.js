@@ -10,7 +10,7 @@ import {
 import { SAMPLE } from './sample.js';
 import { splitRows, parseJS, scanUserSigs, setNativeParse } from './parser.js';
 import { mathNeeds } from './ui/eqtab.js';
-import { installWordTyping, wordShortcuts, makeDialect, classifyMacros, resolveCommand, PACKAGES, WORD_GROUPS, FIELD_MACROS, fieldValue, modelValue } from './wordmath.js';
+import { installWordTyping, wordShortcuts, makeDialect, classifyMacros, resolveCommand, PACKAGES, WORD_GROUPS, FIELD_MACROS, fieldValue, modelValue, mathOnly } from './wordmath.js';
 import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
 import { minimalRow, makeSame } from './minimal.js';
@@ -39,6 +39,7 @@ import { review } from './review.js';
 import { $, mk, mkBtn, store, load, PREFS, textSig, when } from './ui/dom.js';
 // the command registry and everything drawn from it: the ribbon's tabs, the keys, the search box,
 // the right click menu, the insert list (src/commands.js, src/cmd/*.js)
+import { labelsIn, labelPreview } from './find.js';
 import { paletteItems, insertTextHooks, command, commands, describe, enabled, register, unregister, run as runCmd, joinMethods } from './commands.js';
 import { methods as cmdMethods } from './cmd/index.js';
 import { tabs, installRibbon } from './ribbon/tabs.js';
@@ -55,7 +56,8 @@ import { installWebMcp } from './webmcp.js';
 import { TOOLS, agentTools, callTool as callAgentTool, describeCommand } from './agent.js';
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass, pickMain } from './preamble.js';
-import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, titleInfo } from './styles.js';
+import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, THM_STYLES, titleInfo } from './styles.js';
+import { tableAt, cellAt as tableCellAt, colAlign } from './table.js';
 import { eolAt } from './blockenv.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
@@ -392,6 +394,12 @@ function fromField(v, st) {
   return lines.join(' \\\\\n');
 }
 
+// A $ typed in a formula's LaTeX box ends the formula, as the closing $ does in the source; not
+// in an empty box (a dollar sign: newMath's own rule) nor after a backslash (\$, a dollar)
+function dollarEnds(ta) {
+  const before = ta.value.slice(0, ta.selectionStart);
+  return !!ta.value.trim() && ta.selectionStart === ta.selectionEnd && !/(^|[^\\])(\\\\)*\\$/.test(before);
+}
 // The text of the latexmkrc that came with a project (Overleaf's and arXiv's archives carry one),
 // for the document it names; '' when there is none.
 async function latexmkrcText(extra) {
@@ -451,6 +459,9 @@ function popFocusables(p) {
 
 class App {
   constructor() {
+    // (the project's texts; read while letters wait in the typing queue, typeQueue, they go in
+    // first: whatever reads the text, a timer, a command, a script, sees what was typed)
+    Object.defineProperty(this, 'files', { get() { if (this.typeQ) this.typeFlush(); return this.filesNow; }, set(v) { this.filesNow = v; }, configurable: true, enumerable: true });
     this.files = new Map();
     this.main = 'main.tex';
     this.name = 'Editing in Print';
@@ -1153,10 +1164,36 @@ class App {
       return;
     }
     if (document.activeElement !== this.root) this.root.focus({ preventScroll: true });
+    // (right after a formula, a citation or a reference that ends its line, with no text after it
+    // to hold the caret: after it in that line, where the page put it at the next paragraph's
+    // start, and End, Enter there split that paragraph; the live report of a heading's formula)
+    if (r.inexact) {
+      const A = [...this.root.querySelectorAll('.atom')].find((x) => { const i = atomOfEl(x); return i && i.f === c.f && i.e === c.p && !i.a.display; });
+      if (A && A.parentNode) {
+        const i = [...A.parentNode.childNodes].indexOf(A) + 1;
+        sel.collapse(A.parentNode, i);
+        this.pending = { f: c.f, p: c.p, node: A.parentNode, offset: i };
+        if (!quiet) this.scrollToCaret();
+        return;
+      }
+    }
     sel.collapse(r.node, r.offset);
     const back = posFromDom(r.node, r.offset, this.root);
     this.pending = back && back.p !== c.p ? { f: c.f, p: c.p, node: r.node, offset: r.offset } : null;
     if (!quiet) this.scrollToCaret();
+  }
+
+  // After a display closes (Enter, Esc, a click away), the caret on a new line of its own right
+  // after \end{equation}, in the same paragraph, as math papers go on ("where x is …", drawn below
+  // the equation with no indent); a second Enter there makes a new paragraph. What was typed next
+  // joined the equation's last line (\end{equation}After.). Closed by $$, as typed in the source,
+  // the line goes on after it instead (dollarClosed).
+  caretAfterDisplay(rc) {
+    this.ghostAt(rc.f, rc.p, null, true);
+    // (a place for the caret, not a step: Undo after a display closed undoes the display's edit,
+    // where main's takeBackGhost took this line away as an Enter's empty paragraph and the edit
+    // stayed; mathfield.py's one undo of the popover session)
+    if (this.ghost) this.ghost.place = true;
   }
 
   scrollToCaret() {
@@ -1311,6 +1348,8 @@ class App {
   }
 
   undo() {
+    // (letters waiting to go in go first: Undo from the Edit menu or a gesture comes with no key)
+    this.typeFlush();
     // (nothing stays selected across a change of the text: its offsets would be stale)
     this.disarm();
     // typing in the source pane joins the history only after a pause: take it in first, so
@@ -1339,6 +1378,7 @@ class App {
     this.updateUndoUI();
   }
   redo() {
+    this.typeFlush();
     this.disarm();
     if (this.srcRebuild.pending()) this.srcRebuild.flush();
     this.closePop(true);
@@ -1386,6 +1426,15 @@ class App {
   // ---- input --------------------------------------------------------------------
   bindUI() {
     const R = this.root;
+    // (letters waiting to go in, typeQueue: written before any other key, press or command)
+    // (and how long each key waited for the page: the time since the keyboard made it)
+    document.addEventListener('keydown', (e) => { this.keyLate = e.timeStamp ? performance.now() - e.timeStamp : 0; }, true);
+    const first = (e) => { if (this.typeQ != null && !(e.type === 'keydown' && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && this.typeQueueable(e.key))) this.typeFlush(); };
+    document.addEventListener('keydown', first, true);
+    document.addEventListener('pointerdown', first, true);
+    R.addEventListener('pointerdown', () => { this.tabOut = 0; }, true);
+    R.addEventListener('blur', first);
+    R.addEventListener('compositionstart', first, true);
     R.addEventListener('beforeinput', (e) => this.onBeforeInput(e));
     R.addEventListener('keydown', (e) => this.onKeyDown(e));
     R.addEventListener('compositionstart', () => this.onCompStart());
@@ -1397,7 +1446,7 @@ class App {
     R.addEventListener('dragstart', (e) => { if (!this.dragMoveStart(e)) e.preventDefault(); });
     R.addEventListener('dragover', (e) => this.dragMoveOver(e));
     R.addEventListener('dragend', () => this.dragMoveEnd());
-    R.addEventListener('drop', (e) => { if (!this.dragMoveDrop(e) && !(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length)) e.preventDefault(); });
+    R.addEventListener('drop', (e) => { this.typeFlush(); if (!this.dragMoveDrop(e) && !(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length)) e.preventDefault(); });
     R.addEventListener('mousedown', (e) => this.onMouseDown(e), true);
     R.addEventListener('click', (e) => this.onClick(e));
     document.addEventListener('selectionchange', () => this.onSelChange());
@@ -1548,8 +1597,8 @@ class App {
       if (document.body.classList.contains('src-on')) { e.preventDefault(); this.toggleSource(false); }
       else if (document.body.classList.contains('pdf-on')) { e.preventDefault(); this.togglePdf(false); }
     }
-    // (Ctrl+P is Print, src/cmd/page.js: from a field or the source too)
-    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p' && !e.defaultPrevented) { e.preventDefault(); this.runCommand('print'); }
+    // (Ctrl+P is Go to File, src/cmd/find.js, whose first line is Print: from a field or the source too)
+    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p' && !e.defaultPrevented) { e.preventDefault(); this.runCommand('go-to-file'); }
     // (by the keys, the caret goes along both ways and the focus with it: Word's Alt+F9 does the same)
     if (mod && e.key === '\\') { e.preventDefault(); this.toggleSource(undefined, { keys: true }); }
     if (mod && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); this.toggleNav(); }
@@ -1576,6 +1625,9 @@ class App {
   onKeyDown(e) {
     const mod = isMac ? e.metaKey : e.ctrlKey;
     const k = e.key.toLowerCase();
+    // (after $$, only a letter or a backslash may still make it a display: dollarPairTakes)
+    // (AltGr types the backslash on many layouts)
+    if (this.dollarPair && (((mod || e.altKey) && !(e.getModifierState && e.getModifierState('AltGraph'))) || !(e.key === 'Shift' || e.key === 'AltGraph' || /^[\p{L}\\]$/u.test(e.key)))) this.dollarPair = null;
     if (mod && !e.altKey) {
       if (k === 'z') { e.preventDefault(); if (e.shiftKey) this.redo(); else this.undo(); return; }
       if (k === 'y') { e.preventDefault(); this.redo(); return; }
@@ -1584,7 +1636,17 @@ class App {
       // the browser's own select-all ends on a page number, which cannot be selected, and
       // collapses to the top of the page: Ctrl+A then Ctrl+C copied nothing and Delete did nothing
       if (k === 'a' && !e.shiftKey) { e.preventDefault(); this.selectAllText(); return; }
+      if (e.key === 'End' && this.textEnd(e.shiftKey)) { e.preventDefault(); return; }
     }
+    // out of a footnote at the page's foot: Esc, or Right at its end (Shift+F5 too: goBack)
+    if ((e.key === 'Escape' && !this.pop) || (e.key === 'ArrowRight' && !e.shiftKey && !mod && !e.altKey)) {
+      const F = this.footnoteHere(), c = F && this.caretNow();
+      if (F && (e.key === 'Escape' || (c && c.collapsed && c.a >= (F.ie != null ? F.ie : F.e - 1)))) { e.preventDefault(); this.leaveFootnote(F); return; }
+    }
+    // (Esc, then Tab, leaves the page, as it leaves the source pane: the keyboard's way out)
+    // (Esc then Tab as one gesture: an Esc long before, a press since, and Tab stays on the page)
+    const tabOut = !!this.tabOut && performance.now() - this.tabOut < 2000;
+    if (e.key !== 'Shift') this.tabOut = 0;
     // Word's Ctrl+Down and Ctrl+Up (Word for Mac's Cmd+Down and Cmd+Up): the browser's own keeps
     // the caret's column into the next block and could land inside a display formula there,
     // which opened its editor
@@ -1595,10 +1657,24 @@ class App {
       const n = getSelection().anchorNode;
       const el = n && (n.nodeType === 1 ? n : n.parentElement);
       if (el && el.closest('td')) { e.preventDefault(); this.tabCell(e.shiftKey); return; }
+      // Tab keeps the keyboard on the page, as Word's: it went to the status bar or the PDF's
+      // engine list, where the next letters picked an engine (POWER-USER.md 6)
+      if (!mod && !e.altKey && !tabOut && !e.defaultPrevented) {
+        // (in a list's item where its own Tab could do nothing, which says why, the key goes on as
+        // the list's rule has it (src/cmd/lists.js), and the page takes the keyboard back at once)
+        if (el && el.closest('[data-li]')) { this.keepFocusPastTab(); return; }
+        e.preventDefault(); this.tabOnPage(e.shiftKey); return;
+      }
     }
-    if (e.key === 'Escape') { this.disarm(); }
+    if (e.key === 'Escape') { this.disarm(); this.tabOut = performance.now(); }
     // Word's Shift+Enter: a line break inside the paragraph (\\), not a new paragraph
     if (e.key === 'Enter' && e.shiftKey && !mod && !e.altKey && !this.armed) { e.preventDefault(); this.enter(true); return; }
+    // Enter on a formula, a citation or a reference selected alone (Shift and an arrow over it)
+    // opens it, as a click does; it replaced it with a paragraph break (POWER-USER.md 8)
+    if (e.key === 'Enter' && !e.shiftKey && !mod && !e.altKey && !this.armed) {
+      const S = this.atomSelected();
+      if (S && /^(math|cite|ref)$/.test(S.info.a.kind)) { e.preventDefault(); this.openAtom(S.el, S.info); return; }
+    }
     // Enter on an equation, citation or block that Backspace selected opens it, as a click does:
     // the keyboard's way in (Enter used to replace it with a paragraph break)
     if (e.key === 'Enter' && !e.shiftKey && this.armed && this.armed.el && this.armed.el.isConnected) {
@@ -1681,9 +1757,14 @@ class App {
     if (e.isComposing || t === 'insertCompositionText' || t === 'deleteCompositionText' || t === 'insertFromComposition') return;
     e.preventDefault();
     if (this.composing) return;
+    if (this.dollarPair && t === 'insertText' && this.dollarPairTakes(e.data)) return;
+    this.dollarPair = null;
     // (R3) words dragged out of the page are copied there: a move within the page is the page's
     // own drop (src/cmd/move.js), so a deletion by drag only ever follows a drop elsewhere
     if (t === 'deleteByDrag' || t === 'insertFromDrop') return;
+    // (every input but a letter that may wait writes the letters waiting first, before its target
+    // ranges are read: Undo from a menu, a system's autocorrect, a gesture come with no key)
+    if (!(t === 'insertText' && this.typeQ != null && this.typeQueueable(e.data))) this.typeFlush();
     switch (t) {
       case 'insertText': case 'insertReplacementText': {
         let data = e.data;
@@ -1694,7 +1775,9 @@ class App {
           const tr = e.getTargetRanges()[0];
           if (tr) range = this.rangeToSrc(tr);
         }
-        this.insertText(data, range);
+        if (!range && t === 'insertText' && this.typeQueueable(data)) { this.typeQueue(data); break; }
+        this.typeFlush();
+        this.typeIn(data, range);
         break;
       }
       case 'insertParagraph': this.enter(false); break;
@@ -1713,6 +1796,56 @@ class App {
       case 'historyRedo': this.redo(); break;
       default: break;
     }
+  }
+
+  // Letters typed faster than the page is built (a long document; a phone, where a key's edit and
+  // build take a third of a second): each key waited for the build of the one before, and the page
+  // fell seconds behind the typing (POWER-USER.md 4). A letter or digit typed within moments of the
+  // last edit waits here, and the letters behind it with it (the browser hands over the keys
+  // already waiting before a timer), and they go in as one edit in the next task; a letter after a
+  // pause goes in at once, as before. Any other key, a press, the page losing the focus or an input
+  // method first write what waits (bindUI).
+  typeQueueable(data) {
+    // (a space ends the run: the word goes in first, so AutoCorrect and a system's own autocorrect,
+    // which reads the page's text at the space, see it; review M1)
+    if (!/^[\p{L}\p{N}]$/u.test(data || '')) return false;
+    if (this.typeQ) return true;
+    // (only a key that waited for the page, pressed while the key before was still being built:
+    // a key in time goes in at once, as keys always have)
+    if (this.composing || this.pop || this.armed || this.ghost || !(this.keyLate > 12)) return false;
+    // (only a run going on where the last letters went, nothing else edited since: after Enter, a
+    // blank paragraph's first letter or a command, the caret is the page's own again first)
+    const E = this.typeEnd, c = this.caretNow(), n = this.hist.length;
+    return !!E && !!c && !c.ghost && c.collapsed && c.f === E.f && c.a === E.a && n === E.n && this.hist[n - 1] === E.top;
+  }
+  typeQueue(data) {
+    if (this.typeQ == null) { this.typeQ = ''; setTimeout(() => this.typeFlush(), 0); }
+    this.typeQ += data;
+  }
+  typeFlush() {
+    const q = this.typeQ;
+    this.typeQ = null;
+    if (q) this.typeIn(q, null);
+  }
+  // What came in one insert with no key (dictation, a phone's suggestion bar) after the formula
+  // it began in has closed: on the page, where the caret now is; the second $ of a closing $$
+  // taken as a key would be (W4)
+  typeRest(rest) {
+    if (rest[0] === '$' && this.swallowDollar && performance.now() - this.swallowDollar < 1500) { this.swallowDollar = 0; rest = rest.slice(1); }
+    if (rest && this.caretNow()) this.typeIn(rest, null);
+  }
+  typeIn(data, range) {
+    const run = this.typedRun, c0 = this.caretNow();
+    this.insertText(data, range);
+    // Word's Repeat (F4) types the last run of typing again: what was typed since the caret
+    // last went elsewhere (src/cmd/view.js repeatLast)
+    const c1 = this.caretNow();
+    if (!this.cmdDepth && c1 && !c1.ghost) {
+      const on = !range && run && c0 && !c0.ghost && run.f === c0.f && run.p === c0.a;
+      this.typedRun = { f: c1.f, p: c1.a, text: (on ? run.text : '') + data };
+      this.lastAct = { text: this.typedRun.text };
+    }
+    this.typeEnd = c1 && !c1.ghost && c1.collapsed ? { f: c1.f, a: c1.a, n: this.hist.length, top: this.hist[this.hist.length - 1] } : null;
   }
 
   rangeToSrc(r) {
@@ -1805,7 +1938,13 @@ class App {
     }
     // in a blank paragraph too (a new document, the line after Enter): there they were typed
     // as the characters, though that is where an equation or a heading most often starts
-    if (data === '$' && !range && !raw && (c.collapsed || c.ghost)) { this.newMath(); return; }
+    // (the second $ of a closing $$ is the next key or none: a $ typed later is a new formula)
+    if (data !== '$') this.swallowDollar = 0;
+    if (data === '$' && !range && !raw && (c.collapsed || c.ghost)) {
+      // (the second $ of a display's closing $$: the first one closed it)
+      if (this.swallowDollar && performance.now() - this.swallowDollar < 1500) { this.swallowDollar = 0; return; }
+      this.newMath(); return;
+    }
     if (data === '\\' && !range && !raw && (c.collapsed || c.ghost)) { this.openPalette(); return; }
     if (c.ghost) { this.ghostInsert(raw ? data : escapeTeX(data, ' ')); return; }
     const f = range ? range.f : c.f;
@@ -2003,11 +2142,13 @@ class App {
   enter(soft) {
     const c = this.caretNow();
     if (!c) return;
+    // (a second Enter on the line after a display: a new paragraph there)
+    if (c.ghost && this.ghost.line && !this.ghost.pend) { this.ghost.line = false; this.ghost.el.classList.add('ind'); return; }
     // A second Enter where the first left the caret at a paragraph's start: a second empty
     // paragraph above it, as Word's, and one Backspace or Undo takes one away (review V2). The
     // first was shown again in its place, so a second Backspace joined the two paragraphs.
     if (!soft && this.ghost && this.ghost.keepAt && this.ghostKept()) { this.ghost.n = (this.ghost.n || 1) + 1; this.ghostLines(); this.enterAct(); return; }
-    if (c.ghost) { if (this.ghost.tex) this.texGhostEnter(); return; }
+    if (c.ghost) { if (this.ghost.tex) this.texGhostEnter(); else this.ghostLeaveEnv(); return; }
     const T = this.texHere();
     if (T && c.f === T.f) { this.texEnter(T, c); return; }
     const sel = getSelection();
@@ -2132,7 +2273,7 @@ class App {
   showGhost(afterEl, f, pos, o = {}) {
     this.removeGhost();
     const g = document.createElement('div');
-    g.className = 'it p ghostp' + (afterEl.classList.contains('ind') || afterEl.classList.contains('p') || afterEl.classList.contains('tex') ? ' ind' : '') + (o.style === 'latex' ? ' tex' : isEnvStyle(o.style) ? ' quote' : '');
+    g.className = 'it p ghostp' + (!o.line && (afterEl.classList.contains('ind') || afterEl.classList.contains('p') || afterEl.classList.contains('tex')) ? ' ind' : '') + (o.style === 'latex' ? ' tex' : isEnvStyle(o.style) ? ' quote' : '');
     g.dataset.ctx = 'p';
     // the new paragraph runs the way the one above it does
     if (afterEl.dir === 'rtl' || afterEl.dir === 'ltr') g.dir = afterEl.dir;
@@ -2141,11 +2282,28 @@ class App {
     s.textContent = '\u200B';
     g.appendChild(s);
     if (o.before) afterEl.before(g); else afterEl.after(g);
-    this.ghost = { el: g, f, pos, before: !!o.before, style: o.style || null, pend: '' };
+    // (line: a line of the paragraph above, after a display, written after a line break alone)
+    this.ghost = { el: g, f, pos, before: !!o.before, style: o.style || null, pend: '', line: !!o.line };
     const sel = getSelection();
     this.ourSel = true;
     sel.collapse(s.firstChild, 1);
     this.scrollToCaret();
+  }
+  // Enter on the blank paragraph at the end of a theorem, a proof, a quote: it goes after the
+  // \end, as Enter on a list's empty last item leaves the list (Word: the style's next paragraph
+  // is Normal). Enter twice wrote blank lines inside it, and what was typed next went in too.
+  ghostLeaveEnv() {
+    const g = this.ghost;
+    if (!g || g.before || g.style) return false;
+    const m = /^\s*\\end\s*\{([^}]+)\}/.exec(this.src(g.f).slice(g.pos));
+    // (a theorem like one, a proof, a quote, quotation or verse alone: a beamer frame, a minipage,
+    // a center hold paragraphs of their own, and one left out of a frame is set nowhere; review H3)
+    const name = m && m[1].trim(), thm = name && (THM_STYLES[name] || name === 'assumption' || (this.model && this.model.thms && this.model.thms.has(name)));
+    if (!m || !(thm || /^(quote|quotation|verse)$/.test(name))) return false;
+    const after = g.el.previousElementSibling;
+    if (!after) return false;
+    this.showGhost(after, g.f, g.pos + m[0].length);
+    return true;
   }
   removeGhost() { if (this.ghost) { const g = this.ghost; this.ghost = null; g.el.remove(); if (g.restore) g.restore(); } }
   // the caret where Enter at a paragraph's start left it, the empty paragraph showing above it
@@ -2179,7 +2337,7 @@ class App {
   takeBackGhost(how) {
     const g = this.ghost;
     // (the blank page's own paragraph is no Enter's)
-    if (!g || g.sticky) return false;
+    if (!g || g.sticky || (how === 'undo' && g.place)) return false;
     const inIt = this.root.contains(getSelection().anchorNode) && g.el.contains(getSelection().anchorNode);
     const kept = this.ghostKept(), over = !kept && this.ghostOver();
     if (how !== 'undo') {
@@ -2229,8 +2387,8 @@ class App {
     let nlB = 0; for (let k = g.pos - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
     let nlA = 0; for (let k = g.pos; k < src.length && /\s/.test(src[k]); k++) if (src[k] === '\n') nlA++;
     // no blank lines at the very start or end of a file: there is no paragraph to keep apart
-    const pre = g.pos === 0 ? '' : '\n'.repeat(Math.max(0, 2 - nlB));
-    const post = g.pos >= src.length ? '' : '\n'.repeat(Math.max(0, 2 - nlA));
+    const pre = g.pos === 0 ? '' : '\n'.repeat(Math.max(0, (g.line ? 1 : 2) - nlB));
+    const post = g.pos >= src.length ? '' : '\n'.repeat(Math.max(0, (g.line ? 1 : 2) - nlA));
     this.removeGhost();
     const grew = extra.filter((x) => x.f === g.f && x.s <= g.pos).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
     this.commit([...extra, { f: g.f, s: g.pos, e: g.pos, t: pre + open + tex + close + post }], { f: g.f, p: g.pos + grew + pre.length + open.length + tex.length, bias: -1 }, 'type');
@@ -2433,7 +2591,7 @@ class App {
   }
   // a blank paragraph for pos, after the block of the page that ends before it (before the one
   // that starts after it, where none does)
-  ghostAt(f, pos, style) {
+  ghostAt(f, pos, style, line) {
     let prev = null, next = null;
     for (const B of this.renderer.blocks) {
       if (B.f !== f || !B.items.length) continue;
@@ -2442,7 +2600,7 @@ class App {
     }
     const els = (B) => [...this.root.querySelectorAll('.it[data-b="' + B.id + '"]')];
     const at = prev ? els(prev).pop() : next ? els(next)[0] : null;
-    if (at) this.showGhost(at, f, pos, { before: !prev, style });
+    if (at) this.showGhost(at, f, pos, { before: !prev, style, line });
   }
 
   onCompStart() {
@@ -2535,6 +2693,8 @@ class App {
     }
   }
   onPaste(e) {
+    // (a paste from the Edit menu comes with no key: the letters waiting go in before it)
+    this.typeFlush();
     e.preventDefault();
     const dt = e.clipboardData;
     if (!dt) return;
@@ -2636,6 +2796,8 @@ class App {
     e.preventDefault();
     this.disarm();
     if ((e.metaKey || e.ctrlKey) && (info.a.kind === 'url' || atomEl.closest('.y-link'))) { const u = info.a.url || atomEl.closest('.y-link').dataset.url; if (u) openLink(u); return; }
+    // Ctrl+click on a cross reference goes to its label, as in Word (Shift+F5 comes back)
+    if ((e.metaKey || e.ctrlKey) && info.a.kind === 'ref') { this.followRef(info); return; }
     this.openAtom(atomEl, info);
   }
 
@@ -2769,6 +2931,120 @@ class App {
         return;
       }
     }
+  }
+
+  // The footnote the caret types in at the page's foot: its mark's place in the text ({ f, s, e,
+  // ie }), or null. The foot comes after the page's last line, so the browser's own keys (Right,
+  // Down, Ctrl+End) found no way out of it, and all typed next went into the footnote.
+  footnoteHere() {
+    const sel = getSelection();
+    if (!sel.rangeCount) return null;
+    const n = sel.anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement);
+    const box = el && el.closest && el.closest('.fn');
+    if (!box || !this.root.contains(box)) return null;
+    const c = this.caretNow();
+    if (!c || c.ghost) return null;
+    let best = null;
+    for (const m of this.root.querySelectorAll('.fnm[data-a]')) {
+      const info = atomOfEl(m);
+      if (!info || info.f !== c.f || info.s == null || !(info.s < c.a && c.a <= info.e)) continue;
+      if (!best || info.e - info.s < best.e - best.s) best = info;
+    }
+    return best;
+  }
+  // Word's way back from a footnote (Shift+F5, Esc, or Right at its end): the caret after its mark
+  leaveFootnote(F = this.footnoteHere()) {
+    if (!F) return false;
+    this.restoreCaret({ f: F.f, p: F.e, bias: 1 });
+    this.scrollToCaret();
+    return true;
+  }
+  // the caret where it is, back on the page after a Tab that went on to the next control
+  keepFocusPastTab() {
+    const s = getSelection(), r = s.rangeCount ? s.getRangeAt(0).cloneRange() : null;
+    setTimeout(() => {
+      if (document.activeElement === this.root || !r || !r.startContainer.isConnected) return;
+      this.root.focus({ preventScroll: true });
+      const t = getSelection(); t.removeAllRanges(); t.addRange(r);
+    }, 0);
+  }
+  // Tab on the page outside a table, a list or tab stops (those have their own): at a paragraph's
+  // start Word's first line indent (Shift+Tab: none, \noindent), elsewhere a gap as a tab
+  // leaves one (\quad), in a heading, a caption or the title too; nothing in a LaTeX paragraph.
+  // Over a selection, as Word's (review L4, where it did nothing and said nothing): from a
+  // paragraph's start the selected paragraphs' left indent a step in (Shift+Tab: out), from
+  // inside the text the gap in the selection's place
+  tabOnPage(back) {
+    const at = this.ribbonAt(), c = at && at.c;
+    if (!c || c.ghost || at.cell || (at.it && at.it.dataset.li) || /^(tex|li)$/.test(at.ctx || '') || this.texAt(c.f, c.a)) return false;
+    const sel = getSelection();
+    let start = false;
+    if (at.it && sel.rangeCount) {
+      const S = sel.getRangeAt(0), r = document.createRange();
+      try { r.setStart(at.it, 0); r.setEnd(S.startContainer, S.startOffset); start = !r.toString().replace(/[\u200B\s]/g, ''); } catch (e) { start = false; }
+    }
+    const plain = !/^(h|cap|ttl)$/.test(at.ctx || '');
+    if (!c.collapsed && start && plain) return this.runCommand(back ? 'paragraph-outdent' : 'paragraph-indent', null, at) !== false;
+    if (c.collapsed && start && plain) return this.paraFirstLineKey(back, at);
+    if (back) return false;
+    const t = '\\quad' + (/[A-Za-z]/.test(this.src(c.f)[c.b] || '') ? ' ' : '');
+    this.commit([...this.deletionEdits(c.f, c.a, c.b), { f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a + t.length, bias: 1 }, 'type');
+    return true;
+  }
+
+  // The one formula, citation or reference the selection holds, with nothing else of the text:
+  // { el, info }, or null
+  atomSelected() {
+    const sel = getSelection();
+    if (!sel.rangeCount || sel.isCollapsed) return null;
+    const r = sel.getRangeAt(0);
+    if (!this.root.contains(r.commonAncestorContainer)) return null;
+    const box = r.commonAncestorContainer.nodeType === 1 ? r.commonAncestorContainer : r.commonAncestorContainer.parentElement;
+    const atoms = [...(box.closest('.atom') ? [box.closest('.atom')] : box.querySelectorAll('.atom'))].filter((a) => r.intersectsNode(a));
+    if (atoms.length !== 1) return null;
+    const el = atoms[0], info = atomOfEl(el);
+    if (!info || info.s == null || info.a.ro) return null;
+    const rest = r.toString().replace(el.textContent, '').replace(/[\u200B\s]/g, '');
+    return rest ? null : { el, info };
+  }
+  // The cross reference selected alone (Shift and an arrow over it): its atom's info, or null. Not
+  // one the caret only touches: a caret is always at a reference's edge after it is put in, the
+  // moment a Word user presses F12 to save (review H1)
+  refHere() {
+    const S = this.atomSelected();
+    return S && S.info.a.kind === 'ref' ? S.info : null;
+  }
+  // Go to the label a cross reference points to (F12 on it, or Ctrl+click), as Go To does for a
+  // label; Shift+F5 comes back here while nothing has been edited since (src/cmd/find.js goBack)
+  followRef(info = this.refHere()) {
+    if (!info) return false;
+    const m = /\{([^}]*)\}\s*$/.exec(this.src(info.f).slice(info.s, info.e));
+    const key = m ? m[1].split(',')[0].trim() : '';
+    if (!key || !this.labelPlaces().has(key)) { this.toast(key ? 'No \\label{' + key + '} in this project.' : 'This reference names no label.'); return false; }
+    const c = this.caretNow();
+    // (back to the reference as it was selected, or the caret where it was)
+    const back = c && !c.ghost ? (c.collapsed ? { f: c.f, p: c.a } : { f: c.f, p: c.a, selA: c.a, selB: c.b }) : { f: info.f, p: info.e, bias: 1 };
+    const r = this.goToTarget('label', key);
+    if (!r.ok) { this.toast(r.msg); return false; }
+    this.followBack = { back, n: this.hist.length };
+    return true;
+  }
+
+  // Ctrl+End, as Word's: the end of the text, never the footnotes under the last page's lines
+  textEnd(extend) {
+    const spans = this.root.querySelectorAll('.flow span.t');
+    const last = spans[spans.length - 1];
+    // (a display formula or a table at the end: after it, on a blank paragraph, as Word's end
+    // after both; it stopped before the formula or in the last cell, review L1)
+    const its = [...this.root.querySelectorAll('.flow .it')].filter((x) => !x.parentElement.closest('.it')), end = its[its.length - 1];
+    const B = !extend && end && end.dataset.b != null && (!last || !end.contains(last) || last.closest('td')) && this.renderer.blocks.find((x) => String(x.id) === end.dataset.b);
+    if (B) { this.root.focus({ preventScroll: true }); this.showGhost(end, B.f, B.e); return true; }
+    if (!last || !last.firstChild) return false;
+    const sel = getSelection(), n = last.firstChild, o = n.data.length;
+    this.root.focus({ preventScroll: true });
+    if (extend && sel.rangeCount) sel.extend(n, o); else sel.collapse(n, o);
+    this.scrollToCaret();
+    return true;
   }
 
   // a menu's keys: the arrows step through its items and wrap, Home and End go to the ends
@@ -2965,6 +3241,7 @@ class App {
       this.restoreCaret(P.returnCaret);
       if (P.returnCaret.extendBy) try { getSelection().modify('extend', P.returnCaret.extendBy, 'character'); } catch (e) { /* the formula alone stays selected */ }
     }
+    if (!silent && P.display && P.returnCaret && !P.removed && !P.dollarClosed && !P.midLine) this.caretAfterDisplay(P.returnCaret);
     // Opened from a blank paragraph and closed with nothing made, or a document that so far
     // holds only what the popover made (a first formula) and has no text to put the caret in:
     // the caret goes to the blank paragraph, so typing goes on
@@ -3174,21 +3451,64 @@ class App {
       return null;
     }
     let fromMf = false;
-    mf.addEventListener('input', () => {
-      const tex = fromField(fieldValue(mf), st);
+    // (the field as the box last set it: MathLive sends its input event a task after the change,
+    // so one for keys typed before the box took over came after it and wrote the field's reading
+    // of the box back over the box)
+    // (as fromField reads it, fieldValue: a closing bracket typed over the field's waiting one
+    // changes that, not the latex MathLive gives, and was lost; X3's run)
+    // MathLive tells its input a moment after the key: a formula typed fast and closed at once
+    // (x, Enter) closed the box empty and was lost. What the field holds is read into the LaTeX
+    // box first, whatever closes it (pull, before Esc, Enter, a move out; main's PR 94).
+    let given = fieldValue(mf);
+    const pull = () => {
+      const cur = fieldValue(mf);
+      if (cur === given) return;
+      // (taken: a later event for this same value is stale, one for a deletion is not; with given
+      // left at the box's last value, the field emptied by Backspace matched it and the box kept
+      // the last character, X1)
+      given = cur;
+      let tex;
+      try { tex = fromField(cur, st); } catch (e) { return; }
       if (tex === ta.value) return;
       fromMf = true;
       ta.value = tex;
       ta.dispatchEvent(new Event('input'));
       fromMf = false;
-    });
+    };
+    mf.addEventListener('input', pull);
     const sync = () => {
       if (fromMf) return;
       st = toField(ta.value, opts.display, opts.env(), D);
       st.same = same;
       if (mf.getValue('latex') !== st.latex) mf.setValue(st.latex, MATH_VALUE);
+      given = fieldValue(mf);
       st.ml = fieldRows(modelValue(mf), st.multi, D);
     };
+    // MathLive focuses its keyboard sink 60 ms after the field takes the focus, whatever happened
+    // since: the box focused sooner than that (a hand over by dictation as the field opens, CI's
+    // \text{if}\}; a click or a fill of the box as the field arrives, browser.py's lost \gamma
+    // under load, X3; a busy page that runs the timer late) lost its focus to the field, and the
+    // next keys went into the formula. The focus comes to the field from the box only by a press
+    // on the field, Tab, or the page's own call (backOk); any other goes back to the box.
+    let backOk = false;
+    mf.addEventListener('pointerdown', () => { backOk = true; }, true);
+    ta.addEventListener('keydown', (e) => { if (e.key === 'Tab') backOk = true; });
+    // While the box holds what the field cannot show (\begin{ or a brace not yet closed, an
+    // environment not yet ended) the keys stay in the box, a press on the field too: the field's
+    // reading of it replaced the box's text, \begin{ lost and } and & escaped (W3)
+    const boxOnly = () => (P.held && P.held()) || (ta.value.match(/\\begin\s*\{/g) || []).length > (ta.value.match(/\\end\s*\{/g) || []).length;
+    mf.addEventListener('focusin', (e) => {
+      if (e.relatedTarget !== ta || !ta.isConnected) return;
+      if (boxOnly()) {
+        if (backOk) { backOk = false; this.toast('The equation field shows this once it is complete: type on in the LaTeX box.'); }
+        queueMicrotask(() => ta.focus({ preventScroll: true }));
+        return;
+      }
+      if (backOk) { backOk = false; return; }
+      queueMicrotask(() => ta.focus({ preventScroll: true }));
+    });
+    // (the page's own moves of the focus to the field)
+    const fieldFocus = () => { backOk = true; focusField(mf); backOk = false; };
     ta.addEventListener('input', sync);
     mf.addEventListener('paste', (e) => {
       const t = e.clipboardData && e.clipboardData.getData('text/plain');
@@ -3201,6 +3521,7 @@ class App {
     // MathLive 0.108+ can miss focusing itself when clicked while another input has focus.
     mf.addEventListener('pointerup', () => { if (document.activeElement !== mf) focusField(mf); }, true);
     P.syncField = sync;
+    P.pullField = pull;
     if (opts.onKey) mf.addEventListener('keydown', (e) => { if (!wt.active() && mf.mode !== 'latex') opts.onKey(e); }, true);
     const wt = installWordTyping(mf, {
       host: P.el,
@@ -3209,18 +3530,29 @@ class App {
       onNewRowOutside: opts.onNewRowOutside,
       renderTex: (t) => this.renderer.katex(t, false).html,
       decimalComma,
-      baseDepth: () => (st.multi ? 1 : 0)
+      baseDepth: () => (st.multi ? 1 : 0),
+      onDollar: opts.onDollar,
+      closer: () => this.pop && this.pop.closer,
+      onCloser: () => opts.onEnter(),
+      // (W2, W4) what came in one insert after the box took the keys, or after the formula closed
+      boxType: (t) => { ta.setRangeText(t, ta.selectionStart, ta.selectionEnd, 'end'); ta.dispatchEvent(new Event('input')); },
+      afterClose: (rest) => this.typeRest(rest),
+      // what the field cannot hold, typed as LaTeX (\begin{aligned}): it goes on in the LaTeX
+      // box above, at the caret's place, the field showing what it makes
+      toLatex: (more) => {
+        // (a box the field handed over to keeps the field's keys: Enter done, Ctrl+Enter a row;
+        // review N2, where Enter in a display's box was a newline and the next words went in)
+        if (this.pop) this.pop.boxFromField = true;
+        // (keys typed into the field whose input event is still to come: in the box first)
+        pull();
+        backOk = false;
+        let at = ta.value.length;
+        try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (ta.value.startsWith(pre)) at = pre.length; } catch (e) { /* at the end */ }
+        ta.focus();
+        ta.setRangeText(more, at, at, 'end');
+        ta.dispatchEvent(new Event('input'));
+      }
     });
-    // MathLive tells its input a moment after the key: a formula typed fast and closed at once
-    // (x, Enter) closed the box empty and was lost. What the field holds is read into the LaTeX
-    // box first, whatever closes it.
-    const pull = () => {
-      try {
-        const tex = fromField(fieldValue(mf), st);
-        if (tex !== ta.value) { fromMf = true; ta.value = tex; ta.dispatchEvent(new Event('input')); fromMf = false; }
-      } catch (e) { /* as it was */ }
-    };
-    P.pullField = pull;
     mf.addEventListener('keydown', (e) => {
       if (wt.active() || mf.mode === 'latex') return;
       if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); pull(); opts.onEscape(); }
@@ -3257,9 +3589,10 @@ class App {
     }
     P.wordTyping = wt;
     P.field = mf;
-    if (P.insertTex) this.eqWireField(P, mf, D, ta, () => focusField(mf));
+    if (P.insertTex) this.eqWireField(P, mf, D, ta, fieldFocus);
+    P.fieldFocus = fieldFocus;
     if (!opts.keepFocus || document.activeElement !== ta || ta.value === opts.initial) {
-      focusField(mf);
+      fieldFocus();
       try { mf.executeCommand('moveToMathfieldEnd'); if (st.multi) mf.position = Math.max(0, mf.lastOffset - 1); } catch (e) { /* ignore */ }
     }
     this.positionPop();
@@ -3313,7 +3646,7 @@ class App {
     }
     const hint = document.createElement('span');
     hint.className = 'hint';
-    hint.textContent = display ? '\\name + Space, x^(n+1), a/b, Space steps out, Ctrl+Enter new row, Enter done' : '\\name + Space, x^(n+1), a/b, Space steps out, Enter done';
+    hint.textContent = display ? '\\name + Space or \\frac{a}{b}, x^(n+1), a/b, Space steps out, Ctrl+Enter new row, Enter done' : '\\name + Space or \\frac{a}{b}, x^(n+1), a/b, Space steps out, Enter or $ done';
     row.appendChild(hint);
     if (this.caps.sample) {
       const ai = document.createElement('button');
@@ -3371,9 +3704,48 @@ class App {
     preview();
     const push = debounce(() => { if (this.pop && !held()) this.pop.applyInner(ta.value); }, 140);
     ta.addEventListener('input', () => { preview(); push(); ta.rows = Math.min(10, Math.max(display ? 3 : 1, ta.value.split('\n').length)); });
+    // (the closing $ with no key, from dictation, an on-screen keyboard or a script, as its key)
+    ta.addEventListener('beforeinput', (e) => {
+      if (e.data !== '$' || !(!display || (this.pop && this.pop.dollarClose)) || !dollarEnds(ta)) return;
+      e.preventDefault(); if (stay()) return; push.flush();
+      // (opened by $$, its second closing $ is taken however the page draws it: in a p{} or X
+      // cell or a \parbox the display is drawn in the line, not as a display; W1)
+      if (display || this.pop.dollarClose) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; }
+      this.closePop();
+    });
+    // a one line display made one of rows (Ctrl+Enter), as Word's: false, said why, where it cannot
+    const toRows = () => {
+      const P = this.pop;
+      const env = P.env || info.a.env;
+      if (/^(align|alignat|flalign|gather|multline|eqnarray)\*?$/.test(env)) return true;
+      const to = env === 'equation' ? 'align' : /^(equation\*|\\\[|\$\$|displaymath)$/.test(env) ? 'align*' : null;
+      if (!to) { this.toast('This display cannot take rows. Pick Aligned in the menu.'); return false; }
+      push.flush();
+      this.changeEnv(to);
+      const sel = P.el.querySelector('#pop-env');
+      if (sel) { if (![...sel.options].some((o) => o.value === to)) { const o = document.createElement('option'); o.value = to; o.textContent = to; sel.appendChild(o); } sel.value = to; }
+      return true;
+    };
     ta.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (!display || e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
+      const fieldKeys = display && this.pop && this.pop.boxFromField;
+      // (in a box the field handed over to: Ctrl+Enter a new row, inside an environment of rows
+      // the box holds or in the display made one of rows)
+      if (fieldKeys && e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        e.preventDefault();
+        const pre = ta.value.slice(0, ta.selectionStart), open = (pre.match(/\\begin\s*\{/g) || []).length > (pre.match(/\\end\s*\{/g) || []).length;
+        if (!open && !toRows()) return;
+        ta.setRangeText(' \\\\\n', ta.selectionStart, ta.selectionEnd, 'end'); ta.dispatchEvent(new Event('input'));
+        return;
+      }
+      if (e.key === 'Enter' && (!display || fieldKeys || e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
+      // (the closing $ of a formula in the line, as typed in the source; \$ stays a dollar sign)
+      if (e.key === '$' && (!display || (this.pop && this.pop.dollarClose)) && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); if (display || this.pop.dollarClose) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; } this.closePop(); }
+      // \) or \] typed in the box ends a formula opened by \( or \[
+      if (this.pop && this.pop.closer && e.key === this.pop.closer && /(^|[^\\])\\$/.test(ta.value.slice(0, ta.selectionStart))) {
+        e.preventDefault(); ta.setRangeText('', ta.selectionStart - 1, ta.selectionStart, 'end'); ta.dispatchEvent(new Event('input'));
+        if (stay()) return; push.flush(); this.closePop();
+      }
     });
     // However the box closes, what was typed is kept: text held back is written made whole
     // (mathMadeWhole), in the box's undo step.
@@ -3405,21 +3777,24 @@ class App {
       // Ctrl+Enter in a one-line display: turn it into an align so it can take rows.
       onNewRowOutside: display ? () => {
         const P = this.pop;
-        if (!P) return;
-        const env = P.env || info.a.env;
-        const to = env === 'equation' ? 'align' : /^(equation\*|\\\[|\$\$|displaymath)$/.test(env) ? 'align*' : null;
-        if (!to) { this.toast('This display cannot take rows. Pick Aligned in the menu.'); return; }
-        push.flush();
-        this.changeEnv(to);
-        const sel = P.el.querySelector('#pop-env');
-        if (sel) { if (![...sel.options].some((o) => o.value === to)) { const o = document.createElement('option'); o.value = to; o.textContent = to; sel.appendChild(o); } sel.value = to; }
+        if (!P || !toRows()) return;
         const mf = P.field;
         if (!mf) return;
-        focusField(mf);
+        if (P.fieldFocus) P.fieldFocus(); else focusField(mf);
         try { mf.position = Math.max(0, mf.lastOffset - 1); } catch (e) { /* ignore */ }
         P.wordTyping.newRow();
       } : null,
       onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
+      // ($ closes a formula in the line as it does in the source, $x^2$ typed as in Overleaf, and a
+      // display opened by $$ at its closing $$, the second $ taken on the page: insertText)
+      onDollar: (check) => {
+        const ok = !display || !!(this.pop && this.pop.dollarClose);
+        if (check || !ok) return ok;
+        if (stay()) return;
+        push.flush();
+        if (display || this.pop.dollarClose) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; }
+        this.closePop();
+      },
       onMoveOut: display ? null : (d, how) => { if (stay()) return; push.flush(); this.leaveMath(d, how); },
       onEscape: () => { push.flush(); this.closePop(); }
     });
@@ -3459,7 +3834,10 @@ class App {
     this.positionPop();
   }
 
-  newMath() {
+  // o.open, o.close: the delimiters (\( and \) typed as such; $ by default); o.closer: the key
+  // that after a backslash ends it
+  newMath(o = {}) {
+    const open = o.open || '$', close = o.close || '$';
     const c = this.caretNow();
     if (!c) return;
     const sel = getSelection();
@@ -3467,6 +3845,10 @@ class App {
     // (where a display could stand instead, for the Equation tab's Display)
     const canDisplay = this.eqCanDisplayHere(this.ribbonAt());
     const p = this.makePop(null, 'pop-math', 'New inline math');
+    const PM = this.pop;
+    // (the history before the formula: emptied, it goes with every step it made; X1)
+    const h0 = this.hist.length, redo0 = this.redoStack;
+    this.pop.closer = o.closer || null;
     this.pop.display = false;
     { const n = sel.anchorNode, it = n && (n.nodeType === 1 ? n : n.parentElement); const P0 = it && it.closest ? it.closest('.it') : null; this.pop.rtl = !!(P0 && getComputedStyle(P0).direction === 'rtl'); }
     this.pop.eqWhere = { display: canDisplay };
@@ -3477,7 +3859,7 @@ class App {
     const prev = document.createElement('div'); prev.className = 'pv';
     const err = document.createElement('div'); err.className = 'pv-err'; err.hidden = true;
     const row = document.createElement('div'); row.className = 'pop-row';
-    const hint = document.createElement('span'); hint.className = 'hint'; hint.textContent = 'Enter to insert. Type $ again for a dollar sign.';
+    const hint = document.createElement('span'); hint.className = 'hint'; hint.textContent = o.closer ? 'Enter or \\) to insert.' : 'Enter or $ to insert. $ at once is a dollar sign, or a display when a letter follows.';
     row.appendChild(hint);
     if (this.caps.sample) {
       const ai = document.createElement('button');
@@ -3498,7 +3880,7 @@ class App {
       if (held(v)) return;
       if (!ins) {
         if (!v) return;
-        const t = '$' + v + '$';
+        const t = open + v + close;
         if (ghost) {
           this.ghost = ghost;
           const src = this.src(ghost.f);
@@ -3519,29 +3901,203 @@ class App {
         this.pop.returnCaret = { f: ins.f, p: ins.e, bias: 1 };
         return;
       }
-      const t = '$' + v + '$';
+      const t = open + v + close;
       if (!v) { this.commit([{ f: ins.f, s: ins.s, e: ins.e, t: '' }], null, this.pop.session); ins = null; return; }
       this.commit([{ f: ins.f, s: ins.s, e: ins.e, t }], null, this.pop.session);
       ins.e = ins.s + t.length;
       this.pop.returnCaret = { f: ins.f, p: ins.e, bias: 1 };
     };
+    // A formula closed empty goes as Word's empty equation does: with every step it made taken
+    // back, no undo step left for it, the caret where the $ was (X1). (Not while it is open: the
+    // page built again under it closed it.)
+    const dropEmpty = () => {
+      const P = this.pop, at = ins;
+      ins = null;
+      if (!P) return;
+      const mine = this.hist.slice(h0);
+      if (mine.length && mine.every((h) => h.kind === P.session)) {
+        for (const h of mine.reverse()) {
+          this.hist.pop();
+          for (const d of h.files) { const s = this.files.get(d.f) ?? ''; this.files.set(d.f, s.slice(0, d.s) + d.del + s.slice(d.s + d.ins.length)); }
+        }
+        this.redoStack = redo0;
+        this.rebuild(base ? { f: base.f, p: base.a } : undefined);
+        this.pushToSource(); this.saveSoon(); this.updateUndoUI();
+        if (ghost) this.ghostAt(ghost.f, ghost.pos, ghost.style);
+      } else if (at) this.commit([{ f: at.f, s: at.s, e: at.e, t: '' }], null, P.session);
+      else return;
+      P.returnCaret = base ? { f: base.f, p: base.a } : null;
+    };
     const push = debounce(() => this.pop && insert(ta.value), 160);
     const preview = () => { const r = this.renderer.katex(this.mathPreviewTex(ta.value, false), false); prev.innerHTML = ta.value ? r.html : ''; err.textContent = r.err ? plainMathError(r.err, ta.value) : ''; err.title = r.err || ''; err.hidden = !r.err || !ta.value; };
-    ta.addEventListener('beforeinput', (e) => {
-      if (e.data === '$' && !ta.value && !ins) {
-        e.preventDefault();
-        this.closePop(true);
+    // An empty formula: $ at once is a dollar sign, as $$ always was here (a price: $$5), and a
+    // display, as $$ in the source (Overleaf's), when a letter or a backslash comes next
+    // (dollarPairTakes); a space a dollar sign and the space, as a $ alone in prose is (review M6,
+    // L6); \$ is a dollar sign too
+    let keys = 0;
+    const emptyKey = (k) => {
+      // (keys typed into the field whose input event is still to come: "5 each" in one insert
+      // found the formula empty at its space and wrote \$ there, the words after it lost; W4)
+      if ((k === '$' || k === ' ') && !ta.value && this.pop && this.pop.pullField) this.pop.pullField();
+      if (ta.value || ins || (k !== '$' && k !== ' ') || o.closer) return false;
+      if (k === '$' && keys) return false;
+      this.closePop(true);
+      if (k === '$') {
+        // (its own step, nothing typed after it joined to it: the next key may take it back)
+        const redo0 = this.redoStack;
+        this.closeGroup();
         if (ghost) { this.ghost = ghost; this.ghostInsert('\\$'); }
-        else this.commit([{ f: base.f, s: base.a, e: base.b, t: '\\$' }], { f: base.f, p: base.a + 2 }, 'type');
+        else this.commit([{ f: base.f, s: base.a, e: base.b, t: '\\$' }], { f: base.f, p: base.a + 2 }, 'insert');
+        this.closeGroup();
+        const c2 = this.caretNow();
+        this.dollarPair = c2 && !c2.ghost && c2.collapsed ? { f: c2.f, p: c2.a, n: this.hist.length, h: this.hist[this.hist.length - 1], redo0, at: base ? base.a : null, ghost: ghost ? { pos: ghost.pos, style: ghost.style } : null } : null;
+        return true;
       }
+      if (ghost) { this.ghost = ghost; this.ghostInsert('\\$ '); }
+      else this.commit([{ f: base.f, s: base.a, e: base.b, t: '\\$ ' }], { f: base.f, p: base.a + 3 }, 'type');
+      return true;
+    };
+    // $5 then a space is a price, as Word users type one ($5 now), or a formula that opens with a
+    // number ($1 - \alpha$, $0 < x < 1$, $2 x$): the keys after the space decide (verification of
+    // eb14945, V1; of 5446132, W6, W7). The space waits (pend, the number as typed; a % or \% after
+    // it waits as the number does, $5% now). A sign, <, =, a backslash, a digit, a brace, ^, _, $
+    // or Enter keeps the formula, the space in it. A letter starts a word, which waits beside the
+    // formula, said in the box's hint and never drawn in it ($5each$ in math italics until the
+    // space; befd04a's X2): $ right after the word ($2 x$) puts it in the formula and keeps the
+    // formula; a space or a sentence's mark after it, Enter, Esc or the box closing makes the
+    // price, written with the word in one step ($5 each, $5 each.). Backspace takes back the word's
+    // letters, then the space. Text from an input method or a dead key after the space is a word,
+    // never a variable (W5).
+    let pend = null, word = '', priced = false;
+    const PRICE = /^\d+([.,]\d+)?(\\?%)?[.,;:!?)]?$/;
+    const priceText = (more) => '\\$' + pend.replace(/(^|[^\\])%/g, '$1\\%') + ' ' + more;
+    // (a formula opened by $$ where a display cannot go: its closing $$ is one, the second $ taken)
+    const pairDone = () => { if (this.pop && this.pop.pairInline) this.swallowDollar = performance.now(); };
+    const makePrice = (more) => {
+      push.cancel();
+      const t = priceText(more), at = ins, P = this.pop;
+      pend = null; word = '';
+      ins = null; ta.value = '';
+      if (at) this.commit([{ f: at.f, s: at.s, e: at.e, t }], null, P.session);
+      // (closed as a price: not an empty formula to take away, with the price's own step)
+      priced = true;
+      this.closePop(true);
+      if (at) this.restoreCaret({ f: at.f, p: at.s + t.length });
+      else if (ghost) { this.ghost = ghost; this.ghostInsert(t); }
+      else this.commit([{ f: base.f, s: base.a, e: base.b, t }], { f: base.f, p: base.a + t.length }, 'type');
+      return true;
+    };
+    const hint0 = hint.textContent;
+    const wait = () => {
+      hint.textContent = pend === null ? hint0 : word ? '$' + pend + ' ' + word + ': a price at the next space or mark; $ keeps a formula.' : '$' + pend + ' and a space: a price if a word follows.';
+      hint.classList.toggle('wait', pend !== null);
+    };
+    // k: a key's name, or with data a character that came with no key
+    const priceKey = (k, inBox, data) => {
+      if (!k || o.closer) return false;
+      if (pend === null) {
+        if (k !== ' ') return false;
+        // (keys typed into the field whose input event is still to come)
+        if (this.pop && this.pop.pullField) this.pop.pullField();
+        if (!PRICE.test(ta.value)) return false;
+        pend = ta.value; word = ''; wait();
+        return true;
+      }
+      const ch = data ? k[0] : k.length === 1 ? k : null;
+      // (Shift, Caps Lock, an input method's Process and the like come before what they make)
+      if (!ch && !/^(Enter|Escape|Tab|Delete|Backspace|Arrow|Home|End|Page)/.test(k)) return false;
+      if (ch && /^\p{L}$/u.test(ch)) { word += ch; wait(); return true; }
+      if (k === 'Backspace') { if (word) word = word.slice(0, -1); else pend = null; wait(); return true; }
+      if (word && ch && /^[ .,;:!?)'"]$/.test(ch)) return makePrice(word + ch);
+      if (word && /^(Enter|Escape|Tab)$/.test(k)) return makePrice(word);
+      if (!word && k === ' ') return true;
+      // (anything else keeps the formula, the space and the word in it: in the box as typed, in the
+      // field the word alone, which sets no space)
+      const more = word ? ' ' + word : ch && ch !== '$' && inBox ? ' ' : '';
+      pend = null; word = ''; wait();
+      if (more) {
+        if (inBox) ta.setRangeText(more, ta.selectionStart, ta.selectionEnd, 'end');
+        else ta.value += more;
+        ta.dispatchEvent(new Event('input'));
+      }
+      return false;
+    };
+    // (X1) Backspace in an empty formula takes the formula away, as Word's does an equation's
+    const backKey = (k) => {
+      if (k !== 'Backspace') return false;
+      if (this.pop && this.pop.pullField) this.pop.pullField();
+      if (ta.value) return false;
+      push.cancel();
+      this.closePop();
+      return true;
+    };
+    // (W5) an input method's or a dead key's text after "$5 ": the price, with it as its word; it
+    // went into the formula, and the waiting space after it
+    p.addEventListener('compositionend', (e) => {
+      if (pend === null || !e.data || this.pop !== PM) return;
+      e.stopPropagation(); e.preventDefault();
+      makePrice(word + e.data);
+    }, true);
+    ta.addEventListener('beforeinput', (e) => {
+      // (W4) several characters with no key (dictation, a phone's suggestion bar) before the field
+      // is there: one at a time through the rules below, as keys, and once the box has closed the
+      // rest on the page; "5 each" went into the formula whole, the words lost
+      if (e.inputType === 'insertText' && !e.isComposing && e.data && [...e.data].length > 1) {
+        e.preventDefault();
+        const chars = [...e.data];
+        for (let i = 0; i < chars.length; i++) {
+          if (this.pop !== PM) { this.typeRest(chars.slice(i).join('')); return; }
+          const ch = chars[i];
+          if (emptyKey(ch) || priceKey(ch, true, true)) continue;
+          if (ch === '$' && !o.closer && dollarEnds(ta) && !stay()) { push.flush(); pairDone(); this.closePop(); continue; }
+          ta.setRangeText(ch, ta.selectionStart, ta.selectionEnd, 'end'); ta.dispatchEvent(new Event('input')); keys++;
+        }
+        return;
+      }
+      if (emptyKey(e.data) || priceKey(e.data, true, true)) { e.preventDefault(); return; }
+      // (the closing $ that comes with no key, from dictation, an on-screen keyboard or a script:
+      // it went into the formula, and what followed with it)
+      if (e.data === '$' && !o.closer && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); pairDone(); this.closePop(); return; }
+      keys++;
     });
     ta.addEventListener('input', () => { preview(); push(); });
     ta.addEventListener('keydown', (e) => {
+      // (a named key after a price's space: Backspace takes the space back; characters come by beforeinput)
+      if (pend !== null && e.key.length !== 1 && priceKey(e.key, true)) { e.preventDefault(); return; }
+      if (backKey(e.key)) { e.preventDefault(); return; }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
+      if (e.key === '$' && !o.closer && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); pairDone(); this.closePop(); }
+      if (o.closer && e.key === o.closer && /(^|[^\\])\\$/.test(ta.value.slice(0, ta.selectionStart))) {
+        e.preventDefault(); ta.setRangeText('', ta.selectionStart - 1, ta.selectionStart, 'end'); ta.dispatchEvent(new Event('input'));
+        if (stay()) return; push.flush(); this.closePop();
+      }
     });
     const whole = () => mathMadeWhole(ta.value, kerr(ta.value));
-    this.pop.onClose = () => { push.cancel(); if (!this.pop) return; const v = held(ta.value) ? whole() : ta.value; insert(v); this.eqClosed(this.pop, v); };
+    this.pop.onClose = () => {
+      push.cancel();
+      const P = this.pop;
+      if (!P) return;
+      let v = '';
+      // (closed as a price by its key: makePrice wrote it)
+      if (priced) { /* written */ }
+      // (closed by a click or the like with a word after "$5 ": the price, W6)
+      else if (pend !== null && word) {
+        const t = priceText(word);
+        pend = null; word = '';
+        if (ins) { this.commit([{ f: ins.f, s: ins.s, e: ins.e, t }], null, P.session); P.returnCaret = { f: ins.f, p: ins.s + t.length }; ins = null; }
+        else if (ghost) { this.ghost = ghost; this.ghostInsert(t); P.returnCaret = null; }
+        else { this.commit([{ f: base.f, s: base.a, e: base.b, t }], null, P.session); P.returnCaret = { f: base.f, p: base.a + t.length }; }
+        ta.value = '';
+      } else {
+        v = held(ta.value) ? whole() : ta.value;
+        if (!v) dropEmpty(); else insert(v);
+      }
+      // (the Equation tab's menus and the ribbon follow however the box closed: closed empty or as
+      // a price, the ribbon kept the Equation tab of a formula gone, and Insert's Equation button,
+      // agent.py's next step, stayed out of reach)
+      this.eqClosed(P, v);
+    };
     this.pop.refuse = () => !!held(ta.value) && !!held(whole());
     this.pop.mathText = () => ta.value;
     this.pop.returnCaret = base ? { f: base.f, p: base.a } : null;
@@ -3564,30 +4120,80 @@ class App {
       display: false, initial: '', keepFocus: true,
       env: () => '$',
       onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
+      // the closing $ of $x^2$ typed as in Overleaf ends the formula; in an empty one it stays a
+      // dollar sign (onKey, below)
+      onDollar: (check, typing) => { const ok = !!(ta.value || ins || typing); if (check || !ok) return ok; if (stay()) return; push.flush(); pairDone(); this.closePop(); },
       onMoveOut: (d, how) => { if (stay()) return; push.flush(); this.leaveMath(d, how); },
       onEscape: () => { push.flush(); this.closePop(); },
       onKey: (e) => {
-        if (e.key === '$' && !ta.value && !ins) {
-          e.preventDefault(); e.stopPropagation();
-          this.closePop(true);
-          if (ghost) { this.ghost = ghost; this.ghostInsert('\\$'); }
-          else this.commit([{ f: base.f, s: base.a, e: base.b, t: '\\$' }], { f: base.f, p: base.a + 2 }, 'type');
-        }
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (emptyKey(e.key) || priceKey(e.key, false) || backKey(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+        if (e.key.length === 1) keys++;
       }
     });
   }
 
-  // env: the Equation tab's Numbered on a new equation still empty makes it again of that kind
-  newDisplayMath(env = 'equation') {
+  // $$ then a letter or a backslash, as Overleaf's $$x^2$$: the \$ the second $ wrote is taken
+  // back with its step, as if never typed, and a display opens there with the key in its LaTeX
+  // box, where what follows is typed as in the source and $$ closes it. Anything else after $$
+  // (a digit, a space, a sign, Enter, Esc) keeps the dollar sign: a price, $$5, is \$5
+  dollarPairTakes(data) {
+    const P = this.dollarPair;
+    this.dollarPair = null;
+    if (!P || !/^[\p{L}\\]$/u.test(data || '')) return false;
+    const c = this.caretNow(), h = this.hist[this.hist.length - 1];
+    if (!c || c.ghost || !c.collapsed || c.f !== P.f || c.a !== P.p || this.hist.length !== P.n || h !== P.h || this.src(P.f).slice(P.p - 2, P.p) !== '\\$') return false;
+    this.hist.pop();
+    for (const d of h.files) { const s = this.files.get(d.f) ?? ''; this.files.set(d.f, s.slice(0, d.s) + d.del + s.slice(d.s + d.ins.length)); }
+    this.redoStack = P.redo0;
+    this.rebuild({ f: P.f, p: P.ghost ? P.ghost.pos : P.at });
+    this.pushToSource(); this.saveSoon(); this.updateUndoUI();
+    if (P.ghost) this.ghostAt(P.f, P.ghost.pos, P.ghost.style);
+    this.newDisplayMath('\\[', { inLine: true });
+    // (where a display cannot go, a command's argument or a table cell set in a line, a formula in
+    // the line opens instead, its closing $$ taken as one: the key was lost there and the second $
+    // written as \$; V2, V3)
+    const pop = this.pop, ta = pop && pop.el.querySelector('#pop-tex, #pop-newtex');
+    if (!pop || !ta) {
+      // (no formula opened at all: the dollar sign and the key are written as typed)
+      const c2 = this.caretNow(), t = '\\$' + escapeTeX(data, '$');
+      if (c2 && !c2.ghost) this.commit([{ f: c2.f, s: c2.a, e: c2.b, t }], { f: c2.f, p: c2.a + t.length }, 'type');
+      return true;
+    }
+    if (ta.id === 'pop-newtex') pop.pairInline = true;
+    else pop.dollarClose = true;
+    ta.value = data;
+    ta.dispatchEvent(new Event('input'));
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    return true;
+  }
+
+  // env: the Equation tab's Numbered on a new equation still empty makes it again of that kind;
+  // o.inLine: typed as $$ in a line of text, whose words go on after \] (dollarPairTakes)
+  newDisplayMath(env = 'equation', o = {}) {
     let c = this.caretNow();
     if (!c) return;
     // (not in a LaTeX paragraph or a line to come in one: an equation there is typed as its source)
     if (c.ghost ? this.ghostRaw() : this.texHere()) return;
     // in the blank paragraph of a new document too (the ribbon's Equation is pressed there)
     if (c.ghost) { c = { f: this.ghost.f, a: this.ghost.pos }; this.removeGhost(); }
+    else {
+      // never inside a command's argument (a document got \section{The exact PDF\n\begin{equation}…}):
+      // a heading's goes after the heading and its label; in a caption, a footnote or another
+      // command's braces a formula in the line is made instead
+      const B = this.blockBase({ f: c.f, a: c.a, b: c.a }, true);
+      // (nor in a table cell set in a line, l, c or r, where TeX stops at a display: LR mode)
+      if (B === false || this.lineCellAt(c.f, c.a)) { this.newMath(); return; }
+      if (B && B.a !== c.a) { c = { f: c.f, a: B.a }; this.restoreCaret({ f: c.f, p: c.a }, true); }
+    }
     // (a file written with CRLF keeps them; a kind of amsmath's brings it, in the same step)
     const nl = eolAt(this.src(c.f), c.a);
-    const t = (env === '\\[' ? nl + '\\[' + nl + '  ' + nl + '\\]' : nl + '\\begin{' + env + '}' + nl + '  ' + nl + '\\end{' + env + '}') + nl;
+    // (a line break before and after it only where none is: one after it, before the blank line
+    // that was there, made two blank lines)
+    // (typed as $$ in the middle of a line, none after it: the words typed after the closing $$
+    // went between \] and that line break, which printed a space before the rest, "end ."; V4)
+    const S0 = this.src(c.f), lineEnds = /^[ \t]*(\r?\n|$)/.test(S0.slice(c.a)), lead = /\n[ \t]*$/.test(S0.slice(0, c.a)) ? '' : nl, tail = /^[ \t]*\r?\n/.test(S0.slice(c.a)) || o.inLine ? '' : nl;
+    const t = lead + (env === '\\[' ? '\\[' + nl + '  ' + nl + '\\]' : '\\begin{' + env + '}' + nl + '  ' + nl + '\\end{' + env + '}') + tail;
     const pk = this.eqKindPkgs(env);
     // (the history as it is before the equation: given up empty, it goes back to this)
     this.closeGroup();
@@ -3595,13 +4201,15 @@ class App {
     const a0 = c.a;
     c = { f: c.f, a: c.a + pk.filter((x) => x.f === c.f && x.e <= c.a).reduce((n, x) => n + x.t.length - (x.e - x.s), 0) };
     this.commit([{ f: c.f, s: a0, e: a0, t }, ...pk], { f: c.f, p: c.a + t.length }, 'insert');
-    const el = this.findAtomEl({ f: c.f, s: c.a + nl.length, kind: 'math' });
+    const el = this.findAtomEl({ f: c.f, s: c.a + lead.length, kind: 'math' });
     if (el) { const info = atomOfEl(el); if (info) { this.openMath(el, info); this.eqTab(); } }
     // closed with nothing typed, the equation goes again: it stayed as an empty environment,
     // which prints a number beside nothing
     const P = this.pop;
     if (!P || !P.onClose) return;
     P.eqNew = true;
+    // (closed by Esc or a click too, the caret stays in the line, after \], as after its $$)
+    if (o.inLine && !lineEnds) P.midLine = true;
     const done = P.onClose;
     P.onClose = () => {
       done();
@@ -3616,6 +4224,7 @@ class App {
         this.pushToSource(); this.saveSoon(); this.updateUndoUI();
       } else this.commit([{ f: c.f, s: c.a, e: c.a + t.length, t: '' }], null, P.session);
       P.returnCaret = { f: c.f, p: c.a };
+      P.removed = true;
     };
   }
 
@@ -3769,7 +4378,8 @@ class App {
       }
     };
     search.addEventListener('input', draw);
-    search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const b = list.querySelector('.pitem'); if (b) b.click(); } if (e.key === 'Escape') this.closePop(); });
+    // (Enter cites the highlighted work and closes; Ctrl+Enter cites it and stays for another)
+    this.pickerKeys(search, list, true);
     draw();
     this.positionPop();
     search.focus();
@@ -3784,6 +4394,53 @@ class App {
     if (O.biblatex && !O.biblatexNatbib && !O.natbib) return ay ? [['parencite', '(Author, Year)'], ['textcite', 'Author (Year)'], ['cite', 'Author Year'], ['citeauthor', 'Author'], ['citeyear', 'Year']] : [['cite', '[1]'], ['textcite', 'Author [1]'], ['citeauthor', 'Author']];
     if (O.natbib || O.biblatex) return ay ? [['citep', '(Author, Year)'], ['citet', 'Author (Year)'], ['citealt', 'Author Year'], ['citealp', 'Author, Year'], ['citeauthor', 'Author'], ['citeyear', 'Year'], ['cite', '\\cite']] : [['cite', '[1]'], ['citep', '[1] (natbib)'], ['citet', 'Author [1]'], ['citeauthor', 'Author']];
     return [['cite', '[1]']];
+  }
+
+  // A picker's list by the keys, as a completion list is (POWER-USER.md 7): Up and Down move the
+  // highlight, Enter takes it and closes the picker with the caret after what it wrote (Ctrl+Enter,
+  // where more can be taken, takes it and stays), Esc closes. It went on taking the first item
+  // and staying open, so the next words went into its search box.
+  pickerKeys(input, list, more) {
+    const items = () => [...list.querySelectorAll('.pitem')];
+    // (a combobox with its listbox, as the search box is, and a polite count: arrowing through the
+    // list said nothing to a screen reader; review M5)
+    list.id = list.id || 'pk-list';
+    list.setAttribute('role', 'listbox');
+    list.setAttribute('aria-label', input.getAttribute('aria-label') || 'Choices');
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-controls', list.id);
+    input.setAttribute('aria-expanded', 'true');
+    input.setAttribute('aria-autocomplete', 'list');
+    const live = document.createElement('div');
+    live.className = 'sr'; live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite');
+    list.after(live);
+    const mark = (i) => {
+      const all = items();
+      all.forEach((b, k) => { b.classList.toggle('on', k === i); b.id = 'pk-' + k; b.setAttribute('role', 'option'); b.setAttribute('aria-selected', k === i ? 'true' : 'false'); b.tabIndex = -1; });
+      if (all[i]) { all[i].scrollIntoView({ block: 'nearest' }); input.setAttribute('aria-activedescendant', all[i].id); } else input.removeAttribute('aria-activedescendant');
+    };
+    const count = () => { const n = items().length; live.textContent = n === 1 ? '1 match' : n + ' matches'; };
+    input.addEventListener('input', () => { mark(0); count(); });
+    input.addEventListener('keydown', (e) => {
+      const all = items(), i = all.findIndex((b) => b.classList.contains('on'));
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (all.length) mark(e.key === 'ArrowDown' ? (i + 1) % all.length : (i <= 0 ? all.length - 1 : i - 1));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const b = all[Math.max(0, i)];
+        if (b) b.click();
+        if (more && (e.ctrlKey || e.metaKey)) { input.focus(); mark(0); } else this.closePop();
+      } else if (e.key === 'Escape') { e.preventDefault(); this.closePop(); }
+    });
+    // (the place the list starts with: the label the reference points to now, or the first)
+    requestAnimationFrame(() => { const all = items(); const i = all.findIndex((b) => b.classList.contains('on')); mark(Math.max(0, i)); });
+  }
+  // where each \label is: key -> { f, p } (the first of a key, as LaTeX takes it)
+  labelPlaces() {
+    const out = new Map();
+    for (const [f, t] of this.files) if (/\.tex$/i.test(f)) for (const x of labelsIn(t)) if (!out.has(x.key)) out.set(x.key, { f, p: x.p });
+    return out;
   }
 
   openRef(el, info) {
@@ -3807,20 +4464,25 @@ class App {
     const search = document.createElement('input'); search.type = 'search'; search.placeholder = 'Filter labels'; search.id = 'pop-refsearch'; search.setAttribute('aria-label', 'Filter labels');
     const list = document.createElement('div'); list.className = 'plist';
     p.append(top, search, list);
-    const labels = [...this.model.labels.entries()].map(([k, v]) => ({ key: k, num: v.num, kind: v.kind }));
+    const at = this.labelPlaces();
+    const labels = [...this.model.labels.entries()].map(([k, v]) => ({ key: k, num: v.num, kind: v.kind, pv: at.has(k) ? labelPreview(this.src(at.get(k).f), at.get(k).p, v.kind) : { text: '' } }));
     const draw = () => {
       const q = search.value.trim().toLowerCase();
       list.replaceChildren();
-      for (const L of labels.filter((x) => !q || (x.key + ' ' + x.kind + ' ' + x.num).toLowerCase().includes(q))) {
+      for (const L of labels.filter((x) => !q || (x.key + ' ' + x.kind + ' ' + x.num + ' ' + (x.pv.text || x.pv.math || '')).toLowerCase().includes(q))) {
         const b = document.createElement('button'); b.type = 'button'; b.className = 'pitem' + (L.key === key ? ' on' : '');
         b.innerHTML = '<b>' + esc(L.kind.charAt(0).toUpperCase() + L.kind.slice(1)) + ' ' + esc(L.num || '') + '</b><span>' + esc(L.key) + '</span>';
+        // what it names: the heading's words, the equation drawn, the caption (Word's list shows them)
+        const pv = document.createElement('span'); pv.className = 'pv-l';
+        if (L.pv.math) { const r = this.renderer.katex(L.pv.math, false); if (r.err) pv.textContent = L.pv.math; else pv.innerHTML = r.html; } else pv.textContent = L.pv.text;
+        if (pv.textContent) b.appendChild(pv);
         b.addEventListener('click', () => { key = L.key; if (L.kind === 'equation' && cmd === 'ref') cmd = 'eqref'; cs.value = cmd; write(); });
         list.appendChild(b);
       }
       if (!labels.length) { const n = document.createElement('div'); n.className = 'empty'; n.textContent = 'No labels yet. Add \\label{...} after a section, equation or figure.'; list.appendChild(n); }
     };
     search.addEventListener('input', draw);
-    search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const b = list.querySelector('.pitem'); if (b) b.click(); } });
+    this.pickerKeys(search, list, false);
     draw();
     this.positionPop();
     search.focus();
@@ -3845,10 +4507,96 @@ class App {
     const inner = base.a !== base.b && isBalanced(src, base.a, base.b) ? src.slice(base.a, base.b) : '';
     this.commit([{ f: base.f, s: base.a, e: inner ? base.b : base.a, t: open + inner + close }], { f: base.f, p: base.a + open.length + inner.length, bias: 1 }, 'insert');
   }
-  runPalette(x, base, ghost) {
+  // Where a block (a figure, an environment, a list) typed from the insert list goes (review M2):
+  // base as it is; after the heading it was typed in, and the heading's \label; inside another
+  // command's argument (a caption, the title, a footnote), where it broke the command, nowhere
+  // (false), said why. A bare group, {\bf ...}, takes it as the paragraph would.
+  // A table cell that sets its words in a line (an l, c or r column, not p, m or X): a display
+  // there stops TeX (LR mode), so a formula in the line is made instead (V3)
+  lineCellAt(f, p) {
+    const T = tableAt(this.src(f), p);
+    const at = T && tableCellAt(T, p);
+    if (!at) return false;
+    return colAlign(T.spec.cols[at.cell.col]) !== 'p';
+  }
+  blockBase(base, quiet) {
+    if (!base) return base;
+    const src = this.src(base.f), B = this.renderer && this.renderer.blocks.find((x) => x.f === base.f && x.s <= base.a && base.a <= x.e);
+    if (!B) return base;
+    // the braces open at the caret, from the block's start
+    const opens = [];
+    for (let k = B.s; k < base.a; k++) {
+      const ch = src[k];
+      if (ch === '\\') { k++; continue; }
+      if (ch === '{') opens.push(k); else if (ch === '}') opens.pop();
+    }
+    if (!opens.length) return base;
+    const open = opens[0];
+    // (the command's earlier arguments before it: \href{url}{text}, \parbox{4cm}{…},
+    // \colorbox{red}{…}; read past, the text was taken for a bare group and got a display; W1)
+    const m = /\\([A-Za-z]+)\*?\s*(?:\[[^\]]*\]\s*|\{[^{}]*\})*$/.exec(src.slice(Math.max(B.s, open - 400), open));
+    const name = m ? m[1] : '';
+    if (!name) return base;
+    if (/^(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)$/.test(name)) {
+      const lab = /^\s*\\label\s*\{[^}]*\}/.exec(src.slice(B.e));
+      const p = B.e + (lab ? lab[0].length : 0);
+      return { f: base.f, a: p, b: p };
+    }
+    if (!quiet) this.toast('Not inside \\' + name + '{…}: put the caret after it, then the block.', 5000);
+    return false;
+  }
+  // What was typed in the insert list as a command of its own (POWER-USER.md 10): it was written
+  // as typed, \alpha and \frac into the text, where TeX stops (Missing $ inserted). A math
+  // command opens a formula holding it; \begin{name} writes the environment; others as typed.
+  runPaletteRaw(k, base, ghost) {
+    const env = /^begin\s*\{?\s*([A-Za-z]+\*?)?\s*\}?$/.exec(k);
+    if (env && env[1]) { base = this.blockBase(base); if (base === false) return; }
     const insertAt = (open, close) => this.insertPiece(base, ghost, open, close);
-    if (x.act === 'math') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.newMath(); return; }
-    if (x.act === 'equation') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.newDisplayMath(); return; }
+    const back = () => { if (base) this.restoreCaret({ f: base.f, p: base.a }); else if (ghost && this.ghost === ghost && ghost.el.isConnected) this.caretToGhost(); };
+    if (env && !env[1]) { back(); this.runCommand('insert-env-other'); return; }
+    if (env) {
+      const name = env[1];
+      if (/^(equation|align|gather|multline|flalign)\*?$/.test(name)) { back(); this.newDisplayMath(name); return; }
+      // (a list with its first item, a table with a column for each & of its first row: empty they
+      // stopped TeX, missing \item, a tabular with no columns)
+      const inner = /^(itemize|enumerate)$/.test(name) ? ['  \\item ', ''] : name === 'description' ? ['  \\item[', '] '] : /^(tabular|array)$/.test(name) ? ['{ll}\n  ', ' & \\\\'] : ['', ''];
+      insertAt('\n\n\\begin{' + name + '}' + (inner[0][0] === '{' ? '' : '\n') + inner[0], inner[1] + '\n\\end{' + name + '}\n\n');
+      return;
+    }
+    if (mathOnly(k)) {
+      back();
+      this.newMath();
+      const ta = this.pop && this.pop.el.querySelector('#pop-newtex');
+      if (ta) { ta.value = '\\' + k + ' '; ta.dispatchEvent(new Event('input')); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+      return;
+    }
+    insertAt('\\' + k + (/[A-Za-z]$/.test(k) ? ' ' : ''), '');
+  }
+  // insertPiece with edits of the preamble in the same step (a \newtheorem); the caret's place
+  // moved by them
+  insertPieceWith(base, ghost, open, close, needs) {
+    const f = ghost ? ghost.f : base.f, at = ghost ? ghost.pos : base.a;
+    const grow = needs.filter((x) => x.f === f && x.e <= at).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
+    if (ghost) {
+      this.ghost = ghost;
+      const src = this.src(ghost.f);
+      let nlB = 0; for (let k = ghost.pos - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
+      const pre = '\n'.repeat(Math.max(0, 2 - nlB)), o = open.replace(/^\n+/, '');
+      this.removeGhost();
+      this.commit([...needs, { f, s: at, e: at, t: pre + o + close }], { f, p: at + grow + pre.length + o.length, bias: 1 }, 'insert');
+      return;
+    }
+    const src = this.src(f);
+    const inner = base.a !== base.b && isBalanced(src, base.a, base.b) ? src.slice(base.a, base.b) : '';
+    this.commit([...needs, { f, s: base.a, e: inner ? base.b : base.a, t: open + inner + close }], { f, p: base.a + grow + open.length + inner.length, bias: 1 }, 'insert');
+  }
+  runPalette(x, base, ghost) {
+    if (x.block && !x.raw) { base = this.blockBase(base); if (base === false) return; }
+    const insertAt = (open, close) => this.insertPiece(base, ghost, open, close);
+    // (the caret back where the list was opened: in the blank paragraph, or at its place in the text)
+    const back = () => { if (base) this.restoreCaret({ f: base.f, p: base.a }); else if (ghost && this.ghost === ghost && ghost.el.isConnected) this.caretToGhost(); };
+    if (x.act === 'math') { back(); this.newMath(); return; }
+    if (x.act === 'equation') { back(); this.newDisplayMath(x.env || 'equation'); if (x.tex) this.eqInsert(x.tex); return; }
     if (x.act === 'cite' || x.act === 'ref' || x.act === 'eqref') {
       const cmd = x.act === 'cite' ? this.citeChoices()[0][0] : x.act;
       const t = '\\' + cmd + '{}';
@@ -3860,8 +4608,12 @@ class App {
     }
     // an item that is a command of the registry run as its button runs it (Interactive graph)
     if (x.act === 'cmd') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.runCommand(x.id); return; }
-    if (x.raw) { insertAt('\\' + x.k + (/[A-Za-z]$/.test(x.k) ? ' ' : ''), ''); return; }
-    insertAt(x.t.open, x.t.close);
+    if (x.raw) return this.runPaletteRaw(x.k, base, ghost);
+    const t = typeof x.t === 'function' ? x.t(this) : x.t;
+    // (a theorem like environment brings its \newtheorem, proof amsthm, where the preamble has none)
+    const needs = x.needs ? x.needs(this) : [];
+    if (needs.length) return this.insertPieceWith(base, ghost, t.open, t.close, needs);
+    insertAt(t.open, t.close);
   }
 
   openPalette() {
@@ -3884,9 +4636,14 @@ class App {
     let hi = 0;
     let shown = items;
     const draw = () => {
-      const q = inp.value.replace(/^\\/, '').trim().toLowerCase();
-      shown = items.filter((x) => !q || x.k.startsWith(q) || x.d.toLowerCase().includes(q));
-      if (q && !shown.some((x) => x.k === q)) shown = [...shown, { k: q, d: 'Insert \\' + q + ' as typed', raw: true }];
+      // (a raw command keeps its case, \O and \Gamma; one letter matches names only, as \o Enter
+      // wrote \footnote{} where "Footnote" holds an o; review L5)
+      const typed = inp.value.replace(/^\\/, '').trim(), q = typed.toLowerCase();
+      // (a name typed whole first, then names it starts, then descriptions: "equation" Enter took
+      // \eqref, whose description, Equation reference, comes earlier in the list)
+      const rank = (x) => (!q ? 1 : x.k === q ? 0 : x.k.startsWith(q) ? 1 : 2);
+      shown = items.filter((x) => !q || x.k.startsWith(q) || (q.length > 1 && x.d.toLowerCase().includes(q))).sort((a, b) => rank(a) - rank(b));
+      if (q && !shown.some((x) => x.k === typed)) shown = [...shown, { k: typed, d: 'Insert \\' + typed + ' as typed', raw: true }];
       hi = Math.min(hi, shown.length - 1);
       list.replaceChildren();
       shown.slice(0, 12).forEach((x, i) => {
@@ -3897,12 +4654,27 @@ class App {
       });
     };
     const run = (x) => { this.closePop(true); this.runPalette(x, base, ghost); };
-    inp.addEventListener('input', () => { hi = 0; draw(); });
+    const back = () => { if (base) this.restoreCaret({ f: base.f, p: base.a }); else if (ghost && this.ghost === ghost && ghost.el.isConnected) this.caretToGhost(); };
+    inp.addEventListener('input', () => {
+      // a sign right after the backslash, as typed in the source (review M6): \( and \[ open a
+      // formula ended by \) and \]; \$ \% \& \# \_ \{ \} are the sign itself
+      const v = inp.value;
+      if (v.length === 1 && /[([$%&#_{}]/.test(v)) {
+        this.closePop(true);
+        if (v === '(') { back(); this.newMath({ open: '\\(', close: '\\)', closer: ')' }); return; }
+        if (v === '[') { back(); this.newDisplayMath('\\['); if (this.pop) this.pop.closer = ']'; return; }
+        this.insertPiece(base, ghost, '\\' + v, '');
+        return;
+      }
+      hi = 0; draw();
+    });
     inp.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowDown') { e.preventDefault(); hi = Math.min(shown.length - 1, hi + 1); draw(); }
       if (e.key === 'ArrowUp') { e.preventDefault(); hi = Math.max(0, hi - 1); draw(); }
       if (e.key === 'Enter') { e.preventDefault(); if (shown[hi]) run(shown[hi]); }
-      if (e.key === 'Escape') { e.preventDefault(); this.closePop(); }
+      // (Esc keeps what was typed, as the text it is: it went, and the keys after it with it; not
+      // as a command, \sec in prose being an error TeX stops at, review of M6)
+      if (e.key === 'Escape') { e.preventDefault(); const v = inp.value; this.closePop(true); if (v) this.insertPiece(base, ghost, escapeTeX('\\' + v, base ? this.src(base.f)[base.a - 1] || ' ' : ' '), ''); else back(); }
       if (e.key === 'Backspace' && !inp.value) { e.preventDefault(); this.closePop(); }
     });
     draw();
@@ -5894,7 +6666,7 @@ class App {
         <dt>${mod}+Shift+O</dt><dd>Outline, problems (undefined references, missing citations, unclosed environments) and changes</dd>
         <dt>${mod}+F, ${mod}+H, ${mod}+G</dt><dd>On the page: Find (in the Navigation pane), Replace, Go To. What is found is the text the page shows, never a command or math; elsewhere ${mod}+F is the browser's own find</dd>
         <dt>Alt+Shift+arrows, ${mod}+Alt+O</dt><dd>Promote or demote a heading with those under it; move a paragraph, an item, or a heading's whole section up or down; the Outline view</dd>
-        <dt>Esc, then Tab</dt><dd>Leave the source pane, where Tab indents</dd>
+        <dt>Esc, then Tab</dt><dd>Leave the page or the source pane, where Tab indents</dd>
         <dt>${mod}+P</dt><dd>Print: the PDF as TeX makes it, shown beside the page, then the browser's print dialog</dd>
         <dt>Preview</dt><dd>Compiles with TeX Live 2026, running in this browser, and shows the exact PDF: pdfLaTeX, XeLaTeX or LuaLaTeX (Auto reads a <code>% !TeX program</code> line or the preamble). Shell escape runs Ghostscript, gnuplot, Pygments for minted and makeindex here too. It recompiles after each edit; TeX's errors appear under Problems with their line; click the PDF to find that text, click the page to find it in the PDF</dd>
       </dl>
@@ -6055,7 +6827,8 @@ function stripTop(n) { const i = n.indexOf('/'); return i > 0 && n.split('/').le
 // source goes through the edit path typing takes (one undo takes it back), a compile is the
 // one Download PDF runs, and a copy someone shared is read here but not changed.
 function agentApi(app) {
-  const flush = () => { if (app.srcRebuild.pending()) app.srcRebuild.flush(); };
+  // (what the source pane and the typing queue hold, written first: an agent reads it all)
+  const flush = () => { app.typeFlush(); if (app.srcRebuild.pending()) app.srcRebuild.flush(); };
   const mine = (what) => {
     if (document.body.classList.contains('guest')) throw new Error('rikuy.api.' + what + '() changes the document, and this one is open in guest view (a copy someone shared): a script can read it, not change it. getSource(), getFiles(), needs() and compile() work here.');
   };

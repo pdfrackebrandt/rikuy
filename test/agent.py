@@ -60,7 +60,7 @@ DOC = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\\se
        'Second paragraph here.\n\n\\subsection{Details}\nThird paragraph here.\n\\end{document}\n')
 ZH = '\\documentclass{article}\n\\begin{document}\n\u4e2d\u6587\u6bb5\u843d\u3002\n\\end{document}\n'
 PNG = ('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360f8cf00000301010018dd8db00000000049454e44ae426082')
-HOW = 'The typeset page. Click a paragraph and type; edits change the LaTeX source.'
+HOW = 'The typeset page. Click a paragraph and type; edits change the LaTeX source. Tab indents; Escape, then Tab, leaves.'
 # every control, from the command registry: the build writes dist/controls.json
 CONTROLS = json.load(open(os.path.join(DIST, 'controls.json'), encoding='utf8'))['controls']
 # the controls of the bar, the status line, the downloads and the tab Home (open at start), by the
@@ -570,7 +570,7 @@ def audit(page, cdp, width):
     close_all(page)
     c = page.get_by_role('dialog', name='Citation', exact=True)
     first(); button('Citation').click(); c.wait_for(timeout=8000)
-    check('the citation dialog\'s fields have names: style, search, text before and after' + w, c.get_by_role('combobox', name='Citation style', exact=True).count() == 1 and c.get_by_role('searchbox', name='Search the bibliography', exact=True).count() == 1
+    check('the citation dialog\'s fields have names: style, search, text before and after' + w, c.get_by_role('combobox', name='Citation style', exact=True).count() == 1 and c.get_by_role('combobox', name='Search the bibliography', exact=True).count() == 1
           and c.get_by_label('Text before the citation', exact=True).count() == 1 and c.get_by_label('Text after the citation', exact=True).count() == 1)
     close_all(page)
     page.evaluate('rikuy.undo()')

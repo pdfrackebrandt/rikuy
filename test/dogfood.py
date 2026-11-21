@@ -378,9 +378,10 @@ def review(page):
     def cite(*keys):
         k.type('\\'); page.wait_for_timeout(200); k.type('cite', delay=20); page.wait_for_timeout(300); k.press('Enter')
         page.wait_for_selector('#pop-citesearch', timeout=5000); page.wait_for_timeout(200)
-        for q in keys:
-            k.type(q); page.wait_for_timeout(200); k.press('Enter'); page.wait_for_timeout(400)
-        k.press('Escape'); page.wait_for_timeout(300)
+        # (power-keys, POWER-USER.md 7: Enter cites and closes, Ctrl+Enter cites and stays for another)
+        for i, q in enumerate(keys):
+            k.type(q); page.wait_for_timeout(200); k.press('Enter' if i == len(keys) - 1 else 'Control+Enter'); page.wait_for_timeout(400)
+        if page.evaluate('!!window.rikuy.pop'): k.press('Escape'); page.wait_for_timeout(300)
     # E1: the main file in a folder: the .bib named from that folder, where TeX runs
     load_doc(page, {'paper/main.tex': DOC, 'paper/refs.bib': A}, main='paper/main.tex')
     click_text(page, 'Agent income here.', 18); k.type(' See ')

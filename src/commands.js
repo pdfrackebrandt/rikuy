@@ -139,11 +139,18 @@ export function menuItems(contexts) {
 
 // ---- the search box --------------------------------------------------------------------
 // Commands by name, synonym, insert list name and tab: the best first. Words typed in any
-// order; a word may be the start of a word of the name ("bul" finds Bulleted list).
-const fold = (s) => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9+]+/g, ' ').trim();
+// order; a word may be the start of a word of the name ("bul" finds Bulleted list). Less good,
+// as a command palette takes them (POWER-USER.md 9): a word's letters in order from its first
+// ("tbl" Table, "insrt" Insert, "eqn" Equation), the initials of the name's words ("toc" Table of
+// Contents), a digit joined to a word ("heading2"). o.recent: the ids of the commands run last,
+// newest first, which go before others of about as good a match.
+const fold = (s) => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9+]+/g, ' ').replace(/([a-z])([0-9])/g, '$1 $2').trim();
+// w's letters in order in p, from p's first letter
+const inOrder = (w, p) => { if (w.length < 2 || p[0] !== w[0]) return false; let k = 0; for (const ch of p) if (ch === w[k] && ++k === w.length) return true; return false; };
 export function search(q, o = {}) {
   const words = fold(q).split(' ').filter(Boolean).slice(0, 8);
   if (!words.length) return [];
+  const recent = o.recent || [];
   const out = [];
   for (const c of REG.values()) {
     if (c.searchable === false || !c.run) continue;
@@ -151,13 +158,21 @@ export function search(q, o = {}) {
     let best = 0;
     for (const [i, n] of names.entries()) {
       const f = fold(n), parts = f.split(' ');
+      const own = i === 0 ? 5 : 0;
       // (the start of a word only: "bul" is no part of "tabular")
-      if (!words.every((w) => parts.some((p) => p.startsWith(w)))) continue;
-      // the name itself before a synonym; a whole match before a start; fewer words before more
-      const whole = f === words.join(' ') ? 4 : parts[0].startsWith(words[0]) ? 2 : 1;
-      best = Math.max(best, whole * 10 + (i === 0 ? 5 : 0) - Math.min(4, parts.length - words.length));
+      if (words.every((w) => parts.some((p) => p.startsWith(w)))) {
+        // the name itself before a synonym; a whole match before a start; fewer words before more
+        const whole = f === words.join(' ') ? 4 : parts[0].startsWith(words[0]) ? 2 : 1;
+        best = Math.max(best, whole * 10 + own - Math.min(4, parts.length - words.length));
+        continue;
+      }
+      // the initials of the name's words, from its first ("toc", "tc" Track Changes)
+      if (words.length === 1 && words[0].length >= 2 && parts.length >= words[0].length && parts.map((p) => p[0]).join('').startsWith(words[0])) { best = Math.max(best, 8 + own); continue; }
+      if (words.every((w) => parts.some((p) => p.startsWith(w) || inOrder(w, p)))) best = Math.max(best, 4 + own - Math.min(3, parts.length - words.length));
     }
-    if (best) out.push({ c, score: best });
+    if (!best) continue;
+    const r = recent.indexOf(c.id);
+    out.push({ c, score: best + (r >= 0 ? 8 - Math.min(4, r) / 2 : 0) });
   }
   return out.sort((a, b) => b.score - a.score || a.c.order - b.c.order).slice(0, o.max || 12).map((x) => x.c);
 }
