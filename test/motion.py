@@ -227,14 +227,18 @@ def caret(page):
     # (the glide steps aside where keys take over 40 ms to show; a loaded test machine can be that
     # slow on any page, so the limit is set apart here, and its own rule checked below)
     ev(page, 'window.rikuy.caret.slow = 1e9')
-    n = mark(page)
-    page.keyboard.type('ab'); r = since(page, n, 300)
+    n = mark(page); s0 = ev(page, '({ ...window.rikuy.caret.stats })')
+    page.keyboard.type('ab'); r = since(page, n, 300); s1 = ev(page, '({ ...window.rikuy.caret.stats })')
     b = caret_box(page)
     tr = [x for x in r if x['id'] == 'transition:transform' and 'rk-caret' in x['cls']]
-    check('the animated caret glides as a character is typed: a transform transition of 100 ms, easing both ways', tr and all(x['duration'] == 100 and x['easing'].replace(' ', '') == T['standard'].replace(' ', '') for x in tr), r)
+    check('as a character is typed the caret moves at once, no glide (a glide cost each key a frame of Event Timing on dev/bench/sample)', not tr and s1['typed'] >= s0['typed'] + 2, (r, s0, s1))
     check('and stands where the browser\'s caret would (the range\'s own rect, within a pixel)', b and not b['hidden'] and abs(b['x'] - b['rx']) <= 1 and abs(b['y'] - b['ry']) <= 1 and abs(b['h'] - b['rh']) <= 1, b)
     check('the browser\'s own caret is transparent meanwhile, not twice drawn', b and b['mode'] == 'custom' and b['cc'] in ('rgba(0, 0, 0, 0)', 'transparent'), b)
-    page.keyboard.press('ArrowRight'); page.keyboard.press('ArrowRight'); page.wait_for_timeout(250)
+    page.wait_for_timeout(300)
+    n = mark(page)
+    page.keyboard.press('ArrowRight'); page.keyboard.press('ArrowRight'); r = since(page, n, 250)
+    tr = [x for x in r if x['id'] == 'transition:transform' and 'rk-caret' in x['cls']]
+    check('a key that moves it glides it: a transform transition of 100 ms, easing both ways', tr and all(x['duration'] == 100 and x['easing'].replace(' ', '') == T['standard'].replace(' ', '') for x in tr), r)
     b2 = caret_box(page)
     check('the arrow keys move it, and it lands on the new place', b2 and b2['x'] > b['x'] and abs(b2['x'] - b2['rx']) <= 1, (b, b2))
     flips = ev(page, '''() => new Promise((done) => { const c = document.querySelector('.rk-caret'), t = []; const o = new MutationObserver(() => t.push([performance.now(), c.style.opacity]));
@@ -319,13 +323,14 @@ def aim(page):
     for b in btns:
         page.click('#rt-home'); page.wait_for_timeout(300)
         page.click('#rt-insert', no_wait_after=True); page.wait_for_timeout(40)
-        ran += ev(page, "document.getAnimations().filter((a) => a.id === 'rk-tab' && a.playState === 'running').length")
+        # (the slide held at its start, 8 px off, as a slow frame leaves it: the worst a press meets)
+        ran += ev(page, "(() => { const a = document.getAnimations().filter((a) => a.id === 'rk-tab' && a.playState === 'running'); for (const x of a) { x.pause(); x.currentTime = 0; } return a.length; })()")
         ev(page, 'window.__clicks = []; window.__hold = true')
-        page.mouse.click(b['x'] + b['w'] * 0.2, b['y'] + b['h'] / 2)
+        page.mouse.click(b['x'] + min(b['w'] * 0.2, 5), b['y'] + b['h'] / 2)
         page.wait_for_timeout(200)
         got = ev(page, 'window.__clicks'); ev(page, 'window.__hold = false')
         hits.append((b['id'], got[-1] if got else None))
-    check('a button pressed 40 ms after its tab, at the left fifth of where it ends up, while the tab slides in: the press lands on it, 8 of 8 (review L4)', ran >= 6 and len(hits) == 8 and all(a == g for a, g in hits), (ran, hits))
+    check('a button pressed while its tab slides in, held 8 px off, 5 px inside where it ends up: the press lands on it, 8 of 8 (review L4)', ran >= 6 and len(hits) == 8 and all(a == g for a, g in hits), (ran, hits))
     page.click('#rt-home'); page.wait_for_timeout(300)
 
 
