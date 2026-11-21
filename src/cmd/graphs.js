@@ -9,7 +9,7 @@ import { webPage, sourceFiles, stripComments } from '../webpage.js';
 import { dialog } from '../ui/kit.js';
 import { mk } from '../ui/dom.js';
 import { packShare } from '../share.js';
-import { readGraph, graphCanvas } from '../graph.js';
+import { readGraph, graphCanvas, graphShort } from '../graph.js';
 
 const ICON = '<path d="M3 16.5h14M3.5 16V3.5"/><path d="M5 14c2.5-1 4-4 5.5-7.5S14 4 16 4"/><path d="M12.5 13.5l2.2-2.2m0 0 2.2-2.2m-2.2 2.2-2.2-2.2m2.2 2.2 2.2 2.2" stroke-width="1.3"/>';
 const NONE = 'Right click an equation, or put the caret in a paragraph with one';
@@ -89,7 +89,7 @@ export const methods = {
         try {
           const files = sourceFiles(this.files, this.main).map((n) => [n, this.files.get(n)]).filter(([, t]) => t.length < 2e6)
             .map(([n, t]) => [n, !args.comments && /\.(tex|ltx|sty|cls)$/i.test(n) ? stripComments(t, n) : t]);
-          const u = this.shareBase() + '#share=' + await packShare({ v: 1, name: this.name || this.main, main: this.main, files });
+          const u = this.shareBase() + '#share=' + await packShare({ v: 1, name: this.name || this.main, main: this.main, files }, graphShort);
           // (an address past about 2 MB is one no browser opens)
           if (u.length < 1.9e6) openUrl = u;
         } catch (e) { /* no link */ }

@@ -294,7 +294,9 @@ let a coauthor who does not know LaTeX edit a paper.
    {"v":1,"name":"My paper","main":"main.tex","files":[["main.tex","\\\\documentclass{article}..."]],"by":"Your name"}
 
    "files" is a list of [name, text] pairs and must hold "main". Text files only: pictures and
-   other binary files need the .zip route. "name" and "by" are optional: without "name" the
+   other binary files need the .zip route. A link Rikuy makes carries each interactive graph's
+   file (graphs/*.html) as [name, its description as a JSON string, "g"]: the page that opens it
+   writes the file again from the description, and draws the graph's picture again. "name" and "by" are optional: without "name" the
    document is called by its main file. With "by", the person opens it as that sender's guest: a
    bar says who shared it, their edits are marked as changes, and Send back makes a link that
    carries their copy back to the sender. Without "by" it is their own document, as with #tex=.
@@ -319,9 +321,9 @@ What either link does when opened:
 - A link that is cut short or is not a document opens nothing: the page says "Could not open
   the link" with the reason, and the document that was open stays.
 - Size: a #share= link is about two thirds as long as the LaTeX in it, a #tex= link a third
-  longer than it. Rikuy's sample document (94,000 characters in four files, most of them its live
-  graph's file, which carries its own drawing code) makes a #share= link of 43,000 characters;
-  its .tex alone (5,300 characters) makes a #tex= link of 7,100. Chrome
+  longer than it. Rikuy's sample document (8,400 characters of LaTeX and BibTeX in three files, and
+  a live graph, which a link carries as its description alone) makes a #share= link of 5,600
+  characters; its .tex alone (5,300 characters) makes a #tex= link of 7,100. Chrome
   takes addresses up to 2 MB and Firefox up to 1 MB, but chat and mail programs cut long links:
   under 2,000 characters is safe everywhere (about 3,000 characters of LaTeX as #share=, 1,400
   as #tex=). For more than a few pages, hand over the file.
