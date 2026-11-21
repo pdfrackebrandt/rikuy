@@ -1,12 +1,13 @@
 """Typing on the page, input to next paint: this build (dist/, or RIKUY_DIST) with its animations
 and animated caret on, against another build (--against DIR, e.g. one of main: RIKUY_OUT=/tmp/x
 node build.mjs in a worktree of it) and against this build with the animated caret off. Each page
-types the same keys into the middle of dev/bench/long, in rounds that take turns, so a slow
-stretch of a shared machine falls on all. Measured per key: from the keydown's time stamp to a
+types the same keys into the middle of a document of dev/bench (long, or --doc sample, where the
+caret glides: on long a key's paint comes late enough that it jumps), in rounds that take turns,
+so a slow stretch of a shared machine falls on all. Measured per key: from the keydown's time stamp to a
 task after the next frame's animation callbacks (the frame that paints the key; the classic input
 to next paint), and Event Timing's duration of the keydown (Chromium's own input to paint,
 rounded to 8 ms, as INP takes it).
-Usage: taskset -c 1 python3 dev/bench_typing.py [--against /tmp/dist-main] [--rounds 8] [--keys 20] [--cpu 1] [--json out.json]"""
+Usage: taskset -c 1 python3 dev/bench_typing.py [--doc long|sample] [--against /tmp/dist-main] [--rounds 8] [--keys 20] [--cpu 1] [--json out.json]"""
 import json, os, statistics, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'test'))
 from browser import open_page, load_doc  # noqa: E402
@@ -17,7 +18,9 @@ arg = lambda k, d: sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d
 AGAINST = arg('--against', None)
 ROUNDS, KEYS, CPU, OUT = int(arg('--rounds', 8)), int(arg('--keys', 20)), float(arg('--cpu', 1)), arg('--json', None)
 HERE = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
-files = {f: open(os.path.join(ROOT, 'dev/bench/long', f), encoding='utf8').read() for f in ('main.tex', 'refs.bib')}
+DOC = arg('--doc', 'long')
+DIR = os.path.join(ROOT, 'dev/bench', DOC)
+files = {f: open(os.path.join(DIR, f), encoding='utf8').read() for f in sorted(os.listdir(DIR)) if f.endswith(('.tex', '.bib'))}
 
 PROBE = '''() => { window.__lat = []; window.__et = [];
   addEventListener('keydown', (e) => { const t0 = e.timeStamp; requestAnimationFrame(() => { const c = new MessageChannel(); c.port1.onmessage = () => window.__lat.push(performance.now() - t0); c.port2.postMessage(0); }); }, true);
@@ -67,7 +70,7 @@ with sync_playwright() as p:
     for k, (b, page) in runs.items():
         cs = page.evaluate('window.rikuy.caret ? { ...window.rikuy.caret.stats, lag: Math.round(window.rikuy.caret.lag) } : null')
         if cs: out[k]['caret glides, jumps (of which for a slow page), its last lag ms'] = cs
-    out['_'] = {'document': 'dev/bench/long', 'rounds': ROUNDS, 'keys a round': KEYS, 'cpu throttling': CPU}
+    out['_'] = {'document': 'dev/bench/' + DOC, 'rounds': ROUNDS, 'keys a round': KEYS, 'cpu throttling': CPU}
     print(json.dumps(out, indent=1))
     if OUT:
         open(OUT, 'w').write(json.dumps(out, indent=1) + '\n')
