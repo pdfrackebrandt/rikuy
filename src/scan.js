@@ -66,3 +66,39 @@ export function preambleEnd(src) {
     return m ? m.index : -1;
   });
 }
+
+// The project's .tex files the main file reads, in the order TeX reads them: the main file, then
+// each \input, \include, \subfile, \import and \subimport (in a comment none), the files those
+// read after them; names resolved as the model resolves them (src/model.js resolveFile). The
+// project-wide scans (the bibliography's files and style: src/cmd/refs.js, src/model.js) read
+// these alone: a beamer talk or a response letter beside the paper is no part of it (review E16:
+// its \bibliography took the paper's .bib, and its \bibliographystyle set the paper's order).
+export function filesRead(files, main) {
+  const out = [], seen = new Set();
+  const find = (name) => {
+    name = name.trim().replace(/^\.\//, '');
+    if (!name) return null;
+    for (const c of [name, name + '.tex']) if (files.has(c)) return c;
+    const base = name.split('/').pop();
+    for (const k of files.keys()) if (k.endsWith('/' + base) || k.endsWith('/' + base + '.tex') || k === base + '.tex') return k;
+    return null;
+  };
+  const walk = (f) => {
+    if (seen.has(f) || out.length > 500) return;
+    seen.add(f);
+    out.push(f);
+    const t = files.get(f);
+    if (typeof t !== 'string') return;
+    const dir = f.includes('/') ? f.slice(0, f.lastIndexOf('/') + 1) : '';
+    const re = /\\(input|include|subfile|import|subimport)(?![A-Za-z])\s*\{([^{}]*)\}(?:\s*\{([^{}]*)\})?/g;
+    for (const m of commentsBlanked(t, Math.min(t.length, 2e6)).matchAll(re)) {
+      const two = m[1] === 'import' || m[1] === 'subimport';
+      if (two && m[3] == null) continue;
+      const name = two ? (m[1] === 'subimport' ? dir : '') + m[2].replace(/\/?$/, '/') + m[3] : m[2];
+      const g = find(name) || (dir && find(dir + name));
+      if (g && /\.(tex|ltx)$/i.test(g)) walk(g);
+    }
+  };
+  if (files.has(main)) walk(main);
+  return out;
+}

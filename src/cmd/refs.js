@@ -17,6 +17,7 @@ import { usePackages, provides, preambleEnd, stripComments, hasPackage } from '.
 import { applyEdits } from '../styles.js';
 import { mapPos, diffEdit } from '../wrap.js';
 import { parse } from '../parser.js';
+import { filesRead } from '../scan.js';
 import { blockText, compile, hitsIn, hitSource } from '../find.js';
 import * as RS from '../refsrc.js';
 import { openMenu } from '../ui/kit.js';
@@ -205,7 +206,9 @@ class Work {
 }
 
 const eolOf = (t) => (/\r\n/.test(String(t).slice(0, 4000)) ? '\r\n' : '\n');
-const texFiles = (app) => [...app.files.keys()].filter((n) => /\.(tex|ltx)$/i.test(n)).slice(0, 200);
+// the .tex files the main file reads, main first (filesRead: a talk or a letter beside the paper
+// is no part of it, review E16)
+const texFiles = (app) => filesRead(app.files, app.main).slice(0, 200);
 // What the commands' when and on read of the project, once for each text of it: a look at the
 // caret runs every command's, and on a long document (167 KB of preamble, 3000 paragraphs) reading
 // the preamble and every file's body again took 27 to 84 ms a command. The answers are kept while
@@ -560,7 +563,7 @@ export const methods = {
   bibNamed() {
     const B = this.bibState();
     if (B.system === 'thebibliography' || (B.biblatex ? B.resources.length > 0 : !!B.bib)) return true;
-    for (const [f, t] of this.files) if (f !== this.main && /\.(tex|ltx)$/i.test(f) && typeof t === 'string' && BIB_CMD.test(stripComments(t.slice(0, 2e6)))) return true;
+    for (const f of filesRead(this.files, this.main)) { const t = this.files.get(f); if (f !== this.main && typeof t === 'string' && BIB_CMD.test(stripComments(t.slice(0, 2e6)))) return true; }
     return false;
   },
   // A .bib of the project as the main file names it: from the main file's folder, where TeX runs
@@ -577,8 +580,10 @@ export const methods = {
   bibFilesNamed() {
     const out = new Set(), dir = this.main.includes('/') ? this.main.slice(0, this.main.lastIndexOf('/') + 1) : '';
     const norm = (x) => { const parts = []; for (const q of x.split('/')) { if (q === '..') parts.pop(); else if (q && q !== '.') parts.push(q); } return parts.join('/'); };
-    for (const [f, t] of this.files) {
-      if (!/\.(tex|ltx)$/i.test(f) || typeof t !== 'string') continue;
+    // (the files the main file reads: review E16)
+    for (const f of filesRead(this.files, this.main)) {
+      const t = this.files.get(f);
+      if (typeof t !== 'string') continue;
       for (const m of stripComments(t.slice(0, 2e6)).matchAll(new RegExp(BIB_CMD.source, 'g'))) {
         for (const n of m[1].split(',').map((x) => x.trim()).filter(Boolean)) {
           const hit = [dir + n, dir + n + '.bib', n, n + '.bib'].map(norm).find((c) => this.files.has(c));
@@ -603,8 +608,9 @@ export const methods = {
       edits.push(...RS.preambleLine(this.src(f), '\\addbibresource{' + this.bibRel(file, true) + '}'));
       if (!B.print && !this.bibNamed()) edits.push(...RS.endLines(this.src(f), ['\\printbibliography'], ['printindex']));
     } else {
-      // (the first \bibliography of the project's files, main first: its list takes the name)
-      const files = [this.main, ...[...this.files.keys()].filter((x) => x !== this.main && /\.(tex|ltx)$/i.test(x))];
+      // (the first \bibliography of the files the main file reads, main first: its list takes the
+      // name. Of the whole project's, a beamer talk beside the paper took it, review E16.)
+      const files = filesRead(this.files, this.main);
       let at = null;
       for (const g of files) {
         const t = this.src(g);

@@ -5,6 +5,7 @@
 import { parseBib, bibSpans, bibEntryText, bibFieldEdits, bibDeleteEdit, bibAppendEdit, bibEscape, bibKey, texToPlain, typedInto } from '../src/bib.js';
 import * as R from '../src/refsrc.js';
 import { buildModel } from '../src/model.js';
+import { filesRead } from '../src/scan.js';
 
 let pass = 0, fail = 0;
 const check = (name, ok, detail) => { if (ok) pass++; else { fail++; console.log('FAIL', name, detail === undefined ? '' : JSON.stringify(detail).slice(0, 400)); } };
@@ -194,6 +195,20 @@ const ap = (t, ed) => { for (const x of [...ed].sort((a, b) => b.s - a.s || b.e 
   check('E6: a style in an \\input file is read', order(body('\\input{back}'), { 'back.tex': '\\bibliographystyle{unsrt}\n\\bibliography{refs}\n' }) === CIT);
   check('E6: biblatex sorting=none', order(body('\\printbibliography', '\\usepackage[sorting=none]{biblatex}\n\\addbibresource{refs.bib}\n')) === CIT, order(body('\\printbibliography', '\\usepackage[sorting=none]{biblatex}\n\\addbibresource{refs.bib}\n')));
   check('E6: biblatex numeric sorts by author', order(body('\\printbibliography', '\\usepackage{biblatex}\n\\addbibresource{refs.bib}\n')) === AUT);
+}
+
+// ---- review E16: the project-wide scans read only the files the main file reads, in order
+{
+  const files = new Map([
+    ['paper/main.tex', '\\documentclass{article}\n\\begin{document}\n\\input{intro}\n% \\input{old}\n\\include{chapters/two}\n\\subfile{appendix}\n\\import{sec/}{three}\n\\end{document}\n'],
+    ['paper/intro.tex', 'Intro. \\input{inner}'], ['paper/inner.tex', 'x'], ['paper/old.tex', 'old'],
+    ['paper/chapters/two.tex', 'two'], ['paper/appendix.tex', 'app'], ['paper/sec/three.tex', 'three'],
+    ['slides.tex', '\\documentclass{beamer}\\bibliographystyle{unsrt}\\bibliography{talk}'], ['refs.bib', '']
+  ]);
+  const got = filesRead(files, 'paper/main.tex');
+  check('E16: the files the main file reads, in reading order, none in a comment or beside it', JSON.stringify(got) === JSON.stringify(['paper/main.tex', 'paper/intro.tex', 'paper/inner.tex', 'paper/chapters/two.tex', 'paper/appendix.tex', 'paper/sec/three.tex']), got);
+  const m = buildModel({ files: new Map([['main.tex', '\\documentclass{article}\n\\begin{document}\nA \\cite{b} \\cite{a}.\n\\bibliography{refs}\n\\end{document}\n'], ['slides.tex', files.get('slides.tex')], ['refs.bib', '@misc{a, author={Aa, A}, title={T}, year={2001}}\n@misc{b, author={Bb, B}, title={T}, year={2002}}\n']]), main: 'main.tex' });
+  check('E16: a \\bibliographystyle in a talk beside the paper sets nothing of it', m.opts.bibstyle !== 'unsrt', m.opts.bibstyle);
 }
 
 console.log(`bib.test: ${pass} passed, ${fail} failed`);

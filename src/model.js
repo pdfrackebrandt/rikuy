@@ -2,6 +2,7 @@
 // numbering, cross references and citations resolved. Every editable
 // character keeps a pointer to its exact source range.
 import { parse, scanUserSigs, CHARS, ACCENTS, splitRows, MATH_BUDGET } from './parser.js';
+import { filesRead } from './scan.js';
 import { refsSetup, readIndexArg, indexKey, istRight } from './refsrc.js';
 import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bib.js';
 import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
@@ -844,11 +845,11 @@ class Builder {
     if (O.natbib && !O.forceNumeric) O.citeStyle = 'authoryear';
     if (O.biblatex) O.citeStyle = O.biblatexStyle === 'authoryear' ? 'authoryear' : 'numeric';
     // (\bibliographystyle stands at the body's end, where it is read after the citations are
-    // numbered: it is looked for here, in the main file and then the project's other .tex files,
-    // the first that is not in a comment, verbatim or \iffalse, as BibTeX takes the first \bibstyle
-    // of the .aux. Under \bibliographystyle{unsrt} there the page numbered by author and the PDF by
-    // citation order.)
-    const bst = bibStyleIn(ctx.src) || [...this.files].filter(([n, t]) => n !== ctx.f && /\.(tex|ltx)$/i.test(n) && typeof t === 'string').map(([, t]) => bibStyleIn(t)).find(Boolean);
+    // numbered: it is looked for here, in the main file and then the .tex files it reads (filesRead:
+    // not a talk or a letter beside it), the first that is not in a comment, verbatim or \iffalse,
+    // as BibTeX takes the first \bibstyle of the .aux. Under \bibliographystyle{unsrt} there the
+    // page numbered by author and the PDF by citation order.)
+    const bst = bibStyleIn(ctx.src) || filesRead(this.files, ctx.f).filter((n) => n !== ctx.f).map((n) => this.files.get(n)).filter((t) => typeof t === 'string').map((t) => bibStyleIn(t)).find(Boolean);
     if (bst) O.bibstyle = bst;
     if (UNSORTED_BST.has(O.bibstyle) || (O.biblatex && O.bibUnsorted)) O.sort = false;
     if (O.natbib && ['plain', 'unsrt', 'abbrv', 'alpha', 'ieeetr', 'siam', 'acm', 'amsplain', 'unsrtnat_num'].includes(O.bibstyle) && !O.forceAY) O.citeStyle = O.forceNumeric ? 'numeric' : O.citeStyle;
