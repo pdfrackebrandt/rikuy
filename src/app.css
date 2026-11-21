@@ -2794,3 +2794,8 @@ body.file-open #rp-file .rb-tb .btn { height: 32px; min-height: 32px; border-rad
   .sym-grid { gap: 8px; }
   .pd-tabs { margin-top: 4px; }
 }
+/* the keys' ring only after a key (html.keys, src/app.js): a menu opened by a press, or File
+   opened by one, puts the focus on its first item or on Back with no ring, as Word highlights
+   nothing until a key moves (UI-PRINCIPLES.md C13); fields keep theirs */
+html:not(.keys) :is(.pop-menu .nav-act, #rp-file button, #rf-home button):focus-visible { outline: none; }
+html:not(.keys) .pop-menu .nav-act:focus-visible:not(:hover) { background: transparent; }
