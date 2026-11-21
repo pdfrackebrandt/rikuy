@@ -8,6 +8,9 @@ import { atomOfEl } from './editor.js';
 import { changes, spacingOnly, hunks, wordDiff } from './diff.js';
 import { commentOnly } from './share.js';
 import { kvGet, kvPut, decodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
+import { authorEdit, editSpans, layerStep } from './authors.js';
+
+export { authorEdit, editSpans };
 
 // steps never absorbed into the base (rvAbsorbs)
 const NO_ABSORB = new Set(['reject', 'merge', 'word', 'other-tab', 'restore', 'accept']);
@@ -111,85 +114,24 @@ export function absorbText(b, p, c) {
 // layer along (authorEdit) and adds its own pieces; a change is then the author of the pieces
 // it holds, and a change two people's pieces make up is cut in two (byAuthor). Kept with the base,
 // for the text it was made on. Pure, tested in test/review.test.mjs.
-const MAX_SEGS = 20000;
-// segs: [{s, e, who}] sorted by s (e === s: a deletion there); one edit of the old text's
-// [s, e) by text n characters long, made by who
-// (a deletion keeps the text it took, t, so that where two people's deletions meet each is told by
-// its own words, byAuthor; capped, a longer one is told by its place alone)
-const MAX_DEL = 2000;
-export function authorEdit(segs, s, e, n, who, del) {
-  const d = n - (e - s), out = [], inner = [], tail = [];
-  for (const g of segs) {
-    if (g.e < s || (g.e === s && (g.s < s || n === 0 || e > s))) { out.push(g); continue; }
-    // (a deletion just after the deleted text: it follows it, at the same place when nothing is typed)
-    if (g.s === e && g.e === e && e > s && n === 0) { tail.push({ ...g, s, e: s }); continue; }
-    if (g.s > e || (g.s === e && e > s)) { out.push({ ...g, s: g.s + d, e: g.e + d }); continue; }
-    // (a range the edit cuts: what is left of it before and after)
-    if (g.s < s) out.push({ s: g.s, e: s, who: g.who });
-    if (g.e > e) out.push({ s: s + n, e: g.e + d, who: g.who });
-    else if (g.s === g.e && g.s >= s && g.s <= e && e === s) out.push({ ...g, s: g.s + (g.s > s ? d : 0), e: g.s + (g.s > s ? d : 0) });
-    // (an earlier deletion inside the text now deleted: kept, in its place among this one's words)
-    else if (g.s === g.e && e > s) inner.push(g);
-  }
-  if (n > 0) out.push({ s, e: s + n, who });
-  if (e > s) {
-    const T = typeof del === 'string' && del.length === e - s ? del : null;
-    const pt = (t, w) => { const g = { s, e: s, who: w }; if (t != null && t.length <= MAX_DEL) g.t = t; return g; };
-    let off = 0;
-    for (const g of inner) {
-      if (T && g.s - s > off) out.push(pt(T.slice(off, g.s - s), who));
-      out.push({ ...g, s, e: s });
-      if (T) off = g.s - s;
-    }
-    if (!T || off < T.length || !inner.length) out.push(pt(T ? T.slice(off) : null, who));
-    out.push(...tail);
-  } else out.push(...tail);
-  // (stable: points at one place stay in the order their texts stood)
-  out.sort((a, b) => a.s - b.s || a.e - b.e);
-  // (one author's neighbouring ranges are one; their deletions at one place, one text)
-  const m = [];
-  for (const g of out) {
-    const L = m[m.length - 1];
-    if (L && L.who === g.who && L.e === g.s && g.e > g.s && L.e > L.s) L.e = g.e;
-    else if (L && L.who === g.who && L.s === g.s && L.e === g.e && g.e === g.s) { if (L.t != null && g.t != null && L.t.length + g.t.length <= MAX_DEL) L.t += g.t; else delete L.t; }
-    else if (L && L.who === g.who && L.s === g.s && L.e === g.e) continue;
-    else m.push(g.e === g.s ? { ...g } : g);
-  }
-  return m.length > MAX_SEGS ? m.slice(m.length - MAX_SEGS) : m;
-}
-// the edits that make cur of prev, in prev's offsets from the end backwards: one span where the
-// two differ (a keystroke), or word by word where a step replaced much at once (a merge)
-export function editSpans(prev, cur, fine) {
-  let a = 0;
-  const n = Math.min(prev.length, cur.length);
-  while (a < n && prev.charCodeAt(a) === cur.charCodeAt(a)) a++;
-  let b = 0;
-  while (b < n - a && prev.charCodeAt(prev.length - 1 - b) === cur.charCodeAt(cur.length - 1 - b)) b++;
-  const one = [{ s: a, e: prev.length - b, n: cur.length - b - a }];
-  if (!fine || (one[0].e - one[0].s < 200 && one[0].n < 200)) return one;
-  const out = [];
-  for (const c of changes(prev, cur, '')) {
-    let ap = c.as, bp = c.bs, run = null;
-    for (const [op, v] of c.parts) {
-      if (op === ' ') { ap += v.length; bp += v.length; run = null; continue; }
-      if (!run) { run = { s: ap, e: ap, n: 0 }; out.push(run); }
-      if (op === '-') { ap += v.length; run.e = ap; } else { run.n += v.length; bp += v.length; }
-    }
-  }
-  return out.reverse();
-}
 // a change's authors, and the change cut where its pieces' authors differ: [{...c, who}]
 export function byAuthor(c, segs, now) {
   if (!segs || !segs.length) return [{ ...c, who: '' }];
+  // (the segments stand in order and none holds another, so their ends rise too: the first that
+  // ends at x or later found by halving, and not by reading the thousands before it, which a file
+  // with as many tracked changes made a second's work for every listing of the changes)
+  const from = (x) => { let lo = 0, hi = segs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (segs[m].e < x) lo = m + 1; else hi = m; } return lo; };
   const whoAt = (op, p, len) => {
-    if (op === '+') { for (const g of segs) { if (g.s >= p + len) break; if (g.e > g.s && g.s < p + len && p < g.e) return g.who; } return ''; }
-    let best = null;
-    for (const g of segs) { if (g.s > p + 2) break; if (g.e === g.s && Math.abs(g.s - p) <= 2 && (!best || Math.abs(g.s - p) < Math.abs(best.s - p))) best = g; }
-    return best ? best.who : '';
+    if (op === '+') { for (let i = from(p + 1); i < segs.length; i++) { const g = segs[i]; if (g.s >= p + len) break; if (g.e > g.s && g.s < p + len && p < g.e) return g.who; } return ''; }
+    let best = null, rest = '';
+    for (let i = from(p - 2); i < segs.length; i++) { const g = segs[i]; if (g.s > p + 2) break; if (g.e === g.s && Math.abs(g.s - p) <= 2 && (!best || Math.abs(g.s - p) < Math.abs(best.s - p))) best = g; if (g.rest && g.s <= p && p <= g.e) rest = g.who; }
+    // (no mark: inside the range standing for the pieces left out, src/authors.js capped, its name)
+    return best ? best.who : rest;
   };
   // (a deletion where marks with their texts stand: cut into each one's words, the rest of it going
   // with the piece before it; review M4)
-  const marks = segs.filter((g) => g.e === g.s && g.t && g.s >= c.bs - 2 && g.s <= c.be + 2);
+  const marks = [];
+  for (let i = from(c.bs - 2); i < segs.length && segs[i].s <= c.be + 2; i++) { const g = segs[i]; if (g.e === g.s && g.t && g.s >= c.bs - 2) marks.push(g); }
   const used = new Set();
   const parts = [];
   for (const [op, v, p] of c.parts) {
@@ -277,9 +219,9 @@ export const review = {
     for (const [f, cur] of this.files) {
       const p = prev.get(f);
       if (p === cur || p == null) continue;
-      let segs = this.authors.get(f) || [];
-      for (const x of editSpans(p, cur, fine)) segs = authorEdit(segs, x.s, x.e, x.n, who, p.slice(x.s, x.e));
-      this.authors.set(f, segs);
+      // (in one pass over the layer, not one per edit: Reject All of a Word file's 3000 changes held
+      // the page 1.5 s; review N3)
+      this.authors.set(f, layerStep(this.authors.get(f) || [], p, cur, who, fine));
     }
     for (const f of [...this.authors.keys()]) if (!this.files.has(f)) this.authors.delete(f);
     if (h) h.seg1 = new Map(this.authors);
@@ -290,7 +232,7 @@ export const review = {
       if (!Array.isArray(x) || typeof x[0] !== 'string' || !Array.isArray(x[2])) continue;
       const t = this.files.get(x[0]);
       if (t == null || t.length !== x[1]) continue;
-      const segs = x[2].filter((g) => g && Number.isInteger(g.s) && Number.isInteger(g.e) && g.s >= 0 && g.e >= g.s && g.e <= t.length && typeof g.who === 'string').slice(0, 20000).map((g) => (g.e === g.s && typeof g.t === 'string' && g.t.length <= 2000 ? { s: g.s, e: g.e, who: g.who.slice(0, 200), t: g.t } : { s: g.s, e: g.e, who: g.who.slice(0, 200) }));
+      const segs = x[2].filter((g) => g && Number.isInteger(g.s) && Number.isInteger(g.e) && g.s >= 0 && g.e >= g.s && g.e <= t.length && typeof g.who === 'string').slice(0, 20000).map((g) => (g.e === g.s && typeof g.t === 'string' && g.t.length <= 2000 ? { s: g.s, e: g.e, who: g.who.slice(0, 200), t: g.t } : g.e > g.s && g.rest === true ? { s: g.s, e: g.e, who: g.who.slice(0, 200), rest: true } : { s: g.s, e: g.e, who: g.who.slice(0, 200) }));
       this.authors.set(x[0], segs);
     }
   },
@@ -738,10 +680,12 @@ export const review = {
     // (Simple Markup: the outline of a changed equation goes, its bar stays)
     const atomEls = [...this.root.querySelectorAll('.chg-atom')];
     if (!all) for (const x of atomEls) x.classList.remove('chg-atom');
+    // (a page's layer goes into it once every place is measured: one put in between two measures
+    // makes the browser lay out the document again, once per page, a second with thousands of changes)
     const layers = new Map();
     const layer = (page) => {
       let L = layers.get(page);
-      if (!L) { L = mk('div', 'mk-layer'); L.contentEditable = 'false'; L.setAttribute('aria-hidden', 'true'); page.append(L); L.bars = []; layers.set(page, L); }
+      if (!L) { L = mk('div', 'mk-layer'); L.contentEditable = 'false'; L.setAttribute('aria-hidden', 'true'); L.bars = []; layers.set(page, L); }
       return L;
     };
     const pageOf = (n) => (n.nodeType === 1 ? n : n.parentElement).closest('.page');
@@ -774,5 +718,6 @@ export const review = {
       for (const b of bs) { const last = merged[merged.length - 1]; if (last && b[0] <= last[1] + 2) last[1] = Math.max(last[1], b[1]); else merged.push([b[0], b[1]]); }
       for (const [t, b] of merged) { const e = mk('span', 'chg-bar'); e.style.left = x + 'px'; e.style.top = t + 'px'; e.style.height = (b - t) + 'px'; L.append(e); }
     }
+    for (const [page, L] of layers) page.append(L);
   }
 };

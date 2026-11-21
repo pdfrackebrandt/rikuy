@@ -712,6 +712,64 @@ function headText(root) {
 }
 
 // parts: unzip()'s. Returns { parts: the map pandoc should read, info }.
+// ---- tracked changes as Word keeps them -----------------------------------------------------------
+// The people whose tracked changes a file holds (insertions, deletions, moves), in the order their
+// first change stands in the body, its footnotes and endnotes.
+const TRACK_PARTS = ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml'];
+const TRACK = new Set(['w:ins', 'w:del', 'w:moveFrom', 'w:moveTo']);
+// (a name as the file gives it, read from the parsed tree as rejectBy reads it, so either quote
+// counts; without the characters that turn the direction of the text after them, which would turn
+// the rest of a message or a Review row around them)
+const author = (a) => String(a || '').replace(/[\u202a-\u202e\u2066-\u2069]/g, '').trim() || 'Word';
+export function trackAuthors(parts) {
+  const out = new Set();
+  for (const name of TRACK_PARTS) {
+    if (!parts.has(name)) continue;
+    let root;
+    try { root = parseXml(text(parts.get(name)), LIMITS, true); } catch (e) { continue; }
+    each(root, (x) => { if (TRACK.has(x.n)) out.add(author(x.a['w:author'])); });
+  }
+  return [...out];
+}
+// The parts with the tracked changes of these people rejected, the others' left as they are: an
+// insertion goes with what it holds, a deletion's text stays as text, a deleted paragraph mark
+// stays a mark, and a paragraph mark one of them inserted becomes a deleted one, so that pandoc,
+// accepting what is left, joins the two paragraphs again (the split is that author's change, and
+// rejected it is gone). For the steps by which a file's changes come in, one author after
+// another (src/wordjobs.js).
+export function rejectBy(parts, names) {
+  const who = new Set(names), out = new Map(parts);
+  const mine = (el) => TRACK.has(el.n) && who.has(author(el.a['w:author']));
+  const fix = (el, mark) => {
+    const c = [];
+    for (const x of el.c) {
+      if (typeof x === 'string') { c.push(x); continue; }
+      if (mine(x)) {
+        if (mark && x.n === 'w:ins') { x.n = 'w:del'; c.push(x); continue; }
+        if (x.n === 'w:ins' || x.n === 'w:moveTo') continue;
+        // (a deletion: its runs as runs, their deleted text as text)
+        if (!x.c.length) continue;
+        fix(x);
+        each(x, (y) => { if (y.n === 'w:delText') y.n = 'w:t'; else if (y.n === 'w:delInstrText') y.n = 'w:instrText'; });
+        c.push(...x.c);
+        continue;
+      }
+      // (a paragraph's mark: the run properties of its properties)
+      fix(x, x.n === 'w:rPr' && el.n === 'w:pPr');
+      c.push(x);
+    }
+    el.c = c;
+  };
+  for (const name of TRACK_PARTS) {
+    if (!parts.has(name)) continue;
+    let root;
+    try { root = parseXml(text(parts.get(name)), LIMITS, true); } catch (e) { continue; }
+    fix(root);
+    out.set(name, enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + serialize(root)));
+  }
+  return out;
+}
+
 export function premark(parts) {
   const info = { threads: threads(parts), toc: 0, breaks: 0, colors: new Map(), chars: 0, aligned: 0, rtl: 0, ruby: 0, tracked: 0, charts: 0, art: 0, fields: 0, mathcolor: 0, heads: [], cols: [], page: null, sz: 0, endnotes: false, unread: [] };
   const styles = styleInfo(parts);

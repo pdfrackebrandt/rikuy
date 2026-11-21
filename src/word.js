@@ -195,7 +195,14 @@ export const word = {
       pics.set(k, k);
       return k;
     };
-    const W = buildWordDoc(model, this.files, { citeproc, asset, comments: true, main: this.main });
+    // the changes waiting, as Word's tracked changes with their authors (those in plain prose; the
+    // rest go as the text is now, and the Word file says so)
+    const all = this.base && this.realChanges ? this.realChanges() : [];
+    const plain = all.length && this.plainChanges ? this.plainChanges() : [];
+    const changes = plain.map((c) => ({ f: c.f, s: c.bs, e: c.be, del: c.a, who: this.rvName(c.who) }));
+    const W = buildWordDoc(model, this.files, { citeproc, asset, comments: true, main: this.main, changes });
+    const left = all.length - (W.tracked || 0);
+    if (left > 0) W.degraded.push(left + (left === 1 ? ' change' : ' changes') + ' waiting that are not plain words (formatting, equations, commands), as the text is now, not marked as changes');
     for (const [k, out] of pics) {
       try {
         const bytes = new Uint8Array(await this.assetBlobs.get(k).arrayBuffer());
@@ -265,11 +272,28 @@ export const word = {
     this.loadProject(files, 'main.tex', name, 'Opened from Word');
     for (const [n, b] of Object.entries(r.media || {})) this.addAsset(n, new Blob([b]));
     if (Object.keys(r.media || {}).length) { this.binaryDirty = true; this.forceRender = true; this.rebuild(); this.persist(); }
+    // the file's tracked changes: changes waiting here, each its author's, Track Changes' base the
+    // text with all of them rejected, the layer of who wrote what made in the worker (src/wordjobs.js
+    // openDocx); they came in accepted before
+    const T = r.tracked;
+    let tracked = 0, by = '', cut = '';
+    if (T && typeof T.base === 'string' && Array.isArray(T.segs) && Array.isArray(T.authors)) {
+      this.authors = new Map([['main.tex', T.segs]]);
+      const bf = new Map(this.files);
+      bf.set('main.tex', T.base);
+      this.setBase({ t: Date.now(), label: 'Before the tracked changes in ' + fname, files: bf });
+      tracked = this.realChanges().length;
+      if (tracked) { this.setMarks(true); this.toggleNav(true, 'changes'); }
+      // (a few names, the rest counted: a file reviewed by hundreds would fill the screen)
+      const A = T.authors.map((x) => String(x).slice(0, 80));
+      by = A.length > 4 ? A.slice(0, 3).join(', ') + ' and ' + (A.length - 3) + ' others' : A.length > 1 ? A.slice(0, -1).join(', ') + ' and ' + A[A.length - 1] : A[0] || 'Word';
+      if (T.cut) cut = ' The changes before line ' + T.upto + ' of main.tex are credited to "Word", not to their authors: the file holds more pieces of tracked text than the ' + T.segs.length + ' Rikuy tells apart in a file.';
+    }
     const n = Object.keys(r.media || {}).length;
     // what did not come over, or came differently: said here, and kept at the top of main.tex
     // (src/wordjobs.js), where it stays after the toast is gone
     const said = r.warnings || [];
-    this.toast('Opened ' + fname + ' as LaTeX' + (n ? ', with ' + n + (n === 1 ? ' picture' : ' pictures') + ' in figures/' : '') + (r.bib ? ' and its citations in references.bib' : '') + '.' + (said.length ? ' ' + said.slice(0, 4).join(' ') + (said.length > 4 ? ' The rest is at the top of main.tex.' : '') : '') + note, (note ? 16000 : 9000) + 5000 * Math.min(4, said.length));
+    this.toast('Opened ' + fname + ' as LaTeX' + (n ? ', with ' + n + (n === 1 ? ' picture' : ' pictures') + ' in figures/' : '') + (r.bib ? ' and its citations in references.bib' : '') + '.' + (tracked ? ' Its tracked changes are ' + tracked + (tracked === 1 ? ' change' : ' changes') + ' by ' + by + ', marked on the page to accept or reject under Review.' + cut : '') + (said.length ? ' ' + said.slice(0, 4).join(' ') + (said.length > 4 ? ' The rest is at the top of main.tex.' : '') : '') + note, (note || cut ? 16000 : 9000) + 5000 * Math.min(4, said.length));
   },
 
   // ---- a coauthor's edits come back ----

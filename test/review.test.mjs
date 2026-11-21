@@ -8,13 +8,14 @@ import assert from 'assert';
 globalThis.window = globalThis;
 globalThis.document = { addEventListener() {}, querySelector() { return null; }, body: { classList: { contains() { return false; } } } };
 const { review, absorbText, absorbFresh, authorEdit, editSpans, byAuthor } = await import('../src/review.js');
+const { authorSteps, layerStep, MAX_SEGS } = await import('../src/authors.js');
 const { commentsOf, onlyComments, linkRole, commentsBack, bodyAt, findComments, listedFiles, safeCommentLine, parseCommentLine } = await import('../src/share.js');
 // a reader's comment as the author's copy takes it in (src/share.js: the base32 form), and whether
 // some words reached a text at all, as TeX source or inside a comment line's parts
 const L = (who, quote, body) => safeCommentLine({ kind: 'comment', who, quote, body });
 const reached = (text, w) => text.includes(w) || findComments(text, '').some((c) => [c.who, c.quote, c.body, ...c.replies.map((r) => r.body)].join(' ').includes(w));
 const { buildModel } = await import('../src/model.js');
-const { changes } = await import('../src/diff.js');
+const { changes, hunks, hunkChanges } = await import('../src/diff.js');
 const { setLanguageEdits } = await import('../src/ui/wordcount.js');
 const { usePackages } = await import('../src/preamble.js');
 
@@ -390,6 +391,131 @@ group('R4 review: two people\'s edits that touch keep each one\'s author, and Re
   // what is kept with the base keeps the deleted words, and only text
   review.rvAuthorsFrom.call(A, { authors: [['main.tex', T(A).length, [{ s: 16, e: 16, who: 'Pedro', t: 'fox ' }, { s: 1, e: 1, who: 'X', t: { evil: 1 } }]]] });
   assert.deepStrictEqual(A.authors.get('main.tex'), [{ s: 16, e: 16, who: 'Pedro', t: 'fox ' }, { s: 1, e: 1, who: 'X' }]);
+});
+
+group('a Word file\'s tracked changes: the layer of who wrote what made in one pass per step, the same as one edit at a time, in a linear time; a listing of the changes halves to its segments (word review M2)', () => {
+  // (a small generator, the same cases every run)
+  let seed = 7;
+  const rnd = (n) => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) % n; };
+  const W = ['a', 'b', ' ', '\n', 'xy', 'the ', '\n\n'];
+  const oneByOne = (base, steps) => { let segs = [], prev = base; for (const st of steps) { for (const x of editSpans(prev, st.tex, true)) segs = authorEdit(segs, x.s, x.e, x.n, st.who, prev.slice(x.s, x.e)); prev = st.tex; } return segs; };
+  let many = 0;
+  for (let k = 0; k < 600; k++) {
+    let base = ''; const len = 5 + rnd(60) + rnd(2) * 300; for (let i = 0; i < len; i++) base += W[rnd(W.length)];
+    const steps = []; let cur = base;
+    for (let j = 0; j < 1 + rnd(4); j++) {
+      let x = cur;
+      const edits = 1 + rnd(30); for (let m = 0; m < edits; m++) { const p = rnd(x.length + 1), q = Math.min(x.length, p + rnd(5) * rnd(2)); let ins = ''; for (let i = 0; i < rnd(3); i++) ins += W[rnd(W.length)]; x = x.slice(0, p) + ins + x.slice(q); }
+      if (editSpans(cur, x, true).length > 1) many++;
+      steps.push({ who: ['Ana', 'Bo', 'Cy'][rnd(3)], tex: x }); cur = x;
+    }
+    const want = oneByOne(base, steps), got = authorSteps(base, steps);
+    assert.deepStrictEqual(got.segs, want, JSON.stringify({ base, steps }));
+    assert.strictEqual(got.cut, 0);
+    // (the page's step, src/review.js rvAuthorStep, the same in one pass, by words or as one span; N3)
+    for (const fine of [true, false]) {
+      let segs = [], loop = [], prev = base;
+      for (const st of steps) {
+        segs = layerStep(segs, prev, st.tex, st.who, fine);
+        for (const x of editSpans(prev, st.tex, fine)) loop = authorEdit(loop, x.s, x.e, x.n, st.who, prev.slice(x.s, x.e));
+        prev = st.tex;
+      }
+      assert.deepStrictEqual(segs, loop, JSON.stringify({ fine, base, steps }));
+    }
+    // (their starts and ends rise together, which the halving of byAuthor takes for granted)
+    for (let i = 1; i < want.length; i++) assert.ok(want[i].s >= want[i - 1].s && want[i].e >= want[i - 1].e, JSON.stringify(want));
+  }
+  assert.ok(many > 100, 'steps of many edits each: ' + many);
+  // 21000 insertions by two people (20000 took 54 s one edit at a time); the layer keeps MAX_SEGS,
+  // the ones at the start left out, counted and credited to "Word" by one range (review N1: they
+  // showed as the person's own, "You"). (Lines of thirty changed words between lines
+  // left as they were: diff.js takes no more than 1500 edits at a time as edits apart.)
+  const lines = (f) => { let t = '', k = 0; for (let i = 0; i < 700; i++) { const ws = []; for (let j = 0; j < 30; j++, k++) ws.push(f('w' + k, k)); t += ws.join(' ') + '\nkept line ' + i + '\n'; } return t; };
+  const base = lines((w) => w), ana = lines((w, k) => k % 2 ? w : w + 'x'), now = lines((w) => w + 'x');
+  const t0 = Date.now();
+  const A = authorSteps(base, [{ who: 'Ana', tex: ana }, { who: 'Bo', tex: now }]);
+  const ms = Date.now() - t0;
+  assert.ok(ms < 3000, 'authorSteps on 21000 edits: ' + ms + ' ms');
+  assert.strictEqual(A.segs.length, MAX_SEGS);
+  assert.ok(A.cut >= 21000 - MAX_SEGS, 'cut ' + A.cut);
+  assert.deepStrictEqual([A.segs[0].s, A.segs[0].who, A.segs[0].rest, A.segs[0].e === A.from, A.from > 0], [0, 'Word', true, true, true]);
+  // (a word changed is the word replaced: its old letters a mark, its new ones a range)
+  const rs = A.segs.filter((g) => g.e > g.s).slice(-2).map((g) => g.who + ':' + now.slice(g.s, g.e));
+  assert.deepStrictEqual(rs, ['Ana:w20998x', 'Bo:w20999x']);
+  // (hunks with blank lines between them are one only where that changes fewer characters: a
+  // join and a split near each other, not two edits the lines' diff pairs well)
+  const J = changes('x\n\nFirst para\n\nsecond para joined.\n\nThird para split here.\n\ny\n', 'x\n\nFirst para second para joined.\n\nThird para split\n\nhere.\n\ny\n', 'f');
+  assert.deepStrictEqual(J.map((c) => [c.a, c.b]), [['\n\n', ' '], [' ', '\n\n']]);
+  const T = 'The first has some words.\n\nThe second has more words.\n% comment (Ana): Is it?\n\nEnd.\n';
+  assert.deepStrictEqual(changes(T, T.replace('some', 'some good').replace('more words', 'words'), 'f').map((c) => [c.a, c.b]), [['', 'good '], ['more ', '']]);
+  // the changes listed by author, each its own, in a time the page does not feel
+  const t1 = Date.now();
+  const list = [];
+  for (const c of changes(base, now, 'main.tex')) list.push(...byAuthor(c, A.segs, now));
+  assert.ok(Date.now() - t1 < 3000, 'byAuthor over 20000 segments: ' + (Date.now() - t1) + ' ms');
+  assert.ok(list.some((c) => c.who === 'Ana') && list.some((c) => c.who === 'Bo') && !list.some((c) => c.who === ''), 'every change has an author');
+  // (a change at the edge of the two may go either way)
+  assert.ok(list.filter((c) => c.be <= A.from).length > 300 && list.every((c) => c.be > A.from || c.who === 'Word') && list.every((c) => c.bs < A.from + 20 || c.who === 'Ana' || c.who === 'Bo'), 'the start, left out, is "Word"\'s, the rest Ana\'s and Bo\'s');
+  // (the person's own edit there is theirs, and cuts the range in two that stay "Word"'s; a deletion
+  // inside it with no mark is "Word"'s; the range is kept by the project's store and by the cap)
+  const at = now.indexOf('w100x'), mine = now.slice(0, at) + 'mine ' + now.slice(at + 2);
+  // (a layer with room: in a full one the cap takes the first pieces, this one too)
+  const S = authorEdit(A.segs.slice(0, 5000), at, at + 2, 5, '', now.slice(at, at + 2));
+  const L2 = []; for (const c of changes(base, mine, 'main.tex')) L2.push(...byAuthor(c, S, mine));
+  const near = L2.filter((c) => c.be >= at - 40 && c.bs <= at + 40).map((c) => [c.who, c.a, c.b]);
+  assert.ok(near.some((x) => x[0] === '' && x[2].includes('mine')) && near.filter((x) => x[0] === 'Word').length >= 2 && S.filter((g) => g.rest).length === 2, JSON.stringify(near));
+  const D = base.replace(' w3 ', ' '), dl = byAuthor(changes(base, D, 'main.tex')[0], [{ s: 0, e: 900, who: 'Word', rest: true }], D);
+  assert.deepStrictEqual(dl.map((c) => [c.who, c.b]), [['Word', '']]);
+  const R = Object.create(review); R.files = new Map([['main.tex', mine]]);
+  R.rvAuthorsFrom({ authors: [['main.tex', mine.length, S]] });
+  assert.deepStrictEqual(R.authors.get('main.tex').slice(0, 1), [S[0]]);
+  const full = layerStep(A.segs, now, now.replace('kept line 600', 'kept line 600 and more'), 'Cy', false);
+  assert.ok(full.length === MAX_SEGS && full[0].rest && full[0].who === 'Word' && full[0].s === 0, JSON.stringify(full.slice(0, 2)));
+});
+
+group('hunks taken as one block list no more characters than apart, and no change across a paragraph break but a join or a split (review N2)', () => {
+  let seed = 3;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const ri = (n) => Math.floor(rnd() * n);
+  const W = ['alpha', 'beta', 'gamma', 'delta', 'x', 'y', 'z', 'the', 'and', '.', ','];
+  const para = () => { const w = []; for (let i = 1 + ri(12); i > 0; i--) w.push(W[ri(W.length)]); return w.join(' '); };
+  const doc = () => { const ps = []; for (let i = 2 + ri(15); i > 0; i--) ps.push(para()); return ps.join(rnd() < 0.8 ? '\n\n' : '\n\n\n') + '\n'; };
+  // (a join, a split, a paragraph out or in, a word changed: one to four of them)
+  const mutate = (t) => {
+    const ps = t.split('\n\n');
+    for (let k = 1 + ri(4); k > 0; k--) {
+      if (!ps.length) ps.push(para());
+      const i = ri(ps.length), r = rnd();
+      if (r < 0.2 && i + 1 < ps.length) { ps[i] += ' ' + ps[i + 1]; ps.splice(i + 1, 1); }
+      else if (r < 0.4) { const w = ps[i].split(' '), c = ri(w.length + 1); ps.splice(i, 1, w.slice(0, c).join(' '), w.slice(c).join(' ')); }
+      else if (r < 0.6) ps.splice(i, 1);
+      else if (r < 0.75) ps.splice(i, 0, para());
+      else { const w = ps[i].split(' '); w[ri(w.length)] = W[ri(W.length)]; ps[i] = w.join(' '); }
+    }
+    return ps.join('\n\n');
+  };
+  const chars = (cs) => cs.reduce((n, c) => n + c.a.length + c.b.length, 0);
+  const across = (c) => /\n[ \t]*\n/.test(c.a + '\0' + c.b) && /\S/.test(c.a + c.b);
+  let pairs = 0, fewer = 0;
+  for (let it = 0; it < 3000; it++) {
+    const a = doc(), b = mutate(a);
+    if (a === b) continue;
+    pairs++;
+    const C = changes(a, b, 'm'), apart = hunks(a, b).flatMap((h) => hunkChanges(h, 'm'));
+    let back = b;
+    for (const c of [...C].sort((x, y) => y.bs - x.bs)) back = back.slice(0, c.bs) + c.a + back.slice(c.be);
+    let fwd = a;
+    for (const c of [...C].sort((x, y) => y.as - x.as)) fwd = fwd.slice(0, c.as) + c.b + fwd.slice(c.ae);
+    assert.ok(back === a && fwd === b, 'Reject All and Accept All exact: ' + JSON.stringify([a, b]));
+    assert.ok(chars(C) <= chars(apart), 'no more characters than the hunks apart: ' + JSON.stringify([a, b, C.map((c) => [c.a, c.b])]));
+    for (const c of C) assert.ok(!across(c) || apart.some((o) => o.as === c.as && o.a === c.a && o.b === c.b), 'a change across a paragraph break only where the hunks apart list it: ' + JSON.stringify([a, b, c.a, c.b]));
+    if (chars(C) < chars(apart)) fewer++;
+  }
+  assert.ok(pairs > 2900 && fewer > 100, pairs + ' pairs, ' + fewer + ' with fewer characters');
+  // (review N2's pair: delta to gamma and a paragraph out, not one change across the break)
+  const a = 'beta and delta .\n\ngamma z alpha z\n\n, y alpha y\n\nand z z , , z and z x z\n\nthe alpha the . gamma beta y x x\n\nx , and x\n';
+  const b = 'beta and gamma .\n\n, y alpha y\n\nand z z ,\n\nthe alpha the . gamma beta y x x\n\nx , and x\n';
+  assert.deepStrictEqual(changes(a, b, 'm').slice(0, 2).map((c) => [c.a, c.b]), [['delta', 'gamma'], ['gamma z alpha z\n\n', '']]);
 });
 
 console.log('review: ' + groups + ' groups of checks passed');
