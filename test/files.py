@@ -132,6 +132,13 @@ def marks():
         page.evaluate("window.rikuy.markFromLink('', 'repo', 'c.tex', 'git')")
         f = git('Pulled', [['c.tex', EVIL]])
         check('marks: an Allow given here never lifts a restriction kept under the pull\'s main file', f['key'] == 'repo|c.tex' and restricted(f), f)
+        # the shell escape mode is part of what a PDF was made from, as the engine is (N3): after
+        # Allow with the preview closed, the restricted PDF was taken as this one's
+        put('late.zip', zipped({'main.tex': MINE}), 'main.tex')
+        r = page.evaluate("""async () => { const g = window.rikuy; g.lastPdf = new Uint8Array([37]); g.lastPdfSig = g.pdfSigNow(); g.lastCompile = { ok: true }; g.pdfStale = false;
+          const was = document.body.classList.contains('pdf-on'); await g.allowShellHere(); const stale = g.pdfStale, same = g.lastPdfSig === g.pdfSigNow();
+          window.__se = []; await g.api.compile(); return { was, stale, same, sent: window.__se.map((x) => x.shellEscape) }; }""")
+        check('marks: after Allow with the preview closed, the restricted PDF is stale: api.compile compiles again, with shell escape', r['was'] is False and r['stale'] is True and r['same'] is False and r['sent'] and all(r['sent']), r)
         check('no page errors (marks)', not errors, errors[:5])
         browser.close()
 
