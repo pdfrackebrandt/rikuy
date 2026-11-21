@@ -95,6 +95,8 @@ jobs:
         run: cd test && python3 ribbon.py
       - name: The ribbon's frame (tabs, contextual tabs, folding, keys, search, the right click menu, the kit)
         run: cd test && python3 tabs.py
+      - name: One look (the ribbon, the tab row, the title bar and the status bar against UI-PRINCIPLES.md, at six widths, light, dark, forced colours and touch)
+        run: cd test && python3 consistency.py
       - name: Word's keyboard shortcuts (each added key pressed on the page, the tooltips, Help's list, a Mac)
         run: cd test && python3 shortcuts.py
       # its PDF checks (page size, header, line numbers, Print) need dist/tex and run in tex.yml

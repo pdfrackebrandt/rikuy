@@ -23,6 +23,7 @@ import * as equation from './equation.js';  // B13 equations
 import * as parts from './parts.js';        // R3 cover pages, Quick Parts and fields, form fields
 import * as move from './move.js';          // R3 drag to move
 import * as typing from './typing.js';      // Word's keys that type or move text (Alt+X, accents, Spike, F2)
+import * as research from './research.js';  // Frontier, to come (References › Research)
 import * as wordgaps from './wordgaps.js';  // task 67: Word's buttons Rikuy lacked (the document's)
 import * as objects from './objects.js';    // formatting a drawing, a chart or a SmartArt after it is in
 import * as picfx from './picfx.js';        // Corrections, Color, Transparency, Compress Pictures (C in WebAssembly)
@@ -30,4 +31,4 @@ import * as motion from './motion.js';      // task 71: File › Options › Ani
 
 
 // (a method name two modules both add throws here: test/commands.test.mjs imports this file)
-export const methods = joinMethods({}, Object.fromEntries(Object.entries({ frame, font, para, lists, styles, find, page, table, picture, refs, review, proofing, insert, file, view, help, equation, parts, move, typing, wordgaps, objects, picfx, motion }).map(([k, m]) => ['src/cmd/' + k + '.js', m.methods || {}])));
+export const methods = joinMethods({}, Object.fromEntries(Object.entries({ frame, font, para, lists, styles, find, page, table, picture, refs, review, proofing, insert, file, view, help, equation, parts, move, typing, research, wordgaps, objects, picfx, motion }).map(([k, m]) => ['src/cmd/' + k + '.js', m.methods || {}])));

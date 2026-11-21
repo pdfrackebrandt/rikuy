@@ -25,6 +25,7 @@
 //             an arrow "<name> options" that opens menu(app)), 'menu' (opens menu(app)),
 //             'custom' (render(app) makes the element; sync(app, at, el) keeps it current)
 //   role      the control's role when it is no button (a select is a 'combobox')
+//   popup     'dialog' for a button that opens a dialog of its own (aria-haspopup, aria-expanded)
 //   keys      chords as src/keys.js reads them: ['Ctrl+B']; keyScope 'page' (default: only with
 //             the caret on the page) or 'app' (anywhere but a field, the source or the PDF);
 //             keyRank breaks a tie between two commands on one chord (higher wins where both
