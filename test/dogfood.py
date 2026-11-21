@@ -13,18 +13,18 @@ from the paragraph after it; Enter at a paragraph's start writes no blank lines 
 paragraph shows above, to type in); Undo works after a reload. Then lecture notes and a problem
 set: \\mathbb typed in the equation field or pasted from a chat assistant brings amssymb; amsmath's
 \\intertext drawn as a line of text between the rows; "- " in a definition starts a list there; Replace All
-across the notes' files keeps the case of what it replaces. And the hostile review's cases
-(docs: /tmp/review-dogfood.md, E1 to E10).
+across the notes' files keeps the case of what it replaces. And the hostile reviews' cases
+(E1 to E10; then E11 to E18: review2).
 
   python3 dogfood.py [part ...]   parts: formula arrows textfield styles table caption cite paste
-                                  split filename undo_words enter reload_undo mathpkg intertext envlist replace review
+                                  split filename undo_words enter reload_undo mathpkg intertext envlist replace review review2
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import open_page, check, results, src, load_doc, click_text, ROOT
 from playwright.sync_api import sync_playwright
 
-PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo', 'mathpkg', 'intertext', 'envlist', 'replace', 'review']
+PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo', 'mathpkg', 'intertext', 'envlist', 'replace', 'review', 'review2']
 DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
 TEX = os.path.isdir(os.path.join(DIST, 'tex')) and any(n.endswith('.wasm') for n in os.listdir(os.path.join(DIST, 'tex')))
 
@@ -228,7 +228,7 @@ def split(page):
     click_text(page, 'Second para.', 3)
     k.press('Control+Alt+1'); page.wait_for_timeout(300)
     s = src(page)
-    check('split: Heading 1 on the middle paragraph of an abstract splits it around that paragraph', '\\begin{abstract}\nFirst para.\n\\end{abstract}\n\n\\section{Second para.}\n\n\\begin{abstract}\nThird para.\n\\end{abstract}' in s, s)
+    check('split: Heading 1 on the middle paragraph of an abstract ends the abstract before it, the paragraphs after it leave it', '\\begin{abstract}\nFirst para.\n\\end{abstract}\n\n\\section{Second para.}\n\nThird para.\n\nSecond paragraph.' in s, s)
     k.type('X'); page.wait_for_timeout(200)
     check('split: the caret stays in the words', '\\section{SecXond para.}' in src(page), src(page)[40:140])
     k.press('Control+z'); page.wait_for_timeout(200); k.press('Control+z'); page.wait_for_timeout(300)
@@ -245,15 +245,15 @@ def filename(page):
     k.type('Optimal Taxation: a Note', delay=10)
     k.press('Control+Shift+S'); page.wait_for_timeout(200); k.type('Title'); page.wait_for_timeout(200); k.press('Enter'); page.wait_for_timeout(400)
     check('filename: the project is still Untitled', page.evaluate("window.rikuy.name").startswith('Untitled'), page.evaluate("window.rikuy.name"))
-    check('filename: downloads take the title', page.evaluate("window.rikuy.fileBase()") == 'Optimal-Taxation-a-Note', page.evaluate("window.rikuy.fileBase()"))
+    check('filename: downloads take the title', page.evaluate("window.rikuy.fileBase()") == 'Optimal Taxation a Note', page.evaluate("window.rikuy.fileBase()"))
     if TEX:
         with page.expect_download(timeout=90000) as d:
             from browser import download
             download(page, 'rb-pdf')
-        check('filename: Download PDF is Optimal-Taxation-a-Note.pdf', d.value.suggested_filename == 'Optimal-Taxation-a-Note.pdf', d.value.suggested_filename)
+        check('filename: Download PDF is "Optimal Taxation a Note.pdf"', d.value.suggested_filename == 'Optimal Taxation a Note.pdf', d.value.suggested_filename)
     # a document of its own name keeps it
     page.evaluate("window.rikuy.name = 'My paper'")
-    check('filename: a named document keeps its name', page.evaluate("window.rikuy.fileBase()") == 'My-paper', page.evaluate("window.rikuy.fileBase()"))
+    check('filename: a named document keeps its name', page.evaluate("window.rikuy.fileBase()") == 'My paper', page.evaluate("window.rikuy.fileBase()"))
 
 
 def undo_words(page):
@@ -446,6 +446,151 @@ def review(page):
         page.evaluate("(() => { const mf = document.getElementById('pop-field'); mf.focus(); mf.executeCommand('moveToMathfieldEnd'); })()")
         k.press('ArrowRight'); page.wait_for_timeout(400); k.type('Q'); page.wait_for_timeout(300)
         check('review E8: Right out of a formula in a right to left paragraph lands at its right, before it', 'Q$x$' in src(page), src(page)[-60:])
+
+
+def pdf_text(page):
+    import base64, io, pypdf
+    b = page.evaluate('(async () => { const r = await window.rikuy.api.compile(); if (!r.pdf) return ""; let s = ""; const u = new Uint8Array(r.pdf); for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); })()')
+    if not b:
+        return ''
+    return ' '.join(pg.extract_text() or '' for pg in pypdf.PdfReader(io.BytesIO(base64.b64decode(b))).pages)
+
+
+def review2(page):
+    """The second hostile review of PR 94 (E11 to E18, and what it saw in passing)."""
+    k = page.keyboard
+    ghost = lambda: page.evaluate('!!window.rikuy.ghost')
+    D = DOC.replace('Agent income here.', '\\section{Intro}\nFirst paragraph words.').replace('Second paragraph.', 'Second paragraph words.')
+    # E11: Enter at a paragraph's start, then Backspace: the empty paragraph goes, nothing else
+    load_doc(page, D)
+    click_text(page, 'Second paragraph words.', 0)
+    k.press('Enter'); page.wait_for_timeout(200); k.press('Backspace'); page.wait_for_timeout(300)
+    check('review E11: Enter then Backspace at a paragraph\'s start gives back what was there', src(page) == D and not ghost(), src(page)[-90:])
+    k.type('Z'); page.wait_for_timeout(300)
+    check('review E11: and the caret is where it was', 'ZSecond paragraph words.' in src(page), src(page)[-90:])
+    load_doc(page, D)
+    click_text(page, 'Second paragraph words.', 0)
+    k.press('Enter'); page.wait_for_timeout(200); k.press('ArrowUp'); page.wait_for_timeout(200); k.press('Delete'); page.wait_for_timeout(300)
+    check('review E11: Delete in that empty paragraph takes it away', src(page) == D and not ghost(), src(page)[-90:])
+    k.type('Y'); page.wait_for_timeout(300)
+    check('review E11: the caret then at the paragraph\'s start', 'YSecond paragraph words.' in src(page), src(page)[-90:])
+    # E12: Undo after that Enter takes the empty paragraph, not the edit before it
+    load_doc(page, D)
+    click_text(page, 'First paragraph words.', 22); k.type(' Extra', delay=15); page.wait_for_timeout(300)
+    typed = src(page)
+    click_text(page, 'Second paragraph words.', 0)
+    k.press('Enter'); page.wait_for_timeout(200); k.press('Control+z'); page.wait_for_timeout(300)
+    check('review E12: Ctrl+Z after Enter takes the empty paragraph alone', src(page) == typed and not ghost(), src(page)[-90:])
+    k.press('Control+z'); page.wait_for_timeout(300)
+    check('review E12: the next Ctrl+Z takes the typing', src(page) == D, src(page)[-90:])
+    # E18: a \noindent and a comment line stand with the paragraph below them
+    Dn = D.replace('Second paragraph', '\\noindent Second paragraph')
+    load_doc(page, Dn)
+    click_text(page, 'Second paragraph words.', 0)
+    for _ in range(2): k.press('Enter')
+    page.wait_for_timeout(300)
+    check('review E18: Enter at a \\noindent paragraph\'s start writes nothing', src(page) == Dn and ghost(), src(page)[-90:])
+    k.press('ArrowUp'); k.type('New.', delay=10); page.wait_for_timeout(300)
+    check('review E18: typed above, the new paragraph goes before the \\noindent', 'words.\n\nNew.\n\n\\noindent Second paragraph words.' in src(page), src(page)[-90:])
+    Dc = D.replace('\nSecond paragraph', '\n% a note\nSecond paragraph')
+    load_doc(page, Dc)
+    click_text(page, 'Second paragraph words.', 0)
+    for _ in range(2): k.press('Enter')
+    page.wait_for_timeout(300)
+    check('review E18: Enter after a comment line writes nothing', src(page) == Dc and ghost(), src(page)[-90:])
+    k.press('ArrowUp'); k.type('New.', delay=10); page.wait_for_timeout(300)
+    check('review E18: typed above, the new paragraph goes before the comment', 'words.\n\nNew.\n\n% a note\nSecond paragraph words.' in src(page), src(page)[-90:])
+    # E13: a heading in an abstract ends it before the heading (no second "Abstract"); none in a
+    # theorem or a proof
+    Da = DOC.replace('Agent income here.', '\\begin{abstract}\nWe study taxes.\n\nResults follow here.\n\nPolicy implications end it.\n\\end{abstract}')
+    load_doc(page, Da)
+    click_text(page, 'Results follow here.', 3)
+    k.press('Control+Alt+1'); page.wait_for_timeout(300)
+    check('review E13: a heading in an abstract: the paragraphs after it leave the abstract', '\\begin{abstract}\nWe study taxes.\n\\end{abstract}\n\n\\section{Results follow here.}\n\nPolicy implications end it.\n\nSecond paragraph.' in src(page), src(page))
+    if TEX:
+        t = pdf_text(page)
+        check('review E13: the PDF titles the abstract once', t.count('Abstract') == 1 and 'Policy implications' in t, t[:300])
+    Dt = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,amsthm}\n\\newtheorem{theorem}{Theorem}').replace('Agent income here.', '\\begin{theorem}\nFirst claim words.\n\nMiddle claim words.\n\nLast claim words.\n\\end{theorem}\n\n\\begin{proof}\nStep one argued.\n\nStep two argued.\n\nStep three argued.\n\\end{proof}')
+    load_doc(page, Dt)
+    for words, name in (('Middle claim words.', 'theorem'), ('Step two argued.', 'proof')):
+        click_text(page, words, 3)
+        k.press('Control+Alt+1'); page.wait_for_timeout(300)
+        why = page.evaluate("(() => { const st = window.rikuy.blockStyle(window.rikuy.ribbonAt()); return window.rikuy.whyNot(st, window.rikuy.styleCatalog().levels[0]); })()")
+        check('review E13: no heading inside a ' + name + ', and the reason says why', src(page) == Dt and 'cannot stand inside' in why, (why, src(page)[-200:]))
+    # E14: a file opened over one of its name is a step; a step that does not fit the text is not applied
+    files = {'main.tex': DOC.replace('Second paragraph.', '\\input{ch1}\n\nLast paragraph.'), 'ch1.tex': 'Chapter one text is here.\n'}
+    load_doc(page, files)
+    page.evaluate('window.rikuy.persist()'); page.wait_for_timeout(300)
+    click_text(page, 'Chapter one text is here.', 7)
+    k.type(' ALPHA BETA', delay=15); page.wait_for_timeout(400)
+    typed = src(page, 'ch1.tex')
+    NEW = 'A completely different chapter, rewritten by a coauthor and sent by mail.\n'
+    page.evaluate("async (t) => { await window.rikuy.openFiles([new File([t], 'ch1.tex', { type: 'text/plain' })]); }", NEW)
+    page.wait_for_timeout(800)
+    page.evaluate('window.rikuy.persist()'); page.wait_for_timeout(600)
+    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); page.wait_for_timeout(400)
+    check('review E14: the coauthor\'s file is open after a reload', src(page, 'ch1.tex') == NEW, src(page, 'ch1.tex'))
+    click_text(page, 'Last paragraph.', 4)
+    k.press('Control+z'); page.wait_for_timeout(400)
+    check('review E14: Ctrl+Z after a reload takes the opened file back, whole', src(page, 'ch1.tex') == typed, src(page, 'ch1.tex'))
+    k.press('Control+y'); page.wait_for_timeout(400)
+    check('review E14: and Ctrl+Y opens it again', src(page, 'ch1.tex') == NEW, src(page, 'ch1.tex'))
+    # (a text changed outside the history: no step is applied to it)
+    page.evaluate("window.rikuy.files.set('ch1.tex', 'Short.\\n')")
+    k.press('Control+z'); page.wait_for_timeout(400)
+    check('review E14: a step that does not fit the text is not applied, and the history goes', src(page, 'ch1.tex') == 'Short.\n' and page.evaluate('window.rikuy.hist.length + window.rikuy.redoStack.length') == 0, src(page, 'ch1.tex'))
+    # E15: a .bib whose name has a space joins under a name BibTeX reads
+    A = '@article{alpha2001, author={Alpha, Ann}, title={From A}, journal={J}, year={2001}}\n'
+    load_doc(page, DOC)
+    page.evaluate("async (t) => { await window.rikuy.openFiles([new File([t], 'My Library.bib', { type: 'text/plain' })]); }", A)
+    page.wait_for_timeout(600)
+    names = page.evaluate('[...window.rikuy.files.keys()]')
+    check('review E15: "My Library.bib" joins as My-Library.bib', 'My-Library.bib' in names and 'My Library.bib' not in names, names)
+    click_text(page, 'Agent income here.', 18); k.type(' See ')
+    k.type('\\'); page.wait_for_timeout(200); k.type('cite', delay=20); page.wait_for_timeout(300); k.press('Enter')
+    page.wait_for_selector('#pop-citesearch', timeout=5000); page.wait_for_timeout(200)
+    k.type('alpha'); page.wait_for_timeout(200); k.press('Enter'); page.wait_for_timeout(400); k.press('Escape'); page.wait_for_timeout(300)
+    check('review E15: the bibliography names it as BibTeX reads it', '\\bibliography{My-Library}' in src(page), src(page)[-120:])
+    if TEX:
+        text = page.evaluate("async () => { const r = await window.rikuy.api.compile(); return r.ok + ' ' + r.problems.map((p) => p.message).join(' | '); }")
+        check('review E15: compiled in the page, no undefined citation', text.startswith('true') and 'undefined' not in text.lower() and 'database' not in text.lower(), text)
+    # E16: a beamer talk beside the paper is no part of it
+    Bb = '@article{beta2002, author={Beta, Ben}, title={From B}, journal={J}, year={2002}}\n'
+    slides = '\\documentclass{beamer}\n\\begin{document}\n\\begin{frame}Talk \\cite{beta2002}.\\end{frame}\n\\bibliographystyle{unsrt}\n\\bibliography{talkrefs}\n\\end{document}\n'
+    load_doc(page, {'main.tex': DOC, 'slides.tex': slides, 'refs.bib': A, 'talkrefs.bib': Bb})
+    click_text(page, 'Agent income here.', 18); k.type(' See ')
+    k.type('\\'); page.wait_for_timeout(200); k.type('cite', delay=20); page.wait_for_timeout(300); k.press('Enter')
+    page.wait_for_selector('#pop-citesearch', timeout=5000); page.wait_for_timeout(200)
+    k.type('alpha'); page.wait_for_timeout(200); k.press('Enter'); page.wait_for_timeout(400); k.press('Escape'); page.wait_for_timeout(300)
+    check('review E16: the citation\'s bibliography goes into the paper, the talk is untouched', '\\bibliography{refs}' in src(page) and src(page, 'slides.tex') == slides, (src(page)[-120:], src(page, 'slides.tex')[-60:]))
+    if TEX:
+        text = page.evaluate("async () => { const r = await window.rikuy.api.compile(); return r.ok + ' ' + r.problems.map((p) => p.message).join(' | '); }")
+        check('review E16: compiled, no undefined citation', text.startswith('true') and 'undefined' not in text.lower(), text)
+    # E17: download names keep the title's letters
+    page.evaluate("window.rikuy.name = 'Política Económica: Teoría y Evidencia'")
+    check('review E17: a download name keeps accented letters, only a file system\'s forbidden signs go', page.evaluate('window.rikuy.fileBase()') == 'Política Económica Teoría y Evidencia', page.evaluate('window.rikuy.fileBase()'))
+    page.evaluate("window.rikuy.name = '経済学の論文/草稿'")
+    check('review E17: and a title in Chinese or Japanese', page.evaluate('window.rikuy.fileBase()') == '経済学の論文 草稿', page.evaluate('window.rikuy.fileBase()'))
+    # in passing: Ctrl+B, "bold", Ctrl+B, " after": the bold ends for what is typed next
+    load_doc(page, DOC)
+    click_text(page, 'Agent income here.', 12)
+    k.type(' ', delay=15); k.press('Control+b'); k.type('bold', delay=15); k.press('Control+b'); k.type(' after', delay=15); page.wait_for_timeout(300)
+    check('review: Ctrl+B again at the end of bold words ends the bold for what follows', 'Agent income \\textbf{bold} after here.' in src(page), src(page)[40:120])
+    # not verified before: Undo's steps kept across a reload are at most 2 MB, and written only when they change
+    load_doc(page, DOC)
+    page.evaluate("(() => { const big = 'x'.repeat(300000); for (let i = 0; i < 6; i++) window.rikuy.commit([{ f: 'main.tex', s: 0, e: 0, t: big + i }], null, 'api'), window.rikuy.closeGroup(); })()")
+    size = page.evaluate("(() => { const h = window.rikuy.historyKept({ t: 1, name: 'n', main: 'main.tex' }); return JSON.stringify(h).length * 2; })()")
+    check('review: the steps kept across a reload are at most 2 MB', 1e6 < size <= 2e6, size)
+    page.evaluate('window.rikuy.persist()'); page.wait_for_timeout(500)
+    t0 = page.evaluate("new Promise((ok) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const g = q.result.transaction('kv').objectStore('kv').get('history'); g.onsuccess = () => ok(g.result && g.result.t); }; })")
+    page.evaluate('window.rikuy.persist()'); page.wait_for_timeout(500)
+    t1 = page.evaluate("new Promise((ok) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const g = q.result.transaction('kv').objectStore('kv').get('history'); g.onsuccess = () => ok(g.result && g.result.t); }; })")
+    check('review: a save with the same steps does not write them again', t0 and t0 == t1, (t0, t1))
+    # not verified before: \intertext keeps the rows' = signs on one column
+    load_doc(page, DOC.replace('Second paragraph.', '\\begin{align}\na &= b + c + d + e + f \\\\\n\\intertext{Taking first-order conditions,}\ndddddddd + e &= e\n\\end{align}\nAfter.'))
+    page.wait_for_timeout(400)
+    xs = page.evaluate("[...document.querySelectorAll('#pages .dm .dm-rows .mtable > .col-align-l')].map((l) => l.getBoundingClientRect().left)")
+    check('review: the rows after \\intertext line their = up with those before', len(xs) == 2 and abs(xs[0] - xs[1]) < 1, xs)
 
 
 with sync_playwright() as p:
