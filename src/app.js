@@ -4288,7 +4288,10 @@ class App {
           let total = 0;
           for (const n of Object.keys(z.files)) total += (z.files[n]._data && z.files[n]._data.uncompressedSize) || 0;
           if (total > MAX_ZIP) throw new Error('it would unpack to ' + fmtMB(total) + ', more than this page can hold');
-          const names = Object.keys(z.files).filter((n) => !z.files[n].dir && !/(^|\/)(__MACOSX|\.)/.test(n));
+          // (a hidden file is left out, a Mac's or an editor's, but not the two kinds a LaTeX
+          // project needs: latexmk's .latexmkrc, and a .keep or .gitkeep that is there only so its
+          // folder exists, as \tikzexternalize[prefix=figures/] needs figures/ to write into)
+          const names = Object.keys(z.files).filter((n) => !z.files[n].dir && !/(^|\/)(__MACOSX|\.(?!(?:latexmkrc|keep|gitkeep)$))/.test(n));
           if (!names.length) unread.push(file.name + ' has no files in it.');
           const prefix = commonDir(names);
           for (const n of Object.keys(z.files)) {
