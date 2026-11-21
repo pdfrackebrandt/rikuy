@@ -1984,6 +1984,45 @@ await ok('changes waiting go to Word as tracked changes with their authors; a fi
   assert.equal(plain.tracked, undefined);
 });
 
+// Changes waiting as Word's tracked changes (src/wordast.js trackMarks): a deletion at the end of
+// a heading, an item or a paragraph stays in it, never the next paragraph's start (review M4);
+// the deleted words as the page shows them, dashes and quotes typeset (L2); 3000 changes on a
+// 287 KB paper in a time no one waits for (M3: 13.7 s before)
+await ok('changes waiting go to Word each in its own paragraph, the deleted words typeset, thousands of them at once', async () => {
+  const paras = (d) => d.slice(d.indexOf('<w:body>')).split(/<w:p[ >]/).map((x) => x.replace(/<[^>]+>/g, (t) => (/^<w:del\b/.test(t) ? '[del]' : /^<\/w:del>/.test(t) ? '[/del]' : '')).replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const word = (now, changes) => {
+    const files = new Map([['main.tex', now]]);
+    const W = buildWordDoc(buildModel({ files, main: 'main.tex' }), files, { now: 0, main: 'main.tex', changes });
+    return { W, d: text(unzip(exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources: {}, bibs: [], citeproc: false, project: { name: 'Paper', main: 'main.tex', files: [...files] } }).docx).get('word/document.xml')) };
+  };
+  const del = (now, at, t) => word(now, [{ f: 'main.tex', s: now.indexOf(at), e: now.indexOf(at), del: t, who: 'Ana' }]);
+  let x = del(doc('\\section{Intro}\nBody text here.\n'), '}\nBody', ' words');
+  assert.ok(paras(x.d).includes('1 Intro[del] words[/del]') && paras(x.d).includes('Body text here.'), paras(x.d).join(' | '));
+  x = del(doc('One two\n\nNext paragraph.\n'), '\n\nNext', ' three');
+  assert.ok(paras(x.d).includes('One two[del] three[/del]') && paras(x.d).includes('Next paragraph.'), paras(x.d).join(' | '));
+  x = del(doc('Some \\emph{stress}\n\nNext paragraph.\n'), '\n\nNext', ' here');
+  assert.ok(paras(x.d).some((p) => /^Some stress\[del\] here\[\/del\]$/.test(p)) && paras(x.d).includes('Next paragraph.'), paras(x.d).join(' | '));
+  x = del(doc('\\begin{itemize}\n\\item First\n\\item Second\n\\end{itemize}\n'), '\n\\item Second', ' point');
+  assert.ok(paras(x.d).includes('First[del] point[/del]'), paras(x.d).join(' | '));
+  // (a deletion in the middle stays where it was)
+  x = del(doc('The quick fox.\n'), 'fox', 'brown ');
+  assert.ok(paras(x.d).includes('The quick [del]brown [/del]fox.'), paras(x.d).join(' | '));
+  // (L2)
+  x = del(doc('It is a fact.\n'), 'fact', "``really'' established--and---known ");
+  assert.ok(x.d.includes('<w:delText xml:space="preserve">“really” established–and—known </w:delText>'), x.d.slice(x.d.indexOf('<w:del '), x.d.indexOf('</w:del>')));
+  // (M3)
+  const ps = [];
+  for (let i = 0; i < 3000; i++) ps.push('Paragraph ' + i + ' has some words in it that go on for a while, about eighty characters long here.');
+  const now = doc(ps.join('\n\n'));
+  const files = new Map([['main.tex', now]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const changes = [];
+  for (let i = 0, q = 0; i < 3000; i++) { q = now.indexOf('some', q + 1); changes.push({ f: 'main.tex', s: q, e: q + 4, del: 'many', who: 'Ana' }); }
+  const t0 = Date.now();
+  const W = buildWordDoc(m, files, { now: 0, main: 'main.tex', changes });
+  assert.ok(W.tracked === 3000 && Date.now() - t0 < 4000, W.tracked + ' changes in ' + (Date.now() - t0) + ' ms');
+});
+
 // A file's tracked changes, the cases of the second review of Word's Track Changes: a paragraph
 // one author split is that author's change, so rejecting theirs joins it again (M1); a name in
 // single quotes is read as the one in double quotes, and a name turning the direction of the text
