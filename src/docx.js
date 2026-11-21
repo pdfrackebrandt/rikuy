@@ -717,30 +717,35 @@ function headText(root) {
 // first change stands in the body, its footnotes and endnotes.
 const TRACK_PARTS = ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml'];
 const TRACK = new Set(['w:ins', 'w:del', 'w:moveFrom', 'w:moveTo']);
+// (a name as the file gives it, read from the parsed tree as rejectBy reads it, so either quote
+// counts; without the characters that turn the direction of the text after them, which would turn
+// the rest of a message or a Review row around them)
+const author = (a) => String(a || '').replace(/[\u202a-\u202e\u2066-\u2069]/g, '').trim() || 'Word';
 export function trackAuthors(parts) {
-  const out = [];
+  const out = new Set();
   for (const name of TRACK_PARTS) {
     if (!parts.has(name)) continue;
-    for (const m of text(parts.get(name)).matchAll(/<w:(?:ins|del|moveFrom|moveTo)\b([^>]*)>/g)) {
-      const a = /\bw:author="([^"]*)"/.exec(m[1]);
-      const who = (a && unescapeXml(a[1]).trim()) || 'Word';
-      if (!out.includes(who)) out.push(who);
-    }
+    let root;
+    try { root = parseXml(text(parts.get(name)), LIMITS, true); } catch (e) { continue; }
+    each(root, (x) => { if (TRACK.has(x.n)) out.add(author(x.a['w:author'])); });
   }
-  return out;
+  return [...out];
 }
 // The parts with the tracked changes of these people rejected, the others' left as they are: an
 // insertion goes with what it holds, a deletion's text stays as text, a deleted paragraph mark
-// stays a mark. (A paragraph mark one of them inserted stays: pandoc's own reading takes it.)
-// For the steps by which a file's changes come in, one author after another (src/wordjobs.js).
+// stays a mark, and a paragraph mark one of them inserted becomes a deleted one, so that pandoc,
+// accepting what is left, joins the two paragraphs again (the split is that author's change, and
+// rejected it is gone). For the steps by which a file's changes come in, one author after
+// another (src/wordjobs.js).
 export function rejectBy(parts, names) {
   const who = new Set(names), out = new Map(parts);
-  const mine = (el) => TRACK.has(el.n) && who.has((el.a['w:author'] || '').trim() || 'Word');
-  const fix = (el) => {
+  const mine = (el) => TRACK.has(el.n) && who.has(author(el.a['w:author']));
+  const fix = (el, mark) => {
     const c = [];
     for (const x of el.c) {
       if (typeof x === 'string') { c.push(x); continue; }
       if (mine(x)) {
+        if (mark && x.n === 'w:ins') { x.n = 'w:del'; c.push(x); continue; }
         if (x.n === 'w:ins' || x.n === 'w:moveTo') continue;
         // (a deletion: its runs as runs, their deleted text as text)
         if (!x.c.length) continue;
@@ -749,7 +754,8 @@ export function rejectBy(parts, names) {
         c.push(...x.c);
         continue;
       }
-      fix(x);
+      // (a paragraph's mark: the run properties of its properties)
+      fix(x, x.n === 'w:rPr' && el.n === 'w:pPr');
       c.push(x);
     }
     el.c = c;
