@@ -259,7 +259,8 @@ def api(p):
     load_doc(page, DOC)
     cm = page.evaluate('rikuy.api.commands()')
     byid = {c['id']: c for c in cm}
-    check('api.commands lists the commands: id, name, description, tab, group, keys, enabled (and args, asksFirst where they apply)', len(cm) > 40 and all({'description', 'enabled', 'group', 'id', 'keys', 'name', 'tab'} <= set(c) <= {'description', 'enabled', 'group', 'id', 'keys', 'name', 'tab', 'args', 'asksFirst'} for c in cm)
+    check('api.commands lists the commands: id, name, description, tab, group, keys, enabled (and args, asksFirst or personOnly where they apply)', len(cm) > 40 and all({'description', 'enabled', 'group', 'id', 'keys', 'name', 'tab'} <= set(c) <= {'description', 'enabled', 'group', 'id', 'keys', 'name', 'tab', 'args', 'asksFirst', 'personOnly'} and not ('asksFirst' in c and 'personOnly' in c) for c in cm)
+          and byid['download-pdf'].get('personOnly') is True and byid['delete-table'].get('asksFirst') is True
           and byid['bold']['name'] == 'Bold' and byid['bold']['tab'] == 'home' and 'Ctrl+B' in byid['bold']['keys'] and byid['download-latex']['enabled'] is True, [c['id'] for c in cm][:12])
     page.get_by_role('textbox', name='Document', exact=True).get_by_role('paragraph').nth(1).click()
     page.keyboard.press('Home'); page.keyboard.press('Control+Shift+ArrowRight')
