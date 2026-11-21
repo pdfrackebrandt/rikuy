@@ -8,7 +8,7 @@ import { atomOfEl } from './editor.js';
 import { changes, spacingOnly, hunks, wordDiff } from './diff.js';
 import { commentOnly } from './share.js';
 import { kvGet, kvPut, decodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
-import { authorEdit, editSpans } from './authors.js';
+import { authorEdit, editSpans, layerStep } from './authors.js';
 
 export { authorEdit, editSpans };
 
@@ -219,9 +219,9 @@ export const review = {
     for (const [f, cur] of this.files) {
       const p = prev.get(f);
       if (p === cur || p == null) continue;
-      let segs = this.authors.get(f) || [];
-      for (const x of editSpans(p, cur, fine)) segs = authorEdit(segs, x.s, x.e, x.n, who, p.slice(x.s, x.e));
-      this.authors.set(f, segs);
+      // (in one pass over the layer, not one per edit: Reject All of a Word file's 3000 changes held
+      // the page 1.5 s; review N3)
+      this.authors.set(f, layerStep(this.authors.get(f) || [], p, cur, who, fine));
     }
     for (const f of [...this.authors.keys()]) if (!this.files.has(f)) this.authors.delete(f);
     if (h) h.seg1 = new Map(this.authors);
