@@ -184,7 +184,9 @@ def widths(page):
     check('at 860 and 390 px the tabs are the combobox "Ribbon tab" at the row\'s start, in one row that scrolls sideways on a phone', all(not seen[w]['tabs'] and seen[w]['sel'] and seen[w]['h'] <= 44 and seen[w]['page'] <= 0 for w in (860, 390)) and seen[390]['over'], seen)
     # (the three go before any group folds: they take two controls, Editing three; at 860 px the
     # folded Paragraph group leaves room for them)
-    check('the downloads: three at 1400 px; one Download menu where the row has no room for three (1024 and 860 px, and on a phone)', all(seen[w]['dl'] == ['rb-pdf', 'rb-word', 'b-save'] for w in (1400,)) and all(seen[w]['dl'] == ['rb-dl-menu'] for w in (1024, 860, 390)) and not seen[860]['over'], {w: seen[w]['dl'] for w in seen})
+    # (from 900 px with a mouse the three stand one under another, a group as narrow as its longest
+    # name: Home has room for them at 1024 px)
+    check('the downloads: three at 1400 and 1024 px; one Download menu where the row has no room for three (860 px, and on a phone)', all(seen[w]['dl'] == ['rb-pdf', 'rb-word', 'b-save'] for w in (1400, 1024)) and all(seen[w]['dl'] == ['rb-dl-menu'] for w in (860, 390)) and not seen[860]['over'], {w: seen[w]['dl'] for w in seen})
     page.set_viewport_size({'width': 390, 'height': 900}); page.wait_for_timeout(300)
     page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label='Insert'); page.wait_for_timeout(200)
     check('on a phone the combobox opens a tab: Insert\'s Picture is there by its name', page.get_by_role('tabpanel', name='Insert', exact=True).get_by_role('button', name='Picture', exact=True).is_visible())
@@ -199,7 +201,10 @@ def widths(page):
         page.set_viewport_size({'width': w, 'height': 900}); page.wait_for_timeout(300)
         click_text(page, 'Second paragraph', 3); page.wait_for_timeout(150)
         f[w] = page.evaluate('''() => ({ folded: [...document.querySelectorAll('#rp-home .rb-grp.folded')].map((g) => g.dataset.group), over: document.getElementById('ribbon').scrollWidth > document.getElementById('ribbon').clientWidth + 1 })''')
-    check('with more than fits, groups fold, the spare Insert first and then the lowest ranks: Insert alone at 1024 px, Editing and Clipboard with it at 900 px, and the row fits', sorted(f[1024]['folded']) == ['insert'] and sorted(f[900]['folded']) == ['clipboard', 'editing', 'insert'] and not f[900]['over'] and not f[1024]['over'], f)
+    # (Clipboard folds at 900 px too where the downloads stand side by side; one under another they
+    # leave it room)
+    # (eight more in Clipboard, with their names, are three columns: at 1024 px it folds with Insert)
+    check('with more than fits, groups fold, the spare Insert first and then the lowest ranks: at 1024 px Insert and at most Clipboard and Editing (ranks 2 and 1), at 900 px Editing with them and then Paragraph (rank 4) as the row needs; the row fits', 'insert' in f[1024]['folded'] and set(f[1024]['folded']) <= {'clipboard', 'editing', 'insert'} and {'editing', 'insert'} <= set(f[900]['folded']) <= {'clipboard', 'editing', 'insert', 'paragraph'} and not f[900]['over'] and not f[1024]['over'], f)
     page.set_viewport_size({'width': 900, 'height': 900}); page.wait_for_timeout(300)
     gb = page.get_by_role('button', name='Editing', exact=True)
     check('a folded group is one button named after it; its own buttons are out of the accessibility tree', gb.count() == 1 and page.get_by_role('button', name='Editing test 0', exact=True).count() == 0 and not twice(page), twice(page))
@@ -608,7 +613,7 @@ def word_layout(page):
     seen = {t: page.evaluate(LAID, t) for t in tabs if t not in ('home', 'file')}
     bad = {t: [(g['id'], g['cls']) for g in v['groups'] if 'folded' in g['cls'] or ' sm' in g['cls'] or ' nm' in g['cls']] for t, v in seen.items()}
     check('at 1920 px every laid out group of the %d other tabs is open, its buttons as Word draws them on a wide window' % len(seen), not any(bad.values()) and all(v['groups'] for v in seen.values()), bad)
-    big = [(t, g['id'], i) for t, v in seen.items() for g in v['groups'] for i in g['items'] if i[0] == 'L' and not (60 <= i[1] <= 66 and i[2] <= 6)]
+    big = [(t, g['id'], i) for t, v in seen.items() for g in v['groups'] for i in g['items'] if i[0] == 'L' and not (70 <= i[1] <= 72 and i[2] <= 6)]
     small = [(t, g['id'], i) for t, v in seen.items() for g in v['groups'] for i in g['items'] if i[0] in 'SI' and not (20 <= i[1] <= 24)]
     check('large buttons are the height of three small ones, from the group\'s top; small ones and icons 20 to 24 px, three to a column', not big and not small, (big[:4], small[:4]))
     cut = [(t, g['id']) for t, v in seen.items() for g in v['groups'] if not g['whole']]
@@ -708,6 +713,186 @@ def word_layout(page):
     open_tab(page, 'Home')
 
 
+# The three downloads where they show: their boxes and the group's name
+DL = """() => { const r = (e) => { const b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; };
+  const bs = ['rb-pdf', 'rb-word', 'b-save'].map((id) => document.getElementById(id)).filter((b) => b.offsetParent);
+  const lab = document.querySelector('.rb-dl > .rb-lab'), rb = document.getElementById('ribbon').getBoundingClientRect();
+  // (each icon as it is written, on its 20 grid: src/ui/icongrid.js draws it on its pixels' grid)
+  const src = (svg) => svg.dataset.gm || svg.innerHTML;
+  return { b: bs.map(r), lab: lab.offsetParent ? [r(lab), lab.textContent] : null, top: Math.round(rb.top), icons: bs.map((b) => src(b.querySelector('svg'))), preview: src(document.querySelector('#b-pdf svg')) }; }"""
+
+
+def downloads_group(p):
+    """From 900 px with a mouse the downloads are a group as Word draws one: PDF, Word and LaTeX one
+    under another in the three rows of the laid out groups, each its own icon, the group's name
+    Download under them, on Home and every other tab; a touch screen keeps its row."""
+    browser, page, errors = open_page(p, width=1920, height=900)
+    load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
+    bad = {}
+    for w in (1920, 1366):
+        page.set_viewport_size({'width': w, 'height': 900}); page.wait_for_timeout(300)
+        for t in ('home', 'insert', 'review', 'view', 'help'):
+            page.evaluate('(t) => rikuy.selectTab(t)', t); page.wait_for_timeout(150)
+            d = page.evaluate(DL)
+            b = d['b']
+            # (each its own icon with a download's arrow, none Preview's: review L4)
+            ok = len(b) == 3 and len({x[0] for x in b}) == 1 and [x[1] - d['top'] for x in b] == [4, 28, 52] and all(x[3] == 24 for x in b) \
+                and d['lab'] and d['lab'][1] == 'Download' and d['lab'][0][1] >= b[2][1] + 24 and len(set(d['icons'])) == 3 \
+                and d['preview'] not in d['icons'] and all('L17 15' in i for i in d['icons'])
+            if not ok: bad[(w, t)] = d
+    check('from 900 px with a mouse, on Home and the laid out tabs at 1920 and 1366 px: PDF, Word and LaTeX one under another in the grid\'s three rows, each its own icon, the group\'s name Download under them', not bad, str(bad)[:400])
+    # one weight and size for every button's name, as Word's: Find, Replace and Select as PDF, Word
+    # and LaTeX (a glyph drawn for an icon, Bold's B, keeps its own)
+    page.evaluate("rikuy.selectTab('home')"); page.wait_for_timeout(150)
+    wts = page.evaluate("""() => { const out = {}; for (const x of document.querySelectorAll('#ribbon .rb-panel:not([hidden]) .btn:not(.icon) > span:not(.sr), #ribbon .rb-panel:not([hidden]) .btn > .rb-bl'))
+      if (x.offsetParent && x.textContent.trim()) out[x.textContent.trim()] = getComputedStyle(x).fontWeight + ' ' + getComputedStyle(x).fontSize; return out; }""")
+    check('Home at 1366 px: every button\'s name in one weight and size (%d names, Find and PDF among them)' % len(wts), len(set(wts.values())) == 1 and 'Find' in wts and 'PDF' in wts, wts)
+    browser.close()
+    browser, page, errors = open_page(p, width=1180, height=800, touch=True)
+    d = page.evaluate(DL)
+    check('a touch screen at 1180 px keeps the downloads in a row', len(d['b']) in (0, 3) and (not d['b'] or len({x[1] for x in d['b']}) == 1), d)
+    browser.close()
+
+
+NOCARET = WRAP('\\section{Opening}\nAlpha beta gamma.\n\n\\begin{tabular}{ll}\ncell & other \\\\\nmore & last \\\\\n\\end{tabular}\n\nThe last paragraph.')
+AFTER = "(([w, k]) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(w)); const r = document.createRange(); r.setStart(s.firstChild, s.textContent.indexOf(w) + k); r.collapse(true); const b = r.getBoundingClientRect(); return [b.left, b.top + b.height / 2]; })"
+
+
+def no_caret(p):
+    """With no caret on the page (a press on the status bar's words, the source pane, an agent), the
+    ribbon stands for the document's last selection, as Word's: both its ends, moved with every edit
+    since (the source pane's typing, setSource), gone with the document (a new one: its end); a
+    selection stays a selection; reading it moves no selection, so an idle page refreshes nothing.
+    (Review of PR 86, H1, H2, M1: each of these failed before.)"""
+    browser, page, errors = open_page(p, width=1366, height=900)
+    out = lambda: page.mouse.click(*page.evaluate("(() => { const b = document.getElementById('st-save').getBoundingClientRect(); return [b.left + 4, b.top + b.height / 2]; })()"))
+    # H1: the caret after "The " in the last paragraph; 29 characters typed in the source pane
+    # before the table; a press outside the page: the table's commands cannot run, Page break goes
+    # after "The"
+    load_doc(page, NOCARET); page.wait_for_timeout(300)
+    page.mouse.click(*page.evaluate(AFTER, ['The last', 4])); page.wait_for_timeout(300)
+    page.click('#b-src'); page.wait_for_timeout(600)
+    page.evaluate("(() => { const cm = rikuy.cm, i = cm.getValue().indexOf('Alpha'); cm.focus(); cm.setCursor(cm.posFromIndex(i)); })()")
+    page.keyboard.type('Twenty nine characters here. '); page.wait_for_timeout(800)
+    out(); page.wait_for_timeout(300)
+    shown = [t for t in page.evaluate('rikuy.rbTabs') if not page.evaluate('(t) => document.getElementById("rt-" + t).hidden', t)]
+    ran = page.evaluate("rikuy.api.run('table-row-below')")
+    before = src(page)
+    page.evaluate("rikuy.selectTab('insert')"); page.wait_for_timeout(200)
+    page.click('#rp-insert [data-cmd=page-break]'); page.wait_for_timeout(300)
+    after = src(page)
+    check('no caret after an edit before the last place: no table tab, a table row refused, Page break at the place moved with the edit (after "The")', 'table-layout' not in shown and ran is False and 'The\n\\newpage\nlast paragraph.' in after and after.count('\\newpage') == 1, (shown, ran, after[after.find('tabular}'):][:80]))
+    page.click('#b-src'); page.wait_for_timeout(300)
+    # M1: words selected, a press outside: Bold bolds them
+    load_doc(page, NOCARET); page.wait_for_timeout(300)
+    select_text(page, 'beta'); page.wait_for_timeout(200)
+    out(); page.wait_for_timeout(300)
+    page.evaluate("rikuy.selectTab('home')"); page.wait_for_timeout(150)
+    page.click('#rp-home [data-cmd=bold]'); page.wait_for_timeout(300)
+    check('words selected, then a press outside the page: Bold bolds those words (the selection kept, both ends)', 'Alpha \\textbf{beta} gamma.' in src(page), src(page)[40:110])
+    # and a caret between words with no caret on the page: Bold writes nothing (no typing to format)
+    load_doc(page, NOCARET); page.wait_for_timeout(300)
+    page.mouse.click(*page.evaluate(AFTER, ['The last', 3])); page.wait_for_timeout(200)
+    out(); page.wait_for_timeout(300)
+    b0 = src(page); r = page.evaluate("rikuy.api.run('bold')")
+    check('a place between words with no caret on the page: Bold writes nothing', r is False and src(page) == b0, (r, src(page)[-60:]))
+    # H1, an agent: setSource with words before the place moves it; a new document's text put in
+    # its place: its end
+    load_doc(page, NOCARET); page.wait_for_timeout(300)
+    page.mouse.click(*page.evaluate(AFTER, ['The last', 4])); page.wait_for_timeout(300)
+    page.evaluate('(t) => rikuy.api.setSource(t)', src(page).replace('Alpha beta gamma.', 'Alpha beta gamma, with forty more characters of new text.')); page.wait_for_timeout(300)
+    page.evaluate('() => { getSelection().removeAllRanges(); document.activeElement && document.activeElement.blur && document.activeElement.blur(); }'); page.wait_for_timeout(200)
+    page.evaluate("rikuy.api.run('page-break')"); page.wait_for_timeout(300)
+    a1 = src(page)
+    page.evaluate('(t) => rikuy.api.setSource(t)', WRAP('A new document with other words in it.')); page.wait_for_timeout(300)
+    page.evaluate('() => { getSelection().removeAllRanges(); document.activeElement && document.activeElement.blur && document.activeElement.blur(); }'); page.wait_for_timeout(200)
+    page.evaluate("rikuy.api.run('page-break')"); page.wait_for_timeout(300)
+    a2 = src(page)
+    check('setSource with words before the place: Page break at the place moved with them; a new document set: at its end', 'The\n\\newpage\nlast paragraph.' in a1 and 'in it.\n\\newpage\n\\end{document}' in a2, (a1[-60:], a2[-60:]))
+    # N1 of the verification: the caret's paragraph taken away by setSource leaves the page with the
+    # focus and no selection; a command acts at the document's end, as llms.txt says
+    load_doc(page, NOCARET); page.wait_for_timeout(300)
+    page.mouse.click(*page.evaluate(AFTER, ['The last', 4])); page.wait_for_timeout(300)
+    page.evaluate('(t) => rikuy.api.setSource(t)', src(page).replace('\n\nThe last paragraph.', '')); page.wait_for_timeout(300)
+    st = page.evaluate("[document.activeElement.id, getSelection().rangeCount]")
+    r = page.evaluate("rikuy.api.run('page-break')"); page.wait_for_timeout(300)
+    end = src(page)
+    # (the document's end: its last words that can be edited, here the paragraph before the table)
+    check('the page with the focus and no selection (setSource took the caret\'s paragraph away): Page break runs, at the document\'s last words', r is True and 'gamma.\n\\newpage' in end and end.count('\\newpage') == 1, (st, r, end[end.find('Opening'):]))
+    # H2: an idle page with no caret refreshes nothing
+    load_doc(page, NOCARET); page.wait_for_timeout(300)
+    page.mouse.click(*page.evaluate(AFTER, ['The last', 4])); page.wait_for_timeout(200)
+    out(); page.wait_for_timeout(500)
+    page.evaluate("() => { window.__syncs = 0; const app = window.rikuy, f = app.ribbonSync; app.ribbonSync = function () { window.__syncs++; return f.apply(this, arguments); }; }")
+    page.wait_for_timeout(3000)
+    n = page.evaluate('window.__syncs')
+    page.evaluate("() => { delete window.rikuy.ribbonSync; }")
+    check('an idle page with no caret refreshes the ribbon no more: 3 s after a press outside the page, no refresh', n == 0, n)
+    # a new document: the old one's place is gone
+    page.evaluate('rikuy.newDocument()'); page.wait_for_timeout(800)
+    page.evaluate('() => { getSelection().removeAllRanges(); document.activeElement && document.activeElement.blur && document.activeElement.blur(); }'); page.wait_for_timeout(200)
+    r = page.evaluate("rikuy.api.run('page-break')"); page.wait_for_timeout(300)
+    check('a new document keeps no place of the one before: Page break with no caret goes into its body', page.evaluate('!rikuy.rbLast || rikuy.rbLast.files === rikuy.files') and '\\begin{document}' in src(page) and src(page).count('\\newpage') <= 1 and src(page).find('\\newpage') < src(page).find('\\end{document}'), (r, src(page)))
+    check('no page errors (no_caret)', not errors, errors[:3])
+    browser.close()
+
+
+def frontier(p):
+    """References › Research › Frontier, where Word has Researcher: a press opens a small popover
+    (its title, one line, Coming soon., Close) by mouse, keys and tap; Esc and Close close it, the
+    focus goes back to the button; no request leaves the page."""
+    browser, page, errors = open_page(p, width=1366, height=900)
+    load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
+    reqs = []
+    page.on('request', lambda r: reqs.append(r.url))
+    open_tab(page, 'References')
+    page.get_by_role('button', name='Frontier', exact=True).click(); page.wait_for_timeout(200)
+    d = page.get_by_role('dialog', name='Frontier', exact=True)
+    shown = d.count() == 1 and 'Coming soon.' in d.inner_text() and 'shows how its ideas connect' in d.inner_text()
+    d.get_by_role('button', name='Close', exact=True).last.click(); page.wait_for_timeout(200)
+    check('Frontier by mouse: its popover opens (Frontier, what it does, Coming soon.) and Close closes it', shown and page.get_by_role('dialog', name='Frontier').count() == 0)
+    page.focus('#rc-frontier'); page.keyboard.press('Enter'); page.wait_for_timeout(200)
+    k1 = page.get_by_role('dialog', name='Frontier').count() == 1 and page.evaluate('document.activeElement.textContent') == 'Close'
+    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    # (Word: a dialog closed with Esc gives the document back, the caret where it was, src/app.js
+    # closePop; ux.py dialogs_give_the_caret_back)
+    check('Frontier by keys: Enter opens it with the focus on Close, Esc closes it and the caret is back on the page', k1 and page.get_by_role('dialog', name='Frontier').count() == 0 and page.evaluate('document.activeElement.id') == 'pages', page.evaluate('document.activeElement.id'))
+    check('Frontier asks nothing of the network', not [u for u in reqs if not u.startswith('https://rikuy.test/')], reqs[:4])
+    box = page.get_by_role('combobox', name='Search', exact=True)
+    box.click(); box.fill('Researcher'); page.wait_for_timeout(200)
+    found = page.get_by_role('listbox', name='Commands', exact=True).get_by_role('option').all_inner_texts()
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    check('the search box finds Frontier by Researcher', found and found[0].startswith('Frontier'), found[:3])
+    # (review of PR 86, L1 to L3: each of these failed before)
+    fb = page.locator('#rc-frontier')
+    a0 = [fb.get_attribute('aria-haspopup'), fb.get_attribute('aria-expanded')]
+    fb.click(); page.wait_for_timeout(250)
+    d = page.get_by_role('dialog', name='Frontier', exact=True)
+    a1 = fb.get_attribute('aria-expanded')
+    desc = page.evaluate("(() => { const p = document.querySelector('.pop-frontier'); return (p.getAttribute('aria-describedby') || '').split(' ').map((id) => (document.getElementById(id) || {}).textContent || '').join(' '); })()")
+    ring = page.evaluate("(() => { const a = document.activeElement, s = getComputedStyle(a); return [a.textContent, s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0]; })()")
+    look = page.evaluate("(() => { const p = document.querySelector('.pop-frontier'), b = p.querySelector('.pop-row .btn'), x = p.querySelector('.pop-x'); return [parseFloat(getComputedStyle(p).borderTopLeftRadius), Math.round(b.getBoundingClientRect().height), Math.round(x.getBoundingClientRect().height)]; })()")
+    page.keyboard.press('Tab'); page.wait_for_timeout(80)
+    t1 = page.evaluate("document.activeElement.closest('.pop-frontier') ? document.activeElement.getAttribute('aria-label') || document.activeElement.textContent : document.activeElement.tagName")
+    page.keyboard.press('Tab'); page.wait_for_timeout(80)
+    t2 = page.evaluate("document.activeElement.closest('.pop-frontier') ? document.activeElement.textContent : document.activeElement.tagName")
+    d.locator('.pop-row .btn').click(); page.wait_for_timeout(250)
+    back = page.evaluate("(() => { const a = document.activeElement, s = getComputedStyle(a); return [a.id, s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0]; })()")
+    check('Frontier says it opens a dialog and whether it is open; the dialog is described by what it does and Coming soon.', a0 == ['dialog', 'false'] and a1 == 'true' and fb.get_attribute('aria-expanded') == 'false' and 'Coming soon.' in desc and 'ideas connect' in desc, (a0, a1, desc))
+    check('opened and closed with the mouse no ring shows, on Close or where the focus goes after (the keyboard\'s ring for the keyboard)', ring == ['Close', False] and back[1] is False, (ring, back))
+    check('Tab goes round its two buttons while it is open; its corners 8 px, its buttons 32 px tall', t1 == 'Close' and t2 == 'Close' and look == [8, 32, 32], (t1, t2, look))
+    browser.close()
+    browser, page, errors = open_page(p, width=390, height=800, touch=True)
+    load_doc(page, DOC)
+    page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label='References'); page.wait_for_timeout(200)
+    page.locator('#rc-frontier').tap(); page.wait_for_timeout(250)
+    d = page.get_by_role('dialog', name='Frontier', exact=True)
+    t1 = d.count() == 1 and d.locator('.btn').bounding_box()['height'] >= 44
+    d.get_by_role('button', name='Close', exact=True).last.tap(); page.wait_for_timeout(250)
+    check('Frontier by tap on a phone (390 px): the popover opens, its Close 44 px tall, a tap closes it', t1 and page.get_by_role('dialog', name='Frontier').count() == 0)
+    browser.close()
+
+
 def mac_keytips(p):
     """On a Mac, Option alone types nothing and shows no letters (it is how a Mac types é and ©, and
     Word for Mac has no KeyTips); F10 shows them."""
@@ -744,22 +929,23 @@ OVERLAP = """(tab) => { const app = window.rikuy, rb = document.getElementById('
       if (w > 1.5 && h > 1.5) ov.push([cs[i].getAttribute('aria-label') || cs[i].id, cs[j].getAttribute('aria-label') || cs[j].id]);
     }
   }
-  const grid = [...P.querySelectorAll('.rb-grp.lay')].filter((g) => getComputedStyle(g).display === 'grid').length;
+  // (the mouse's grid, three rows of small buttons; a finger's row is one row of 44 px and the name)
+  const grid = [...P.querySelectorAll('.rb-grp.lay')].filter((g) => getComputedStyle(g).display === 'grid' && getComputedStyle(g).gridTemplateRows.split(' ').length > 2).length;
   app.rbTab = null; app.selectTab('home');
   return { ov, cut, grid }; }"""
 
 
 def tablet(p):
-    """A touch screen 900 px and wider (a tablet in landscape) keeps the row of 44 px targets its
-    own rules give it: Word's grid of 22 px rows is for a mouse; no control overlaps another or is
-    cut off by the ribbon."""
+    """A touch screen 900 px and wider (a tablet in landscape) keeps its row of 44 px targets, each
+    group's name under it: Word's grid of three rows of small buttons is for a mouse; no control
+    overlaps another or is cut off by the ribbon."""
     for w in (1024, 1180, 1366):
         browser, page, errors = open_page(p, width=w, height=800, touch=True)
         bad = {}
         for t in ('home', 'insert', 'review', 'view', 'references', 'table-layout', 'picture-format', 'equation'):
             r = page.evaluate(OVERLAP, t)
             if r['ov'] or r['cut'] or r['grid']: bad[t] = r
-        check('a touch screen at %d px: no laid out group is a grid, no control overlaps another or is cut off, on 8 tabs' % w, not bad, str(bad)[:400])
+        check('a touch screen at %d px: no laid out group is the mouse\'s grid of three rows, no control overlaps another or is cut off, on 8 tabs' % w, not bad, str(bad)[:400])
         browser.close()
 
 
@@ -779,7 +965,8 @@ SWEEP = """() => { const app = window.rikuy, rb = document.getElementById('ribbo
     let names = 0;
     for (const x of P.querySelectorAll('.rb-grp .btn:not(.rb-gbtn) > span:not(.sr), .rb-grp .btn > .rb-bl')) if (x.offsetParent && x.getClientRects().length && x.getBoundingClientRect().right <= innerWidth + 1) names++;
     const folded = [...P.querySelectorAll('.rb-grp.folded')], wasted = [];
-    for (const g of folded) { const c = [...g.classList]; g.classList.remove('folded', 'ico'); if (fits()) wasted.push(g.dataset.group); g.className = c.join(' '); }
+    // (Home's spare Insert waits for the Styles gallery: beside the style list it stays folded)
+    for (const g of folded) { if (g.dataset.spare && rb.classList.contains('rb-narrow')) continue; const c = [...g.classList]; g.classList.remove('folded', 'ico'); if (fits()) wasted.push(g.dataset.group); g.className = c.join(' '); }
     out[id] = { n, names, over: !fits(), folded: folded.map((g) => g.dataset.group), wasted, small: [...P.querySelectorAll('.rb-grp.sm, .rb-grp.nm')].map((g) => g.dataset.group) };
   }
   app.rbTab = null; app.selectTab('home');
@@ -842,21 +1029,27 @@ def fold_sweep(page):
         check('%s: no group is folded where it would fit open' % tag, not wasted, wasted[:6])
         if extra == []:
             home = {w: seen[w]['home'] for w in widths}
-            check('Home from 1920 to 1024 px folds nothing but its spare Insert; at 900 px Clipboard and Editing may fold with it', all(set(home[w]['folded']) <= {'insert'} for w in widths if w >= 1024) and set(home[900]['folded']) <= {'insert', 'editing', 'clipboard'}, {w: home[w]['folded'] for w in (900, 1030, 1360)})
+            # (at 900 px Paragraph: every split button's arrow a 24 px target, WCAG 2.5.8, made Font
+            # and Paragraph wider than Clipboard and Editing can make room for)
+            check('Home from 1920 to 1024 px folds nothing but its spare Insert; at 900 px one group of rank 4 or less may fold with it', all(set(home[w]['folded']) <= {'insert'} for w in widths if w >= 1024) and len(set(home[900]['folded']) - {'insert'}) <= 1 and set(home[900]['folded']) <= {'insert', 'editing', 'clipboard', 'paragraph'}, {w: home[w]['folded'] for w in (900, 1030, 1360)})
     page.evaluate("""() => { for (const c of window.rikuy.cmds.commands()) if (/^t-sw/.test(c.id)) window.rikuy.cmds.unregister(c.id); window.rikuy.ribbonBuild(); window.rikuy.ribbonFit = window.__rf; }""")
     page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
     open_tab(page, 'Home')
 
 
 def run():
+    # (python3 tabs.py widths fold_sweep: those parts alone)
+    only = set(sys.argv[1:])
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         for f in (mouse_and_keys, contextual, widths, collapse, every_command, keys, search_box, context_menu, kit, round_trips, kept_braces, review_fixes, word_layout, fold_sweep):
+            if only and f.__name__ not in only: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
-        for f in (tablet, mac_keytips):
+        for f in (tablet, mac_keytips, downloads_group, frontier, no_caret):
+            if only and f.__name__ not in only: continue
             try: f(p)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
     bad = [r for r in results if not r[1]]

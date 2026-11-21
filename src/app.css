@@ -14,6 +14,11 @@
   --blue-ink: #1D5C91;
   /* the title band: Rikuy's own blue, in the tone of a word processor's title bar */
   --title: #1A5C99;
+  /* the title bar: a light blue with dark ink, the search box white with a line round it (its
+     line 3:1 against the bar and the box, its text 4.5:1; consistency.py measures them) */
+  --bar: #DCEAF7; --bar-ink: #13314F; --bar-mute: #3E5470; --bar-field: #FFFFFF; --bar-line: #62778D;
+  --bar-hover: rgba(19, 49, 79, .09); --bar-press: rgba(19, 49, 79, .16); --file: #2B74B0;
+  --field-line: #7D8A98;
   --ribbon: #FFFFFF;
   --tabrow: #F2F4F7;
   --warn: #B3412C;
@@ -89,6 +94,9 @@
     --desk: #151A20; --desk-2: #0F1318; --chrome: #1B222A; --panel: #1F2730; --line: #2E3843;
     --ink-ui: #E2E7ED; --mute: #8D9AA8; --blue: #6AAEE3; --blue-wash: #1B3650; --blue-ink: #9CCBF0;
     --title: #143E66; --ribbon: #1F2730; --tabrow: #1B222A;
+    --bar: #1C2A3A; --bar-ink: #E2E7ED; --bar-mute: #B4C2D0; --bar-field: #151C24; --bar-line: #7A90A8;
+    --bar-hover: rgba(255, 255, 255, .09); --bar-press: rgba(255, 255, 255, .16); --file: #1F64A3;
+    --field-line: #75828F;
     --warn: #E8806B; --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .45);
     --ins-ui: #6FD39C; --del-ui: #F28B7D;
     color-scheme: dark;
@@ -98,6 +106,9 @@
   --desk: #151A20; --desk-2: #0F1318; --chrome: #1B222A; --panel: #1F2730; --line: #2E3843;
   --ink-ui: #E2E7ED; --mute: #8D9AA8; --blue: #6AAEE3; --blue-wash: #1B3650; --blue-ink: #9CCBF0;
   --title: #143E66; --ribbon: #1F2730; --tabrow: #1B222A;
+  --bar: #1C2A3A; --bar-ink: #E2E7ED; --bar-mute: #B4C2D0; --bar-field: #151C24; --bar-line: #7A90A8;
+  --bar-hover: rgba(255, 255, 255, .09); --bar-press: rgba(255, 255, 255, .16); --file: #1F64A3;
+  --field-line: #75828F;
   --warn: #E8806B; --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .45);
   --ins-ui: #6FD39C; --del-ui: #F28B7D;
   color-scheme: dark;
@@ -111,27 +122,34 @@ button { font: inherit; color: inherit; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 [hidden] { display: none !important; }
 
-/* ---- bar: a coloured title band. Quick Access at the left, the name and the search in the middle ---- */
-#bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 4px 10px; min-height: 56px; background: var(--title); color: #fff; border-bottom: 0; flex: none; position: relative; }
+/* ---- bar: a light blue title band. Quick Access at the left, the name and the search in the middle ---- */
+#bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 4px 10px; min-height: 56px; background: var(--bar); color: var(--bar-ink); border-bottom: 0; flex: none; position: relative; }
 .bar-left, .title-end { display: flex; align-items: center; gap: 2px; min-width: 0; flex: none; }
 .title-mid { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; }
 .title-name { display: flex; align-items: baseline; justify-content: center; gap: 8px; max-width: 100%; min-width: 0; }
 .qat { display: flex; align-items: center; gap: 0; }
-.qat .btn.icon { width: 28px; height: 28px; }
 .brand { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: none; padding: 0 6px; }
-.mark { font-family: var(--font-doc); font-style: italic; font-size: 18px; letter-spacing: .01em; color: #fff; }
+.mark { font-family: var(--font-doc); font-style: italic; font-size: 18px; letter-spacing: .01em; color: var(--bar-ink); }
 /* the document's name, centred, with whether this browser has the latest edit */
-.docname { display: block; min-width: 0; max-width: 100%; color: #fff; font-size: 13px; font-weight: 600; line-height: 1.2; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
-.savestate { flex: none; color: rgba(255, 255, 255, .82); font-size: 12px; font-weight: 400; white-space: nowrap; }
+.docname { display: block; min-width: 0; max-width: 100%; color: var(--bar-ink); font-size: 13px; font-weight: 600; line-height: 1.2; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.savestate { flex: none; color: var(--bar-mute); font-size: 12px; font-weight: 400; white-space: nowrap; }
 .savestate::before { content: "\2014\00a0"; }
-#bar .btn.ghost { color: #fff; }
-#bar .btn.ghost:hover { background: rgba(255, 255, 255, .16); }
-#bar .btn.ghost[aria-pressed="true"] { background: rgba(255, 255, 255, .22); color: #fff; }
-#bar .btn:focus-visible { outline-color: #fff; }
-#bar .sep { background: rgba(255, 255, 255, .35); }
+/* the bar's buttons: one size, the ribbon's names (12 px, regular) and its 16 px icons */
+#bar .btn { height: 28px; padding: 0 8px; gap: 6px; border-radius: 4px; font-size: 12px; font-weight: 400; line-height: 16px; }
+#bar .btn.icon { width: 28px; padding: 0; }
+#bar .btn svg { width: 16px; height: 16px; }
+#bar .btn.ghost { color: var(--bar-ink); }
+#bar .btn.ghost:hover { background: var(--bar-hover); }
+#bar .btn.ghost[aria-pressed="true"] { background: var(--bar-press); color: var(--bar-ink); }
+/* (pressed: a line under it as well as the wash, a shape and not a tint alone, D5; a border, so
+   forced colours keep it) */
+#bar .btn { position: relative; }
+#bar .btn.ghost[aria-pressed="true"]::after { content: ""; position: absolute; left: 6px; right: 6px; bottom: 1px; height: 0; border-bottom: 2px solid currentColor; }
+#bar .btn:focus-visible { outline-color: var(--bar-ink); }
+#bar .sep { height: 20px; background: color-mix(in srgb, var(--bar-ink) 30%, transparent); }
 .tools { display: flex; align-items: center; gap: 2px; flex: none; }
 .sep { width: 1px; height: 20px; background: var(--line); margin: 0 6px; }
-.btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid transparent; background: var(--blue); color: #fff; cursor: pointer; font-weight: 500; font-size: 13px; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 4px; border: 1px solid transparent; background: var(--blue); color: #fff; cursor: pointer; font-weight: 500; font-size: 13px; white-space: nowrap; }
 .btn:hover { filter: brightness(1.06); }
 .btn:focus-visible, .linkish:focus-visible, .pitem:focus-visible, .bubble button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .btn.ghost { background: transparent; color: var(--ink-ui); }
@@ -151,14 +169,14 @@ body.has-ai .ai-only { display: inline-flex !important; }
 /* ---- the search box in the bar (Alt+Q): any command by its name ---- */
 #bar { position: relative; }
 .srch { position: relative; width: min(420px, 100%); min-width: 0; display: flex; align-items: center; container-type: inline-size; }
-.srch > svg { position: absolute; left: 9px; top: 50%; width: 15px; height: 15px; margin-top: -7.5px; fill: none; stroke: #5C6B7A; stroke-width: 1.6; stroke-linecap: round; pointer-events: none; }
-.srch input { width: 100%; height: 28px; box-sizing: border-box; padding: 0 62px 0 30px; border: 0; border-radius: 14px; background: #fff; color: #18212A; font: 13px var(--font-ui); }
+.srch > svg { position: absolute; left: 9px; top: 50%; width: 16px; height: 16px; margin-top: -8px; fill: none; stroke: var(--bar-mute); stroke-width: 1px; stroke-linecap: round; pointer-events: none; }
+.srch input { width: 100%; height: 28px; box-sizing: border-box; padding: 0 48px 0 32px; border: 1px solid var(--bar-line); border-radius: 4px; background: var(--bar-field); color: var(--ink-ui); font: 12px var(--font-ui); }
 /* the chord, so the box reads as command search and not as Find in the document */
-.srch-key { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); margin: 0; padding: 1px 5px; border: 0; border-radius: 4px; background: #EEF2F6; color: #5C6B7A; font: 11px/1.4 var(--font-ui); pointer-events: none; }
+.srch-key { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); margin: 0; padding: 2px 6px; border: 0; border-radius: 4px; background: color-mix(in srgb, var(--bar-line) 14%, var(--bar-field)); color: var(--bar-mute); font: 11px/1.4 var(--font-ui); pointer-events: none; }
 .srch:focus-within .srch-key, .srch:has(input:not(:placeholder-shown)) .srch-key { visibility: hidden; }
 @container (max-width: 210px) { .srch-key { display: none; } .srch input { padding-right: 10px; } }
-.srch input::placeholder { color: var(--mute); }
-.srch input:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: transparent; }
+.srch input::placeholder { color: var(--bar-mute); opacity: 1; }
+.srch input:focus { outline: 2px solid var(--blue); outline-offset: -2px; border-color: var(--blue); }
 .srch-list { position: absolute; top: calc(100% + 4px); left: 0; z-index: 45; min-width: 100%; width: max-content; max-width: min(440px, calc(100vw - 16px)); max-height: 60vh; overflow: auto; box-sizing: border-box; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 40px rgba(10, 20, 30, .22); }
 .srch-opt { display: flex; align-items: baseline; gap: 10px; padding: 6px 10px; border-radius: 5px; cursor: pointer; white-space: nowrap; }
 .srch-opt.on { background: var(--blue-wash); }
@@ -177,15 +195,16 @@ body.has-ai .ai-only { display: inline-flex !important; }
 :root[data-theme="dark"] { --tab-on: var(--blue-ink); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ctx: #C59BE8; } }
 :root[data-theme="dark"] { --ctx: #C59BE8; }
-.rb-tabs { display: flex; align-items: flex-end; gap: 1px; min-width: 0; }
-.rb-tab { position: relative; flex: none; height: 26px; padding: 0 11px; border: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--mute); font: 500 13px var(--font-ui); cursor: pointer; white-space: nowrap; }
+.rb-tabs { display: flex; align-items: flex-end; gap: 0; min-width: 0; }
+.rb-tab { position: relative; flex: none; height: 26px; padding: 0 12px; border: 0; border-radius: 4px 4px 0 0; background: transparent; color: var(--mute); font: 500 13px var(--font-ui); cursor: pointer; white-space: nowrap; }
 .rb-tab:hover { color: var(--ink-ui); background: color-mix(in srgb, var(--blue-wash) 50%, transparent); }
 .rb-tab.on { color: var(--tab-on); background: var(--ribbon); }
 .rb-tab.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: 0; height: 3px; border-radius: 2px 2px 0 0; background: var(--tab-on); }
 /* File is the accent tab, and it opens the backstage rather than another ribbon row */
-.rb-tab[data-tab="file"] { color: #fff; background: var(--title); border-radius: 4px 4px 0 0; margin-right: 4px; }
-.rb-tab[data-tab="file"]:hover { color: #fff; background: color-mix(in srgb, var(--title) 86%, #000); }
-.rb-tab[data-tab="file"].on { color: #fff; background: var(--title); }
+/* File in the accent blue, a step deeper than the bar above it, white on it (5:1 and more) */
+.rb-tab[data-tab="file"] { color: #fff; background: var(--file); border-radius: 4px 4px 0 0; margin-right: 4px; }
+.rb-tab[data-tab="file"]:hover { color: #fff; background: color-mix(in srgb, var(--file) 86%, #000); }
+.rb-tab[data-tab="file"].on { color: #fff; background: var(--file); }
 .rb-tab[data-tab="file"].on::after { display: none; }
 .rb-ktip { display: none; }
 body.keytips .rb-ktip { display: inline-block; margin-left: 4px; padding: 0 3px; border-radius: 2px; background: #fff; color: var(--title); border: 1px solid var(--title); font: 700 10px/14px var(--font-ui); vertical-align: 1px; }
@@ -198,14 +217,14 @@ body.keytips .rb-ktip::before { content: attr(data-k); }
 .rb-tab:not(.ctx) + .rb-tab.ctx { margin-left: 10px; }
 .rb-tab:not(.ctx) + .rb-tab.ctx::before { content: ""; position: absolute; left: -6px; top: 7px; bottom: 7px; width: 1px; background: var(--line); }
 .rb-tab:focus-visible, .rb-coll:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
-.rb-coll { flex: none; width: 28px; height: 24px; margin-bottom: 2px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--mute); cursor: pointer; }
+.rb-coll { flex: none; width: 24px; height: 24px; margin-bottom: 2px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--mute); cursor: pointer; }
 .rb-coll:hover { background: var(--blue-wash); color: var(--ink-ui); }
-.rb-coll svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.rb-coll svg { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1px; stroke-linecap: round; stroke-linejoin: round; }
 body.rb-collapsed .rb-coll svg { transform: rotate(180deg); }
 body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
 @media (min-width: 861px) { body.rb-collapsed:not(.rb-peek) #ribbon { display: none; } }
 /* a phone's tabs: one list at the start of the row */
-.rb-tabsel { display: none; font: 13px var(--font-ui); color: var(--ink-ui); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; height: 28px; padding: 0 2px; width: 86px; margin-right: 2px; }
+.rb-tabsel { display: none; font: 13px var(--font-ui); color: var(--ink-ui); background: var(--panel); border: 1px solid var(--field-line); border-radius: 4px; height: 28px; padding: 0 2px; width: 86px; margin-right: 2px; }
 .rb-tabsel:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 /* the open tab's panel: one toolbar of groups, the downloads at its end */
 .rb-panel { flex: 1 0 auto; display: flex; align-self: stretch; }
@@ -219,8 +238,8 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
 .rb-grp.folded > .rb-gbtn { display: inline-flex; padding: 0 4px 0 8px; gap: 2px; }
 .rb-gbtn svg { width: 14px; height: 14px; }
 .rb-split { display: inline-flex; align-items: center; }
-.rb-split > .btn:first-child { border-radius: 6px 0 0 6px; }
-.rb-split > .rb-x { width: 16px; border-radius: 0 6px 6px 0; }
+.rb-split > .btn:first-child { border-radius: 4px 0 0 4px; }
+.rb-split > .rb-x { width: 16px; border-radius: 0 4px 4px 0; }
 .rb-split > .rb-x svg { width: 12px; height: 12px; }
 .rb-split:hover > .btn:not(:disabled) { background: color-mix(in srgb, var(--blue-wash) 60%, transparent); }
 .rb-split > .btn:hover:not(:disabled) { background: var(--blue-wash); }
@@ -230,7 +249,7 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
 .rb::-webkit-scrollbar { display: none; }
 .rb > * { flex: none; }
 .rb > .rb-panel { flex: 1 0 auto; }
-.rb-style { font: 13px var(--font-ui); color: var(--ink-ui); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; height: 28px; padding: 0 4px; width: 128px; }
+.rb-style { font: 13px var(--font-ui); color: var(--ink-ui); background: var(--panel); border: 1px solid var(--field-line); border-radius: 4px; height: 28px; padding: 0 4px; width: 100px; }
 .rb-style:disabled { opacity: .55; }
 .rb-style:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 /* The Styles gallery, as Word's: one bordered box of tiles, each the style's name drawn in that
@@ -238,8 +257,8 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
    its ends page through the tiles where they do not all fit, a button at its right edge opens
    them all; its name under it. ribbonFit (src/ribbon.js) sets how many tiles show (rb-fold folds
    the insert buttons' names, rb-narrow puts the style list in its place); a phone has the list. */
-.rb-gw { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 2px 0 1px; }
-.rb-gal { display: flex; align-items: stretch; height: 33px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
+.rb-gw { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 2px 0 0; }
+.rb-gal { display: flex; align-items: stretch; height: 33px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
 .rb-tiles { display: flex; flex: none; gap: 2px; padding: 2px; }
 .rb-tile { flex: none; min-width: 46px; display: flex; align-items: center; justify-content: center; padding: 0 6px; box-sizing: border-box; border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--ink-ui); cursor: pointer; white-space: nowrap; line-height: 1; }
 .rb-tile:hover { background: color-mix(in srgb, var(--blue-wash) 55%, transparent); }
@@ -258,10 +277,10 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
 .rb-more { border-left: 1px solid var(--line); border-radius: 0 4px 4px 0; }
 .rb-sb:hover { background: var(--blue-wash); }
 .rb-sb:disabled { color: var(--mute); opacity: .4; cursor: default; pointer-events: none; }
-.rb-sb svg { width: 9px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.rb-sb svg { width: 9px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1px; stroke-linecap: round; stroke-linejoin: round; }
 .rb-more svg { height: 8px; }
 @media (pointer: coarse) { .rb-sb { width: 32px; } }
-.rb-cap { font: 11px/1 var(--font-ui); color: var(--mute); letter-spacing: .01em; }
+.rb-cap { font: 12px/16px var(--font-ui); color: var(--mute); }
 /* group names under the controls, on a wide window. A phone's row stays one line of buttons. */
 .rb-glab { display: none; }
 /* the corner arrow is for a mouse on a wide window; a phone reaches the same dialog from its own button */
@@ -272,18 +291,18 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   /* padding is vertical only: extra horizontal padding would fold a wider window more than a narrower one */
   /* overflow hidden: a label wider than its buttons must not widen the row (that folded a wider window more) */
   .rb-grp:not(.folded) { position: relative; padding-bottom: 16px; overflow: hidden; }
-  .rb-grp:not(.folded) > .rb-glab { display: block; position: absolute; left: 0; right: 0; bottom: 3px; text-align: center; font: 11px/1 var(--font-ui); color: var(--mute); pointer-events: none; }
-  .rb-tb > .sep { align-self: stretch; height: auto; margin-top: 8px; margin-bottom: 18px; }
-  .rb-gw { position: relative; padding-bottom: 14px; align-self: stretch; justify-content: center; }
-  .rb-cap { position: absolute; left: 0; right: 0; bottom: 2px; }
+  .rb-grp:not(.folded) > .rb-glab { display: block; position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; font: 12px/16px var(--font-ui); color: var(--mute); pointer-events: none; }
+  .rb-tb > .sep { align-self: stretch; height: auto; margin-top: 8px; margin-bottom: 20px; }
+  .rb-gw { position: relative; padding-bottom: 16px; align-self: stretch; justify-content: center; }
+  .rb-cap { position: absolute; left: 0; right: 0; bottom: 4px; }
   /* Editing: Find, Replace and Select one under another */
-  .rb-grp[data-group="editing"]:not(.folded) { flex-direction: column; align-items: stretch; flex-wrap: nowrap; justify-content: center; gap: 0; padding: 2px 0 18px; }
+  .rb-grp[data-group="editing"]:not(.folded) { flex-direction: column; align-items: stretch; flex-wrap: nowrap; justify-content: center; gap: 0; padding: 4px 0 16px; }
   .rb-grp[data-group="editing"] > .btn, .rb-grp[data-group="editing"] > .rb-split > .btn { height: 22px; }
   .rb-grp[data-group="editing"] > .rb-split { height: 22px; }
   /* a group's dialog, the small arrow at the label's corner. Out of the row's width, so folding stays as it was. */
-  .rb-grp:not(.folded) > .rb-launch { display: flex; position: absolute; right: 0; bottom: 1px; width: 16px; height: 14px; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 2px; background: transparent; color: var(--mute); cursor: pointer; }
+  .rb-grp:not(.folded) > .rb-launch { display: flex; position: absolute; right: 0; bottom: 1px; width: 16px; height: 14px; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--mute); cursor: pointer; }
   .rb-grp:not(.folded) > .rb-launch:hover { background: var(--blue-wash); color: var(--ink-ui); }
-  .rb-grp:not(.folded) > .rb-launch svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+  .rb-grp:not(.folded) > .rb-launch svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1px; stroke-linecap: round; stroke-linejoin: round; }
 }
 /* (and from 861 to 899 px, where Home's Font group is two rows of buttons and the others one) */
 @media (min-width: 861px) and (max-width: 899px) and (pointer: fine) { body:not(.file-open) .rb { height: 67px; } }
@@ -291,60 +310,60 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
    of 22 px rows would overlap and cut off: test/tabs.py tablet) */
 @media (min-width: 900px) and (pointer: fine) {
   /* every tab as tall as Home, so the page does not jump when another tab opens */
-  body:not(.file-open) .rb { height: 92px; }
+  body:not(.file-open) .rb { height: 100px; }
   /* Clipboard: a large Paste, and Cut, Copy, Format Painter in a column beside it (a touch screen's
      44 px buttons keep a row), its name on the line of the other groups' names */
-  .rb-grp[data-group="clipboard"]:not(.folded) { display: grid; grid-template-columns: 54px auto; grid-template-rows: repeat(3, 20px); column-gap: 2px; align-content: center; justify-content: center; padding: 4px 0 18px; }
-  .rb-grp[data-group="clipboard"] > [data-cmd="paste"] { grid-column: 1; grid-row: 1 / span 3; flex-direction: column; height: 60px; width: 52px; gap: 1px; justify-content: center; padding: 2px 2px; font-size: 12px; border-radius: 4px; }
-  .rb-grp[data-group="clipboard"] > [data-cmd="paste"] svg { width: 22px; height: 22px; }
-  .rb.rb-fold .rb-grp[data-group="clipboard"] > [data-cmd="paste"] { width: 52px; height: 60px; flex-direction: column; padding: 2px; }
+  .rb-grp[data-group="clipboard"]:not(.folded) { display: grid; grid-template-columns: 54px auto; grid-template-rows: repeat(3, 24px); grid-auto-flow: column; column-gap: 2px; align-content: start; justify-content: center; padding: 4px 0 24px; }
+  .rb-grp[data-group="clipboard"] > [data-cmd="paste"] { grid-column: 1; grid-row: 1 / span 3; flex-direction: column; height: 72px; width: 52px; gap: 3px; justify-content: flex-start; padding: 4px 2px 2px; font-size: 12px; border-radius: 4px; }
+  .rb-grp[data-group="clipboard"] > [data-cmd="paste"] svg { width: 32px; height: 32px; }
+  .rb.rb-fold .rb-grp[data-group="clipboard"] > [data-cmd="paste"] { width: 52px; height: 72px; flex-direction: column; padding: 4px 2px 2px; }
   .rb.rb-fold .rb-grp[data-group="clipboard"] > [data-cmd="paste"] span:not(.sr) { display: inline; }
   .rb-grp[data-group="clipboard"] > [data-cmd="cut"],
   .rb-grp[data-group="clipboard"] > [data-cmd="copy"],
-  .rb-grp[data-group="clipboard"] > [data-cmd="format-painter"] { grid-column: 2; height: 20px; width: 26px; padding: 0; }
+  .rb-grp[data-group="clipboard"] > [data-cmd="format-painter"] { grid-column: 2; height: 24px; width: 26px; padding: 0; }
   /* Home's Styles name on the same line as its other groups' names */
   #rp-home .rb-grp[data-group="styles"]:not(.folded) { padding-bottom: 0; align-items: stretch; }
   #rp-home .rb-grp[data-group="styles"] > .rb-gw { padding-bottom: 16px; }
-  #rp-home .rb-grp[data-group="styles"] .rb-cap { bottom: 3px; }
+  #rp-home .rb-grp[data-group="styles"] .rb-cap { bottom: 4px; }
   /* Word's layout of the other tabs (src/ribbon/layout.js): large buttons, the icon over the name;
      small ones three to a column; the group's name on a row of its own under them, as wide as the
      group (so the group is at least as wide as its name). --c: the columns it takes. */
-  .rb-grp.lay:not(.folded) { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, 22px) minmax(0, 1fr); grid-template-columns: repeat(var(--c), auto); grid-auto-columns: auto; column-gap: 1px; align-items: center; justify-items: start; padding: 4px 1px 3px; }
+  .rb-grp.lay:not(.folded) { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, 24px) 20px; align-content: start; grid-template-columns: repeat(var(--c), auto); grid-auto-columns: auto; row-gap: 0; column-gap: 2px; align-items: center; justify-items: start; padding: 4px 2px; }
   .rb-grp.lay:not(.folded) > .rb-glab { position: static; grid-row: 4; grid-column: 1 / -1; align-self: end; justify-self: stretch; padding: 0 4px; white-space: nowrap; }
   .rb-grp.lay:not(.folded):has(> .rb-launch, > .rb-launch-c) > .rb-glab { padding: 0 16px; }
   /* the corner arrow that is the group's own button (src/ribbon/tabs.js) */
   /* (#ribbon: every ribbon button is position relative, #ribbon .btn) */
-  #ribbon .rb-grp.lay:not(.folded) > .rb-launch-c { position: absolute; right: 0; bottom: 1px; width: 16px; min-width: 0; height: 14px; padding: 0; gap: 0; align-items: center; justify-content: center; border: 0; border-radius: 2px; background: transparent; color: var(--mute); }
+  #ribbon .rb-grp.lay:not(.folded) > .rb-launch-c { position: absolute; right: 0; bottom: 1px; width: 16px; min-width: 0; height: 14px; padding: 0; gap: 0; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--ink-ui); }
   .rb-grp.lay:not(.folded) > .rb-launch-c:hover { background: var(--blue-wash); color: var(--ink-ui); }
   .rb-grp.lay:not(.folded) > .rb-launch-c > :not(.rb-larrow):not(.sr) { display: none; }
-  .rb-grp.lay:not(.folded) > .rb-launch-c > .rb-larrow { display: block; width: 10px; height: 10px; stroke-width: 1.3; }
+  .rb-grp.lay:not(.folded) > .rb-launch-c > .rb-larrow { display: block; width: 10px; height: 10px; stroke-width: 1px; }
   .rb-grp.lay > [data-brk] { grid-row-start: 1; }
-  .rb-grp.lay > .btn, .rb-grp.lay > .rb-split > .btn { height: 22px; border-radius: 4px; font-size: 12px; font-weight: 400; }
+  .rb-grp.lay > .btn, .rb-grp.lay > .rb-split > .btn { height: 24px; border-radius: 4px; font-size: 12px; font-weight: 400; }
   .rb-grp.lay > .btn svg, .rb-grp.lay > .rb-split > .btn svg { width: 16px; height: 16px; }
   .rb-grp.lay .rb-ln { white-space: nowrap; }
   .rb-grp.lay .rb-car { display: inline-block; width: 10px; height: 10px; margin-left: 1px; vertical-align: -1px; }
   /* small: the icon and its name */
-  .rb-grp.lay > .btn[data-size="S"] { padding: 0 6px 0 3px; gap: 4px; width: auto; }
-  .rb-grp.lay > .rb-split[data-size="S"] > .btn:first-child { padding: 0 3px 0 3px; gap: 4px; width: auto; }
-  .rb-grp.lay > .rb-split > .rb-x { width: 14px; height: 22px; }
+  .rb-grp.lay > .btn[data-size="S"] { padding: 0 6px 0 4px; gap: 4px; width: auto; }
+  .rb-grp.lay > .rb-split[data-size="S"] > .btn:first-child { padding: 0 4px; gap: 4px; width: auto; }
+  .rb-grp.lay > .rb-split > .rb-x { width: 24px; height: 24px; }
   .rb-grp.lay > .rb-split > .rb-x svg { width: 10px; height: 10px; }
   /* the icon alone */
-  .rb-grp.lay > .btn[data-size="I"], .rb-grp.lay > .rb-split[data-size="I"] > .btn:first-child { width: 26px; padding: 0; justify-content: center; }
+  .rb-grp.lay > .btn[data-size="I"], .rb-grp.lay > .rb-split[data-size="I"] > .btn:first-child { width: 24px; padding: 0; justify-content: center; }
   .rb-grp.lay > .btn[data-size="I"] .rb-bl { display: none; }
   /* large: the icon over its name, a column of its own */
   .rb-grp.lay > [data-size="L"] { grid-row-end: span 3; justify-self: center; align-self: start; }
-  .rb-grp.lay > .btn[data-size="L"], .rb-grp.lay > .rb-split[data-size="L"] > .btn:first-child { flex-direction: column; justify-content: flex-start; align-items: center; height: 66px; width: auto; min-width: 42px; padding: 4px 5px 2px; gap: 3px; line-height: 14px; }
-  .rb-grp.lay > .btn[data-size="L"] svg:not(.rb-car), .rb-grp.lay > .rb-split[data-size="L"] > .btn:first-child svg { width: 24px; height: 24px; }
+  .rb-grp.lay > .btn[data-size="L"], .rb-grp.lay > .rb-split[data-size="L"] > .btn:first-child { flex-direction: column; justify-content: flex-start; align-items: center; height: 72px; width: auto; min-width: 42px; padding: 4px 4px 2px; gap: 2px; line-height: 16px; }
+  .rb-grp.lay > .btn[data-size="L"] svg:not(.rb-car), .rb-grp.lay > .rb-split[data-size="L"] > .btn:first-child svg { width: 32px; height: 32px; }
   .rb-grp.lay .btn[data-size="L"] .rb-bl, .rb-grp.lay > .rb-split[data-size="L"] .rb-bl { display: flex; flex-direction: column; align-items: center; text-align: center; }
   /* (a glyph for an icon, Symbol's Ω, in the icon's box, so its name lines up with the others') */
-  .rb-grp.lay > .btn[data-size="L"] > .sym-g { display: block; height: 24px; font-size: 21px; line-height: 24px; }
+  .rb-grp.lay > .btn[data-size="L"] > .sym-g { display: block; height: 32px; font-size: 28px; line-height: 32px; }
   .rb-grp.lay .btn[data-size="L"] .rb-bl > .rb-car { margin: 1px 0 0; }
   /* a large split button as Word's: its icon alone above (as high as a large button's), its name
      and arrow below, in the part that opens the menu, where a large button has its name */
-  .rb-grp.lay > .rb-split[data-size="L"] { flex-direction: column; height: 66px; }
-  .rb-grp.lay > .rb-split[data-size="L"] > .btn:first-child { height: 30px; width: 100%; padding: 4px 5px 2px; gap: 0; border-radius: 4px 4px 0 0; }
+  .rb-grp.lay > .rb-split[data-size="L"] { flex-direction: column; height: 72px; }
+  .rb-grp.lay > .rb-split[data-size="L"] > .btn:first-child { height: 38px; width: 100%; padding: 4px 4px 2px; gap: 0; border-radius: 4px 4px 0 0; }
   .rb-grp.lay > .rb-split[data-size="L"] > .btn:first-child > .rb-bl { display: none; }
-  .rb-grp.lay > .rb-split[data-size="L"] > .rb-x { display: flex; flex-direction: column; justify-content: flex-start; align-items: center; width: 100%; height: 36px; padding: 1px 5px 0; border-radius: 0 0 4px 4px; font-size: 12px; line-height: 14px; }
+  .rb-grp.lay > .rb-split[data-size="L"] > .rb-x { display: flex; flex-direction: column; justify-content: flex-start; align-items: center; width: 100%; height: 34px; padding: 0 4px; border-radius: 0 0 4px 4px; font-size: 12px; line-height: 16px; }
   .rb-grp.lay > .rb-split[data-size="L"] > .rb-x > svg:not(.rb-car) { display: none; }
   .rb-grp.lay > .rb-split[data-size="L"] > .rb-x > .rb-xname { display: flex; flex-direction: column; align-items: center; text-align: center; }
   /* a gallery's tiles, side by side in one box */
@@ -354,8 +373,8 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   .rb-grp.lay > .btn[data-size="T"] svg { width: 26px; height: 26px; }
   .rb-grp.lay > .btn[data-size="T"][aria-pressed="true"] { border-color: var(--blue); position: relative; z-index: 1; }
   /* the spin fields: a row each */
-  .rb-grp.lay > .pf, .rb-grp.lay > .pf-field { height: 22px; padding: 0 2px; }
-  .rb-grp.lay > .pf .pf-v, .rb-grp.lay > .pf-field .pf-v { height: 20px; }
+  .rb-grp.lay > .pf, .rb-grp.lay > .pf-field { height: 24px; padding: 0 2px; }
+  .rb-grp.lay > .pf .pf-v, .rb-grp.lay > .pf-field .pf-v { height: 24px; }
   .rb-grp.lay > .pf:has(#rl-spacing-before), .rb-grp.lay > .pf:has(#rl-spacing-after) { margin-left: 8px; }
   /* Word's check boxes (Table Style Options, View's Show, the header's Options): a box ticked when on */
   .rb-grp.lay-check:not(.nm) > .btn[aria-pressed][data-size="S"] { position: relative; padding-left: 4px; }
@@ -375,22 +394,24 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   /* (a run of small ones, Previous over Next, starts a column where it would not fit in this one) */
   .rb-grp.lay:is(.sm, .nm) > [data-sbrk] { grid-row-start: 1; }
   .rb-grp.lay:is(.sm, .nm) > .btn[data-size="L"], .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .btn:first-child,
-  .rb-grp.lay:is(.sm, .nm) > .btn[data-size="T"] { flex-direction: row; height: 22px; min-width: 0; padding: 0 6px 0 3px; gap: 4px; border: 1px solid transparent; margin: 0; background: transparent; line-height: normal; }
+  .rb-grp.lay:is(.sm, .nm) > .btn[data-size="T"] { flex-direction: row; height: 24px; min-width: 0; padding: 0 6px 0 4px; gap: 4px; border: 1px solid transparent; margin: 0; background: transparent; line-height: 16px; }
   .rb-grp.lay:is(.sm, .nm) > .btn[data-size="L"] svg:not(.rb-car), .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .btn:first-child svg, .rb-grp.lay:is(.sm, .nm) > .btn[data-size="T"] svg { width: 16px; height: 16px; }
   .rb-grp.lay:is(.sm, .nm) .btn[data-size="L"] .rb-bl, .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] .rb-bl { flex-direction: row; gap: 3px; }
-  .rb-grp.lay:is(.sm, .nm) > .btn[data-size="T"] { width: 26px; padding: 0; justify-content: center; border-radius: 4px; }
+  .rb-grp.lay:is(.sm, .nm) > .btn[data-size="T"] { width: 24px; padding: 0; justify-content: center; border-radius: 4px; }
   .rb-grp.lay:is(.sm, .nm) > .btn[data-size="T"][aria-pressed="true"] { background: var(--blue-wash); }
-  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] { flex-direction: row; height: 22px; }
-  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .btn:first-child { width: auto; height: 22px; padding: 0 6px 0 3px; gap: 4px; border-radius: 4px 0 0 4px; }
+  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] { flex-direction: row; height: 24px; }
+  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .btn:first-child { width: auto; height: 24px; padding: 0 6px 0 4px; gap: 4px; border-radius: 4px 0 0 4px; }
   .rb-grp.lay.sm:not(.nm) > .rb-split[data-size="L"] > .btn:first-child > .rb-bl { display: flex; }
-  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x { width: 14px; height: 22px; padding: 0; border-radius: 0 4px 4px 0; }
+  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x { width: 24px; height: 24px; padding: 0; border-radius: 0 4px 4px 0; }
   .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x > svg:not(.rb-car) { display: inline; }
   .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x > .rb-xname { display: none; }
+  /* (a large split button with its name taken, an icon alone as every other: 24 px) */
+  .rb-grp.lay.nm > .rb-split[data-size="L"] > .btn:first-child { width: 24px; padding: 0; justify-content: center; }
   .rb-grp.lay.nm > [data-size] .rb-bl, .rb-grp.lay.nm > .rb-split > .btn .rb-bl { display: none; }
   /* (rb-fold's 32 px for a button whose name went must not widen a group already without names:
      every step of ribbonFit takes room) */
   .rb-grp.lay.nm > .btn[data-size], .rb-grp.lay.nm > .rb-split > .btn:first-child,
-  .rb.rb-fold .rb-grp.lay.nm > .btn[data-size]:not(.icon) { width: 26px; padding: 0; gap: 0; justify-content: center; }
+  .rb.rb-fold .rb-grp.lay.nm > .btn[data-size]:not(.icon) { width: 24px; padding: 0; gap: 0; justify-content: center; }
   .rb-grp.lay.nm > .pf .pf-l, .rb-grp.lay.nm > .pf .pf-u, .rb-grp.lay.nm > .pf-field .pf-lab { display: none; }
   .rb-grp.lay.nm.lay-check > .btn[aria-pressed]::before, .rb-grp.lay.nm.lay-check > .btn[aria-pressed]::after { display: none; }
   .rb-grp.lay.nm.lay-check > .btn[aria-pressed] > svg { display: inline; }
@@ -505,6 +526,13 @@ body.file-open #rp-file .rf-back span { display: inline !important; }
 /* the row scrolls and clips anything drawn outside a button, so the focus ring sits inside */
 .rb .btn:focus-visible, .rb .rb-tile:focus-visible, .rb .rb-sb:focus-visible, .rb-style:focus-visible, .rb-tabsel:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 .rb .btn.icon b, .rb .btn.icon i, .rb .btn.icon u { font: 15px var(--font-doc); }
+/* every ribbon button's name in one regular weight, as Word draws them (Home's Find, Replace and
+   Select read bolder than the downloads beside them); a glyph keeps its own (Bold's B). With a
+   mouse from 900 px, one size too: Home's groups' names as the laid out groups' and the downloads' */
+#ribbon .btn { font-size: 12px; font-weight: 400; line-height: 16px; }
+/* the keyboard's ring inside a ribbon control: a group's edge would cut one drawn outside it */
+#ribbon .btn:focus-visible, #ribbon .rb-launch:focus-visible, #rb-top .rb-coll:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+@media (min-width: 900px) and (pointer: fine) { #ribbon .rb-grp > .btn, #ribbon .rb-grp > .rb-split > .btn { font-size: 12px; } }
 .rb .btn.icon b { font-weight: 700; }
 /* a press on a disabled button reaches the row, which keeps the caret on the page */
 .rb .btn:disabled { pointer-events: none; }
@@ -523,6 +551,28 @@ body.file-open #rp-file .rf-back span { display: inline !important; }
 @keyframes rb-busy { from { opacity: 1; } to { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { #rb-pdf[aria-busy="true"] svg { animation: none; opacity: .5; } }
 /* the LaTeX download keeps live graphs live: a mark says so when the document has some */
+/* The downloads as a group of Word's, with a mouse from 900 px: PDF, Word and LaTeX as small
+   buttons one under another in the three rows the laid out groups have, each its own page (the
+   PDF's as the Preview button's, a page with a paragraph mark, a page of source), and the group's
+   name under them, as every group's. A line before them, as between groups. Folded (rb-dl1) they
+   are one Download button, its icon alone, as a folded group is. A touch screen and a narrower row
+   keep their row. */
+@media (min-width: 900px) and (pointer: fine) {
+  body:not(.file-open) .rb-dl { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, 24px) 20px; align-content: start; align-items: center; justify-items: stretch; gap: 0;
+    padding: 4px 10px; }
+  /* (the line before them, as the separators between groups are drawn: 8 px from the top, 20 from the bottom) */
+  body:not(.file-open) .rb-dl::after { content: ""; position: absolute; left: 0; top: 8px; bottom: 20px; width: 1px; background: var(--line); }
+  body:not(.file-open) .rb-dl > .btn { height: 24px; padding: 0 8px 0 4px; gap: 4px; justify-content: flex-start; border-radius: 4px; font-size: 12px; font-weight: 400; }
+  body:not(.file-open) .rb-dl > .btn svg { width: 16px; height: 16px; }
+  body:not(.file-open) .rb-dl > .rb-lab, body:not(.file-open) .rb.rb-nolab .rb-dl > .rb-lab { display: block; grid-row: 4; grid-column: 1; align-self: end; justify-self: center; margin: 0; font: 12px/16px var(--font-ui); color: var(--mute); }
+  body:not(.file-open) .rb.rb-dl1 .rb-dl > .rb-lab { display: none; }
+  /* (one Download button: a large one with its name, as a folded group is drawn) */
+  body:not(.file-open) .rb.rb-dl1 .rb-dl { padding: 4px; }
+  body:not(.file-open) .rb.rb-dl1 .rb-dl > #rb-dl-menu { grid-row: 1 / span 3; align-self: start; flex-direction: column; justify-content: flex-start; align-items: center; width: auto; min-width: 42px; height: 72px; padding: 4px 4px 2px; gap: 2px; line-height: 16px; }
+  body:not(.file-open) .rb.rb-dl1 .rb-dl > #rb-dl-menu > svg { width: 32px; height: 32px; }
+  /* (the source kept live: its green mark before the icon, as in the row) */
+  body:not(.file-open) .rb-dl > #b-save.live { padding-left: 12px; }
+}
 #b-save.live { padding-left: 13px; }
 #b-save.live::before { content: ""; position: absolute; top: 50%; left: 4px; width: 4px; height: 16px; margin-top: -8px; border-radius: 2px; background: #2E9E6B; }
 .src-head { display: flex; align-items: flex-end; border-bottom: 1px solid var(--line); background: var(--chrome); flex: none; }
@@ -606,13 +656,15 @@ body.pdf-on #pdfpane { display: flex; }
 /* ---- status ---- */
 /* one line at every width: what does not fit scrolls, and a fade at the cut edge says so
    (a scrollbar is hidden, so without the fade the Page and PDF buttons look simply missing) */
-#status { display: flex; align-items: center; gap: 14px; padding: 0 14px; min-height: 28px; font-size: 12px; color: var(--mute); background: var(--chrome); border-top: 1px solid var(--line); flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; scroll-padding-inline: 24px; }
+#status { display: flex; align-items: center; gap: 12px; padding: 0 12px; min-height: 28px; font-size: 12px; line-height: 16px; color: var(--mute); background: var(--chrome); border-top: 1px solid var(--line); flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; scroll-padding-inline: 24px; }
 #status::-webkit-scrollbar { display: none; }
 #status.st-fade-r { mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
 #status.st-fade-l { mask-image: linear-gradient(to right, transparent, #000 20px); -webkit-mask-image: linear-gradient(to right, transparent, #000 20px); }
 #status.st-fade-l.st-fade-r { mask-image: linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 28px), transparent); -webkit-mask-image: linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 28px), transparent); }
 /* an outline drawn outside a control is clipped by this bar, so the ring sits inside it */
 #status :focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+#status .linkish { display: inline-flex; align-items: center; height: 24px; font-size: 12px; color: var(--mute); }
+#status .linkish:hover { color: var(--blue-ink); }
 #st-warn { color: var(--warn); }
 /* the installed app's marks (src/pwa.js): no network, a new version ready */
 #st-net { color: var(--warn); font-weight: 500; }
@@ -922,7 +974,7 @@ body.dropping .dropzone { display: grid; }
 .bubble .mono { font-family: var(--font-mono); font-size: 12px; }
 /* border-box: the max height set from the window then holds the padding too, so a tall popover
    (the help) ends inside the window instead of 22px below it */
-.pop { box-sizing: border-box; position: fixed; z-index: 40; width: min(440px, calc(100vw - 16px)); background: var(--panel); color: var(--ink-ui); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(10, 20, 30, .22); padding: 10px; display: flex; flex-direction: column; gap: 8px; max-height: calc(100vh - 70px); overflow: auto; }
+.pop { box-sizing: border-box; position: fixed; z-index: 40; width: min(440px, calc(100vw - 16px)); background: var(--panel); color: var(--ink-ui); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 40px rgba(10, 20, 30, .22); padding: 10px; display: flex; flex-direction: column; gap: 8px; max-height: calc(100vh - 70px); overflow: auto; }
 .pop.pop-math { width: min(660px, calc(100vw - 16px)); }
 .pop.sheet-mode { left: 8px !important; right: 8px; bottom: calc(8px + var(--kb-h, 0px) + env(safe-area-inset-bottom, 0px)); top: auto !important; width: auto; max-height: 60vh; }
 .pop-h { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 12px; letter-spacing: .02em; color: var(--mute); }
@@ -1026,11 +1078,11 @@ body.dropping .dropzone { display: grid; }
    buttons show their icons alone instead of running over the name */
 @media (max-width: 1200px) {
   #bar .btn span:not(.sr) { display: none; }
-  #bar .btn:not(.icon):not(.sm):not(.zv) { width: 32px; padding: 0; justify-content: center; }
+  #bar .btn:not(.icon):not(.sm):not(.zv) { width: 28px; padding: 0; justify-content: center; }
 }
 @media (max-width: 1100px) {
   body.has-ai #bar .btn span:not(.sr) { display: none; }
-  body.has-ai #bar .btn:not(.icon):not(.sm):not(.zv) { width: 32px; padding: 0; justify-content: center; }
+  body.has-ai #bar .btn:not(.icon):not(.sm):not(.zv) { width: 28px; padding: 0; justify-content: center; }
 }
 @media (max-width: 860px) {
   #bar { min-height: 44px; padding-top: 0; padding-bottom: 0; }
@@ -1324,13 +1376,14 @@ body.guest #b-new, body.guest #b-sample { display: none; }
   #st-lang { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
 }
 /* from 700 px it folds as Word's does: the views and the zoom stay whole at the right end, and
-   the words in the middle (the language, Track Changes, the storage line, the links) are cut short
-   with an ellipsis before anything is pushed past the window (a wider font in CI's Chromium put the
-   zoom 11 px out at 900 px) */
+   the words in the middle give way whole, one at a time, before anything is pushed past the window
+   (src/ribbon/tabs.js statusFit: Load the sample, New document, the language, Track Changes, the
+   storage line, the words), never cut short (UI-PRINCIPLES L3; a wider font in CI's Chromium put
+   the zoom 11 px out at 900 px) */
 @media (min-width: 700px) {
-  #status > .linkish, #status > #st-lang, #status > #st-track, #status > #st-save, #status > #st-words { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #status > #st-pages, #status > .st-views, #status > .st-zoom { flex: none; }
+  #status > .linkish, #status > #st-lang, #status > #st-track, #status > #st-save, #status > #st-words, #status > #st-pages, #status > .st-views, #status > .st-zoom { flex: none; white-space: nowrap; }
 }
+#status > .st-gone { display: none !important; }
 /* the Find and Replace dialog: open while the page is worked on, out of the text's way */
 .fr { position: fixed; z-index: 38; top: 112px; right: 18px; width: min(452px, calc(100vw - 16px)); box-sizing: border-box; background: var(--panel); color: var(--ink-ui); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 14px 44px rgba(10, 20, 30, .24); padding: 0 12px 12px; display: flex; flex-direction: column; gap: 9px; font: 13px/1.4 var(--font-ui); max-height: calc(100vh - 130px); overflow: auto; }
 .fr[hidden] { display: none; }
@@ -1662,18 +1715,18 @@ body.nav-on.nav-outline #nav { width: 460px; }
 .sheet[data-font="mono"] { --font-doc: var(--font-doc-tt); }
 
 /* the font and size boxes: Word's editable boxes with their arrow */
-.fbx { display: inline-flex; align-items: center; height: 28px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); margin: 0 1px; }
+.fbx { box-sizing: border-box; display: inline-flex; align-items: center; height: 28px; border: 1px solid var(--field-line); border-radius: 4px; background: var(--panel); margin: 0; }
 .fbx:focus-within { outline: 2px solid var(--blue); outline-offset: 1px; }
 .fbx.off { opacity: .55; }
 /* no caret yet: the box still shows the document's font, in the normal colour */
 .fbx:not(.off) .fbx-v:disabled { color: var(--ink-ui); -webkit-text-fill-color: var(--ink-ui); opacity: 1; }
-.fbx-v { box-sizing: border-box; height: 100%; border: 0; background: transparent; color: var(--ink-ui); font: 13px var(--font-ui); padding: 0 2px 0 7px; min-width: 0; }
+.fbx-v { box-sizing: border-box; height: 100%; border: 0; background: transparent; color: var(--ink-ui); font: 13px var(--font-ui); padding: 0 2px 0 8px; min-width: 0; }
 .fbx-v:focus { outline: none; }
 .fbx-font .fbx-v { width: 108px; text-overflow: ellipsis; }
 .fbx-size .fbx-v { width: 26px; text-align: right; padding-left: 4px; }
 .fbx-x { width: 16px; height: 100%; display: inline-flex; align-items: center; justify-content: center; color: var(--mute); cursor: pointer; border-radius: 0 6px 6px 0; }
 .fbx-x:hover { background: var(--blue-wash); color: var(--ink-ui); }
-.fbx-x svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.fbx-x svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1px; }
 .pop-fbx .fbx-mi .mi-n { font-size: 15px; }
 .pop.pop-fbx-size { min-width: 150px; }
 /* The Font group in Word's two rows of small buttons (the boxes, sizes, case and Clear above;
@@ -1681,7 +1734,7 @@ body.nav-on.nav-outline #nav { width: 460px; }
    the Styles gallery keeps its place beside it. A phone's row, which scrolls, keeps one row of
    buttons a finger can press. */
 @media (min-width: 861px) {
-  .rb-grp[data-group="font"]:not(.folded) { flex-wrap: wrap; width: 276px; gap: 1px; align-content: center; align-self: stretch; }
+  .rb-grp[data-group="font"]:not(.folded) { flex-wrap: wrap; width: 276px; gap: 2px 0; align-content: center; align-self: stretch; }
   .rb-grp[data-group="font"] > .btn.icon, .rb-grp[data-group="font"] .rb-split > .btn.icon:not(.rb-x) { width: 24px; height: 21px; border-radius: 4px; }
   .rb-grp[data-group="font"] .rb-split > .btn.icon:not(.rb-x) { border-radius: 4px 0 0 4px; }
   .rb-grp[data-group="font"] .rb-split > .rb-x { width: 12px; height: 21px; border-radius: 0 4px 4px 0; }
@@ -1698,7 +1751,7 @@ body.nav-on.nav-outline #nav { width: 460px; }
 }
 @media (max-width: 860px) {
   /* (a little narrower than the row's other buttons: Home fits from 521 px with them) */
-  .rb-grp[data-group="font"] { gap: 1px; }
+  .rb-grp[data-group="font"] { gap: 0; }
   .rb-grp[data-group="font"] > .btn.icon, .rb-grp[data-group="font"] .rb-split > .btn.icon:not(.rb-x) { width: 28px; }
   .rb-grp[data-group="font"] .rb-split > .rb-x { width: 12px; }
   /* Bold, Italic and Underline first in the row, then the rest of the Font group, then the
@@ -2042,7 +2095,7 @@ body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outli
 /* Layout › Paragraph: a label, the number, its unit */
 .pf { display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 4px; font: 12.5px var(--font-ui); color: var(--ink-ui); }
 .pf-l { color: var(--mute); min-width: 38px; }
-.pf-v { width: 46px; height: 24px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--ink-ui); font: 12.5px var(--font-ui); padding: 0 5px; text-align: right; }
+.pf-v { width: 46px; height: 24px; box-sizing: border-box; border: 1px solid var(--field-line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 12px var(--font-ui); padding: 0 4px; text-align: right; }
 .pf-v:focus { outline: 2px solid color-mix(in srgb, var(--blue) 55%, transparent); border-color: var(--blue); }
 .pf-v:disabled { opacity: .45; }
 .pf-u { color: var(--mute); min-width: 14px; }
@@ -2090,7 +2143,7 @@ body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outli
    is short (a wider window never shows fewer controls: tabs.py); a phone's row, which scrolls,
    keeps one row of buttons a finger can press. */
 @media (min-width: 861px) {
-  .rb-grp[data-group="paragraph"]:not(.lay):not(.folded) { flex-wrap: wrap; width: 224px; gap: 1px; align-content: center; align-self: stretch; }
+  .rb-grp[data-group="paragraph"]:not(.lay):not(.folded) { flex-wrap: wrap; width: 224px; gap: 2px 0; align-content: center; align-self: stretch; }
   .rb-grp[data-group="paragraph"]:not(.lay):not(.folded)::after { content: ""; order: 1; flex-basis: 100%; height: 0; }
   .rb-grp[data-group="paragraph"]:not(.lay) > [data-cmd^="align-"], .rb-grp[data-group="paragraph"]:not(.lay) > [data-cmd="justify"], .rb-grp[data-group="paragraph"]:not(.lay) > [data-cmd="line-spacing"],
   .rb-grp[data-group="paragraph"]:not(.lay) > .rb-split:has([data-cmd="shading"]), .rb-grp[data-group="paragraph"]:not(.lay) > .rb-split:has([data-cmd="borders"]) { order: 2; }
@@ -2109,28 +2162,30 @@ body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outli
 
 /* ---- B12: the views (Page · LaTeX · PDF), Show LaTeX, the View tab's page modes, Focus ---- */
 /* the status bar's three views, a segmented control as Word's view buttons beside the zoom */
-.st-views { display: inline-flex; flex: none; padding: 2px; gap: 2px; border-radius: 6px; background: color-mix(in srgb, var(--line) 55%, transparent); }
-.st-views button { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--mute); font-size: 12px; font-weight: 500; cursor: pointer; }
-.st-views button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.st-views button:hover { color: var(--ink-ui); }
-.st-views button[aria-pressed="true"] { background: var(--paper); color: var(--blue-ink); box-shadow: 0 1px 2px rgba(20, 32, 44, .18); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .st-views button[aria-pressed="true"] { background: var(--panel); } }
-:root[data-theme="dark"] .st-views button[aria-pressed="true"] { background: var(--panel); }
+.st-views { display: inline-flex; flex: none; padding: 2px; gap: 2px; border-radius: 6px; background: transparent; }
+.st-views button { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--mute); font-size: 12px; font-weight: 400; cursor: pointer; }
+.st-views button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1px; stroke-linecap: round; stroke-linejoin: round; }
+.st-views button:hover { color: var(--ink-ui); background: color-mix(in srgb, var(--blue-wash) 60%, transparent); }
+/* the view shown: the ribbon's pressed colours */
+.st-views button[aria-pressed="true"] { background: var(--blue-wash); color: var(--blue-ink); }
 .st-views button:focus-visible, .st-zoom input:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .st-zoom { display: inline-flex; align-items: center; gap: 6px; flex: none; }
 /* Mobile View's toggle: in the status bar of a window under 700 px, beside the views */
-.sv-mobile { display: none; align-items: center; gap: 4px; flex: none; height: 26px; padding: 0 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--mute); font: 500 12px var(--font-ui); cursor: pointer; }
-.sv-mobile svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.sv-mobile { display: none; align-items: center; gap: 4px; flex: none; height: 24px; padding: 0 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--mute); font: 400 12px/16px var(--font-ui); cursor: pointer; }
+.sv-mobile svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1px; stroke-linecap: round; stroke-linejoin: round; }
 .sv-mobile[aria-pressed="true"] { background: var(--blue-wash); color: var(--blue-ink); border-color: color-mix(in srgb, var(--blue) 35%, var(--line)); }
 .sv-mobile:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 @media (max-width: 699px) { .sv-mobile { display: inline-flex; } }
 @media (max-width: 520px) { .sv-mobile { order: -1; } }
 @media (max-width: 699px) and (pointer: coarse) { .sv-mobile { height: 44px; min-width: 44px; } }
+/* (the status bar's words a finger's target too: Word Count) */
+@media (pointer: coarse) { #status #st-words { min-width: 44px; justify-content: center; } }
 .st-zoom input { width: 110px; height: 16px; margin: 0; accent-color: var(--blue); cursor: pointer; }
 #st-zoomv { min-width: 38px; text-align: right; color: var(--mute); text-decoration: none; font-size: 12px; }
 #st-zoomv:hover { color: var(--ink-ui); }
 /* Undo's arrow: the last steps (Word's Undo list) */
-#bar .btn.undo-x { width: 16px; margin-left: -6px; }
+/* (24 px, the smallest target, and beside Undo, not under it: test/consistency.py) */
+#bar .btn.undo-x { width: 24px; }
 #bar .btn.undo-x svg { width: 12px; height: 12px; }
 @media (max-width: 860px) { #bar .btn.undo-x { display: none; } }
 
@@ -2353,7 +2408,7 @@ textarea.gd-in { resize: vertical; line-height: 1.4; }
 .pc-h-sw { left: -3px; bottom: -3px; border-left: 5px solid #111; border-bottom: 5px solid #111; cursor: nesw-resize; }
 .pf-field { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 2px; font: 12px var(--font-ui); color: var(--ink-ui); }
 .pf-field .pf-lab { color: var(--mute); }
-.pf-field .pf-v { width: 58px; height: 24px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--ink-ui); font: 12px var(--font-ui); padding: 0 6px; text-align: right; }
+.pf-field .pf-v { width: 58px; height: 24px; box-sizing: border-box; border: 1px solid var(--field-line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 12px var(--font-ui); padding: 0 6px; text-align: right; }
 .pf-field .pf-v:focus { outline: 2px solid var(--blue); outline-offset: 0; }
 .pf-field .pf-v:disabled { opacity: .5; }
 .rb.rb-fold .pf-field .pf-lab, .rb.rb-narrow .pf-field .pf-lab { display: none; }
@@ -2726,6 +2781,140 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
   .pop.pop-ps, .pop.pop-tabs { max-height: calc(100dvh - 16px); overflow: auto; overscroll-behavior: contain; }
 }
 
+/* every icon of the ribbon, the title bar and the status bar drawn with 1 px lines at whatever
+   size it is drawn (16 px small, 32 large), as Word's (test/consistency.py, C3) */
+:is(#ribbon, #bar, #rb-top, #status) svg :is(path, circle, rect, line, polyline, polygon, ellipse) { vector-effect: non-scaling-stroke; }
+:is(#ribbon, #bar, #status) .btn svg, #status button svg, .rb-coll svg { stroke-width: 1px; }
+/* ---- the ribbon's one look (test/consistency.py), with a mouse from 900 px ----
+   Every small control 24 px tall (WCAG 2.2's 2.5.8 target), three rows of them the height of a
+   large one (72 px); a split button's arrow 24 px wide; every small icon 16 px, every large one 32
+   (Word's), every line of an icon 1 px whatever its size, every menu's arrow 12; every button's name 12 px regular (#ribbon .btn); a folded group a large
+   button with the group's name, as Word's; Home's Font and Paragraph groups two rows of these in
+   the three rows' height; a corner arrow in the ink's colour, as every control that works. */
+@media (min-width: 900px) and (pointer: fine) {
+  .rb .rb-grp > .btn:not([data-size="L"]):not([data-size="T"]):not(.rb-gbtn):not(.rb-launch):not(.rb-launch-c):not([data-cmd="paste"]),
+  .rb .rb-grp > .rb-split:not([data-size="L"]), .rb .rb-grp > .rb-split:not([data-size="L"]) > .btn { height: 24px; }
+  .rb .rb-grp .rb-split > .rb-x:not(:is(.lay > [data-size="L"] > .rb-x)) { width: 24px; }
+  #ribbon .rb-grp > .btn:not([data-size="L"]):not([data-size="T"]):not(.rb-gbtn):not(.rb-launch):not(.rb-launch-c):not([data-cmd="paste"]) > svg:not(.rb-car):not(.rb-gico),
+  #ribbon .rb-grp > .rb-split:not([data-size="L"]) > .btn:not(.rb-x) > svg:not(.rb-car) { width: 16px; height: 16px; }
+  #ribbon .rb-grp .rb-x > svg, #ribbon .rb-grp .rb-car, #ribbon .rb-gbtn > svg:not(.rb-gico) { width: 12px; height: 12px; }
+  .rb .rb-grp:not(.folded) > .rb-launch { color: var(--ink-ui); }
+  /* Home's Clipboard and Editing: three rows of 24 */
+  /* (a grid of three rows: a command more starts a column, where a column of flex would hide it) */
+  #rp-home .rb-grp[data-group="editing"]:not(.folded) { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, 24px); grid-auto-columns: auto; align-content: start; justify-content: start; justify-items: stretch; column-gap: 2px; padding: 4px 0 24px; }
+  #rp-home .rb-grp[data-group="editing"] > .btn, #rp-home .rb-grp[data-group="editing"] > .rb-split, #rp-home .rb-grp[data-group="editing"] > .rb-split > .btn { height: 24px; }
+  /* Font and Paragraph: two rows in the three rows' height (the second row's controls after a break
+     a whole line wide, by order), each control 24 px, the group as wide as its longer row */
+  /* (each as wide as its longer row: a wrapping row's own width would be all of it in one line) */
+  #rp-home .rb-grp:is([data-group="font"], [data-group="paragraph"]):not(.folded) { flex-wrap: wrap; gap: 2px 0; align-content: center; align-self: stretch; padding: 4px 0 24px; }
+  #rp-home .rb-grp[data-group="font"]:not(.folded) { width: 298px; }
+  #rp-home .rb-grp[data-group="paragraph"]:not(.folded) { width: 224px; }
+  #rp-home .rb-grp[data-group="font"]:not(.folded)::after { content: ""; order: 1; flex-basis: 100%; height: 0; }
+  #rp-home .rb-grp[data-group="font"] > :is([data-cmd="bold"], [data-cmd="italic"], [data-cmd="strikethrough"], [data-cmd="subscript"], [data-cmd="superscript"], [data-cmd="font-more"]),
+  #rp-home .rb-grp[data-group="font"] > .rb-split:has(> :is([data-cmd="underline"], [data-cmd="highlight"], [data-cmd="font-color"])) { order: 2; }
+  #rp-home .rb-grp:is([data-group="font"], [data-group="paragraph"]) > .btn.icon:not(.rb-launch-c), #rp-home .rb-grp:is([data-group="font"], [data-group="paragraph"]) .rb-split > .btn.icon:not(.rb-x) { width: 24px; height: 24px; }
+  /* every icon alone 24 px wide, the names gone (rb-fold) too: the minimum target, one width */
+  .rb.rb-fold .rb-grp > .btn:not(.icon):not(.rb-gbtn):not([data-cmd="paste"]), .rb.rb-fold .rb-grp .rb-split > #rb-find, #ribbon .rb-grp:not(.lay) > .btn.icon:not(.rb-launch-c):not(.rb-gbtn), #ribbon .rb-grp:not(.lay) > .rb-split > .btn.icon:not(.rb-x) { width: 24px; padding: 0; }
+  #rp-home .rb-grp:is([data-group="font"], [data-group="paragraph"]) .rb-split > .rb-x { width: 24px; height: 24px; }
+  #rp-home .rb-grp[data-group="font"] .fbx { height: 24px; }
+  /* a folded group: a large button, its first command's icon over the group's name and a menu's
+     arrow, in the group's place (Word's); its separators stay */
+  .rb .rb-grp.folded { align-self: stretch; align-items: flex-start; padding: 4px 0 0; }
+  .rb .rb-grp.folded > .rb-gbtn, .rb .rb-grp.ico > .rb-gbtn { display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-start; width: auto; min-width: 42px; height: 72px; padding: 4px 4px 2px; gap: 2px; font-size: 12px; line-height: 16px; border-radius: 4px; }
+  .rb .rb-grp.folded > .rb-gbtn > .rb-gico, .rb .rb-grp.ico > .rb-gbtn > .rb-gico { display: block; width: 32px; height: 32px; }
+  .rb .rb-grp.folded > .rb-gbtn > span, .rb .rb-grp.ico > .rb-gbtn > span { display: block; white-space: nowrap; }
+  .rb .rb-grp.folded > .rb-gbtn > svg:not(.rb-gico), .rb .rb-grp.ico > .rb-gbtn > svg:not(.rb-gico) { display: block; }
+  .rb-tb > .sep:has(+ .rb-grp.ico) { display: block; }
+  /* (a separator 2 px from the groups each side, as Word's: their own padding spaces them; the row
+     no gap of its own) */
+  .rb-tb > .sep { margin-left: 2px; margin-right: 2px; }
+  body:not(.file-open) .rb-tb { gap: 0; }
+  .rb-tb > .rb-grp.ico { margin-left: 0; }
+  /* a corner arrow that is a group's own button, in any group (Home's Paragraph settings too) */
+  #ribbon .rb-grp:not(.folded) > .rb-launch-c { position: absolute; right: 0; bottom: 1px; width: 16px; min-width: 0; height: 14px; padding: 0; gap: 0; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--ink-ui); }
+  #ribbon .rb-grp:not(.folded) > .rb-launch-c > :not(.rb-larrow):not(.sr) { display: none; }
+  #ribbon .rb-grp:not(.folded) > .rb-launch-c > .rb-larrow { display: block; width: 10px; height: 10px; stroke-width: 1px; }
+  #ribbon .rb-grp:not(.folded) > .rb-launch-c:hover { background: var(--blue-wash); }
+  /* the Styles gallery's name centred under it, as every group's */
+  #rp-home .rb-grp[data-group="styles"] .rb-cap { text-align: center; }
+}
+
+/* Frontier's popover (References › Research): what it will do, that it is coming, Close */
+.pop.pop-frontier { width: min(340px, calc(100vw - 16px)); }
+.pop-frontier p { margin: 4px 0 8px; font-size: 13px; line-height: 1.45; color: var(--ink-ui); }
+.pop-frontier .fr-soon { font-weight: 600; }
+.pop-frontier .pop-row { display: flex; justify-content: flex-end; }
+/* a dialog's buttons 32 px (C1), its Close in the corner too; 44 with touch */
+.pop-frontier .btn { height: 32px; padding: 0 16px; }
+.pop-frontier .pop-x { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; }
+@media (pointer: coarse) { .pop-frontier .btn { min-height: 44px; min-width: 64px; } .pop-frontier .pop-x { width: 44px; height: 44px; } }
+
+/* every small icon of the ribbon 16 px (the larger rules above outweigh this one) */
+:where(#ribbon) .btn svg { width: 16px; height: 16px; }
+/* ---- a finger's targets (test/consistency.py, T1: 44 px with a coarse pointer) ----
+   Every control of the ribbon, the tab row and the title bar at least 44 px each way on a touch
+   screen, as Word's touch mode spaces its ribbon; the corner arrows in the row as buttons of their
+   own; the Styles gallery its list, a 44 px field (the gallery's 27 px tiles are a mouse's). */
+@media (pointer: coarse) {
+  .rb .rb-grp > .btn, .rb .rb-grp > .rb-split > .btn, .rb .rb-dl > .btn, .rb .rb-gbtn { min-width: 44px; min-height: 44px; }
+  .rb .rb-grp > .rb-split { min-height: 44px; }
+  .rb .rb-grp .fbx, .rb .rb-grp .pf-v, .rb-style, .rb-tabsel { min-height: 44px; }
+  .rb .rb-grp:not(.folded) > .rb-launch, #ribbon .rb-grp:not(.folded) > .rb-launch-c { position: static; width: 44px; height: 44px; min-width: 44px; align-self: center; color: var(--ink-ui); }
+  .rb .rb-split > .rb-x svg { width: 12px; height: 12px; }
+  .st-zoom input { height: 44px; }
+  #st-zoomv { min-width: 44px; justify-content: center; }
+  .rb .rb-gw { display: none; }
+  .rb.rb-narrow .rb-style, .rb .rb-style { display: inline-block; }
+}
+/* the Styles group's own name only where its list stands in the gallery's place (the gallery has
+   its caption) */
+@media (min-width: 900px) { .rb:not(.rb-narrow) #rp-home .rb-grp[data-group="styles"] > .rb-glab { display: none; } }
+/* A tablet (a touch screen from 861 px): one row of 44 px controls, every group's name under it in
+   a row of its own (the group as wide as its name), a folded group's button its icon and name, the
+   downloads a group as the others */
+@media (pointer: coarse) and (min-width: 861px) {
+  .rb .rb-grp:not(.folded), body:not(.file-open) .rb .rb-dl { display: grid; grid-auto-flow: column; grid-template-rows: 44px 20px; grid-template-columns: none; grid-auto-columns: auto;
+    align-items: center; justify-items: center; align-content: start; gap: 0; padding: 4px 2px; width: auto; height: auto; overflow: visible; }
+  .rb .rb-grp:not(.folded) > *, body:not(.file-open) .rb .rb-dl > * { grid-row: 1; }
+  .rb .rb-grp:not(.folded) > .rb-glab, body:not(.file-open) .rb .rb-dl > .rb-lab { grid-row: 2; grid-column: 1 / span 30; position: static; display: block; justify-self: stretch; align-self: end;
+    margin: 0; padding: 0 4px; text-align: center; white-space: nowrap; font: 12px/16px var(--font-ui); color: var(--mute); }
+  .rb.rb-dl1 .rb-dl > .rb-lab { display: none !important; }
+  .rb .rb-grp.folded > .rb-gbtn { display: inline-flex; flex-direction: row; align-items: center; gap: 4px; width: auto; padding: 0 8px; font-size: 12px; }
+  .rb .rb-grp.folded > .rb-gbtn > .rb-gico { display: inline; width: 16px; height: 16px; }
+  .rb .rb-grp.folded > .rb-gbtn > span, .rb .rb-grp.folded > .rb-gbtn > svg:not(.rb-gico) { display: inline; }
+  .rb .rb-grp.folded > .rb-gbtn > svg:not(.rb-gico) { width: 12px; height: 12px; }
+  #ribbon .rb-dl > #rb-dl-menu > span:not(.sr) { display: inline; }
+  .rb-tb > .sep { align-self: stretch; height: auto; margin: 8px 2px 24px; }
+  #rp-home .rb-grp[data-group="styles"] > .rb-glab { display: block; }
+  .rb-tab, .rb-coll { min-height: 44px; }
+  .rb-coll { width: 44px; }
+  .srch input { height: 44px; }
+}
+/* the bar's buttons and the search box a finger's 44 px, a phone's too (its row of them scrolls) */
+@media (pointer: coarse) {
+  #bar .btn, #bar .btn.icon, #bar .btn.undo-x { min-width: 44px; min-height: 44px; }
+  .rb .rb-grp .fbx-size .fbx-v { min-width: 44px; }
+}
+@media (pointer: coarse) and (max-width: 860px) {
+  /* (closed, the search box is a 44 px icon; open, it takes the bar's width, as below 860 px) */
+  .srch:not(:focus-within) { width: 44px; min-width: 44px; }
+  .srch input { height: 44px; }
+}
+
+/* ---- forced colours (D4): what shows a state is drawn in the system's colours ----
+   The selected tab's mark a border (a background turns Canvas there); the bar's and the status
+   bar's pressed toggles in Highlight, as the ribbon's (Preview, Outline, Page, LaTeX, PDF). */
+@media (forced-colors: active) {
+  .rb-tab.on::after { height: 0; background: none; border-bottom: 3px solid CanvasText; }
+  #bar .btn[aria-pressed="true"], .st-views button[aria-pressed="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+  #bar .btn[aria-pressed="true"]::after { border-bottom-color: HighlightText; }
+}
+/* ---- the focus ring only for the keyboard (C13): after a press with the mouse or a finger no
+   control keeps one, though a popover gave it the focus back (a field shows where typing goes) ---- */
+html[data-input="pointer"] :is(button, [role=tab], [role=menuitem], [role=menuitemradio], [role=menuitemcheckbox], a):focus-visible { outline: none !important; }
+/* the style list a field as the ribbon's others with a mouse: 24 px; a finger's menu items 44 */
+@media (min-width: 900px) and (pointer: fine) { #ribbon .rb-style { height: 24px; } }
+@media (pointer: coarse) { .pop-tpick .nav-act, .pop [role^=menuitem] { min-height: 44px; } }
 /* ---- One size and shape per kind, outside the ribbon (docs/handoff/UI-PRINCIPLES.md: C1, C5, C9,
    C13, T1). Dialogs, panes and the popovers that hold a form: buttons and fields 32 px tall with
    4 px corners; the surfaces themselves (dialogs, menus, panes as sheets, Find and Replace) 8 px;
@@ -2751,10 +2940,11 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
   #bar .srch:not(:focus-within) { width: 44px; min-width: 44px; }
   #bar .srch input { height: 44px; }
   /* (closed, the search box is one of the bar's icons, drawn as they are: a white pill twice the
-     size of its neighbours stood out; open, it is the white box across the bar again) */
-  #bar .srch:not(:focus-within) input { background: transparent; border-radius: 4px; }
-  #bar .srch:not(:focus-within) input:active { background: rgba(255, 255, 255, .22); }
-  #bar .srch:not(:focus-within) > svg { left: 50%; margin-left: -9px; width: 18px; height: 18px; margin-top: -9px; stroke: #fff; }
+     size of its neighbours stood out; open, it is the white box across the bar again; in the light
+     bar's ink, as the bar's other icons) */
+  #bar .srch:not(:focus-within) input { background: transparent; border-color: transparent; border-radius: 4px; }
+  #bar .srch:not(:focus-within) input:active { background: var(--bar-press); }
+  #bar .srch:not(:focus-within) > svg { left: 50%; margin-left: -9px; width: 18px; height: 18px; margin-top: -9px; stroke: var(--bar-ink); }
   #b-open, #b-src { display: none; }
   #bar { gap: 0; }
 }
