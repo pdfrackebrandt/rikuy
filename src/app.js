@@ -1297,7 +1297,7 @@ class App {
       // ticking it on a document that came in a link allows shell escape for that document only
       const li = this.linkCache && this.linkCache.get(this.name + '|' + this.main);
       if (e.target.checked && li && !li.allowed) { if (this.prefs.shellEscape === false) { this.prefs.shellEscape = true; store(PREFS, this.prefs); } this.allowShellHere(); return; }
-      this.prefs.shellEscape = e.target.checked; store(PREFS, this.prefs); if (document.body.classList.contains('pdf-on')) this.compilePdf({ clean: true });
+      this.prefs.shellEscape = e.target.checked; store(PREFS, this.prefs); if (document.body.classList.contains('pdf-on')) this.compilePdf({ clean: true }); else this.pdfStale = true;
     });
     this.syncEngineMenu();
     $('#pdf-msg').addEventListener('click', () => { if (this.texIssues.some((x) => x.sev !== 'info')) this.toggleNav(true, 'problems'); });
@@ -4946,7 +4946,8 @@ class App {
     const gen = this.pdfGen || 0;
     const st = $('#pdf-status'), bar = $('#pdf-prog'), msg = $('#pdf-msg');
     let said = ''; // how the run ended, for the "PDF status" line
-    const sig = this.pdfSigNow();
+    // (the text and engine as the run starts; the shell escape mode once the project's mark is read)
+    let sig = this.pdfSigNow();
     // (what decides the PDF's sheet in the source compiled: the sheet TeX gives it is the page's)
     const mediaKey = this.model && this.model.opts.page ? this.model.opts.page.mediaKey : null;
     // a long TeX run gets a clock and a Stop button; one that never ends is stopped after
@@ -4975,6 +4976,7 @@ class App {
       // a document that came in a link compiles restricted, and the worker keeps nothing of it
       const li = await this.linkInfo();
       const untrusted = !!(li && !li.allowed);
+      sig = sig.slice(0, sig.lastIndexOf('|') + 1) + this.shellMode(li);
       this.syncEngineMenu();
       // The packs this project's last compile read, handed to the worker to load together before
       // TeX starts. Without them TeX asks for each when it first opens a file from it, one after
@@ -5555,7 +5557,11 @@ App.prototype.openLink = openLink;
 App.prototype.textSigNow = function () { return textSig(this.main, [...this.files.entries()]); };
 // what the PDF was made from: the text and the engine chosen, so a PDF from another engine is not
 // taken as this one's (rikuy.api.compile and Download PDF right after the engine was changed)
-App.prototype.pdfSigNow = function () { return this.textSigNow() + '|' + this.engineChoice(); };
+App.prototype.pdfSigNow = function (li) { return this.textSigNow() + '|' + this.engineChoice() + '|' + this.shellMode(li); };
+// how shell escape runs for the open project: restricted (a stranger's, not allowed), on or off;
+// part of what a PDF was made from, as the engine is: after Allow, or Shell escape ticked, with
+// the preview closed, api.compile, Download PDF and Print gave the restricted PDF as this one's
+App.prototype.shellMode = function (li = this.linkCache && this.linkCache.get(this.name + '|' + this.main)) { return li && !li.allowed ? 'restricted' : this.prefs.shellEscape !== false ? 'shell' : 'no shell'; };
 // the Word worker's files, asked for as the page asks for its other files (src/word.js)
 App.prototype.assetUrl = asset;
 

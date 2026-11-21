@@ -296,6 +296,7 @@ export const collab = {
     if (!(await this.allowMark('allowed'))) return;
     this.syncEngineMenu();
     if (document.body.classList.contains('pdf-on')) this.compilePdf({ clean: true });
+    else this.pdfStale = true;
   },
   // said under Problems at every compile, and once per project in a toast that can allow it
   noteRestricted(issues) {
