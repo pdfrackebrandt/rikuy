@@ -3054,11 +3054,6 @@ class App {
       given = mf.getValue('latex');
       st.ml = fieldRows(modelValue(mf), st.multi, D);
     };
-    ta.addEventListener('input', sync);
-    mf.addEventListener('paste', (e) => {
-      const t = e.clipboardData && e.clipboardData.getData('text/plain');
-      const inner = t ? unwrapMath(t) : null;
-      if (inner == null) return;
     // MathLive focuses its keyboard sink 60 ms after the field takes the focus, whatever happened
     // since: a hand over to the box sooner than that (dictation as the field opens, or a busy
     // page that runs the timer late) lost the box's focus to the field, and the next keys went
@@ -3072,6 +3067,11 @@ class App {
       if (backOk) { backOk = false; handed = false; return; }
       queueMicrotask(() => ta.focus({ preventScroll: true }));
     });
+    ta.addEventListener('input', sync);
+    mf.addEventListener('paste', (e) => {
+      const t = e.clipboardData && e.clipboardData.getData('text/plain');
+      const inner = t ? unwrapMath(t) : null;
+      if (inner == null) return;
       e.preventDefault(); e.stopImmediatePropagation();
       mf.insert(D.toField(inner), { format: 'latex', insertionMode: 'replaceSelection', selectionMode: 'after', mode: 'math' });
       mf.dispatchEvent(new Event('input'));
@@ -3097,15 +3097,15 @@ class App {
         // (a box the field handed over to keeps the field's keys: Enter done, Ctrl+Enter a row;
         // review N2, where Enter in a display's box was a newline and the next words went in)
         if (this.pop) this.pop.boxFromField = true;
+        // (keys typed into the field whose input event is still to come: in the box first)
+        pull();
+        handed = true; backOk = false;
         let at = ta.value.length;
         try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (ta.value.startsWith(pre)) at = pre.length; } catch (e) { /* at the end */ }
         ta.focus();
         ta.setRangeText(more, at, at, 'end');
         ta.dispatchEvent(new Event('input'));
       }
-        // (keys typed into the field whose input event is still to come: in the box first)
-        pull();
-        handed = true; backOk = false;
     });
     mf.addEventListener('keydown', (e) => {
       if (wt.active() || mf.mode === 'latex') return;
