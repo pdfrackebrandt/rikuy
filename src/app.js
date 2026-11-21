@@ -1102,7 +1102,9 @@ class App {
   // brings up the on-screen keyboard before anyone asked to type; not where something else
   // already has the focus (a link's guest bar, a dialog).
   placeInitialCaret() {
-    const first = this.root.querySelector('.it.p span.t');
+    // (a document of headings alone: the first heading's words; there was no caret, and the first
+    // keys after a reload typed nothing)
+    const first = this.root.querySelector('.it.p span.t:not(.gh)') || this.root.querySelector('.it:not(.atom) span.t:not(.gh)');
     if (!first || !first.firstChild || window.innerWidth < 700 || matchMedia('(pointer: coarse)').matches) return;
     const a = document.activeElement;
     if (a && a !== document.body && a !== this.root) return;
@@ -1919,6 +1921,18 @@ class App {
       this.showGhost(itemEl, f, p);
       return;
     }
+    // at its start, as Word's: an empty paragraph above it, the caret staying with the words (Up
+    // goes into it, and what is typed there is a paragraph of its own); it wrote blank lines
+    // into the source, which LaTeX reads as nothing, and Up then skipped to the block before
+    const head = c.collapsed && itemEl && !itemEl.classList.contains('split-b') && !itemEl.classList.contains('tex') ? itemEl.querySelector('span.t:not(.gh)') : null;
+    const p0 = head && head.firstChild ? posFromDom(head.firstChild, 0, this.root) : null;
+    if (p0 && !p0.ghost && p0.f === f && p0.p === p && kind === 'p') {
+      this.showGhost(itemEl, f, p, { before: true });
+      this.ghost.below = itemEl;
+      this.ourSel = true;
+      getSelection().collapse(head.firstChild, 0);
+      return;
+    }
     const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
     const ins = w.close + '\n\n' + w.open;
     // a break moved before a wrapper leaves the caret at the start of its text, still inside it
@@ -2399,7 +2413,8 @@ class App {
   onSelChange() {
     const sel = getSelection();
     const inRoot = sel.rangeCount && this.root.contains(sel.anchorNode);
-    if (this.ghost && !this.ghost.sticky && !(inRoot && this.ghost.el.contains(sel.anchorNode))) {
+    // (an empty paragraph above one, by Enter at its start: kept while the caret is in either)
+    if (this.ghost && !this.ghost.sticky && !(inRoot && (this.ghost.el.contains(sel.anchorNode) || (this.ghost.below && this.ghost.below.contains(sel.anchorNode))))) {
       // keep ghost while focus is in the popover; drop otherwise
       if (!this.pop) this.removeGhost();
     }

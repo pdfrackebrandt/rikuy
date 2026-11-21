@@ -468,6 +468,29 @@ def access_keys(page):
     key(page, 'Escape', 200)
 
 
+def lows(page):
+    """Enter at a paragraph's start makes an empty paragraph above it, as Word's (it wrote blank
+    lines LaTeX reads as nothing, and Up skipped to the block before); Shift+F5 after an undo goes
+    to the undone edit; after a reload a document of headings alone has the caret in its first."""
+    load_doc(page, DOC); click_text(page, 'Third paragraph', 0); key(page, 'Enter', 200)
+    check('Enter at a paragraph\'s start writes nothing yet', src(page) == DOC, src(page)[100:200])
+    page.keyboard.type('X'); page.wait_for_timeout(200)
+    check('the caret stays with the words: the next letter starts them', 'XThird paragraph' in src(page), src(page)[100:200])
+    load_doc(page, DOC); click_text(page, 'Third paragraph', 0); key(page, 'Enter', 200); key(page, 'ArrowUp', 200)
+    page.keyboard.type('New one.'); page.wait_for_timeout(300)
+    check('Up goes into the empty paragraph above: what is typed there is a paragraph of its own', 'New one.\n\nThird paragraph here.' in src(page), src(page)[100:220])
+    undo(page)
+    load_doc(page, DOC); click_text(page, 'Third paragraph', 5); page.keyboard.type('Q'); page.wait_for_timeout(200)
+    undo(page); key(page, 'Control+Home', 150); key(page, 'Shift+F5', 200)
+    c = caret(page)
+    check('Shift+F5 after an undo goes to the undone edit\'s place', c and abs(c[1] - DOC.index('Third paragraph') - 5) <= 2, (c, DOC.index('Third paragraph') + 5))
+    heads = '\\documentclass{article}\n\\begin{document}\n\\section{Only heading}\n\\end{document}\n'
+    load_doc(page, heads); page.evaluate('window.rikuy.persist()'); page.wait_for_timeout(500)
+    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); page.wait_for_timeout(500)
+    page.keyboard.type('Z'); page.wait_for_timeout(300)
+    check('after a reload, a document of headings alone takes the first keys in its first heading', '\\section{ZOnly heading}' in src(page), src(page)[30:120])
+
+
 def tips_and_help(page, mac=False, tag=''):
     title = page.evaluate("document.getElementById('rb-b') ? document.getElementById('rb-b').title : [...document.querySelectorAll('#ribbon [data-cmd=bold]')].map((b) => b.title)[0]")
     check(tag + 'the Bold button\'s tooltip names its key' + (' as a Mac does (\u2318B)' if mac else ' (Ctrl+B)'), ('\u2318B' if mac else 'Ctrl+B') in (title or ''), title)
@@ -547,7 +570,7 @@ def run():
     only = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (paragraphs, references, finding, views, typing, fields, headings, tables, files, caret_keys, paste_format, source_pane, access_keys):
+        for f in (paragraphs, references, finding, views, typing, fields, headings, tables, files, caret_keys, paste_format, source_pane, access_keys, lows):
             if only and f.__name__ not in only: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
