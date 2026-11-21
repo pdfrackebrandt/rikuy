@@ -402,6 +402,31 @@ def paste_format(page):
     page.evaluate("navigator.clipboard.writeText('')"); page.wait_for_timeout(100)
     load_doc(page, DOC); select_text(page, 'Third'); key(page, 'Control+Shift+V', 300)
     check('nothing on the clipboard: Ctrl+Shift+V deletes nothing', src(page) == DOC, src(page)[60:260])
+    # Paste Formatting by the keys alone, as Microsoft 365's Word: Ctrl+Shift+C, Shift and the
+    # arrows, Ctrl+Alt+V, as one step, again on other words
+    load_doc(page, bold); click_text(page, 'First', 2); key(page, 'Control+Shift+C', 150)
+    click_text(page, 'Third', 0)
+    for _ in range(5): page.keyboard.press('Shift+ArrowRight')
+    h0 = page.evaluate('window.rikuy.hist.length'); key(page, 'Control+Alt+v', 300)
+    one = bold.replace('Third paragraph', '\\textbf{Third} paragraph')
+    check('Ctrl+Shift+C, Shift+Right five times, Ctrl+Alt+V: bold, as one step', src(page) == one and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page)[60:260])
+    check('and the painter Ctrl+Shift+C armed is put away (a click after would paint again)', not page.evaluate('!!window.rikuy.fpaint'))
+    click_text(page, 'Fourth', 0)
+    for _ in range(6): page.keyboard.press('Shift+ArrowRight')
+    key(page, 'Control+Alt+v', 300)
+    check('Ctrl+Alt+V again on other words', src(page) == one.replace('Fourth paragraph', '\\textbf{Fourth} paragraph'), src(page)[60:300])
+    undo(page); undo(page)
+    check('two undos give the bytes back', src(page) == bold, src(page)[60:200])
+    # nothing copied: nothing changes, nothing is typed
+    page.evaluate('window.rikuy.fmtCopy = null')
+    load_doc(page, DOC); select_text(page, 'Third'); key(page, 'Control+Alt+v', 300)
+    check('Ctrl+Alt+V with no formatting copied changes nothing', src(page) == DOC, src(page)[60:260])
+    # AltGr, which Windows reports as Ctrl+Alt: AltGr+V types a letter on a Polish keyboard (ż), no
+    # Paste Formatting
+    load_doc(page, bold); click_text(page, 'First', 2); key(page, 'Control+Shift+C', 150); key(page, 'Escape', 100)
+    select_text(page, 'Third')
+    page.evaluate("document.getElementById('pages').dispatchEvent(new KeyboardEvent('keydown', { key: '\u017c', code: 'KeyV', ctrlKey: true, altKey: true, modifierAltGraph: true, bubbles: true, cancelable: true }))"); page.wait_for_timeout(300)
+    check('AltGr+V (Ctrl+Alt with AltGr) is no Paste Formatting', src(page) == bold, src(page)[60:260])
 
 
 def cm_state(page):
