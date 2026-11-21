@@ -23,7 +23,7 @@ import { APP, appInit, asset as appAsset, registerApp, takeLaunches, takeShared,
 const PLACEHOLDER_PDF = 'JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAzMjAgMjQwXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCA+PiA+PgplbmRvYmoKNCAwIG9iago8PCAvTGVuZ3RoIDUxID4+CnN0cmVhbQowLjg1IGcgMCAwIDMyMCAyNDAgcmUgZiAwLjYgRyAyIHcgMSAxIDMxOCAyMzggcmUgUwplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA1CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDU4IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDIxOSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDUgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjMxOQolJUVPRgo=';
 const PLACEHOLDER_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAAAAACRn/EaAAAACXBIWXMAAAAjAAAAIwHV9BZdAAAADklEQVR42mO4CQQMcAIATFkKLSVMoyAAAAAASUVORK5CYII=';
 const PLACEHOLDER_EPS = '%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 320 240\n0.85 setgray 0 0 320 240 rectfill\n0.6 setgray 2 setlinewidth 1 1 318 238 rectstroke\nshowpage\n';
-import { texToPlain, shortAuthors, entryYear } from './bib.js';
+import { texToPlain, shortAuthors, entryYear, parseBib } from './bib.js';
 import { kvGet, kvPut, kvDel, kvSwap, decodeText, encodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
 import { changes, spacingOnly } from './diff.js';
 import { TeXEngine, parseTeXLog } from './tex.js';
@@ -3281,7 +3281,20 @@ class App {
 
   bibList() {
     const out = [];
-    for (const [k, e] of this.model.bibEntries) out.push({ key: k, label: shortAuthors(e) + ' ' + entryYear(e), title: texToPlain(e.fields.title || '').replace(/[{}]/g, '') });
+    const item = (k, e, loose) => ({ key: k, label: shortAuthors(e) + ' ' + entryYear(e), title: texToPlain(e.fields.title || '').replace(/[{}]/g, ''), ...(loose ? { loose } : {}) });
+    for (const [k, e] of this.model.bibEntries) out.push(item(k, e));
+    // A .bib the project holds and the document names nowhere yet (Open or a drop added it):
+    // its entries are offered all the same, as Overleaf offers a project's, and the first one
+    // picked writes the document's bibliography lines (citeBibFor). The list was empty, saying
+    // no bibliography was loaded, right after the toast that said the .bib was added.
+    if (!out.length && !this.bibNamed()) {
+      const seen = new Set();
+      for (const [n, t] of this.files) {
+        if (!/\.bib$/i.test(n) || typeof t !== 'string') continue;
+        try { for (const [k, e] of parseBib(t, n)) if (!seen.has(k)) { seen.add(k); out.push(item(k, e, n)); } } catch (e) { /* a .bib it cannot read */ }
+        if (out.length > 5000) break;
+      }
+    }
     return out;
   }
 
@@ -3343,7 +3356,7 @@ class App {
       for (const h of hits) {
         const b = document.createElement('button'); b.type = 'button'; b.className = 'pitem';
         b.innerHTML = '<b>' + esc(h.label) + '</b><span>' + esc(h.title) + '</span>';
-        b.addEventListener('click', () => { keys.push(h.key); search.value = ''; write(); search.focus(); });
+        b.addEventListener('click', () => { keys.push(h.key); search.value = ''; write(); if (h.loose) this.citeBibFor(h.loose); search.focus(); });
         list.appendChild(b);
       }
     };
