@@ -1,0 +1,15 @@
+{
+  "kind": "function",
+  "title": "The saving rule k′ = αβk^α that solves the Bellman equation, and the 45 degree line; their crossing is the steady state",
+  "vars": ["k"],
+  "f": ["α β k^α", "k"],
+  "cross": [[0, 1]],
+  "x": { "min": 0, "max": 0.5, "label": "k" },
+  "y": { "min": 0, "max": 0.25, "label": "k′" },
+  "aspect": 0.67,
+  "sliders": [
+    { "name": "α", "min": 0.1, "max": 0.9, "step": 0.01, "value": 0.33 },
+    { "name": "β", "min": 0.5, "max": 0.99, "step": 0.01, "value": 0.95 }
+  ],
+  "equal": true
+}
