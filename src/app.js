@@ -48,7 +48,7 @@ import { installDock } from './ui/dock.js';
 import { installKeys } from './keys.js';
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
-import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf } from './styles.js';
+import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, titleInfo } from './styles.js';
 import { eolAt } from './blockenv.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
@@ -4703,6 +4703,21 @@ class App {
       return;
     }
   }
+  // The name a download takes: the document's, or for a new one still called Untitled, its title
+  // as the page prints it, as Word offers a new file's first line ("Optimal Taxation under
+  // Political Turnover.pdf", not Untitled.pdf). The project keeps its name: storage, versions,
+  // the engine chosen and git are kept under it.
+  fileBase() {
+    let n = this.name || '';
+    if (/^Untitled( \d+)?$/.test(n)) {
+      const T = titleInfo(this.src(this.main) || '');
+      if (T && T.title) {
+        const t = texToPlain(this.src(this.main).slice(T.title.is, T.title.ie).replace(/\\thanks\s*\{[^{}]*\}/g, '').replace(/\\\\(\[[^\]]*\])?/g, ' ')).replace(/[{}]/g, '').replace(/\s+/g, ' ').trim();
+        if (t) n = t;
+      }
+    }
+    return n.replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '').slice(0, 100).replace(/[-.]+$/, '') || 'paper';
+  }
   // a blank article to type into; the open project stays under Review, Versions
   async newDocument() {
     await this.snapshot('Before starting a new document', { force: !this.lastSig });
@@ -4782,7 +4797,7 @@ class App {
       } else {
         blob = await this.zipBlob();
         withGit = blob.withGit;
-        fname = (this.name || 'paper').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') + '.zip';
+        fname = this.fileBase() + '.zip';
       }
       if (D) await D.save({ filename: fname, data: blob });
       else {
@@ -5166,7 +5181,7 @@ class App {
 
   async downloadPdf() {
     if (!this.lastPdf) return;
-    const fname = (this.name || 'paper').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') + '.pdf';
+    const fname = this.fileBase() + '.pdf';
     const blob = new Blob([this.lastPdf], { type: 'application/pdf' });
     try {
       if (this.caps.downloads) await this.caps.downloads.save({ filename: fname, data: blob });
@@ -5247,7 +5262,7 @@ class App {
       '<div class="sheet" lang="' + (sheet.lang || 'en') + '" style="' + (sheet.getAttribute('style') || '').replace(/"/g, '&quot;') + '"' + (sheet.dataset.font ? ' data-font="' + sheet.dataset.font + '"' : '') + '>' + clone.outerHTML + '</div>' +
       '<script>addEventListener("load",function(){setTimeout(function(){print()},500)})<\/script></body></html>';
     const blob = new Blob([html], { type: 'text/html' });
-    const fname = (this.name || 'paper').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') + '-print.html';
+    const fname = this.fileBase() + '-print.html';
     try {
       if (this.caps.downloads) await this.caps.downloads.save({ filename: fname, data: blob });
       else {
