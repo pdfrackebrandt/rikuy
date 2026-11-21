@@ -8,6 +8,7 @@ import assert from 'assert';
 globalThis.window = globalThis;
 globalThis.document = { addEventListener() {}, querySelector() { return null; }, body: { classList: { contains() { return false; } } } };
 const { review, absorbText, absorbFresh, authorEdit, editSpans, byAuthor } = await import('../src/review.js');
+const { authorSteps, MAX_SEGS } = await import('../src/authors.js');
 const { commentsOf, onlyComments, linkRole, commentsBack, bodyAt, findComments, listedFiles, safeCommentLine, parseCommentLine } = await import('../src/share.js');
 // a reader's comment as the author's copy takes it in (src/share.js: the base32 form), and whether
 // some words reached a text at all, as TeX source or inside a comment line's parts
@@ -390,6 +391,51 @@ group('R4 review: two people\'s edits that touch keep each one\'s author, and Re
   // what is kept with the base keeps the deleted words, and only text
   review.rvAuthorsFrom.call(A, { authors: [['main.tex', T(A).length, [{ s: 16, e: 16, who: 'Pedro', t: 'fox ' }, { s: 1, e: 1, who: 'X', t: { evil: 1 } }]]] });
   assert.deepStrictEqual(A.authors.get('main.tex'), [{ s: 16, e: 16, who: 'Pedro', t: 'fox ' }, { s: 1, e: 1, who: 'X' }]);
+});
+
+group('a Word file\'s tracked changes: the layer of who wrote what made in one pass per step, the same as one edit at a time, in a linear time; a listing of the changes halves to its segments (word review M2)', () => {
+  // (a small generator, the same cases every run)
+  let seed = 7;
+  const rnd = (n) => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) % n; };
+  const W = ['a', 'b', ' ', '\n', 'xy', 'the ', '\n\n'];
+  const oneByOne = (base, steps) => { let segs = [], prev = base; for (const st of steps) { for (const x of editSpans(prev, st.tex, true)) segs = authorEdit(segs, x.s, x.e, x.n, st.who, prev.slice(x.s, x.e)); prev = st.tex; } return segs; };
+  let many = 0;
+  for (let k = 0; k < 600; k++) {
+    let base = ''; const len = 5 + rnd(60) + rnd(2) * 300; for (let i = 0; i < len; i++) base += W[rnd(W.length)];
+    const steps = []; let cur = base;
+    for (let j = 0; j < 1 + rnd(4); j++) {
+      let x = cur;
+      const edits = 1 + rnd(30); for (let m = 0; m < edits; m++) { const p = rnd(x.length + 1), q = Math.min(x.length, p + rnd(5) * rnd(2)); let ins = ''; for (let i = 0; i < rnd(3); i++) ins += W[rnd(W.length)]; x = x.slice(0, p) + ins + x.slice(q); }
+      if (editSpans(cur, x, true).length > 1) many++;
+      steps.push({ who: ['Ana', 'Bo', 'Cy'][rnd(3)], tex: x }); cur = x;
+    }
+    const want = oneByOne(base, steps), got = authorSteps(base, steps);
+    assert.deepStrictEqual(got.segs, want, JSON.stringify({ base, steps }));
+    assert.strictEqual(got.cut, 0);
+    // (their starts and ends rise together, which the halving of byAuthor takes for granted)
+    for (let i = 1; i < want.length; i++) assert.ok(want[i].s >= want[i - 1].s && want[i].e >= want[i - 1].e, JSON.stringify(want));
+  }
+  assert.ok(many > 100, 'steps of many edits each: ' + many);
+  // 21000 insertions by two people (20000 took 54 s one edit at a time); the layer keeps MAX_SEGS,
+  // the ones at the start left out and counted. (Lines of thirty changed words between lines
+  // left as they were: diff.js takes no more than 1500 edits at a time as edits apart.)
+  const lines = (f) => { let t = '', k = 0; for (let i = 0; i < 700; i++) { const ws = []; for (let j = 0; j < 30; j++, k++) ws.push(f('w' + k, k)); t += ws.join(' ') + '\nkept line ' + i + '\n'; } return t; };
+  const base = lines((w) => w), ana = lines((w, k) => k % 2 ? w : w + 'x'), now = lines((w) => w + 'x');
+  const t0 = Date.now();
+  const A = authorSteps(base, [{ who: 'Ana', tex: ana }, { who: 'Bo', tex: now }]);
+  const ms = Date.now() - t0;
+  assert.ok(ms < 3000, 'authorSteps on 21000 edits: ' + ms + ' ms');
+  assert.strictEqual(A.segs.length, MAX_SEGS);
+  assert.ok(A.cut >= 21000 - MAX_SEGS, 'cut ' + A.cut);
+  // (a word changed is the word replaced: its old letters a mark, its new ones a range)
+  const rs = A.segs.filter((g) => g.e > g.s).slice(-2).map((g) => g.who + ':' + now.slice(g.s, g.e));
+  assert.deepStrictEqual(rs, ['Ana:w20998x', 'Bo:w20999x']);
+  // the changes listed by author, each its own, in a time the page does not feel
+  const t1 = Date.now();
+  const list = [];
+  for (const c of changes(base, now, 'main.tex')) list.push(...byAuthor(c, A.segs, now));
+  assert.ok(Date.now() - t1 < 3000, 'byAuthor over 20000 segments: ' + (Date.now() - t1) + ' ms');
+  assert.ok(list.some((c) => c.who === 'Ana') && list.some((c) => c.who === 'Bo') && list.some((c) => c.who === ''), 'the start, left out, has no author');
 });
 
 console.log('review: ' + groups + ' groups of checks passed');
