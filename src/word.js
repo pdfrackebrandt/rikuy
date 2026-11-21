@@ -276,7 +276,7 @@ export const word = {
       // (a few names, the rest counted: a file reviewed by hundreds would fill the screen)
       const A = T.authors.map((x) => String(x).slice(0, 80));
       by = A.length > 4 ? A.slice(0, 3).join(', ') + ' and ' + (A.length - 3) + ' others' : A.length > 1 ? A.slice(0, -1).join(', ') + ' and ' + A[A.length - 1] : A[0] || 'Word';
-      if (T.cut) cut = ' The changes before line ' + T.upto + ' of main.tex are not credited to their authors and show as yours: the file holds more pieces of tracked text than the ' + T.segs.length + ' Rikuy tells apart in a file.';
+      if (T.cut) cut = ' The changes before line ' + T.upto + ' of main.tex are credited to "Word", not to their authors: the file holds more pieces of tracked text than the ' + T.segs.length + ' Rikuy tells apart in a file.';
     }    const n = Object.keys(r.media || {}).length;
     // what did not come over, or came differently: said here, and kept at the top of main.tex
     // (src/wordjobs.js), where it stays after the toast is gone
