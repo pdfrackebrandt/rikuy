@@ -562,7 +562,74 @@ def burst(page):
     cdp.send('Emulation.setCPUThrottlingRate', {'rate': 1})
 
 
-PARTS = [footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips, palette, insertlist, repeat, quickopen, burst]
+ACC = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\n\\section{How to use it}\n\nClick to make it \\textbf{bold} here.\n\n'
+       'First para ends here.\n\n\\begin{figure}\n  \\centering\n  \\caption{Results here}\n\\end{figure}\n\nLast para.\n\n\\end{document}\n')
+FRAC = '\\frac{\\partial u}{\\partial x_k} = \\sum_{i=1}^n \\alpha_i'
+
+
+def typ(page, text, how):
+    # at full speed: keys with no pause between them, or the characters alone (insertText, as
+    # dictation, an on-screen keyboard or a script sends them, with no key)
+    if how == 'keys': page.keyboard.type(text, delay=0)
+    else:
+        for ch in text: page.keyboard.insert_text(ch)
+
+
+def fresh(page, doc=ACC):
+    page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+    load_doc(page, doc)
+
+
+def accept(page):
+    """What Pedro met on the live site, typed at full speed, and the rules for where the caret goes
+    when the equation field closes (the coordinator's acceptance checks)."""
+    for how in ('keys', 'insertText'):
+        w = ' (' + how + ')'
+        # (1) a formula typed with the words around it in a new paragraph
+        fresh(page); click_text(page, 'ends here.', 10); key(page, 'Enter', 100)
+        typ(page, 'New para $a^2+b^2=c^2$ then text.', how); page.wait_for_timeout(900)
+        s = src(page)
+        check('accept: a new paragraph typed at full speed keeps its formula' + w, '\n\nNew para $a^2+b^2=c^2$ then text.\n\n' in s and active(page) == 'pages', (s[s.find('ends'):][:90], active(page)))
+        # (2) Ctrl+End from inside a paragraph: the end of the text
+        fresh(page); click_text(page, 'First', 2); key(page, 'Control+End', 100); typ(page, 'ZZ', how); page.wait_for_timeout(400)
+        check('accept: Ctrl+End from inside a paragraph goes to the end of the text' + w, 'Last para.ZZ\n' in src(page), src(page)[-60:])
+        # (3) Alt+= on an empty paragraph and LaTeX typed at once: a display, its structure as typed
+        fresh(page); click_text(page, 'ends here.', 10); key(page, 'Enter', 100); key(page, 'Alt+Equal', 0)
+        typ(page, FRAC, how); page.wait_for_timeout(400); key(page, 'Enter', 500)
+        s = src(page); i, j = s.find('\\begin{equation}'), s.find('\\end{equation}')
+        body = ''.join(s[i + 16:j].split()) if 0 <= i < j else None
+        check('accept: Alt+= on an empty paragraph, LaTeX at full speed: a display equation, as typed' + w,
+              body in ('\\frac{\\partialu}{\\partialx_{k}}=\\sum_{i=1}^{n}\\alpha_{i}', '\\frac{\\partialu}{\\partialx_k}=\\sum_{i=1}^n\\alpha_i') and '$' not in s, (body, s[s.find('ends'):][:140]))
+        # (4) after its Enter, the next words in a paragraph of their own
+        typ(page, 'After.', how); page.wait_for_timeout(500)
+        s = src(page)
+        check('accept: after Enter closes the display, what is typed is a new paragraph after it' + w, '\\end{equation}\n\nAfter.' in s, s[s.find('\\end{equation}'):][:40])
+        # (5) a formula at a heading's end, Enter, then End, Enter, Q: Q a paragraph after the heading
+        for close in ('Enter', 'Escape'):
+            fresh(page); click_text(page, 'How to use it', 13); key(page, 'Alt+Equal', 0)
+            typ(page, 'x+y', how); page.wait_for_timeout(400); key(page, close, 400)
+            key(page, 'End', 100); key(page, 'Enter', 100); typ(page, 'Q', how); page.wait_for_timeout(400)
+            s = src(page)
+            check('accept: a heading\'s formula closed by ' + close + ', then End, Enter, Q: Q after the heading' + w, '\\section{How to use it$x+y$}\n\nQ\n\nClick to make it \\textbf{bold} here.' in s and active(page) == 'pages', s[s.find('section'):][:90])
+    # a display is never written inside a command's argument: after the heading, inline in a caption
+    fresh(page); click_text(page, 'How to use it', 6); insert_list(page, 'equation', 600)
+    typ(page, 'E=mc^2', 'keys'); page.wait_for_timeout(300); key(page, 'Enter', 400)
+    s = src(page)
+    check('accept: an equation asked for in a heading goes after the heading', '\\section{How to use it}' in s and s.find('\\begin{equation}') > s.find('\\section{How to use it}') and 'E=mc^2' in s.replace(' ', ''), s[s.find('section'):][:120])
+    fresh(page); click_text(page, 'Results here', 12); insert_list(page, 'equation', 600)
+    typ(page, 'x', 'keys'); page.wait_for_timeout(300); key(page, 'Enter', 400)
+    s = src(page)
+    check('accept: an equation asked for in a caption is a formula in the line there', '\\caption{Results here$x$}' in s and '\\begin{equation}' not in s, s[s.find('caption'):][:60])
+    # a display closed by Esc: the caret after it too; one closed empty goes, leaving no step
+    fresh(page); click_text(page, 'ends here.', 10); key(page, 'Enter', 100); key(page, 'Alt+Equal', 400)
+    typ(page, 'y=2', 'keys'); page.wait_for_timeout(300); key(page, 'Escape', 400); typ(page, 'Then.', 'keys'); page.wait_for_timeout(300)
+    check('accept: a display closed by Esc, what is typed is a new paragraph after it', '\\end{equation}\n\nThen.' in src(page), src(page)[src(page).find('\\end{equation}'):][:30])
+    fresh(page); n = page.evaluate('window.rikuy.hist.length')
+    click_text(page, 'ends here.', 10); key(page, 'Enter', 100); key(page, 'Alt+Equal', 400); key(page, 'Escape', 400)
+    check('accept: an equation closed empty goes with its environment, leaving no undo step', src(page) == ACC and page.evaluate('window.rikuy.hist.length') == n, (src(page)[100:200], page.evaluate('window.rikuy.hist.length'), n))
+
+
+PARTS = [accept, footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips, palette, insertlist, repeat, quickopen, burst]
 
 
 def run():
