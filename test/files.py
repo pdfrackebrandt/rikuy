@@ -37,6 +37,99 @@ def saved(page):
     with zipfile.ZipFile(path) as z:
         return {n: z.read(n) for n in z.namelist() if not n.endswith('/')}
 
+# Every way the open project's key (its name and main file, under which its mark is kept: a
+# stranger's project compiles with restricted shell escape until its owner allows more) changes
+# keeps the strictest mark there is: a version of the project under another main file, File, Main
+# document, a git pull or a branch without the main file (and the one its latexmkrc names), a
+# .zip opened again (review I1, I2). The TeX worker is a stand-in that notes what it was asked.
+EVIL = '\\documentclass{article}\n\\begin{document}\n\\immediate\\write18{echo pwned > /tmp/x}\nEvil.\n\\end{document}\n'
+MINE = '\\documentclass{article}\n\\begin{document}\nMine.\n\\end{document}\n'
+STUB = """() => { const g = window.rikuy; window.__se = []; g.texEngine = () => ({ info: { v: 1, packs: 0 }, compile: async (o) => { window.__se.push({ shellEscape: o.shellEscape, untrusted: o.untrusted }); return { ok: false, runs: [], log: '', problems: [] }; } }); }"""
+# what the open project's compile is sent, its mark and its key
+FLAGS = """async () => { const g = window.rikuy; const li = await g.linkInfo(); window.__se = []; try { await g.compilePdf({}); } catch (e) {}
+  const s = window.__se.pop() || {}; return { key: g.name + '|' + g.main, mark: li && { origin: li.origin, allowed: li.allowed }, se: s.shellEscape, untrusted: s.untrusted }; }"""
+def marks():
+    def zipped(d):
+        z = io.BytesIO()
+        with zipfile.ZipFile(z, 'w') as f:
+            for k, v in d.items(): f.writestr(k, v)
+        return z.getvalue()
+    with sync_playwright() as p:
+        browser, page, errors = open_page(p)
+        page.evaluate(STUB)
+        def put(name, data, main):
+            path = os.path.join(TMP, name)
+            open(path, 'wb').write(data)
+            page.set_input_files('#fileinput', path)
+            page.wait_for_function('(m) => window.rikuy.main === m && window.rikuy.files.has(m)', arg=main, timeout=10000)
+            page.wait_for_timeout(500)
+            return page.evaluate(FLAGS)
+        def openv(name, main):
+            return page.evaluate("""async ([n, m]) => { const g = window.rikuy; const v = (await g.allSnaps()).find((x) => x.name === n && x.main === m); if (!v) return 'no version';
+              await g.restoreVersion(v); await new Promise((r) => setTimeout(r, 300)); return g.name + '|' + g.main; }""", [name, main])
+        restricted = lambda f: f['mark'] and f['mark']['allowed'] is False and f['se'] is False and f['untrusted'] is True
+        full = lambda f: f['mark'] is None and f['se'] is True and f['untrusted'] is False
+        own = put('thesis.tex', MINE.encode(), 'thesis.tex')
+        check('marks: one\'s own thesis.tex compiles with full shell escape', own['key'] == 'thesis|thesis.tex' and full(own), own)
+        f = put('thesis.zip', zipped({'talk/evil.tex': EVIL, 'latexmkrc': "@default_files = ('talk/evil.tex');\n"}), 'talk/evil.tex')
+        check('marks: a stranger\'s thesis.zip opens as a project of its own beside one\'s thesis, restricted', f['key'] == 'thesis (2)|talk/evil.tex' and restricted(f) and 'This browser keeps a project named thesis' in page.inner_text('#toast'), (f, page.inner_text('#toast')[:200]))
+        # a stranger's mark under one's own project name, as a .zip opened before names were checked left it
+        openv('thesis', 'thesis.tex')
+        page.evaluate("""() => { const g = window.rikuy; g.markFromLink('', 'thesis', 'talk/evil.tex', 'zip'); g.files.set('talk/evil.tex', %r); g.rebuild(); }""" % EVIL)
+        page.evaluate("window.rikuy.runCommand('main-document', 'talk/evil.tex')")
+        page.wait_for_function("window.rikuy.main === 'talk/evil.tex'", timeout=5000)
+        f = page.evaluate(FLAGS)
+        check('marks: File, Main document keeps the restriction kept under the other document (no mark here deleted it)', f['key'] == 'thesis|talk/evil.tex' and restricted(f), f)
+        page.evaluate('window.rikuy.newDocument()'); page.wait_for_timeout(600)
+        openv('thesis', 'thesis.tex')
+        f = page.evaluate(FLAGS)
+        check('marks: one\'s own version under its own main file is still one\'s own', f['key'] == 'thesis|thesis.tex' and full(f), f)
+        openv('thesis', 'talk/evil.tex')
+        f = page.evaluate(FLAGS)
+        check('marks: opening the version under the stranger\'s main file keeps its restriction (review I1, repro A)', f['key'] == 'thesis|talk/evil.tex' and restricted(f), f)
+        page.reload(); page.wait_for_function('window.rikuy && window.rikuy.model', timeout=20000); page.wait_for_timeout(500); page.evaluate(STUB)
+        f = page.evaluate(FLAGS)
+        check('marks: and after a reload', f['key'] == 'thesis|talk/evil.tex' and restricted(f), f)
+        # an Allow given to one .zip never reaches another of the same name (repro C)
+        f = put('paper.zip', zipped({'main.tex': MINE}), 'main.tex')
+        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        ok = page.evaluate(FLAGS)
+        f = put('paper.zip', zipped({'src/evil.tex': EVIL}), 'src/evil.tex')
+        check('marks: a second paper.zip opens as paper (2), restricted, the first one\'s Allow untouched', ok['key'] == 'paper|main.tex' and ok['mark'] == {'origin': 'zip', 'allowed': True} and f['key'] == 'paper (2)|src/evil.tex' and restricted(f)
+              and page.evaluate("async () => (await window.rikuy.markOf('paper', 'main.tex')).allowed") is True, (ok, f))
+        openv('paper', 'main.tex')
+        page.evaluate("""() => { const g = window.rikuy; g.markFromLink('', 'paper', 'src/evil.tex', 'zip'); g.files.set('src/evil.tex', %r); }""" % EVIL)
+        page.evaluate("window.rikuy.runCommand('main-document', 'src/evil.tex')")
+        page.wait_for_function("window.rikuy.main === 'src/evil.tex'", timeout=5000)
+        f = page.evaluate(FLAGS)
+        check('marks: an Allow given here never lifts a restriction kept under the other main file (repro C)', f['key'] == 'paper|src/evil.tex' and restricted(f), f)
+        # git: a pull, or a branch, without the main file
+        page.evaluate("async (fs) => { const g = window.rikuy; await g.openRepoFiles('repo', new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)]))); }", [['main.tex', MINE]]); page.wait_for_timeout(400)
+        f = page.evaluate(FLAGS)
+        check('marks: a cloned repository is restricted', f['key'] == 'repo|main.tex' and restricted(f), f)
+        def git(label, fs):
+            page.evaluate("async ([l, fs]) => { const g = window.rikuy; await g.loadGitFiles(new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)])), l); }", [label, fs]); page.wait_for_timeout(400)
+            return page.evaluate(FLAGS)
+        f = git('Pulled', [['paper.tex', EVIL]])
+        check('marks: a pull that renamed main.tex keeps the restriction (review I2)', f['key'] == 'repo|paper.tex' and restricted(f), f)
+        f = git('Switched to dev', [['a.tex', MINE], ['b.tex', EVIL], ['latexmkrc', "@default_files = ('b.tex');\n"]])
+        check('marks: a branch whose latexmkrc names another document keeps it too', f['key'] == 'repo|b.tex' and restricted(f), f)
+        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        page.evaluate("window.rikuy.markFromLink('', 'repo', 'c.tex', 'git')")
+        f = git('Pulled', [['c.tex', EVIL]])
+        check('marks: an Allow given here never lifts a restriction kept under the pull\'s main file', f['key'] == 'repo|c.tex' and restricted(f), f)
+        check('no page errors (marks)', not errors, errors[:5])
+        browser.close()
+
+if sys.argv[1:] == ['marks']:
+    try: marks()
+    except Exception as e:
+        traceback.print_exc()
+        check('the run reaches its end', False, e)
+    bad = [r for r in results if not r[1]]
+    print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
+    sys.exit(1 if bad else 0)
+
 try:
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
@@ -418,6 +511,7 @@ try:
             check('storage %s: the user is told it is not kept' % label, want in page.inner_text('#toast') and 'Saved in this browser' not in page.inner_text('#st-save'), (page.inner_text('#toast')[:120], page.inner_text('#st-save')))
             check('storage %s: no page errors' % label, not errors, errors[:3])
             browser.close()
+    marks()
 except Exception as e:
     # a run that stops part way has failed, whatever the checks before it said
     traceback.print_exc()
