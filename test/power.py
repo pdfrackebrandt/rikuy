@@ -675,6 +675,11 @@ CTX = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\nTe
        '\\begin{figure}\n\\centering\n\\caption{Cap text.}\n\\end{figure}\n\nBold \\textbf{strong words} end.\n\nPrice text.\n\n\\end{document}\n')
 
 
+CTX2 = ('\\documentclass{article}\n\\usepackage{amsmath,tabularx,hyperref}\n\\begin{document}\n\nSee \\href{https://x.org}{the link text} here.\n\n'
+        '\\begin{tabularx}{\\linewidth}{lX}\nCell l & Cell xcol\\\\\n\\end{tabularx}\n\n\\begin{tabular}{p{3cm}c}\nCell para & Cell cc\\\\\n\\end{tabular}\n\n'
+        'Box \\parbox{4cm}{parbox words} end.\n\n\\end{document}\n')
+
+
 def slow(page, text, d=60):
     for ch in text:
         page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else d)
@@ -693,6 +698,13 @@ def pairs(page):
         check('pairs: $$x^2$$ in ' + at + ' is a formula in the line, every key kept', want in s and '\\$' not in s and '\\[' not in s and active(page) == 'pages', (s[s.find(at.split()[0]) - 20:][:80], active(page)))
     for ch in '$$': page.keyboard.type(ch); page.wait_for_timeout(250)
     check('pairs: a $$ typed again after it is a dollar sign, not swallowed', '$x^2$ z\\$' in src(page), src(page)[src(page).find('Cell a'):][:60])
+    # (verification of 5446132, W1) \href's text is an argument: a formula in the line; a display
+    # in a p{} or X cell or a \parbox takes its second closing $ as one too
+    for at, off, want in (('link text', 4, '{the link $x^2$ z text}'), ('Cell xcol', 9, 'Cell xcol \n\\[x^2\\] z\\\\'),
+                          ('Cell para', 9, 'Cell para \n\\[x^2\\] z &'), ('parbox words', 6, '{parbox $x^2$ z words}')):
+        fresh(page, CTX2); click_text(page, at, off); slow(page, ' $$x^2$$ z')
+        s = src(page)
+        check('pairs: $$x^2$$ z in ' + at + ': no stray dollar sign', want in s and '\\$' not in s and active(page) == 'pages', (s[s.find(at.split()[0]) - 20:][:80], active(page)))
     # (a p{} cell takes a display, as a paragraph does)
     fresh(page, CTX); click_text(page, 'Para cell', 9); slow(page, ' $$x^2$$')
     s = src(page)

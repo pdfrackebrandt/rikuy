@@ -3236,7 +3236,9 @@ class App {
     ta.addEventListener('beforeinput', (e) => {
       if (e.data !== '$' || !(!display || (this.pop && this.pop.dollarClose)) || !dollarEnds(ta)) return;
       e.preventDefault(); if (stay()) return; push.flush();
-      if (display) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; }
+      // (opened by $$, its second closing $ is taken however the page draws it: in a p{} or X
+      // cell or a \parbox the display is drawn in the line, not as a display; W1)
+      if (display || this.pop.dollarClose) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; }
       this.closePop();
     });
     // a one line display made one of rows (Ctrl+Enter), as Word's: false, said why, where it cannot
@@ -3266,7 +3268,7 @@ class App {
       if (e.key === 'Enter' && (!display || fieldKeys || e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
       // (the closing $ of a formula in the line, as typed in the source; \$ stays a dollar sign)
-      if (e.key === '$' && (!display || (this.pop && this.pop.dollarClose)) && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); if (display) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; } this.closePop(); }
+      if (e.key === '$' && (!display || (this.pop && this.pop.dollarClose)) && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); if (display || this.pop.dollarClose) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; } this.closePop(); }
       // \) or \] typed in the box ends a formula opened by \( or \[
       if (this.pop && this.pop.closer && e.key === this.pop.closer && /(^|[^\\])\\$/.test(ta.value.slice(0, ta.selectionStart))) {
         e.preventDefault(); ta.setRangeText('', ta.selectionStart - 1, ta.selectionStart, 'end'); ta.dispatchEvent(new Event('input'));
@@ -3318,7 +3320,7 @@ class App {
         if (check || !ok) return ok;
         if (stay()) return;
         push.flush();
-        if (display) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; }
+        if (display || this.pop.dollarClose) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; }
         this.closePop();
       },
       onEscape: () => { push.flush(); this.closePop(); }
@@ -3935,7 +3937,9 @@ class App {
     }
     if (!opens.length) return base;
     const open = opens[0];
-    const m = /\\([A-Za-z]+)\*?\s*(?:\[[^\]]*\]\s*)?$/.exec(src.slice(Math.max(B.s, open - 60), open));
+    // (the command's earlier arguments before it: \href{url}{text}, \parbox{4cm}{…},
+    // \colorbox{red}{…}; read past, the text was taken for a bare group and got a display; W1)
+    const m = /\\([A-Za-z]+)\*?\s*(?:\[[^\]]*\]\s*|\{[^{}]*\})*$/.exec(src.slice(Math.max(B.s, open - 400), open));
     const name = m ? m[1] : '';
     if (!name) return base;
     if (/^(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)$/.test(name)) {
