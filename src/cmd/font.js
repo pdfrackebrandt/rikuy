@@ -141,8 +141,12 @@ register(
     when: (app, at) => can(app, at) && !at.c.collapsed, whyNot: () => 'Select the characters the reading goes over.', run: (app) => openRubyDialog(app) },
 
   { id: 'format-painter', name: 'Format Painter', order: 40, tab: 'home', group: 'clipboard', kind: 'toggle', icon: '<path d="M4.5 3.5h9v3.4h-9z"/><path d="M13.5 5.2h2v3.6H9.6v2.7"/><path d="M8.6 11.5h2v5h-2z"/>',
-    title: 'Format Painter (Ctrl+Shift+C): copies the formatting where the caret is to the next text you select (double click: to all until Escape)', synonyms: ['Copy formatting', 'Paste formatting', 'Paint format'], keys: ['Ctrl+Shift+C'],
+    title: 'Format Painter (Ctrl+Shift+C): copies the formatting where the caret is to the next text you select (double click: to all until Escape); Ctrl+Alt+V pastes it on the selection', synonyms: ['Copy formatting', 'Paint format'], keys: ['Ctrl+Shift+C'],
     when: (app, at) => !!app.fpaint || can(app, at), on: (app) => !!app.fpaint, resync: true, run: (app) => app.formatPainter() },
+  // Microsoft 365's Word: Ctrl+Alt+V (Word for Mac's Cmd+Option+V), since Ctrl+Shift+V became
+  // Paste Text Only; Paste Special keeps the Paste menu, as there
+  { id: 'paste-formatting', name: 'Paste Formatting', title: 'Paste Formatting (Ctrl+Alt+V): the formatting Ctrl+Shift+C or the Format Painter copied, on the selection or the caret\'s word', synonyms: ['Paste format', 'Apply formatting', 'Paste formatting only'],
+    keys: ['Ctrl+Alt+V'], when: can, run: (app) => app.pasteFormat() },
 
   { id: 'typewriter', name: 'Typewriter', title: 'Typewriter text: \\texttt', synonyms: ['Monospace', 'Code', 'texttt'], when: can, on: on('mono'), run: (app) => app.fmtToggle('mono'),
     palette: { k: 'texttt', d: 'Typewriter', order: 70, t: { open: '\\texttt{', close: '}' } } }
@@ -824,6 +828,8 @@ export const methods = {
     const sel = getSelection();
     // (where it was armed: the selection there is no place to paint, see the touch screen's rest below)
     this.fpaint = { fmts, sticky: !!sticky, from: sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null, style: this.fpStyleAt(at), at: { f: c.f, a: c.a, b: c.b } };
+    // (kept for Paste Formatting, Ctrl+Alt+V, again and again: pasteFormat)
+    this.fmtCopy = { fmts, style: this.fpaint.style };
     document.body.classList.add('fpainting');
     if (!fmts.length && !this.fpaint.style) this.toast('The caret is in plain text: the next selection is made plain.', 2400);
     return true;
@@ -874,6 +880,20 @@ export const methods = {
     });
     if (!P0.sticky) { this.fpaint = null; document.body.classList.remove('fpainting'); }
     this.ribbonSync();
+    return ok;
+  },
+  // Paste Formatting (Ctrl+Alt+V): the formatting copied by Ctrl+Shift+C or the Format Painter,
+  // on the selection or the caret's word, as one press of the painter (one undo); the copy stays
+  // for the next one, a painter Ctrl+Shift+C armed is put away (a click after would paint again),
+  // one a double click keeps stays. With nothing copied it says so and changes nothing.
+  pasteFormat() {
+    const K = this.fmtCopy, at = this.ribbonAt();
+    if (!K) { this.toast('Copy formatting first: Ctrl+Shift+C where it is, or the Format Painter.', 3600); return false; }
+    if (!at || !at.c || at.c.ghost) return false;
+    const P0 = this.fpaint;
+    this.fpaint = { fmts: K.fmts, style: K.style, sticky: false, from: null };
+    const ok = this.paintFormat();
+    if (P0 && P0.sticky) { this.fpaint = P0; document.body.classList.add('fpainting'); this.ribbonSync(); }
     return ok;
   },
   // the words selected before a style was given to their paragraph, selected again where the
