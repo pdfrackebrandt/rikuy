@@ -1630,14 +1630,19 @@ class App {
     const src = this.src(f);
     const slice = src.slice(a, b);
     if (/^\s+$/.test(slice)) {
-      if ((slice.match(/\n/g) || []).length >= 2) return [{ f, s: a, e: b, t: ' ' }];
+      // (a blank line still on either side, where an empty paragraph's text went: no paragraphs
+      // join, and a space put there stood at the end of the paragraph before; review V8)
+      const apart = /\n[ \t\r]*\n[ \t\r]*$/.test(src.slice(Math.max(0, a - 100), a)) || /^[ \t\r]*\n[ \t\r]*\n/.test(src.slice(b, b + 100));
+      if (!apart && (slice.match(/\n/g) || []).length >= 2) return [{ f, s: a, e: b, t: ' ' }];
       return [{ f, s: a, e: b, t: '' }];
     }
     // Only comment lines between two paragraphs (a note, a review comment): joining them takes
     // out the blank lines alone. The comments are text nobody sees on the page, and the line
-    // break left before them keeps a space between the two paragraphs' words.
-    if (/^(?:\s|%[^\n]*\n)+$/.test(slice) && /\n[ \t]*\n/.test(slice)) {
-      const lines = slice.split('\n');
+    // break left before them keeps a space between the two paragraphs' words. A \noindent that
+    // began the second paragraph goes too: in the middle of one it does nothing. (It was taken
+    // with the comments as any text, and the words met with no space: "words.Second".)
+    if (/^(?:\s|%[^\n]*\n|\\noindent(?![A-Za-z]))+$/.test(slice) && /\n[ \t]*\n/.test(slice)) {
+      const lines = slice.split('\n').map((l) => (/^[ \t]*%/.test(l) ? l : l.replace(/\\noindent(?![A-Za-z])[ \t]*/g, '')));
       // (a LaTeX paragraph's mark goes too: the paragraph it marked joins the one before, as text)
       const mark = (l) => /^[ \t]*%[ \t]*rikuy:[ \t]*latex[ \t]*\r?$/.test(l);
       const kept = lines.filter((l, i) => i === 0 || (i === lines.length - 1 ? !mark(l) : l.trim() !== '' && !mark(l)));
@@ -1679,6 +1684,9 @@ class App {
 
   insertText(data, range) {
     if (!data) return;
+    // (typed over the mark of the empty paragraph Enter showed: that paragraph goes, and the
+    // letters go where Enter left the caret, as Word's; ghostOver)
+    if (!range && this.ghostOver()) this.takeBackGhost('back');
     const whole = range ? null : this.wholeDoc();
     if (whole) { this.replaceBody(whole, escapeTeX(data, ' '), 'replace'); return; }
     const c = this.caretNow();
@@ -1897,6 +1905,10 @@ class App {
   enter(soft) {
     const c = this.caretNow();
     if (!c) return;
+    // A second Enter where the first left the caret at a paragraph's start: a second empty
+    // paragraph above it, as Word's, and one Backspace or Undo takes one away (review V2). The
+    // first was shown again in its place, so a second Backspace joined the two paragraphs.
+    if (!soft && this.ghost && this.ghost.keepAt && this.ghostKept()) { this.ghost.n = (this.ghost.n || 1) + 1; this.ghostLines(); this.enterAct(); return; }
     if (c.ghost) { if (this.ghost.tex) this.texGhostEnter(); return; }
     const T = this.texHere();
     if (T && c.f === T.f) { this.texEnter(T, c); return; }
@@ -1921,14 +1933,14 @@ class App {
       // Enter in the title, an author or the date starts the text below them, after \maketitle
       // (it did nothing, so a document with a title alone had no way to its first paragraph)
       const B = itemEl && BLOCKS.get(+itemEl.dataset.b);
-      if (B) this.showGhost(itemEl, B.f, B.e);
+      if (B) { this.showGhost(itemEl, B.f, B.e); this.enterAct(); }
       return;
     }
     if (kind === 'h') {
       const B = itemEl && BLOCKS.get(+itemEl.dataset.b);
       // the \label on the heading's next line stays with the heading: the new paragraph goes after it
       const lab = B && /^\s*\\label\s*\{[^}]*\}/.exec(src.slice(B.e));
-      if (B) this.showGhost(itemEl, f, B.e + (lab ? lab[0].length : 0));
+      if (B) { this.showGhost(itemEl, f, B.e + (lab ? lab[0].length : 0)); this.enterAct(); }
       return;
     }
     if (kind === 'li' && itemEl && itemEl.dataset.li) {
@@ -1959,6 +1971,7 @@ class App {
     // Paragraph: at end -> ghost paragraph; otherwise split
     if (c.collapsed && itemEl && this.atItemEnd(itemEl, sel)) {
       this.showGhost(itemEl, f, p);
+      this.enterAct();
       return;
     }
     const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
@@ -1971,6 +1984,7 @@ class App {
       const keep = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
       this.showGhost(itemEl, f, w.p - ps[1].length, { before: true });
       if (keep) { sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true; if (this.ghost) this.ghost.keepAt = keep; }
+      this.enterAct();
       return;
     }
     const ins = w.close + '\n\n' + w.open;
@@ -2035,6 +2049,22 @@ class App {
     const k = this.ghost && this.ghost.keepAt, sel = getSelection();
     return !!k && sel.rangeCount > 0 && sel.isCollapsed && sel.anchorNode === k.startContainer && sel.anchorOffset === k.startOffset;
   }
+  // From that caret into the empty paragraph above it (Shift+Left, Shift+Up): its mark selected,
+  // as Word's, which Backspace or Delete takes away alone (review V3). The empty paragraph went
+  // as the selection left the caret, and the Backspace after it joined the two paragraphs.
+  // (Chromium gives the selection's ends as places in the page's blocks, not in their text: a
+  // selection over it and no words is that one)
+  ghostOver() {
+    const g = this.ghost, sel = getSelection();
+    if (!g || !g.keepAt || !g.el.isConnected || !sel.rangeCount || sel.isCollapsed || !this.root.contains(sel.anchorNode)) return false;
+    const r = sel.getRangeAt(0);
+    return r.intersectsNode(g.el) && !r.toString().replace(/[\u200B\s]/g, '');
+  }
+  // one empty paragraph per Enter (enter): those after the first as lines above it
+  ghostLines() { const g = this.ghost; if (g) g.el.style.paddingTop = g.n > 1 ? 'calc(' + (g.n - 1) + ' * var(--lh))' : ''; }
+  // Enter that showed an empty paragraph is an action, as typing is: nothing is left to redo
+  // after it, as in Word (review V9: Ctrl+Y brought back an edit undone before the Enter)
+  enterAct() { if (this.redoStack.length) { this.redoStack = []; this.updateUndoUI(); } this.lastAct = null; }
   // The one rule for taking back an empty paragraph Enter showed (enter, showGhost). It wrote
   // nothing, so until something is typed in it, it is Enter's whole effect, and Backspace, Delete
   // and Undo take it away and do nothing else, as Word's Enter then Backspace or Ctrl+Z gives
@@ -2047,16 +2077,24 @@ class App {
     // (the blank page's own paragraph is no Enter's)
     if (!g || g.sticky) return false;
     const inIt = this.root.contains(getSelection().anchorNode) && g.el.contains(getSelection().anchorNode);
-    const kept = this.ghostKept();
+    const kept = this.ghostKept(), over = !kept && this.ghostOver();
     if (how !== 'undo') {
-      // Backspace and Delete in it, or Backspace at the caret Enter left below it; spaces
-      // waiting in a line to come go one by one first (deleteInput)
-      if (g.pend || !(inIt || (kept && how === 'back'))) return false;
+      // Backspace and Delete in it or on its selected mark, or Backspace at the caret Enter left
+      // below it; spaces waiting in a line to come go one by one first (deleteInput)
+      if (g.pend || !(inIt || over || (kept && how === 'back'))) return false;
       // (Delete in the empty paragraph above a paragraph: the caret goes to that paragraph's start)
       if (how === 'del' && !(g.before || g.tex === 'before')) return false;
     }
+    const back = () => { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(g.keepAt); this.ourSel = true; };
+    // (of several Enters' empty paragraphs, one goes: review V2)
+    if (g.n > 1 && !g.pend) {
+      g.n--; this.ghostLines();
+      if (over) back();
+      this.ribbonSoon();
+      return true;
+    }
     this.removeGhost();
-    if (kept) { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(g.keepAt); this.ourSel = true; }
+    if (kept || over) back();
     // (Backspace in it ends at the paragraph above, Delete and Undo at the place it stood for)
     else this.restoreCaret({ f: g.f, p: g.pos, bias: g.tex === 'before' || (how !== 'back' && (g.before || how === 'del')) ? 1 : -1 });
     this.ribbonSoon();
@@ -2479,7 +2517,7 @@ class App {
     const sel = getSelection();
     const inRoot = sel.rangeCount && this.root.contains(sel.anchorNode);
     // (an empty paragraph Enter showed above the caret stays while the caret is where Enter left it)
-    const kept = this.ghostKept();
+    const kept = this.ghostKept() || this.ghostOver();
     if (this.ghost && !this.ghost.sticky && !kept && !(inRoot && this.ghost.el.contains(sel.anchorNode))) {
       // keep ghost while focus is in the popover; drop otherwise
       if (!this.pop) this.removeGhost();
@@ -4596,16 +4634,20 @@ class App {
       // A .bib opened on its own under a name BibTeX cannot read (Zotero exports "My Library.bib":
       // \bibliography{My Library} found no database, and every citation printed [?]) joins the
       // project under one it can, My-Library.bib, which the citation picker then writes (review
-      // E15). Opened again, it replaces that file. (One from an archive keeps the name its
-      // document gives it.)
+      // E15). Opened again, it replaces that file: the name it came under is kept with it
+      // (this.orig's from). Another whose name comes to the same, "My  Library.bib", gets a free
+      // one, My-Library-2.bib: it replaced the first, and the toast said Added (review V5). (One
+      // from an archive keeps the name its document gives it.)
       const bibRenamed = [];
       for (const n of [...texts.keys()]) {
         const base = n.split('/').pop();
         if (!/\.bib$/i.test(n) || zipAdded.has(n) || /^[A-Za-z0-9_.-]+$/.test(base)) continue;
-        const safe = n.slice(0, n.length - base.length) + ((base.slice(0, -4).replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^[-.]+|-+$/g, '') || 'references') + '.bib');
-        if (texts.has(safe)) continue;
+        const dir = n.slice(0, n.length - base.length), stem = base.slice(0, -4).replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^[-.]+|-+$/g, '') || 'references';
+        const free = (k) => !texts.has(k) && !this.files.has(k) && !this.assetBlobs.has(k) && !this.extra.has(k);
+        let safe = [...this.orig].find(([k, o]) => o && o.from === n && this.files.has(k) && !texts.has(k))?.[0];
+        if (!safe) { safe = dir + stem + '.bib'; for (let k = 2; !free(safe); k++) safe = dir + stem + '-' + k + '.bib'; }
         texts.set(safe, texts.get(n)); texts.delete(n);
-        if (orig.has(n)) { orig.set(safe, orig.get(n)); orig.delete(n); }
+        if (orig.has(n)) { orig.set(safe, { ...orig.get(n), from: n }); orig.delete(n); }
         bibRenamed.push([n, safe]);
       }
       const bibNote = bibRenamed.length ? ' ' + bibRenamed.map(([a, b]) => a + ' is ' + b + ' here').join(', ') + ': BibTeX cannot read a name with spaces or signs.' : '';
@@ -4670,6 +4712,8 @@ class App {
       // were applied to the new text at the old offsets: stepFits)
       this.closeGroup();
       const overText = new Map([...texts.keys()].filter((n) => this.files.has(n) && this.files.get(n) !== texts.get(n)).map((n) => [n, this.files.get(n)]));
+      // (a text file over one of its name is said replaced, not added: review V5)
+      for (const n of texts.keys()) if (this.files.has(n) && !replaced.includes(n)) replaced.push(n);
       for (const [n, t] of texts) this.files.set(n, t);
       if (overText.size) { this.record(overText, 'open', null, null); this.closeGroup(); }
       // (an opened file: no last selection of the one it replaced)
@@ -4869,7 +4913,7 @@ class App {
       jobs.push(kvPut('binary', {
         assets: [...this.assetBlobs.entries()],
         extra: [...this.extra.entries()],
-        orig: [...this.orig.entries()].map(([n, o]) => [n, { bytes: o.bytes, enc: o.enc, bom: o.bom }])
+        orig: [...this.orig.entries()].map(([n, o]) => [n, { bytes: o.bytes, enc: o.enc, bom: o.bom, from: o.from }])
       }));
     }
     Promise.all(jobs).then(() => { show(true); try { localStorage.removeItem(STORE); } catch (e) { /* ignore */ } })
@@ -4933,8 +4977,15 @@ class App {
     // (a file name as Word suggests one: letters of any script, digits and spaces kept, only what
     // a file system refuses taken out; "Política Económica" came out Pol-tica-Econ-mica, and a
     // title in Chinese as paper; review E17)
-    n = n.normalize('NFC').replace(/[\\/:*?"<>|\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').replace(/^[\s.]+|[\s.]+$/g, '');
-    return [...n].slice(0, 100).join('').replace(/[\s.]+$/, '') || 'paper';
+    // (and what other programs trip on, review V7: the marks that turn text's direction or join
+    // letters unseen, which can make "fdp.exe" read as "exe.pdf"; Windows' device names, which no
+    // file there may have even with an extension, CON.pdf; at most 200 bytes of UTF-8, cut
+    // between characters, so the name with its extension stays under the 255 of ext4 and APFS)
+    n = n.normalize('NFC').replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]+/g, '').replace(/[\\/:*?"<>|\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').replace(/^[\s.]+|[\s.]+$/g, '');
+    let out = '', bytes = 0;
+    for (const ch of [...n].slice(0, 100)) { const k = new TextEncoder().encode(ch).length; if (bytes + k > 200) break; out += ch; bytes += k; }
+    out = out.replace(/[\s.]+$/, '').replace(/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?=\.|$)/i, '$1_');
+    return out || 'paper';
   }
   // a blank article to type into; the open project stays under Review, Versions
   async newDocument() {

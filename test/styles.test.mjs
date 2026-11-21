@@ -506,7 +506,8 @@ ok('Dogfood: a heading on one paragraph of an environment of several splits it a
   // (review E13: an abstract is never begun again, which TeX titles "Abstract" a second time: the
   // paragraphs after the heading leave it; a quote is split around the heading)
   const want = {
-    First: 'x\n\\section{First para.}\n\nSecond para.\n\nThird para.\n\nBody.',
+    // (review V1: on the first paragraph the abstract begins after the heading, its title kept)
+    First: 'x\n\\section{First para.}\n\n\\begin{abstract}\nSecond para.\n\nThird para.\n\\end{abstract}\n\nBody.',
     Second: 'x\n\\begin{abstract}\nFirst para.\n\\end{abstract}\n\n\\section{Second para.}\n\nThird para.\n\nBody.',
     Third: 'x\n\\begin{abstract}\nFirst para.\n\nSecond para.\n\\end{abstract}\n\n\\section{Third para.}\n\nBody.'
   };
@@ -528,6 +529,19 @@ ok('Dogfood: a heading on one paragraph of an environment of several splits it a
   assert.ok(SR2.splitEnvEdits(d, { ...b, we: d.indexOf('Third para.') + 11, e: d.indexOf('{abstract}', d.indexOf('\\end')) + 10 }, 'section', d.indexOf('Second') + 1).why);
   const one = 'x\n\\begin{quote}\nOnly.\n\\end{quote}';
   assert.ok(SR2.splitEnvEdits(one, { v: 'quote', s: 2, ws: one.indexOf('Only'), we: one.indexOf('Only') + 5, e: one.length }, 'section', 15).why);
+});
+
+ok('A proof made a heading or a paragraph leaves its \\qedhere behind (an error out of a proof), the caret kept', () => {
+  const src = 'x\n\n\\begin{proof}\nIt holds. \\qedhere\n\\end{proof}\n\nBody.';
+  const b = { v: 'proof', s: src.indexOf('\\begin'), ws: src.indexOf('It'), we: src.indexOf('qedhere') + 7, e: src.indexOf('{proof}', src.indexOf('\\end')) + 7 };
+  for (const [to, want] of [['section', 'x\n\n\\section{It holds.}\n\nBody.'], ['p', 'x\n\nIt holds.\n\nBody.']]) {
+    const r = restyle(src, b, to, src.indexOf('holds'));
+    const out = applyEdits(src, r.edits);
+    assert.equal(out, want, to);
+    assert.equal(out.slice(r.p, r.p + 5), 'holds', to + ': the caret');
+  }
+  // (a quote is no proof either)
+  assert.ok(applyEdits(src, restyle(src, b, 'quote', 20).edits).includes('\\qedhere') === false);
 });
 
 console.log('styles: ' + n + ' groups of checks passed');
