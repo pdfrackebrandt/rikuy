@@ -3158,11 +3158,12 @@ class App {
       st.ml = fieldRows(modelValue(mf), st.multi, D);
     };
     // MathLive focuses its keyboard sink 60 ms after the field takes the focus, whatever happened
-    // since: a hand over to the box sooner than that (dictation as the field opens, or a busy
-    // page that runs the timer late) lost the box's focus to the field, and the next keys went
-    // into the formula (\text{if}\} on CI). After a hand over (handed) the focus comes back to
-    // the field from the box only by a press on the field or Tab; any other goes back to the box.
-    let handed = false, backOk = false;
+    // since: the box focused sooner than that (a hand over by dictation as the field opens, CI's
+    // \text{if}\}; a click or a fill of the box as the field arrives, browser.py's lost \gamma
+    // under load, X3; a busy page that runs the timer late) lost its focus to the field, and the
+    // next keys went into the formula. The focus comes to the field from the box only by a press
+    // on the field, Tab, or the page's own call (backOk); any other goes back to the box.
+    let backOk = false;
     mf.addEventListener('pointerdown', () => { backOk = true; }, true);
     ta.addEventListener('keydown', (e) => { if (e.key === 'Tab') backOk = true; });
     // While the box holds what the field cannot show (\begin{ or a brace not yet closed, an
@@ -3176,10 +3177,11 @@ class App {
         queueMicrotask(() => ta.focus({ preventScroll: true }));
         return;
       }
-      if (!handed) return;
-      if (backOk) { backOk = false; handed = false; return; }
+      if (backOk) { backOk = false; return; }
       queueMicrotask(() => ta.focus({ preventScroll: true }));
     });
+    // (the page's own moves of the focus to the field)
+    const fieldFocus = () => { backOk = true; focusField(mf); backOk = false; };
     ta.addEventListener('input', sync);
     mf.addEventListener('paste', (e) => {
       const t = e.clipboardData && e.clipboardData.getData('text/plain');
@@ -3216,7 +3218,7 @@ class App {
         if (this.pop) this.pop.boxFromField = true;
         // (keys typed into the field whose input event is still to come: in the box first)
         pull();
-        handed = true; backOk = false;
+        backOk = false;
         let at = ta.value.length;
         try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (ta.value.startsWith(pre)) at = pre.length; } catch (e) { /* at the end */ }
         ta.focus();
@@ -3231,9 +3233,10 @@ class App {
     }, true);
     P.wordTyping = wt;
     P.field = mf;
-    if (P.insertTex) this.eqWireField(P, mf, D, ta, () => focusField(mf));
+    if (P.insertTex) this.eqWireField(P, mf, D, ta, fieldFocus);
+    P.fieldFocus = fieldFocus;
     if (!opts.keepFocus || document.activeElement !== ta || ta.value === opts.initial) {
-      focusField(mf);
+      fieldFocus();
       try { mf.executeCommand('moveToMathfieldEnd'); if (st.multi) mf.position = Math.max(0, mf.lastOffset - 1); } catch (e) { /* ignore */ }
     }
     this.positionPop();
@@ -3421,7 +3424,7 @@ class App {
         if (!P || !toRows()) return;
         const mf = P.field;
         if (!mf) return;
-        focusField(mf);
+        if (P.fieldFocus) P.fieldFocus(); else focusField(mf);
         try { mf.position = Math.max(0, mf.lastOffset - 1); } catch (e) { /* ignore */ }
         P.wordTyping.newRow();
       } : null,
