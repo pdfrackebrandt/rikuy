@@ -4288,7 +4288,10 @@ class App {
           let total = 0;
           for (const n of Object.keys(z.files)) total += (z.files[n]._data && z.files[n]._data.uncompressedSize) || 0;
           if (total > MAX_ZIP) throw new Error('it would unpack to ' + fmtMB(total) + ', more than this page can hold');
-          const names = Object.keys(z.files).filter((n) => !z.files[n].dir && !/(^|\/)(__MACOSX|\.)/.test(n));
+          // (a hidden file is left out, a Mac's or an editor's, but not the two kinds a LaTeX
+          // project needs: latexmk's .latexmkrc, and a .keep or .gitkeep that is there only so its
+          // folder exists, as \tikzexternalize[prefix=figures/] needs figures/ to write into)
+          const names = Object.keys(z.files).filter((n) => !z.files[n].dir && !/(^|\/)(__MACOSX|\.(?!(?:latexmkrc|keep|gitkeep)$))/.test(n));
           if (!names.length) unread.push(file.name + ' has no files in it.');
           const prefix = commonDir(names);
           for (const n of Object.keys(z.files)) {
@@ -4829,15 +4832,23 @@ class App {
   }
 
   // Where TeX sees a project file: relative to the main file's folder.
+  // (a file beside the main file's folder is ../ from it: talk/slides.tex reads ../style/defs)
   texPath(f) {
     const dir = this.main.includes('/') ? this.main.slice(0, this.main.lastIndexOf('/') + 1) : '';
-    return dir && f.startsWith(dir) ? f.slice(dir.length) : f;
+    if (!dir || f.startsWith(dir)) return f.slice(dir.length);
+    const up = dir.split('/').filter(Boolean), parts = f.split('/');
+    let k = 0;
+    while (k < up.length && k < parts.length - 1 && up[k] === parts[k]) k++;
+    return '../'.repeat(up.length - k) + parts.slice(k).join('/');
   }
   fromTexPath(p) {
     if (!p) return this.main;
     const dir = this.main.includes('/') ? this.main.slice(0, this.main.lastIndexOf('/') + 1) : '';
     const clean = p.replace(/^\.\//, '');
-    for (const c of [dir + clean, clean, dir + clean + '.tex', clean + '.tex']) if (this.files.has(c)) return c;
+    // (TeX names a file from the main file's folder: ../sections/intro.tex from talk/)
+    const norm = (t) => { const out = []; for (const x of t.split('/')) { if (x === '..') out.pop(); else if (x && x !== '.') out.push(x); } return out.join('/'); };
+    const rel = norm(dir + clean), own = norm(clean);
+    for (const c of [rel, rel + '.tex', own, own + '.tex', dir + clean, clean, dir + clean + '.tex', clean + '.tex']) if (this.files.has(c)) return c;
     for (const k of this.files.keys()) if (k.endsWith('/' + clean)) return k;
     return null;
   }
