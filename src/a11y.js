@@ -89,7 +89,9 @@ export function graphName(g) {
   const what = g.kind === 'function' ? 'y = ' + (g.f || []).join('; y = ')
     : g.kind === 'curve' ? (g.curve.mode === 'polar' ? 'r(θ) = ' + g.curve.r : 'x(t) = ' + g.curve.x + ', y(t) = ' + g.curve.y)
       : g.kind === 'data' ? (g.data.points.length + ' points with a ' + g.data.fit + ' fit')
-        : g.dist.family + ' distribution' + (g.dist.mode === 'mean' ? ', the mean of n draws' : '');
+        : g.kind === 'implicit' ? (g.eq || []).join('; ')
+          : g.kind === 'phase' ? 'd' + g.vars[0] + '/dt = ' + g.phase.dx + ', d' + g.vars[1] + '/dt = ' + g.phase.dy
+            : g.kind === 'dist' ? g.dist.family + ' distribution' + (g.dist.mode === 'mean' ? ', the mean of n draws' : '') : g.kind;
   const sl = (g.sliders || []).map((q) => q.name + ' from ' + q.min + ' to ' + q.max + ', now ' + q.value).join('; ');
   return ('Interactive graph' + (g.title ? ': ' + g.title : '') + '. ' + what + (sl ? '. Sliders: ' + sl : '')).slice(0, 1000);
 }
