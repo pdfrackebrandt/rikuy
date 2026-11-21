@@ -2502,7 +2502,8 @@ class App {
       const f = document.activeElement;
       if (e.key === 'ArrowRight' && f && el.contains(f) && f.getAttribute('aria-haspopup') === 'menu' && f.getAttribute('aria-disabled') !== 'true') { e.preventDefault(); e.stopPropagation(); f.click(); return; }
       if (!/^(ArrowDown|ArrowUp|Home|End)$/.test(e.key)) return;
-      const all = [...el.querySelectorAll('[role=menuitem], [role=menuitemradio]')].filter((a) => !a.disabled && a.getAttribute('aria-disabled') !== 'true' && a.offsetParent);
+      // (a greyed item with its reason stays in reach: kit.js openMenu's why)
+      const all = [...el.querySelectorAll('[role=menuitem], [role=menuitemradio]')].filter((a) => ((!a.disabled && a.getAttribute('aria-disabled') !== 'true') || a.dataset.reach) && a.offsetParent);
       if (!all.length) return;
       const i = all.indexOf(document.activeElement), n = all.length;
       const j = e.key === 'Home' || (i < 0 && e.key === 'ArrowDown') ? 0 : e.key === 'End' || i < 0 ? n - 1 : (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
