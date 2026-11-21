@@ -101,7 +101,9 @@ jobs:
   # list still holds every suite of test/ and every part of a suite split by part.
   editor:
     needs: editor-shard
-    if: ${{ !cancelled() }}
+    # always(), not !cancelled(): a cancelled run must end this required gate red, never skipped
+    # (GitHub counts a skipped job as passing a required check)
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
