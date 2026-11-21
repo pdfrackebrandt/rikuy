@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, merge3, mergeProjects, commentOnly, base32, unbase32, parseCommentLine } from '../src/share.js';
 import { changes } from '../src/diff.js';
 import { TeXEngine } from '../src/tex.js';
-import { graphShort, graphWhole, graphHtml, readGraph } from '../src/graph.js';
+import { graphShort, graphWhole, graphHtml, readGraph, OTHER_VERSION } from '../src/graph.js';
 
 import zlib from 'node:zlib';
 import { llms, llmsFull, robots, sitemap, structured } from '../build/app.mjs';
@@ -227,15 +227,28 @@ await ok('a link carries a graph as its description, and the file comes back byt
   // a stranger's description is read as a graph's file is (normalized, capped), and only into an
   // .html file; too many graphs, a name that is no .html, or what is no description: refused
   const g = (files) => packShare({ v: 1, main: 'main.tex', files: [['main.tex', 'x'], ...files] });
-  const back = await unpackShare(await g([['g.html', '{"kind":"function","f":["x"],"title":"</script><script>alert(1)</script>"}', 'g']]), graphWhole);
+  // (a description as a link carries it: normalized by the writer, src/graph.js graphShort)
+  const canon = (spec) => graphShort(graphHtml(spec));
+  const back = await unpackShare(await g([['g.html', canon({ kind: 'function', f: ['x'], title: '</script><script>alert(1)</script>' }), 'g']]), graphWhole);
   const made = back.files[1][1];
   assert.ok(readGraph(made) && made === graphHtml(readGraph(made)) && !/<\/script><script>alert/.test(made));
   for (const bad of [[['g.tex', '{}', 'g']], [['g.html', 'not json', 'g']], [['g.html', '[1,2]', 'g']], [['g.html', 'null', 'g']], [['g.html', ' '.repeat(1e6 + 1), 'g']]]) {
     await assert.rejects(unpackShare(await g(bad), graphWhole), /cannot accept/, JSON.stringify(bad).slice(0, 60));
   }
-  await assert.rejects(unpackShare(await g(Array.from({ length: 51 }, (_, i) => ['g' + i + '.html', '{}', 'g'])), graphWhole), /too many graphs/);
+  await assert.rejects(unpackShare(await g(Array.from({ length: 51 }, (_, i) => ['g' + i + '.html', canon({}), 'g'])), graphWhole), /too many graphs/);
   // fifty is a document's worth, and opens
-  assert.equal((await unpackShare(await g(Array.from({ length: 50 }, (_, i) => ['g' + i + '.html', '{}', 'g'])), graphWhole)).files.length, 51);
+  assert.equal((await unpackShare(await g(Array.from({ length: 50 }, (_, i) => ['g' + i + '.html', canon({}), 'g'])), graphWhole)).files.length, 51);
+  // (review of 89a05a4, L1) a description this copy would normalize otherwise is another version's:
+  // a key it does not know (a newer Rikuy's), one it would drop or reorder, or one not normalized;
+  // the link is refused with that said, not opened with the graph quietly drawn another way
+  const known = canon({ kind: 'function', f: ['a x'], sliders: [{ name: 'a', min: 0, max: 2, step: 0.1, value: 1 }] });
+  assert.equal((await unpackShare(await g([['g.html', known, 'g']]), graphWhole)).files[1][1], graphHtml(JSON.parse(known)));
+  const newer = known.replace(/\}$/, ',"zz":true}');
+  for (const other of [newer, known.replace('"kind":"function",', '') + '', '{"f":["x"]}', '{}']) {
+    if (other === canon({})) continue;
+    await assert.rejects(unpackShare(await g([['g.html', other, 'g']]), graphWhole), /another version of Rikuy\. Reload this page/, other.slice(0, 60));
+  }
+  assert.equal(OTHER_VERSION.includes('Reload this page'), true);
 });
 
 await ok('a comment goes on its own line under the line it is about', () => {
