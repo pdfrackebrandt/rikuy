@@ -128,6 +128,11 @@ export function installCaret(app) {
   pages.addEventListener('keydown', (e) => {
     if (!keyAt && !/^(Shift|Control|Alt|Meta|CapsLock)$/.test(e.key)) keyAt = e.timeStamp || performance.now();
     if ((e.key.length === 1 && !e.ctrlKey && !e.metaKey) || /^(Backspace|Delete|Enter|Tab)$/.test(e.key)) typedAt = performance.now();
+    // (a key can move the text under a caret whose place in it stays: Enter again at a paragraph's
+    // start grows the empty paragraph shown above it, Backspace or Ctrl+Z takes it back, the
+    // selection unchanged, no selectionchange; a letter typed moves the selection itself, so typing
+    // costs nothing more)
+    if (!(e.key.length === 1 && !e.ctrlKey && !e.metaKey)) soon();
   }, true);
   pages.addEventListener('focus', soon);
   pages.addEventListener('blur', soon);
