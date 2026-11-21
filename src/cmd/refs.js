@@ -551,6 +551,30 @@ export const methods = {
     void nl;
     return place === 'end' ? w : w.commit(null, 'insert');
   },
+  // whether the document names a bibliography file: \bibliography{...}, or biblatex's \addbibresource
+  bibNamed() { const B = this.bibState(); return B.system === 'thebibliography' || (B.biblatex ? B.resources.length > 0 : !!B.bib); },
+  // A key the citation picker took from a .bib the document names nowhere (bibList): the lines
+  // that print the bibliography from it go in, at the document's end, in the citation's own step
+  // (the popover's session), so one Undo takes both. BibTeX's plain (natbib's plainnat where natbib
+  // is loaded), or biblatex's resource and \printbibliography. Without them TeX prints [?].
+  citeBibFor(file) {
+    const P = this.pop;
+    if (!P || this.bibNamed()) return;
+    const f = this.main, src = this.src(f), B = this.bibState(), name = file.replace(/\.bib$/i, '');
+    const edits = [];
+    if (B.biblatex) {
+      edits.push(...RS.preambleLine(src, '\\addbibresource{' + file + '}'));
+      if (!B.print) edits.push(...RS.endLines(src, ['\\printbibliography'], ['printindex']));
+    } else edits.push(...RS.endLines(src, [...(B.styleCall ? [] : ['\\bibliographystyle{' + (B.natbib ? 'plainnat' : 'plain') + '}']), '\\bibliography{' + name + '}'], ['printindex']));
+    if (!edits.length) return;
+    this.commit(edits.map((x) => ({ f, ...x })), null, P.session);
+    // (a line in the preamble moves the citation the popover writes, and where the caret goes back)
+    const R = P.range, grow = (p) => edits.reduce((n, x) => (x.e <= p ? n + x.t.length - (x.e - x.s) : n), 0);
+    if (R && R.f === f) { const d = grow(R.s); R.s += d; R.e += d; }
+    if (P.returnCaret && P.returnCaret.f === f) P.returnCaret = { ...P.returnCaret, p: P.returnCaret.p + grow(P.returnCaret.p) };
+    if (P.anchorPos && P.anchorPos.f === f) P.anchorPos = { ...P.anchorPos, s: P.anchorPos.s + grow(P.anchorPos.s) };
+    this.toast('The bibliography from ' + file + ' goes at the end of the document.');
+  },
   bibRemove() {
     const B = this.bibState(), spots = this.bodySpots(['bibliography', 'printbibliography', ...(B.biblatex ? [] : ['bibliographystyle'])], true);
     return this.removeSpots(spots.filter((x) => x.name !== 'bibliographystyle' || preambleEnd(this.src(x.f)) < x.s));
