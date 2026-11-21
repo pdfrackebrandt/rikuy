@@ -4301,7 +4301,8 @@ class App {
           // (a hidden file is left out, a Mac's or an editor's, but not the two kinds a LaTeX
           // project needs: latexmk's .latexmkrc, and a .keep or .gitkeep that is there only so its
           // folder exists, as \tikzexternalize[prefix=figures/] needs figures/ to write into)
-          const names = Object.keys(z.files).filter((n) => !z.files[n].dir && !/(^|\/)(__MACOSX|\.(?!(?:latexmkrc|keep|gitkeep)$))/.test(n));
+          const hidden = (n) => /(^|\/)(__MACOSX|\.(?!(?:latexmkrc|keep|gitkeep)$))/.test(n);
+          const names = Object.keys(z.files).filter((n) => !z.files[n].dir && !hidden(n));
           if (!names.length) unread.push(file.name + ' has no files in it.');
           const prefix = commonDir(names);
           for (const n of Object.keys(z.files)) {
@@ -4312,6 +4313,8 @@ class App {
           for (const n of names) {
             const rel = cleanPath(n.slice(prefix.length));
             if (rel === null) { skipped.push(n); continue; }
+            // (again on the name as cleanPath made it, \ read as /: figs\.htaccess is figs/.htaccess, review N6)
+            if (hidden(rel)) continue;
             if (TEXT_EXT.test(rel)) {
               const bytes = await z.files[n].async('uint8array');
               const d = decodeText(bytes);

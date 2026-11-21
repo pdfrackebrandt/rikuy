@@ -515,9 +515,10 @@ try:
         # a folder kept by a .gitkeep, and latexmk's .latexmkrc: files of the project, not hidden
         # files to leave out; \\tikzexternalize[prefix=figures/] writes its pictures into figures/
         open_zip('Externalize.zip', zipped2({'main.tex': '\\documentclass{article}\n\\usepackage{tikz}\n\\usetikzlibrary{external}\n\\tikzexternalize[prefix=figures/]\n\\begin{document}\n\\begin{tikzpicture}\\draw (0,0) circle (1);\\end{tikzpicture}\n\\end{document}\n',
-                                              'figures/.gitkeep': '', '.latexmkrc': "$pdf_mode = 1;\n", '.DS_Store': 'x', '__MACOSX/._main.tex': 'x'}))
+                                              'figures/.gitkeep': '', '.latexmkrc': "$pdf_mode = 1;\n", '.DS_Store': 'x', '__MACOSX/._main.tex': 'x', 'figs\\.htaccess': 'x'}))
         extra = sorted(page.evaluate('[...window.rikuy.extra.keys()]'))
-        check('a .zip\'s .gitkeep and .latexmkrc are kept, a Mac\'s hidden files are not', extra == ['.latexmkrc', 'figures/.gitkeep'], extra)
+        # (a hidden file named with \ for /, as Windows' tools write it, is one too: review N6)
+        check('a .zip\'s .gitkeep and .latexmkrc are kept, a Mac\'s hidden files are not, nor figs\\.htaccess', extra == ['.latexmkrc', 'figures/.gitkeep'], extra)
         if TREE:
             page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
             r = page.evaluate("async () => { const r = await window.rikuy.api.compile(); return { ok: r.ok, pages: r.pages, errs: r.problems.filter((x) => x.severity === 'error').map((x) => x.message) }; }")
