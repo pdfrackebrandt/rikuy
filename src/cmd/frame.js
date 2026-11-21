@@ -7,8 +7,8 @@ import { $ } from '../ui/dom.js';
 
 const always = () => true;
 register(
-  { id: 'undo', name: 'Undo', el: 'b-undo', static: true, place: 'bar', title: 'Undo (Ctrl+Z)', keysElsewhere: ['Ctrl+Z'], when: () => !$('#b-undo').disabled, run: (app) => app.undo() },
-  { id: 'redo', name: 'Redo', el: 'b-redo', static: true, place: 'bar', title: 'Redo (Ctrl+Shift+Z)', keysElsewhere: ['Ctrl+Shift+Z', 'Ctrl+Y'], when: () => !$('#b-redo').disabled, run: (app) => app.redo() },
+  { id: 'undo', name: 'Undo', el: 'b-undo', static: true, place: 'bar', title: 'Undo (Ctrl+Z): take back the last edit', keysElsewhere: ['Ctrl+Z'], when: () => !$('#b-undo').disabled, run: (app) => app.undo() },
+  { id: 'redo', name: 'Redo', el: 'b-redo', static: true, place: 'bar', title: 'Redo (Ctrl+Shift+Z): make again the edit just undone', keysElsewhere: ['Ctrl+Shift+Z', 'Ctrl+Y'], when: () => !$('#b-redo').disabled, run: (app) => app.redo() },
   { id: 'search', name: 'Search', el: 'rk-search', role: 'combobox', static: true, place: 'bar', title: 'Search for a command by its name (Alt+Q)', keys: ['Alt+Q'], keyScope: 'app', mac: { 'Alt+Q': 'Control+Alt+Q' },
     searchable: false, when: always, run: (app) => app.openSearch() },
   { id: 'ribbon-collapse', name: 'Collapse the ribbon', el: 'rb-collapse', role: 'button', static: true, place: 'tabs', only: 'wide', title: 'Collapse the ribbon to its tabs, or show it again (Ctrl+F1)', keys: ['Ctrl+F1'], keyScope: 'app',
