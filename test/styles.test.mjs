@@ -506,7 +506,8 @@ ok('Dogfood: a heading on one paragraph of an environment of several splits it a
   // (review E13: an abstract is never begun again, which TeX titles "Abstract" a second time: the
   // paragraphs after the heading leave it; a quote is split around the heading)
   const want = {
-    First: 'x\n\\section{First para.}\n\nSecond para.\n\nThird para.\n\nBody.',
+    // (review V1: on the first paragraph the abstract begins after the heading, its title kept)
+    First: 'x\n\\section{First para.}\n\n\\begin{abstract}\nSecond para.\n\nThird para.\n\\end{abstract}\n\nBody.',
     Second: 'x\n\\begin{abstract}\nFirst para.\n\\end{abstract}\n\n\\section{Second para.}\n\nThird para.\n\nBody.',
     Third: 'x\n\\begin{abstract}\nFirst para.\n\nSecond para.\n\\end{abstract}\n\n\\section{Third para.}\n\nBody.'
   };

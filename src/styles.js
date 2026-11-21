@@ -173,6 +173,8 @@ export function restyle(src, b, to, p) {
 // heading: Word gives the style to that paragraph alone, so the environment ends before it and
 // starts again after it, its other paragraphs kept where they are. An abstract is not begun
 // again (TeX would title it "Abstract" a second time): the paragraphs after the heading leave it.
+// On its first paragraph there is no first title: the abstract begins after the heading, as a
+// quote does, or the heading would take the whole abstract, title and all, away (review V1).
 // A theorem or a proof is never split (src/cmd/styles.js SPLITS): its second part would print
 // its title, and a theorem's a new number. b: the environment's block as styleOfBlock reads it
 // ({ v, s, ws, we, e }: the whole of it and its words), p the caret, to the heading's command.
@@ -198,7 +200,7 @@ export function splitEnvEdits(src, b, to, p) {
   const head = k > 0 ? { s: paras[k - 1][1], e: ps, t: eol + '\\end{' + name + '}' + eol + eol } : { s: b.s, e: ps, t: '' };
   const edits = [head, { s: ps, e: ps, t: '\\' + to + '{' }, { s: pe, e: pe, t: '}' }];
   if (k === paras.length - 1) edits.push({ s: pe, e: b.e, t: '' });
-  else if (name === 'abstract') edits.push({ s: pe, e: paras[k + 1][0], t: eol + eol }, { s: b.we, e: b.e, t: '' });
+  else if (name === 'abstract' && k > 0) edits.push({ s: pe, e: paras[k + 1][0], t: eol + eol }, { s: b.we, e: b.e, t: '' });
   else edits.push({ s: pe, e: paras[k + 1][0], t: eol + eol + '\\begin{' + name + '}' + eol });
   // the caret where it was in the words, which moved by what went before them
   const shift = head.t.length - (head.e - head.s) + to.length + 2;
