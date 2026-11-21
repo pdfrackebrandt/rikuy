@@ -137,7 +137,8 @@ def dollars(page):
     click_text(page, 'gamma.', 6); typed(page, ' z '); typed(page, '\\', 300); typed(page, 'sec'); key(page, 'Escape', 300); typed(page, ' w')
     check('dollars: \\sec then Esc in prose is the text \\sec, not the formula command', 'gamma. Z \\textbackslash{}sec w' in src(page), src(page)[60:110])
     # a price as Word users type it: $ a number and a space is a dollar sign (verification of 2308408)
-    for typed_, want in ((' costs $5 each', ' Costs \\$5 each'), (' pay $12.50 now', ' Pay \\$12.50 now'), (' so $5x$ ok', ' So $5x$ ok')):
+    # (the word after the space decides at its end: a space or a mark, W6)
+    for typed_, want in ((' costs $5 each.', ' Costs \\$5 each.'), (' pay $12.50 now.', ' Pay \\$12.50 now.'), (' so $5x$ ok', ' So $5x$ ok')):
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
         for ch in typed_:
@@ -148,7 +149,7 @@ def dollars(page):
     # (verification of eb14945, V1) the key after the space decides: a letter starting a word makes
     # the price; a sign, <, =, a backslash, a digit or $ keeps the formula that opens with a number
     import re
-    for typed_, want in ((' costs $5 and $10 now', re.escape(' Costs \\$5 and \\$10 now')), (' it costs $5. Then more', re.escape(' It costs \\$5. Then more')),
+    for typed_, want in ((' costs $5 and $10 now.', re.escape(' Costs \\$5 and \\$10 now.')), (' it costs $5. Then more', re.escape(' It costs \\$5. Then more')),
                          (' pay $5, then go', re.escape(' Pay \\$5, then go')),
                          (' the $1 - \\alpha$ level', r' The \$1\s*-\s*\\alpha\$ level'), (' with $0 < x < 1$ ok', r' With \$0\s*<\s*x\s*<\s*1\$ ok'),
                          (' and $2 \\times 3$ ok', r' And \$2\s*\\times\s*3\$ ok'), (' so $5 = x$ ok', r' So \$5\s*=\s*x\$ ok'), (' at $5 \b+1$ ok', r' At \$5\+1\$ ok')):
@@ -161,6 +162,45 @@ def dollars(page):
         s = src(page)
         check('dollars: ' + typed_.strip().replace('\\b', '(Backspace)') + (' is a price' if '\\\\$' in want else ' stays a formula'),
               re.search('gamma\\.' + want + '\n', s) is not None and 'textbackslash' not in s and active(page) == 'pages', (s[60:130], active(page)))
+    # (verification of 5446132) W6: $ right after the word keeps the formula ($2 x$), a click away
+    # after the word makes the price; W7: a % or \% after the number waits as the number does
+    for typed_, want in ((' a $2 x$ term', r' A \$2\s*x\$ term'), (' save $5% now.', re.escape(' Save \\$5\\% now.')), (' save $5\\% now.', re.escape(' Save \\$5\\% now.'))):
+        fresh(page, MATH)
+        click_text(page, 'gamma.', 6)
+        for ch in typed_:
+            page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
+        page.wait_for_timeout(300)
+        s = src(page)
+        check('dollars: ' + typed_.strip() + (' is a price' if '%' in typed_ else ' stays a formula'), re.search('gamma\\.' + want + '\n', s) is not None and active(page) == 'pages', (s[60:130], active(page)))
+    fresh(page, MATH)
+    click_text(page, 'gamma.', 6)
+    for ch in ' costs $5 each': page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
+    xy = page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('Next')); const b = s.getBoundingClientRect(); return [b.left + 2, b.top + b.height / 2]; })()")
+    page.mouse.click(xy[0], xy[1]); page.wait_for_timeout(400)
+    check('dollars: $5 each then a click away is a price', 'gamma. Costs \\$5 each\n' in src(page), src(page)[60:130])
+    # W4: words with no key (dictation, a phone's suggestion bar) into a $ just opened are kept;
+    # W5: an input method's or a dead key's word after "$5 " keeps the space
+    cdp = page.context.new_cdp_session(page)
+    for ins_, after, want in (('5 each', ' ok.', re.escape(' See \\$5 each ok.')), ('ab cd', '$ ok', r' See \$ab\s*cd\$ ok')):
+        page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+        load_doc(page, MATH)
+        click_text(page, 'gamma.', 6)
+        for ch in ' see $': page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
+        cdp.send('Input.insertText', {'text': ins_}); page.wait_for_timeout(400)
+        for ch in after: page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
+        page.wait_for_timeout(300)
+        s = src(page)
+        check('dollars: ' + repr(ins_) + ' in one insert after $ keeps its words', re.search('gamma\\.' + want + '\n', s) is not None, s[60:130])
+    for how, comp, commit in (('an input method', 'に', '日本'), ('a dead key', '´', 'é')):
+        page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+        load_doc(page, MATH)
+        click_text(page, 'gamma.', 6)
+        for ch in ' price $5 ': page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
+        cdp.send('Input.imeSetComposition', {'text': comp, 'selectionStart': 1, 'selectionEnd': 1}); page.wait_for_timeout(200)
+        cdp.send('Input.insertText', {'text': commit}); page.wait_for_timeout(300)
+        page.keyboard.type(' ok'); page.wait_for_timeout(300)
+        s = src(page)
+        check('dollars: after "$5 " ' + how + '\'s word is the price\'s, the space kept', 'gamma. Price \\$5 ' + commit + ' ok\n' in s and active(page) == 'pages', (s[60:130], active(page)))
 
 
 def field(page, keys):
