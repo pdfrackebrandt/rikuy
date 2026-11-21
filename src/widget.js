@@ -212,6 +212,41 @@ function normPath(p) {
   return out.join('/');
 }
 
+// The paper's faces for a graph's frame, which has none of the page's fonts: KaTeX's Computer
+// Modern roman and math italic, the faces the page sets math in and TeX the PDF's labels
+// (src/graph.js mount). Read once from the page's style sheets: a data: address decoded (the
+// page's policy fetches no data:), a file of the page's own fetched from beside it.
+let FACES = null;
+export function paperFaces() {
+  if (FACES) return FACES;
+  FACES = (async () => {
+    const out = [];
+    for (const sh of document.styleSheets) {
+      let rules;
+      try { rules = sh.cssRules; } catch (e) { continue; }
+      for (const r of rules) {
+        if (r.type !== CSSRule.FONT_FACE_RULE) continue;
+        const fam = r.style.getPropertyValue('font-family').replace(/["']/g, '').trim(), st = r.style.getPropertyValue('font-style') || 'normal';
+        if (!(fam === 'KaTeX_Main' && st === 'normal' || fam === 'KaTeX_Math' && st === 'italic') || !/^(normal|400|)$/.test(r.style.getPropertyValue('font-weight')) || out.some((f) => f.family === fam)) continue;
+        const m = /url\(\s*["']?([^"')]+)["']?\s*\)/.exec(r.style.getPropertyValue('src'));
+        if (!m) continue;
+        try {
+          let data;
+          if (m[1].startsWith('data:')) { const b = atob(m[1].slice(m[1].indexOf(',') + 1)), a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); data = a.buffer; }
+          else { const u = new URL(m[1], sh.href || document.baseURI); if (u.origin !== location.origin) continue; data = await (await fetch(u)).arrayBuffer(); }
+          if (data.byteLength < 3e5) out.push({ family: fam, style: st, weight: '400', data });
+        } catch (e) { /* the frame keeps its serif */ }
+      }
+    }
+    return out;
+  })();
+  return FACES;
+}
+const darkPage = () => document.body.classList.contains('dark-page');
+export function sendFaces(win, dark, scale) {
+  paperFaces().then((faces) => { try { win.postMessage({ rikuy: 'fonts', faces, dark: !!dark, scale: scale || 1 }, '*'); } catch (e) { /* gone */ } });
+}
+
 // The frames, over the boxes the text keeps for them. A frame taken out of the document and put
 // back starts again from nothing, and the pages move and redraw their contents all the time (a
 // caption typed into redraws its figure; pagination moves blocks between pages). So the frames
@@ -222,7 +257,10 @@ function normPath(p) {
 // Protocol, from the widget: parent.postMessage({rikuy: "height", px: <integer>}, "*") gives the
 // height its content needs, in its own CSS pixels; {rikuy: "menu", x, y} asks for Rikuy's menu
 // at that point of the frame (an interactive graph's right click or long press: the host opens it
-// only for a graph, and at most once a second). The page lays the widget out at the width the
+// only for a graph, and at most once a second); {rikuy: "fonts"} asks for the paper's faces
+// (answered four times at most: {rikuy: "fonts", faces: [{family, style, weight, data}], dark}),
+// and {rikuy: "theme", dark} follows when View, Dark page changes; {rikuy: "touch"}, a tap in a
+// graph, shows its buttons a while (above it: on a touch screen they wait for a tap). The page lays the widget out at the width the
 // text has at 100 % zoom and scales it with the page, so a widget looks the same at any zoom, as a
 // figure does. Messages are taken only from these frames' windows (a widget's origin is "null",
 // as is every sandboxed frame's, so the window is what tells them apart).
@@ -241,6 +279,13 @@ export class WidgetLayer {
     this.queued = false;
     framesOnlySrcdoc();
     window.addEventListener('message', (e) => this.onMessage(e));
+    // the paper's colour, to every frame when View, Dark page changes
+    let dark = darkPage();
+    new MutationObserver(() => {
+      if (darkPage() === dark) return;
+      dark = !dark;
+      for (const F of this.frames.values()) if (F.frame && F.frame.contentWindow) F.frame.contentWindow.postMessage({ rikuy: 'theme', dark }, '*');
+    }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
     // the boxes move whenever the pages change: a new layout, a blank paragraph shown while
     // typing, a picture above that finished loading; and a box selected for deletion shows it on
     // its frame, which covers it
@@ -288,8 +333,10 @@ export class WidgetLayer {
       B.width = (r.width / s) + 'px';
       B.height = (r.height / s) + 'px';
       B.transform = Math.abs(s - 1) < 1e-4 ? '' : 'scale(' + s + ')';
-      // the box's scale, so its buttons keep their size on the screen (44 px on a phone's page)
+      // the box's scale, so its buttons keep their size on the screen (44 px on a phone's page);
+      // the frame told it, so a graph keeps its plot readable on a phone's page
       B.setProperty('--ws', String(s));
+      if (F.frame && F.ws !== s) { F.ws = s; try { F.frame.contentWindow.postMessage({ rikuy: 'theme', dark: darkPage(), scale: s }, '*'); } catch (e) { /* not loaded yet: its fonts request is answered with it */ } }
     }
     for (const [id, F] of this.frames) if (!keep.has(id)) { F.box.remove(); this.frames.delete(id); }
   }
@@ -352,10 +399,17 @@ export class WidgetLayer {
 
   onMessage(e) {
     const d = e.data;
-    if (!d || typeof d !== 'object' || (d.rikuy !== 'height' && d.rikuy !== 'menu') || !e.source) return;
+    if (!d || typeof d !== 'object' || !/^(height|menu|fonts|touch)$/.test(d.rikuy) || !e.source) return;
     let F = null;
     for (const x of this.frames.values()) if (x.frame && x.frame.contentWindow === e.source) { F = x; break; }
     if (!F) return;
+    if (d.rikuy === 'fonts') { F.fonts = (F.fonts || 0) + 1; if (F.fonts <= 4) sendFaces(e.source, darkPage(), this.host.scale()); return; }
+    if (d.rikuy === 'touch') {
+      F.box.classList.add('wtouch');
+      clearTimeout(F.touched);
+      F.touched = setTimeout(() => F.box.classList.remove('wtouch'), 5000);
+      return;
+    }
     // a right click or long press in the frame: the host decides whether a menu opens
     if (d.rikuy === 'menu') { if (this.host.menu) this.host.menu(F, d.x, d.y); return; }
     const px = Math.round(Number(d.px));
