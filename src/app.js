@@ -1246,6 +1246,8 @@ class App {
     // Ctrl+Z right after typing undoes that typing instead of wiping it
     if (this.srcRebuild.pending()) this.srcRebuild.flush();
     this.closePop(true);
+    // (an empty paragraph Enter showed is a step of its own: takeBackGhost)
+    if (this.takeBackGhost('undo')) return;
     const h = this.hist.pop();
     if (!h) { this.toast('Nothing to undo'); return; }
     h.open = false; h.before = null; h.win = null; h.after = null;
@@ -1258,8 +1260,6 @@ class App {
     // (src/review.js: an Accept's base back; the step's edit absorbed as it was when made)
     if (h.base0) this.rvBaseStep(h, true);
     this.rvStep = h;
-    // (an empty paragraph Enter showed is a step of its own: takeBackGhost)
-    if (this.takeBackGhost('undo')) return;
     const c = h.caretBefore || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].del.length } : null);
     this.rebuild(c);
     this.pushToSource();
@@ -1700,6 +1700,8 @@ class App {
 
   deleteInput(type, ranges) {
     const c = this.caretNow();
+    // (an empty paragraph Enter showed: takeBackGhost)
+    if (this.takeBackGhost(/Backward/.test(type) ? 'back' : 'del')) return;
     if (c && c.ghost) {
       // the spaces typed so far in a line or a paragraph to come in LaTeX go one by one
       if (/Backward/.test(type) && this.ghost.pend) { this.ghost.pend = this.ghost.pend.slice(0, -1); this.paintGhost(); return; }
@@ -1732,8 +1734,6 @@ class App {
           const open = /\\(?:part|chapter|(?:sub){0,2}section|(?:sub)?paragraph)\*?\s*(?:\[[^\]]*\]\s*)?\{\s*$/.exec(src.slice(from, c.a));
           const close = /^\s*\}/.exec(src.slice(c.a, c.a + 400));
           if (open && close) {
-    // (an empty paragraph Enter showed: takeBackGhost)
-    if (this.takeBackGhost(/Backward/.test(type) ? 'back' : 'del')) return;
             this.commit([{ f: c.f, s: from + open.index, e: c.a + close[0].length, t: '' }], { f: c.f, p: from + open.index, bias: -1 }, 'del');
             return;
           }
@@ -1994,6 +1994,38 @@ class App {
     this.scrollToCaret();
   }
   removeGhost() { if (this.ghost) { const g = this.ghost; this.ghost = null; g.el.remove(); if (g.restore) g.restore(); } }
+  // the caret where Enter at a paragraph's start left it, the empty paragraph showing above it
+  ghostKept() {
+    const k = this.ghost && this.ghost.keepAt, sel = getSelection();
+    return !!k && sel.rangeCount > 0 && sel.isCollapsed && sel.anchorNode === k.startContainer && sel.anchorOffset === k.startOffset;
+  }
+  // The one rule for taking back an empty paragraph Enter showed (enter, showGhost). It wrote
+  // nothing, so until something is typed in it, it is Enter's whole effect, and Backspace, Delete
+  // and Undo take it away and do nothing else, as Word's Enter then Backspace or Ctrl+Z gives
+  // back exactly what was there. Before, Backspace acted on the caret Enter had left at the next
+  // paragraph's start and deleted the blank line before it, joining two paragraphs; Undo undid
+  // the edit made before the Enter. how: 'back' (Backspace), 'del' (Delete) or 'undo'. True
+  // where it took one away.
+  takeBackGhost(how) {
+    const g = this.ghost;
+    // (the blank page's own paragraph is no Enter's)
+    if (!g || g.sticky) return false;
+    const inIt = this.root.contains(getSelection().anchorNode) && g.el.contains(getSelection().anchorNode);
+    const kept = this.ghostKept();
+    if (how !== 'undo') {
+      // Backspace and Delete in it, or Backspace at the caret Enter left below it; spaces
+      // waiting in a line to come go one by one first (deleteInput)
+      if (g.pend || !(inIt || (kept && how === 'back'))) return false;
+      // (Delete in the empty paragraph above a paragraph: the caret goes to that paragraph's start)
+      if (how === 'del' && !(g.before || g.tex === 'before')) return false;
+    }
+    this.removeGhost();
+    if (kept) { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(g.keepAt); this.ourSel = true; }
+    // (Backspace in it ends at the paragraph above, Delete and Undo at the place it stood for)
+    else this.restoreCaret({ f: g.f, p: g.pos, bias: g.tex === 'before' || (how !== 'back' && (g.before || how === 'del')) ? 1 : -1 });
+    this.ribbonSoon();
+    return true;
+  }
   // what is typed in the blank paragraph or line is LaTeX source, written as it is
   ghostRaw() { return !!this.ghost && (!!this.ghost.tex || this.ghost.style === 'latex'); }
   // extra: edits of the same step (the packages a paste needs, src/app.js pastePackages)
@@ -2027,38 +2059,6 @@ class App {
   }
 
   // ---- LaTeX paragraphs (src/styles.js) ----------------------------------------------
-  // the caret where Enter at a paragraph's start left it, the empty paragraph showing above it
-  ghostKept() {
-    const k = this.ghost && this.ghost.keepAt, sel = getSelection();
-    return !!k && sel.rangeCount > 0 && sel.isCollapsed && sel.anchorNode === k.startContainer && sel.anchorOffset === k.startOffset;
-  }
-  // The one rule for taking back an empty paragraph Enter showed (enter, showGhost). It wrote
-  // nothing, so until something is typed in it, it is Enter's whole effect, and Backspace, Delete
-  // and Undo take it away and do nothing else, as Word's Enter then Backspace or Ctrl+Z gives
-  // back exactly what was there. Before, Backspace acted on the caret Enter had left at the next
-  // paragraph's start and deleted the blank line before it, joining two paragraphs; Undo undid
-  // the edit made before the Enter. how: 'back' (Backspace), 'del' (Delete) or 'undo'. True
-  // where it took one away.
-  takeBackGhost(how) {
-    const g = this.ghost;
-    // (the blank page's own paragraph is no Enter's)
-    if (!g || g.sticky) return false;
-    const inIt = this.root.contains(getSelection().anchorNode) && g.el.contains(getSelection().anchorNode);
-    const kept = this.ghostKept();
-    if (how !== 'undo') {
-      // Backspace and Delete in it, or Backspace at the caret Enter left below it; spaces
-      // waiting in a line to come go one by one first (deleteInput)
-      if (g.pend || !(inIt || (kept && how === 'back'))) return false;
-      // (Delete in the empty paragraph above a paragraph: the caret goes to that paragraph's start)
-      if (how === 'del' && !(g.before || g.tex === 'before')) return false;
-    }
-    this.removeGhost();
-    if (kept) { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(g.keepAt); this.ourSel = true; }
-    // (Backspace in it ends at the paragraph above, Delete and Undo at the place it stood for)
-    else this.restoreCaret({ f: g.f, p: g.pos, bias: g.tex === 'before' || (how !== 'back' && (g.before || how === 'del')) ? 1 : -1 });
-    this.ribbonSoon();
-    return true;
-  }
   // A LaTeX paragraph's box on the page is its source, character for character: what is typed,
   // pasted or deleted there is written as it is, never escaped. What needs care is the blank
   // line: TeX ends a paragraph there, and with it the mark's reach, so what came after it would
