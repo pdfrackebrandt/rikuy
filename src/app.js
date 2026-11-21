@@ -3133,7 +3133,12 @@ class App {
     // of the box back over the box)
     let given = mf.getValue('latex');
     const pull = () => {
-      if (mf.getValue('latex') === given) return;
+      const cur = mf.getValue('latex');
+      if (cur === given) return;
+      // (taken: a later event for this same value is stale, one for a deletion is not; with given
+      // left at the box's last value, the field emptied by Backspace matched it and the box kept
+      // the last character, X1)
+      given = cur;
       const tex = fromField(fieldValue(mf), st);
       if (tex === ta.value) return;
       fromMf = true;
@@ -3481,6 +3486,8 @@ class App {
     const canDisplay = this.eqCanDisplayHere(this.ribbonAt());
     const p = this.makePop(null, 'pop-math', 'New inline math');
     const PM = this.pop;
+    // (the history before the formula: emptied, it goes with every step it made; X1)
+    const h0 = this.hist.length, redo0 = this.redoStack;
     this.pop.closer = o.closer || null;
     this.pop.display = false;
     this.pop.eqWhere = { display: canDisplay };
@@ -3539,6 +3546,27 @@ class App {
       ins.e = ins.s + t.length;
       this.pop.returnCaret = { f: ins.f, p: ins.e, bias: 1 };
     };
+    // A formula closed empty goes as Word's empty equation does: with every step it made taken
+    // back, no undo step left for it, the caret where the $ was (X1). (Not while it is open: the
+    // page built again under it closed it.)
+    const dropEmpty = () => {
+      const P = this.pop, at = ins;
+      ins = null;
+      if (!P) return;
+      const mine = this.hist.slice(h0);
+      if (mine.length && mine.every((h) => h.kind === P.session)) {
+        for (const h of mine.reverse()) {
+          this.hist.pop();
+          for (const d of h.files) { const s = this.files.get(d.f) ?? ''; this.files.set(d.f, s.slice(0, d.s) + d.del + s.slice(d.s + d.ins.length)); }
+        }
+        this.redoStack = redo0;
+        this.rebuild(base ? { f: base.f, p: base.a } : undefined);
+        this.pushToSource(); this.saveSoon(); this.updateUndoUI();
+        if (ghost) this.ghostAt(ghost.f, ghost.pos, ghost.style);
+      } else if (at) this.commit([{ f: at.f, s: at.s, e: at.e, t: '' }], null, P.session);
+      else return;
+      P.returnCaret = base ? { f: base.f, p: base.a } : null;
+    };
     const push = debounce(() => this.pop && insert(ta.value), 160);
     const preview = () => { const r = this.renderer.katex(this.mathPreviewTex(ta.value, false), false); prev.innerHTML = ta.value ? r.html : ''; err.textContent = r.err ? plainMathError(r.err, ta.value) : ''; err.title = r.err || ''; err.hidden = !r.err || !ta.value; };
     // An empty formula: $ at once is a dollar sign, as $$ always was here (a price: $$5), and a
@@ -3577,7 +3605,7 @@ class App {
     // or a sentence's mark after it, Enter, Esc or the box closing makes the price, written with
     // the word in one step ($5 each, $5 each.). Backspace takes the space back. Text from an input
     // method or a dead key after the space is a word, never a variable (W5).
-    let pend = null, word = '';
+    let pend = null, word = '', priced = false;
     const PRICE = /^\d+([.,]\d+)?(\\?%)?[.,;:!?)]?$/;
     const priceText = (more) => '\\$' + pend.replace(/(^|[^\\])%/g, '$1\\%') + ' ' + more;
     // (a formula opened by $$ where a display cannot go: its closing $$ is one, the second $ taken)
@@ -3588,6 +3616,8 @@ class App {
       pend = null; word = '';
       ins = null; ta.value = '';
       if (at) this.commit([{ f: at.f, s: at.s, e: at.e, t }], null, P.session);
+      // (closed as a price: not an empty formula to take away, with the price's own step)
+      priced = true;
       this.closePop(true);
       if (at) this.restoreCaret({ f: at.f, p: at.s + t.length });
       else if (ghost) { this.ghost = ghost; this.ghostInsert(t); }
@@ -3630,6 +3660,15 @@ class App {
       pend = null; word = '';
       return false;
     };
+    // (X1) Backspace in an empty formula takes the formula away, as Word's does an equation's
+    const backKey = (k) => {
+      if (k !== 'Backspace') return false;
+      if (this.pop && this.pop.pullField) this.pop.pullField();
+      if (ta.value) return false;
+      push.cancel();
+      this.closePop();
+      return true;
+    };
     // (W5) an input method's or a dead key's text after "$5 ": the price, with it as its word; it
     // went into the formula, and the waiting space after it
     p.addEventListener('compositionend', (e) => {
@@ -3663,6 +3702,7 @@ class App {
     ta.addEventListener('keydown', (e) => {
       // (a named key after a price's space: Backspace takes the space back; characters come by beforeinput)
       if (pend !== null && e.key.length !== 1 && priceKey(e.key, true)) { e.preventDefault(); return; }
+      if (backKey(e.key)) { e.preventDefault(); return; }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
       if (e.key === '$' && !o.closer && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); pairDone(); this.closePop(); }
@@ -3674,7 +3714,7 @@ class App {
     const whole = () => mathMadeWhole(ta.value, kerr(ta.value));
     this.pop.onClose = () => {
       push.cancel();
-      if (!this.pop) return;
+      if (!this.pop || priced) return;
       // (closed by a click or the like with a word after "$5 ": the price, W6)
       if (pend !== null && word) {
         const t = priceText(word), P = this.pop;
@@ -3685,7 +3725,9 @@ class App {
         ta.value = '';
         return;
       }
-      const v = held(ta.value) ? whole() : ta.value; insert(v); this.eqClosed(this.pop, v);
+      const v = held(ta.value) ? whole() : ta.value;
+      if (!v) { dropEmpty(); return; }
+      insert(v); this.eqClosed(this.pop, v);
     };
     this.pop.refuse = () => !!held(ta.value) && !!held(whole());
     this.pop.mathText = () => ta.value;
@@ -3715,7 +3757,7 @@ class App {
       onEscape: () => { push.flush(); this.closePop(); },
       onKey: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        if (emptyKey(e.key) || priceKey(e.key, false)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+        if (emptyKey(e.key) || priceKey(e.key, false) || backKey(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
         if (e.key.length === 1) keys++;
       }
     });

@@ -178,7 +178,23 @@ def dollars(page):
     xy = page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('Next')); const b = s.getBoundingClientRect(); return [b.left + 2, b.top + b.height / 2]; })()")
     page.mouse.click(xy[0], xy[1]); page.wait_for_timeout(400)
     check('dollars: $5 each then a click away is a price', 'gamma. Costs \\$5 each\n' in src(page), src(page)[60:130])
-    # W4: words with no key (dictation, a phone's suggestion bar) into a $ just opened are kept;
+    # (verification of befd04a, X1) Backspace deletes a formula's last character, then the formula,
+    # as Word's does an equation: no stray \$, no undo step left for it, the caret where the $ was
+    for typed_, n in ((' costs $x', 2), (' costs $ab+1', 5), (' costs $5', 2), (' costs $5 each', 7)):
+        fresh(page, MATH)
+        click_text(page, 'gamma.', 6)
+        for ch in typed_.split('$')[0]: page.keyboard.type(ch); page.wait_for_timeout(40)
+        page.wait_for_timeout(300); h0 = page.evaluate('window.rikuy.hist.length'); s0 = src(page)
+        for ch in '$' + typed_.split('$')[1]: page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 60)
+        page.wait_for_timeout(400)
+        for _ in range(n - 1): key(page, 'Backspace', 200)
+        mid = page.evaluate("(() => { const P = window.rikuy.pop; const t = P && P.el.querySelector('textarea'); return t ? t.value : null; })()")
+        key(page, 'Backspace', 400)
+        check('dollars: ' + typed_.strip() + ', Backspace ' + str(n - 1) + ' times empties it, once more takes it away, no step left',
+              mid == '' and src(page) == s0 and page.evaluate('window.rikuy.hist.length') == h0 and active(page) == 'pages', (mid, src(page)[60:120], page.evaluate('window.rikuy.hist.length'), h0, active(page)))
+        typed(page, 'Q')
+        check('dollars: ' + typed_.strip() + ' taken away, the next key where the $ was', s0.replace('gamma. Costs \n', 'gamma. Costs Q\n') == src(page), src(page)[60:120])
+
     # W5: an input method's or a dead key's word after "$5 " keeps the space
     cdp = page.context.new_cdp_session(page)
     for ins_, after, want in (('5 each', ' ok.', re.escape(' See \\$5 each ok.')), ('ab cd', '$ ok', r' See \$ab\s*cd\$ ok')):
