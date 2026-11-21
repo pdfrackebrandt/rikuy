@@ -91,6 +91,11 @@ export function posFromDom(node, off, root) {
   const kids = el.childNodes;
   if (off > 0 && kids[off - 1]) { const r = lastPos(kids[off - 1]); if (r) return r; }
   if (kids[off]) { const r = firstPos(kids[off]); if (r) return r; }
+  // (a place before a heading's number, which Home and Ctrl+Home give, is the start of the
+  // heading's own words: looking outside the element first sent the keys typed there into the
+  // paragraph before or after it)
+  for (let i = off + 1; i < kids.length; i++) { const r = firstPos(kids[i]); if (r) return r; }
+  for (let i = off - 2; i >= 0; i--) { const r = lastPos(kids[i]); if (r) return r; }
   return before(el, root) || after(el, root);
 }
 

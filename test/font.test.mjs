@@ -387,6 +387,15 @@ ok('review H2: a family on a group of declarations that is an argument stays a d
   // free, a declaration's group becomes the command
   const t = 'A {\\fontfamily{ppl}\\selectfont abc} z.', [p, q] = sel(t, 'abc');
   assert.equal(F.setValue(t, p, q, 'family', { cmd: 'textsf' }).text, 'A \\textsf{abc} z.');
+  // \usefont{T1}{phv}{m}{n}, its family the second of four: read as a family, so a copy or the
+  // Format Painter keeps it, written again as it was, and another family replaces it (review N5)
+  const u = 'Plain {\\usefont{T1}{phv}{m}{n} sans words} end.', [ua, ub] = sel(u, 'sans');
+  const uf = F.formatsAt(u, ua, ub);
+  assert.deepEqual(uf.map((x) => [x.group, x.w.cmd, x.w.args]), [['family', 'usefont', ['T1', 'phv', 'm', 'n']]]);
+  assert.equal(F.openerAny(uf[0].w), '{\\usefont{T1}{phv}{m}{n} ');
+  assert.equal(F.familyOf(uf[0].w), 'helvetica');
+  assert.equal(F.chainAt(u, ua, ub).map((x) => u.slice(x.W.s, x.W.is)).join(), '{\\usefont{T1}{phv}{m}{n} ');
+  assert.equal(F.setValue(u, ...sel(u, 'sans words'), 'family', { cmd: 'textsf' }).text, 'Plain \\textsf{sans words} end.');
 });
 
 ok('review H3: Change Case changes the letters of words alone (math, keys, specs, code and pictures keep theirs)', () => {

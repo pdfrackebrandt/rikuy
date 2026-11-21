@@ -327,6 +327,37 @@ def clipboard(page):
     page.evaluate('window.rikuy.runCommand("paste-special")'); page.wait_for_selector('[role=dialog] .ps-list')
     page.get_by_role('radio', name='LaTeX source').check(); page.get_by_role('button', name='OK').click(); page.wait_for_timeout(400)
     check('clipboard: Paste Special, LaTeX source', '$x_1$ & 50%Delta' in src(page), src(page))
+    # by the keys, as Word's: Paste Special (Paste's menu; Ctrl+Alt+V is Paste Formatting, as in
+    # Microsoft 365) gives the dialog the focus, the arrows choose, Enter is OK (the keys went on to
+    # the page: Enter broke the paragraph and nothing was pasted)
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    doc = src(page); click_text(page, 'Delta', 0)
+    page.evaluate('window.rikuy.runCommand("paste-special")'); page.wait_for_selector('[role=dialog] .ps-list')
+    page.wait_for_timeout(150)
+    focus = page.evaluate('document.activeElement.getAttribute("aria-label")')
+    for k in ('ArrowDown', 'Enter'): page.keyboard.press(k); page.wait_for_timeout(120)
+    page.wait_for_timeout(300)
+    check('clipboard: Paste Special, Down, Enter pastes as LaTeX source, the focus in the dialog till then', focus == 'Unformatted text' and src(page) == doc.replace('Delta', '$x_1$ & 50%Delta'), (focus, src(page)))
+    # a word copied from inside its bold stays bold, as Word's copy keeps it (it came plain)
+    load_doc(page, W('Alpha \\textbf{beta} gamma.\n\nDelta.'))
+    select_text(page, 'eta'); page.keyboard.press('Control+c'); click_text(page, 'Delta', 5); page.keyboard.press('Control+v'); page.wait_for_timeout(300)
+    check('clipboard: letters copied from a bold word paste bold', src(page) == W('Alpha \\textbf{beta} gamma.\n\nDelta\\textbf{eta}.'), src(page))
+    # moved inside the same italic phrase they take no second \emph, which would print them upright
+    load_doc(page, W('An \\emph{italic phrase with words inside} here.'))
+    select_text(page, 'words '); page.keyboard.press('Control+x'); page.wait_for_timeout(250)
+    click_text(page, 'phrase', 0); page.keyboard.press('Control+v'); page.wait_for_timeout(300)
+    check('clipboard: words cut and pasted inside the same \\emph stay in it once', src(page) == W('An \\emph{italic words phrase with inside} here.'), src(page))
+    # a format with a value goes only where the place has the same one: a size into another size,
+    # a family into another family keep theirs, as Word's paste keeps the copied look; the same
+    # size or colour is not put twice
+    for doc, sel, at, off, want, label in [
+            ('A {\\Large big words} and {\\small small text here}.', 'big', 'small text', 6, 'A {\\Large big words} and {\\small small {\\Large big}text here}.', 'a size into another size'),
+            ('A \\textsf{sans word} and \\textrm{roman text here}.', 'sans', 'roman text', 6, 'A \\textsf{sans word} and \\textrm{roman \\textsf{sans}text here}.', 'a family into another family'),
+            ('A {\\Large big words} and {\\Large large text here}.', 'big', 'large text', 6, 'A {\\Large big words} and {\\Large large bigtext here}.', 'a size into the same size'),
+            ('A \\textcolor{red}{red words} and \\textcolor{red}{more red here}.', 'words', 'more red', 5, 'A \\textcolor{red}{red words} and \\textcolor{red}{more wordsred here}.', 'a colour into the same colour')]:
+        load_doc(page, W(doc)); page.wait_for_timeout(150)
+        select_text(page, sel); page.keyboard.press('Control+c'); click_text(page, at, off); page.keyboard.press('Control+v'); page.wait_for_timeout(300)
+        check('clipboard: ' + label + ' (review M5)', src(page) == W(want), src(page))
 
 
 def once(page, doc, at, cmd, want, label):

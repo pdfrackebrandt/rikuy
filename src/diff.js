@@ -101,28 +101,67 @@ export function wordDiff(a, b) {
 const nl = (t) => { let n = 0; for (let i = 0; i < t.length; i++) if (t.charCodeAt(i) === 10) n++; return n; };
 export function changes(a, b, f) {
   const out = [];
-  for (const h of hunks(a, b)) {
-    const ops = wordDiff(h.a, h.b);
-    let ap = h.as, bp = h.bs, line = h.line;
-    let cur = null, pend = null;
-    const flush = () => { if (cur) out.push(cur); cur = null; pend = null; };
-    for (const [op, v] of ops) {
-      if (op === ' ') {
-        if (cur && !(v.length >= 10 || /\S\s+\S/.test(v) || nl(v) > 1)) pend = { v, ap, bp };
-        else flush();
-        ap += v.length; bp += v.length; line += nl(v);
-        continue;
-      }
-      if (cur && pend) {
-        cur.a += pend.v; cur.b += pend.v; cur.parts.push([' ', pend.v, pend.bp]);
-        pend = null;
-      }
-      if (!cur) cur = { f, as: ap, ae: ap, bs: bp, be: bp, a: '', b: '', line, parts: [] };
-      if (op === '-') { cur.a += v; ap += v.length; cur.parts.push(['-', v, bp]); }
-      else { cur.b += v; cur.parts.push(['+', v, bp]); bp += v.length; line += nl(v); }
-      cur.ae = ap; cur.be = bp;
+  for (const h of joinBlank(hunks(a, b), a, b, f)) for (const c of h.list || hunkChanges(h, f)) out.push(c);
+  return out;
+}
+// the changes of one hunk, as changes() lists them
+export function hunkChanges(h, f) {
+  const out = [];
+  const ops = wordDiff(h.a, h.b);
+  let ap = h.as, bp = h.bs, line = h.line;
+  let cur = null, pend = null;
+  const flush = () => { if (cur) out.push(cur); cur = null; pend = null; };
+  for (const [op, v] of ops) {
+    if (op === ' ') {
+      if (cur && !(v.length >= 10 || /\S\s+\S/.test(v) || nl(v) > 1)) pend = { v, ap, bp };
+      else flush();
+      ap += v.length; bp += v.length; line += nl(v);
+      continue;
     }
-    flush();
+    if (cur && pend) {
+      cur.a += pend.v; cur.b += pend.v; cur.parts.push([' ', pend.v, pend.bp]);
+      pend = null;
+    }
+    if (!cur) cur = { f, as: ap, ae: ap, bs: bp, be: bp, a: '', b: '', line, parts: [] };
+    if (op === '-') { cur.a += v; ap += v.length; cur.parts.push(['-', v, bp]); }
+    else { cur.b += v; cur.parts.push(['+', v, bp]); bp += v.length; line += nl(v); }
+    cur.ae = ap; cur.be = bp;
+  }
+  flush();
+  return out;
+}
+// Hunks with only blank lines between them as one, where the block's changes, as listed, hold
+// fewer characters than the hunks' together and none of them reaches across a paragraph break but
+// a join or a split (a break against spacing, nothing else): a blank line is a poor anchor, and
+// where one paragraph was joined to the next and another split (a Word file's tracked changes,
+// each its author's) the lines' diff pairs the wrong paragraphs, by blank lines, and lists the
+// join as text put in at one place and taken out at another, which no author's step made; over
+// the block the words' diff finds the paragraph break that went and the one that came. (The
+// characters listed, not the words' diff's: changes() takes the spaces between nearby edits in,
+// and a block could list fewer edits but more characters, or one change across a break that Word
+// cannot take as a tracked change and Accept and Reject act on as a whole; review N2. Small blocks
+// only: past 2000 characters the words' diff could pass MAXD and give the block as one replacement.)
+const listed = (h, f) => { if (!h.list) { h.list = hunkChanges(h, f); h.cost = 0; for (const c of h.list) h.cost += c.a.length + c.b.length; } return h.cost; };
+const PAR = /\n[ \t]*\n/;
+const crosses = (c) => (PAR.test(c.a) || PAR.test(c.b)) && /\S/.test(c.a + c.b);
+function joinBlank(H, a, b, f) {
+  const out = [];
+  let i = 0;
+  while (i < H.length) {
+    // (a block grown from H[i] while each hunk taken in lists fewer characters; it ends at the
+    // last size whose changes cross no break, a join and a split being two steps: the join alone
+    // with the paragraph after it lists that paragraph as moved, the split then gives it back)
+    let B = H[i], good = B, end = i, j = i + 1;
+    for (; j < H.length; j++) {
+      const h = H[j], gap = a.slice(B.as + B.a.length, h.as);
+      if (!/^\s+$/.test(gap) || gap.length > 8 || h.as + h.a.length - B.as + h.be - B.bs > 2000) break;
+      const M = { a: a.slice(B.as, h.as + h.a.length), b: b.slice(B.bs, h.be), as: B.as, bs: B.bs, be: h.be, line: B.line };
+      if (!(listed(M, f) < listed(B, f) + listed(h, f))) break;
+      B = M;
+      if (!M.list.some(crosses)) { good = M; end = j; }
+    }
+    out.push(good);
+    i = end + 1;
   }
   return out;
 }
