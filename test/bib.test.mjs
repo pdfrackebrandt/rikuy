@@ -177,6 +177,23 @@ const ap = (t, ed) => { for (const x of [...ed].sort((a, b) => b.s - a.s || b.e 
   check('Dogfood: plain lists by author', pl.sort === true && /^chetty2012 \[1\]; mirrlees1971 \[2\]$/.test(pl.list || ''), pl);
   const c = nums('', '%\\bibliographystyle{unsrt}\n');
   check('Dogfood: a \\bibliographystyle in a comment is not read', c.sort === true, c);
+  // (review E6) verbatim and \iffalse are not read; the first one counts, as BibTeX's first
+  // \bibstyle; IEEEtran numbers in citation order; one in an \input file; biblatex's sorting=none
+  const order = (main, extra = {}) => {
+    const files = new Map([['main.tex', main], ['refs.bib', bib], ...Object.entries(extra)]);
+    const m1 = buildModel({ files, main: 'main.tex' }), m = buildModel({ files, main: 'main.tex', prev: m1 });
+    const refs = m.blocks.flatMap((b) => b.items || []).find((x) => x.type === 'refs');
+    return refs ? refs.entries.map((x) => x.key).join(' ') : '';
+  };
+  const body = (tail, pre = '') => '\\documentclass{article}\n' + pre + '\\begin{document}\nFirst \\cite{mirrlees1971}, then \\cite{chetty2012}.\n' + tail + '\n\\end{document}\n';
+  const CIT = 'mirrlees1971 chetty2012', AUT = 'chetty2012 mirrlees1971';
+  check('E6: a \\bibliographystyle in verbatim is not read', order(body('\\begin{verbatim}\n\\bibliographystyle{unsrt}\n\\end{verbatim}\n\\bibliographystyle{plain}\n\\bibliography{refs}')) === AUT);
+  check('E6: nor one in \\iffalse', order(body('\\iffalse\n\\bibliographystyle{unsrt}\n\\fi\n\\bibliographystyle{plain}\n\\bibliography{refs}')) === AUT);
+  check('E6: the first one counts, as BibTeX\'s', order(body('\\bibliographystyle{unsrt}\n\\bibliographystyle{plain}\n\\bibliography{refs}')) === CIT);
+  check('E6: IEEEtran numbers in citation order', order(body('\\bibliographystyle{IEEEtran}\n\\bibliography{refs}')) === CIT);
+  check('E6: a style in an \\input file is read', order(body('\\input{back}'), { 'back.tex': '\\bibliographystyle{unsrt}\n\\bibliography{refs}\n' }) === CIT);
+  check('E6: biblatex sorting=none', order(body('\\printbibliography', '\\usepackage[sorting=none]{biblatex}\n\\addbibresource{refs.bib}\n')) === CIT, order(body('\\printbibliography', '\\usepackage[sorting=none]{biblatex}\n\\addbibresource{refs.bib}\n')));
+  check('E6: biblatex numeric sorts by author', order(body('\\printbibliography', '\\usepackage{biblatex}\n\\addbibresource{refs.bib}\n')) === AUT);
 }
 
 console.log(`bib.test: ${pass} passed, ${fail} failed`);
