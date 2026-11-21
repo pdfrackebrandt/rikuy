@@ -27,7 +27,7 @@ const PLACEHOLDER_EPS = '%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 320 240\n0.
 import { texToPlain, shortAuthors, entryYear } from './bib.js';
 import { kvGet, kvPut, kvDel, kvSwap, decodeText, encodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
 import { changes, spacingOnly } from './diff.js';
-import { TeXEngine, parseTeXLog } from './tex.js';
+import { TeXEngine, parseTeXLog, issueText } from './tex.js';
 import { PdfView } from './pdfview.js';
 import { collab, installCollab } from './collab.js';
 import { word, installWord, isDocx } from './word.js';
@@ -5016,7 +5016,7 @@ class App {
         const f = known || this.main;
         const line = known ? x.line : null;
         const p = line ? lineStart(this.src(f), line) : 0;
-        return { sev: x.sev, f, p, line, msg: x.msg + (x.ctx ? ' (at ' + x.ctx.trim().slice(0, 60) + ')' : ''), key: 'tex:' + x.msg, tex: true };
+        return { sev: x.sev, f, p, line, msg: issueText(x, line ? this.src(f).slice(p).split('\n', 1)[0] : ''), key: 'tex:' + x.msg, tex: true };
       });
       this.problemsSoon();
       const errs = this.texIssues.filter((x) => x.sev === 'error').length;
