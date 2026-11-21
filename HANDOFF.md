@@ -98,8 +98,8 @@ merge only when every check is green.
   its review is. Whoever stops updates it (`gh pr edit N --body-file body.md`).
 - **Reviews are files in the repository**: `docs/reviews/<batch>.md`, with the verdicts and each
   later verification appended to the same file.
-- **Merging:** only when the required checks are green (test, editor, workflows; editor-more and
-  tex run too) and the latest verification in the review says merge. A merge to main deploys
+- **Merging:** only when the required checks are green (test, editor, workflows; editor is the
+  gate over the editor's shards, `.github/ci-shards.json`; tex runs too) and the latest verification in the review says merge. A merge to main deploys
   (tex.yml, then deploy.yml). Never force push; when a branch must take main, merge main into it.
 - **This file** is rewritten whenever the list above changes. It is the one status file the
   "no status commits" rule of PLAN.md allows.
