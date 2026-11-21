@@ -334,6 +334,220 @@ def files(page):
     undo(page)
 
 
+EQ = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\\section{Opening}\nFirst paragraph is here and it runs on with words enough to stand above the formula.\n'
+      '\\begin{equation}\na = b + c + d + e + f\n\\end{equation}\nMiddle paragraph text.\n\n\\[ x^2 \\]\n\nLast words.\n\\end{document}\n')
+
+
+def typed_at(page, keys, doc, label, want):
+    """keys pressed on doc (the caret placed first by the caller's place()), then Q typed: Q lands where want says"""
+    page.keyboard.type('Q'); page.wait_for_timeout(200)
+    got = src(page)
+    check(label, want in got and got.replace(want, want.replace('Q', ''), 1) == doc, got[got.find('Q') - 30:got.find('Q') + 30])
+
+
+def caret_keys(page):
+    """Where Word's keys put the caret, as the next letter typed shows: Home and Ctrl+Home on a
+    numbered heading (before its number: the letter went into the paragraph next to it), Ctrl+Down
+    and Ctrl+Up from paragraph to paragraph's start, over a display formula without opening it."""
+    for k, at, want in (('Control+Home', 'Fourth paragraph', '\\section{QOpening}'), ('Home', 'Closing', '\\section{QClosing}'), ('Home', 'Inner', '\\subsection{QInner}')):
+        load_doc(page, DOC); click_text(page, at, 3); key(page, k, 150)
+        typed_at(page, k, DOC, k + ' on a numbered heading: the next letter starts the heading\'s words', want)
+    for k, at, want, label in (('Control+ArrowDown', 'paragraph is here', '\nQMiddle paragraph', 'Ctrl+Down passes over the display formula to the next paragraph\'s start'),
+                               ('Control+ArrowUp', 'paragraph text', '\nQMiddle paragraph', 'Ctrl+Up goes to the start of the caret\'s paragraph'),
+                               ('Control+ArrowUp', 'Last words', '\nQMiddle paragraph', 'Ctrl+Up at a paragraph\'s start goes to the one before, over a formula')):
+        load_doc(page, EQ); click_text(page, at, 0 if at == 'Last words' else 3); key(page, k, 200)
+        opened = page.evaluate('!!window.rikuy.pop')
+        check(label + ', no editor opened', not opened, opened)
+        if opened: close_pop(page)
+        typed_at(page, k, EQ, label + ' (the letter typed there)', want)
+    load_doc(page, EQ); click_text(page, 'paragraph is here', 3); key(page, 'Control+ArrowDown', 150); key(page, 'Control+ArrowDown', 150)
+    typed_at(page, 'Control+ArrowDown', EQ, 'Ctrl+Down twice: the paragraph after the second formula', '\nQLast words')
+    TAB = ('\\documentclass{article}\n\\begin{document}\nBefore it.\n\n\\begin{table}[h]\n\\centering\n\\begin{tabular}{ll}\nc & d \\\\\n\\end{tabular}\n\\caption{The caption}\n\\end{table}\n\nAfter it.\n\\end{document}\n')
+    load_doc(page, TAB); click_text(page, 'd', 0); key(page, 'Control+ArrowDown', 200)
+    typed_at(page, 'Control+ArrowDown', TAB, 'Ctrl+Down from a table\'s last cell goes to its caption (it skipped it)', '\\caption{QThe caption}')
+    load_doc(page, EQ); click_text(page, 'paragraph is here', 3); key(page, 'Control+Shift+ArrowDown', 150)
+    check('Ctrl+Shift+Down selects to the paragraph\'s end', selected(page) == 'agraph is here and it runs on with words enough to stand above the formula.', selected(page))
+
+
+def paint_up(page):
+    # (a press that lets go on the page: where the Format Painter paints)
+    page.evaluate("window.rikuy.root.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))"); page.wait_for_timeout(250)
+
+
+def paste_format(page):
+    """Ctrl+Shift+V is Keep Text Only always, as Microsoft 365's Word and Rikuy's own tooltips have
+    it: after Ctrl+Shift+C too (it painted the copied formatting and pasted nothing, review W1),
+    and for words copied here with their formatting (W3); an empty clipboard deletes nothing.
+    Ctrl+Shift+C arms the Format Painter; again elsewhere it copies that place's formatting; a
+    press after a double click's painting turns it off (it armed it again, W4)."""
+    page.context.grant_permissions(['clipboard-read', 'clipboard-write'])
+    bold = DOC.replace('First paragraph', '\\textbf{First} paragraph')
+    load_doc(page, bold); click_text(page, 'First', 2); key(page, 'Control+Shift+C', 150)
+    page.evaluate("navigator.clipboard.writeText('Pasted words')"); page.wait_for_timeout(100)
+    select_text(page, 'Third'); key(page, 'Control+Shift+V', 300)
+    check('after Ctrl+Shift+C, Ctrl+Shift+V still pastes the clipboard\'s text, plain', src(page) == bold.replace('Third paragraph', 'Pasted words paragraph'), src(page)[60:260])
+    key(page, 'Escape', 100)
+    load_doc(page, bold); select_text(page, 'irs'); key(page, 'Control+c', 150); select_text(page, 'Third'); key(page, 'Control+Shift+V', 300)
+    check('letters copied from a bold word, pasted by Ctrl+Shift+V: the letters alone', src(page) == bold.replace('Third paragraph', 'irs paragraph'), src(page)[60:260])
+    # Ctrl+Shift+C again elsewhere copies that place's formatting, painted by the next selection
+    both = bold.replace('Third paragraph', '\\emph{Third} paragraph')
+    load_doc(page, both); click_text(page, 'First', 2); key(page, 'Control+Shift+C', 150); click_text(page, 'Third', 2); key(page, 'Control+Shift+C', 150)
+    select_text(page, 'Fourth'); paint_up(page)
+    check('a second Ctrl+Shift+C elsewhere copies that formatting instead', src(page) == both.replace('Fourth paragraph', '\\emph{Fourth} paragraph'), src(page)[60:300])
+    # kept on by a double click, the painter's button turns it off after painting
+    load_doc(page, bold); click_text(page, 'First', 2); page.evaluate('window.rikuy.formatPainter(true)')
+    select_text(page, 'Fourth'); paint_up(page)
+    page.evaluate("window.rikuy.runCommand('format-painter')"); page.wait_for_timeout(150)
+    check('a double click\'s painter: painted, then its button turns it off', '\\textbf{Fourth}' in src(page) and not page.evaluate('!!window.rikuy.fpaint'), page.evaluate('window.rikuy.fpaint && window.rikuy.fpaint.sticky'))
+    page.evaluate("navigator.clipboard.writeText('')"); page.wait_for_timeout(100)
+    load_doc(page, DOC); select_text(page, 'Third'); key(page, 'Control+Shift+V', 300)
+    check('nothing on the clipboard: Ctrl+Shift+V deletes nothing', src(page) == DOC, src(page)[60:260])
+    # Paste Formatting by the keys alone, as Microsoft 365's Word: Ctrl+Shift+C, Shift and the
+    # arrows, Ctrl+Alt+V, as one step, again on other words
+    load_doc(page, bold); click_text(page, 'First', 2); key(page, 'Control+Shift+C', 150)
+    click_text(page, 'Third', 0)
+    for _ in range(5): page.keyboard.press('Shift+ArrowRight')
+    h0 = page.evaluate('window.rikuy.hist.length'); key(page, 'Control+Alt+v', 300)
+    one = bold.replace('Third paragraph', '\\textbf{Third} paragraph')
+    check('Ctrl+Shift+C, Shift+Right five times, Ctrl+Alt+V: bold, as one step', src(page) == one and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page)[60:260])
+    check('and the painter Ctrl+Shift+C armed is put away (a click after would paint again)', not page.evaluate('!!window.rikuy.fpaint'))
+    click_text(page, 'Fourth', 0)
+    for _ in range(6): page.keyboard.press('Shift+ArrowRight')
+    key(page, 'Control+Alt+v', 300)
+    check('Ctrl+Alt+V again on other words', src(page) == one.replace('Fourth paragraph', '\\textbf{Fourth} paragraph'), src(page)[60:300])
+    undo(page); undo(page)
+    check('two undos give the bytes back', src(page) == bold, src(page)[60:200])
+    # nothing copied: nothing changes, nothing is typed
+    page.evaluate('window.rikuy.fmtCopy = null')
+    load_doc(page, DOC); select_text(page, 'Third'); key(page, 'Control+Alt+v', 300)
+    check('Ctrl+Alt+V with no formatting copied changes nothing', src(page) == DOC, src(page)[60:260])
+    # AltGr, which Windows reports as Ctrl+Alt: AltGr+V types a letter on a Polish keyboard (ż), no
+    # Paste Formatting
+    load_doc(page, bold); click_text(page, 'First', 2); key(page, 'Control+Shift+C', 150); key(page, 'Escape', 100)
+    select_text(page, 'Third')
+    page.evaluate("document.getElementById('pages').dispatchEvent(new KeyboardEvent('keydown', { key: '\u017c', code: 'KeyV', ctrlKey: true, altKey: true, modifierAltGraph: true, bubbles: true, cancelable: true }))"); page.wait_for_timeout(300)
+    check('AltGr+V (Ctrl+Alt with AltGr) is no Paste Formatting', src(page) == bold, src(page)[60:260])
+
+
+def cm_state(page):
+    return page.evaluate("""(() => { const g = window.rikuy, cm = g.cm; if (!cm) return null; const d = cm.getDoc();
+      return { focus: cm.hasFocus(), at: d.indexFromPos(d.getCursor()), sel: d.getSelection(), shown: document.body.classList.contains('src-on') }; })()""")
+
+
+def source_pane(page):
+    """Ctrl+\\ as Word's Alt+F9: the source opens at the caret's character with the focus in it,
+    and closing it from there puts the page's caret at the source's cursor (it opened at line 1 with
+    the focus left on the page, and closing dropped the focus); Ctrl+F in the source is Find and
+    Replace In LaTeX source, its hit selected there, Escape back to the source; matching brackets lit."""
+    load_doc(page, DOC); click_text(page, 'Third paragraph', 5)
+    key(page, 'Control+Backslash', 700)
+    st = cm_state(page)
+    check('Ctrl+\\ opens the source at the caret\'s character, the focus in it', st and st['shown'] and st['focus'] and st['at'] == DOC.index('Third paragraph') + 5, st)
+    page.keyboard.type('Q'); page.wait_for_timeout(200)
+    key(page, 'Control+Backslash', 500)
+    page.keyboard.type('W'); page.wait_for_timeout(300)
+    check('Ctrl+\\ from the source closes it, the caret on the page where the cursor was: the next letter follows', 'ThirdQW paragraph' in src(page) and not cm_state(page)['shown'], src(page)[100:200])
+    load_doc(page, DOC); click_text(page, 'Fourth paragraph', 0)
+    key(page, 'Control+Backslash', 700)
+    key(page, 'Control+Shift+ArrowRight', 150)
+    key(page, 'Control+f', 400)
+    d = page.get_by_role('dialog', name='Find and Replace', exact=True)
+    q = d.get_by_label('Find what', exact=True)
+    check('Ctrl+F in the source: Find and Replace, In LaTeX source ticked, the word selected there to find', d.count() == 1 and d.get_by_label('In LaTeX source', exact=True).is_checked() and q.input_value() == 'Fourth', q.input_value() if d.count() else None)
+    key(page, 'Enter', 300); key(page, 'Escape', 300)
+    st = cm_state(page)
+    check('Escape gives the source the focus back, the hit selected in it', st['focus'] and st['sel'] == 'Fourth', st)
+    key(page, 'Control+Backslash', 400); click_text(page, 'Third paragraph', 0); key(page, 'Control+h', 300)
+    ticked = page.get_by_role('dialog', name='Find and Replace', exact=True).get_by_label('In LaTeX source', exact=True).is_checked()
+    check('the page\'s next Find and Replace searches the page again (In LaTeX source as it was)', not ticked, ticked)
+    key(page, 'Escape', 200); key(page, 'Control+Backslash', 600)
+    page.evaluate("(() => { const d = window.rikuy.cm.getDoc(); d.setCursor(d.posFromIndex(window.rikuy.cm.getValue().indexOf('{article}'))); })()"); page.wait_for_timeout(150)
+    lit = page.evaluate("document.querySelectorAll('#srcpane .CodeMirror-matchingbracket').length")
+    check('the bracket at the cursor and its match are lit', lit == 2, lit)
+    key(page, 'Control+Backslash', 300)
+
+
+def focused(page):
+    return page.evaluate("(() => { const a = document.activeElement; return a ? (a.getAttribute('aria-label') || a.textContent || '').trim() : null; })()")
+
+
+def access_keys(page):
+    """Word's underlined letters in its dialogs: Alt and the letter, with the focus in the dialog,
+    presses, ticks or focuses that control (Find and Replace, Font, Paragraph, Insert Table, Page
+    setup); held, Alt underlines them, and it does not bring up the ribbon's KeyTips there."""
+    load_doc(page, DOC); click_text(page, 'Third paragraph', 0)
+    key(page, 'Control+h', 300); page.keyboard.type('paragraph here'); page.wait_for_timeout(300)
+    page.keyboard.down('Alt'); page.wait_for_timeout(100)
+    under = page.evaluate("[...document.querySelectorAll('[role=dialog] .ak')].filter((x) => x.getClientRects().length && getComputedStyle(x).textDecorationLine === 'underline').map((x) => x.textContent)")
+    page.keyboard.up('Alt'); page.wait_for_timeout(100)
+    plain = page.evaluate("[...document.querySelectorAll('[role=dialog] .ak')].filter((x) => getComputedStyle(x).textDecorationLine === 'underline').length")
+    check('Find and Replace: Alt held underlines its letters, and only while held', len(under) >= 15 and plain == 0 and not page.evaluate("document.body.classList.contains('keytips')"), (under, plain))
+    # (the letter the keyboard types, not the key's place: on a German keyboard the key that types y
+    # is the one US layouts call Z)
+    page.evaluate("document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'y', code: 'KeyZ', altKey: true, bubbles: true, cancelable: true }))"); page.wait_for_timeout(150)
+    whole = page.get_by_role('dialog', name='Find and Replace', exact=True).get_by_label('Find whole words only', exact=True)
+    check('Alt and the key that types Y on this keyboard ticks Find whole words only', whole.is_checked(), whole.is_checked())
+    whole.uncheck()
+    key(page, 'Alt+i', 150)
+    check('Alt+I goes to Replace with', focused(page) == 'Replace with', focused(page))
+    page.keyboard.type('line'); key(page, 'Alt+u', 150)
+    ticked = page.get_by_role('dialog', name='Find and Replace', exact=True).get_by_label('Use wildcards', exact=True).is_checked()
+    key(page, 'Alt+u', 150); key(page, 'Alt+a', 400)
+    check('Alt+U ticks Use wildcards (again: off), Alt+A is Replace All', ticked and src(page) == DOC.replace('paragraph here', 'line'), src(page)[60:260])
+    key(page, 'Escape', 200); undo(page)
+    load_doc(page, DOC); select_text(page, 'Third'); key(page, 'Control+d', 300); key(page, 'Alt+b', 150); key(page, 'Enter', 300)
+    check('Font: Ctrl+D, Alt+B (Subscript), Enter', '\\textsubscript{Third}' in src(page), src(page)[100:220])
+    load_doc(page, DOC); click_text(page, 'Third paragraph', 3)
+    page.evaluate("window.rikuy.runCommand('paragraph-settings')"); page.wait_for_timeout(300)
+    key(page, 'Alt+p', 200); key(page, 'Alt+x', 150)
+    kept = page.get_by_role('checkbox', name='Keep with next').is_checked()
+    check('Paragraph: Alt+P opens Line and Page Breaks, Alt+X ticks Keep with next', kept, kept)
+    key(page, 'Escape', 200)
+    load_doc(page, DOC); click_text(page, 'Fourth paragraph', 0)
+    page.evaluate("window.rikuy.runCommand('insert-table-dialog')"); page.wait_for_timeout(300)
+    key(page, 'Alt+c', 100); page.keyboard.type('3'); key(page, 'Alt+r', 100); page.keyboard.type('4'); key(page, 'Enter', 400)
+    check('Insert Table: Alt+C 3, Alt+R 4, Enter: three columns, four rows', '\\begin{tabular}{lll}' in src(page) and src(page).count('\\\\') >= 4, src(page)[200:420])
+    load_doc(page, DOC); click_text(page, 'Fourth paragraph', 0)
+    page.evaluate("window.rikuy.runCommand('page-setup')"); page.wait_for_timeout(300)
+    key(page, 'Alt+b', 150)
+    check('Page setup: Alt+B goes to Bottom', focused(page) == 'Bottom', focused(page))
+    key(page, 'Escape', 200)
+
+
+def lows(page):
+    """Enter at a paragraph's start makes an empty paragraph above it, as Word's (it wrote blank
+    lines LaTeX reads as nothing, and Up skipped to the block before); Shift+F5 after an undo goes
+    to the undone edit; after a reload a document of headings alone has the caret in its first."""
+    load_doc(page, DOC); click_text(page, 'Third paragraph', 0); key(page, 'Enter', 200)
+    check('Enter at a paragraph\'s start writes nothing yet', src(page) == DOC, src(page)[100:200])
+    page.keyboard.type('X'); page.wait_for_timeout(200)
+    check('the caret stays with the words: the next letter starts them', 'XThird paragraph' in src(page), src(page)[100:200])
+    load_doc(page, DOC); click_text(page, 'Third paragraph', 0); key(page, 'Enter', 200); key(page, 'ArrowUp', 200)
+    page.keyboard.type('New one.'); page.wait_for_timeout(300)
+    check('Up goes into the empty paragraph above: what is typed there is a paragraph of its own', 'New one.\n\nThird paragraph here.' in src(page), src(page)[100:220])
+    undo(page)
+    # (review M6) only where the source has a paragraph's start before the caret: words after a
+    # display or a list with no blank line are the same paragraph, and Enter makes them a new one;
+    # a paragraph that starts with a formula is at its start too, and nothing is written there
+    W = lambda b: '\\documentclass{article}\n\\begin{document}\n' + b + '\n\\end{document}\n'
+    for body, at, label in [('Some text\n\\[ x \\]\ncontinued here.', 'continued here', 'a display'),
+                            ('\\begin{itemize}\n\\item One\n\\end{itemize}\ncontinued here.', 'continued here', 'a list')]:
+        load_doc(page, W(body)); click_text(page, at, 0); key(page, 'Enter', 250)
+        check('Enter at words after ' + label + ' with no blank line makes them a paragraph of their own (review M6)', src(page) == W(body.replace('continued', '\n\ncontinued')), src(page)[40:140])
+    body = 'First one.\n\n$x$ is a variable here.'
+    load_doc(page, W(body)); click_text(page, 'is a variable', 0); key(page, 'Home', 150); key(page, 'Enter', 250)
+    check('Enter at a paragraph that starts with a formula writes nothing yet (review M6)', src(page) == W(body), src(page)[40:140])
+    load_doc(page, DOC); click_text(page, 'Third paragraph', 5); page.keyboard.type('Q'); page.wait_for_timeout(200)
+    undo(page); key(page, 'Control+Home', 150); key(page, 'Shift+F5', 200)
+    c = caret(page)
+    check('Shift+F5 after an undo goes to the undone edit\'s place', c and abs(c[1] - DOC.index('Third paragraph') - 5) <= 2, (c, DOC.index('Third paragraph') + 5))
+    heads = '\\documentclass{article}\n\\begin{document}\n\\section{Only heading}\n\\end{document}\n'
+    load_doc(page, heads); page.evaluate('window.rikuy.persist()'); page.wait_for_timeout(500)
+    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); page.wait_for_timeout(500)
+    page.keyboard.type('Z'); page.wait_for_timeout(300)
+    check('after a reload, a document of headings alone takes the first keys in its first heading', '\\section{ZOnly heading}' in src(page), src(page)[30:120])
+
+
 def tips_and_help(page, mac=False, tag=''):
     title = page.evaluate("document.getElementById('rb-b') ? document.getElementById('rb-b').title : [...document.querySelectorAll('#ribbon [data-cmd=bold]')].map((b) => b.title)[0]")
     check(tag + 'the Bold button\'s tooltip names its key' + (' as a Mac does (\u2318B)' if mac else ' (Ctrl+B)'), ('\u2318B' if mac else 'Ctrl+B') in (title or ''), title)
@@ -354,6 +568,9 @@ def mac_keys(p):
         key(page, 'Meta+b', 250)
         check('Mac: Cmd+B bolds', '\\textbf{Second paragraph}' in src(page), src(page)[60:160])
         undo(page)
+        load_doc(page, DOC); click_text(page, 'First paragraph', 3); key(page, 'Meta+ArrowDown', 200); page.keyboard.type('Q'); page.wait_for_timeout(200)
+        check('Mac: Cmd+Down goes to the next paragraph\'s start, as Word for Mac', 'QSecond paragraph' in src(page), src(page)[60:200])
+        load_doc(page, DOC)
         click_text(page, 'Second paragraph', 3)
         key(page, 'Meta+Digit2', 250)
         check('Mac: Cmd+2 double line spacing, as Word for Mac', 'doublespac' in src(page), src(page)[60:200])
@@ -413,7 +630,7 @@ def run():
     only = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (paragraphs, references, finding, views, typing, fields, headings, tables, files):
+        for f in (paragraphs, references, finding, views, typing, fields, headings, tables, files, caret_keys, paste_format, source_pane, access_keys, lows):
             if only and f.__name__ not in only: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])

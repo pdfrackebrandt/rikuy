@@ -59,7 +59,7 @@ register(
     keys: ['Shift+F4', 'Ctrl+Alt+Y'], keysMac: ['Ctrl+Shift+F4', 'Ctrl+G'], when: () => true, run: (app) => app.findNext() },
   // Word's Shift+F5 (and Ctrl+Alt+Z): back to where the last edits were, the four last in turn
   { id: 'go-back', name: 'Go Back', title: 'The caret back to where you last edited; again, the edit before, among the last four (Shift+F5)', synonyms: ['Last edit', 'Previous edit', 'Last change', 'Where was I'],
-    keys: ['Shift+F5', 'Ctrl+Alt+Z'], when: (app) => !!(app.hist && app.hist.length) || !!app.followBack || !!app.footnoteHere(), whyNot: () => 'Nothing has been edited yet.', run: (app) => app.goBack() },
+    keys: ['Shift+F5', 'Ctrl+Alt+Z'], when: (app) => !!((app.hist && app.hist.length) || (app.redoStack && app.redoStack.length)) || !!app.followBack || !!app.footnoteHere(), whyNot: () => 'Nothing has been edited yet.', run: (app) => app.goBack() },
   // Word's F8: each press selects more where the caret is: the word, the sentence, the paragraph,
   // the document; Shift+F8 one step back
   { id: 'extend-selection', name: 'Extend Selection', title: 'Select more: the word, then the sentence, the paragraph, the whole document, one step a press (F8)', synonyms: ['Grow selection', 'Expand selection', 'Select word'],
@@ -426,6 +426,22 @@ export const methods = {
     this.findViews();
   },
   // the hit in view, about a third down the window
+  // Ctrl+F and Ctrl+H in the source pane: the dialog searching the files themselves, the words
+  // selected there as what to find; its hits are selected in the source, and closing it gives the
+  // source back the focus (findShow, closeFindDialog)
+  srcFind(tab) {
+    const fs = this.findState(), cm = this.cm;
+    const sel = cm ? cm.getSelection() : '';
+    // (the box ticked for this search; closed, it is as it was: the page's next Ctrl+F searched
+    // the source)
+    if (!fs.fromSrc) fs.srcWas = !!fs.o.source;
+    fs.fromSrc = true;
+    fs.o.source = true;
+    openFindDialog(this, tab);
+    const D = this.fr;
+    if (sel && sel.length <= 80 && !/\n/.test(sel)) { D.q.value = sel; this.findSet({ q: sel }); }
+    D.q.focus(); D.q.select();
+  },
   findShow(h) {
     if (!h) return;
     // (a hit under a collapsed heading: the heading opens, as Word's does)
@@ -437,12 +453,12 @@ export const methods = {
       if (r.top < D.top + 40 || r.bottom > D.bottom - 40) this.desk.scrollTop += r.top - D.top - D.height / 3;
       this.findDialogAside(rs[0].getBoundingClientRect());
       const pane = $('#srcpane');
-      if (h.src && document.body.classList.contains('src-on') && pane) this.reveal(h.f, h.s, false);
+      if (h.src && document.body.classList.contains('src-on') && pane) this.reveal(h.f, h.s, false, h.e);
       return;
     }
     if (h.eq) return;
     // (a hit in the preamble, or in a file the page does not show: the source pane shows it)
-    if (h.src) this.reveal(h.f, h.s, false);
+    if (h.src) this.reveal(h.f, h.s, false, h.e);
   },
   // the Find and Replace dialog moved off the hit it shows, as Word moves its own: below the
   // hit, or above it where there is no room (not on a phone, where it is a sheet at the foot)
@@ -768,7 +784,11 @@ export const methods = {
     const F = this.followBack;
     this.followBack = null;
     if (F && F.n === this.hist.length) { this.ribbonBack(); this.restoreCaret(F.back); this.scrollToCaret(); return true; }
+    // (an undo is the last edit too, as Word's: the undone step's place first; after an undo
+    // Shift+F5 went only to older edits, or did nothing when none was left)
+    const R = this.redoStack && this.redoStack[this.redoStack.length - 1], rd = R && R.files && R.files[0];
     const spots = editSpots(this.hist, 4);
+    if (rd && rd.f != null) { const u = { f: rd.f, p: rd.s + (rd.del || '').length }; if (!spots.some((x) => x.f === u.f && Math.abs(x.p - u.p) < SPOT_NEAR)) spots.unshift(u); }
     if (!spots.length) return false;
     const G = this.goBackAt, top = this.hist[this.hist.length - 1];
     let i;

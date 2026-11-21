@@ -61,7 +61,7 @@ ok('every chord reads; two commands on one chord differ in rank, or one says whe
   }
   assert.ok(command('style-heading1').keys.includes('Ctrl+Alt+1') && command('style-normal').keys.includes('Ctrl+Alt+0') && command('style-normal').keys.includes('Ctrl+Shift+N') && command('bullets').keys.includes('Ctrl+Shift+L'));
   assert.ok(command('double-underline').keys.includes('Ctrl+Shift+D') && command('clear-paragraph-formatting').keys.includes('Ctrl+Q'));
-  assert.ok(command('format-painter').keys.includes('Ctrl+Shift+C') && command('paste-special').keys.includes('Ctrl+Alt+V'));
+  assert.ok(command('format-painter').keys.includes('Ctrl+Shift+C') && command('paste-formatting').keys.includes('Ctrl+Alt+V') && !(command('paste-special').keys || []).includes('Ctrl+Alt+V'));
   assert.deepEqual(KEYTIPS, { file: 'F', home: 'H', insert: 'N', design: 'G', layout: 'P', references: 'S', review: 'R', view: 'W', help: 'Y2',
     'table-design': 'JT', 'table-layout': 'JL', 'picture-format': 'JP', equation: 'JE', headfoot: 'JH' });
   // (no tab's letters the start of another's: Word waits for the second letter only after J and Y)
@@ -86,7 +86,7 @@ const WORD = [
   ['Ctrl+Alt+C', 'insert-copyright', null], ['Ctrl+Alt+R', 'insert-registered', null], ['Ctrl+Alt+T', 'insert-trademark', null], ['Ctrl+Alt+.', 'insert-ldots'], ['Alt+X', 'unicode-toggle', 'Control+Alt+X'],
   ['Ctrl+\'', 'accent-acute', null], ['Ctrl+`', 'accent-grave', null], ['Ctrl+Shift+^', 'accent-circumflex', null], ['Ctrl+Shift+~', 'accent-tilde', null], ['Ctrl+Shift+:', 'accent-umlaut', null],
   ['Ctrl+Shift+@', 'accent-ring', null], ['Ctrl+Shift+&', 'accent-ligature', null], ['Ctrl+/', 'accent-slash', null], ['Ctrl+Alt+Shift+?', 'insert-iquest', null], ['Ctrl+Alt+Shift+!', 'insert-iexcl', null],
-  ['Ctrl+Alt+V', 'paste-special', 'Ctrl+Control+V'], ['Ctrl+F3', 'spike'], ['Ctrl+Shift+F3', 'spike-insert'], ['F2', 'move-text'], ['Shift+F2', 'copy-text'], ['Alt+F3', 'quick-part-save'],
+  ['Ctrl+Alt+V', 'paste-formatting'], ['Ctrl+F3', 'spike'], ['Ctrl+Shift+F3', 'spike-insert'], ['F2', 'move-text'], ['Shift+F2', 'copy-text'], ['Alt+F3', 'quick-part-save'],
   ['Alt+Shift+D', 'insert-date', 'Control+Shift+D'], ['Alt+Shift+T', 'insert-time', 'Control+Shift+T'], ['Alt+Shift+P', 'insert-page-field', 'Control+Shift+P'], ['Ctrl+F9', 'insert-field'],
   ['Ctrl+K', 'link'], ['Ctrl+Alt+F', 'footnote'], ['Ctrl+Alt+D', 'endnote', 'Ctrl+Alt+E'], ['Alt+Shift+>', 'next-footnote', 'Control+Shift+>'], ['Alt+Shift+<', 'previous-footnote', 'Control+Shift+<'],
   ['Alt+Shift+O', 'toc-add-text', 'Control+Shift+O'], ['Alt+Shift+X', 'mark-entry', 'Control+Shift+X'], ['Alt+Shift+I', 'mark-citation', 'Control+Shift+I'], ['Ctrl+Shift+F5', 'bookmark'],
@@ -110,7 +110,7 @@ ok('Word\'s keys: each bound to its command, on Windows and Linux and on a Mac (
   }
   // Word for Mac's own: Cmd+Option+L spelling, Cmd+Option+A a comment, Control+Shift+M indents, Cmd+G finds again
   const M = bindings(true);
-  for (const [k, id] of [['Ctrl+Alt+L', 'spelling'], ['Ctrl+Alt+A', 'comment-new'], ['Control+Shift+M', 'paragraph-indent'], ['Ctrl+G', 'find-next'], ['Ctrl+8', 'show-marks']]) assert.ok(M.some((b) => b.id === id && b.chord === k), k);
+  for (const [k, id] of [['Ctrl+Alt+L', 'spelling'], ['Ctrl+Alt+A', 'comment-new'], ['Ctrl+Control+V', 'paste-special'], ['Control+Shift+M', 'paragraph-indent'], ['Ctrl+G', 'find-next'], ['Ctrl+8', 'show-marks']]) assert.ok(M.some((b) => b.id === id && b.chord === k), k);
   // Save (Ctrl+S) says the document is kept; Save As (F12) and Download LaTeX download
   assert.ok(command('save').keysElsewhere.includes('Ctrl+S') && !command('download-latex').keysElsewhere && command('save-as').keys.includes('F12'));
   // Word's keys a browser keeps are bound to nothing here

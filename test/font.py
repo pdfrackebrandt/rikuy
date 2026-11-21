@@ -378,6 +378,14 @@ def dialog(page):
     check('Double strikethrough takes Strikethrough\'s place (one of the two)', not d.get_by_role('checkbox', name='Strikethrough', exact=True).is_checked())
     d.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
     check('and OK changes only that', '\\textbf{\\textcolor{blue}{\\dsout{plain words}}}' in body(page), body(page))
+    # by the keys, as Word's: Ctrl+D, a style chosen by the arrows in its list, Enter is OK (Enter
+    # on a list did nothing, and the dialog opens with the focus on one)
+    load_doc(page, DOC); select_text(page, 'plain words')
+    page.keyboard.press('Control+d'); page.wait_for_timeout(250)
+    page.keyboard.press('Tab'); page.keyboard.press('ArrowDown'); page.keyboard.press('ArrowDown'); page.wait_for_timeout(100)
+    page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    check('Ctrl+D, Tab, Down Down (Bold), Enter: bold, the dialog closed and the caret back on the page', '\\textbf{plain words}' in body(page) and page.get_by_role('dialog', name='Font').count() == 0
+          and page.evaluate('document.activeElement.id') == 'pages', (body(page), page.evaluate('document.activeElement.id')))
     # Set As Default: the document's font and size
     load_doc(page, DOC); click_text(page, 'plain', 2)
     page.keyboard.press('Control+d'); page.wait_for_timeout(250)

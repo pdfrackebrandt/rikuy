@@ -110,6 +110,17 @@ def levels(page):
     check('Enter at an item\'s end makes the next item', '\\item Two\n      \\item ' in src(page), src(page)[40:])
     key(page, 'Enter')
     check('Enter in that empty nested item takes it a level up (Word\'s way out of a level)', src(page) == WRAP('\\begin{itemize}\n  \\item One\n    \\begin{itemize}\n      \\item Two\n    \\end{itemize}\n  \\item \n\\end{itemize}'), src(page)[40:])
+    # Enter in the empty last item of a list leaves it, \end{itemize} on a line of its own (it was
+    # glued to the item before: "\item Three\end{itemize}")
+    load_doc(page, L3); click_text(page, 'Three', 5)
+    key(page, 'Enter'); key(page, 'Enter'); page.keyboard.type('After'); page.wait_for_timeout(200)
+    check('Enter twice at a list\'s end leaves it, its \\end on a line of its own', src(page) == WRAP('\\begin{itemize}\n  \\item One\n  \\item Two\n  \\item Three\n\\end{itemize}\n\nAfter'), src(page)[40:])
+    # in a file whose lines end in CR LF the lines written end so too (a lone LF was written)
+    crlf = L3.replace('\n', '\r\n')
+    load_doc(page, crlf); click_text(page, 'Three', 5)
+    key(page, 'Enter'); key(page, 'Enter'); page.keyboard.type('After'); page.wait_for_timeout(200)
+    got = src(page)
+    check('and in a CR LF file every line it writes ends in CR LF', '\\item Three\r\n\\end{itemize}\r\n\r\nAfter' in got and not re.search(r'(?<!\r)\n', got), repr(got[40:]))
     # a table cell keeps its own Tab
     tab = WRAP('\\begin{itemize}\n  \\item One\n\\end{itemize}\n\n\\begin{tabular}{ll}\na & b \\\\\n\\end{tabular}')
     load_doc(page, tab); click_text(page, 'a', 0); key(page, 'Tab')

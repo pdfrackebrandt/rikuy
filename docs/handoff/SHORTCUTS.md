@@ -34,7 +34,7 @@ How to read it:
 | Ctrl+F2, Ctrl+Alt+I | | Print Preview | `preview` (the PDF beside the page) | added |
 | Ctrl+X, Ctrl+C, Ctrl+V | | Cut, Copy, Paste | `cut`, `copy`, `paste` | works |
 | Ctrl+Shift+V | | Paste text only | `paste-text` | works |
-| Ctrl+Alt+V | Cmd+Control+V | Paste Special (older Word; Word 365's page: paste formatting) | `paste-special` | works; Mac's chord added |
+| Ctrl+Alt+V | Cmd+Option+V | Paste Formatting, as Microsoft 365's Word (moved here from Ctrl+Shift+V when that became Paste Text Only; Paste Special before) | `paste-formatting`: the formatting Ctrl+Shift+C or the Format Painter copied, on the selection or the caret's word, one undo; nothing copied, nothing changes | works; Paste Special stays in Paste's menu (and Word for Mac's Cmd+Control+V) |
 | Ctrl+Alt+C | | Copy formatting (Word 365); © (older Word) | `insert-copyright`; copy formatting is `format-painter`, Ctrl+Shift+C | other: © as older Word |
 | Ctrl+Z, Ctrl+Y | | Undo, Redo | `undo`, `redo` | works |
 | F4 | | Repeat | `repeat` | works |
@@ -65,7 +65,7 @@ How to read it:
 | Word | Mac | What it does | Rikuy | Status |
 |---|---|---|---|---|
 | Arrows, Ctrl+Left/Right, Home, End, PgUp, PgDn, Ctrl+Home, Ctrl+End | Option+Left/Right | Move the caret | the browser's caret on the page | works |
-| Ctrl+Up/Down | Cmd+Up/Down | Paragraph up, down | the browser's own caret keys | works as the browser does |
+| Ctrl+Up/Down | Cmd+Up/Down | Paragraph up, down | `paraJump` (src/app.js): the next paragraph's start, this one's or the one before's; Shift extends to a paragraph's end or start; a cell and a caption are paragraphs, display formulas are passed over | added |
 | Shift with each of those | | Select | the browser's | works |
 | Ctrl+PgUp, Ctrl+PgDn | Cmd+PgUp/PgDn | Previous, next page | Go To (F5) a page; the Navigation pane's Pages | browser: switches tabs |
 | Ctrl+Alt+PgUp/PgDn | | Top, bottom of the window | | none worth a key: PgUp and PgDn |
@@ -88,7 +88,7 @@ How to read it:
 | Ctrl+F3, Ctrl+Shift+F3 | Cmd+F3, Cmd+Shift+F3 | Spike: cut to it, put it all in | `spike`, `spike-insert` (in a heading or a cell its pieces join with spaces) | added |
 | Alt+F3 | Option+F3 | New building block | `quick-part-save` | added |
 | F3 (after a name) | | Insert a building block | Insert › Quick Parts | none: Chromium's F3 is Find again |
-| Ctrl+Shift+C | Cmd+Shift+C | Copy formatting | `format-painter` | works |
+| Ctrl+Shift+C | Cmd+Shift+C | Copy formatting | `format-painter` (Ctrl+Alt+V pastes it) | works |
 | Alt+Shift+R | | Header like the section before | | none: LaTeX's headers are the document's |
 | Ctrl+Shift+F7 | | Update linked information | | none |
 | Alt+Shift+F10 | | Paste options, AutoCorrect actions | Paste's arrow; AutoCorrect undoes with Ctrl+Z | none as a key |
