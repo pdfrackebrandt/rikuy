@@ -50,6 +50,7 @@ import { installKeys } from './keys.js';
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
 import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, THM_STYLES } from './styles.js';
+import { tableAt, cellAt as tableCellAt, colAlign } from './table.js';
 import { eolAt } from './blockenv.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
@@ -1733,6 +1734,8 @@ class App {
     }
     // in a blank paragraph too (a new document, the line after Enter): there they were typed
     // as the characters, though that is where an equation or a heading most often starts
+    // (the second $ of a closing $$ is the next key or none: a $ typed later is a new formula)
+    if (data !== '$') this.swallowDollar = 0;
     if (data === '$' && !range && !raw && (c.collapsed || c.ghost)) {
       // (the second $ of a display's closing $$: the first one closed it)
       if (this.swallowDollar && performance.now() - this.swallowDollar < 1500) { this.swallowDollar = 0; return; }
@@ -2837,7 +2840,7 @@ class App {
     P.el.remove();
     this.closeGroup();
     if (!silent && P.returnCaret) this.restoreCaret(P.returnCaret);
-    if (!silent && P.display && P.returnCaret && !P.removed && !P.dollarClosed) this.caretAfterDisplay(P.returnCaret);
+    if (!silent && P.display && P.returnCaret && !P.removed && !P.dollarClosed && !P.midLine) this.caretAfterDisplay(P.returnCaret);
     // Opened from a blank paragraph and closed with nothing made, or a document that so far
     // holds only what the popover made (a first formula) and has no text to put the caret in:
     // the caret goes to the blank paragraph, so typing goes on
@@ -3459,6 +3462,8 @@ class App {
     // Backspace takes the waiting space back. k is a key's name, or with data what came in
     // without one (dictation), decided by its first character.
     let pend = false;
+    // (a formula opened by $$ where a display cannot go: its closing $$ is one, the second $ taken)
+    const pairDone = () => { if (this.pop && this.pop.pairInline) this.swallowDollar = performance.now(); };
     const priceKey = (k, inBox, data) => {
       if (!k || o.closer) return false;
       if (!pend) {
@@ -3493,7 +3498,7 @@ class App {
       if (emptyKey(e.data) || priceKey(e.data, true, true)) { e.preventDefault(); return; }
       // (the closing $ that comes with no key, from dictation, an on-screen keyboard or a script:
       // it went into the formula, and what followed with it)
-      if (e.data === '$' && !o.closer && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); return; }
+      if (e.data === '$' && !o.closer && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); pairDone(); this.closePop(); return; }
       keys++;
     });
     ta.addEventListener('input', () => { preview(); push(); });
@@ -3502,7 +3507,7 @@ class App {
       if (pend && e.key.length !== 1 && priceKey(e.key, true)) { e.preventDefault(); return; }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
-      if (e.key === '$' && !o.closer && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
+      if (e.key === '$' && !o.closer && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); pairDone(); this.closePop(); }
       if (o.closer && e.key === o.closer && /(^|[^\\])\\$/.test(ta.value.slice(0, ta.selectionStart))) {
         e.preventDefault(); ta.setRangeText('', ta.selectionStart - 1, ta.selectionStart, 'end'); ta.dispatchEvent(new Event('input'));
         if (stay()) return; push.flush(); this.closePop();
@@ -3534,7 +3539,7 @@ class App {
       onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
       // the closing $ of $x^2$ typed as in Overleaf ends the formula; in an empty one it stays a
       // dollar sign (onKey, below)
-      onDollar: (check, typing) => { const ok = !!(ta.value || ins || typing); if (check || !ok) return ok; if (stay()) return; push.flush(); this.closePop(); },
+      onDollar: (check, typing) => { const ok = !!(ta.value || ins || typing); if (check || !ok) return ok; if (stay()) return; push.flush(); pairDone(); this.closePop(); },
       onEscape: () => { push.flush(); this.closePop(); },
       onKey: (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -3560,18 +3565,28 @@ class App {
     this.rebuild({ f: P.f, p: P.ghost ? P.ghost.pos : P.at });
     this.pushToSource(); this.saveSoon(); this.updateUndoUI();
     if (P.ghost) this.ghostAt(P.f, P.ghost.pos, P.ghost.style);
-    this.newDisplayMath('\\[');
-    const pop = this.pop, ta = pop && pop.el.querySelector('#pop-tex');
-    if (!pop || !ta) return true;
-    pop.dollarClose = true;
+    this.newDisplayMath('\\[', { inLine: true });
+    // (where a display cannot go, a command's argument or a table cell set in a line, a formula in
+    // the line opens instead, its closing $$ taken as one: the key was lost there and the second $
+    // written as \$; V2, V3)
+    const pop = this.pop, ta = pop && pop.el.querySelector('#pop-tex, #pop-newtex');
+    if (!pop || !ta) {
+      // (no formula opened at all: the dollar sign and the key are written as typed)
+      const c2 = this.caretNow(), t = '\\$' + escapeTeX(data, '$');
+      if (c2 && !c2.ghost) this.commit([{ f: c2.f, s: c2.a, e: c2.b, t }], { f: c2.f, p: c2.a + t.length }, 'type');
+      return true;
+    }
+    if (ta.id === 'pop-newtex') pop.pairInline = true;
+    else pop.dollarClose = true;
     ta.value = data;
     ta.dispatchEvent(new Event('input'));
     ta.setSelectionRange(ta.value.length, ta.value.length);
     return true;
   }
 
-  // env: the Equation tab's Numbered on a new equation still empty makes it again of that kind
-  newDisplayMath(env = 'equation') {
+  // env: the Equation tab's Numbered on a new equation still empty makes it again of that kind;
+  // o.inLine: typed as $$ in a line of text, whose words go on after \] (dollarPairTakes)
+  newDisplayMath(env = 'equation', o = {}) {
     let c = this.caretNow();
     if (!c) return;
     // (not in a LaTeX paragraph or a line to come in one: an equation there is typed as its source)
@@ -3583,14 +3598,17 @@ class App {
       // a heading's goes after the heading and its label; in a caption, a footnote or another
       // command's braces a formula in the line is made instead
       const B = this.blockBase({ f: c.f, a: c.a, b: c.a }, true);
-      if (B === false) { this.newMath(); return; }
+      // (nor in a table cell set in a line, l, c or r, where TeX stops at a display: LR mode)
+      if (B === false || this.lineCellAt(c.f, c.a)) { this.newMath(); return; }
       if (B && B.a !== c.a) { c = { f: c.f, a: B.a }; this.restoreCaret({ f: c.f, p: c.a }, true); }
     }
     // (a file written with CRLF keeps them; a kind of amsmath's brings it, in the same step)
     const nl = eolAt(this.src(c.f), c.a);
     // (a line break before and after it only where none is: one after it, before the blank line
     // that was there, made two blank lines)
-    const S0 = this.src(c.f), lead = /\n[ \t]*$/.test(S0.slice(0, c.a)) ? '' : nl, tail = /^[ \t]*\r?\n/.test(S0.slice(c.a)) ? '' : nl;
+    // (typed as $$ in the middle of a line, none after it: the words typed after the closing $$
+    // went between \] and that line break, which printed a space before the rest, "end ."; V4)
+    const S0 = this.src(c.f), lineEnds = /^[ \t]*(\r?\n|$)/.test(S0.slice(c.a)), lead = /\n[ \t]*$/.test(S0.slice(0, c.a)) ? '' : nl, tail = /^[ \t]*\r?\n/.test(S0.slice(c.a)) || o.inLine ? '' : nl;
     const t = lead + (env === '\\[' ? '\\[' + nl + '  ' + nl + '\\]' : '\\begin{' + env + '}' + nl + '  ' + nl + '\\end{' + env + '}') + tail;
     const pk = this.eqKindPkgs(env);
     // (the history as it is before the equation: given up empty, it goes back to this)
@@ -3606,6 +3624,8 @@ class App {
     const P = this.pop;
     if (!P || !P.onClose) return;
     P.eqNew = true;
+    // (closed by Esc or a click too, the caret stays in the line, after \], as after its $$)
+    if (o.inLine && !lineEnds) P.midLine = true;
     const done = P.onClose;
     P.onClose = () => {
       done();
@@ -3894,6 +3914,14 @@ class App {
   // base as it is; after the heading it was typed in, and the heading's \label; inside another
   // command's argument (a caption, the title, a footnote), where it broke the command, nowhere
   // (false), said why. A bare group, {\bf ...}, takes it as the paragraph would.
+  // A table cell that sets its words in a line (an l, c or r column, not p, m or X): a display
+  // there stops TeX (LR mode), so a formula in the line is made instead (V3)
+  lineCellAt(f, p) {
+    const T = tableAt(this.src(f), p);
+    const at = T && tableCellAt(T, p);
+    if (!at) return false;
+    return colAlign(T.spec.cols[at.cell.col]) !== 'p';
+  }
   blockBase(base, quiet) {
     if (!base) return base;
     const src = this.src(base.f), B = this.renderer && this.renderer.blocks.find((x) => x.f === base.f && x.s <= base.a && base.a <= x.e);

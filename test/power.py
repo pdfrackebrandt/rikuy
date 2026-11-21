@@ -670,7 +670,51 @@ def accept(page):
     check('accept: an equation closed empty goes with its environment, leaving no undo step', src(page) == ACC and page.evaluate('window.rikuy.hist.length') == n, (src(page)[100:200], page.evaluate('window.rikuy.hist.length'), n))
 
 
-PARTS = [accept, footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips, palette, insertlist, repeat, quickopen, burst]
+CTX = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\nText\\footnote{Note here.} more.\n\n'
+       '\\begin{itemize}\n\\item Item text.\n\\end{itemize}\n\n\\begin{tabular}{lp{3cm}}\nCell a & Para cell\\\\\n\\end{tabular}\n\n'
+       '\\begin{figure}\n\\centering\n\\caption{Cap text.}\n\\end{figure}\n\nBold \\textbf{strong words} end.\n\nPrice text.\n\n\\end{document}\n')
+
+
+def slow(page, text, d=60):
+    for ch in text:
+        page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else d)
+    page.wait_for_timeout(300)
+
+
+def pairs(page):
+    """$$x^2$$ typed where a display cannot go, and in the middle of a line (verification of
+    eb14945, V2 to V4)."""
+    # (V2, V3) in a command's argument or a table cell set in a line: a formula in the line, every
+    # key kept, its closing $$ taken as one
+    for at, off, want in (('Note here', 9, '\\footnote{Note here $x^2$ z.}'), ('Cap text', 8, '\\caption{Cap text $x^2$ z.}'),
+                          ('strong words', 6, '\\textbf{strong $x^2$ z words}'), ('Cell a', 6, 'Cell a $x^2$ z & Para cell')):
+        fresh(page, CTX); click_text(page, at, off); slow(page, ' $$x^2$$ z')
+        s = src(page)
+        check('pairs: $$x^2$$ in ' + at + ' is a formula in the line, every key kept', want in s and '\\$' not in s and '\\[' not in s and active(page) == 'pages', (s[s.find(at.split()[0]) - 20:][:80], active(page)))
+    for ch in '$$': page.keyboard.type(ch); page.wait_for_timeout(250)
+    check('pairs: a $$ typed again after it is a dollar sign, not swallowed', '$x^2$ z\\$' in src(page), src(page)[src(page).find('Cell a'):][:60])
+    # (a p{} cell takes a display, as a paragraph does)
+    fresh(page, CTX); click_text(page, 'Para cell', 9); slow(page, ' $$x^2$$')
+    s = src(page)
+    check('pairs: $$x^2$$ in a p{} cell is a display', '\\[' in s and 'x^2' in s[s.find('\\['):s.find('\\]')] and '\\$' not in s, s[s.find('Para cell'):][:60])
+    # (V4) in the middle of a line, the words typed after the closing $$ go on in the line, no
+    # line break between them and the rest of the paragraph
+    for at, off in (('Price text', 10), ('Item text', 9)):
+        fresh(page, CTX); click_text(page, at, off); slow(page, ' abc $$x^2$$ end')
+        s = src(page)
+        check('pairs: $$x^2$$ in the middle of ' + at + ', the words after it in the line', '\\] end.' in s and 'end\n.' not in s and 'x^2' in s[s.find('\\['):s.find('\\]')], s[s.find(at.split()[0]):][:70])
+        # one undo step back to the start for each part, the display's own steps among them
+        for _ in range(6):
+            if src(page) == CTX: break
+            key(page, 'Control+z', 250)
+        check('pairs: undo goes back to the document as it was (' + at + ')', src(page) == CTX, src(page)[-120:])
+    # closed by Esc instead of $$: the caret in the line after \] too
+    fresh(page, CTX); click_text(page, 'Price text', 10); slow(page, ' abc $$x^2'); key(page, 'Escape', 400); slow(page, ' end')
+    s = src(page)
+    check('pairs: $$x^2 then Esc in the middle of a line, the words after it in the line', '\\] end.' in s and 'end\n.' not in s, s[s.find('Price'):][:70])
+
+
+PARTS = [accept, footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips, palette, insertlist, repeat, quickopen, burst, pairs]
 
 
 def run():
