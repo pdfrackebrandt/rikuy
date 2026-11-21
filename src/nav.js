@@ -128,7 +128,7 @@ export const nav = {
     if (this.navTab === 'outline') { this.renderOutline(body); return; }
     body.replaceChildren();
     if (this.navTab === 'problems') {
-      if (!probs.length) { const e = document.createElement('div'); e.className = 'nav-empty'; e.textContent = 'No problems found. References, citations, labels, environments and math all resolve.'; body.appendChild(e); return; }
+      if (!probs.length) { const e = document.createElement('div'); e.className = 'nav-empty'; e.textContent = 'No problems: references, citations, labels, environments and math all resolve.'; body.appendChild(e); return; }
       for (const x of probs) {
         const b = document.createElement('button');
         b.type = 'button'; b.className = 'prob ' + x.sev + (x.tex ? ' tex' : '');
@@ -384,7 +384,15 @@ export const nav = {
     if (!hs.length && !withText) {
       this.navSig = null;
       view.replaceChildren();
-      view.append(mk('div', 'nav-empty', 'No headings yet. Headings appear here as you add them: Heading 1 is \\section{...}.'));
+      // (what belongs here and the command that puts it here, UI-PRINCIPLES.md N5; LaTeX's name
+      // for it is in the button's tooltip, N2)
+      const e = mk('div', 'nav-empty');
+      const b = mk('button', 'btn ghost sm', 'Apply Heading 1');
+      b.type = 'button'; b.title = 'Heading 1 on the paragraph the caret is in (Ctrl+Alt+1): \\section, or \\chapter in a report or a book';
+      b.addEventListener('mousedown', (ev) => ev.preventDefault());
+      b.addEventListener('click', () => { this.ribbonBack(); this.runCommand('style-heading1'); });
+      e.append(mk('p', null, 'No headings yet: a paragraph styled Heading 1 or 2 is listed here.'), b);
+      view.append(e);
       this.navHeads = [];
       this.navTools();
       return;
