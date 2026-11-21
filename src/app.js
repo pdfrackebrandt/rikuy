@@ -1630,14 +1630,19 @@ class App {
     const src = this.src(f);
     const slice = src.slice(a, b);
     if (/^\s+$/.test(slice)) {
-      if ((slice.match(/\n/g) || []).length >= 2) return [{ f, s: a, e: b, t: ' ' }];
+      // (a blank line still on either side, where an empty paragraph's text went: no paragraphs
+      // join, and a space put there stood at the end of the paragraph before; review V8)
+      const apart = /\n[ \t\r]*\n[ \t\r]*$/.test(src.slice(Math.max(0, a - 100), a)) || /^[ \t\r]*\n[ \t\r]*\n/.test(src.slice(b, b + 100));
+      if (!apart && (slice.match(/\n/g) || []).length >= 2) return [{ f, s: a, e: b, t: ' ' }];
       return [{ f, s: a, e: b, t: '' }];
     }
     // Only comment lines between two paragraphs (a note, a review comment): joining them takes
     // out the blank lines alone. The comments are text nobody sees on the page, and the line
-    // break left before them keeps a space between the two paragraphs' words.
-    if (/^(?:\s|%[^\n]*\n)+$/.test(slice) && /\n[ \t]*\n/.test(slice)) {
-      const lines = slice.split('\n');
+    // break left before them keeps a space between the two paragraphs' words. A \noindent that
+    // began the second paragraph goes too: in the middle of one it does nothing. (It was taken
+    // with the comments as any text, and the words met with no space: "words.Second".)
+    if (/^(?:\s|%[^\n]*\n|\\noindent(?![A-Za-z]))+$/.test(slice) && /\n[ \t]*\n/.test(slice)) {
+      const lines = slice.split('\n').map((l) => (/^[ \t]*%/.test(l) ? l : l.replace(/\\noindent(?![A-Za-z])[ \t]*/g, '')));
       // (a LaTeX paragraph's mark goes too: the paragraph it marked joins the one before, as text)
       const mark = (l) => /^[ \t]*%[ \t]*rikuy:[ \t]*latex[ \t]*\r?$/.test(l);
       const kept = lines.filter((l, i) => i === 0 || (i === lines.length - 1 ? !mark(l) : l.trim() !== '' && !mark(l)));
