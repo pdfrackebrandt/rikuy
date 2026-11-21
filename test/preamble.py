@@ -130,7 +130,7 @@ with sync_playwright() as pw:
             ('an index', '\\usepackage{makeidx}\\makeindex', 'Word\\index{word}.', 'writes'),
             ('\\pdfinfo', '\\pdfinfo{/Subject (kept)}', 'Text.', 'PDF differs'),
             ('a colour stack', '\\chardef\\mystack=\\pdfcolorstackinit page direct{0 g}', 'Text.', 'colour stack'),
-            ('the clock', '\\edef\\now{\\the\\time}', 'At \\now.', 'clock'),
+            ('the clock', '\\edef\\now{\\the\\time}', 'At \\ifnum\\now<0 never\\else now\\fi.', 'clock'),  # (the PDF must not print the minute: it may turn between the two compiles)
             ('a program', '\\immediate\\write18{echo hello > made.txt}', 'Text.', '')]:  # (a compile in which a program ran is never dumped)
         d = {'main.tex': '\\documentclass{article}\n%s\n\\begin{document}\n%s\n\\end{document}\n' % (pre, body)}
         n = warm(d, 'd-' + name)

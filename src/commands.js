@@ -25,6 +25,7 @@
 //             an arrow "<name> options" that opens menu(app)), 'menu' (opens menu(app)),
 //             'custom' (render(app) makes the element; sync(app, at, el) keeps it current)
 //   role      the control's role when it is no button (a select is a 'combobox')
+//   popup     'dialog' for a button that opens a dialog of its own (aria-haspopup, aria-expanded)
 //   keys      chords as src/keys.js reads them: ['Ctrl+B']; keyScope 'page' (default: only with
 //             the caret on the page) or 'app' (anywhere but a field, the source or the PDF);
 //             keyRank breaks a tie between two commands on one chord (higher wins where both
@@ -50,6 +51,12 @@
 //   searchable  false: the search box leaves it out (a paging arrow)
 //   only      'wide', 'narrow' or 'claude': a control shown at one width only, or only in the
 //             copy inside Claude (agents, test/agent.py)
+//   dialog    true: it opens a dialog; the right click menu writes "…" after its name, as Word's
+//             menus do (UI-PRINCIPLES.md C11), and only after such a command's
+//   menuName  the right click menu's words for it, Word's there ("Font…" for Font Settings): the
+//             start of its name, so the words shown are in its accessible name (WCAG 2.5.3),
+//             which stays its name
+//   submenu   true: its run opens a menu (the right click menu marks it with › and aria-haspopup)
 //
 // A module of src/cmd/ is loaded by the build too, under node (build/app.mjs writes llms.txt and
 // controls.json from the registry): nothing in it may touch the page (document, window, navigator)

@@ -10,6 +10,7 @@ import { TABS, groupOf, KEYTIPS } from '../src/ribbon/order.js';
 import { LAYOUT, TIPS, LAUNCH, CHECKS, readLine } from '../src/ribbon/layout.js';
 import { parseChord, chordFor, bindings } from '../src/keys.js';
 import { controls } from '../build/app.mjs';
+import { regrid, regridPath } from '../src/ui/icongrid.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -246,6 +247,20 @@ ok('KeyTips: in each tab every one is unique and none is the start of another (W
     }
     for (const id of Object.keys(TIPS[tab])) assert.ok(command(id) && places(command(id)).some((p) => p.tab === tab), tab + ': ' + id + ' is on the tab');
   }
+});
+
+ok('icons on the grid of their pixels: a line\'s points on the pixels\' middles at 16 and 32 px, a curve\'s handles scaled, an arc\'s flags kept, a filled shape on the pixels\' edges; every icon of the registry drawn so', () => {
+  const ends = (d) => [...d.matchAll(/[MLHVA]([^MLHVACQSTZ]*)/g)].flatMap((m) => m[0][0] === 'A' ? m[1].trim().split(/[ ,]+/).slice(5).map(Number) : m[1].trim().split(/[ ,]+/).map(Number));
+  for (const n of [16, 32]) {
+    const d = regridPath('M3.5 5.5h13M6.5 10h10l-2 3', n / 20, n / 20, (v) => Math.round(v - 0.5) + 0.5);
+    assert.ok(ends(d).every((v) => Math.abs(v % 1) === 0.5), n + ': ' + d);
+  }
+  assert.equal(regridPath('M2 2a3 3 0 0 1 6 0', 0.8, 0.8, (v) => Math.round(v - 0.5) + 0.5), 'M1.5 1.5A2.4 2.4 0 0 1 6.5 1.5');
+  assert.match(regridPath('M2 2C4 4 6 6 8 8', 0.8, 0.8, (v) => Math.round(v - 0.5) + 0.5), /^M1\.5 1\.5C3\.2 3\.2 4\.8 4\.8 6\.5 6\.5$/);
+  assert.match(regrid('<rect x="2" y="2" width="5" height="5" fill="currentColor"/>', 20, 20, 16, 16), /x="2" y="2" width="4" height="4"/);
+  assert.match(regrid('<circle cx="10" cy="10" r="5"/>', 20, 20, 16, 16), /cx="8\.5" cy="8\.5" r="4"/);
+  // every icon the registry draws reads and comes back as a path
+  for (const c of commands()) if (c.icon) for (const n of [16, 32]) { const out = regrid(c.icon, 20, 20, n, n); assert.ok(!/NaN|undefined/.test(out), c.id + ' ' + n + ': ' + out); }
 });
 
 console.log('commands: ' + n + ' groups of checks passed');

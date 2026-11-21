@@ -110,8 +110,13 @@ with sync_playwright() as p:
     p2 = page.evaluate("""(async () => { const lib = await import(new URL('tex/pdf.min.mjs', location.href).href);
       const doc = await lib.getDocument({ data: new Uint8Array(window.rikuy.lastPdf.slice(0)) }).promise; const pg = await doc.getPage(2);
       return (await pg.getTextContent()).items.map(i => i.str).join(' ').replace(/\\s+/g, ' '); })()""")
-    words = [w for w in flashed.split() if len(w) > 5][:4]
-    check('clicking the PDF jumps to the same text on the page', after > before and words and all(w in p2 for w in words), (before, after, flashed[:80]))
+    # (the paragraph may start on page 1 or end on page 3: its first words or its last are on page
+    # 2; a word TeX broke at a line's end is joined again)
+    import re as _re
+    p2j = _re.sub(r'-\s+', '', p2)
+    long = [w for w in flashed.split() if len(w) > 5]
+    words = long[:4]
+    check('clicking the PDF jumps to the same text on the page', after > before and words and (all(w in p2j for w in words) or all(w in p2j for w in long[-4:])), (before, after, flashed[:80], p2[:160]))
 
     # a run that never ends can be stopped, and the next compile starts a fresh engine
     page.evaluate("""(() => { const g = window.rikuy; const s = g.files.get('main.tex'); const at = s.indexOf('\\\\begin{document}');

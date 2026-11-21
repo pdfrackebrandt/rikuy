@@ -276,7 +276,7 @@ register(
     when: (app) => { const T = app.eqTarget(); return !!T && !!T.info; }, whyNot: why(() => ''), run: (app) => app.eqCopyLatex() },
   { id: 'eq-copy-word', name: 'Copy for Word', title: 'Copies the equation as MathML: Word, PowerPoint and OneNote paste it as an editable equation', synonyms: ['Copy MathML'], menu: { equation: 31 },
     when: (app) => { const T = app.eqTarget(); return !!T && !!T.info; }, whyNot: why(() => ''), run: (app) => { const T = app.eqTarget(); return app.copyEquation(T.inner, T.display); } },
-  { id: 'eq-save', name: 'Save as new equation', title: 'Keeps this equation (or the part selected in it) in the Equation gallery of this browser', synonyms: ['Save to equation gallery', 'Save selection to equation gallery'], menu: { equation: 32 },
+  { id: 'eq-save', name: 'Save as new equation', dialog: true, title: 'Keeps this equation (or the part selected in it) in the Equation gallery of this browser', synonyms: ['Save to equation gallery', 'Save selection to equation gallery'], menu: { equation: 32 },
     when: hasTarget, whyNot: () => NOT_HERE, run: (app) => app.eqSave() },
   // (F2 or Enter with the formula selected, Shift and an arrow over it: F2 is Move Text otherwise)
   { id: 'eq-edit', name: 'Edit equation', title: 'Opens the equation in its field (F2 or Enter with it selected)', synonyms: ['Open equation'], menu: { equation: 1 }, keys: ['F2'], keyRank: 1,

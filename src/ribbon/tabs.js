@@ -28,10 +28,43 @@ import { commands, command, inGroup, places, enabled, pressed, installers } from
 import { $, mk, store, PREFS } from '../ui/dom.js';
 import { openMenu, splitButton, CARET } from '../ui/kit.js';
 import { measureTiles, installGallery } from '../ui/gallery.js';
+import { gridIcons } from '../ui/icongrid.js';
 import { styOfEl } from '../editor.js';
 import { enclosing } from '../wrap.js';
 
 const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + '</svg>';
+// A name as the ribbon shows it, in Word's title case (C11: one capitalisation for every button's
+// and group's name): each word's first letter capital but the small words after the first; a
+// word written with a capital already, LaTeX or AI, as it is. The accessible name stays the
+// command's own (the same words: WCAG's label in name reads them without their case).
+const SMALL = new Set(['a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'from', 'in', 'into', 'of', 'on', 'or', 'per', 'the', 'to', 'vs', 'with']);
+export const titleCase = (s) => String(s).split(' ').map((w, i) => (i > 0 && SMALL.has(w.toLowerCase())) || !/^[a-z]/.test(w) ? w : w[0].toUpperCase() + w.slice(1)).join(' ');
+
+// What kind of control each one of the ribbon, the title bar and the status bar is (data-kind):
+// one height, type, spacing and corner per kind, which test/consistency.py measures in one pass.
+// The kind is what the layout asks for (a large button stays "large" in a group drawn small).
+function kindOf(e, scope) {
+  if (e.matches('.sep')) return 'separator';
+  if (e.matches('.rb-glab, .rb-cap')) return 'group-label';
+  if (e.matches('.rb-tab')) return 'tab';
+  if (e.matches('input, select') || e.closest('.fbx, .pf, .pf-field, .nf')) return 'field';
+  if (e.closest('.rb-gal') || e.matches('.rb-tile, .rb-sb')) return 'gallery';
+  if (scope === 'bar') return e.matches('.undo-x') ? 'split-arrow' : e.matches('.icon') ? 'title-icon' : 'title-button';
+  if (scope === 'status') return 'status';
+  if (e.matches('.rb-gbtn')) return 'group';
+  if (e.matches('.rb-launch')) return 'launcher';
+  if (e.matches('.rb-x')) return 'split-arrow';
+  const s = (e.closest('.rb-split') || e).dataset.size;
+  if (s === 'L' || e.dataset.cmd === 'paste') return 'large';
+  if (s === 'T') return 'tile';
+  if (s === 'I') return 'icon';
+  if (s === 'S') return 'small';
+  return e.querySelector(':scope > span:not(.sr), :scope > .rb-bl') ? 'small' : 'icon';
+}
+export function tagKinds(root, scope) {
+  if (!root) return;
+  for (const e of root.querySelectorAll('button, input, select, .sep, .rb-glab, .rb-cap')) if (!e.dataset.kind) e.dataset.kind = kindOf(e, scope);
+}
 
 // A group's commands in Word's order where src/ribbon/layout.js lays the group out (those it does
 // not list after them, small), each with its line l; else in the registry's order
@@ -139,11 +172,11 @@ export const tabs = {
         // the button the group folds into: its name, and a menu of its commands
         const gb = mk('button', 'btn ghost rb-gbtn');
         gb.type = 'button'; gb.id = 'rg-' + T.id + '-' + g.id;
-        gb.setAttribute('aria-label', g.name); gb.title = g.name; gb.setAttribute('aria-haspopup', 'menu'); gb.setAttribute('aria-expanded', 'false');
+        gb.setAttribute('aria-label', g.name); gb.title = g.name + ': show the group\'s commands in a menu'; gb.setAttribute('aria-haspopup', 'menu'); gb.setAttribute('aria-expanded', 'false');
         // (its first command's icon, which it shows folded: see ribbonFit)
         const first = items.find(({ c }) => c.icon);
         if (first) gb.insertAdjacentHTML('beforeend', SVG(first.c.icon).replace('<svg ', '<svg class="rb-gico" '));
-        gb.append(mk('span', '', g.name));
+        gb.append(mk('span', '', titleCase(g.name)));
         gb.insertAdjacentHTML('beforeend', SVG(CARET));
         gb.addEventListener('click', () => this.openGroupMenu(T.id, g, gb));
         box.append(gb);
@@ -170,7 +203,7 @@ export const tabs = {
         // Endnote, Size and Position), that button is the arrow, with a mouse from 900 px: one
         // control, not an arrow and an icon beside it that do the same. Elsewhere it is the button.
         // (it keeps its place among them, for the narrower row)
-        const own = lay && launch ? items.find((x) => x.c.id === launch[0] && x.p.main) : null;
+        const own = launch ? items.find((x) => x.c.id === launch[0] && x.p.main) : null;
         if (!own && !gallery) { const b = launchBtn(); if (b) box.append(b); }
         const flow = own ? items.filter((x) => x !== own) : items;
         if (lay) {
@@ -195,9 +228,10 @@ export const tabs = {
           box.append(e);
         }
         if (gallery) { const b = launchBtn(); if (b) box.append(b); }
-        // the group's name under its controls, as Word's ribbon labels them (the Styles gallery
-        // already has its own caption). Hidden from the accessibility tree: the group has the name.
-        if (!gallery) { const lab = mk('span', 'rb-glab', g.name); lab.setAttribute('aria-hidden', 'true'); box.append(lab); }
+        // the group's name under its controls, as Word's ribbon labels them (the Styles gallery has
+        // its own caption: this one names the group where the style list stands in its place).
+        // Hidden from the accessibility tree: the group has the name.
+        { const lab = mk('span', 'rb-glab', titleCase(g.name)); lab.setAttribute('aria-hidden', 'true'); box.append(lab); }
         tb.append(box);
       });
       tb.append(mk('span', 'grow'));
@@ -207,6 +241,10 @@ export const tabs = {
     }
     // the downloads wait in the first panel until a tab is chosen
     rb.querySelector('.rb-tb').append(dl);
+    tagKinds(rb, 'ribbon'); tagKinds($('#rb-top'), 'ribbon'); tagKinds($('#bar'), 'bar'); tagKinds($('#status'), 'status');
+    // (every icon of the bar, the tab row and the status bar on the grid of its pixels; the
+    // ribbon's as each tab is shown and fitted, ribbonFit)
+    gridIcons($('#bar')); gridIcons($('#rb-top')); gridIcons($('#status'));
     this.rbBuilt = true;
     const want = this.rbTabs.includes(this.rbTab) ? this.rbTab : 'home';
     this.rbTab = null;
@@ -226,7 +264,8 @@ export const tabs = {
     if (c.kind === 'toggle') b.setAttribute('aria-pressed', 'false');
     if (c.icon) b.insertAdjacentHTML('beforeend', SVG(c.icon));
     else if (c.glyph) b.insertAdjacentHTML('beforeend', c.glyph);
-    const shown = l && l.size !== 'I' && l.size !== 'T' ? l.shown || label || p.name : label;
+    const shown0 = l && l.size !== 'I' && l.size !== 'T' ? l.shown || label || p.name : label;
+    const shown = shown0 && titleCase(shown0);
     if (!shown) b.append(mk('span', 'sr', p.name));
     else if (!l) b.append(mk('span', '', shown));
     else {
@@ -240,6 +279,8 @@ export const tabs = {
       b.append(bl);
     }
     if (c.kind === 'menu') { b.setAttribute('aria-haspopup', 'menu'); b.setAttribute('aria-expanded', 'false'); }
+    // (a button that opens a dialog of its own says so, and whether it is open)
+    if (c.popup) { b.setAttribute('aria-haspopup', c.popup); b.setAttribute('aria-expanded', 'false'); }
     if (c.kind === 'split') {
       const box = splitButton(this, b, p.name, () => this.commandMenu(c));
       // A large split button as Word's: its icon above runs it, its name and arrow below open the
@@ -289,6 +330,17 @@ export const tabs = {
     if (at === undefined) at = this.ribbonAt();
     if (at) at.memo = {};
     if (!enabled(this, c, at)) return false;
+    if (at && at.c && at.c.rest) {
+      // (no caret on the page and no words kept selected: a character format at a place between
+      // words has nothing to take, where Word would set the format of typing that does not come)
+      if (at.c.collapsed && c.group === 'font' && !c.static) {
+        const t = this.src(at.c.f), w = /[\p{L}\p{N}]/u;
+        if (!(w.test(t[at.c.a - 1] || '') && w.test(t[at.c.a] || ''))) return false;
+      }
+      // (with no caret on the page a command acts at the document's last selection, as Word's: the
+      // selection goes there now, and stays)
+      this.atRestDo(at, () => {});
+    }
     const r = c.run(this, args, at);
     if (r !== false && this.noteRecent) this.noteRecent(id);
     if (c.resync !== false) { if (r && typeof r.then === 'function') r.then(() => this.ribbonSync(), () => this.ribbonSync()); else this.ribbonSync(); }
@@ -385,6 +437,8 @@ export const tabs = {
     const rb = $('#ribbon');
     if (!rb || !this.rbBuilt) return;
     this.rbFitting = true;
+    // (controls the app adds later, an update's button in the bar, take their kind here)
+    tagKinds($('#bar'), 'bar'); tagKinds($('#status'), 'status');
     const panel = $('#rp-' + this.rbTab), gw = $('#rb-gw'), gal = !!panel && panel.contains(gw);
     const groups = panel ? [...panel.querySelectorAll('.rb-grp')] : [];
     const fits = () => rb.scrollWidth <= rb.clientWidth + 1;
@@ -400,24 +454,29 @@ export const tabs = {
     if (gal) { tiles(6); this.paintGallery(); }
     // (a spare group first, as one step each: its commands have a tab of their own)
     const fold = (g) => ({ do: () => g.classList.add('folded', ...(g.querySelector('.rb-gico') ? ['ico'] : [])), undo: () => g.classList.remove('folded', 'ico') });
+    // (Home's spare Insert comes back only with the Styles gallery: opened beside the style list, it
+    // showed more controls than a row a little wider, with the gallery and Insert folded)
+    const spareFold = (g) => ({ ...fold(g), spare: true });
     const spare = foldsGroups() ? groups.filter((g) => g.dataset.spare).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
-    const steps = [...spare.map(fold), flag('rb-nolab')];
+    const steps = [...spare.map(spareFold), flag('rb-nolab')];
     // (a laid out group, from 900 px with a mouse, gives way as Word's do: its large buttons small,
     // the least needed group first; then its names, the same way. Neither takes a control, so all
     // of it goes before any group folds. src/ribbon/layout.js)
     const lay = wideLay() ? groups.filter((g) => g.classList.contains('lay')).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
     // (a group's large buttons made small only where that is narrower: one large button with a
     // name over two lines is narrower than the same as a small one, and every step must take room)
-    const small = (g) => ({ chain: 'small', do: () => { const w = g.offsetWidth; g.classList.add('sm'); if (g.offsetWidth >= w) g.classList.remove('sm'); }, undo: () => g.classList.remove('sm') });
+    // (one chain with the names: a group's large buttons come back only once every name taken after
+    // them has, so no group is smaller at a wider width, test/consistency.py collapse)
+    const small = (g) => ({ chain: 'names', do: () => { const w = g.offsetWidth; g.classList.add('sm'); if (g.offsetWidth >= w) g.classList.remove('sm'); }, undo: () => g.classList.remove('sm') });
     const bare = (g) => ({ chain: 'names', do: () => g.classList.add('nm'), undo: () => g.classList.remove('nm') });
     // (and a group of one large button keeps its name: it would save next to nothing, and Word
     // keeps such a group large until it folds)
     const named = lay.filter((g) => g.querySelectorAll(':scope > [data-size]').length > 1);
     steps.push(...lay.map(small));
-    // Two chains, each given back from its last step only (ribbonFit's pass back): a step comes
-    // back only once every later step of its chain has, so a group of higher rank is never smaller
-    // than one of lower rank and a wider window never shows fewer names. The large buttons made
-    // small are one chain. The names are the other: the less needed groups' names (below rank 4),
+    // One chain, given back from its last step only (ribbonFit's pass back): a step comes back
+    // only once every later step of the chain has, so a group of higher rank is never smaller than
+    // one of lower rank, no group is smaller at a wider width and a wider window never shows fewer
+    // names. First the large buttons made small; then the names: the less needed groups' names (below rank 4),
     // then the gallery's tiles one at a time down to three (Home), then the three downloads as one
     // Download button (Word spends no room on them), then the names of the groups that matter
     // most, then every button's name (rb-fold).
@@ -445,10 +504,14 @@ export const tabs = {
     for (let i = k - 1; i >= 0; i--) {
       const st = steps[i];
       if (st.chain && held.has(st.chain)) continue;
+      if (st.spare && gal && rb.classList.contains('rb-narrow')) continue;
       st.undo();
       if (!fits()) { st.do(); if (st.chain) held.add(st.chain); }
     }
     this.rbFitting = false;
+    // (the icons on the grid of the size each is now drawn at: a group made small draws its large
+    // icons at 16 px, src/ui/icongrid.js)
+    gridIcons(panel); gridIcons(rb.querySelector('.rb-dl')); gridIcons($('#bar'));
     this.ribbonRove();
   },
 
@@ -578,7 +641,9 @@ export function installRibbon(app) {
     const t = e.target.closest('[role=tab]');
     if (!t) return;
     app.peekRibbon(true);
-    app.selectTab(t.dataset.tab, document.activeElement === t || document.activeElement === document.body);
+    // (a press with the mouse gives the tab no focus: its ring would stay drawn round it, the
+    // keyboard's sign, after a click; the keys reach the tabs by Tab, F10 or Alt)
+    app.selectTab(t.dataset.tab, document.activeElement === t);
   });
   list.addEventListener('keydown', (e) => {
     const shown = [...list.children].filter((t) => !t.hidden), i = shown.indexOf(document.activeElement);
@@ -610,6 +675,35 @@ export function installRibbon(app) {
   app.root.addEventListener('focusin', () => app.peekRibbon(false));
   for (const f of installers) f(app);
   document.addEventListener('selectionchange', app.ribbonSoon);
+  // The status bar from 700 px: what has no room goes whole, the least needed first (its words are
+  // never cut short, UI-PRINCIPLES L3; a phone's line scrolls instead). Again as the window or the
+  // line's words change.
+  const status = $('#status');
+  if (status) {
+    const ORDER = ['b-sample', 'b-new', 'st-lang', 'st-track', 'st-save', 'st-words'];
+    let soon = 0;
+    const statusFit = () => {
+      soon = 0;
+      for (const id of ORDER) { const e = document.getElementById(id); if (e) e.classList.remove('st-gone'); }
+      if (innerWidth < 700) return;
+      for (const id of ORDER) {
+        if (status.scrollWidth <= status.clientWidth + 1) break;
+        const e = document.getElementById(id);
+        if (e && e.offsetParent) e.classList.add('st-gone');
+      }
+    };
+    const later = () => { if (!soon) soon = requestAnimationFrame(statusFit); };
+    addEventListener('resize', later);
+    // (its words and what shows: not the classes this fit sets)
+    new MutationObserver(later).observe(status, { subtree: true, childList: true, characterData: true, attributeFilter: ['hidden'] });
+    later();
+    app.statusFit = statusFit;
+  }
+  // (the last input, the mouse's or a finger's or the keyboard's: the focus ring shows for the
+  // keyboard alone, though a popover gives the focus back to its button after a press, src/app.css)
+  const input = (k) => () => { if (document.documentElement.dataset.input !== k) document.documentElement.dataset.input = k; };
+  document.addEventListener('pointerdown', input('pointer'), true);
+  document.addEventListener('keydown', input('key'), true);
   document.addEventListener('focusin', app.ribbonSoon);
   // the gallery's room is measured again when the window's width changes and once the fonts the
   // tiles and the buttons' names are drawn in have come

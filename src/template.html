@@ -8,10 +8,10 @@
     <div class="bar-left">
       <button id="b-nav" class="btn ghost icon" type="button" aria-pressed="false" title="Outline, problems and changes (Ctrl+Shift+O)" aria-label="Outline and problems"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 5.5h13M6.5 10h10M6.5 14.5h10"/></svg><span class="sr">Outline and problems</span><span id="nav-dot" class="nav-dot" aria-hidden="true" hidden></span></button>
       <div class="qat" role="toolbar" aria-label="Quick Access">
-        <button id="qat-save" class="btn ghost icon" type="button" title="Save (Ctrl+S)" aria-label="Save"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3.5h9l3 3V16.5H4z"/><path d="M7 3.5v4h6v-4M7 16.5v-4h6v4"/></svg><span class="sr">Save</span></button>
-        <button id="b-undo" class="btn ghost icon" type="button" title="Undo (Ctrl+Z)" disabled aria-label="Undo"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5 3.5 8.5 7 12M4 8.5h8a4 4 0 0 1 0 8H9"/></svg><span class="sr">Undo</span></button>
+        <button id="qat-save" class="btn ghost icon" type="button" title="Save (Ctrl+S): every edit is kept in this browser as you make it" aria-label="Save"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3.5h9l3 3V16.5H4z"/><path d="M7 3.5v4h6v-4M7 16.5v-4h6v4"/></svg><span class="sr">Save</span></button>
+        <button id="b-undo" class="btn ghost icon" type="button" title="Undo (Ctrl+Z): take back the last edit" disabled aria-label="Undo"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5 3.5 8.5 7 12M4 8.5h8a4 4 0 0 1 0 8H9"/></svg><span class="sr">Undo</span></button>
         <button id="b-undo-x" class="btn ghost icon undo-x" type="button" title="The last steps: undo several at once" aria-label="Undo options" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 8.5l3 3 3-3"/></svg><span class="sr">Undo options</span></button>
-        <button id="b-redo" class="btn ghost icon" type="button" title="Redo (Ctrl+Shift+Z)" disabled aria-label="Redo"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m13 5 3.5 3.5L13 12m3-3.5H8a4 4 0 0 0 0 8h3"/></svg><span class="sr">Redo</span></button>
+        <button id="b-redo" class="btn ghost icon" type="button" title="Redo (Ctrl+Shift+Z): make again the edit just undone" disabled aria-label="Redo"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m13 5 3.5 3.5L13 12m3-3.5H8a4 4 0 0 0 0 8h3"/></svg><span class="sr">Redo</span></button>
       </div>
       <div class="brand"><span class="mark">Rikuy</span></div>
     </div>
@@ -20,16 +20,16 @@
       <div id="srch" class="srch"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5"/><path d="M12.2 12.2 16.5 16.5"/></svg><input id="rk-search" type="text" role="combobox" aria-label="Search" aria-autocomplete="list" aria-expanded="false" aria-controls="rk-search-list" autocomplete="off" spellcheck="false" placeholder="Search commands" title="Search for a command by its name (Alt+Q)"><kbd class="srch-key" aria-hidden="true">Alt+Q</kbd><div id="rk-search-list" class="srch-list" role="listbox" aria-label="Commands" hidden></div></div>
     </div>
     <div class="title-end">
-    <button id="b-comments" class="btn ghost" type="button" title="Comments" aria-label="Comments"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.5h12v8H9.5L6 15.5v-3H4z"/></svg><span>Comments</span></button>
+    <button id="b-comments" class="btn ghost" type="button" title="Comments: show the comments and changes in the side panel" aria-label="Comments"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.5h12v8H9.5L6 15.5v-3H4z"/></svg><span>Comments</span></button>
     <button id="b-share" class="btn ghost" type="button" title="A link anyone can open and type in, or a copy for Overleaf" aria-label="Share"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="5" cy="10" r="2.2"/><circle cx="15" cy="5" r="2.2"/><circle cx="15" cy="15" r="2.2"/><path d="M7 9l6-3M7 11l6 3"/></svg><span>Share</span></button>
     <div class="tools">
       <button id="b-open" class="btn ghost" type="button" title="Open .tex, .bib, images, an Overleaf .zip or a Word .docx (Ctrl+O)" aria-label="Open"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h5l1.5 1.5H17v8.5H3z"/></svg><span>Open</span></button>
-      <button id="b-pdf" class="btn ghost" type="button" aria-pressed="false" title="Show the PDF as TeX makes it, beside the page" aria-label="Preview"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h7l3.5 3.5v11.5H5zM12 2.5V6h3.5M7.5 10h5M7.5 13h5"/></svg><span>Preview</span></button>
+      <button id="b-pdf" class="btn ghost" type="button" aria-pressed="false" title="Preview (Ctrl+F2): show the PDF as TeX makes it, beside the page" aria-label="Preview"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h7l3.5 3.5v11.5H5zM12 2.5V6h3.5M7.5 10h5M7.5 13h5"/></svg><span>Preview</span></button>
       <span class="sep"></span>
       <div class="zoom" role="group" aria-label="Zoom">
-        <button id="b-zout" class="btn ghost icon" type="button" title="Zoom out" aria-label="Zoom out"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h10"/></svg><span class="sr">Zoom out</span></button>
-        <button id="zoomv" class="btn ghost zv" type="button" title="Zoom: the page at this percentage of its size; a press fits it to the window&#39;s width" aria-label="Fit width">100%</button>
-        <button id="b-zin" class="btn ghost icon" type="button" title="Zoom in" aria-label="Zoom in"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h10M10 5v10"/></svg><span class="sr">Zoom in</span></button>
+        <button id="b-zout" class="btn ghost icon" type="button" title="Zoom out (Ctrl+-): show the page smaller" aria-label="Zoom out"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h10"/></svg><span class="sr">Zoom out</span></button>
+        <button id="zoomv" class="btn ghost zv" type="button" title="Fit width: fit the page to the window&#39;s width; the button shows the zoom as a percentage of the page&#39;s size" aria-label="Fit width">100%</button>
+        <button id="b-zin" class="btn ghost icon" type="button" title="Zoom in (Ctrl+=): show the page larger" aria-label="Zoom in"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h10M10 5v10"/></svg><span class="sr">Zoom in</span></button>
       </div>
       <span class="sep"></span>
       <button id="b-ai" class="btn ghost ai-only" type="button" title="Ask Claude to rewrite the selection" aria-label="Ask Claude"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v4M10 13.5v4M2.5 10h4M13.5 10h4M5 5l2.2 2.2M12.8 12.8 15 15M15 5l-2.2 2.2M7.2 12.8 5 15"/></svg><span>Ask Claude</span></button>
@@ -71,9 +71,9 @@
     <div class="rb-dl" role="group" aria-label="Download">
       <span class="rb-lab">Download</span>
       <button id="rb-dl-menu" class="btn ghost" type="button" data-cmd="download-menu" aria-haspopup="menu" title="Download as PDF, Word or LaTeX" aria-label="Download"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 15.5h12"/></svg><span>Download</span></button>
-      <button id="rb-pdf" class="btn ghost" type="button" data-cmd="download-pdf" title="Download the PDF as TeX makes it" aria-label="Download PDF"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 15.5h12"/></svg><span>PDF</span></button>
-      <button id="rb-word" class="btn ghost" type="button" data-cmd="download-word" title="Download a Word file (.docx)" aria-label="Download Word"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 15.5h12"/></svg><span>Word</span></button>
-      <button id="b-save" class="btn ghost" type="button" data-cmd="download-latex" title="Download the LaTeX source (F12)" aria-label="Download LaTeX"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 15.5h12"/></svg><span>LaTeX</span></button>
+      <button id="rb-pdf" class="btn ghost" type="button" data-cmd="download-pdf" title="Download the PDF as TeX makes it" aria-label="Download PDF"><svg class="dl-ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 16.5v-14h6l3 3V10M10.5 2.5v3h3M4.5 16.5h6M7 8.5h4M7 11.5h3M14.5 11.5v6M12 15l2.5 2.5L17 15"/></svg><span>PDF</span></button>
+      <button id="rb-word" class="btn ghost" type="button" data-cmd="download-word" title="Download a Word file (.docx)" aria-label="Download Word"><svg class="dl-ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 16.5v-14h6l3 3V10M10.5 2.5v3h3M4.5 16.5h6M8.5 7.5v6M10 7.5v6M10 7.5H7.8a1.5 1.5 0 0 0 0 3h.7M14.5 11.5v6M12 15l2.5 2.5L17 15"/></svg><span>Word</span></button>
+      <button id="b-save" class="btn ghost" type="button" data-cmd="download-latex" title="Download the LaTeX source (F12)" aria-label="Download LaTeX"><svg class="dl-ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 16.5v-14h6l3 3V10M10.5 2.5v3h3M4.5 16.5h6M8 8 6.5 9.75 8 11.5M9.5 8l1.5 1.75-1.5 1.75M14.5 11.5v6M12 15l2.5 2.5L17 15"/></svg><span>LaTeX</span></button>
     </div>
     <input id="picinput" type="file" multiple hidden accept=".png,.jpg,.jpeg,.pdf,image/png,image/jpeg,application/pdf">
   </div>
@@ -126,7 +126,7 @@
     </aside>
   </main>
   <footer id="status" aria-label="Status">
-    <button id="st-pages" class="linkish" type="button" title="Go To a page, a heading, a footnote, an equation or a label (Ctrl+G)"></button><button id="st-words" class="linkish" type="button" title="Word Count: the words, characters, paragraphs and lines (Ctrl+Shift+G)"></button><button id="st-warn" class="linkish" type="button" hidden></button>
+    <button id="st-pages" class="linkish" type="button" title="Go To (Ctrl+G): go to a page, a heading, a footnote, an equation or a label"></button><button id="st-words" class="linkish" type="button" title="Word Count: the words, characters, paragraphs and lines (Ctrl+Shift+G)"></button><button id="st-warn" class="linkish" type="button" title="Problems: show what TeX found, in the side panel" hidden></button>
     <span class="grow"></span>
     <!--APPSTATUS-->
     <span id="st-save" class="st-quiet" role="status">Kept in this browser</span>

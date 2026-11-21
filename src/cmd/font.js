@@ -96,10 +96,10 @@ register(
     title: 'Clear Character Formatting (Ctrl+Space): bold, italic, colours, sizes and fonts off the selection', synonyms: ['Reset character', 'Plain text'],
     when: can, whyNot: () => WHY, run: (app) => app.clearFormatting(false) },
 
-  { id: 'bold', name: 'Bold', order: 10, title: 'Bold (Ctrl+B)', tab: 'home', group: 'font', el: 'rb-b', kind: 'toggle', glyph: '<b aria-hidden="true">B</b>', keys: ['Ctrl+B'], menu: { selection: 20 },
+  { id: 'bold', name: 'Bold', order: 10, title: 'Bold (Ctrl+B): make the selected text bold', tab: 'home', group: 'font', el: 'rb-b', kind: 'toggle', glyph: '<b aria-hidden="true">B</b>', keys: ['Ctrl+B'], menu: { selection: 20 },
     keysQuiet: ['Ctrl+Shift+B'], synonyms: ['Strong', 'textbf'], when: can, on: on('bold'), run: (app) => app.fmtToggle('bold'),
     palette: { k: 'textbf', d: 'Bold', order: 60, t: { open: '\\textbf{', close: '}' } } },
-  { id: 'italic', name: 'Italic', order: 20, title: 'Italic (Ctrl+I)', tab: 'home', group: 'font', el: 'rb-i', kind: 'toggle', glyph: '<i aria-hidden="true">I</i>', keys: ['Ctrl+I'], menu: { selection: 30 },
+  { id: 'italic', name: 'Italic', order: 20, title: 'Italic (Ctrl+I): make the selected text italic', tab: 'home', group: 'font', el: 'rb-i', kind: 'toggle', glyph: '<i aria-hidden="true">I</i>', keys: ['Ctrl+I'], menu: { selection: 30 },
     keysQuiet: ['Ctrl+Shift+I'], synonyms: ['Emphasis', 'emph', 'textit'], when: can, on: on('italic'), run: (app) => app.fmtToggle('italic'),
     palette: { k: 'emph', d: 'Emphasis', order: 50, t: { open: '\\emph{', close: '}' } } },
   { id: 'underline', name: 'Underline', order: 30, title: 'Underline (Ctrl+U): \\uline, which breaks across lines; the arrow for double, wave, dashed, dotted and a colour', tab: 'home', group: 'font', el: 'rb-u', kind: 'split', glyph: '<u aria-hidden="true">U</u>', keys: ['Ctrl+U'], keysQuiet: ['Ctrl+Shift+U'],
@@ -124,7 +124,7 @@ register(
     title: 'More Font Effects: small caps, all caps, double strikethrough, border, shading, enclosed characters, ruby', synonyms: ['Effects', 'Text effects'],
     when: can, whyNot: () => WHY, run: (app) => app.moreMenu() },
   // (Word's launcher at the group's corner: here More Font Effects' last item, the right click menu and Ctrl+D)
-  { id: 'font-dialog', name: 'Font Settings', keys: ['Ctrl+D'],
+  { id: 'font-dialog', name: 'Font Settings', dialog: true, menuName: 'Font', keys: ['Ctrl+D'],
     title: 'Font… (Ctrl+D): every character format in one dialog, with a preview, and the spacing, scale and position of letters', synonyms: ['Font dialog', 'Font…', 'Character spacing', 'Advanced font'],
     menu: { selection: 80, text: 80 }, when: can, whyNot: () => WHY, run: (app) => openFontDialog(app) },
 

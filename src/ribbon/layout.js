@@ -24,7 +24,7 @@ export const LAYOUT = {
     pages: ['cover-page S V', 'blank-page S NP', 'page-break S B'],
     // (Insert Table, Convert Text to Table and Table from Data File are in Table's menu, as Word's)
     tables: ['insert-table L T'],
-    illustrations: ['picture L P', 'insert-shapes L SH', 'insert-icons L Y', 'insert-interactive-graph L G', 'insert-smartart S M', 'insert-chart S C', 'insert-screenshot S SC'],
+    illustrations: ['picture L P', 'insert-interactive-graph L G', 'insert-shapes L SH', 'insert-icons L Y', 'insert-smartart S M', 'insert-chart S C', 'insert-screenshot S SC'],
     links: ['link L I', 'bookmark L K', 'cross-reference L RF'],
     comments: ['comment-new L L'],
     headfoot: ['header L H', 'footer L O', 'page-number L NU'],
@@ -45,6 +45,7 @@ export const LAYOUT = {
   references: {
     toc: ['table-of-contents L T', 'toc-add-text S A', 'update-toc S U'],
     footnotes: ['footnote L F', 'endnote S E', 'next-footnote S O', 'show-notes S H', 'footnote-options I -'],
+    research: ['frontier L RS'],
     citations: ['citation L C', 'manage-sources S M', 'citation-style S L', 'bibliography S B', 'add-source S W'],
     captions: ['insert-caption L P', 'table-of-figures S G', 'update-tof S V Update Table', 'cross-reference S RF'],
     index: ['mark-entry L N', 'insert-index S X', 'update-index S D'],
@@ -66,7 +67,7 @@ export const LAYOUT = {
     immersive: ['focus L O'],
     movement: ['page-vertical L V', 'side-to-side L 7'],
     mode: ['dark-page L D'],
-    show: ['ruler S R', 'view-gridlines-page S G', 'navigation-pane S K', 'show-latex S SL', 'show-marks S SM Formatting marks'],
+    show: ['ruler S R', 'view-gridlines-page S G', 'navigation-pane S K', 'show-latex S SL', 'show-marks S SM'],
     zoom: ['zoom-dialog L Q Zoom', 'zoom-100 L J', 'one-page S 1', 'multiple-pages S M', 'page-width S I'],
     window: ['split-view L B']
   },
@@ -97,7 +98,7 @@ export const LAYOUT = {
     size: ['picture-crop L C', 'picture-height S H', 'picture-width S W', '|', 'picture-lock I L', 'picture-size I -']
   },
   equation: {
-    tools: ['eq-gallery L E', 'eq-numbered S N', 'eq-display S D'],
+    tools: ['eq-gallery L E', 'eq-numbered S N', 'eq-display S D', 'graph-this L H'],
     conversions: ['eq-convert L CV', 'eq-unicode S K', 'eq-latex-format S X LaTeX', 'eq-normal-text S T', 'show-latex L L'],
     symbols: ['eq-sym-basic S S1 Basic math', 'eq-sym-greek S S2 Greek letters', 'eq-sym-ops S S3 Operators', 'eq-sym-arrows S S4 Arrows', 'eq-sym-relations S S5 Relations',
       'eq-sym-sets S S6 Sets and logic', 'eq-sym-geometry S S7 Geometry'],

@@ -37,9 +37,11 @@ jobs:
   # The editor in Chromium. These tests need only the page (npm run build), not the TeX tree's
   # packs; pdf.py and engines.py compile with TeX and need them, and stress.py holds keystroke
   # times to limits a shared runner may miss, so those three are left out.
+  # (60 minutes: the browser suites grew past 30 on a busy runner, and a job cut at its limit
+  # reports "cancelled", which reads as nobody's failure)
   editor:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -93,6 +95,8 @@ jobs:
         run: cd test && python3 ribbon.py
       - name: The ribbon's frame (tabs, contextual tabs, folding, keys, search, the right click menu, the kit)
         run: cd test && python3 tabs.py
+      - name: One look (the ribbon, the tab row, the title bar and the status bar against UI-PRINCIPLES.md, at six widths, light, dark, forced colours and touch)
+        run: cd test && python3 consistency.py
       - name: Word's keyboard shortcuts (each added key pressed on the page, the tooltips, Help's list, a Mac)
         run: cd test && python3 shortcuts.py
       - name: A power user's keys (footnotes, formulas typed as LaTeX, Tab, the pickers, KeyTips, Alt+Q, the insert list, F4, Go to File)
@@ -118,7 +122,7 @@ jobs:
   # with every suite took longer); the newer batches' suites run here.
   editor-more:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -159,6 +163,9 @@ jobs:
       # its compiles on three engines need dist/tex and run in tex.yml
       - name: Insert, interactive graphs, the clipboard, symbols and AutoCorrect
         run: cd test && python3 insert.py
+      # (the live paper, task 70; its compiles and TeX's picture against the live one run in tex.yml)
+      - name: Interactive graphs as the edge, Graph this, the web page with live graphs, speed, phones
+        run: cd test && python3 graphs.py opening graph_this dialog hand_edits upgrade keyboard webpage speed phones
       # their PDF parts (the PDF view by SyncTeX, Learn Rikuy and the templates compiled) need
       # dist/tex and run in tex.yml; here they skip them
       - name: The views (Page, LaTeX, PDF), Show LaTeX, the View and Help tabs, on phones too

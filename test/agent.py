@@ -146,8 +146,12 @@ def api(p):
     page.evaluate('''() => window.rikuy.openFiles([new File([Uint8Array.from('%s'.match(/../g).map((h) => parseInt(h, 16)))], 'dot.png', { type: 'image/png' })])''' % PNG)
     page.wait_for_function('window.rikuy.assetBlobs.has("dot.png")', timeout=5000)
     files = page.evaluate('rikuy.api.getFiles()')
-    check('api.getFiles gives each text file with its text and a picture with its size', [sorted(f) for f in files] == [['name', 'text'], ['name', 'text'], ['bytes', 'name']]
-          and [f['name'] for f in files] == ['main.tex', 'refs.bib', 'dot.png'] and files[0]['text'] == src(page) and files[1]['text'] == src(page, 'refs.bib') and files[2]['bytes'] == len(PNG) // 2, [(f['name'], f.get('bytes')) for f in files])
+    # (the opening document's live graph brings its own text files, rikuy.sty and graphs/saving.html,
+    # and its picture once it is drawn: each in the shape its kind has)
+    by = {f['name']: f for f in files}
+    check('api.getFiles gives each text file with its text and a picture with its size', all(sorted(f) == (['bytes', 'name'] if re.search(r'\.(png|jpe?g|pdf|pgf)$', f['name']) else ['name', 'text']) for f in files)
+          and [f['name'] for f in files][:2] == ['main.tex', 'refs.bib'] and {'rikuy.sty', 'graphs/saving.html', 'dot.png'} <= set(by)
+          and by['main.tex']['text'] == src(page) and by['refs.bib']['text'] == src(page, 'refs.bib') and by['dot.png']['bytes'] == len(PNG) // 2, [(f['name'], f.get('bytes')) for f in files])
     before = [src(page), page.evaluate('rikuy.hist.length')]
     check('the sample needs no script set up: api.needs is [] and api.setUpScripts resolves to null, changing nothing',
           page.evaluate('rikuy.api.needs()') == [] and page.evaluate('rikuy.api.setUpScripts()') is None and [src(page), page.evaluate('rikuy.hist.length')] == before)
@@ -255,8 +259,10 @@ def api(p):
     page.evaluate('rikuy.ribbonBack()')
     bad = page.evaluate("""async () => { const out = []; for (const id of ['no-such-command', 7]) try { await window.rikuy.api.run(id); out.push('took ' + id); } catch (e) { out.push(e.name); } return out; }""")
     check('api.run refuses an id that is no command with a TypeError', bad == ['TypeError', 'TypeError'], bad)
+    # (with no caret on the page a command acts where the caret last was, as Word's: a paragraph
+    # here, where a table's row cannot be added)
     page.evaluate("document.getElementById('pages').blur(); getSelection().removeAllRanges()")
-    check('api.run resolves to false where the command cannot run (no caret on the page)', page.evaluate("rikuy.api.run('bold')") is False and src(page) == DOC)
+    check('api.run resolves to false where the command cannot run (no caret on the page: the last place, a paragraph, has no table row to add after)', page.evaluate("rikuy.api.run('table-row-below')") is False and src(page) == DOC)
     check('no page errors (the API)', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e and 'fetch' not in e], errors[:4])
 
     # a guest's view: the document someone shared, opened from their link
@@ -811,6 +817,8 @@ def equations(p):
     "Display math" and its "Equation editor", the contextual tab "Equation" in front, its button
     "Fraction" and the menu item "stacked fraction"; Escape on the tab back to the field."""
     full = open(os.path.join(DIST, 'llms-full.txt'), encoding='utf8').read()
+    # (a control named in its guide as the ribbon names it: View's Show marks, review of PR 86 L6)
+    check('llms-full.txt names View\'s Show marks as the ribbon does, not Formatting marks', 'Show marks' in full and 'Formatting marks' not in full)
     check('llms-full.txt says Alt+= makes an equation, Ctrl+Shift+E is Track Changes, and names the Equation tab\'s controls',
           'Alt+= (Mac: Control+=)' in full and 'Ctrl+Shift+E: Track Changes' in full and all('"%s"' % n in full for n in ('Equation gallery', 'Numbered', 'Display', 'Fraction', 'Matrix', 'Change to inline', 'Copy as LaTeX')), full[:0])
     browser, page, errors = open_page(p, width=1400, height=900)

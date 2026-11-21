@@ -12,7 +12,7 @@ import { firstKey, macUA } from '../keys.js';
 import { SYMBOLS, openSymbols } from '../ui/symbol.js';
 import { correct, borderLine, DEFAULTS as AC_DEFAULTS, REPLACE } from '../autocorrect.js';
 import { openGraphDialog } from '../ui/graphdialog.js';
-import { kit as GK, graphHtml, readGraph, isGraph, sameGraph, graphPNG, pngWidth, pngMark, TEMPLATES, RIKUY_STY } from '../graph.js';
+import { kit as GK, graphHtml, readGraph, isGraph, sameGraph, graphPNG, graphCanvas, graphPGF, pgfMark, specHash, pngWidth, pngMark, TEMPLATES, RIKUY_STY, RIKUY_STY_V10, styDrawsPgf } from '../graph.js';
 import { widgetPath } from '../widget.js';
 import { hasPackage, kvEdits } from '../preamble.js';
 import { escapeAlt } from '../picture.js';
@@ -127,13 +127,38 @@ function freshName(app, kind) {
     // (a few random letters: two coauthors' first graphs were both function-1, and a merge kept one)
     const tag = Math.random().toString(36).slice(2, 6).padEnd(4, '0');
     const rel = 'graphs/' + base + '-' + tag;
-    if (![rel + '.html', rel + '.png'].some((x) => app.files.has(dir + x) || app.assetBlobs.has(dir + x) || app.extra.has(dir + x))) return rel;
+    if (![rel + '.html', rel + '.png', rel + '.pgf'].some((x) => app.files.has(dir + x) || app.assetBlobs.has(dir + x) || app.extra.has(dir + x))) return rel;
   }
   return 'graphs/' + base + '-' + Date.now();
 }
 
 // the width of the text at 100 %, in CSS pixels: the live figure's width, and so the picture's
 const textWidthPx = (app) => Math.round(((app.layout && app.layout.g && app.layout.g.tw) || 345) * 96 / 72.27);
+
+// The picture TeX prints for a graph: PGF (vector, in the document's fonts) where the project's
+// rikuy.sty draws it or Rikuy writes or renews that file (none yet, or Rikuy's own v1.0), else a
+// PNG (a rikuy.sty of one's own is left alone). { pgf, sty: the edits to rikuy.sty }
+function pictureKind(app) {
+  const dir = dirOf(app.main), name = dir + 'rikuy.sty';
+  const t = app.files.get(name), elsewhere = app.assetBlobs.has(name) || app.extra.has(name);
+  if (t == null && !elsewhere) return { pgf: true, sty: [{ f: name, s: 0, e: 0, t: RIKUY_STY }] };
+  if (t != null && styDrawsPgf(t)) return { pgf: true, sty: [] };
+  if (t != null && RIKUY_STY_V10.test(t)) return { pgf: true, sty: [{ f: name, s: 0, e: t.length, t: RIKUY_STY }] };
+  return { pgf: false, sty: [] };
+}
+// the picture's file, drawn: a PGF picture's text or a PNG (mark: the graph's file)
+async function pictureBlob(spec, W, mark, pgf) {
+  return pgf ? new Blob([graphPGF(spec, W, mark)], { type: 'text/x-tex' }) : graphPNG(spec, W, 3, mark + ' ' + specHash(spec));
+}
+// what a picture of ours says of itself: { path, hash, W } (a PNG's mark is "path hash")
+async function pictureMark(blob, png) {
+  if (!blob) return null;
+  if (!png) return pgfMark(await blob.slice(0, 400).text());
+  const bytes = new Uint8Array(await blob.arrayBuffer()), m = pngMark(bytes);
+  if (!m) return null;
+  const [path, hash] = m.split(' ');
+  return { path, hash: hash || null, W: pngWidth(bytes) };
+}
 
 register(
   { id: 'insert-list', name: 'Insert list', title: 'The list of things to insert: footnote, citation, section, environments and more (\\; Ctrl+K is Link)', synonyms: ['Insert a command', 'Command'], run: (app) => app.openPalette() },
@@ -153,7 +178,7 @@ register(
   { id: 'insert-ldots', name: 'Ellipsis', synonyms: ['Dots', 'ldots'], keys: ['Ctrl+Alt+.'], run: (app) => app.insertFromPalette('ldots'), palette: { k: 'ldots', d: 'Ellipsis …', order: 220, t: piece('\\ldots{}', '') } },
   { id: 'insert-newline', name: 'Line break', title: 'Line break (Shift+Enter): a new line in the same paragraph, \\\\', keysElsewhere: ['Shift+Enter'], synonyms: ['New line', 'Manual line break'], run: (app) => app.insertFromPalette('newline'), palette: { k: 'newline', d: 'Line break', order: 230, t: piece('\\\\\n', '') } },
   // (the page's own copy and cut handlers give the LaTeX: the focus goes back to the page first)
-  { id: 'cut', name: 'Cut', title: 'Cut (Ctrl+X)', keysElsewhere: ['Ctrl+X'], menu: { selection: 10 }, when: sel, tab: 'home', group: 'clipboard', order: 20,
+  { id: 'cut', name: 'Cut', title: 'Cut (Ctrl+X): take the selection out, onto the clipboard', keysElsewhere: ['Ctrl+X'], menu: { selection: 10 }, when: sel, tab: 'home', group: 'clipboard', order: 20,
     icon: '<circle cx="6" cy="14.5" r="2.2"/><circle cx="14" cy="14.5" r="2.2"/><path d="M7.6 12.9 14 3.5M12.4 12.9 6 3.5"/>', run: (app) => { app.ribbonBack(); document.execCommand('cut'); } },
   { id: 'copy', name: 'Copy', title: 'Copy, as LaTeX and as text (Ctrl+C)', keysElsewhere: ['Ctrl+C'], menu: { selection: 11 }, when: sel, tab: 'home', group: 'clipboard', order: 30,
     icon: '<rect x="7" y="6.5" width="9" height="10.5" rx="1.2"/><path d="M4.5 13.5V4.2c0-.7.5-1.2 1.2-1.2h7"/>', run: (app) => { app.ribbonBack(); document.execCommand('copy'); } },
@@ -161,7 +186,7 @@ register(
   // Rikuy's live figures, as Word's Insert Chart: a gallery of kinds, a dialog with the graph live
   // beside its fields. Help's guide (B12) calls this id.
   // (one button: its dialog opens on the gallery of kinds, so the row keeps the room an arrow takes)
-  { id: 'insert-interactive-graph', name: 'Interactive graph', label: 'Interactive graph', tab: 'insert', group: 'illustrations', order: 60,
+  { id: 'insert-interactive-graph', name: 'Interactive graph', label: 'Interactive graph', tab: 'insert', group: 'illustrations', order: 15,
     title: 'A live graph: a function with sliders, data with a fit, a curve or a distribution. The page runs it, the PDF prints its picture',
     synonyms: ['Live figure', 'Live graph', 'Chart', 'Plot', 'Graph', 'Slider', 'Widget', 'Desmos', 'rikuywidget'],
     icon: '<path d="M3 16.5h14"/><path d="M3.5 16V3.5"/><path d="M4 13c2.5-6 4.5-7 6.5-3.5S14 11 16.5 5"/><circle cx="10.5" cy="9.5" r="1.6"/>',
@@ -194,6 +219,8 @@ register(
 export const methods = {
   // whether the caret means an interactive graph (the right click menu's 'graph' items)
   graphHere(at) { return !!graphAt(this, at); },
+  // each graph's picture as its commands name it, and the graph's file: Map fallback -> file
+  graphFallbacks() { return new Map(graphUses(this).map((u) => [u.fb.v.trim(), u.path])); },
 
   // the dialog for a new graph (o.template: its kind's id, o.spec: a description)
   graphDialog(o = {}) {
@@ -208,25 +235,28 @@ export const methods = {
   async graphInsert(spec, caption, spot) {
     const s = GK.normalize(spec);
     GK.formulas(s);
-    const dir = dirOf(this.main), rel = freshName(this, s.kind);
-    const blob = await graphPNG(s, textWidthPx(this), 3, dir + rel + '.html');
-    if (spot) this.restoreCaret(spot);
-    const { f, p, pre, post } = this.afterBlockPos();
+    const dir = dirOf(this.main), rel = freshName(this, s.kind), kind = pictureKind(this), ext = kind.pgf ? '.pgf' : '.png';
+    const blob = await pictureBlob(s, textWidthPx(this), dir + rel + '.html', kind.pgf);
+    // (Graph this says where in the source: after the block that holds the equation, worked out
+    // from the source and never before it; the caret, put back from a source place, can land in
+    // the block before a display equation and split its paragraph)
+    let f, p, pre, post;
+    if (spot && spot.after != null) ({ f, p, pre, post } = this.afterSourcePos(spot.f, spot.after));
+    else { if (spot) this.restoreCaret(spot); ({ f, p, pre, post } = this.afterBlockPos()); }
     // (its description is the picture's alt text: tagged PDF and Word read it)
     const alt = s.title.trim() ? ',alt={' + escapeAlt(s.title.trim()) + '}' : '';
-    const cmd = '\\rikuywidget[width=\\linewidth' + alt + ']{' + rel + '.html}{' + rel + '.png}';
+    const cmd = '\\rikuywidget[width=\\linewidth' + alt + ']{' + rel + '.html}{' + rel + ext + '}';
     const cap = String(caption || '').trim();
     const text = cap ? '\\begin{figure}[htbp]\n\\centering\n' + cmd + '\n\\caption{' + this.escapeAt(f, p, cap) + '}\n\\label{fig:' + rel.slice(7) + '}\n\\end{figure}' : '\\begin{center}\n' + cmd + '\n\\end{center}';
     const edits = [{ f, s: p, e: p, t: pre + text + post }, { f: dir + rel + '.html', s: 0, e: 0, t: graphHtml(s) }];
     // (TeX reads rikuy.sty beside the main file; one in another folder is not found)
-    const hasSty = [this.files, this.assetBlobs, this.extra].some((m) => m.has(dir + 'rikuy.sty'));
-    if (!hasSty) edits.push({ f: dir + 'rikuy.sty', s: 0, e: 0, t: RIKUY_STY });
+    edits.push(...kind.sty);
     const pk = this.packageEdits(['rikuy']);
     edits.push(...pk);
     // the caret after the new block (the package line moves it when both are in the main file)
     const shift = f === this.main ? pk.filter((x) => x.s <= p).reduce((n, x) => n + x.t.length - (x.e - x.s), 0) : 0;
     this.closeGroup();
-    this.commit(edits, { f, p: p + shift + pre.length + text.length, bias: -1 }, undefined, [{ name: dir + rel + '.png', blob }]);
+    this.commit(edits, { f, p: p + shift + pre.length + text.length, bias: -1 }, undefined, [{ name: dir + rel + ext, blob }]);
     // (drawn for the text's width; once the page has its box, at that box's width: a column)
     setTimeout(() => this.graphRefresh(), 400);
     this.toast('Inserted a live graph: drag its sliders on the page. The PDF prints its picture.', 4000);
@@ -245,25 +275,51 @@ export const methods = {
       let n = 0;
       for (const u of graphUses(this).slice(0, 50)) {
         const fb = u.fb.v.trim().replace(/^\.\//, '');
-        if (!/\.png$/i.test(fb) || /[{}\\]|\.\./.test(fb)) continue;
+        const png = /\.png$/i.test(fb);
+        if (!(png || /\.pgf$/i.test(fb)) || /[{}\\]|\.\./.test(fb)) continue;
         const spec = readGraph(this.files.get(u.path));
         if (!spec) continue;
+        // (a graph that no longer draws, a hand edit gone wrong, is skipped, and the problems
+        // list says so: the others are still drawn, review M15)
+        try { GK.formulas(spec); } catch (e) { continue; }
         const box = [...this.root.querySelectorAll('.w-live')].find((b) => b.dataset.wf === u.path);
-        const name = dir + fb, old = this.assetBlobs.get(name), bytes = old ? new Uint8Array(await old.arrayBuffer()) : null;
+        const name = dir + fb, old = this.assetBlobs.get(name), mark = await pictureMark(old, png);
         // only a picture Rikuy drew for this graph, or none at all: any other is someone's own
-        if (old && pngMark(bytes) !== u.path) continue;
+        if (old && (!mark || mark.path !== u.path)) continue;
         if (!old && (this.extra.has(name) || this.files.has(name))) continue;
-        const had = old ? pngWidth(bytes) : 0;
-        const W = Math.round((box && box.getBoundingClientRect().width / k) || had || textWidthPx(this));
-        if (old && Math.abs(had - W) < 2) continue;
-        this.setAsset(name, await graphPNG(spec, W, 3, u.path));
-        n++;
+        const W = Math.round((box && box.getBoundingClientRect().width / k) || (mark && mark.W) || textWidthPx(this));
+        // drawn again for another width, or for a description changed by hand (its hash)
+        if (old && Math.abs(mark.W - W) < 2 && (!mark.hash || mark.hash === specHash(spec))) continue;
+        try { this.setAsset(name, await pictureBlob(spec, W, u.path, !png)); n++; } catch (e) { /* this one stays as it was; the next is drawn */ }
       }
-      if (n) this.saveSoon();
+      // (no save of its own: a picture drawn again is derived, and a save here wrote this tab's text
+      // over what another tab of the same project had typed meanwhile; the next edit's save keeps
+      // it, and a picture missing after a reload is drawn again)
       return n;
     };
     this.grBusy = run();
     try { return await this.grBusy; } finally { this.grBusy = null; }
+  },
+
+  // A graph's picture as a PNG, for what cannot take PGF: the page where a stranger's figures wait
+  // for a click, a print of the page, Word. Rikuy's own drawing of the graph's description (never
+  // its file's script), kept until the description changes.
+  graphPictureURL(path) {
+    const spec = readGraph(this.files.get(path));
+    if (!spec) return null;
+    const key = path + ' ' + specHash(spec);
+    this.grPics = this.grPics || new Map();
+    if (!this.grPics.has(key)) {
+      if (this.grPics.size > 40) this.grPics.clear();
+      try { this.grPics.set(key, graphCanvas(spec, textWidthPx(this), 2).toDataURL('image/png')); } catch (e) { this.grPics.set(key, null); }
+    }
+    return this.grPics.get(key);
+  },
+  // the PNG for a .pgf picture of ours (its first line names its graph), or null
+  async graphPictureBytes(name) {
+    const b = this.assetBlobs.get(name), m = await pictureMark(b, false), spec = m && readGraph(this.files.get(m.path));
+    if (!spec) return null;
+    return new Uint8Array(await (await graphPNG(spec, m.W || textWidthPx(this), 3, m.path)).arrayBuffer());
   },
 
   // the dialog on the graph of this widget file
@@ -281,22 +337,32 @@ export const methods = {
     if (was && sameGraph(was, spec)) { this.toast('The graph is as it was: nothing to write.'); return true; }
     const s = GK.normalize(spec);
     GK.formulas(s);
-    const blob = await graphPNG(s, textWidthPx(this), 3, path);
     const edits = [{ f: path, s: 0, e: (this.files.get(path) || '').length, t: graphHtml(s) }];
-    // the picture: the one its commands name where that is a PNG, else a PNG beside the widget
-    // that those commands are pointed at
-    const dir = dirOf(this.main);
+    // The picture: the PGF or PNG of ours its commands name, drawn again; a PNG of ours becomes a
+    // PGF where rikuy.sty draws one (written or renewed as Insert does); any other fallback (a
+    // picture of one's own) is left, and the commands are pointed at a picture of the graph's own
+    const dir = dirOf(this.main), kind = pictureKind(this);
     const uses = widgetUses(this).filter((u) => u.path === path);
-    const pngOf = (u) => (/\.png$/i.test(u.fb.v.trim()) ? u.fb.v.trim() : null);
-    // (a PNG of one's own the command names is left alone: the graph gets a picture of its own)
-    const ours = async (r) => { const b = this.assetBlobs.get(dir + r.replace(/^\.\//, '')); return !b || pngMark(new Uint8Array(await b.arrayBuffer())) === path; };
-    let rel = uses.map(pngOf).find(Boolean);
-    if (rel && !(await ours(rel))) rel = null;
-    if (!rel) {
-      rel = path.slice(dir.length).replace(/\.html?$/i, '') + '.png';
-      for (let k = 2; !(await ours(rel)) && k < 100; k++) rel = path.slice(dir.length).replace(/\.html?$/i, '') + '-' + k + '.png';
-      for (const u of uses) edits.push({ f: u.f, s: u.fb.s, e: u.fb.e, t: rel });
+    const ours = async (r) => { const b = this.assetBlobs.get(dir + r.replace(/^\.\//, '')); if (!b) return !this.files.has(dir + r) && !this.extra.has(dir + r); const m = await pictureMark(b, /\.png$/i.test(r)); return !!m && m.path === path; };
+    let rel = null;
+    for (const u of uses) { const r = u.fb.v.trim(); if (/\.(png|pgf)$/i.test(r) && (await ours(r))) { rel = r; break; } }
+    const blobs = [];
+    const stem = path.slice(dir.length).replace(/\.html?$/i, '');
+    if (rel && /\.png$/i.test(rel) && kind.pgf) {
+      // (the old PNG goes in the same step: one undo brings it and the command back)
+      blobs.push({ name: dir + rel.replace(/^\.\//, ''), blob: null });
+      rel = rel.replace(/\.png$/i, '.pgf');
+      if (!(await ours(rel))) rel = null;
     }
+    if (!rel || uses.some((u) => u.fb.v.trim() !== rel)) {
+      const ext = kind.pgf ? '.pgf' : '.png';
+      rel = rel || stem + ext;
+      for (let k = 2; !(await ours(rel)) && k < 100; k++) rel = stem + '-' + k + ext;
+      for (const u of uses) if (u.fb.v.trim() !== rel) edits.push({ f: u.f, s: u.fb.s, e: u.fb.e, t: rel });
+    }
+    const pgf = /\.pgf$/i.test(rel);
+    if (pgf) edits.push(...kind.sty);
+    blobs.push({ name: dir + rel.replace(/^\.\//, ''), blob: await pictureBlob(s, textWidthPx(this), path, pgf) });
     // a new description: the alt text of each command that shows it
     if (!was || was.title !== s.title) {
       const a = s.title.trim() ? '{' + escapeAlt(s.title.trim()) + '}' : null;
@@ -307,8 +373,32 @@ export const methods = {
       }
     }
     this.closeGroup();
-    this.commit(edits, null, undefined, [{ name: dir + rel.replace(/^\.\//, ''), blob }]);
+    this.commit(edits, null, undefined, blobs);
+    setTimeout(() => this.graphRefresh(), 400);
     return true;
+  },
+
+  // Where a graph goes after source place at of file f: the end of the paragraph that holds it in
+  // TeX's sense (the next blank line outside any brace group opened after it, or \end{document}),
+  // and past every block of the page that holds it (a table that holds a cell's equation). A
+  // display equation inside a paragraph keeps the paragraph whole. Never before at.
+  // { f, p, pre, post } as afterBlockPos gives.
+  afterSourcePos(f, at) {
+    const src = this.src(f);
+    let p = src.length, d = 0;
+    for (let k = at; k < src.length; k++) {
+      const c = src[k];
+      if (c === '\\') { if (src.startsWith('\\end{document}', k)) { p = k; break; } k++; continue; }
+      if (c === '%') { while (k < src.length && src[k] !== '\n') k++; continue; }
+      if (c === '{') d++;
+      else if (c === '}') d--;
+      else if (c === '\n' && d <= 0 && /^\n[ \t]*\n/.test(src.slice(k, k + 40))) { p = k; break; }
+    }
+    if (this.model && !this.stale) for (const mb of this.model.blocks) if (mb.f === f && mb.s < at && mb.e >= at && mb.e > p) p = mb.e;
+    p = Math.max(p, at);
+    let nlB = 0; for (let k = p - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
+    let nlA = 0; for (let k = p; k < src.length && /\s/.test(src[k]); k++) if (src[k] === '\n') nlA++;
+    return { f, p, pre: '\n'.repeat(Math.max(0, 2 - nlB)), post: '\n'.repeat(Math.max(0, 2 - nlA)) };
   },
 
   // ---- on the page: the Edit graph button over a graph, its menu, and the first time hint ----
@@ -323,7 +413,9 @@ export const methods = {
     b.addEventListener('mousedown', (e) => e.preventDefault());
     b.addEventListener('click', () => this.runCommand('edit-graph', { file: F.path }));
     F.box.append(b);
-    if (!(this.prefs && this.prefs.graphHint) && !this.graphHinted) {
+    // (the opening document's own graph says in its text what it is: the hint waits for one's own)
+    const sampleGraph = F.path === 'graphs/saving.html' && this.main === 'main.tex' && /^The graph above is live:/m.test(this.files.get('main.tex') || '');
+    if (!(this.prefs && this.prefs.graphHint) && !this.graphHinted && !sampleGraph) {
       this.graphHinted = true;
       const h = mk('div', 'w-hint');
       h.setAttribute('role', 'note');

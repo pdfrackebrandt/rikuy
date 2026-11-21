@@ -116,7 +116,7 @@ register(
   // pane is where Modify and Update to Match are there, with no More menu and no right click)
   { id: 'styles-pane', name: 'Styles pane', keys: ['Ctrl+Alt+Shift+S'], keyScope: 'app', title: 'Styles pane (Ctrl+Alt+Shift+S): every style of this document, the one at the caret marked; Modify, New Style, Update to Match',
     synonyms: ['Styles window', 'Style list', 'Manage styles', 'Style Inspector'], when: () => true, run: (app) => app.toggleStylesPane() },
-  { id: 'modify-style', name: 'Modify Style', title: 'Modify Style: a heading level\'s font, size, colour, alignment, rule, spacing and numbering (titlesec\'s \\titleformat and \\titlespacing, once in the preamble), or a style of this document\'s own',
+  { id: 'modify-style', name: 'Modify Style', dialog: true, title: 'Modify Style: a heading level\'s font, size, colour, alignment, rule, spacing and numbering (titlesec\'s \\titleformat and \\titlespacing, once in the preamble), or a style of this document\'s own',
     synonyms: ['Modify', 'Change style', 'titleformat', 'Heading format'], menu: { heading: 72 }, when: (app, at) => { const st = styleOf(app, at); return !!st && app.canModifyStyle(st.v); },
     whyNot: (app, at) => { const st = styleOf(app, at); return st ? app.modifyWhy(st.v) : WHY.none; }, run: (app, args, at) => app.openModifyStyle(args && args.v ? args.v : (styleOf(app, at) || {}).v) },
   { id: 'create-style', name: 'Create a Style', title: 'Create a Style: a character style (\\newcommand{\\name}[1]{…}) or a paragraph style (\\newenvironment), from the formatting at the caret, written once in the preamble',

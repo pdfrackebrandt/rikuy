@@ -14,6 +14,7 @@ import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
 import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
+import { mapPos } from './wrap.js';
 import { findProblems, missingFigures } from './problems.js';
 import { WidgetLayer } from './widget.js';
 import { APP, appInit, asset as appAsset, registerApp, takeLaunches, takeShared, warmTeX } from './pwa.js';
@@ -388,6 +389,41 @@ function fromField(v, st) {
 function dollarEnds(ta) {
   const before = ta.value.slice(0, ta.selectionStart);
   return !!ta.value.trim() && ta.selectionStart === ta.selectionEnd && !/(^|[^\\])(\\\\)*\\$/.test(before);
+}
+// whether the last thing the person did was a key or a press, as html.rk-keys: the focus rings
+// follow it where the code moves the focus (a menu's first item, File's Back), since the
+// browser's own guess, :focus-visible, differs between Chromium's versions there
+if (typeof document !== 'undefined') {
+  const set = (on) => { document.documentElement.classList.toggle('rk-keys', on); };
+  document.addEventListener('keydown', (e) => { if (!['Shift', 'Control', 'Meta'].includes(e.key)) set(true); }, true);
+  document.addEventListener('pointerdown', () => set(false), true);
+}
+// A field of a dialog, a pane or File kept in sight when the window shrinks under it, as the
+// on-screen keyboard makes it (UI-PRINCIPLES.md T6, WCAG 2.4.11): the field the keys type into was
+// left under the keyboard, below the sheet's scrolled part (Page setup's last margins, Properties'
+// Keywords). The page itself is the browser's to scroll.
+if (typeof window !== 'undefined') {
+  let kt = 0;
+  const inSight = () => {
+    cancelAnimationFrame(kt);
+    kt = requestAnimationFrame(() => {
+      const a = document.activeElement;
+      if (!a || !a.matches || !a.matches('input, textarea, select') || !a.closest('.pop, #fr, .stp, .help-pane, .sp-pane, #rp-file')) return;
+      const vv = window.visualViewport, r = a.getBoundingClientRect(), bottom = vv ? vv.offsetTop + vv.height : innerHeight;
+      let top = vv ? vv.offsetTop : 0, low = bottom;
+      for (let e = a.parentElement; e && e !== document.body; e = e.parentElement) {
+        if (/auto|scroll/.test(getComputedStyle(e).overflowY)) { const q = e.getBoundingClientRect(); top = Math.max(top, q.top); low = Math.min(low, q.bottom); }
+      }
+      if (r.top < top || r.bottom > low) a.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+  };
+  window.addEventListener('resize', inSight);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', inSight);
+  document.addEventListener('focusin', inSight);
+}
+// the controls a dialog's Tab goes round, in order: shown, enabled, reachable by Tab
+function popFocusables(p) {
+  return [...p.querySelectorAll('button, [href], input, select, textarea, [tabindex]')].filter((x) => x.tabIndex >= 0 && !x.disabled && !x.closest('[inert], [hidden]') && x.getClientRects().length && getComputedStyle(x).visibility !== 'hidden');
 }
 
 class App {
@@ -1128,7 +1164,8 @@ class App {
   }
 
   // As Word opens a document with the caret at its start, so the first keys type: at the start
-  // of the first paragraph, without scrolling. Not on a touch screen, where focusing the page
+  // of the first paragraph, without scrolling (the first text: a figure before it, as the
+  // sample's live graph is, is no place to type). Not on a touch screen, where focusing the page
   // brings up the on-screen keyboard before anyone asked to type; not where something else
   // already has the focus (a link's guest bar, a dialog).
   placeInitialCaret() {
@@ -1172,6 +1209,8 @@ class App {
       if (apart) win.set(f, { pre: list[list.length - 1].s, suf: text.length - list[0].e });
       for (const ed of list) text = text.slice(0, ed.s) + ed.t + text.slice(ed.e);
       this.files.set(f, text);
+      // (the document's last selection, where a command acts with no caret on the page, moves too)
+      if (this.rbLast && this.rbLast.f === f && this.rbLast.text === before.get(f)) this.restMove(f, list, text);
     }
     // (the blocks shown as LaTeX move with these edits, src/cmd/view.js; typing ends Repeat's turn)
     this.viewMap(byFile, before);
@@ -2732,6 +2771,9 @@ class App {
   // a menu's keys: the arrows step through its items and wrap, Home and End go to the ends
   menuKeys(el) {
     el.addEventListener('keydown', (e) => {
+      // (→ on an item that opens a menu opens it, as Word's and every menu bar's)
+      const f = document.activeElement;
+      if (e.key === 'ArrowRight' && f && el.contains(f) && f.getAttribute('aria-haspopup') === 'menu' && f.getAttribute('aria-disabled') !== 'true') { e.preventDefault(); e.stopPropagation(); f.click(); return; }
       if (!/^(ArrowDown|ArrowUp|Home|End)$/.test(e.key)) return;
       // (a greyed item with its reason stays in reach: kit.js openMenu's why)
       const all = [...el.querySelectorAll('[role=menuitem], [role=menuitemradio]')].filter((a) => ((!a.disabled && a.getAttribute('aria-disabled') !== 'true') || a.dataset.reach) && a.offsetParent);
@@ -2744,8 +2786,15 @@ class App {
   }
 
   makePop(anchor, cls, title) {
-    this.closePop();
+    // A dialog opened from inside another (Paragraph's Tabs…, by a press or by the keys) takes
+    // over where that one would have given the focus back, the page's caret or its opener: looked
+    // for again, it found neither (the focus was in the dialog going away) and fell to the ribbon's
+    // launcher, and the next key was lost
+    const prev = this.pop, inPrev = !!(prev && prev.el.getAttribute('role') === 'dialog' && prev.el.contains(document.activeElement));
+    this.closePop(inPrev);
     if (this.pop) this.closePop(false, true);
+    const hand = inPrev ? { back: prev.back, opener: prev.opener } : this.popHandoff;
+    this.popHandoff = null;
     const p = document.createElement('div');
     p.className = 'pop ' + (cls || '');
     // named by its title, so a screen reader and an agent can tell the dialogs apart. Not
@@ -2770,14 +2819,47 @@ class App {
     // the page's body and the next keys typed nothing. (On a touch screen only when the page had
     // the focus: focusing it there brings up the on-screen keyboard.)
     const at = this.caretNow(), had = document.activeElement;
+    // (a ribbon control, pressed or reached by the keys, gives the page its caret back, as Word's
+    // ribbon does once its command has run; tabs.py's Frontier by keys. Under File's view, which
+    // covers the page, the command is the opener and gets the focus back)
     const pageHad = had === this.root || (!matchMedia('(pointer: coarse)').matches && (!had || had === document.body || !!had.closest('#ribbon, #rb-top')));
-    const back = at && !at.ghost && !at.crossFile && pageHad ? { c: at.collapsed ? { f: at.f, p: at.p } : { f: at.f, selA: at.a, selB: at.b }, text: this.files.get(at.f) } : null;
+    const back = hand ? hand.back : at && !at.ghost && !at.crossFile && pageHad ? { c: at.collapsed ? { f: at.f, p: at.p } : { f: at.f, selA: at.a, selB: at.b }, text: this.files.get(at.f) } : null;
     document.body.appendChild(p);
     // (the control it was opened from, by the keys: the focus goes back to it when the page does
     // not take it, as a dialog's opener does; File's commands under File's view)
-    const opener = had && had !== this.root && had !== document.body && had.closest && !had.closest('#pages') ? had : null;
+    const opener = hand ? hand.opener : had && had !== this.root && had !== document.body && had.closest && !had.closest('#pages') ? had : null;
     this.pop = { el: p, anchor, anchorPos: null, onClose: null, session: 'pop' + Date.now(), back, opener };
     p.addEventListener('mousedown', (e) => e.stopPropagation());
+    // A dialog takes the focus as it opens, as Word's do, by the keys or by a press on the ribbon
+    // (a press there keeps the page's focus, and Check accessibility or AutoCorrect Options then
+    // left the keys typing into the page under them); its first control, not Close, and under a
+    // finger never a text field (the on-screen keyboard would cover the dialog). Tab and Shift+Tab
+    // go round inside it: past Close they had walked out into the bar and the page.
+    if (/(^| )pop-(dlg|share|comment)( |$)/.test(p.className)) {
+      p.addEventListener('keydown', (e) => {
+        if (e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
+        const all = popFocusables(p);
+        if (!all.length) return;
+        const i = all.indexOf(document.activeElement);
+        if (e.shiftKey ? i <= 0 : i === all.length - 1 || i < 0) { e.preventDefault(); all[e.shiftKey ? all.length - 1 : 0].focus(); }
+      });
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!this.pop || this.pop.el !== p || !p.isConnected) return;
+        const coarse = matchMedia('(pointer: coarse)').matches, text = (x) => x.matches('input:not([type]), input[type="text"], input[type="search"], input[type="number"], textarea, [contenteditable]');
+        const a = document.activeElement;
+        if (p.contains(a)) {
+          // (under a finger a dialog never opens into a text field, even one it focuses itself:
+          // Android's keyboard came up over it; a tap on the field brings it. But a field the
+          // command named, data-named (Alt Text opens Table Properties at its Description), keeps
+          // the focus on every device, as Word's)
+          if (!coarse || !text(a) || a.hasAttribute('data-named')) return;
+        } else if (a && a !== document.body && a !== this.root && !(a.closest && a.closest('#ribbon, #rb-top, #bar, #status, #nav'))) return;
+        // (only from the page or the chrome: a field that took it on purpose keeps it)
+        const all = popFocusables(p).filter((x) => !(coarse && text(x)));
+        const pick = all.find((x) => !x.classList.contains('pop-x')) || all[0];
+        if (pick) pick.focus({ preventScroll: true });
+      }));
+    }
     setTimeout(() => {
       this.popOutside = (e) => {
         if (!this.pop || this.pop.el.contains(e.target) || (e.target.closest && e.target.closest('.atom'))) return;
@@ -2844,6 +2926,12 @@ class App {
     try { if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) window.mathVirtualKeyboard.hide(); } catch (e) { /* ignore */ }
     this.pop = null;
     if (this.popOutside) document.removeEventListener('mousedown', this.popOutside, true);
+    // (closed quietly with the focus in it, as a button that opens the next dialog does: that one
+    // inherits this one's way back, in the same task only)
+    if (silent && P.el.getAttribute('role') === 'dialog' && P.el.contains(document.activeElement)) {
+      this.popHandoff = { back: P.back, opener: P.opener };
+      queueMicrotask(() => { this.popHandoff = null; });
+    }
     P.el.remove();
     this.closeGroup();
     if (!silent && P.returnCaret) this.restoreCaret(P.returnCaret);
@@ -5134,6 +5222,8 @@ class App {
       // (a file opened over another is a step of its own: typing before it and after it are two undos)
       this.closeGroup();
       for (const [n, t] of texts) this.files.set(n, t);
+      // (an opened file: no last selection of the one it replaced)
+      this.rbLast = null;
       for (const [n, o] of orig) this.orig.set(n, o);
       for (const [n, b] of blobs) this.addAsset(n, b);
       for (const [n, b] of extra) this.extra.set(n, b);
@@ -5247,7 +5337,9 @@ class App {
     let shift = 0;
     // graphicx once, after the last \usepackage line, as a package for an equation's symbol is
     // added (src/preamble.js); graphics, loaded by hand, does as well
-    const others = d ? this.preambleOthers() : [];
+    // (rikuy.sty loads graphicx for its live figures, but a document whose graphs go keeps its
+    // pictures: they get graphicx of their own, so rikuy.sty does not count here)
+    const others = d ? this.preambleOthers().filter((t) => !/\\ProvidesPackage\{rikuy\}/.test(t)) : [];
     if (d && !hasPackage(main, 'graphics', d.at, others)) {
       const add = usePackage(main, 'graphicx', null, { end: d.at, others });
       for (const x of add) edits.push({ f: this.main, ...x });
@@ -6183,8 +6275,17 @@ function agentApi(app) {
       flush();
       const main = app.src(app.main), d = diff(main, text);
       if (!d) return;
+      // (a caret on the page moves with the edit, as with any edit made around it: left where the
+      // old page had it, the page drawn again would put it at another place, and a command run
+      // later with no caret would act there)
+      // (one whose words the edit took away is gone: no caret then, and the document's end stands
+      // for it, src/ribbon.js)
+      const ed = { s: d.s, e: d.s + d.del.length, t: d.ins }, c = app.caretNow();
+      const gone = c && !c.ghost && c.f === app.main && ((ed.s < c.a && ed.e > c.a) || (ed.s < c.b && ed.e > c.b));
+      const caret = c && !c.ghost && c.f === app.main && !gone ? (c.collapsed ? { f: c.f, p: mapPos([ed], c.p, 1), bias: 1 } : { f: c.f, p: mapPos([ed], c.a, 1), selA: mapPos([ed], c.a, 1), selB: mapPos([ed], c.b, -1) }) : null;
+      if (gone) { getSelection().removeAllRanges(); app.rbLast = null; }
       app.closeGroup();
-      app.commit([{ f: app.main, s: d.s, e: d.s + d.del.length, t: d.ins }], null, 'api');
+      app.commit([{ f: app.main, ...ed }], caret, 'api');
       app.closeGroup();
       if (app.src(app.main) !== text) throw new Error('The source could not be changed.');
     },

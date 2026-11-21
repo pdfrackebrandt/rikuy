@@ -50,7 +50,7 @@ const ICON = {
 
 // ---- the commands ----------------------------------------------------------------------------------
 register(
-  { id: 'footnote', name: 'Footnote', order: 50, title: 'Footnote (Ctrl+Alt+F)', synonyms: ['Insert footnote', 'Note'], tab: 'home', group: 'insert', el: 'rb-fn', label: 'Footnote',
+  { id: 'footnote', name: 'Footnote', order: 50, title: 'Footnote (Ctrl+Alt+F): put a footnote here, its number in the text', synonyms: ['Insert footnote', 'Note'], tab: 'home', group: 'insert', el: 'rb-fn', label: 'Footnote',
     icon: '<path d="M4 8l6 7.5M10 8l-6 7.5M14 5.2l1.6-1v5.6"/>', also: [{ tab: 'references', group: 'footnotes', el: 'rr-fn', order: 10 }], keys: ['Ctrl+Alt+F'],
     when: (app, at) => !!at && !tight(at), run: (app) => app.insertEmpty('\\footnote{', '}'),
     palette: { k: 'footnote', d: 'Footnote', order: 10, t: piece('\\footnote{', '}') } },
@@ -79,7 +79,7 @@ register(
   { id: 'label', name: 'Label', title: 'A label to refer to', synonyms: ['Bookmark'], run: (app) => app.insertFromPalette('label'), palette: { k: 'label', d: 'Label', order: 200, t: piece('\\label{', '}') } },
 
   // the link at the caret (its right click menu, and C7)
-  { id: 'link-edit', name: 'Edit Link', menu: { link: 10 }, title: 'Edit Link: its address and its text', synonyms: ['Edit hyperlink'], when: (app, at) => !!app.linkAt(at), whyNot: () => 'Put the caret in a link first', run: (app, args, at) => openLinkDialog(app, at) },
+  { id: 'link-edit', name: 'Edit Link', dialog: true, menu: { link: 10 }, title: 'Edit Link: its address and its text', synonyms: ['Edit hyperlink'], when: (app, at) => !!app.linkAt(at), whyNot: () => 'Put the caret in a link first', run: (app, args, at) => openLinkDialog(app, at) },
   { id: 'link-open', name: 'Open Link', menu: { link: 20 }, title: 'Open Link in a new tab (Ctrl+click it)', synonyms: ['Open hyperlink', 'Follow link'], when: (app, at) => !!(app.linkAt(at) || {}).url, whyNot: () => 'Put the caret in a link to a web page first', run: (app, args, at) => app.openLink(app.linkAt(at).url) },
   { id: 'link-copy', name: 'Copy Link', menu: { link: 30 }, title: 'Copy Link: its address to the clipboard', synonyms: ['Copy hyperlink', 'Copy address'], when: (app, at) => !!(app.linkAt(at) || {}).url, whyNot: () => 'Put the caret in a link to a web page first', run: (app, args, at) => app.linkCopy(at) },
   { id: 'link-remove', name: 'Remove Link', menu: { link: 40 }, title: 'Remove Link: its words stay, without the link', synonyms: ['Remove hyperlink', 'Unlink'], when: (app, at) => !!app.linkAt(at), whyNot: () => 'Put the caret in a link first', run: (app, args, at) => app.linkRemove(at) },
@@ -140,7 +140,7 @@ register(
   { id: 'bibliography-remove', name: 'Remove Bibliography', title: 'Remove Bibliography: its lines taken out', synonyms: ['Delete bibliography'], when: (app) => !app.bibWhyNot() && app.bibAt(), whyNot: (app) => app.bibWhyNot() || 'The document has no bibliography', run: (app) => app.bibRemove() },
 
   // ---- References › Captions
-  { id: 'insert-caption', name: 'Insert Caption', tab: 'references', group: 'captions', order: 10, label: 'Insert Caption', icon: ICON.caption,
+  { id: 'insert-caption', name: 'Insert Caption', dialog: true, tab: 'references', group: 'captions', order: 10, label: 'Insert Caption', icon: ICON.caption,
     title: 'Insert Caption: a numbered caption and a label for the figure or the table the caret is in (a picture or a table on its own becomes a figure or a table)', synonyms: ['Caption', 'Figure caption', 'Table caption', 'caption'],
     when: (app, at) => !app.captionWhyNot(at), whyNot: (app, at) => app.captionWhyNot(at), run: (app, args, at) => (args ? app.captionWrite(at, args) : openCaptionDialog(app, at)) },
   { id: 'table-of-figures', name: 'Insert Table of Figures', kind: 'split', menuWhenOff: true, tab: 'references', group: 'captions', order: 20, label: 'Table of Figures', icon: ICON.lof,
