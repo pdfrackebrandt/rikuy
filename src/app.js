@@ -4485,7 +4485,9 @@ class App {
     // Such a project opens under a name this browser does not keep yet, as a share link does
     // (review I1): a stranger's thesis.zip opened under the name of the user's own thesis shared
     // its versions, and the marks kept per name and main file met the user's own there.
-    const want = zipName || this.main.replace(/\.tex$/i, '').split('/').pop();
+    // (no | in it, as Rename makes sure: this browser keeps a project's records under name|main file,
+    // and a .zip named thesis|talk.zip read as another split of the same key)
+    const want = (zipName || this.main.replace(/\.tex$/i, '').split('/').pop()).replace(/[\u0000-\u001F\u007F|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Untitled';
     let name = want;
     if (theirs) {
       const kept = new Set((await this.allSnaps()).map((v) => v.name));

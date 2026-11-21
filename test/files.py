@@ -117,6 +117,8 @@ def marks():
         z = put('paper.zip', zipped({'evil.tex': EVIL}), 'evil.tex')
         check('marks: a second paper.zip opens as paper (2), restricted, the first one\'s Allow untouched', f['key'] == 'paper|main.tex' and z['key'] == 'paper (2)|evil.tex' and restricted(z)
               and page.evaluate("async () => (await window.rikuy.markOf('paper', 'main.tex')).allowed") is True, z)
+        z = put('thesis|talk.zip', zipped({'main.tex': EVIL}), 'main.tex')
+        check('marks: a .zip\'s name with a | in it (records are kept under name|main) opens with a space there', z['key'] == 'thesis talk|main.tex' and restricted(z), z)
         # git: a pull, or a branch, without the main file
         page.evaluate("async (fs) => { const g = window.rikuy; await g.openRepoFiles('repo', new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)]))); }", [['main.tex', MINE]]); page.wait_for_timeout(400)
         f = page.evaluate(FLAGS)
