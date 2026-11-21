@@ -50,7 +50,7 @@ const ICON = {
 
 // ---- the commands ----------------------------------------------------------------------------------
 register(
-  { id: 'footnote', name: 'Footnote', order: 50, title: 'Footnote (Ctrl+Alt+F)', synonyms: ['Insert footnote', 'Note'], tab: 'home', group: 'insert', el: 'rb-fn', label: 'Footnote',
+  { id: 'footnote', name: 'Footnote', order: 50, title: 'Footnote (Ctrl+Alt+F): put a footnote here, its number in the text', synonyms: ['Insert footnote', 'Note'], tab: 'home', group: 'insert', el: 'rb-fn', label: 'Footnote',
     icon: '<path d="M4 8l6 7.5M10 8l-6 7.5M14 5.2l1.6-1v5.6"/>', also: [{ tab: 'references', group: 'footnotes', el: 'rr-fn', order: 10 }], keys: ['Ctrl+Alt+F'],
     when: (app, at) => !!at && !tight(at), run: (app) => app.insertEmpty('\\footnote{', '}'),
     palette: { k: 'footnote', d: 'Footnote', order: 10, t: piece('\\footnote{', '}') } },

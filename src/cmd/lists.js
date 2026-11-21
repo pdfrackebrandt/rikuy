@@ -202,7 +202,9 @@ export const methods = {
       return { f: B.f, B, src, lists, ...sel, a, b, fmt: formatOf(src, sel.L, this.listCfg()), cont: /,1$/.test(it.dataset.li), labelled: !!item.lab };
     }
     // every block from the one the selection starts in to the one it ends in
-    const r = getSelection().getRangeAt(0);
+    // (the caret's own range: with no caret on the page, the kept selection's, src/ribbon.js)
+    const r = c.range || (getSelection().rangeCount ? getSelection().getRangeAt(0) : null);
+    if (!r) return null;
     const of = (n) => { const el = n.nodeType === 1 ? n : n.parentElement, i = el && el.closest('.it'); return i ? { it: i, B: BLOCKS.get(+i.dataset.b) } : null; };
     const A = of(r.startContainer), Z = of(r.endContainer);
     if (!A || !Z || !A.B || !Z.B || A.B.f !== Z.B.f) return null;
