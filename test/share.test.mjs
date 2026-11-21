@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, merge3, mergeProjects, commentOnly, base32, unbase32, parseCommentLine } from '../src/share.js';
 import { changes } from '../src/diff.js';
 import { TeXEngine } from '../src/tex.js';
+import { graphShort, graphWhole, graphHtml, readGraph } from '../src/graph.js';
 
 import zlib from 'node:zlib';
 import { llms, llmsFull, robots, sitemap, structured } from '../build/app.mjs';
@@ -132,13 +133,14 @@ await ok('llms.txt says what is so, and llms-full.txt adds to it', async () => {
   const sample = /```latex\n([\s\S]*?)\n```/.exec(full)[1];
   assert.ok(sample.startsWith('\\documentclass') && sample.endsWith('\\end{document}'));
   // (what the guide says the sample's links measure is so, within 3 %: the sample grew with its
-  // live graph, 7,000 to 7,100 for #tex=, and the guide must follow it)
+  // live graph, 7,000 to 7,100 for #tex=, and the guide must follow it. A #share= link carries the
+  // graph's description, not its 85 kB file: 5,600 characters, not 43,000)
   const tex = Buffer.from(sample + '\n', 'utf8').toString('base64url').length;
   const said = (re) => +re.exec(guide.replace(/\s+/g, ' '))[1].replace(/,/g, '');
   const saidTex = said(/makes a #tex= link of ([\d,]+)/), saidShare = said(/makes a #share= link of ([\d,]+) characters/);
   assert.ok(Math.abs(tex - saidTex) < 0.03 * saidTex, 'the #tex= link of the sample is ' + tex + ' characters, the guide says ' + saidTex);
   const { SAMPLE } = await import('../src/sample.js');
-  const share = (await packShare({ v: 1, name: 'main.tex', main: 'main.tex', files: Object.entries(SAMPLE).filter(([, t]) => typeof t === 'string') })).length;
+  const share = (await packShare({ v: 1, name: 'main.tex', main: 'main.tex', files: Object.entries(SAMPLE).filter(([, t]) => typeof t === 'string') }, graphShort)).length;
   assert.ok(Math.abs(share - saidShare) < 0.03 * saidShare, 'the #share= link of the sample is ' + share + ' characters, the guide says ' + saidShare);
 });
 
@@ -200,6 +202,40 @@ await ok('a long document makes a short link', async () => {
   const body = Array.from({ length: 400 }, (_, i) => 'Sentence number ' + i + ' of a paper about mechanism design.').join('\n');
   const s = await packShare({ v: 1, name: 'x', main: 'main.tex', files: [['main.tex', body]] });
   assert.ok(s.length < body.length / 4, s.length + ' vs ' + body.length);
+});
+
+// a graph's file is 85 kB of which the link needs only the description: the reader's Rikuy
+// writes the same file again (src/graph.js graphShort, graphWhole); CI on ab27d09
+await ok('a link carries a graph as its description, and the file comes back byte for byte', async () => {
+  const { SAMPLE } = await import('../src/sample.js');
+  const files = Object.entries(SAMPLE).filter(([, t]) => typeof t === 'string');
+  const html = SAMPLE['graphs/saving.html'];
+  assert.ok(html.length > 60000 && readGraph(html));
+  const o = { v: 1, name: 'Sample', main: 'main.tex', files, base: null, by: 'Ana', role: 'coauthor', rid: null };
+  const whole = await packShare(o), short = await packShare(o, graphShort);
+  assert.ok(short.length < 8000 && short.length < whole.length / 5, short.length + ' vs ' + whole.length);
+  assert.deepEqual(await unpackShare(short, graphWhole), o);
+  // a page that cannot write graphs again (none given) refuses such a link rather than open half of it
+  await assert.rejects(unpackShare(short), /cannot accept/);
+  // a file edited by hand is not what Rikuy writes: it travels whole, as it stands
+  const mine = html.replace('<title>', '<title>Mine: ');
+  const o2 = { ...o, files: [['main.tex', 'x'], ['graphs/saving.html', mine], ['notes.html', '<p>hi</p>']] };
+  const s2 = await packShare(o2, graphShort);
+  assert.deepEqual((await unpackShare(s2, graphWhole)).files, o2.files);
+  assert.equal(graphShort(mine), null);
+  assert.equal(graphShort('<p>hi</p>'), null);
+  // a stranger's description is read as a graph's file is (normalized, capped), and only into an
+  // .html file; too many graphs, a name that is no .html, or what is no description: refused
+  const g = (files) => packShare({ v: 1, main: 'main.tex', files: [['main.tex', 'x'], ...files] });
+  const back = await unpackShare(await g([['g.html', '{"kind":"function","f":["x"],"title":"</script><script>alert(1)</script>"}', 'g']]), graphWhole);
+  const made = back.files[1][1];
+  assert.ok(readGraph(made) && made === graphHtml(readGraph(made)) && !/<\/script><script>alert/.test(made));
+  for (const bad of [[['g.tex', '{}', 'g']], [['g.html', 'not json', 'g']], [['g.html', '[1,2]', 'g']], [['g.html', 'null', 'g']], [['g.html', ' '.repeat(1e6 + 1), 'g']]]) {
+    await assert.rejects(unpackShare(await g(bad), graphWhole), /cannot accept/, JSON.stringify(bad).slice(0, 60));
+  }
+  await assert.rejects(unpackShare(await g(Array.from({ length: 51 }, (_, i) => ['g' + i + '.html', '{}', 'g'])), graphWhole), /too many graphs/);
+  // fifty is a document's worth, and opens
+  assert.equal((await unpackShare(await g(Array.from({ length: 50 }, (_, i) => ['g' + i + '.html', '{}', 'g'])), graphWhole)).files.length, 51);
 });
 
 await ok('a comment goes on its own line under the line it is about', () => {
