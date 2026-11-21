@@ -38,6 +38,7 @@
   --rk-color-caret: #1E6BAA;       /* the caret on the page (#pages caret-color) */
   --rk-color-caret-tex: #2B74B0;   /* the caret in a LaTeX source paragraph (.it.tex) */
   --rk-color-caret-dark-page: #8CC4F2; /* on View, Dark page */
+  --rk-color-flash: rgba(43, 116, 176, .28); /* the wash over where something landed (a heading gone to) */
   /* the modal dialog's backdrop (Fluent: modal dialogs dim the page, non-modal ones do not) */
   --rk-color-backdrop: rgba(16, 24, 32, .32);
 
@@ -97,6 +98,8 @@
   --rk-scale-menu: 0.98;           /* a menu grows from its anchor from this */
   --rk-scale-dialog: 0.96;         /* a dialog from this */
   --rk-caret-blink: 1060ms;        /* one on and off of the caret: the platform's 530 ms each */
+  --rk-hold: 900ms;                /* how long a mark of where something landed stays, then fades (slow) */
+  --rk-loop: 1000ms;               /* one way of a busy indicator's pulse or sweep */
 }
 
 /* dark: the same names, the interface's dark values (app.css's dark set) */
