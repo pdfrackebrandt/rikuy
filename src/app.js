@@ -758,8 +758,7 @@ class App {
   }
 
   async allowWidgets() {
-    const v = await this.linkInfo();
-    if (v && !v.widgets) { v.widgets = true; if (!this.noIdb) kvPut('link:' + this.name + '|' + this.main, v).catch(() => {}); }
+    await this.allowMark('widgets');
     this.forceRender = true;
     this.rebuild(this.caretNow());
   }
@@ -4058,14 +4057,22 @@ class App {
       else if (IMG_EXT.test(n) || /\.(pdf|eps)$/i.test(n)) blobs.set(n, new Blob([b]));
       else extra.set(n, new Blob([b]));
     }
+    // (a pull or a branch without the main file: the document it has, or the one its latexmkrc names)
+    const was = this.main;
+    const main = texts.has(was) ? was : pickMain(texts, await latexmkrcText(extra)) || was;
+    // The project's mark goes to its new main file, the stricter of it and the one kept there,
+    // as on File, Main document (review I2): unmarked there, a pull or a branch that renamed
+    // main.tex compiled a cloned repository with full shell escape. Read before anything changes.
+    const [mark, there] = !origin && main !== was ? await Promise.all([this.linkInfo(), this.markOf(this.name, main)]) : [];
     for (const u of this.assets.values()) URL.revokeObjectURL(u);
     this.assets.clear(); this.assetBlobs.clear();
     this.files = texts; this.orig = orig; this.extra = extra;
     for (const [n, b] of blobs) this.addAsset(n, b);
-    if (!this.files.has(this.main)) this.main = pickMain(texts, await latexmkrcText(extra)) || this.main;
+    this.main = main;
     // a cloned repository is someone else's content: its shell escape is restricted until the
     // owner allows more, marked before anything below can start a compile
     if (origin) this.markFromLink('', this.name, this.main, origin);
+    else if (main !== was) this.carryLink(mark, main, there);
     this.binaryDirty = true; this.forceRender = true;
     this.hist = []; this.redoStack = []; this.updateUndoUI();
     this.srcFile = this.main;
@@ -4467,12 +4474,24 @@ class App {
     // (a subfiles chapter compiles alone too, but the document is the one it names: never it
     // first; a latexmkrc that names the document is followed, as latexmk does)
     this.main = pickMain(texts, await latexmkrcText(extra)) || onlyTex[0];
-    this.name = zipName || this.main.replace(/\.tex$/i, '').split('/').pop();
     // A .zip or a project with a git history is content from someone else, like a share link:
     // its shell escape is restricted (the worker runs only TeX Live's safe programs, keeps no
     // LuaTeX font cache and is let go after) until the owner allows more. Loose .tex/.bib files
     // the user opened are their own and stay unrestricted.
-    if (from || zipCode() || gitFiles.has('.git/HEAD')) this.markFromLink('', this.name, this.main, from || (gitFiles.has('.git/HEAD') ? 'git' : 'zip'));
+    const theirs = !!(from || zipCode() || gitFiles.has('.git/HEAD'));
+    // Such a project opens under a name this browser does not keep yet, as a share link does
+    // (review I1): a stranger's thesis.zip opened under the name of the user's own thesis shared
+    // its versions, and the marks kept per name and main file met the user's own there.
+    const want = zipName || this.main.replace(/\.tex$/i, '').split('/').pop();
+    let name = want;
+    if (theirs) {
+      const kept = new Set((await this.allSnaps()).map((v) => v.name));
+      kept.add(this.name);
+      for (let k = 2; kept.has(name); k++) name = want + ' (' + k + ')';
+    }
+    this.name = name;
+    const renamed = name !== want ? ' This browser keeps a project named ' + want + ', so this one is ' + name + '.' : '';
+    if (theirs) this.markFromLink('', this.name, this.main, from || (gitFiles.has('.git/HEAD') ? 'git' : 'zip'));
     this.hist = []; this.redoStack = []; this.updateUndoUI();
     this.forceRender = true;
     this.srcFile = this.main;
@@ -4498,7 +4517,7 @@ class App {
         }
       } catch (e) { gitNote = ' Its .git folder could not be read: ' + e.message + '.'; }
     }
-    this.toast('Opened ' + this.main + (texts.size > 1 ? ' and ' + (texts.size - 1) + ' more file' + (texts.size > 2 ? 's' : '') : '') + '.' + (missing.length ? ' Not found: ' + missing.join(', ') + '.' : '') + gitNote + (prev && prev !== this.name ? ' ' + prev + ' is kept under Review, Versions.' : '') + skipNote, skipNote ? 10000 : 7000);
+    this.toast('Opened ' + this.main + (texts.size > 1 ? ' and ' + (texts.size - 1) + ' more file' + (texts.size > 2 ? 's' : '') : '') + '.' + renamed + (missing.length ? ' Not found: ' + missing.join(', ') + '.' : '') + gitNote + (prev && prev !== this.name ? ' ' + prev + ' is kept under Review, Versions.' : '') + skipNote, skipNote ? 10000 : 7000);
   }
 
   // Where a block of its own (a picture, a table) goes: after the paragraph, list or table the

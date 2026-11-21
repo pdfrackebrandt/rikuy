@@ -267,11 +267,12 @@ export const methods = {
   async setMain(name) {
     if (name === this.main || !this.mainDocs().includes(name)) return false;
     const key = this.name + '|' + this.main;
-    const mark = await this.linkInfo();
+    // (the stricter of the project's mark and the one kept under the other document: see carryLink)
+    const [mark, there] = await Promise.all([this.linkInfo(), this.markOf(this.name, name)]);
     // (another project opened while the mark was read: nothing of it is carried there)
     if (this.name + '|' + this.main !== key || !this.files.has(name)) return false;
     this.closeGroup();
-    this.carryLink(mark, name);
+    this.carryLink(mark, name, there);
     this.main = name;
     this.srcFile = name;
     this.forceRender = true;
