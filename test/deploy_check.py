@@ -156,5 +156,7 @@ if os.path.isfile(os.path.join(DIST, '_headers')) and os.path.isfile(os.path.joi
     want = ["'sha256-%s'" % h for h in serve.inline_hashes(open(os.path.join(DIST, 'index.html'), encoding='utf8').read())]
     ok('dist/_headers names the hash of every script dist/index.html runs, and no other', [x for x in built['script-src'] if x.startswith("'sha256-")] == want and len(want) == 1, (built['script-src'], want))
     shells = [f for f in os.listdir(DIST) if f.startswith('widget-') and f.endswith('.html')]
-    ok('dist/ has its widget document, named by its hash', len(shells) == 1 and __import__('hashlib').sha256(open(os.path.join(DIST, shells[0]), 'rb').read()).hexdigest().startswith(shells[0][7:23]), shells)
+    rule = subprocess.run(['node', '--input-type=module', '-e', "import { WIDGET_RULE } from './build/app.mjs'; process.stdout.write(WIDGET_RULE)"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
+    ok('dist/ has its widget document, named by the hash of it and its headers\' rule (a change to either is a new address, past every browser\'s cache)',
+       len(shells) == 1 and __import__('hashlib').sha256(open(os.path.join(DIST, shells[0]), 'rb').read() + b'\n' + rule.encode()).hexdigest().startswith(shells[0][7:23]) and rule in open(os.path.join(DIST, '_headers'), encoding='utf8').read(), shells)
 print('%d/%d passed' % (n, n))
