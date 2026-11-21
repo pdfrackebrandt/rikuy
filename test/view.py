@@ -8,7 +8,7 @@ right click menu; Ctrl+Shift+= in the equation field): the block shown as its so
 stands, the source unchanged by showing it, typing written as typed, one undo, Enter without a
 mark, CRLF kept, Esc back, a selection over two paragraphs, a LaTeX paragraph of the document's
 own left alone, the place kept when text before it changes, Word's model without it. The View
-tab: Draft, Side to Side, Multiple pages, One page, 100%, Dark page, Focus and Esc, Formatting marks (B2's) there
+tab: Draft, Side to Side, Multiple pages, One page, 100%, Dark page, Focus and Esc, Show marks (B2's) there
 (Ctrl+Shift+8) writing nothing, the zoom slider. Repeat (F4, Ctrl+Y with nothing to redo) and
 Undo's list. Help: Learn Rikuy (its files, the live graph on the page, its PDF compiled where
 dist/tex exists), Interactive graphs, Keyboard shortcuts, What's new. Phones at 390 and 360 px:
@@ -176,7 +176,7 @@ def show_latex(page):
 def view_tab(page):
     load_doc(page, LONG)
     page.get_by_role('tab', name='View', exact=True).click(); page.wait_for_timeout(300)
-    for n in ('Read Mode', 'Print Layout', 'LaTeX Mode', 'Draft', 'Show LaTeX', 'Formatting marks', 'One page', 'Multiple pages', 'Side to Side', 'Dark page', 'Focus', '100%', 'Page width'):
+    for n in ('Read Mode', 'Print Layout', 'LaTeX Mode', 'Draft', 'Show LaTeX', 'Show marks', 'One page', 'Multiple pages', 'Side to Side', 'Dark page', 'Focus', '100%', 'Page width'):
         check('View has ' + n, page.get_by_role('button', name=n, exact=True).count() == 1)
     page.get_by_role('button', name='Draft', exact=True).click(); page.wait_for_timeout(400)
     g = ev(page, "(() => { const p = [...document.querySelectorAll('.page')]; return p.length > 1 && Math.round(p[1].getBoundingClientRect().top - p[0].getBoundingClientRect().bottom); })()")
