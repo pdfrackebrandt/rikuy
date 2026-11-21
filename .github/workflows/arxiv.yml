@@ -4,8 +4,15 @@
 #   sources   choose the sample (dev/arxiv_corpus.py, seeded) unless dev/arxiv-ids.txt exists,
 #             download the papers at one request per 3 s, keep them in the Actions cache
 #   rikuy     build dist/ as PLAN.md's Building section does
+#   desktop   download the desktop TeX Live 2026's packages once (2.5 GB, dev/fetch_tl26.sh) into
+#             the Actions cache, keyed by dev/tl26-packages.txt, so later runs never ask Ubuntu's
+#             mirror for them. Run 44766248361 had each shard download them: the mirror slowed
+#             to a few KB/s, and five of eight shards spent their 5 h 50 min there.
 #   shard     8 jobs, each compiling an eighth of the papers with Rikuy (corpus_full.py) and
-#             with a desktop TeX Live 2026 (pdfcompare.py), both inside dev/sandbox.sh
+#             with a desktop TeX Live 2026 (pdfcompare.py), both inside dev/sandbox.sh, each
+#             within a budget counted from the job's start (COMPILE_UNTIL, COMPARE_UNTIL): a
+#             paper that does not fit gets a row saying so, and the rows go up before the
+#             job's limit (timeout-minutes, 350)
 #   collect   commit the identifiers, the compile results and the comparison to the branch
 #             arxiv-results; the sources are never committed
 # With from_run set to an earlier run of this workflow, only collect runs, on that run's shard
@@ -37,6 +44,11 @@ permissions:
 env:
   SHARDS: 8
   SDE: '1700000000'
+  # minutes after a shard starts by which Rikuy's compiles, then the desktop's, are done; a
+  # document has at most 330 s in Rikuy and 900 s on the desktop (corpus_full.py, pdfcompare.py),
+  # so the comparison ends by minute 335 and the rows are uploaded before minute 350
+  COMPILE_UNTIL: '210'
+  COMPARE_UNTIL: '335'
 jobs:
   sources:
     if: inputs.from_run == ''
@@ -112,8 +124,33 @@ jobs:
         with:
           path: dist
           key: rikuy-dist-${{ github.run_id }}
+  desktop:
+    if: inputs.from_run == ''
+    runs-on: ubuntu-24.04
+    # each package gets six tries of at most 20 minutes (fetch_tl26.sh); a run whose mirror is
+    # this slow stops here instead of in eight shards
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: The packages' folder
+        run: sudo mkdir -p /mnt/eng/s26/debs && sudo chown -R "$USER" /mnt/eng
+      - id: debs
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /mnt/eng/s26/debs
+          key: tl26-debs-${{ hashFiles('dev/tl26-packages.txt') }}
+      - name: Download and check the packages
+        if: steps.debs.outputs.cache-hit != 'true'
+        run: RIKUY_WORK=/mnt/eng TL26_DEBS_ONLY=1 UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu sh dev/fetch_tl26.sh
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: steps.debs.outputs.cache-hit != 'true'
+        with:
+          path: /mnt/eng/s26/debs
+          key: tl26-debs-${{ hashFiles('dev/tl26-packages.txt') }}
   shard:
-    needs: [sources, rikuy]
+    needs: [sources, rikuy, desktop]
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     env:
@@ -123,6 +160,8 @@ jobs:
       matrix:
         k: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
+      - name: The budget's start
+        run: echo "SHARD_START=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -139,6 +178,15 @@ jobs:
         with:
           path: dist
           key: rikuy-dist-${{ github.run_id }}
+          fail-on-cache-miss: true
+      - name: The packages' folder
+        run: sudo mkdir -p /mnt/eng/s26/debs && sudo chown -R "$USER" /mnt/eng
+      # the desktop job's download; fetch_tl26.sh checks every package's hash again before it
+      # unpacks it, and fetches any that is missing or different
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /mnt/eng/s26/debs
+          key: tl26-debs-${{ hashFiles('dev/tl26-packages.txt') }}
           fail-on-cache-miss: true
       # What the sandbox sees: /mnt/corpus/py (Python), pw (Chromium), rikuy (dev/, test/,
       # tex/tex-smoke.html, dist/), arxiv (the sources) and /mnt/tl26, read only. Rikuy's step
@@ -158,6 +206,7 @@ jobs:
           # the packages' folder and the TeX Live made of hard links to it share one file system
           RIKUY_WORK=/mnt/eng UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu sh dev/fetch_tl26.sh
       - name: The sandbox, and a check that it holds
+        id: sandbox
         run: |
           mkdir -p /mnt/corpus/rikuy/tex
           cp -r dev test dist /mnt/corpus/rikuy/ && cp tex/tex-smoke.html /mnt/corpus/rikuy/tex/
@@ -178,11 +227,14 @@ jobs:
             || { echo "warming the desktop TeX Live failed" >&2; exit 1; }
           sudo chown -R -h root:root /mnt/tl26/home && sudo chmod -R a+rX,go-w /mnt/tl26/home
       # the two steps that run what the papers ask for; nothing they leave running outlives them
+      # (the step limits are a backstop: the budget stops each script before them)
       - name: Compile with Rikuy
+        timeout-minutes: 240
         run: |
           sudo sh dev/sandbox.sh corpus -w /mnt/corpus/home -w /mnt/corpus/out \
             PATH=/mnt/corpus/py/bin:/usr/bin:/bin HOME=/mnt/corpus/home LANG=C.UTF-8 \
             PLAYWRIGHT_BROWSERS_PATH=/mnt/corpus/pw SDE="$SDE" SHARD="${{ matrix.k }}/$SHARDS" \
+            DEADLINE="$((SHARD_START + COMPILE_UNTIL * 60))" \
             CORPUS_LIST=/mnt/corpus/rikuy/dev/arxiv-ids.txt CORPUS_REPO=/mnt/corpus/arxiv RIKUY_DIST=/mnt/corpus/rikuy/dist PDF_DIR=/mnt/corpus/out/pdf \
             python3 /mnt/corpus/rikuy/dev/corpus_full.py "/mnt/corpus/out/arxiv-results-${{ matrix.k }}.jsonl"
       # Rikuy's results and PDFs out of the papers' reach: the desktop's step runs what they ask
@@ -191,15 +243,21 @@ jobs:
       - name: Keep Rikuy's results
         if: always()
         run: |
+          # the step before may have been stopped by its time limit rather than ended: nothing it
+          # ran outlives it into the comparison, which now runs after it either way
+          sudo pkill -KILL -u corpus || true
           sudo install -d -o root -g root -m 755 /mnt/corpus/rikuy-out
           for f in /mnt/corpus/out/arxiv-results-${{ matrix.k }}.jsonl /mnt/corpus/out/pdf; do
             if [ -e "$f" ] && [ ! -L "$f" ]; then sudo mv -- "$f" /mnt/corpus/rikuy-out/; fi
           done
           sudo chown -R -h root:root /mnt/corpus/rikuy-out && sudo chmod -R a+rX,go-w /mnt/corpus/rikuy-out
+      # also after Rikuy's step failed or ran out of time: the rows it wrote are compared
       - name: Compare with the desktop TeX Live
+        if: ${{ !cancelled() && steps.sandbox.outcome == 'success' }}
         run: |
           sudo sh dev/sandbox.sh corpus -w /mnt/corpus/home -w /mnt/corpus/out2 \
             PATH=/mnt/corpus/py/bin:/usr/bin:/bin HOME=/mnt/corpus/home LANG=C.UTF-8 \
+            DEADLINE="$((SHARD_START + COMPARE_UNTIL * 60))" \
             TL26=/mnt/tl26 TL26_HOME_TEMPLATE=/mnt/tl26/home SDE="$SDE" CORPUS_LIST=/mnt/corpus/rikuy/dev/arxiv-ids.txt CORPUS_REPO=/mnt/corpus/arxiv \
             python3 /mnt/corpus/rikuy/dev/pdfcompare.py "/mnt/corpus/rikuy-out/arxiv-results-${{ matrix.k }}.jsonl" /mnt/corpus/rikuy-out/pdf \
               "/mnt/corpus/out2/arxiv-pdfcompare-${{ matrix.k }}.jsonl"

@@ -21,12 +21,14 @@ def check(name, ok, detail=''):
 
 d = tempfile.mkdtemp(prefix='collect-')
 try:
-    open(os.path.join(d, 'ids.txt'), 'w').write('# sample\n2401.00001 2024\n2401.00002 2024\n2401.00003 2024\n')
+    open(os.path.join(d, 'ids.txt'), 'w').write('# sample\n2401.00001 2024\n2401.00002 2024\n2401.00003 2024\n'
+                                                 '2401.00004 2024 main.tex\n2401.00005 2024 main.tex\n2401.00006 2024 SPARE\n')
     for k, lines in ((0, ['{"doc": "arxiv/2401.00002/main.tex", "ok": true}', '{"doc": "arxiv/2401.00001", "ok": false}', '', 'not json',
                           '{"ok": true}', '["arxiv/2401.00003"]', '{"doc": 7}', '{"doc": "arxiv/9999.99999/a.tex"}', '{"doc": "../../x/2401.00003"}',
                           '{"doc": "arxiv/2401.00001/main.tex", "ok": true}', '"\\ud800"', '{"doc": "a/b/c"}',
                           '{"doc": "arxiv/2401.00003/../x.tex", "forged": true}', '{"doc": "arxiv/2401.00003//x.tex", "forged": true}']),
-                     (1, ['{"doc": "arxiv/2401.00003/src/paper.tex", "ok": true}', '{"doc": "arxiv/2401.00003/other.tex", "forged": true}', 'x' * (2 << 20)])):
+                     (1, ['{"doc": "arxiv/2401.00003/src/paper.tex", "ok": true}', '{"doc": "arxiv/2401.00003/other.tex", "forged": true}', 'x' * (2 << 20),
+                          '{"doc": "arxiv/2401.00004/main.tex", "ok": null, "error": "budget"}'])):
         s = os.path.join(d, 'shards', 'arxiv-shard-%d' % k)
         os.makedirs(s)
         open(os.path.join(s, 'arxiv-results-%d.jsonl' % k), 'w').write('\n'.join(lines) + '\n')
@@ -37,9 +39,12 @@ try:
     check('the merge runs to its end on hostile shard files', r.returncode == 0, r.stderr[-400:])
     rows = [json.loads(l) for l in open(os.path.join(d, 'arxiv-results.jsonl'))]
     check('only rows naming a paper of the sample, once each, in the sample\'s order',
-          [(x['doc'], x.get('ok')) for x in rows] == [('arxiv/2401.00001', False), ('arxiv/2401.00002/main.tex', True), ('arxiv/2401.00003/src/paper.tex', True)], rows)
+          [(x['doc'], x.get('ok')) for x in rows] == [('arxiv/2401.00001', False), ('arxiv/2401.00002/main.tex', True), ('arxiv/2401.00003/src/paper.tex', True),
+                                                     ('arxiv/2401.00004/main.tex', None)], rows)
     check('a second row for a paper, or a main file outside its folder, does not replace the first', not any(x.get('forged') for x in rows))
-    check('the drops are counted', 'results 3 kept, 13 dropped' in r.stdout, r.stdout)
+    check('the drops are counted', 'results 4 kept, 13 dropped' in r.stdout, r.stdout)
+    check('papers with a main file and no row, and those left for lack of time, are counted (a spare is not)',
+          '1 papers without a row, 1 left for lack of time' in r.stdout, r.stdout)
     cmp = [json.loads(l) for l in open(os.path.join(d, 'arxiv-pdfcompare.jsonl'))]
     check('a link is not followed and bytes that are not UTF-8 are dropped', cmp == [{'doc': 'arxiv/2401.00001'}] and 'pdfcompare 1 kept, 2 dropped' in r.stdout, (cmp, r.stdout))
 finally:

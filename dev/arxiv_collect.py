@@ -10,6 +10,9 @@ names a paper arxiv/<id>/<main file>, the id in IDS and the main file a relative
 paper's folder (arxiv/<id> alone is taken too). A row the old merge took on trust (no "doc", a
 "doc" that is not a string) stopped the job before it committed anything; the merge after it read
 only arxiv/<id> and so dropped every real row (run 43936586314: 0 kept, 998 dropped).
+It also says how many papers with a main file have no row (a shard that never compiled: run
+44766248361 merged 375 of 998 without saying so) and how many a shard left for lack of time
+(rows with the error "budget").
 """
 import glob, json, os, re, sys
 
@@ -52,14 +55,28 @@ def rows_of(paths, order):
     return kept, dropped
 
 
+def expected(ids_path):
+    """The papers a run compiles: those with a main file in IDS's third field."""
+    out = set()
+    for l in open(ids_path, encoding='utf8'):
+        x = l.split()
+        if l.startswith('#') or len(x) != 3 or x[2] in ('-', 'SPARE', 'PDF-ONLY', 'NO-MAIN'):
+            continue
+        out.add(x[0])
+    return out
+
+
 def main(ids_path, shards, out_dir):
     order = load(ids_path)
+    want = expected(ids_path)
     for kind in ('results', 'pdfcompare'):
         rows, dropped = rows_of(glob.glob(os.path.join(shards, 'arxiv-shard-*', 'arxiv-%s-*.jsonl' % kind)), order)
         with open(os.path.join(out_dir, 'arxiv-%s.jsonl' % kind), 'w', encoding='utf8') as out:
             for r in rows:
                 out.write(json.dumps(r) + '\n')
-        print(kind, len(rows), 'kept,', dropped, 'dropped')
+        have = {r['doc'].split('/')[1] for r in rows}
+        print(kind, len(rows), 'kept,', dropped, 'dropped,', len(want - have), 'papers without a row,',
+              sum(1 for r in rows if r.get('error') == 'budget'), 'left for lack of time')
 
 
 if __name__ == '__main__':
