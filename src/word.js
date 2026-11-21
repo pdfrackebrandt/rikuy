@@ -9,7 +9,6 @@ import { pageForWord } from './pageword.js';
 import { checkData, planImport, unpackRead } from './wordsync.js';
 import { loadPdfjs } from './pdfview.js';
 import { kvGet, kvPut } from './store.js';
-import { editSpans, authorEdit } from './review.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const WORD = typeof __RIKUY_WORD__ === 'undefined' ? true : __RIKUY_WORD__;
@@ -263,27 +262,26 @@ export const word = {
     for (const [n, b] of Object.entries(r.media || {})) this.addAsset(n, new Blob([b]));
     if (Object.keys(r.media || {}).length) { this.binaryDirty = true; this.forceRender = true; this.rebuild(); this.persist(); }
     // the file's tracked changes: changes waiting here, each its author's, Track Changes' base the
-    // text with all of them rejected (src/wordjobs.js openDocx); they came in accepted before
+    // text with all of them rejected, the layer of who wrote what made in the worker (src/wordjobs.js
+    // openDocx); they came in accepted before
     const T = r.tracked;
-    let tracked = 0;
-    if (T && typeof T.base === 'string' && Array.isArray(T.steps) && T.steps.length && T.steps[T.steps.length - 1].tex === this.files.get('main.tex')) {
-      let segs = [], prev = T.base;
-      for (const st of T.steps) {
-        for (const x of editSpans(prev, st.tex, true)) segs = authorEdit(segs, x.s, x.e, x.n, String(st.who || 'Word').slice(0, 200), prev.slice(x.s, x.e));
-        prev = st.tex;
-      }
-      this.authors = new Map([['main.tex', segs]]);
+    let tracked = 0, by = '', cut = '';
+    if (T && typeof T.base === 'string' && Array.isArray(T.segs) && Array.isArray(T.authors)) {
+      this.authors = new Map([['main.tex', T.segs]]);
       const bf = new Map(this.files);
       bf.set('main.tex', T.base);
       this.setBase({ t: Date.now(), label: 'Before the tracked changes in ' + fname, files: bf });
       tracked = this.realChanges().length;
       if (tracked) { this.setMarks(true); this.toggleNav(true, 'changes'); }
-    }
-    const n = Object.keys(r.media || {}).length;
+      // (a few names, the rest counted: a file reviewed by hundreds would fill the screen)
+      const A = T.authors.map((x) => String(x).slice(0, 80));
+      by = A.length > 4 ? A.slice(0, 3).join(', ') + ' and ' + (A.length - 3) + ' others' : A.length > 1 ? A.slice(0, -1).join(', ') + ' and ' + A[A.length - 1] : A[0] || 'Word';
+      if (T.cut) cut = ' The changes before line ' + T.upto + ' of main.tex are not credited to their authors and show as yours: the file holds more pieces of tracked text than the ' + T.segs.length + ' Rikuy tells apart in a file.';
+    }    const n = Object.keys(r.media || {}).length;
     // what did not come over, or came differently: said here, and kept at the top of main.tex
     // (src/wordjobs.js), where it stays after the toast is gone
     const said = r.warnings || [];
-    this.toast('Opened ' + fname + ' as LaTeX' + (n ? ', with ' + n + (n === 1 ? ' picture' : ' pictures') + ' in figures/' : '') + (r.bib ? ' and its citations in references.bib' : '') + '.' + (tracked ? ' Its tracked changes are ' + tracked + (tracked === 1 ? ' change' : ' changes') + ' by ' + T.authors.join(', ') + ', marked on the page to accept or reject under Review.' : '') + (said.length ? ' ' + said.slice(0, 4).join(' ') + (said.length > 4 ? ' The rest is at the top of main.tex.' : '') : '') + note, (note ? 16000 : 9000) + 5000 * Math.min(4, said.length));
+    this.toast('Opened ' + fname + ' as LaTeX' + (n ? ', with ' + n + (n === 1 ? ' picture' : ' pictures') + ' in figures/' : '') + (r.bib ? ' and its citations in references.bib' : '') + '.' + (tracked ? ' Its tracked changes are ' + tracked + (tracked === 1 ? ' change' : ' changes') + ' by ' + by + ', marked on the page to accept or reject under Review.' + cut : '') + (said.length ? ' ' + said.slice(0, 4).join(' ') + (said.length > 4 ? ' The rest is at the top of main.tex.' : '') : '') + note, (note || cut ? 16000 : 9000) + 5000 * Math.min(4, said.length));
   },
 
   // ---- a coauthor's edits come back ----

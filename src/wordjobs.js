@@ -9,6 +9,7 @@ import { safeUrl } from './wordast.js';
 import { scriptNeeds, scriptLines, scriptSetup, otherDirection, INDIC, MORE } from './scripts.js';
 import { pageDocx, pageLatex, relsMap } from './wordpage.js';
 import { endnotesDocx, markEndnotes, endnotesTex } from './wordnotes.js';
+import { authorSteps } from './authors.js';
 import { wrapMulticols } from './pagesrc.js';
 import { docSpacing } from './parasrc.js';
 import { tableExtras, applyTableExtras, docxFormulas } from './wordtable.js';
@@ -1147,19 +1148,37 @@ function formulaLines(tex, fx, N) {
 // A stranger's .docx as a new project: its LaTeX with every tracked change accepted, and where it
 // holds some, the steps they came by: the text with all of them rejected (Track Changes' base,
 // src/word.js) and, author by author, the text with theirs accepted too, so that each change on
-// the page is its author's (they came in accepted, and no one could review them)
+// the page is its author's (they came in accepted, and no one could review them). The layer of
+// who wrote what is made here, off the page (src/authors.js authorSteps): r.tracked is
+// { base, segs, authors, cut }, cut the pieces at the start left without an author and upto the
+// line of main.tex where the credited ones start.
 const MAX_TRACK_AUTHORS = 6;
+const NOTES = /^% Opened from a Word file by Rikuy\.\n(?:% - [^\n]*\n)*/;
 export function openDocx(P, bytes, name) {
   const r = docxToLatex(P, bytes, name);
   let who = [];
   try { who = trackAuthors(unzip(bytes)); } catch (e) { who = []; }
   if (!who.length) return r;
-  const k = Math.min(who.length, MAX_TRACK_AUTHORS);
-  const base = docxToLatex(P, bytes, name, { track: 'reject' }).tex;
-  const steps = [];
-  for (let i = 1; i < k; i++) steps.push({ who: who[i - 1], tex: docxToLatex(P, bytes, name, { reject: who.slice(i) }).tex });
-  steps.push({ who: who.slice(k - 1).join(', '), tex: r.tex });
-  return { ...r, tracked: { base, steps, authors: who } };
+  try {
+    const k = Math.min(who.length, MAX_TRACK_AUTHORS);
+    // (every step with the notes at the top of the text as it is: each reading counts the tracked
+    // changes left in its own copy, and the difference would be a change in the notes)
+    const head = (NOTES.exec(r.tex) || [''])[0];
+    const same = (t) => head + t.slice((NOTES.exec(t) || [''])[0].length);
+    const base = same(docxToLatex(P, bytes, name, { track: 'reject' }).tex);
+    const steps = [];
+    for (let i = 1; i < k; i++) steps.push({ who: who[i - 1], tex: same(docxToLatex(P, bytes, name, { reject: who.slice(i) }).tex) });
+    steps.push({ who: who.slice(k - 1).join(', '), tex: r.tex });
+    const A = authorSteps(base, steps);
+    const tracked = { base, segs: A.segs, authors: who, cut: A.cut };
+    if (A.cut) tracked.upto = r.tex.slice(0, A.segs.length ? A.segs[0].s : r.tex.length).split('\n').length;
+    return { ...r, tracked };
+  } catch (e) {
+    // (the extra readings failed, a file too large for them or one pandoc reads only once: the
+    // file opens as it did before they were made, its changes accepted, and says so)
+    const was = (t) => t.replace(/( tracked changes?) in the file came in as changes to accept or reject \(Review\)\./, (m, c) => c + ' in the file ' + (/s$/.test(c) ? 'were' : 'was') + ' accepted: reading them as changes to review failed.');
+    return { ...r, tex: was(r.tex), warnings: (r.warnings || []).map(was), tracked: null };
+  }
 }
 
 // o.track: 'accept' (the default) or 'reject', what pandoc does with the tracked changes;
