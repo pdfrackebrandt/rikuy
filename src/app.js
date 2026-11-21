@@ -388,6 +388,9 @@ function fromField(v, st) {
 // key typed in the field wrote that run back into the source.
 const MATH_VALUE = { silenceNotifications: true, mode: 'math', format: 'latex' };
 
+// at most this much of Undo's steps is kept across a reload (App.historyKept)
+const HIST_BYTES = 2e6;
+
 // What stands before a paragraph's first word when the caret there is at its start: a blank line,
 // or the line of a \begin{...} (the document, a quote, a theorem with its [title]), a heading or
 // \maketitle; then any comment lines and a \noindent, which belong to the paragraph below them
@@ -495,7 +498,7 @@ class App {
       // (Undo's steps, written with this very copy of the project: historyKept)
       try {
         const H = await kvGet('history');
-        if (H && H.t === saved.t && H.name === this.name && H.main === this.main && Array.isArray(H.hist)) {
+        if (H && H.t === (saved.hT ?? saved.t) && H.name === this.name && H.main === this.main && Array.isArray(H.hist)) {
           const live = (x) => ({ ...x, open: false, before: null, win: null, after: null });
           this.hist = H.hist.map(live);
           this.redoStack = (H.redo || []).map(live);
@@ -1221,22 +1224,31 @@ class App {
 
   // The undo and redo steps as IndexedDB keeps them across a reload: what each changed and where
   // the caret was, the newest first back to a step that holds pictures or Track Changes' base
-  // (kept in memory only), at most 2 MB of text. Word loses its undo when the file closes; a
+  // (kept in memory only), at most 2 MB in all (HIST_BYTES: a character of text is two bytes,
+  // as a string is held; 2e6 characters were 4 MB). Word loses its undo when the file closes; a
   // browser tab is closed by accident, and the steps are small.
   historyKept(meta) {
+    // (Undo's steps first, the newest first; Redo's in what is left)
+    let size = 0;
     const keep = (list) => {
       const out = [];
-      let size = 0;
       for (let i = list.length - 1; i >= 0; i--) {
         const h = list[i];
         if ((h.blobs && h.blobs.length) || h.base0 || h.base1) break;
-        size += h.files.reduce((n, d) => n + d.del.length + d.ins.length + 40, 0);
-        if (size > 2e6) break;
+        const n = h.files.reduce((m, d) => m + 2 * (d.f.length + d.del.length + d.ins.length) + 64, 160);
+        if (size + n > HIST_BYTES) break;
+        size += n;
         out.unshift({ kind: h.kind, files: h.files.map((d) => ({ f: d.f, s: d.s, del: d.del, ins: d.ins, ...(d.made ? { made: true } : {}) })), caretBefore: h.caretBefore || null, caretAfter: h.caretAfter || null, time: h.time, abs: h.abs });
       }
       return out;
     };
     return { t: meta.t, name: meta.name, main: meta.main, hist: keep(this.hist), redo: keep(this.redoStack) };
+  }
+  // What the steps are now, cheaply: persist writes them only when this changed (a save came
+  // every few seconds of typing, and wrote up to 2 MB of steps each time)
+  historySig() {
+    const top = (l) => { const h = l[l.length - 1]; return h ? h.time + ':' + h.files.reduce((n, d) => n + d.s + ':' + d.del.length + ':' + d.ins.length + ';', '') : ''; };
+    return [this.name, this.main, this.hist.length, top(this.hist), this.redoStack.length, top(this.redoStack)].join('|');
   }
 
   undo() {
@@ -4818,10 +4830,19 @@ class App {
     // this one last read or wrote, that tab's text goes into the versions instead of being lost.
     const prevT = this.savedT;
     this.savedT = meta.t;
-    const jobs = [kvSwap('project', meta).then((cur) => { if (cur && cur.files && cur.t !== prevT) return this.keepOtherTab(cur); })];
-    // Undo's history goes with the text it undoes, under the same time, so a reload can still undo
-    // (init reads it only where the project it was written with is the one it loads)
-    jobs.push(kvPut('history', this.historyKept(meta)).catch(() => {}));
+    const jobs = [];
+    // Undo's history goes with the text it undoes, so a reload can still undo: the project names
+    // the time its steps were written under (hT), and init reads them only where that and the
+    // project match. Steps unchanged since the last write are not written again (historySig):
+    // the project names that write's time. A failed write is retried at the next save, and until
+    // then the project names a time no steps have, so none are taken.
+    const sig = this.historySig();
+    if (sig !== this.histSig || !this.histT) {
+      this.histT = meta.t; this.histSig = sig;
+      jobs.push(kvPut('history', this.historyKept(meta)).catch(() => { this.histSig = null; }));
+    }
+    meta.hT = this.histT;
+    jobs.push(kvSwap('project', meta).then((cur) => { if (cur && cur.files && cur.t !== prevT) return this.keepOtherTab(cur); }));
     if (this.binaryDirty) {
       this.binaryDirty = false;
       jobs.push(kvPut('binary', {
