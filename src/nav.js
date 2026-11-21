@@ -10,6 +10,7 @@ import { spacingOnly } from './diff.js';
 import { commentOnly } from './share.js';
 import { openMenu } from './ui/kit.js';
 import { openFindDialog } from './ui/finddialog.js';
+import { flash } from './motion.js';
 import { context, blockText } from './find.js';
 
 const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + '</svg>';
@@ -739,8 +740,7 @@ export const nav = {
       const it = el.closest('.it') || el;
       const R = it.getBoundingClientRect(), D = this.desk.getBoundingClientRect();
       this.desk.scrollTop += R.top - D.top - (heading ? 24 : D.height / 3);
-      it.classList.remove('flash'); void it.offsetWidth; it.classList.add('flash');
-      setTimeout(() => it.classList.remove('flash'), 900);
+      flash(it);
     }
     if (document.body.classList.contains('src-on') || !el) this.reveal(f, p, false);
   }

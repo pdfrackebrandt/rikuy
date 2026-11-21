@@ -12,6 +12,7 @@ import { buildModel } from '../model.js';
 import { hunks } from '../diff.js';
 import { groupOf } from '../ribbon/order.js';
 import { rulerInstall, rulerSync, rulerNarrow } from '../ui/ruler.js';
+import { crossFade } from '../motion.js';
 
 const always = () => true;
 const cls = () => document.body.classList;
@@ -143,7 +144,9 @@ export const methods = {
   // they were, the PDF or the source beside the page: pressed in another view they go back to the
   // page first (App.toggleSource and togglePdf ask leaveView). A PDF that is current shows at once;
   // one that is not shows while TeX makes the new one, the pane saying so.
-  async setView(v) {
+  // (as a cross fade where the browser has View Transitions: src/motion.js)
+  setView(v) { return crossFade(() => this.setViewNow(v)); },
+  async setViewNow(v) {
     if (!VIEWS.includes(v)) return false;
     const was = this.view || 'page';
     if (v === was) { this.viewSync(); return true; }

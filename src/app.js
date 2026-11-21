@@ -49,6 +49,10 @@ import { installFileView } from './ui/fileview.js';
 import { methods as helpPaneMethods } from './ui/helppane.js';
 import { installDock } from './ui/dock.js';
 import { installKeys } from './keys.js';
+import { installMotion, flash } from './motion.js';
+import { installCaret } from './caret.js';
+import { installWebMcp } from './webmcp.js';
+import { TOOLS, agentTools, callTool as callAgentTool, describeCommand } from './agent.js';
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass, pickMain } from './preamble.js';
 import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, titleInfo } from './styles.js';
@@ -756,9 +760,12 @@ class App {
     this.layout.opts = model.opts;
     // (the text under a collapsed heading is left out of the page's view: src/cmd/find.js)
     this.foldFilter(items);
+    // (every page drawn, or only those near the view in a document too big for that)
+    const lazy = this.lazyPages(items);
     this.layout.measure(items, fns);
     const plan = this.layout.plan(items);
     this.layout.apply(plan);
+    if (!lazy) this.root.classList.remove('lazy');
     this.runInOverFloats(items);
     this.items = items;
     this.plan = plan;
@@ -2757,8 +2764,7 @@ class App {
         const sel = getSelection();
         this.root.focus({ preventScroll: true });
         sel.collapse(last.firstChild, last.firstChild.data.length);
-        f.classList.add('flash');
-        setTimeout(() => f.classList.remove('flash'), 900);
+        flash(f);
         this.scrollToCaret();
         return;
       }
@@ -3985,7 +3991,7 @@ class App {
       const i = segOfSpan(span);
       if (!i || i.seg.f !== f) continue;
       const x = boundary(i.B, i.seg, i.o), y = boundary(i.B, i.seg, i.o + i.len);
-      if (y > a && x < b) { span.classList.add('flash'); setTimeout(() => span.classList.remove('flash'), 1400); }
+      if (y > a && x < b) flash(span, { inline: true });
     }
   }
 
@@ -4632,8 +4638,7 @@ class App {
     const it = el.closest('.it') || el;
     const R = it.getBoundingClientRect(), D = this.desk.getBoundingClientRect();
     if (R.top < D.top + 30 || R.bottom > D.bottom - 30) this.desk.scrollTop += R.top - D.top - D.height / 3;
-    it.classList.remove('flash'); void it.offsetWidth; it.classList.add('flash');
-    setTimeout(() => it.classList.remove('flash'), 900);
+    flash(it);
   }
 
   dragGutter(e) {
@@ -6041,8 +6046,12 @@ function stripTop(n) { const i = n.indexOf('/'); return i > 0 && n.split('/').le
 
 // ---- for scripts on the page ------------------------------------------------------------
 // window.rikuy.api: what a script on the page (an AI agent's, a test's) may count on. These
-// ten names stay from version to version (commands and run came in 0.26.0, the others before); the rest of window.rikuy is the app itself and
-// changes without notice. Nothing here does more than a person at the keyboard can: a new
+// names stay from version to version (commands and run came in 0.26.0; tools, callTool,
+// getDocument, select, runCommand, editSource, insertGraph and undo with the agent tools, task
+// 71, the others before); the rest of window.rikuy is the app itself and changes without notice.
+// The agent tools (src/agent.js) are the same as WebMCP's: callTool(name, input) runs one as the
+// browser's agent would, asking the person where the tool asks; the named methods are the same
+// tools, throwing an Error with the tool's words where it returns one. Nothing here does more than a person at the keyboard can: a new
 // source goes through the edit path typing takes (one undo takes it back), a compile is the
 // one Download PDF runs, and a copy someone shared is read here but not changed.
 function agentApi(app) {
@@ -6050,6 +6059,9 @@ function agentApi(app) {
   const mine = (what) => {
     if (document.body.classList.contains('guest')) throw new Error('rikuy.api.' + what + '() changes the document, and this one is open in guest view (a copy someone shared): a script can read it, not change it. getSource(), getFiles(), needs() and compile() work here.');
   };
+  let tools = null;
+  const T = () => tools || (tools = agentTools(app));
+  const call = async (name, input) => { const r = await callAgentTool(app, T(), name, input); if (r && r.error) throw new Error(r.error); return r; };
   return Object.freeze({
     // the build: the package's version, and in the installed app the hash of its files too
     version: VERSION + (__RIKUY_APP__ && appInit().on ? '+' + appInit().v : ''),
@@ -6104,7 +6116,7 @@ function agentApi(app) {
       flush();
       const at = app.ribbonAt();
       if (at) at.memo = {};
-      return commands().filter((c) => c.run && c.searchable !== false).map((c) => ({ id: c.id, name: c.name, tab: c.tab || null, group: c.group || null, keys: [...(c.keys || []), ...(c.keysElsewhere || [])], enabled: enabled(app, c, at) }));
+      return commands().filter((c) => c.run && c.searchable !== false).map((c) => describeCommand(app, c, at));
     },
     // one command by its id where the caret is, as its button does: resolves to true when it ran,
     // false when it cannot run there (commands() says which can)
@@ -6115,7 +6127,23 @@ function agentApi(app) {
       flush();
       const r = await app.runCommand(id, args);
       return r !== false;
-    }
+    },
+    // ---- the agent tools (src/agent.js), as WebMCP has them
+    tools: Object.freeze(TOOLS.map((t) => Object.freeze({ name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations, method: t.api }))),
+    // one tool by its name: its result, or { error } in plain words (never throws)
+    callTool(name, input) { return callAgentTool(app, T(), name, input); },
+    // the document as data: sections, formulas, figures, graphs, citations, labels, problems...
+    getDocument(include) { return call('get_document', Array.isArray(include) ? { include } : include && typeof include === 'object' ? include : {}); },
+    // the caret (start) or a selection (start to end) at a place of a file's source
+    select(file, start, end) { return call('select', { file, start, end }); },
+    // a command, as run() does, saying what it changed: { ran, changed, undoSteps, selection }
+    runCommand(id, args) { return call('run_command', { id, args }); },
+    // { file, start, end, text, expected } or { at: 'selection', text }: one edit, said as changed
+    editSource(edit) { return call('edit_source', edit); },
+    // an interactive graph after the caret's paragraph
+    insertGraph(spec, caption) { return call('insert_graph', { spec, caption }); },
+    // the agent's own last edit back: a number of steps, or the step an edit returned
+    undo(steps) { return call('undo', typeof steps === 'string' ? { step: steps } : steps && typeof steps === 'object' ? steps : steps ? { steps } : {}); }
   });
 }
 
@@ -6127,8 +6155,30 @@ App.prototype.insertFromPalette = function (k) {
   const c = this.caretNow(), x = paletteItems().find((y) => y.k === k);
   if (c && x) this.runPalette(x, c.ghost ? null : { f: c.f, a: c.a, b: c.b }, c.ghost ? this.ghost : null);
 };
+// Every page is drawn, so Chromium's accessibility tree, which leaves out what it does not draw
+// (content-visibility: auto), has the whole document for screen readers and agents: on
+// dev/bench/long 11 of 11 formulas and 43 of 43 headings, against 0 and 2 when only the pages
+// near the view were drawn, for 130 ms more on its first render and 1 to 2 ms of layout and style
+// a key. A document so big that drawing it whole could take the tab down (500 formulas of 120
+// terms each, 1.3 million elements, crashed Chromium's renderer) has only the pages near the view
+// drawn, as before (#pages.lazy). The items' elements are counted at most every two seconds while
+// their number stays the same: one walk in the browser, under a millisecond for a long paper. The
+// class comes on before the layout and goes only after it: the old pages of a big document are
+// still there while the new ones are measured, and drawing them all then took the tab down too.
+const LAZY = 250000;
+App.prototype.lazyPages = function (items) {
+  const now = performance.now();
+  if (this.lazyAt != null && items.length === this.lazyItems && now - this.lazyAt < 2000) return this.lazyBig;
+  this.lazyAt = now; this.lazyItems = items.length;
+  let n = 0;
+  for (const it of items) if (it.el) { n += it.el.getElementsByTagName('*').length; if (n > LAZY) break; }
+  this.lazyBig = n > LAZY;
+  if (this.lazyBig) this.root.classList.add('lazy');
+  return this.lazyBig;
+};
 // a link opened from a command (Help's) as one in a document is: web and mail addresses only
-App.prototype.openLink = openLink;
+// (an agent's tool never opens one: src/agent.js PERSON, and this for what that list misses)
+App.prototype.openLink = function (u) { if (this.agentDepth) { this.toast('An AI agent asked to open a link; only you open links.'); return false; } return openLink(u); };
 App.prototype.textSigNow = function () { return textSig(this.main, [...this.files.entries()]); };
 // what the PDF was made from: the text and the engine chosen, so a PDF from another engine is not
 // taken as this one's (rikuy.api.compile and Download PDF right after the engine was changed)
@@ -6194,6 +6244,11 @@ installSearch(app);
 installMenu(app);
 installFileView(app);
 installDock(app);
+// motion (src/motion.js), Word's animated caret (src/caret.js), and the tools an AI agent in this
+// browser may use where the browser offers them (src/webmcp.js, WebMCP)
+installMotion(app);
+app.caret = installCaret(app);
+app.ready.then(() => installWebMcp(app), () => {});
 app.isBalanced = isBalanced;
 // for tests and the batches' own checks: the registry and the parts controls are made of
 app.cmds = { command, commands, describe, enabled, register, unregister, run: (id, args) => runCmd(app, id, args) };
