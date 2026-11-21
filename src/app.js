@@ -4634,16 +4634,20 @@ class App {
       // A .bib opened on its own under a name BibTeX cannot read (Zotero exports "My Library.bib":
       // \bibliography{My Library} found no database, and every citation printed [?]) joins the
       // project under one it can, My-Library.bib, which the citation picker then writes (review
-      // E15). Opened again, it replaces that file. (One from an archive keeps the name its
-      // document gives it.)
+      // E15). Opened again, it replaces that file: the name it came under is kept with it
+      // (this.orig's from). Another whose name comes to the same, "My  Library.bib", gets a free
+      // one, My-Library-2.bib: it replaced the first, and the toast said Added (review V5). (One
+      // from an archive keeps the name its document gives it.)
       const bibRenamed = [];
       for (const n of [...texts.keys()]) {
         const base = n.split('/').pop();
         if (!/\.bib$/i.test(n) || zipAdded.has(n) || /^[A-Za-z0-9_.-]+$/.test(base)) continue;
-        const safe = n.slice(0, n.length - base.length) + ((base.slice(0, -4).replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^[-.]+|-+$/g, '') || 'references') + '.bib');
-        if (texts.has(safe)) continue;
+        const dir = n.slice(0, n.length - base.length), stem = base.slice(0, -4).replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^[-.]+|-+$/g, '') || 'references';
+        const free = (k) => !texts.has(k) && !this.files.has(k) && !this.assetBlobs.has(k) && !this.extra.has(k);
+        let safe = [...this.orig].find(([k, o]) => o && o.from === n && this.files.has(k) && !texts.has(k))?.[0];
+        if (!safe) { safe = dir + stem + '.bib'; for (let k = 2; !free(safe); k++) safe = dir + stem + '-' + k + '.bib'; }
         texts.set(safe, texts.get(n)); texts.delete(n);
-        if (orig.has(n)) { orig.set(safe, orig.get(n)); orig.delete(n); }
+        if (orig.has(n)) { orig.set(safe, { ...orig.get(n), from: n }); orig.delete(n); }
         bibRenamed.push([n, safe]);
       }
       const bibNote = bibRenamed.length ? ' ' + bibRenamed.map(([a, b]) => a + ' is ' + b + ' here').join(', ') + ': BibTeX cannot read a name with spaces or signs.' : '';
@@ -4708,6 +4712,8 @@ class App {
       // were applied to the new text at the old offsets: stepFits)
       this.closeGroup();
       const overText = new Map([...texts.keys()].filter((n) => this.files.has(n) && this.files.get(n) !== texts.get(n)).map((n) => [n, this.files.get(n)]));
+      // (a text file over one of its name is said replaced, not added: review V5)
+      for (const n of texts.keys()) if (this.files.has(n) && !replaced.includes(n)) replaced.push(n);
       for (const [n, t] of texts) this.files.set(n, t);
       if (overText.size) { this.record(overText, 'open', null, null); this.closeGroup(); }
       // (an opened file: no last selection of the one it replaced)
@@ -4907,7 +4913,7 @@ class App {
       jobs.push(kvPut('binary', {
         assets: [...this.assetBlobs.entries()],
         extra: [...this.extra.entries()],
-        orig: [...this.orig.entries()].map(([n, o]) => [n, { bytes: o.bytes, enc: o.enc, bom: o.bom }])
+        orig: [...this.orig.entries()].map(([n, o]) => [n, { bytes: o.bytes, enc: o.enc, bom: o.bom, from: o.from }])
       }));
     }
     Promise.all(jobs).then(() => { show(true); try { localStorage.removeItem(STORE); } catch (e) { /* ignore */ } })
