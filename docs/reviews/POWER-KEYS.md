@@ -318,3 +318,114 @@ the next sentence goes into the equation.**
 
 Each with checks in `test/power.py` (147 in all, `accept` the live cases typed as keys and as
 insertText) that fail on the commit before.
+
+## Verification of eb14945
+
+Reviewer: Claude, hostile, in a fresh worktree at eb14945 (`origin/power-keys`), `npm run build`, no
+TeX tree. Scripts in `/tmp/review-power-out/scripts/` (`v3.py <part>`, plus the first rounds'
+`atk.py`, `v2.py`, `eqime*.py`), each run with `/tmp/rk-heavy`.
+
+**Verdict: fix first.** The price rule of e144b5f and 0a411ee (`$5 ` writes `\$5`) also catches
+formulas that open with a number and a space, which math papers write all the time. And `$$` in a
+footnote, caption or `\textbf{}` drops the first key. Both are small fixes; the rest holds.
+
+### Fix first
+
+**V1 (High, from the price rule): a formula that opens with a number and a space becomes prose.**
+- Where: `src/app.js:3430` (`priceKey`), which fires on the space after digits.
+- Repro (`v3.py price`, typed key by key in a paragraph):
+
+  | typed | source written |
+  |---|---|
+  | `the $1 - \alpha$ level` | `the \$1 - \textbackslash{}alpha\$ level` |
+  | `with $0 < x < 1$ ok` | `with \$0 < x < 1\$ ok` |
+  | `and $2 \times 3$ ok` | `and \$2 \textbackslash{}times 3\$ ok` |
+
+  The `\` of `\alpha` then opened the insert list, which took the keys up to Esc. In pdfLaTeX's OT1
+  encoding a `<` in prose prints as ¡.
+- What still works: `$10^3$` and `$1+2$` (no space), prices (`costs $5 each.` gives `\$5 each.`,
+  `$5.50,` gives `\$5.50,`).
+- Fix: decide at the key after the space. A letter makes it a price; a sign, a backslash, a digit
+  or `$` keeps the formula, with the space in it.
+
+**V2 (Medium-High, from e144b5f with ed4f37a): `$$x^2$$` inside a command's argument loses its
+first key and writes a stray dollar sign.**
+- Where: `src/app.js:3513` (`dollarPairTakes`). `newDisplayMath` makes a formula in the line there
+  (`blockBase` false), which has no `#pop-tex`, so `if (!pop || !ta) return true;` eats the key.
+- Repro (`v3.py ctx`): ` $$x^2$$ z` typed in `\footnote{Note here}` gives
+  `\footnote{Note here $^2$\$ z.}`. In `\caption{Cap text}` and `\textbf{strong words}` the result
+  is the same.
+- Fix: there, put the key into the line formula's `#pop-newtex` and let its closing `$$` end it
+  (`swallowDollar`), or keep the `\$` and type the key after it.
+
+### Medium
+
+**V3: `$$x^2$$` in a table cell writes a display, and its closing `$$` leaves a `\$`.**
+- Repro (`v3.py ctx`): in an `l` column, `Cell a` gives `Cell a \n\[x^2\]\$ z\n & Cell b`.
+- A display in a `tabular` `l`, `c` or `r` cell is a TeX error (LR mode), and the second closing
+  `$` became `\$`.
+- Fix: a table cell (not a `p{}`, `m{}` or `X` column) takes a formula in the line, as an argument
+  does.
+
+### Low
+
+- **V4:** after `$$…$$` in the middle of a paragraph, the display's trailing line break stays
+  between the words typed after it and the rest of the paragraph. `abc $$x^2$$ end` before the
+  paragraph's `.` gives `\] end\n.`, which prints "end ." with a stray space. The list item case is
+  the same. `src/app.js:3541` (`tail`): with the line closed by `$$`, write no line break after
+  `\]`.
+- **V5:** Ctrl+Enter with `\text{if` still open ends the argument and makes the display an `align`
+  (`\begin{align} x=1\text{if} \end{align}`), but adds no row. "insertText" is gone (N1 fixed).
+- **V6:** a paste is inconsistent. Plain text `costs $5 and $x^2$ here` pastes as text
+  (`\$5 and \$x\textasciicircum{}2\$`), but `$$x$$` pastes as a display.
+
+### Held up
+
+- **`$$`:**
+  - `pay $$5 now` gives `\$5 now`; `a $$ b` gives `a \$ b`.
+  - `so $$\alpha$$ end` and `abc $$x^2$$ end` give a display.
+  - Undo across the conversion steps back through the typing, the formula, the display and the
+    start (four Undos); Redo gives it all back. No `\$` step is left in the chain.
+- **Displays in context:**
+  - Heading: goes after the heading.
+  - List item and minipage: inside, valid.
+  - A LaTeX paragraph (`% rikuy: latex`): `$$y$$` is written raw.
+- **After a display:**
+  - Enter then `where x`: `\end{equation}\nwhere x`, before `\end{document}`.
+  - Enter, Enter: a new paragraph.
+  - Esc, then typing: the same line.
+  - Closing and doing nothing, or clicking away: no stray lines.
+- **IME and dead keys through the field:**
+  - Dead `^` then `^2` (composition): `x^2+y`.
+  - IME `α` in the field: `x+\alpha+1`.
+  - `\text{` + IME `日本`, then Enter, then words: `x=1\text{日本}+y`, the words after
+    `\end{equation}` (N2 fixed).
+  - A dead `^` in the inline box: `$x^2$`.
+- **Insert list and equation field:**
+  - Empty Alt+= then Esc: no change, no undo step.
+  - `\` `equation` Enter: an equation.
+  - `\sec` then Esc: `\textbackslash{}sec` (valid).
+- **Caret after a heading ending in a formula:** End, Enter makes a new paragraph after the
+  heading.
+- **Earlier rounds, rechecked:** the queue cases (the first Edit menu Undo now gives the text back exactly; Redo, paste, IME, real keys), F12, Ctrl+P (`print` now finds Print)
+  and Enter twice, as in the verification of 2308408.
+- **Suites:** all pass.
+
+  | suite | checks |
+  |---|---|
+  | power.py | 147 |
+  | browser.py | 201 |
+  | mathfield.py | 19 |
+  | wordmath.py | 84 |
+  | eqtab.py | 158 |
+  | eqextras.py | 18 |
+  | lists.py | 203 |
+  | find.py | 114 |
+  | view.py | 154 |
+  | shortcuts.py | 82 |
+  | styles.py | 410 |
+  | page.py | 129 |
+  | agent.py | 142 |
+
+Not tested: `$$` typed in the source pane. CodeMirror there has no page handlers, so it is written
+as typed.
