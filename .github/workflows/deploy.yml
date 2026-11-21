@@ -101,6 +101,7 @@ jobs:
       - name: Within Cloudflare Pages' limits
         run: python3 dev/pages_check.py dist
       - name: Upload to Cloudflare Pages
+        id: upload
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -111,11 +112,22 @@ jobs:
           if ! npx --no-install wrangler pages project list --json | python3 -c 'import json,sys; sys.exit(0 if any(p.get("Project Name") == sys.argv[1] or p.get("name") == sys.argv[1] for p in json.load(sys.stdin)) else 1)' "$PROJECT"; then
             npx --no-install wrangler pages project create "$PROJECT" --production-branch main
           fi
-          npx --no-install wrangler pages deploy dist --project-name "$PROJECT" --branch main --commit-hash "$SHA" --commit-dirty=false
+          set -o pipefail
+          npx --no-install wrangler pages deploy dist --project-name "$PROJECT" --branch main --commit-hash "$SHA" --commit-dirty=false | tee "$RUNNER_TEMP/wrangler.txt"
+          # the deployment's own address (https://<id>.<project>.pages.dev), which serves this upload
+          # at once; the live check asks it before the custom domain, which waits for the edge
+          url=$(grep -oE 'https://[0-9a-f]+\.[a-z0-9-]+\.pages\.dev' "$RUNNER_TEMP/wrangler.txt" | tail -1)
+          [ -n "$url" ] || { echo "::error::wrangler printed no deployment address"; exit 1; }
+          echo "deployment=$url" >> "$GITHUB_OUTPUT"
       # the live site as it answers: this build's page, its policy naming the hash of the script
       # it serves (an edge that rewrote the page would stop the app), no-transform and HSTS; the
-      # widget document with its own policy; /git passing git's request and refusing an IP
+      # widget document with its own policy; /git passing git's request and refusing an IP. First
+      # at the deployment's own address, where anything wrong is the build's and fails at once;
+      # then the custom domain, asked every 10 s until it serves this build, for at most 5 minutes
+      # (Cloudflare's edge takes seconds to a minute; a name that does not resolve on the runner
+      # is one more try of that poll, never a pass)
       - name: The live site serves what was built
         env:
           SITE: ${{ vars.RIKUY_SITE || 'https://rikuy.rackebrandt.pe/' }}
-        run: python3 dev/live_check.py "$SITE" dist
+          DEPLOYMENT: ${{ steps.upload.outputs.deployment }}
+        run: python3 dev/live_check.py "$SITE" dist "$DEPLOYMENT" --within 300 --every 10
