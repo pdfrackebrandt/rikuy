@@ -1,0 +1,55 @@
+# TEMPORARY (removed before this pull request is ready): dev/live_check.py as this branch has it,
+# against the newest deployment that passed: its own pages.dev address, then the custom domain.
+# Shows that a deployment's own address answers as the domain does (HSTS, the policies, /git), so
+# checking it first cannot fail a good build. Reads only; deploys nothing.
+name: Live check probe
+on:
+  pull_request:
+    paths: ['.github/workflows/live-probe.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: The newest passing deployment, its TeX run and its own address
+        id: last
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          for run in $(gh run list -R "$REPO" --workflow deploy.yml --status success --limit 20 --json databaseId --jq '.[].databaseId'); do
+            job=$(gh api "repos/$REPO/actions/runs/$run/jobs" --jq '.jobs[] | select(.name == "deploy" and .conclusion == "success") | .id')
+            [ -n "$job" ] || continue
+            gh api "repos/$REPO/actions/jobs/$job/logs" > "$RUNNER_TEMP/deploy.log"
+            url=$(grep -oE 'https://[0-9a-f]+\.[a-z0-9-]+\.pages\.dev' "$RUNNER_TEMP/deploy.log" | tail -1)
+            tex=$(grep -oE 'Deploying TeX run [0-9]+, commit [0-9a-f]+' "$RUNNER_TEMP/deploy.log" | head -1)
+            [ -n "$url" ] && [ -n "$tex" ] && break
+          done
+          echo "deploy run $run: $tex at $url"
+          { echo "url=$url"; echo "tex=$(echo "$tex" | awk '{print $4}' | tr -d ,)"; echo "sha=$(echo "$tex" | awk '{print $6}')"; } >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ steps.last.outputs.sha }}
+          path: built
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: rikuy-dist
+          path: built/dist
+          run-id: ${{ steps.last.outputs.tex }}
+          github-token: ${{ github.token }}
+      - name: The page as deploy.yml built it
+        run: cd built && npm ci && node build.mjs
+      - name: The deployment's own address, then the domain
+        env:
+          URL: ${{ steps.last.outputs.url }}
+        run: python3 dev/live_check.py https://rikuy.rackebrandt.pe/ built/dist "$URL" --within 120 --every 10
