@@ -230,6 +230,24 @@ How to read it:
 | Arrows, Ctrl+arrows, Home, End, Shift with them | | Move and select in an equation | MathLive's | works |
 | Space after \alpha and the like | | Math AutoCorrect | MathLive's | works |
 
+Dollars, as typed in the source (`src/app.js` `newMath`, `dollarPairTakes`):
+
+- `$x^2$` is a formula in the line; `\$` and a `$` alone before a space are dollar signs.
+- `$5` and a space wait for the next key: a letter makes a price (`$5 now` is `\$5 now`, as are
+  `$5. Then` and `$5, then`); a sign, `<`, `=`, a backslash, a digit, a brace, `^`, `_` or `$`
+  keeps the formula (`$1 - \alpha$`, `$0 < x < 1$`). Backspace takes the space back.
+- `$$` and a letter or a backslash opens a display (`\[ \]`), closed by `$$`; the words typed
+  after it go on in the same line. Where a display cannot stand (a command's braces: a footnote,
+  a caption, `\textbf{}`; a table cell of an `l`, `c` or `r` column) it is a formula in the line
+  instead, closed by `$$` too. `$$` and anything else is a dollar sign (`$$5` is `\$5`).
+
+Pasted text (`src/paste.js` `withMath`): text from outside Rikuy keeps its math as the source
+writes it, `$..$`, `\(..\)`, `$$..$$` and `\[..\]`, where a pair holds something mathematical;
+money stays money (`costs $5 and $x^2$ here` is `costs \$5 and $x^2$ here`). Where a display
+cannot stand, `$$..$$` is written `$..$`. Rikuy's own copy pastes as the LaTeX it was copied
+from; Ctrl+Shift+V pastes the words alone, every `$` a dollar sign; text whose backslashes were
+escaped offers Paste as LaTeX.
+
 ## Where it lives
 
 - Chords and their matching: `src/keys.js` (`matches`, the number pad's keys, Alt+Shift and a

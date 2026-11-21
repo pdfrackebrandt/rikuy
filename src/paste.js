@@ -196,7 +196,7 @@ export function plainToTeX(text, prev, opts = {}) {
       const h = /^(#{1,4}) (.*)$/.exec(para.trim());
       if (h && !para.trim().includes('\n')) { outParas.push(['\\section', '\\section', '\\subsection', '\\subsubsection'][h[1].length - 1] + '{' + inlineMd(h[2], ' ') + '}'); continue; }
     }
-    outParas.push(md ? inlineMd(para.replace(/\s*\n\s*/g, ' '), p) : withMath(para.replace(/\s*\n\s*/g, ' '), p));
+    outParas.push(md ? inlineMd(para.replace(/\s*\n\s*/g, ' '), p, opts.inlineOnly) : withMath(para.replace(/\s*\n\s*/g, ' '), p, opts.inlineOnly));
     p = ' ';
   }
   const out = tidyParas(outParas.map((x) => x.trim()).join('\n\n'));
@@ -210,32 +210,35 @@ function mdList(lines, env, re) {
   for (const l of lines) { if (re.test(l)) items.push(l.replace(re, '')); else if (items.length) items[items.length - 1] += ' ' + l.trim(); }
   return '\\begin{' + env + '}\n' + items.map((x) => '  \\item ' + inlineMd(x, ' ')).join('\n') + '\n\\end{' + env + '}';
 }
-function inlineMd(s, prev) {
+function inlineMd(s, prev, inl) {
   const parts = [];
   const re = /\*\*([^*]+)\*\*|__([^_]+)__|(?<![\w*])\*([^*\s][^*]*)\*(?!\w)|`([^`]+)`/g;
   let last = 0, m;
   while ((m = re.exec(s))) {
-    parts.push(withMath(s.slice(last, m.index), prev));
-    if (m[1] || m[2]) parts.push('\\textbf{' + withMath(m[1] || m[2], ' ') + '}');
-    else if (m[3]) parts.push('\\emph{' + withMath(m[3], ' ') + '}');
+    parts.push(withMath(s.slice(last, m.index), prev, inl));
+    if (m[1] || m[2]) parts.push('\\textbf{' + withMath(m[1] || m[2], ' ', true) + '}');
+    else if (m[3]) parts.push('\\emph{' + withMath(m[3], ' ', true) + '}');
     else parts.push('\\texttt{' + escapeTeX(m[4], ' ', { verbatim: true }) + '}');
     last = m.index + m[0].length;
     prev = 'x';
   }
-  parts.push(withMath(s.slice(last), prev));
+  parts.push(withMath(s.slice(last), prev, inl));
   return parts.join('');
 }
 // Text with $..$, \(..\), \[..\], $$..$$ kept as math. A $..$ pair counts as math only if it
-// holds something mathematical, so "costs $5 and $10" stays money.
-export function withMath(s, prev) {
+// holds something mathematical, so "costs $5 and $10" stays money. A pair taken for money gives
+// up its closing $ to the next pair: "costs $5 and $x^2$ here" lost $x^2$ to the money before it,
+// though $$x$$ in the same text was math (verification of eb14945, V6). inl: where a display
+// cannot go (a heading, a caption, a cell, a command's braces), $$..$$ and \[..\] are written
+// in the line, $..$.
+export function withMath(s, prev, inl) {
   const re = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$([^$\n]+?)\$/g;
   let out = '', last = 0, m;
   while ((m = re.exec(s))) {
     const inner = m[4];
-    if (inner != null && !/[\\^_=+<>]|[a-zA-Z]\s*\(|^[a-zA-Z]$|\d\s*[a-zA-Z]/.test(inner)) continue;
-    if (inner != null && /^\d/.test(inner) && /\s$/.test(inner)) continue;
+    if (inner != null && (!/[\\^_=+<>]|[a-zA-Z]\s*\(|^[a-zA-Z]$|\d\s*[a-zA-Z]/.test(inner) || (/^\d/.test(inner) && /\s$/.test(inner)))) { re.lastIndex = m.index + 1; continue; }
     out += escapeTeX(s.slice(last, m.index), last ? 'x' : prev);
-    out += m[1] != null || m[2] != null ? '\n\\[\n' + (m[1] || m[2]).trim() + '\n\\]\n' : '$' + (m[3] || inner).trim() + '$';
+    out += (m[1] != null || m[2] != null) && !inl ? '\n\\[\n' + (m[1] || m[2]).trim() + '\n\\]\n' : '$' + (m[1] || m[2] || m[3] || inner).trim() + '$';
     last = m.index + m[0].length;
   }
   return out + escapeTeX(s.slice(last), last ? 'x' : prev);

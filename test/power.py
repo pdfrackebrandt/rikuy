@@ -714,7 +714,24 @@ def pairs(page):
     check('pairs: $$x^2 then Esc in the middle of a line, the words after it in the line', '\\] end.' in s and 'end\n.' not in s, s[s.find('Price'):][:70])
 
 
-PARTS = [accept, footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips, palette, insertlist, repeat, quickopen, burst, pairs]
+PASTE = """(t) => { const dt = new DataTransfer(); dt.setData('text/plain', t);
+  window.rikuy.root.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }"""
+
+
+def paste(page):
+    """Dollars in plain text pasted (verification of eb14945, V6): money stays money, a formula is
+    a formula, $..$ and $$..$$ alike; where a display cannot go $$..$$ is a formula in the line."""
+    for txt, want in ((' costs $5 and $x^2$ here', ' costs \\$5 and $x^2$ here'), (' it costs $5 and $10.', ' it costs \\$5 and \\$10.'),
+                      (' so $$x$$ and $y$ ok', ' so\n\\[\nx\n\\]\nand $y$ ok')):
+        fresh(page, CTX); click_text(page, 'Price text', 10); page.evaluate(PASTE, txt); page.wait_for_timeout(400)
+        s = src(page)
+        check('paste: ' + repr(txt.strip()), 'Price text' + want + '.' in s, s[s.find('Price'):][:70])
+    fresh(page, CTX); click_text(page, 'Cap text', 8); page.evaluate(PASTE, ' then $$x$$ and $y$'); page.wait_for_timeout(400)
+    s = src(page)
+    check('paste: $$x$$ into a caption is a formula in the line', '\\caption{Cap text then $x$ and $y$.}' in s, s[s.find('caption'):][:60])
+
+
+PARTS = [accept, footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips, palette, insertlist, repeat, quickopen, burst, pairs, paste]
 
 
 def run():
