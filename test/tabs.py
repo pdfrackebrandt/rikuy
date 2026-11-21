@@ -385,7 +385,8 @@ def context_menu(page):
     menu = page.get_by_role('menu', name='Context menu', exact=True)
     items = [menu.get_by_role('menuitem').nth(k).get_attribute('aria-label') for k in range(menu.get_by_role('menuitem').count())]
     # (B11: Paste after Copy, as in Word's menu)
-    check('a right click on selected words opens Rikuy\'s menu "Context menu": Cut, Copy, Paste, Bold, Italic, New comment, Font Settings, Show in source', items[:8] == ['Cut', 'Copy', 'Paste', 'Bold', 'Italic', 'New comment', 'Font Settings', 'Show in source'], items)
+    # (Show in source with Show LaTeX and Next tab stop at the menu's end since PR 90's review)
+    check('a right click on selected words opens Rikuy\'s menu "Context menu": Cut, Copy, Paste, Bold, Italic, New comment, Font Settings, Paragraph Settings, ..., Show in source near its end', items[:8] == ['Cut', 'Copy', 'Paste', 'Bold', 'Italic', 'New comment', 'Font Settings', 'Paragraph Settings'] and 'Show in source' in items[-4:], items)
     menu.get_by_role('menuitem', name='Bold', exact=True).click(); page.wait_for_timeout(200)
     check('its Bold makes them bold, and the caret is back on the page', '\\textbf{Second paragraph} here.' in src(page) and page.evaluate('document.activeElement.id') == 'pages', src(page)[60:140])
     page.keyboard.press('Control+z'); page.wait_for_timeout(120)

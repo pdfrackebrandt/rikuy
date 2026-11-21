@@ -2,11 +2,14 @@
 suggestion, fractions and scripts left with Space, -> and <= turned into symbols."""
 import os, sys, json, time, traceback
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import ROUTES, SKELETON_HEAD, ROOT, SHOTS, check, results, PRINT_LAYOUT
+from browser import ROUTES, SKELETON_HEAD, ROOT, SHOTS, check, results, PRINT_LAYOUT, policy
 from playwright.sync_api import sync_playwright
 CSP = ("default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; "
        "style-src 'unsafe-inline' https://fonts.googleapis.com; font-src data: https://fonts.gstatic.com; img-src data: blob:; "
-       "media-src data: blob:; connect-src 'none'; worker-src blob:")
+       "media-src data: blob:; connect-src 'none'; worker-src blob:; frame-src 'self'")
+# (frame-src 'self': the opening document's live graph runs in the build's widget document,
+# widget-<hash>, from the host's own site, as a host of this build serves it; a host that
+# refuses frames altogether gets the artifact's build, whose widgets are srcdoc frames)
 html = open(os.path.join(ROOT, 'dist/rikuy.html'), encoding='utf8').read()
 inner = SKELETON_HEAD + html + '</body></html>'
 outer = '<!doctype html><html><body style="margin:0"><iframe id="f" src="https://sandbox.test/a" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads" style="border:0;width:100vw;height:100vh"></iframe></body></html>'
@@ -43,6 +46,12 @@ def run(touch=False):
         def h(route):
             u = route.request.url
             if u.startswith('https://host.test/'): return route.fulfill(status=200, content_type='text/html', body=outer)
+            w = u[len('https://sandbox.test/'):].split('?')[0] if u.startswith('https://sandbox.test/widget-') else None
+            if w and os.path.isfile(os.path.join(ROOT, 'dist', w + '.html')):
+                # (its policy's frame-ancestors 'self' names the site it is served from; here that
+                # site is itself in the host's frame, which every ancestor must be allowed)
+                hd = {k: v.replace("frame-ancestors 'self'", "frame-ancestors 'self' https://host.test") for k, v in policy(os.path.join(ROOT, 'dist'), '/' + w + '.html').items()}
+                return route.fulfill(status=200, content_type='text/html; charset=utf-8', headers=hd, body=open(os.path.join(ROOT, 'dist', w + '.html'), 'rb').read())
             if u.startswith('https://sandbox.test/'): return route.fulfill(status=200, content_type='text/html', body=inner, headers={'Content-Security-Policy': CSP})
             if u in ROUTES: return route.fulfill(status=200, content_type='application/javascript', body=open(ROUTES[u], encoding='utf8').read())
             return route.abort()
