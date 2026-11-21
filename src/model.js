@@ -307,8 +307,10 @@ function bracketArg(nodes, src) {
   for (let i = 0; i < nodes.length && i < 64; i++) {
     const n = nodes[i], from = i === 0 ? n0.s + 1 : n.s;
     if (n.t !== 'text') { if (n.t === 'par') return null; kids.push(n); continue; }
-    const j = src.indexOf(']', from);
-    if (j < 0 || j >= n.e) { if (n.e > from) kids.push({ ...n, s: from }); continue; }
+    // (looked for inside this node only: a stranger's slides with many \item<1>[ and no ] made
+    // every item read to the document's end)
+    const k = src.slice(from, n.e).indexOf(']'), j = k < 0 ? -1 : from + k;
+    if (j < 0) { if (n.e > from) kids.push({ ...n, s: from }); continue; }
     if (j > from) kids.push({ ...n, s: from, e: j });
     nodes.splice(0, i + 1, ...(j + 1 < n.e ? [{ ...n, s: j + 1 }] : []));
     return { o: true, s: n0.s, e: j + 1, is: n0.s + 1, ie: j, nodes: kids };
