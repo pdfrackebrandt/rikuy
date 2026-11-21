@@ -429,3 +429,18 @@ first key and writes a stray dollar sign.**
 
 Not tested: `$$` typed in the source pane. CodeMirror there has no page handlers, so it is written
 as typed.
+
+## Fixes after the verification of eb14945 (author)
+
+| finding | commit | what changed |
+|---|---|---|
+| CI | 3a9b8da, 8ab19a9 | dictation into `\text{` as the field opens (CI at 5994e31: `\text{if}\}`): two races with MathLive acting a task late. Its keyboard's focus 60 ms after the field's no longer takes the focus back from the LaTeX box after a hand over; the field's input event, sent after a timeout, no longer writes over the box, which takes the field's keys first (`pull`) |
+| V5 | b4e6e77 | Ctrl+Enter (and Shift+Enter) with `\text{` open ends it, then adds the row; every whole value set in the field is read as math (after `\text{…}` MathLive read it as text: the align's LaTeX went in as words) |
+| V1 | 11f98ac | `$5` and a space wait for the next key: a letter makes the price, a sign, `<`, `=`, a backslash, a digit, a brace, `^`, `_`, `$` or Enter keeps the formula; Backspace takes the space back |
+| V2, V3, V4 | c9d7aa8 | `$$` where a display cannot go (a command's braces, an `l`, `c` or `r` cell) opens a formula in the line with the key in it, closed by `$$` as one; a `$$` display mid line has no line break after `\]`, and the caret stays in the line however it closes |
+| V6 | 294ffe7 | pasted text: a `$..$` pair taken for money gave its closing `$` away from the next pair (`$x^2$` was lost to `$5 and $`); `$$..$$` is `$..$` where a display cannot go. The rules, typed and pasted, in `docs/handoff/SHORTCUTS.md` (Equations) |
+
+3a9b8da and b4e6e77 were staged with zero context lines and put three hunks in the wrong place
+(a syntax error in `src/app.js`, an IndentationError in `test/power.py`); 8ab19a9 puts them back,
+without rewriting history: skip the two when bisecting. Each finding has checks in
+`test/power.py` (173 in all; new parts `pairs` and `paste`) that fail on 5994e31's build.
