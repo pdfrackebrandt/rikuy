@@ -18,7 +18,7 @@ import { buildWordDoc, expandMath, unpackRuns, wordColor, listStyle, uncolor } f
 import { createPandoc } from '../src/pandoc.js';
 import { exportDocx, readDocx, docxToLatex, openDocx } from '../src/wordjobs.js';
 import { checkData, planImport, unpackRead, rebase, textHunks, mathPatch, stripNumbers, safeMath } from '../src/wordsync.js';
-import { unzip, zip, extract, parseXml, readRikuyPart, text, badZip64 } from '../src/docx.js';
+import { unzip, zip, extract, parseXml, readRikuyPart, text, badZip64, trackAuthors } from '../src/docx.js';
 import { isBalanced } from '../src/parser.js';
 import { scriptNeeds, scriptLines, addScriptSetup, rtlDocument, INDIC } from '../src/scripts.js';
 import { scanDir, resolve } from '../src/wordbidi.js';
@@ -1984,4 +1984,31 @@ await ok('changes waiting go to Word as tracked changes with their authors; a fi
   assert.equal(plain.tracked, undefined);
 });
 
+// A file's tracked changes, the cases of the second review of Word's Track Changes: a paragraph
+// one author split is that author's change, so rejecting theirs joins it again (M1); a name in
+// single quotes is read as the one in double quotes, and a name turning the direction of the text
+// after it comes without the characters that turn it (L4, L5)
+const tracked = (b) => edit(exportFiles(new Map([['main.tex', doc('Body.\n')]])).docx, (d) => d.replace(/<w:body>[\s\S]*<\/w:body>/, '<w:body>' + b + '<w:sectPr/></w:body>'));
+const tr = (t) => '<w:r><w:t xml:space="preserve">' + t + '</w:t></w:r>';
+const tp = (...x) => '<w:p>' + x.join('') + '</w:p>';
+const tmark = (kind, who, id) => '<w:pPr><w:rPr><w:' + kind + ' w:id="' + id + '" w:author="' + who + '" w:date="2026-01-01T00:00:00Z"/></w:rPr></w:pPr>';
+const tins = (who, t, id, q = '"') => '<w:ins w:id=' + q + id + q + ' w:author=' + q + who + q + ' w:date="2026-01-01T00:00:00Z">' + tr(t) + '</w:ins>';
+// (Ana joins two paragraphs, a deleted mark; Bo splits one, an inserted mark)
+const joinSplit = tracked('<w:p>' + tmark('del', 'Ana', 5) + tr('First para') + '</w:p>' + tp(tr('second para joined by Ana.')) + tp(tr('A paragraph between.')) + '<w:p>' + tmark('ins', 'Bo', 6) + tr('Third para split') + '</w:p>' + tp(tr('here by Bo.')));
+const inDoc = (t) => t.slice(t.indexOf('\\begin{document}'));
+await ok('a file\'s tracked changes: a paragraph split is its author\'s, rejected with theirs; names in either quotes, without direction marks', async () => {
+  const all = inDoc(docxToLatex(P, joinSplit, 'marks.docx').tex), none = inDoc(docxToLatex(P, joinSplit, 'marks.docx', { track: 'reject' }).tex);
+  assert.ok(all.includes('First para second para') && all.includes('Third para split\n\nhere by Bo.'), all);
+  assert.ok(none.includes('First para\n\nsecond para') && none.includes('Third para split here by Bo.'), none);
+  // (Bo's rejected: his split gone and Ana's join kept, the step Ana's changes make; before, the
+  // split stayed, so it was counted as Ana's and Reject by Bo left it)
+  const ana = inDoc(docxToLatex(P, joinSplit, 'marks.docx', { reject: ['Bo'] }).tex);
+  assert.ok(ana.includes('First para second para') && ana.includes('Third para split here by Bo.'), ana);
+  const bo = inDoc(docxToLatex(P, joinSplit, 'marks.docx', { reject: ['Ana'] }).tex);
+  assert.ok(bo.includes('First para\n\nsecond para') && bo.includes('Third para split\n\nhere by Bo.'), bo);
+  // (L4, L5)
+  const q = tracked(tp(tr('One '), tins('Ana', 'aa ', 1), tr('two '), tins('Bo', 'bb ', 2, "'"), tr('three '), tins('‮Eve⁦', 'cc ', 3), tr('four.')));
+  assert.deepEqual(trackAuthors(unzip(q)), ['Ana', 'Bo', 'Eve']);
+  assert.ok(inDoc(docxToLatex(P, q, 'q.docx', { reject: ['Bo'] }).tex).includes('One aa two three cc four.'));
+});
 console.log('word: ' + n + ' groups of checks passed');
