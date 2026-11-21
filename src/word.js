@@ -32,7 +32,9 @@ const NUMERIC_CSL_ANY = `<?xml version="1.0" encoding="utf-8"?>
 // abbrv, alpha and the page number them. Word had citation order alone, so under plain its [1]
 // was another entry than the PDF's and the page's [1].)
 const NUMERIC_CSL = NUMERIC_CSL_ANY.replace('%SORT%', '');
-const NUMERIC_CSL_SORTED = NUMERIC_CSL_ANY.replace('%SORT%', '<sort><key macro="author"/><key macro="year"/><key variable="title"/></sort>');
+// (sorted as BibTeX's plain sorts: "van Dijk" under v, its particle kept with the family name;
+// CSL's sort-only took it under D, review E7)
+const NUMERIC_CSL_SORTED = NUMERIC_CSL_ANY.replace('%SORT%', '<sort><key macro="author"/><key macro="year"/><key variable="title"/></sort>').replace('demote-non-dropping-particle="sort-only"', 'demote-non-dropping-particle="never"');
 export const numericCsl = (sorted) => (sorted ? NUMERIC_CSL_SORTED : NUMERIC_CSL);
 
 // ---- the worker ---------------------------------------------------------------------------------
@@ -199,7 +201,7 @@ export const word = {
       } catch (e) { W.degraded.push(k + ' (could not be drawn)'); }
     }
     return {
-      doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources, bibs: citeproc ? bibs : [], csl: citeproc ? cslName : null, citeproc,
+      doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources, bibs: citeproc ? bibs : [], csl: citeproc ? cslName : null, citeproc, vonSort: cslName === 'rikuy-numeric.csl' && model.opts.sort !== false,
       bullets: W.bullets,
       toc: W.doc.blocks && model.blocks.some((u) => u.items.some((x) => x.type === 'toc')),
       // the page's set up (task 44): paper, margins, columns, headers and footers, in Word's terms

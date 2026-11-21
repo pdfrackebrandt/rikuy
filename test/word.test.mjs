@@ -1956,7 +1956,14 @@ await ok('Dogfood: numeric citations in Word numbered as the .bst numbers them: 
     const E = exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources: { 'refs.bib': bib, 'rikuy-numeric.csl': numericCsl(m.opts.sort !== false) }, bibs: ['refs.bib'], csl: 'rikuy-numeric.csl', citeproc: true, project: { name: 'P', main: 'main.tex', files: [...files] } });
     const d = text(unzip(E.docx).get('word/document.xml')).replace(/<[^>]+>/g, '');
     assert.ok(d.includes('First [' + mir + '], then [' + (mir === '2' ? '1' : '2') + ']'), style + ': ' + d.slice(0, 200));
-  }
+  }  // (review E7) a von name sorted as plain sorts it: van Dijk under v, after Smith
+  const vb = '@article{dijk, author={van Dijk, Jan}, title={D}, journal={J}, year={2001}}\n@article{smith, author={Smith, Ann}, title={S}, journal={J}, year={2002}}\n';
+  const vs = '\\documentclass{article}\n\\begin{document}\nSee \\cite{dijk} and \\cite{smith}.\n\\bibliographystyle{plain}\n\\bibliography{refs}\n\\end{document}\n';
+  const vf = new Map([['main.tex', vs], ['refs.bib', vb]]), vm = buildModel({ files: vf, main: 'main.tex' });
+  const VW = buildWordDoc(vm, vf, { citeproc: true, now: 0, main: 'main.tex' });
+  const VE = exportDocx(P, { doc: VW.doc, anchors: VW.anchors, atoms: VW.atoms, resources: { 'refs.bib': vb, 'rikuy-numeric.csl': numericCsl(true) }, bibs: ['refs.bib'], csl: 'rikuy-numeric.csl', citeproc: true, vonSort: true, project: { name: 'P', main: 'main.tex', files: [...vf] } });
+  const vd = text(unzip(VE.docx).get('word/document.xml')).replace(/<[^>]+>/g, '');
+  assert.ok(vd.includes('See [2] and [1]'), vd.slice(0, 200));
 });
 
 console.log('word: ' + n + ' groups of checks passed');
