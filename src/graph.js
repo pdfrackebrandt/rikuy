@@ -1946,12 +1946,19 @@ export function graphShort(html) {
   return s && graphHtml(s) === html ? JSON.stringify(s) : null;
 }
 // and back: the file for such a description, as graphHtml writes it (src/share.js unpackShare);
-// the description is a stranger's, read as readGraph reads a file's (capped, normalized)
+// the description is a stranger's, read as readGraph reads a file's (capped, normalized). A link
+// carries descriptions as its writer normalized them, so one this copy normalizes otherwise comes
+// from another version of Rikuy: a reader not yet updated would drop what it does not know (a
+// newer graph's flip, say) and write the graph wrong, and a copy sent back would take that home.
+// The link is refused with that said (review of 89a05a4, L1)
+export const OTHER_VERSION = 'It holds a graph written by another version of Rikuy. Reload this page to bring it up to date and open the link again; if it still cannot be opened, ask the sender to reload theirs and send a new link.';
 export function graphWhole(json) {
   if (typeof json !== 'string' || json.length > 1e6) throw new Error('not a graph');
   const s = JSON.parse(json);
   if (!s || typeof s !== 'object' || Array.isArray(s)) throw new Error('not a graph');
-  return graphHtml(s);
+  const n = K.normalize(s);
+  if (JSON.stringify(n) !== json) { const e = new Error(OTHER_VERSION); e.linkMessage = OTHER_VERSION; throw e; }
+  return graphHtml(n);
 }
 
 // whether two descriptions draw the same graph

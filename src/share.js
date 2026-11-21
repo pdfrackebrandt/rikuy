@@ -108,7 +108,8 @@ export async function unpackShare(s, whole = null) {
     // own Rikuy, from the description only, or the link is refused
     if (f[2] === 'g') {
       if (!whole || !/\.html?$/i.test(n) || t.length > 1e6) throw refuse();
-      try { t = whole(t); } catch (e) { throw refuse(); }
+      // (a writer that can say why, another version of Rikuy, says it; anything else is refused alike)
+      try { t = whole(t); } catch (e) { throw e && typeof e.linkMessage === 'string' ? new Error(e.linkMessage) : refuse(); }
       if (typeof t !== 'string') throw refuse();
     }
     files.push([n, t]);
