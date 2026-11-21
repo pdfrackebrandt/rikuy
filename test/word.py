@@ -363,6 +363,39 @@ try:
         check('and it goes out to Word as Ana\'s tracked change: w:del of finding, w:ins of result', re.search(r'<w:del w:id="\d+" w:author="Ana" w:date="[^"]+"><w:r><w:delText xml:space="preserve">finding</w:delText>', dd) is not None
               and re.search(r'<w:ins w:id="\d+" w:author="Ana" w:date="[^"]+">(?:(?!</w:ins>).)*>result</w:t>', dd, re.S) is not None and 'rkIns' not in dd, re.findall(r'<w:(?:ins|del) [^>]*>', dd)[:4])
 
+        # ---- many tracked changes, many authors (the second review of Track Changes): the layer of
+        # who wrote what made in the worker, the page not held up (M2: 3000 changes stalled it for
+        # 1.8 s, 20000 for a minute); a file with more pieces than the layer keeps says where its
+        # credited changes start (M2); the open message names a few authors and counts the rest
+        # (L3: 300 names made 5,800 characters), each name without the characters that turn the
+        # text's direction (L4) ----
+        def body_docx(name, body):
+            P1 = parts(fx)
+            d1 = P1['word/document.xml'].decode()
+            P1['word/document.xml'] = re.sub(r'<w:body>[\s\S]*</w:body>', lambda m: '<w:body>' + body + '<w:sectPr/></w:body>', d1).encode()
+            return make_zip(os.path.join(TMP, name), P1)
+        run = lambda t: '<w:r><w:t xml:space="preserve">%s</w:t></w:r>' % t
+        tins = lambda who, t, i: '<w:ins w:id="%d" w:author="%s" w:date="2026-11-01T10:00:00Z">%s</w:ins>' % (i, who, run(t))
+        many = ''.join('<w:p>' + ''.join(run('w%d ' % (i * 50 + j)) + tins('Bo' if j % 2 else 'Ana', 'x', 10 + i * 50 + j) for j in range(50)) + '</w:p>' for i in range(60))
+        page.evaluate("window.__gap = 0; let last = performance.now(); const f = () => { const n = performance.now(); window.__gap = Math.max(window.__gap, n - last); last = n; requestAnimationFrame(f); }; requestAnimationFrame(f);")
+        open_file(page, body_docx('Many.docx', many)); page.wait_for_timeout(800)
+        gap = page.evaluate('window.__gap')
+        ch = page.evaluate("window.rikuy.realChanges().map((c) => window.rikuy.rvName(c.who))")
+        check('3000 tracked changes come in each its author\'s, the page never held up for a second (review M2: 1.8 s)', len(ch) > 2500 and set(ch) == {'Ana', 'Bo'} and gap < 1000, (len(ch), sorted(set(ch)), gap))
+        people = ''.join(tins('Author number %d' % k, 'x', 10 + k) + run('w%d ' % k) for k in range(300))
+        # (Eve first: past the sixth, authors share the last step and its joined name)
+        open_file(page, body_docx('People.docx', '<w:p>' + run('Then ') + tins('\u202eEve\u2066', 'cc ', 400) + run('end.') + '</w:p>' + '<w:p>' + run('Start ') + people + '</w:p>'))
+        toast = page.inner_text('#toast')
+        check('the open message names three authors and counts the rest (review L3)', 'by Eve, Author number 0, Author number 1 and 298 others,' in toast and len(toast) < 800, (len(toast), toast[:300]))
+        check('a name turning the text\'s direction comes without those characters (review L4)', 'Eve' in page.evaluate("window.rikuy.realChanges().map((c) => window.rikuy.rvName(c.who)).join(' ')") and not re.search('[\u202a-\u202e\u2066-\u2069]', page.evaluate("window.rikuy.realChanges().map((c) => c.who).join('')") + toast))
+        huge = ''.join('<w:p>' + ''.join(run('w%d ' % (i * 30 + j)) + tins('Bo' if j % 2 else 'Ana', 'x', 10 + i * 30 + j) for j in range(30)) + '</w:p>' for i in range(400))
+        open_file(page, body_docx('Huge.docx', huge))
+        toast = page.inner_text('#toast')
+        m = re.search(r'The changes before line (\d+) of main\.tex are not credited to their authors and show as yours', toast)
+        line = int(m.group(1)) if m else -1
+        first = page.evaluate("(n) => { const R = window.rikuy, t = R.files.get('main.tex'); const at = t.split('\\n').slice(0, n - 1).join('\\n').length; return R.realChanges().filter((c) => c.bs > at + 200).every((c) => c.who === 'Ana' || c.who === 'Bo'); }", line)
+        check('a file with more pieces of tracked text than the layer keeps says from which line its changes are credited, and they are (review M2)', line > 1 and first, toast[:400])
+
         # ---- what pandoc alone loses: kept where LaTeX has it, said where it has not ----
         fx2 = os.path.join(TMP, 'Reform.docx')
         open(fx2, 'wb').write(word_fixture.make_rich())
