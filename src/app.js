@@ -2210,6 +2210,34 @@ class App {
       const B = itemEl && BLOCKS.get(+itemEl.dataset.b);
       // the \label on the heading's next line stays with the heading: the new paragraph goes after it
       const lab = B && /^\s*\\label\s*\{[^}]*\}/.exec(src.slice(B.e));
+      const m = B && c.collapsed && B.f === f && src[B.e - 1] === '}' ? /^\\[A-Za-z]+\*?\s*(\[[^\]]*\]\s*)?\{\s*/.exec(src.slice(B.s, B.e)) : null;
+      const ws = m ? B.s + m[0].length : 0, we = B.e - 1;
+      // Enter at the heading's start: an empty paragraph above it, the caret staying on the
+      // heading, as Word's and as at a paragraph's start. It was shown below the heading, and
+      // what was typed next was written there, after the heading.
+      if (m && p <= ws) {
+        const keep = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+        this.showGhost(itemEl, f, B.s, { before: true });
+        if (keep) { sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true; if (this.ghost) this.ghost.keepAt = keep; }
+        this.enterAct();
+        return;
+      }
+      // Enter inside its words splits it in two headings of its level, as Word splits a paragraph
+      // and both keep its style (a \label stays with the first). Only at the top level of its
+      // words, outside braces and math, and not in a heading with a short title for the contents.
+      // It showed the empty paragraph below the heading, the words after the caret left in it.
+      if (m && !m[1] && p > ws && p < we && src.slice(p, we).trim() && isBalanced(src, ws, p) && isBalanced(src, p, we) &&
+        ((src.slice(ws, p).replace(/\\./g, '').match(/\$/g) || []).length % 2 === 0)) {
+        let s0 = p, e0 = p;
+        while (s0 > ws && /[ \t\r\n]/.test(src[s0 - 1])) s0--;
+        while (e0 < we && /[ \t\r\n]/.test(src[e0])) e0++;
+        const NL = /\r\n/.test(src) ? '\r\n' : '\n', open = m[0].trimEnd();
+        const t = '}' + (lab ? lab[0] : '') + NL + NL + open;
+        const edits = [{ f, s: s0, e: e0, t }];
+        if (lab) edits.push({ f, s: B.e, e: B.e + lab[0].length, t: '' });
+        this.commit(edits, { f, p: s0 + t.length, bias: 1 }, 'enter');
+        return;
+      }
       if (B) { this.showGhost(itemEl, f, B.e + (lab ? lab[0].length : 0)); this.enterAct(); }
       return;
     }

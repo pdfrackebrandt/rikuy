@@ -1392,9 +1392,30 @@ def r2_phone(p):
             check('R2 phone run%s runs to its end' % tag, False, str(e)[:400])
         browser.close()
 
+def heading_enter(page):
+    """(bugs 2026-11-22) Enter at a heading's start: Word puts an empty paragraph above it and the
+    caret stays on the heading; Rikuy showed the empty paragraph below it, and what was typed next
+    was written after the heading. Enter inside a heading's words: Word splits it in two headings
+    of its style; Rikuy left the words after the caret in it and made a paragraph below."""
+    H = A('Alpha.\n\n\\section{Head}\nBody.')
+    load_doc(page, H); click_text(page, 'Head', 0); page.keyboard.press('Enter'); settle(page, 150); page.keyboard.type('X'); settle(page, 200)
+    check('heading_enter: Enter at a heading\'s start, then typing: the caret stayed on the heading', src(page) == H.replace('{Head}', '{XHead}'), src(page)[40:])
+    load_doc(page, H); click_text(page, 'Head', 0); page.keyboard.press('Enter'); settle(page, 150); page.keyboard.press('ArrowUp'); settle(page, 150); page.keyboard.type('Y'); settle(page, 200)
+    check('heading_enter: and Up goes into the empty paragraph above it', src(page) == H.replace('Alpha.\n\n', 'Alpha.\n\nY\n\n'), src(page)[40:])
+    S = A('\\section*{Head line}\\label{s:h}\nBody.')
+    load_doc(page, S); h0 = page.evaluate('window.rikuy.hist.length'); click_text(page, 'Head line', 4); page.keyboard.press('Enter'); settle(page, 200)
+    check('heading_enter: Enter inside a heading\'s words splits it in two headings of its level, the \\label with the first', src(page) == A('\\section*{Head}\\label{s:h}\n\n\\section*{line}\nBody.'), src(page)[40:])
+    page.keyboard.type('X'); settle(page, 200)
+    check('heading_enter: the caret at the second one\'s start', '\\section*{Xline}' in src(page), src(page)[40:])
+    page.keyboard.press('Control+z'); settle(page, 150); page.keyboard.press('Control+z'); settle(page, 150)
+    check('heading_enter: undo gives the heading back whole', src(page) == S and page.evaluate('window.rikuy.hist.length') == h0, src(page)[40:])
+    load_doc(page, A('\\section{Head \\textbf{bold words} end}\nBody.')); click_text(page, 'bold words', 4); page.keyboard.press('Enter'); settle(page, 150); page.keyboard.type('Z'); settle(page, 200)
+    check('heading_enter: Enter inside a bold run of a heading splits nothing in it: a paragraph after it, as before', '\\section{Head \\textbf{bold words} end}\n\nZ' in src(page), src(page)[40:])
+
+
 def run():
     with sync_playwright() as p:
-        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review)
+        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style)
         # (names given on the command line run those alone)
