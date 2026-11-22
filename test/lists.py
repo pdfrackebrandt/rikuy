@@ -28,7 +28,7 @@ space at once, an autocorrected dash, an IME's composition).
 RIKUY_DIST names another dist/."""
 import os, sys, base64, io, re
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import open_page, check, results, src, load_doc, click_text, select_text, roundtrip
+from browser import settle, open_page, check, results, src, load_doc, click_text, select_text, roundtrip
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -41,12 +41,12 @@ E3 = WRAP('\\begin{enumerate}\n  \\item One\n  \\item Two\n  \\item Three\n\\end
 
 
 def run(page, cid, args=None):
-    r = page.evaluate('([id, a]) => window.rikuy.runCommand(id, a)', [cid, args]); page.wait_for_timeout(200)
+    r = page.evaluate('([id, a]) => window.rikuy.runCommand(id, a)', [cid, args]); settle(page, 200)
     return r
 
 
 def key(page, k):
-    page.keyboard.press(k); page.wait_for_timeout(250)
+    page.keyboard.press(k); settle(page, 250)
 
 
 def hist(page):
@@ -59,14 +59,14 @@ def labels(page):
 
 def tile(page, arrow, name):
     """Open a list button's menu and press its tile (or item) of that name"""
-    page.click(arrow); page.wait_for_timeout(200)
-    page.get_by_role('menu').get_by_role('menuitemradio', name=name, exact=True).click(); page.wait_for_timeout(250)
+    page.click(arrow); settle(page, 200)
+    page.get_by_role('menu').get_by_role('menuitemradio', name=name, exact=True).click(); settle(page, 250)
 
 
 def checked(page, arrow, name):
-    page.click(arrow); page.wait_for_timeout(200)
+    page.click(arrow); settle(page, 200)
     v = page.get_by_role('menu').get_by_role('menuitemradio', name=name, exact=True).get_attribute('aria-checked')
-    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    page.keyboard.press('Escape'); settle(page, 100)
     return v == 'true'
 
 
@@ -99,7 +99,7 @@ def levels(page):
     load_doc(page, E3)
     page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')]; const a = sp.find((x) => x.textContent.includes('Two')), b = sp.find((x) => x.textContent.includes('Three'));
       const r = document.createRange(); r.setStart(a.firstChild, 1); r.setEnd(b.firstChild, 2); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''')
-    page.wait_for_timeout(100); key(page, 'Tab')
+    settle(page, 100); key(page, 'Tab')
     check('Tab on two selected items moves both, as one list', src(page) == WRAP('\\begin{enumerate}\n  \\item One\n    \\begin{enumerate}\n      \\item Two\n      \\item Three\n    \\end{enumerate}\n\\end{enumerate}'), src(page)[40:])
     check('the page numbers them (a) and (b), as TeX does', labels(page) == ['1.', '(a)', '(b)'], labels(page))
     sel = page.evaluate('(() => { const c = window.rikuy.caretNow(); return [c.collapsed, window.rikuy.src("main.tex").slice(c.a, c.b)]; })()')
@@ -113,12 +113,12 @@ def levels(page):
     # Enter in the empty last item of a list leaves it, \end{itemize} on a line of its own (it was
     # glued to the item before: "\item Three\end{itemize}")
     load_doc(page, L3); click_text(page, 'Three', 5)
-    key(page, 'Enter'); key(page, 'Enter'); page.keyboard.type('After'); page.wait_for_timeout(200)
+    key(page, 'Enter'); key(page, 'Enter'); page.keyboard.type('After'); settle(page, 200)
     check('Enter twice at a list\'s end leaves it, its \\end on a line of its own', src(page) == WRAP('\\begin{itemize}\n  \\item One\n  \\item Two\n  \\item Three\n\\end{itemize}\n\nAfter'), src(page)[40:])
     # in a file whose lines end in CR LF the lines written end so too (a lone LF was written)
     crlf = L3.replace('\n', '\r\n')
     load_doc(page, crlf); click_text(page, 'Three', 5)
-    key(page, 'Enter'); key(page, 'Enter'); page.keyboard.type('After'); page.wait_for_timeout(200)
+    key(page, 'Enter'); key(page, 'Enter'); page.keyboard.type('After'); settle(page, 200)
     got = src(page)
     check('and in a CR LF file every line it writes ends in CR LF', '\\item Three\r\n\\end{itemize}\r\n\r\nAfter' in got and not re.search(r'(?<!\r)\n', got), repr(got[40:]))
     # a table cell keeps its own Tab
@@ -130,7 +130,7 @@ def levels(page):
     h0 = hist(page); run(page, 'list-level', {'level': 3})
     check('Change List Level to level 3: two levels at once, one undo', '        \\item D' in src(page) and hist(page) == h0 + 1 and labels(page)[-1] == '∗', (src(page)[40:], labels(page)))
     load_doc(page, L3); click_text(page, 'Two', 1)
-    run(page, 'list-level'); page.wait_for_timeout(150)
+    run(page, 'list-level'); settle(page, 150)
     names = page.evaluate("[...document.querySelectorAll('.pop-menu [role^=menuitem]')].map((x) => x.getAttribute('aria-label') + ':' + x.getAttribute('aria-checked') + ':' + (x.getAttribute('aria-disabled') || ''))")
     page.keyboard.press('Escape')
     check('Change List Level\'s menu: Level 1 checked, Level 2 offered', names[:2] == ['Level 1:true:', 'Level 2:false:'], names)
@@ -202,15 +202,15 @@ def libraries(page):
     # Define New Bullet and Define New Number Format
     load_doc(page, L3); click_text(page, 'Two', 1); run(page, 'bullet-define')
     page.get_by_role('dialog', name='Define New Bullet').get_by_role('radio', name='Large star').click()
-    page.get_by_role('dialog', name='Define New Bullet').get_by_role('button', name='OK').click(); page.wait_for_timeout(250)
+    page.get_by_role('dialog', name='Define New Bullet').get_by_role('button', name='OK').click(); settle(page, 250)
     check('Define New Bullet: a symbol of its grid', 'label=$\\bigstar$' in src(page) and labels(page) == ['★'] * 3, (src(page)[:200], labels(page)))
     load_doc(page, L3); click_text(page, 'Two', 1); run(page, 'bullet-define')
     d = page.get_by_role('dialog', name='Define New Bullet')
     d.get_by_label('Character or LaTeX', exact=True).fill('{\\bf x')
-    d.get_by_role('button', name='OK').click(); page.wait_for_timeout(200)
+    d.get_by_role('button', name='OK').click(); settle(page, 200)
     check('LaTeX that does not balance is refused with a word, nothing written', src(page) == L3 and 'balance' in d.get_by_role('alert').text_content(), d.get_by_role('alert').text_content())
     d.get_by_label('Character or LaTeX', exact=True).fill('+&')
-    d.get_by_role('button', name='OK').click(); page.wait_for_timeout(250)
+    d.get_by_role('button', name='OK').click(); settle(page, 250)
     check('a character typed is written as text, escaped', 'label=+\\&' in src(page) or 'label={+\\&}' in src(page), src(page)[:200])
     load_doc(page, E3); click_text(page, 'Two', 1); run(page, 'number-define')
     d = page.get_by_role('dialog', name='Define New Number Format')
@@ -218,7 +218,7 @@ def libraries(page):
     d.get_by_label('Text before', exact=True).fill('Part ')
     d.get_by_label('Text after', exact=True).fill(':')
     d.get_by_role('spinbutton', name='Start at').fill('3')
-    d.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    d.get_by_role('button', name='OK').click(); settle(page, 300)
     check('Define New Number Format: its style, text and start', '\\begin{enumerate}[label=Part \\Roman*:,start=3]' in src(page) and labels(page)[:2] == ['Part III:', 'Part IV:'], (src(page)[:200], labels(page)))
     check('both in one step, one undo (the review of PR 22: it was two)', hist(page) == 1, hist(page))
 
@@ -249,7 +249,7 @@ def numbering(page):
     d = page.get_by_role('dialog', name='Set Numbering Value')
     check('Set Numbering Value: Continue is off with no list before', d.get_by_role('radio', name='Continue from previous list').is_disabled())
     d.get_by_role('spinbutton', name='Set value to').fill('4'); d.get_by_role('spinbutton', name='Set value to').press('Tab')
-    d.get_by_role('button', name='OK').click(); page.wait_for_timeout(250)
+    d.get_by_role('button', name='OK').click(); settle(page, 250)
     check('its OK writes the start', '[start=4]' in src(page) and labels(page) == ['4.', '5.', '6.'], labels(page))
     # spacing
     roundtrip(page, L3, ('Two', 1), lambda pg: run(pg, 'list-spacing', {'sep': 'nosep'}), WRAP('\\begin{itemize}[nosep]\n  \\item One\n  \\item Two\n  \\item Three\n\\end{itemize}', EI),
@@ -267,11 +267,11 @@ def numbering(page):
 def multilevel(page):
     ml = WRAP('\\begin{enumerate}\n  \\item One\n\\end{enumerate}', EI)
     want = WRAP('\\begin{enumerate}\n  \\item One\n\\end{enumerate}', EI + '\\setlist[enumerate,1]{label=\\arabic*.}\n\\setlist[enumerate,2]{label=\\arabic{enumi}.\\arabic*.}\n\\setlist[enumerate,3]{label=\\arabic{enumi}.\\arabic{enumii}.\\arabic*.}\n\\setlist[enumerate,4]{label=\\arabic{enumi}.\\arabic{enumii}.\\arabic{enumiii}.\\arabic*.}\n')
-    pick = lambda name: (lambda pg: (pg.click('#rb-ml'), pg.wait_for_timeout(200), pg.get_by_role('menu').get_by_role('menuitemradio', name=name, exact=True).click(), pg.wait_for_timeout(250)))
+    pick = lambda name: (lambda pg: (pg.click('#rb-ml'), settle(pg, 200), pg.get_by_role('menu').get_by_role('menuitemradio', name=name, exact=True).click(), settle(pg, 250)))
     roundtrip(page, ml, ('One', 1), pick('Multilevel 1. 1.1. 1.1.1.'), want, off_command=pick('LaTeX\'s numbering 1. (a) i. A.'), label='Multilevel list 1. 1.1. 1.1.1.')
-    load_doc(page, want); click_text(page, 'One', 1); key(page, 'Enter'); page.keyboard.type('Sub'); page.wait_for_timeout(200); key(page, 'Tab')
+    load_doc(page, want); click_text(page, 'One', 1); key(page, 'Enter'); page.keyboard.type('Sub'); settle(page, 200); key(page, 'Tab')
     check('with it, a level two item reads 1.1.', labels(page) == ['1.', '1.1.'], labels(page))
-    page.click('#rb-ml'); page.wait_for_timeout(200)
+    page.click('#rb-ml'); settle(page, 200)
     on = page.get_by_role('menu').get_by_role('menuitemradio', name='Multilevel 1. 1.1. 1.1.1.', exact=True).get_attribute('aria-checked')
     page.keyboard.press('Escape')
     check('and the preset shows checked', on == 'true')
@@ -283,7 +283,7 @@ def multilevel(page):
     d = page.get_by_role('dialog', name='Define New Multilevel List')
     d.get_by_label('List', exact=True).select_option('item')
     d.get_by_label('Level 1 bullet', exact=True).select_option('$\\star$')
-    d.get_by_role('button', name='OK').click(); page.wait_for_timeout(250)
+    d.get_by_role('button', name='OK').click(); settle(page, 250)
     check('Define New Multilevel List: the bullets of each level', '\\setlist[itemize,1]{label=$\\star$}' in src(page) and labels(page) == ['⋆'] * 3, (src(page)[:400], labels(page)))
 
 
@@ -295,10 +295,10 @@ def sorting(page):
     load_doc(page, paras)
     page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')]; const a = sp.find((x) => x.textContent.includes('Charlie')), b = sp.find((x) => x.textContent.includes('Bravo'));
       const r = document.createRange(); r.setStart(a.firstChild, 0); r.setEnd(b.firstChild, 3); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''')
-    page.wait_for_timeout(100); run(page, 'sort')
+    settle(page, 100); run(page, 'sort')
     d = page.get_by_role('dialog', name='Sort Text')
     check('Sort Text says what it sorts', 'Sort 3 paragraphs' in d.text_content(), d.text_content())
-    d.get_by_role('radio', name='Descending').check(); d.get_by_role('button', name='OK').click(); page.wait_for_timeout(250)
+    d.get_by_role('radio', name='Descending').check(); d.get_by_role('button', name='OK').click(); settle(page, 250)
     check('Sort: the selected paragraphs, descending', src(page) == WRAP('Charlie here.\n\nBravo here.\n\nAlpha here.'), src(page)[40:])
     load_doc(page, WRAP('Only one.')); click_text(page, 'Only', 1)
     check('Sort is off on one paragraph and says why', state(page, 'sort')[0] is False and 'select' in state(page, 'sort')[2].lower(), state(page, 'sort'))
@@ -307,37 +307,37 @@ def sorting(page):
 def autolists(page):
     load_doc(page, WRAP('First.\n\nSecond words.')); click_text(page, 'Second', 0)
     h0 = hist(page)
-    page.keyboard.type('- '); page.wait_for_timeout(300)
+    page.keyboard.type('- '); settle(page, 300)
     check('"- " at a paragraph\'s start: a bulleted list', src(page) == WRAP('First.\n\n\\begin{itemize}\n  \\item Second words.\n\\end{itemize}'), src(page)[40:])
     c = page.evaluate('window.rikuy.caretNow().a')
     check('the caret before the item\'s words', src(page)[c:c + 6] == 'Second', src(page)[c - 5:c + 6])
     key(page, 'Control+z')
     check('Undo gives back what was typed', src(page) == WRAP('First.\n\n- Second words.'), src(page)[40:])
-    load_doc(page, WRAP('Intro.\n\nThe end.')); click_text(page, 'The end', 0); page.keyboard.type('a) '); page.wait_for_timeout(300)
+    load_doc(page, WRAP('Intro.\n\nThe end.')); click_text(page, 'The end', 0); page.keyboard.type('a) '); settle(page, 300)
     check('"a) ": a numbered list in that format', src(page) == WRAP('Intro.\n\n\\begin{enumerate}[label=\\alph*)]\n  \\item The end.\n\\end{enumerate}', EI) and labels(page) == ['a)'], (src(page)[:200], labels(page)))
-    load_doc(page, WRAP('Intro.\n\nLater.')); click_text(page, 'Later', 0); page.keyboard.type('3. '); page.wait_for_timeout(300)
+    load_doc(page, WRAP('Intro.\n\nLater.')); click_text(page, 'Later', 0); page.keyboard.type('3. '); settle(page, 300)
     check('"3. ": numbered from 3', '\\begin{enumerate}[start=3]' in src(page) and labels(page) == ['3.'], (src(page)[:200], labels(page)))
     lst = WRAP('\\begin{enumerate}\n  \\item One\n\\end{enumerate}\n\nNext one.')
-    load_doc(page, lst); click_text(page, 'Next', 0); page.keyboard.type('2. '); page.wait_for_timeout(300)
+    load_doc(page, lst); click_text(page, 'Next', 0); page.keyboard.type('2. '); settle(page, 300)
     check('"2. " right after a list of one item goes on with that list', src(page) == WRAP('\\begin{enumerate}\n  \\item One\n  \\item Next one.\n\\end{enumerate}'), src(page)[40:])
-    load_doc(page, WRAP('In 1. place')); click_text(page, 'place', 0); page.keyboard.type('- '); page.wait_for_timeout(250)
+    load_doc(page, WRAP('In 1. place')); click_text(page, 'place', 0); page.keyboard.type('- '); settle(page, 250)
     check('in the middle of a paragraph "- " is text', src(page) == WRAP('In 1. - place'), src(page)[40:])
     page.evaluate('window.rikuy.prefs.autoLists = false')
-    load_doc(page, WRAP('Intro.\n\nWords.')); click_text(page, 'Words', 0); page.keyboard.type('* '); page.wait_for_timeout(250)
+    load_doc(page, WRAP('Intro.\n\nWords.')); click_text(page, 'Words', 0); page.keyboard.type('* '); settle(page, 250)
     check('Options\' switch (prefs.autoLists false): "* " stays text', src(page) == WRAP('Intro.\n\n* Words.'), src(page)[40:])
     page.evaluate('window.rikuy.prefs.autoLists = true')
 
 
 def menus(page):
     load_doc(page, E3); click_text(page, 'Two', 1)
-    page.click('#rb-ol-x'); page.wait_for_timeout(200)
+    page.click('#rb-ol-x'); settle(page, 200)
     page.keyboard.press('ArrowRight'); page.keyboard.press('ArrowDown')
     f = page.evaluate('document.activeElement.getAttribute("aria-label")')
     page.keyboard.press('Escape')
     check('the library\'s tiles: the arrow keys move in two directions (right one, down a row of three)', f == 'Capital letters A. B. C.', f)
     # the right click menu of a list item has the list's commands
     load_doc(page, E3); click_text(page, 'Two', 1)
-    page.keyboard.press('Shift+F10'); page.wait_for_timeout(200)
+    page.keyboard.press('Shift+F10'); settle(page, 200)
     names = page.evaluate("[...document.querySelectorAll('.pop-ctx [role^=menuitem]')].map((x) => x.getAttribute('aria-label'))")
     page.keyboard.press('Escape')
     check('a list item\'s right click menu: Increase Indent, Decrease Indent, Restart at 1, Set Numbering Value', all(n in names for n in ('Bulleted list', 'Numbered list', 'Increase Indent', 'Decrease Indent', 'Restart at 1', 'Set Numbering Value', 'List spacing', 'Sort')), names)
@@ -345,7 +345,7 @@ def menus(page):
     box = page.get_by_role('combobox', name='Search', exact=True)
     got = []
     for q in ('restart', 'multilevel', 'indent', 'sort'):
-        box.click(); box.fill(q); page.wait_for_timeout(150)
+        box.click(); box.fill(q); settle(page, 150)
         got.append(page.get_by_role('listbox', name='Commands', exact=True).get_by_role('option').all_inner_texts()[:1])
     page.keyboard.press('Escape')
     check('the search box finds Restart at 1, Multilevel list, Increase Indent, Sort by Word\'s words', [g[0].split('\n')[0] if g else '' for g in got] == ['Restart at 1', 'Multilevel list', 'Increase Indent', 'Sort'], got)
@@ -371,7 +371,7 @@ def select_spans(page, a, b, b_end):
     """Select from the start of the span holding a to b_end characters into the one holding b"""
     page.evaluate('''([a, b, z]) => { const sp = [...document.querySelectorAll('#pages span.t')]; const x = sp.find((s) => s.textContent.includes(a)), y = sp.find((s) => s.textContent.includes(b));
       const r = document.createRange(); r.setStart(x.firstChild, 0); r.setEnd(y.firstChild, z); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''', [a, b, b_end])
-    page.wait_for_timeout(150)
+    settle(page, 150)
 
 
 def review(page):
@@ -404,20 +404,20 @@ def review(page):
     # H2: Define New Number Format with a start: one step, one undo
     D = WRAP('Para one.\n\nPara two.')
     load_doc(page, D); click_text(page, 'one', 1); h0 = hist(page)
-    run(page, 'number-define'); page.wait_for_timeout(200)
+    run(page, 'number-define'); settle(page, 200)
     page.get_by_label('Text before').fill('Q'); page.get_by_label('Start at').first.fill('4')
-    page.get_by_role('button', name='OK').click(); page.wait_for_timeout(400)
+    page.get_by_role('button', name='OK').click(); settle(page, 400)
     check('H2 Define New Number Format with a start: one step', hist(page) == h0 + 1 and labels(page) == ['Q4.'], (hist(page) - h0, labels(page)))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     check('H2 and one undo gives the bytes back', src(page) == D, src(page)[40:])
     # (letters stop at z: Start at 27 with a, b, c is refused in the dialog)
     load_doc(page, E3); click_text(page, 'One', 1)
-    run(page, 'number-define'); page.wait_for_timeout(200)
+    run(page, 'number-define'); settle(page, 200)
     page.get_by_label('Number style').select_option('alph'); page.get_by_label('Start at').first.fill('27')
-    page.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    page.get_by_role('button', name='OK').click(); settle(page, 300)
     msg = page.evaluate("(document.querySelector('.pop-list .ld-msg') || {}).textContent || ''")
     check('M1 Start at 27 with letters is refused, saying why (TeX: Counter too large)', src(page) == E3 and '26' in msg, msg)
-    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    page.keyboard.press('Escape'); settle(page, 150)
     A = WRAP('\\begin{enumerate}[label=\\alph*)]\n  \\item One\n\\end{enumerate}', EI)
     load_doc(page, A); click_text(page, 'One', 1)
     r = run(page, 'list-value', {'value': 27})
@@ -425,28 +425,28 @@ def review(page):
     # M4: OK with nothing changed keeps Step~\arabic*. (the ~ a no-break space in the field)
     D = WRAP('\\begin{enumerate}[label=Step~\\arabic*.]\n  \\item One\n\\end{enumerate}', EI)
     load_doc(page, D); click_text(page, 'One', 1)
-    run(page, 'number-define'); page.wait_for_timeout(200)
+    run(page, 'number-define'); settle(page, 200)
     before = page.get_by_label('Text before').input_value()
-    page.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    page.get_by_role('button', name='OK').click(); settle(page, 300)
     check('M4 Define New Number Format, OK unchanged: the label as written, ~ shown as a no-break space', src(page) == D and before == 'Step\u00a0', (before, src(page)[60:]))
     # H3: Define New Multilevel List, OK unchanged: hand written levels kept, no levels added
     D = WRAP('\\begin{enumerate}\n  \\item One\n\\end{enumerate}', EI + '\\setlist[enumerate,2]{label=\\textbf{\\alph*}, leftmargin=2em}\n\\setlist[enumerate,3]{label=\\S\\roman*}\n')
     load_doc(page, D); click_text(page, 'One', 1)
-    run(page, 'multilevel-define'); page.wait_for_timeout(200)
+    run(page, 'multilevel-define'); settle(page, 200)
     opt = page.get_by_label('Level 2 number style').evaluate('(s) => s.options[s.selectedIndex].text')
-    page.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    page.get_by_role('button', name='OK').click(); settle(page, 300)
     check('H3 Define New Multilevel List, OK unchanged: \\textbf{\\alph*} and \\S\\roman* kept, shown as Custom (kept)', src(page) == D and 'Custom (kept)' in opt, (opt, src(page)[:260]))
     load_doc(page, D); click_text(page, 'One', 1)
-    run(page, 'multilevel-define'); page.wait_for_timeout(200)
+    run(page, 'multilevel-define'); settle(page, 200)
     page.get_by_label('Level 1 number style').select_option('Roman')
-    page.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    page.get_by_role('button', name='OK').click(); settle(page, 300)
     s1 = src(page)
     check('H3 one level changed: only its line written', '\\setlist[enumerate,1]{label=\\Roman*.}' in s1 and '\\textbf{\\alph*}' in s1 and '\\S\\roman*' in s1 and 'enumerate,4' not in s1, s1[:320])
     B = WRAP('\\begin{itemize}\n  \\item One\n\\end{itemize}', EI + '\\usepackage{pifont}\n\\setlist[itemize,1]{label=\\ding{43}}\n')
     load_doc(page, B); click_text(page, 'One', 1)
-    run(page, 'multilevel-define'); page.wait_for_timeout(200)
+    run(page, 'multilevel-define'); settle(page, 200)
     l3 = page.get_by_label('Level 3 bullet').evaluate('(s) => s.options[s.selectedIndex].text')
-    page.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    page.get_by_role('button', name='OK').click(); settle(page, 300)
     check('H3 bullets: \\ding{43} kept, level 3 LaTeX\'s own ∗', src(page) == B and '∗' in l3, (l3, src(page)[:200]))
     # M3: a typed » refused on pdfLaTeX (its fonts have none), → written as its symbol
     D = WRAP('\\begin{itemize}\n  \\item One\n  \\item Two\n\\end{itemize}')
@@ -459,11 +459,11 @@ def review(page):
         ok, flat, errs = compiled(page)
         check('M3 that compiles in the page with pdfLaTeX', ok and not errs, errs)
     load_doc(page, D); click_text(page, 'Two', 1)
-    run(page, 'bullet-define'); page.wait_for_timeout(200)
-    page.get_by_label('Character or LaTeX').fill('»'); page.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    run(page, 'bullet-define'); settle(page, 200)
+    page.get_by_label('Character or LaTeX').fill('»'); page.get_by_role('button', name='OK').click(); settle(page, 300)
     msg = page.evaluate("(document.querySelector('.pop-list .ld-msg') || {}).textContent || ''")
     check('M3 the dialog refuses a typed » too, keeping itself open with why', src(page) == D and 'pdfLaTeX' in msg, msg)
-    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    page.keyboard.press('Escape'); settle(page, 150)
     X = '% !TeX program = xelatex\n' + D
     load_doc(page, X); click_text(page, 'Two', 1); run(page, 'bullet-define', {'code': '»'})
     check('M3 on XeLaTeX » is taken as it is', '\\begin{itemize}[label=»]' in src(page), src(page)[60:])
@@ -477,9 +477,9 @@ def review(page):
             check('M5 ' + k + ' in ' + name + ': the key goes on, the source unchanged', not prevented and src(page) == D, prevented)
     # lows: an automatic list takes the \noindent with it; Sort takes paragraphs with comments
     D = WRAP('\\noindent Words here.')
-    load_doc(page, D); click_text(page, 'Words', 0); page.keyboard.type('1. '); page.wait_for_timeout(300)
+    load_doc(page, D); click_text(page, 'Words', 0); page.keyboard.type('1. '); settle(page, 300)
     check('L1 "1. " after \\noindent: the list without an orphaned \\noindent', '\\noindent' not in src(page) and '\\item Words here.' in src(page), src(page)[40:])
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     check('L1 and Undo gives back what was typed', src(page) == WRAP('\\noindent 1. Words here.'), src(page)[40:])
     D = WRAP('Gamma para.\n\nalpha para.\n\n% comment (X) on "Beta": hi\nBeta para.\n\nLast.')
     load_doc(page, D); select_spans(page, 'Gamma', 'Beta para', 3)
@@ -502,7 +502,7 @@ def review(page):
          ['a.One', 'b.Two', 'Seea.']),
     ]
     for name, D, want in docs:
-        load_doc(page, D); page.wait_for_timeout(300)
+        load_doc(page, D); settle(page, 300)
         flat = page_flat(page)
         check('M1 the page draws ' + name + ' as TeX prints them', all(w in flat for w in want), [w for w in want if w not in flat])
         if tex:
@@ -515,13 +515,13 @@ def tap_text(page, text, off=0):
     """A finger's tap on the page's text: offset characters into the first span holding text"""
     xy = page.evaluate('''([t, o]) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(t)); const n = s.firstChild, i = n.textContent.indexOf(t) + o;
       const r = document.createRange(); r.setStart(n, i); r.setEnd(n, Math.min(n.length, i + 1)); const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }''', [text, off])
-    page.touchscreen.tap(xy[0], xy[1]); page.wait_for_timeout(300)
+    page.touchscreen.tap(xy[0], xy[1]); settle(page, 300)
 
 
 def tap(page, loc):
     """A tap on a control, the ribbon's row swiped to it first (a phone shows part of the row)"""
-    loc.evaluate('(e) => e.scrollIntoView({ block: "nearest", inline: "center" })'); page.wait_for_timeout(150)
-    loc.tap(); page.wait_for_timeout(300)
+    loc.evaluate('(e) => e.scrollIntoView({ block: "nearest", inline: "center" })'); settle(page, 150)
+    loc.tap(); settle(page, 300)
 
 
 def no_side_scroll(page):
@@ -548,9 +548,9 @@ def phone_run(p, w, h, dark=False):
         h0 = hist(page)
         tap(page, page.get_by_role('button', name='Increase Indent', exact=True))
         check('Increase Indent tapped: the item one level down, one step' + tag, src(page) == L3N and hist(page) == h0 + 1, src(page)[40:])
-        page.keyboard.insert_text('Z'); page.wait_for_timeout(300)
+        page.keyboard.insert_text('Z'); settle(page, 300)
         check('the caret still types in the item\'s words after it' + tag, 'Z' in src(page)[src(page).find('\\item T'):src(page).find('\\item T') + 14], src(page)[40:])
-        page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+        page.evaluate('window.rikuy.undo()'); settle(page, 200)
         tap(page, page.get_by_role('button', name='Decrease Indent', exact=True))
         check('Decrease Indent tapped: back to the bytes of before' + tag, src(page) == L3, src(page)[40:])
         sizes = page.evaluate('''["Bulleted list", "Bulleted list options", "Numbered list", "Numbered list options", "Multilevel list", "Decrease Indent", "Increase Indent", "Sort"].map((n) => { const b = document.querySelector('.rb [aria-label="' + n + '"]'); const r = b.getBoundingClientRect(); return [n, Math.round(r.width), Math.round(r.height)]; })''')
@@ -587,23 +587,23 @@ def phone_run(p, w, h, dark=False):
         # autocorrect made of "-", the space alone, an IME composing "a) "
         D = WRAP('Words here.\n\nMore words.')
         load_doc(page, D); tap_text(page, 'Words', 0)
-        page.keyboard.insert_text('- '); page.wait_for_timeout(400)
+        page.keyboard.insert_text('- '); settle(page, 400)
         check('"- " from the phone\'s keyboard at a paragraph\'s start: a bulleted list' + tag, src(page) == WRAP('\\begin{itemize}\n  \\item Words here.\n\\end{itemize}\n\nMore words.'), src(page)[40:])
-        page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+        page.evaluate('window.rikuy.undo()'); settle(page, 200)
         check('and Undo gives back what was typed' + tag, src(page) == WRAP('- Words here.\n\nMore words.'), src(page)[40:])
         load_doc(page, D); tap_text(page, 'Words', 0)
-        page.keyboard.insert_text('– '); page.wait_for_timeout(400)
+        page.keyboard.insert_text('– '); settle(page, 400)
         check('"– ", the dash a phone\'s autocorrect makes of "-": a bulleted list too' + tag, '\\begin{itemize}\n  \\item Words here.' in src(page), src(page)[40:])
         load_doc(page, D); tap_text(page, 'More', 0)
-        page.keyboard.insert_text('1.'); page.wait_for_timeout(200); page.keyboard.insert_text(' '); page.wait_for_timeout(400)
+        page.keyboard.insert_text('1.'); settle(page, 200); page.keyboard.insert_text(' '); settle(page, 400)
         check('"1." then the space: a numbered list' + tag, '\\begin{enumerate}\n  \\item More words.' in src(page), src(page)[40:])
         load_doc(page, D); tap_text(page, 'Words', 0)
         cdp = page.context.new_cdp_session(page)
-        cdp.send('Input.imeSetComposition', {'text': 'a)', 'selectionStart': 2, 'selectionEnd': 2}); page.wait_for_timeout(100)
-        cdp.send('Input.imeSetComposition', {'text': 'a) ', 'selectionStart': 3, 'selectionEnd': 3}); page.wait_for_timeout(100)
-        cdp.send('Input.insertText', {'text': 'a) '}); page.wait_for_timeout(500)
+        cdp.send('Input.imeSetComposition', {'text': 'a)', 'selectionStart': 2, 'selectionEnd': 2}); settle(page, 100)
+        cdp.send('Input.imeSetComposition', {'text': 'a) ', 'selectionStart': 3, 'selectionEnd': 3}); settle(page, 100)
+        cdp.send('Input.insertText', {'text': 'a) '}); settle(page, 500)
         check('"a) " composed by an IME and committed with its space: a list a), b)' + tag, '\\begin{enumerate}[label=\\alph*)]\n  \\item Words here.' in src(page) and labels(page)[:1] == ['a)'], src(page)[40:])
-        page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+        page.evaluate('window.rikuy.undo()'); settle(page, 200)
         check('and Undo gives back the composed text' + tag, src(page) == WRAP('a) Words here.\n\nMore words.'), src(page)[40:])
         check('no page errors on the phone' + tag, not errors, errors[:3])
     finally:
@@ -628,7 +628,7 @@ def pdf_check(page):
     page.set_default_timeout(900000)
     for eng in ('pdflatex', 'xelatex', 'lualatex'):
         doc = ('% !TeX program = ' + eng + '\n' if eng != 'pdflatex' else '') + WRAP(body, pre)
-        load_doc(page, doc); page.wait_for_timeout(300)
+        load_doc(page, doc); settle(page, 300)
         drawn = labels(page)
         r = page.evaluate("""async () => { const r = await window.rikuy.api.compile(); let s = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) s += String.fromCharCode(...r.pdf.subarray(i, i + 8192)); return { ok: r.ok, pdf: s ? btoa(s) : '' }; }""")
         text = PdfReader(io.BytesIO(base64.b64decode(r['pdf']))).pages[0].extract_text() if r['pdf'] else ''
@@ -655,7 +655,7 @@ def put_picture(page, name):
     """A picture of the project (as one opened with it), for the picture bullet to use"""
     page.evaluate("""async (n) => { const c = document.createElement('canvas'); c.width = c.height = 8; const g = c.getContext('2d'); g.fillStyle = '#c81e3c'; g.fillRect(0, 0, 8, 8);
       const b = await new Promise((r) => c.toBlob(r, 'image/png')); window.rikuy.addAsset(n, b); window.rikuy.forceRender = true; window.rikuy.rebuild(); }""", name)
-    page.wait_for_timeout(200)
+    settle(page, 200)
 
 
 B3 = '\\begin{itemize}\n  \\item One\n  \\item Two\n\\end{itemize}'
@@ -672,30 +672,30 @@ def r2(page):
     own = lambda pg: pg.evaluate("window.rikuy.listLabel('itemize', null)")
     want = WRAP(PIC, '\\usepackage{enumitem}\n\\usepackage{graphicx}\n')
     load_doc(page, D); put_picture(page, 'figures/dot.png'); click_text(page, 'Two', 1); h0 = hist(page)
-    pic(page); page.wait_for_timeout(250)
+    pic(page); settle(page, 250)
     check('Picture Bullet: \\includegraphics[height=1.6ex] as enumitem\'s label, braced, enumitem and graphicx once, one step', src(page) == want and hist(page) == h0 + 1, src(page))
     drawn = page.evaluate("[...document.querySelectorAll('#pages .lbl')].map((l) => { const i = l.querySelector('img'); return i ? [i.src.slice(0, 5), Math.round(i.getBoundingClientRect().height)] : l.textContent; })")
     fs = page.evaluate("parseFloat(getComputedStyle(document.querySelector('#pages .it.p')).fontSize)")
     check('the page draws the picture as each item\'s bullet, a capital letter high', len(drawn) == 2 and all(isinstance(x, list) and x[0] == 'blob:' and 0.5 * fs <= x[1] <= 1.1 * fs for x in drawn), (drawn, fs))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     check('one undo gives the source back byte for byte', src(page) == D)
-    load_doc(page, want); put_picture(page, 'figures/dot.png'); click_text(page, 'Two', 1); own(page); page.wait_for_timeout(200)
+    load_doc(page, want); put_picture(page, 'figures/dot.png'); click_text(page, 'Two', 1); own(page); settle(page, 200)
     check('LaTeX\'s own bullet again takes exactly the label off', src(page) == WRAP(B3, '\\usepackage{enumitem}\n\\usepackage{graphicx}\n'), src(page))
     # the dialog: a picture of the project, and one from a file going into the project in the same step
     load_doc(page, D); put_picture(page, 'figures/dot.png'); click_text(page, 'Two', 1)
-    run(page, 'bullet-define'); page.get_by_role('button', name='Picture…').click(); page.wait_for_timeout(250)
+    run(page, 'bullet-define'); page.get_by_role('button', name='Picture…').click(); settle(page, 250)
     dlg = page.get_by_role('dialog', name='Picture Bullet')
-    dlg.get_by_role('radio', name='figures/dot.png').click(); dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    dlg.get_by_role('radio', name='figures/dot.png').click(); dlg.get_by_role('button', name='OK').click(); settle(page, 300)
     check('Define New Bullet › Picture…: the project\'s picture picked and OK', src(page) == want, src(page))
     load_doc(page, D); click_text(page, 'Two', 1); h0 = hist(page)
-    run(page, 'bullet-picture'); page.wait_for_timeout(200)
+    run(page, 'bullet-picture'); settle(page, 200)
     dlg = page.get_by_role('dialog', name='Picture Bullet')
-    dlg.locator('input[type=file]').set_input_files(png_file('/tmp/r2 red dot!.png')); page.wait_for_timeout(300)
+    dlg.locator('input[type=file]').set_input_files(png_file('/tmp/r2 red dot!.png')); settle(page, 300)
     picked = dlg.get_by_role('radio', name='figures/r2-red-dot.png').get_attribute('aria-checked')
-    dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(400)
+    dlg.get_by_role('button', name='OK').click(); settle(page, 400)
     has = page.evaluate("window.rikuy.assetBlobs.has('figures/r2-red-dot.png')")
     check('a picture from a file: a name TeX takes, picked, put in the project with the label in one step', picked == 'true' and has and 'label={\\includegraphics[height=1.6ex]{figures/r2-red-dot.png}}' in src(page) and hist(page) == h0 + 1, (picked, has, src(page)[-200:]))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(250)
+    page.evaluate('window.rikuy.undo()'); settle(page, 250)
     check('and one undo takes both out again', src(page) == D and not page.evaluate("window.rikuy.assetBlobs.has('figures/r2-red-dot.png')"))
     r = page.evaluate("window.rikuy.runCommand('bullet-picture', { file: '../x}.png' })")
     check('a picture name TeX would not take is refused, nothing written', r is False and src(page) == D)
@@ -716,23 +716,23 @@ def r2(page):
     check('the page draws the text at the margin and the label\'s box labelsep before it', abs(geo['pad'] - 4.2675) < 0.05 and abs(geo['labRight'] - (4.2675 - 0.71125)) < 0.05 and abs(geo['w'] - (2.845 + 0.71125)) < 0.05, geo)
     # the dialog
     load_doc(page, WRAP(B3, '\\usepackage{enumitem}\n')); click_text(page, 'Two', 1)
-    run(page, 'list-indents'); page.wait_for_timeout(200)
+    run(page, 'list-indents'); settle(page, 200)
     dlg = page.get_by_role('dialog', name='Adjust List Indents')
     vals = [dlg.get_by_role('spinbutton', name=n).input_value() for n in ('Text indent', 'Label width', 'Space after label')]
     check('Adjust List Indents shows LaTeX\'s own at the level: 2.5em, 2em, 0.5em', vals == ['2.5', '2', '0.5'], vals)
     f = dlg.get_by_role('spinbutton', name='Text indent'); f.fill('3'); f.press('Tab')
-    dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    dlg.get_by_role('button', name='OK').click(); settle(page, 300)
     check('OK after a change writes the three, so TeX and the page put the label where the dialog says', '\\begin{itemize}[leftmargin=3em,labelwidth=2em,labelsep=0.5em]' in src(page), src(page))
-    run(page, 'list-indents'); page.wait_for_timeout(200)
+    run(page, 'list-indents'); settle(page, 200)
     dlg = page.get_by_role('dialog', name='Adjust List Indents')
-    dlg.get_by_role('button', name='LaTeX\'s own').click(); dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    dlg.get_by_role('button', name='LaTeX\'s own').click(); dlg.get_by_role('button', name='OK').click(); settle(page, 300)
     check('LaTeX\'s own there takes them away again', src(page) == WRAP(B3, '\\usepackage{enumitem}\n'), src(page))
     load_doc(page, WRAP('\\begin{enumerate}[(a)]\n  \\item One\n\\end{enumerate}', '\\usepackage{enumerate}\n')); click_text(page, 'One', 1)
     st = state(page, 'list-indents')
     check('beside the enumerate package it is off, saying why (enumitem would break its lists)', st[0] is False and 'enumerate package' in st[2], st)
     # the right click menu and the libraries have both
     load_doc(page, D); click_text(page, 'Two', 1)
-    page.click('#rb-ul-x'); page.wait_for_timeout(200)
+    page.click('#rb-ul-x'); settle(page, 200)
     names = page.evaluate("[...document.querySelectorAll('.pop-menu [role^=menuitem]')].map((x) => x.getAttribute('aria-label'))")
     page.keyboard.press('Escape')
     check('the bullet library\'s menu has Picture Bullet and Adjust List Indents', 'Picture Bullet…' in names or 'Picture Bullet' in names, names)
@@ -785,22 +785,22 @@ def r2_phone(p, w, h, dark=False):
     os.makedirs(shots, exist_ok=True)
     try:
         load_doc(page, WRAP(B3)); put_picture(page, 'figures/dot.png'); tap_text(page, 'Two', 1)
-        tap(page, page.locator('#rb-ul-x')); page.wait_for_timeout(200)
-        page.locator('.pop-menu [aria-label="Picture Bullet…"], .pop-menu [aria-label="Picture Bullet"]').first.tap(); page.wait_for_timeout(300)
+        tap(page, page.locator('#rb-ul-x')); settle(page, 200)
+        page.locator('.pop-menu [aria-label="Picture Bullet…"], .pop-menu [aria-label="Picture Bullet"]').first.tap(); settle(page, 300)
         f = fits(page, '.pop-list')
         small = page.evaluate("Math.min(...[...document.querySelectorAll('.pop-list .ld-pic, .pop-list .btn')].filter((x) => x.offsetParent).map((x) => Math.min(x.getBoundingClientRect().height, x.getBoundingClientRect().width)))")
         page.screenshot(path=os.path.join(shots, 'lists-picture-bullet-%d-%s.png' % (w, 'dark' if dark else 'light')))
         check('Picture Bullet by taps from the library\'s menu: on the screen, its tiles and buttons 44 px' + tag, f and f['across'] and f['down'] and small >= 44, (f, small))
-        page.get_by_role('radio', name='figures/dot.png').tap(); page.get_by_role('button', name='OK').tap(); page.wait_for_timeout(400)
+        page.get_by_role('radio', name='figures/dot.png').tap(); page.get_by_role('button', name='OK').tap(); settle(page, 400)
         check('and a tap on a picture and OK writes the bullet' + tag, 'label={\\includegraphics[height=1.6ex]{figures/dot.png}}' in src(page), src(page)[-160:])
         tap_text(page, 'Two', 1)
-        tap(page, page.locator('#rb-ul-x')); page.wait_for_timeout(200)
-        page.locator('.pop-menu [aria-label="Adjust List Indents…"], .pop-menu [aria-label="Adjust List Indents"]').first.tap(); page.wait_for_timeout(300)
+        tap(page, page.locator('#rb-ul-x')); settle(page, 200)
+        page.locator('.pop-menu [aria-label="Adjust List Indents…"], .pop-menu [aria-label="Adjust List Indents"]').first.tap(); settle(page, 300)
         f = fits(page, '.pop-list')
         small = page.evaluate("Math.min(...[...document.querySelectorAll('.pop-list input, .pop-list select, .pop-list .btn')].filter((x) => x.offsetParent).map((x) => x.getBoundingClientRect().height))")
         page.screenshot(path=os.path.join(shots, 'lists-indents-%d-%s.png' % (w, 'dark' if dark else 'light')))
         check('Adjust List Indents by taps: on the screen, its fields and buttons 44 px tall' + tag, f and f['across'] and f['down'] and small >= 44, (f, small))
-        fld = page.get_by_role('spinbutton', name='Text indent'); fld.tap(); fld.fill('4'); page.get_by_role('button', name='OK').tap(); page.wait_for_timeout(400)
+        fld = page.get_by_role('spinbutton', name='Text indent'); fld.tap(); fld.fill('4'); page.get_by_role('button', name='OK').tap(); settle(page, 400)
         check('a value typed and OK tapped writes the indents' + tag, 'leftmargin=4em,labelwidth=2em,labelsep=0.5em' in src(page), src(page)[-200:])
         check('no sideways scroll' + tag, no_side_scroll(page))
         check('no page errors' + tag, not errors, errors[:3])

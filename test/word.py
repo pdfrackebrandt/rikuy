@@ -21,7 +21,7 @@ Word support is and fetches nothing of it."""
 import os, sys, io, re, json, base64, zipfile, tempfile, traceback, time, subprocess, shutil, difflib
 sys.path.insert(0, os.path.dirname(__file__))
 import serve
-from browser import ROUTES, check, results, click_text, load_doc, undo_all, download
+from browser import settle, ROUTES, check, results, click_text, load_doc, undo_all, download
 from playwright.sync_api import sync_playwright
 import word_fixture
 
@@ -149,7 +149,7 @@ def open_app(p, url=URL):
 
 def wait_idle(page, ms=30000):
     page.wait_for_function('!window.rikuy.wordBusy', timeout=ms)
-    page.wait_for_timeout(300)
+    settle(page, 300)
 
 
 def save_docx(page, path):
@@ -162,7 +162,7 @@ def save_docx(page, path):
 
 def open_file(page, path):
     page.set_input_files('#fileinput', path)
-    page.wait_for_timeout(300)
+    settle(page, 300)
     wait_idle(page, 120000)
 
 
@@ -203,7 +203,7 @@ try:
         proj = make_zip(os.path.join(TMP, 'growth.zip'), {'main.tex': MAIN, 'refs.bib': BIB, 'fig.png': PNG})
         page.set_input_files('#fileinput', proj)
         page.wait_for_function("window.rikuy.name === 'growth'", timeout=10000)
-        page.wait_for_timeout(500)
+        settle(page, 500)
 
         # ---- Save as Word ----
         n0 = len(reqs)
@@ -356,7 +356,7 @@ try:
         check('a .docx\'s tracked changes come in waiting, each its author\'s: Ana\'s finding to result, Bo\'s big', '\\item\n  First result' in t and '\\item\n  Second big finding' in t
               and ['Ana', 'finding', 'result'] in ch and ['Bo', '', 'big '] in ch and len(ch) == 2, ch)
         check('they are marked on the page, as Word shows them', page.evaluate("document.querySelectorAll('#pages .chg-ins, #pages [class*=chg-ins], #pages ins').length") > 0 or page.evaluate("document.querySelectorAll('#pages [class*=chg]').length") > 0)
-        page.evaluate("window.rikuy.rejectChanges(window.rikuy.realChanges().filter((c) => window.rikuy.rvName(c.who) === 'Bo'))"); page.wait_for_timeout(300)
+        page.evaluate("window.rikuy.rejectChanges(window.rikuy.realChanges().filter((c) => window.rikuy.rvName(c.who) === 'Bo'))"); settle(page, 300)
         check('rejecting Bo\'s takes his word out, Ana\'s stays waiting', '\\item\n  Second finding' in src(page) and '\\item\n  First result' in src(page) and len(page.evaluate("window.rikuy.realChanges()")) == 1, src(page)[src(page).find('First'):][:80])
         out_tr = save_docx(page, os.path.join(TMP, 'tracked-out.docx'))
         dd = parts(out_tr)['word/document.xml'].decode()
@@ -378,14 +378,14 @@ try:
         tins = lambda who, t, i: '<w:ins w:id="%d" w:author="%s" w:date="2026-11-01T10:00:00Z">%s</w:ins>' % (i, who, run(t))
         many = ''.join('<w:p>' + ''.join(run('w%d ' % (i * 50 + j)) + tins('Bo' if j % 2 else 'Ana', 'x', 10 + i * 50 + j) for j in range(50)) + '</w:p>' for i in range(60))
         page.evaluate("window.__gap = 0; let last = performance.now(); const f = () => { const n = performance.now(); window.__gap = Math.max(window.__gap, n - last); last = n; requestAnimationFrame(f); }; requestAnimationFrame(f);")
-        open_file(page, body_docx('Many.docx', many)); page.wait_for_timeout(800)
+        open_file(page, body_docx('Many.docx', many)); settle(page, 800)
         gap = page.evaluate('window.__gap')
         ch = page.evaluate("window.rikuy.realChanges().map((c) => window.rikuy.rvName(c.who))")
         check('3000 tracked changes come in each its author\'s, the page never held up for a second (review M2: 1.8 s)', len(ch) > 2500 and set(ch) == {'Ana', 'Bo'} and gap < 1000, (len(ch), sorted(set(ch)), gap))
         # (Reject by author and Reject All move the layer in one pass: they held the page 0.9 and 1.5 s; N3)
-        page.evaluate("window.__gap = 0"); page.evaluate("window.rikuy.rejectChanges(window.rikuy.realChanges().filter((c) => window.rikuy.rvName(c.who) === 'Bo'))"); page.wait_for_timeout(500)
+        page.evaluate("window.__gap = 0"); page.evaluate("window.rikuy.rejectChanges(window.rikuy.realChanges().filter((c) => window.rikuy.rvName(c.who) === 'Bo'))"); settle(page, 500)
         g_bo, left = page.evaluate('window.__gap'), page.evaluate("window.rikuy.realChanges().map((c) => window.rikuy.rvName(c.who))")
-        page.evaluate("window.__gap = 0"); page.evaluate("window.rikuy.rejectAllChanges(false)"); page.wait_for_timeout(500)
+        page.evaluate("window.__gap = 0"); page.evaluate("window.rikuy.rejectAllChanges(false)"); settle(page, 500)
         g_all = page.evaluate('window.__gap')
         check('Reject by Bo and then Reject All on them hold the page under half a second each (review N3: 0.9 and 1.5 s)', set(left) == {'Ana'} and len(left) >= 60 and g_bo < 500 and g_all < 500 and not page.evaluate("window.rikuy.realChanges().length") and src(page) == page.evaluate("window.rikuy.base.files.get('main.tex')"), (len(left), round(g_bo), round(g_all)))
         people = ''.join(tins('Author number %d' % k, 'x', 10 + k) + run('w%d ' % k) for k in range(300))
@@ -548,14 +548,14 @@ try:
         # by dropping it, and by pasting it
         # ---- on the page: colours by number and by name, in text and formulas; a list and a table in a cell ----
         load_doc(page, PAGE_DOC)
-        page.wait_for_timeout(600)
+        settle(page, 600)
         look = page.evaluate("Object.fromEntries([...document.querySelectorAll('#pages .y-color, #pages .y-bg')].map(e => [e.textContent.trim(), [getComputedStyle(e).color, getComputedStyle(e).backgroundColor]]))")
         check('colours given as numbers or defined in the preamble draw on the page', look.get('blue result', [''])[0] == 'rgb(15, 158, 213)' and look.get('key term', [''])[0] == 'rgb(192, 0, 0)' and look.get('shaded', ['', ''])[1] == 'rgb(230, 242, 255)' and look.get('orange', [''])[0] == 'rgb(233, 113, 50)', look)
         check('what is not a colour of those models colours nothing', look.get('bad', [''])[0] == look.get('worse', [''])[0] and look['bad'][0] not in ('rgb(192, 0, 0)', 'rgb(15, 158, 213)') and 'url' not in page.evaluate("document.querySelector('#pages').innerHTML"), (look.get('bad'), look.get('worse')))
         mcol = page.evaluate("[...document.querySelectorAll('#pages .katex [style*=color]')].map(e => e.style.color)")
         check('colour inside formulas, by number and by the preamble\'s name', 'rgb(15, 158, 213)' in mcol and 'rgb(192, 0, 0)' in mcol and page.evaluate("document.querySelectorAll('#pages .merr, #pages .has-err').length") == 0, mcol[:6])
         page.evaluate("() => { const g = window.rikuy, t = g.files.get('main.tex'), i = t.indexOf('C00000'); g.commit([{ f: 'main.tex', s: i, e: i + 6, t: '1E7B3C' }]); }")
-        page.wait_for_timeout(500)
+        settle(page, 500)
         check('a \\definecolor changed in the source recolours the text and the formula that use it', page.evaluate("[getComputedStyle([...document.querySelectorAll('#pages .y-color')].find(x => x.textContent === 'key term')).color, [...document.querySelectorAll('#pages .katex [style*=color]')].map(e => e.style.color).includes('rgb(30, 123, 60)')]") == ['rgb(30, 123, 60)', True])
         undo_all(page)
         click_text(page, 'blue result', 4)
@@ -564,7 +564,7 @@ try:
         page.keyboard.type('s')
         click_text(page, 'Outer', 5)
         page.keyboard.type('most')
-        page.wait_for_timeout(200)
+        settle(page, 200)
         t = src(page)
         want = PAGE_DOC.replace('{blue result}', '{blueX result}').replace('{key term}', '{keys term}').replace('Outer &', 'Outermost &')
         check('typing inside coloured text and beside a list in a cell patches only those spots', t == want, [l for l in difflib.unified_diff(want.split('\n'), t.split('\n'), lineterm='', n=0)][:8])
@@ -579,7 +579,7 @@ try:
         check('a click on the list opens its source', v.startswith('\\begin{itemize}') and v.endswith('\\end{itemize}') and 'nested' in v, v[:80])
         page.fill('#pop-raw', v.replace('second', 'SECOND'))
         page.keyboard.press('Control+Enter')
-        page.wait_for_timeout(400)
+        settle(page, 400)
         check('an edit there changes that word in the source and on the page', src(page) == PAGE_DOC.replace('  second', '  SECOND') and 'SECOND' in page.inner_text('#pages td ul'), src(page)[src(page).find('itemize'):][:120])
         undo_all(page)
         check('and is undone to the byte', src(page) == PAGE_DOC)
@@ -588,7 +588,7 @@ try:
         for how, js in [('drop', "(b) => { const f = new File([Uint8Array.from(atob(b), (c) => c.charCodeAt(0))], 'Dropped.docx'); const dt = new DataTransfer(); dt.items.add(f); document.getElementById('desk').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); }"),
                         ('paste', "(b) => { const f = new File([Uint8Array.from(atob(b), (c) => c.charCodeAt(0))], 'Pasted.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }); const dt = new DataTransfer(); dt.items.add(f); document.getElementById('pages').focus(); document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }")]:
             page.evaluate(js, b64)
-            page.wait_for_timeout(300)
+            settle(page, 300)
             wait_idle(page, 120000)
             want = 'Dropped' if how == 'drop' else 'Pasted'
             check('a .docx opens by %s too' % how, page.evaluate('window.rikuy.name') == want and '\\section{Findings}' in src(page), page.evaluate('window.rikuy.name'))
@@ -612,7 +612,7 @@ try:
         check('a Word file with a DTD (XXE, entity expansion) is refused', 'DTD' in page.inner_text('#toast') or 'could not' in page.inner_text('#toast').lower(), page.inner_text('#toast')[:200])
         # ---- only this browser's own exports are merged; the file carries only what it shows ----
         page.evaluate('window.rikuy.doReset()')
-        page.wait_for_timeout(500)
+        settle(page, 500)
         page.evaluate('() => { const g = window.rikuy; g.files.set("unused.tex", "SECRET-CHAPTER nobody inputs"); g.saveSoon && g.saveSoon(); }')
         own = save_docx(page, os.path.join(TMP, 'own.docx'))
         P = parts(own)
@@ -644,7 +644,7 @@ try:
         check('and the project it claimed to edit is as it was, in History', snaps == before, (snaps or '')[:120])
         # the untouched export, edited in Word, still comes back as edits to its project
         page.evaluate('window.rikuy.doReset()')
-        page.wait_for_timeout(500)
+        settle(page, 500)
         own2 = save_docx(page, os.path.join(TMP, 'own2.docx'))
         ed = edit_docx(own2, os.path.join(TMP, 'own2-edited.docx'), [('Click anywhere', 'Click nearly anywhere')])
         open_file(page, ed)
@@ -667,10 +667,10 @@ try:
             browser, page, errors, reqs = open_app(p, 'http://127.0.0.1:%d/' % port2)
             check('without Word: Download still offers Word', page.evaluate('document.getElementById("rb-word").textContent').strip() == 'Word' and not page.evaluate('document.getElementById("rb-word").disabled'))
             download(page, 'rb-word')
-            page.wait_for_timeout(300)
+            settle(page, 300)
             check('without Word: Word says it lives on the hosted copy', 'hosted copy' in page.inner_text('#toast'), page.inner_text('#toast'))
             page.set_input_files('#fileinput', fx)
-            page.wait_for_timeout(500)
+            settle(page, 500)
             check('without Word: opening a .docx says so too, and the project stays', 'hosted copy' in page.inner_text('#toast') and page.evaluate('window.rikuy.main') == 'main.tex' and 'Editing in Print' in src(page) or 'hosted copy' in page.inner_text('#toast'))
             check('without Word: nothing of pandoc is ever fetched', not [u for u in reqs if '/word/' in u], [u for u in reqs if '/word/' in u])
             check('without Word: no page errors', not errors, errors[:3])

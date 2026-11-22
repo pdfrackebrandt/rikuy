@@ -23,7 +23,7 @@ Run: python3 objects.py [section ...] (sections: shapes, charts, smart, menus, c
 pictures_compiled, arrange, selpane, phones, shots, pictures_unloaded, pictures_phone)."""
 import os, sys, re, base64
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import open_page, check, results, src, load_doc, roundtrip, pressed
+from browser import settle, open_page, check, results, src, load_doc, roundtrip, pressed
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -45,7 +45,7 @@ DOC = lambda obj: WRAP('Before it.\n\n' + obj + '\nAfter it.')
 
 def run_cmd(page, cid, args=None):
     r = page.evaluate('([id, a]) => window.rikuy.runCommand(id, a)', [cid, args])
-    page.wait_for_timeout(200)
+    settle(page, 200)
     return r
 
 
@@ -55,7 +55,7 @@ def obj_box(page, sel='svg.tz', n=0):
 
 def press(page, sel='svg.tz', n=0, at=(0.5, 0.5)):
     b = obj_box(page, sel, n)
-    page.mouse.click(b[0] + b[2] * at[0], b[1] + b[3] * at[1]); page.wait_for_timeout(200)
+    page.mouse.click(b[0] + b[2] * at[0], b[1] + b[3] * at[1]); settle(page, 200)
 
 
 def selector(sel='svg.tz', n=0, sub=None):
@@ -65,7 +65,7 @@ def selector(sel='svg.tz', n=0, sub=None):
         press(page, sel, n)
         if sub is not None:
             page.evaluate('''([s, k]) => { const g = window.rikuy, e = document.querySelectorAll('#pages ' + s)[0]; g.shapeSel.k = k; g.ribbonSync(); }''', [sel, sub])
-        page.wait_for_timeout(80)
+        settle(page, 80)
     return f
 
 
@@ -90,19 +90,19 @@ def body(page):
 
 def shapes(page):
     D = DOC(SHAPE)
-    load_doc(page, D); page.wait_for_timeout(300)
+    load_doc(page, D); settle(page, 300)
     check('before a press no Shape Format tab', not tab_shown(page, 'shape-format'))
     press(page)
     check('a press on a drawing selects it: Shape Format shows and opens, its points have handles', tab_shown(page, 'shape-format') and page.evaluate('window.rikuy.rbTab') == 'shape-format' and page.evaluate("[...document.querySelectorAll('.shape-layer .shape-h')].filter((h) => !h.hidden).length") == 2)
-    page.click('#rt-shape-format'); page.wait_for_timeout(200)
+    page.click('#rt-shape-format'); settle(page, 200)
     check('a press on the ribbon keeps it selected, its buttons enabled', page.evaluate("!!window.rikuy.objHere() && !document.getElementById('rc-shape-fill').disabled"))
     # Shape Fill and Outline, by the menus as a person picks them
-    page.click('#rc-shape-fill'); page.wait_for_timeout(200)
-    page.get_by_role('menuitemradio', name='red!40', exact=True).click(); page.wait_for_timeout(300)
+    page.click('#rc-shape-fill'); settle(page, 200)
+    page.get_by_role('menuitemradio', name='red!40', exact=True).click(); settle(page, 300)
     check('Shape Fill › red!40 from the colour grid writes fill=red!40 in place of fill=blue!20, one step', src(page) == D.replace('fill=blue!20', 'fill=red!40'), body(page))
     check('and the page draws it red!40 (255,153,153)', fill_of(page) == 'rgb(255,153,153)', fill_of(page))
     check('the drawing stays selected after the edit', page.evaluate("!!window.rikuy.objHere() && document.querySelector('#pages .raw.drawn').classList.contains('sel')"))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     check('one undo gives the bytes back', src(page) == D)
     sel = selector()
     roundtrip(page, D, sel, cmd('shape-fill', {'color': None}), D.replace(', fill=blue!20', ''), off_command=cmd('shape-fill', {'color': 'blue!20'}), label='Shape Fill › No Fill')
@@ -117,18 +117,18 @@ def shapes(page):
     check('and the drawing is drawn in the style\'s colours', fill_of(page) == 'rgb(255,192,128)', fill_of(page))
     T = D.replace(RECT, RECT + '\n\\node[align=center] at (1.5,1) {Start};')
     roundtrip(page, D, sel, cmd('shape-text', {'text': 'Start'}), T, off_command=cmd('shape-text', {'text': ''}), label='Edit Text › Start')
-    load_doc(page, T); page.wait_for_timeout(300)
+    load_doc(page, T); settle(page, 300)
     check('the words drawn in the shape, at its middle', page.evaluate("(() => { const t = document.querySelector('#pages svg.tz text'), r = document.querySelector('#pages svg.tz rect'); if (!t || !r) return false; const a = t.getBoundingClientRect(), b = r.getBoundingClientRect(); return t.textContent === 'Start' && Math.abs((a.left + a.right) / 2 - (b.left + b.right) / 2) < 3 && Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2) < 6; })()"))
     # Edit Text by its dialog
     load_doc(page, D); sel(page)
     run_cmd(page, 'shape-text')
-    page.get_by_role('textbox', name='Words in the shape, a line each').fill('Two\nlines'); page.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(300)
+    page.get_by_role('textbox', name='Words in the shape, a line each').fill('Two\nlines'); page.get_by_role('button', name='OK', exact=True).click(); settle(page, 300)
     check('Edit Text\'s dialog writes its lines with \\\\ between', '\\node[align=center] at (1.5,1) {Two \\\\ lines};' in src(page), body(page))
     roundtrip(page, D, sel, cmd('shape-width', {'cm': 6}), D.replace('\\begin{tikzpicture}', '\\begin{tikzpicture}[scale=2]'), off_command=cmd('shape-width', {'cm': 3}), label='Shape Width 6 cm (its shape kept)')
     load_doc(page, D); sel(page)
     w0 = obj_box(page)[2]
-    page.click('#rt-shape-format'); page.wait_for_timeout(150)
-    page.fill('#rc-shape-height', '3'); page.press('#rc-shape-height', 'Enter'); page.wait_for_timeout(400)
+    page.click('#rt-shape-format'); settle(page, 150)
+    page.fill('#rc-shape-height', '3'); page.press('#rc-shape-height', 'Enter'); settle(page, 400)
     w1 = obj_box(page)[2]
     check('the Height field: 3 typed, Enter writes scale=1.5 and the page draws it half as wide again (%.0f to %.0f px)' % (w0, w1), '\\begin{tikzpicture}[scale=1.5]' in src(page) and abs(w1 / w0 - 1.5) < 0.08, body(page))
     check('and the fields read the new size', page.evaluate("[document.getElementById('rc-shape-width').value, document.getElementById('rc-shape-height').value]") == ['4.5 cm', '3 cm'])
@@ -137,40 +137,40 @@ def shapes(page):
     run_cmd(page, 'shape-insert', {'shape': 'circle'})
     check('Insert Shape › Circle: a second \\draw in the same picture, at the right of the first, one step', src(page) == D.replace(RECT, RECT + '\n\\draw[thick, draw=blue!60!black, fill=blue!20] (4.5,1) circle (1);') and page.evaluate('window.rikuy.hist.length') == h0 + 1, body(page))
     check('the new shape is the one selected: Bring Forward has nothing over it, Send Backward can', page.evaluate("window.rikuy.shapeSel.k") == 1 and page.evaluate("document.getElementById('rc-shape-forward').disabled") and not page.evaluate("document.getElementById('rc-shape-backward').disabled"))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     check('one undo takes it off', src(page) == D)
     W = DOC(TWO)
     CIRC = '\\draw[thick, draw=red, fill=red!20] (2,1) circle (1);'
     roundtrip(page, W, selector(sub=0), cmd('shape-forward'), W.replace(RECT + '\n' + CIRC, CIRC + '\n' + RECT), off_command=lambda p: (p.evaluate('window.rikuy.shapeSel.k = 1'), run_cmd(p, 'shape-backward')), label='Bring Forward of the rectangle')
     # a second press on one shape of a selected drawing selects it alone; Fill then changes it alone
-    load_doc(page, W); page.wait_for_timeout(300)
+    load_doc(page, W); settle(page, 300)
     page.evaluate('window.rikuy.shapeSel.clear()'); press(page); b = page.evaluate("(() => { const c = document.querySelector('#pages svg.tz circle'); const r = c.getBoundingClientRect(); return [r.x + r.width * 0.8, r.y + r.height / 2]; })()")
-    page.mouse.click(b[0], b[1]); page.wait_for_timeout(250)
+    page.mouse.click(b[0], b[1]); settle(page, 250)
     check('a second press on the circle selects it alone (a glow, its own handles)', page.evaluate("window.rikuy.shapeSel.k") == 1 and page.evaluate("document.querySelector('#pages svg.tz circle').classList.contains('sub')"))
     run_cmd(page, 'shape-fill', {'color': 'green!40'})
     check('Shape Fill then changes the circle alone', src(page) == W.replace('fill=red!20', 'fill=green!40'), body(page))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     # Delete and the press elsewhere
-    load_doc(page, D); page.wait_for_timeout(200); press(page)
-    page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    load_doc(page, D); settle(page, 200); press(page)
+    page.keyboard.press('Delete'); settle(page, 300)
     check('Delete takes the drawing off with the center it stood in, one step', src(page) == WRAP('Before it.\n\n\nAfter it.'), body(page))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     check('and one undo gives it back', src(page) == D)
     press(page)
     b = page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('After it')); const r = s.getBoundingClientRect(); return [r.x + 5, r.y + r.height / 2]; })()")
-    page.mouse.click(b[0], b[1]); page.wait_for_timeout(200)
+    page.mouse.click(b[0], b[1]); settle(page, 200)
     check('a press on the text lets it go: Shape Format hides', not tab_shown(page, 'shape-format') and not page.evaluate('!!window.rikuy.objHere()'))
 
 
 def charts(page):
     D = DOC(CHART)
-    load_doc(page, D); page.wait_for_timeout(300)
+    load_doc(page, D); settle(page, 300)
     press(page, 'svg.pgf')
     check('a press on a chart selects it (a frame): Chart Design and Format show, no grid opens', tab_shown(page, 'chart-design') and tab_shown(page, 'chart-format') and not page.evaluate("!!document.querySelector('.pop input.pd-cell')"))
     sel = selector('svg.pgf')
     ax = lambda add: D.replace(AXIS, AXIS[:-1] + ', ' + add + ']')
     roundtrip(page, D, sel, cmd('chart-title', {'text': 'Q1 sales'}), ax('title={Q1 sales}'), off_command=cmd('chart-title', {'text': ''}), label='Chart Title')
-    load_doc(page, ax('title={Q1 sales}')); page.wait_for_timeout(300)
+    load_doc(page, ax('title={Q1 sales}')); settle(page, 300)
     check('the page draws the title above the chart', page.evaluate("[...document.querySelectorAll('#pages svg.pgf text')].some((t) => t.textContent === 'Q1 sales')"))
     roundtrip(page, D, sel, cmd('chart-axis-titles', {'x': 'Region', 'y': 'Units'}), ax('xlabel={Region}, ylabel={Units}'), off_command=cmd('chart-axis-titles', {'x': '', 'y': ''}), label='Axis Titles')
     roundtrip(page, D, sel, 'chart-gridlines', ax('ymajorgrids'), forms=[D.replace('ybar,', 'ybar, ymajorgrids,')], label='Gridlines')
@@ -178,7 +178,7 @@ def charts(page):
     roundtrip(page, D, sel, cmd('chart-legend', {'pos': 'south east'}), D.replace('legend pos=north west', 'legend pos=south east'), off_command=cmd('chart-legend', {'pos': 'north west'}), label='Legend › Bottom Right')
     cyc = 'cycle list={{draw=blue!70!black,fill=blue!70!white,mark=none},{draw=blue!70!black,fill=blue!45!white,mark=none},{draw=blue!70!black,fill=blue!25!white,mark=none},{draw=blue!70!black,fill=blue!10!white,mark=none}}'
     roundtrip(page, D, sel, cmd('chart-colors', {'palette': 'blue'}), ax(cyc), off_command=cmd('chart-colors', {'palette': 'colorful'}), label='Change Colors › Monochromatic Blue')
-    load_doc(page, ax(cyc)); page.wait_for_timeout(300)
+    load_doc(page, ax(cyc)); settle(page, 300)
     check('the page draws the bars in the palette\'s fills', page.evaluate("[...document.querySelectorAll('#pages svg.pgf rect')].some((r) => r.getAttribute('fill') === 'rgb(77,77,255)')"))
     # Change Chart Type keeps the settings; Switch Row/Column twice gives the bytes back
     T = ax('title={T}')
@@ -197,7 +197,7 @@ def charts(page):
     run_cmd(page, 'chart-edit-data')
     vals = page.evaluate("[...document.querySelectorAll('.pop input.pd-cell')].slice(0, 8).map((i) => i.value)")
     check('Edit Data opens the grid with the chart\'s data', vals[:3] == ['', 'Sales', 'Costs'] and vals[4:6] == ['A', '4.3'], vals)
-    page.get_by_role('textbox', name='Row 2, series 1', exact=True).fill('7'); page.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(300)
+    page.get_by_role('textbox', name='Row 2, series 1', exact=True).fill('7'); page.get_by_role('button', name='OK', exact=True).click(); settle(page, 300)
     check('OK writes (B,7) and keeps the title', src(page) == T.replace('(B,2.5)', '(B,7)'), body(page))
     # review N8: a series' name keeps & % _ (escaped, in the legend); a category says what it cannot hold
     load_doc(page, T); sel(page); run_cmd(page, 'chart-edit-data')
@@ -205,12 +205,12 @@ def charts(page):
     page.get_by_role('textbox', name='Category 1', exact=True).fill('R&D')
     note = page.evaluate("(() => { const n = document.querySelector('.pop .pd-catnote'); return n && !n.hidden ? n.textContent : ''; })()")
     check('N8: the grid says a category cannot hold & and how it is written: ' + note, '"R&D" is written "R D"' in note, note)
-    page.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(300)
+    page.get_by_role('button', name='OK', exact=True).click(); settle(page, 300)
     s8 = src(page)
     check('N8: the legend keeps "Sales & Co 50%_x" escaped; the category is R D', '\\addlegendentry{Sales \\& Co 50\\%\\_x}' in s8 and 'symbolic x coords={R D,B,C}' in s8 and '(R D,' in s8, body(page))
     sel(page); run_cmd(page, 'chart-edit-data')
     v8 = page.evaluate("[...document.querySelectorAll('.pop input.pd-cell')].slice(0, 3).map((i) => i.value)")
-    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    page.keyboard.press('Escape'); settle(page, 150)
     check('N8: the grid reads the name back as typed', v8[1] == 'Sales & Co 50%_x', v8)
     if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
         for eng in ('pdflatex', 'xelatex', 'lualatex'):
@@ -219,22 +219,22 @@ def charts(page):
             # (pdfLaTeX's OT1 \_ is a drawn rule pdftotext cannot read)
             got = ('Sales & Co 50%_x' in t8) if eng != 'pdflatex' else ('Sales&Co50%x' in re.sub(r'[\s_]', '', t8))
             check('N8: the legend compiles with %s, "Sales & Co 50%%_x" in the PDF' % eng, r['ok'] and not r['problems'] and got, (r['problems'], t8[:200]))
-    load_doc(page, D); page.wait_for_timeout(300)
+    load_doc(page, D); settle(page, 300)
     b = obj_box(page, 'svg.pgf')
-    page.mouse.dblclick(b[0] + b[2] / 2, b[1] + b[3] / 2); page.wait_for_timeout(300)
+    page.mouse.dblclick(b[0] + b[2] / 2, b[1] + b[3] / 2); settle(page, 300)
     check('a double click on a chart opens its grid', page.evaluate("!!document.querySelector('.pop input.pd-cell')"))
-    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    page.keyboard.press('Escape'); settle(page, 150)
     roundtrip(page, D, sel, cmd('chart-height', {'cm': 4.5}), D.replace('height=6cm', 'height=4.5cm'), off_command=cmd('chart-height', {'cm': 6}), label='Chart Height 4.5 cm')
     load_doc(page, D); sel(page); w0 = obj_box(page, 'svg.pgf')[2]
-    page.click('#rt-chart-format'); page.wait_for_timeout(150)
-    page.fill('#rc-chart-width', '50%'); page.press('#rc-chart-width', 'Enter'); page.wait_for_timeout(400)
+    page.click('#rt-chart-format'); settle(page, 150)
+    page.fill('#rc-chart-width', '50%'); page.press('#rc-chart-width', 'Enter'); settle(page, 400)
     w1 = obj_box(page, 'svg.pgf')[2]
     check('Chart Width 50%%: width=0.5\\linewidth, drawn %.0f px from %.0f' % (w1, w0), 'width=0.5\\linewidth' in src(page) and abs(w1 / w0 - 0.5 / 0.8) < 0.05, body(page))
 
 
 def smart(page):
     D = DOC(SMART)
-    load_doc(page, D); page.wait_for_timeout(300)
+    load_doc(page, D); settle(page, 300)
     press(page, 'svg.smart')
     check('a press on a SmartArt selects it: SmartArt Design and Format show', tab_shown(page, 'smart-design') and tab_shown(page, 'smart-format') and page.evaluate("document.querySelector('#pages .a-smart').classList.contains('sel')"))
     sel = selector('svg.smart')
@@ -246,7 +246,7 @@ def smart(page):
     roundtrip(page, C, sel, 'smart-rtl', C.replace(':clockwise', ':counterclockwise'), forms=[C.replace(':clockwise', ':counterclockwise').replace('circular', ' circular').replace('[ circular', '[circular')], label='Right to Left')
     teal = '\\smartdiagramset{set color list={teal!60,teal!52,teal!44,teal!37,teal!30,teal!24,teal!19,teal!14,teal!10,teal!7}}\n' + SD + '\n\\smartdiagramset{' + RESET + '}% rikuy: colours back'
     roundtrip(page, D, sel, cmd('smart-colors', {'palette': 'teal'}), D.replace(SD, teal), off_command=cmd('smart-colors', {'palette': 'colorful'}), label='Change Colors › Teal (and the package\'s colours back after it)')
-    load_doc(page, D.replace(SD, teal)); page.wait_for_timeout(300)
+    load_doc(page, D.replace(SD, teal)); settle(page, 300)
     check('the page draws the teal boxes, and no set\'s words as text', page.evaluate("document.querySelector('#pages svg.smart rect').getAttribute('fill')") == 'rgb(102,179,179)' and 'set color list' not in page.evaluate("document.getElementById('pages').innerText"))
     press(page, 'svg.smart')
     check('a press on it takes in its set and the line after it (Reset Graphic can run)', not page.evaluate("document.getElementById('rc-smart-reset').disabled"))
@@ -255,12 +255,12 @@ def smart(page):
     roundtrip(page, D, sel, cmd('smart-fill', {'color': 'orange!50'}), D.replace(SD, '\\smartdiagramset{uniform color list=orange!50 for 10 items}\n' + SD + '\n\\smartdiagramset{' + RESET + '}% rikuy: colours back'), off_command=cmd('smart-fill', {'color': None}), label='SmartArt Shape Fill')
     roundtrip(page, D, sel, cmd('smart-outline', {'color': 'black'}), D.replace(SD, '\\smartdiagramset{border color=black}\n' + SD), off_command=cmd('smart-outline', {'color': None}), label='SmartArt Shape Outline')
     # the Text Pane by its dialog, from a double click
-    load_doc(page, D); page.wait_for_timeout(300)
-    b = obj_box(page, 'svg.smart'); page.mouse.dblclick(b[0] + b[2] / 2, b[1] + b[3] / 2); page.wait_for_timeout(300)
+    load_doc(page, D); settle(page, 300)
+    b = obj_box(page, 'svg.smart'); page.mouse.dblclick(b[0] + b[2] / 2, b[1] + b[3] / 2); settle(page, 300)
     ta = page.get_by_role('textbox', name='Items, one per line')
     check('a double click opens the Text Pane with its items', ta.count() == 1 and ta.input_value() == 'Plan\nWrite\nSubmit')
     if ta.count():
-        ta.fill('Plan\nWrite\nCheck\nSubmit'); page.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(300)
+        ta.fill('Plan\nWrite\nCheck\nSubmit'); page.get_by_role('button', name='OK', exact=True).click(); settle(page, 300)
         check('OK writes the items in place, one step', src(page) == D.replace('Write, Submit', 'Write, Check, Submit'), body(page))
 
 
@@ -268,20 +268,20 @@ def menus(page):
     for obj, sel, names in ((SHAPE, 'svg.tz', ['Edit Text', 'Theme Styles', 'Shape Fill', 'Shape Outline', 'Bring Forward', 'Show Drawing Source', 'Delete Object']),
                             (CHART, 'svg.pgf', ['Edit Data', 'Chart Title', 'Axis Titles', 'Change Colors', 'Change Chart Type', 'Show Chart Source', 'Delete Object']),
                             (SMART, 'svg.smart', ['Text Pane', 'Add Shape', 'Change Layout', 'Change Colors', 'Show SmartArt Source', 'Delete Object'])):
-        load_doc(page, DOC(obj)); page.wait_for_timeout(300)
+        load_doc(page, DOC(obj)); settle(page, 300)
         b = obj_box(page, sel)
-        page.mouse.click(b[0] + b[2] / 2, b[1] + b[3] / 2, button='right'); page.wait_for_timeout(300)
+        page.mouse.click(b[0] + b[2] / 2, b[1] + b[3] / 2, button='right'); settle(page, 300)
         got = page.evaluate("[...document.querySelectorAll('.pop-ctx [role^=menuitem]')].map((a) => a.getAttribute('aria-label'))")
         check('a right click on the %s: its own menu (%s)' % (sel, ', '.join(got)), all(n in got for n in names), got)
-        page.keyboard.press('Escape'); page.wait_for_timeout(150)
-    load_doc(page, DOC(CHART)); page.wait_for_timeout(300)
-    b = obj_box(page, 'svg.pgf'); page.mouse.click(b[0] + b[2] / 2, b[1] + b[3] / 2, button='right'); page.wait_for_timeout(300)
-    page.get_by_role('menuitem', name='Change Chart Type').click(); page.wait_for_timeout(250)
-    page.get_by_role('menuitemradio', name='Line').click(); page.wait_for_timeout(300)
+        page.keyboard.press('Escape'); settle(page, 150)
+    load_doc(page, DOC(CHART)); settle(page, 300)
+    b = obj_box(page, 'svg.pgf'); page.mouse.click(b[0] + b[2] / 2, b[1] + b[3] / 2, button='right'); settle(page, 300)
+    page.get_by_role('menuitem', name='Change Chart Type').click(); settle(page, 250)
+    page.get_by_role('menuitemradio', name='Line').click(); settle(page, 300)
     check('the menu\'s Change Chart Type › Line writes a line chart', '\\addplot+[mark=*]' in src(page) and 'ybar' not in src(page), body(page))
     # Enter on a selected drawing edits its source, as before
-    load_doc(page, DOC(SHAPE)); page.wait_for_timeout(300); press(page)
-    page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    load_doc(page, DOC(SHAPE)); settle(page, 300); press(page)
+    page.keyboard.press('Enter'); settle(page, 300)
     check('Enter on a selected drawing opens its source', page.evaluate("!!(window.rikuy.pop && window.rikuy.pop.el.querySelector('textarea, .cm-editor, [contenteditable]'))"))
     page.keyboard.press('Escape')
 
@@ -308,7 +308,7 @@ def compiled(page):
         return
     # made by the commands themselves, on the page
     D = DOC(SHAPE + '\n' + LINE + '\n' + TWO + '\n' + CHART + '\n' + SMART + '\n' + SMART.replace('Plan', 'Again'))
-    load_doc(page, D); page.wait_for_timeout(300)
+    load_doc(page, D); settle(page, 300)
     steps = [('svg.tz', 0, 'shape-styles', {'style': 'teal-intense'}), ('svg.tz', 0, 'shape-text', {'text': 'Start here'}), ('svg.tz', 0, 'shape-width', {'cm': 4.5}),
              ('svg.tz', 0, 'shape-weight', {'pt': 1.5}), ('svg.tz', 0, 'shape-dashes', {'dash': 'dash dot'}), ('svg.tz', 1, 'shape-arrows', {'arrow': '<->'}), ('svg.tz', 1, 'shape-outline', {'color': 'red!75!black'}),
              ('svg.tz', 2, 'shape-insert', {'shape': 'star'}), ('svg.tz', 2, 'shape-back', None), ('svg.tz', 2, 'shape-fill', {'color': None}),
@@ -320,7 +320,7 @@ def compiled(page):
         if c == 'shape-back':
             page.evaluate('window.rikuy.shapeSel.k = 1')
         run_cmd(page, c, a)
-        page.keyboard.press('Escape'); page.wait_for_timeout(100)
+        page.keyboard.press('Escape'); settle(page, 100)
     doc = src(page)
     check('the steps wrote each its part (%d characters)' % len(doc), all(x in doc for x in ('fill=teal!80!black', 'Start here', 'scale=1.5', 'line width=1.5pt', 'dash dot', '<->', 'title={Q1 sales \\& R\\&D: 50\\% of \\$5\\_000 \\#1}', 'cycle list=', 'set color list={blue!50', 'border color=blue!50!black', 'counterclockwise', 'Item 4')), doc[doc.find('\\begin{document}'):][:1500])
     open(os.path.join(SHOTS, 'objects-compiled.tex'), 'w').write(doc)
@@ -344,15 +344,15 @@ def phones(p):
         tag = ' (%d px, touch)' % w
         try:
             D = DOC(SHAPE)
-            load_doc(page, D); page.wait_for_timeout(400)
+            load_doc(page, D); settle(page, 400)
             b = obj_box(page)
-            page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2); page.wait_for_timeout(300)
+            page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2); settle(page, 300)
             check('a tap selects the drawing: Shape Format shows' + tag, tab_shown(page, 'shape-format') and page.evaluate('!!window.rikuy.objHere()'))
             hs = page.evaluate("[...document.querySelectorAll('.shape-layer .shape-h')].filter((h) => !h.hidden).map((h) => parseFloat(getComputedStyle(h, '::before').width))")
             check('its handles are 44 px targets' + tag, hs and all(x >= 44 for x in hs), hs)
             check('the tap opened Shape Format (the "Ribbon tab" list says so)' + tag, page.evaluate("[window.rikuy.rbTab, document.getElementById('rb-tabsel').value]") == ['shape-format', 'shape-format'])
-            page.locator('#rc-shape-fill').tap(); page.wait_for_timeout(250)
-            page.get_by_role('menuitemradio', name='green!40', exact=True).tap(); page.wait_for_timeout(350)
+            page.locator('#rc-shape-fill').tap(); settle(page, 250)
+            page.get_by_role('menuitemradio', name='green!40', exact=True).tap(); settle(page, 350)
             check('taps on Shape Fill and a colour write it' + tag, src(page) == D.replace('fill=blue!20', 'fill=green!40'), body(page))
             check('the page never scrolls sideways' + tag, page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1'))
             # review H6: every visible control of each new tab a 44 px target; L6: the colour grid's tiles too
@@ -360,43 +360,43 @@ def phones(p):
             SMALL = """(t) => [...document.querySelectorAll('#rp-' + t + ' button, #rp-' + t + ' input, #rp-' + t + ' select')].filter((e) => e.getClientRects().length && e.offsetParent && !e.closest('.rb-dl'))
               .map((e) => { const b = e.getBoundingClientRect(); return [e.id || e.getAttribute('aria-label') || e.className, Math.round(b.width), Math.round(b.height)]; }).filter((x) => x[1] < 44 || x[2] < 44)"""
             for obj, sel_, tabs in ((SHAPE, 'svg.tz', ['shape-format']), (CHART, 'svg.pgf', ['chart-design', 'chart-format']), (SMART, 'svg.smart', ['smart-design', 'smart-format'])):
-                load_doc(page, DOC(obj)); page.wait_for_timeout(400)
-                b = obj_box(page, sel_); page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2); page.wait_for_timeout(300)
+                load_doc(page, DOC(obj)); settle(page, 400)
+                b = obj_box(page, sel_); page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2); settle(page, 300)
                 for t in tabs:
-                    page.evaluate('(t) => rikuy.selectTab(t)', t); page.wait_for_timeout(250)
+                    page.evaluate('(t) => rikuy.selectTab(t)', t); settle(page, 250)
                     n = page.evaluate("(t) => [...document.querySelectorAll('#rp-' + t + ' button, #rp-' + t + ' input')].filter((e) => e.getClientRects().length && e.offsetParent && !e.closest('.rb-dl')).length", t)
                     small = page.evaluate(SMALL, t)
                     check('H6: every one of %s\'s %d controls is a 44 px target%s' % (t, n, tag), n > 0 and not small, small[:6])
-            load_doc(page, DOC(SHAPE)); page.wait_for_timeout(300)
-            b = obj_box(page); page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2); page.wait_for_timeout(300)
-            page.evaluate("rikuy.selectTab('shape-format')"); page.wait_for_timeout(200)
-            page.locator('#rc-shape-fill').tap(); page.wait_for_timeout(300)
+            load_doc(page, DOC(SHAPE)); settle(page, 300)
+            b = obj_box(page); page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2); settle(page, 300)
+            page.evaluate("rikuy.selectTab('shape-format')"); settle(page, 200)
+            page.locator('#rc-shape-fill').tap(); settle(page, 300)
             g = page.evaluate("""() => { const m = document.querySelector('.pop-colors'); const t = [...m.querySelectorAll('.gal-tile')].filter((a) => a.getClientRects().length).map((a) => a.getBoundingClientRect()); return { n: t.length, rows: new Set(t.map((r) => Math.round(r.top))).size, small: t.filter((r) => r.width < 44 || r.height < 44).length, right: Math.max(...t.map((r) => r.right)), w: innerWidth }; }""")
             check('L6: the colour grid in rows of tiles, 44 px each, inside the screen (%d tiles in %d rows)%s' % (g['n'], g['rows'], tag), g['rows'] < g['n'] / 4 and g['small'] == 0 and g['right'] <= g['w'] + 1, g)
-            page.keyboard.press('Escape'); page.wait_for_timeout(150)
-            page.evaluate("rikuy.runCommand('selection-pane')"); page.wait_for_timeout(300)
+            page.keyboard.press('Escape'); settle(page, 150)
+            page.evaluate("rikuy.runCommand('selection-pane')"); settle(page, 300)
             sp = page.evaluate("""() => [...document.querySelectorAll('#sel-pane button, #sel-pane input')].filter((e) => e.getClientRects().length).map((e) => { const b = e.getBoundingClientRect(); return [e.getAttribute('aria-label') || e.textContent, Math.round(b.width), Math.round(b.height), Math.round(b.right)]; })""")
             check('H6: the Selection Pane\'s Close, Show All, Hide All, rows, names and eyes are 44 px tall, inside the screen%s' % tag, sp and all(x[2] >= 44 and x[3] <= page.evaluate('innerWidth') + 1 for x in sp) and all(x[1] >= 44 for x in sp if x[0] in ('Close',) or (x[0] or '').startswith('Show ')), sp)
             page.keyboard.press('Escape')
             # a long press: the object's menu, 44 px items in the screen
             for obj, sel_, name in ((CHART, 'svg.pgf', 'Chart Title'), (SMART, 'svg.smart', 'Text Pane'), (SHAPE, 'svg.tz', 'Edit Text')):
-                load_doc(page, DOC(obj)); page.wait_for_timeout(400)
+                load_doc(page, DOC(obj)); settle(page, 400)
                 b = obj_box(page, sel_)
                 cdp = page.context.new_cdp_session(page)
                 x, y = b[0] + b[2] / 2, b[1] + b[3] / 2
-                cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': x, 'y': y}]}); page.wait_for_timeout(750)
-                cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []}); cdp.detach(); page.wait_for_timeout(300)
+                cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': x, 'y': y}]}); settle(page, 750)
+                cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []}); cdp.detach(); settle(page, 300)
                 g = page.evaluate("""() => { const m = document.querySelector('.pop-ctx'); if (!m) return null; const r = m.getBoundingClientRect();
                   const it = [...m.querySelectorAll('[role^=menuitem]')].filter((a) => a.getClientRects().length).map((a) => a.getBoundingClientRect());
                   return { names: [...m.querySelectorAll('[role^=menuitem]')].map((a) => a.getAttribute('aria-label')), l: r.left, r: r.right, b: r.bottom, w: innerWidth, h: innerHeight, small: it.filter((t) => t.height < 44).length }; }""")
                 check('a long press on the %s opens its menu, in the screen, 44 px items%s' % (sel_, tag), g and name in g['names'] and g['l'] >= 0 and g['r'] <= g['w'] + 1 and g['small'] == 0, g)
                 if g:
-                    page.get_by_role('menuitem', name=name).tap(); page.wait_for_timeout(300)
+                    page.get_by_role('menuitem', name=name).tap(); settle(page, 300)
                     check('and a tap on %s opens its dialog' % name + tag, page.evaluate("!!document.querySelector('.pop-dlg')"))
-                    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+                    page.keyboard.press('Escape'); settle(page, 150)
             if w == 390:
-                load_doc(page, DOC(CHART)); page.wait_for_timeout(300); b = obj_box(page, 'svg.pgf')
-                page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2); page.wait_for_timeout(300)
+                load_doc(page, DOC(CHART)); settle(page, 300); b = obj_box(page, 'svg.pgf')
+                page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2); settle(page, 300)
                 page.screenshot(path=os.path.join(SHOTS, 'chart-design-390.png'))
             check('no page errors' + tag, not [e for e in errs if 'tree.wasm' not in e], errs[:3])
         finally:
@@ -410,25 +410,25 @@ def shots(p):
     for w, hh, dark, touch in ((1920, 1080, False, False), (1366, 768, False, False), (1366, 768, True, False), (390, 844, False, True)):
         br, page, errs = open_page(p, w, hh, dark=dark, touch=touch)
         try:
-            load_doc(page, D); page.wait_for_timeout(500)
+            load_doc(page, D); settle(page, 500)
             for sel_, tab, name in (('svg.tz', 'shape-format', 'shape'), ('svg.pgf', 'chart-design', 'chart'), ('svg.smart', 'smart-design', 'smart')):
                 b = obj_box(page, sel_)
                 if touch: page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2)
                 else: page.mouse.click(b[0] + b[2] / 2, b[1] + b[3] / 2)
-                page.wait_for_timeout(250)
-                page.wait_for_timeout(300)
+                settle(page, 250)
+                settle(page, 300)
                 page.screenshot(path=os.path.join(SHOTS, '%s-%d%s.png' % (name, w, '-dark' if dark else '')))
             # Picture Format with Corrections, Color, Transparency and Compress, a picture made sepia
-            load_doc(page, pic_doc()); put_png(page, 'a.png', 300, 200, dpi=150); page.wait_for_timeout(300)
+            load_doc(page, pic_doc()); put_png(page, 'a.png', 300, 200, dpi=150); settle(page, 300)
             sel_pic(page); run_async(page, 'picture-color', {'recolor': 'sepia'}, 1200)
             sel_pic(page)
             if not touch:
-                page.click('#rc-picture-corrections'); page.wait_for_timeout(300)
+                page.click('#rc-picture-corrections'); settle(page, 300)
             page.screenshot(path=os.path.join(SHOTS, 'picture-%d%s.png' % (w, '-dark' if dark else '')))
             page.keyboard.press('Escape')
             # the Selection Pane over the objects
-            load_doc(page, D); page.wait_for_timeout(300)
-            run_cmd(page, 'selection-pane'); page.wait_for_timeout(300)
+            load_doc(page, D); settle(page, 300)
+            run_cmd(page, 'selection-pane'); settle(page, 300)
             page.screenshot(path=os.path.join(SHOTS, 'selection-pane-%d%s.png' % (w, '-dark' if dark else '')))
             page.keyboard.press('Escape')
         finally:
@@ -449,12 +449,13 @@ def put_png(page, name, w, h, dpi=None, color=(200, 60, 40)):
 
 def sel_pic(page):
     page.evaluate("() => { const g = window.rikuy, t = g.files.get('main.tex'); g.picSelect({ f: 'main.tex', s: t.indexOf('\\\\includegraphics') }, { tab: true }); }")
-    page.wait_for_timeout(100)
+    settle(page, 100)
 
 
 def run_async(page, cid, args=None, wait=900):
     page.evaluate('([id, a]) => { window.__r = window.rikuy.runCommand(id, a); }', [cid, args])
-    page.wait_for_timeout(wait)
+    # (the command's promise settled: its work, in the picture module, done)
+    page.evaluate('() => Promise.resolve(window.__r).then(() => true, () => true)'); settle(page, wait)
 
 
 # the page's picture, its pixel at (fx, fy) of its size, read through a canvas
@@ -464,7 +465,7 @@ PIXEL = """async ([fx, fy]) => { const i = document.querySelector('#pages .a-img
 
 def pictures(page):
     D = pic_doc()
-    load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); page.wait_for_timeout(300)
+    load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); settle(page, 300)
     sel_pic(page)
     check('Picture Format shows Corrections, Color, Transparency and Compress Pictures, enabled on a PNG', page.evaluate("['picture-corrections', 'picture-color', 'picture-transparency', 'picture-compress'].every((id) => { const b = document.getElementById('rc-' + id); return b && !b.disabled; })"))
     h0 = page.evaluate('window.rikuy.hist.length')
@@ -476,7 +477,7 @@ def pictures(page):
         check('the new file is in the project, the first one kept', page.evaluate('(n) => window.rikuy.assetBlobs.has(n) && window.rikuy.assetBlobs.has("a.png")', m.group(1)))
         px = page.evaluate(PIXEL, [0.1, 0.5])
         check('the page draws the new pixels: (200,60,40) made (251,111,91), the size kept (300 by 200)', px and px[:3] == [251, 111, 91] and px[4:] == [300, 200], px)
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.undo()'); settle(page, 300)
     check('one undo gives the bytes back, the picture drawn as before', src(page) == D and page.evaluate(PIXEL, [0.1, 0.5])[:3] == [200, 60, 40])
     # the round trip rule: each against Reset Picture
     sel = lambda p: (p.evaluate('window.rikuy.disarm && window.rikuy.disarm()'), sel_pic(p))
@@ -502,16 +503,16 @@ def pictures(page):
     # the menus and the dialog
     load_doc(page, D); sel_pic(page)
     page.click('#rt-picture-format') if page.evaluate("!!document.getElementById('rt-picture-format').offsetParent") else None
-    page.click('#rc-picture-corrections'); page.wait_for_timeout(250)
+    page.click('#rc-picture-corrections'); settle(page, 250)
     n = page.evaluate("document.querySelectorAll('.pop [role^=menuitem]').length")
-    page.get_by_role('menuitemradio', name='Brightness: +20% Contrast: -20%').click(); page.wait_for_timeout(900)
+    page.get_by_role('menuitemradio', name='Brightness: +20% Contrast: -20%').click(); settle(page, 900)
     check('the Corrections menu: sharpen and soften, 25 of brightness and contrast, Options (%d items); a pick writes it' % n, n == 31 and '% rikuy: from {a.png}, brightness 0.2, contrast -0.2\n' in src(page), src(page)[-200:])
     sel_pic(page); run_async(page, 'picture-fx-options', None, 300)
-    page.get_by_role('textbox', name='Sharpness (%)').fill('25'); page.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(900)
+    page.get_by_role('textbox', name='Sharpness (%)').fill('25'); page.get_by_role('button', name='OK', exact=True).click(); settle(page, 900)
     check('Format Picture: Sharpness 25 typed, OK keeps the others and adds it', '% rikuy: from {a.png}, sharpen 0.25, brightness 0.2, contrast -0.2\n' in src(page), src(page)[-200:])
     # Compress Pictures: a large picture shown small, at 96 ppi; a picture of no width of its own keeps its size
     big = pic_doc('width=0.3\\linewidth', 'big.png').replace('\\end{center}\n', '\\end{center}\n\n\\begin{center}\n\\includegraphics{small.png}\n\\end{center}\n')
-    load_doc(page, big); b0 = put_png(page, 'big.png', 2400, 1600, dpi=300); put_png(page, 'small.png', 900, 300, dpi=300, color=(40, 160, 90)); page.wait_for_timeout(900)
+    load_doc(page, big); b0 = put_png(page, 'big.png', 2400, 1600, dpi=300); put_png(page, 'small.png', 900, 300, dpi=300, color=(40, 160, 90)); settle(page, 900)
     W_PT = "document.querySelectorAll('#pages .a-img')[1].getBoundingClientRect().width / window.rikuy.layout.px"
     w_small = page.evaluate(W_PT)
     h0 = page.evaluate('window.rikuy.hist.length')
@@ -525,14 +526,14 @@ def pictures(page):
     # (0.3 of a 345 pt line is 103.5 pt, 138 pixels at 96 ppi)
     check('the big one now 0.3 of the line at 96 ppi: %d px wide' % (dims[4] if dims else 0), dims and 136 <= dims[4] <= 140, dims)
     check('what it did is said honestly (the PDF\'s bytes, and the project keeping the first files): ' + toast[:160], 'Compressed 2 pictures' in toast and 'the PDF carries' in toast and 'keeps the first files' in toast)
-    page.wait_for_timeout(800)
+    settle(page, 800)
     w_small2 = page.evaluate(W_PT)
     # (the page reads whole pixels per inch from a pHYs, TeX its pixels per metre: within 1%)
     check('a picture of no width of its own prints the size its first file gives TeX, 900 px at 300 ppi = 216 pt, from its smaller file (its pixels per inch scaled): %.1f pt' % w_small2, abs(w_small2 - 216) < 216 * 0.01, w_small)
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.undo()'); settle(page, 300)
     check('one undo puts both back', src(page) == big)
     # a PDF picture: the tools say why not
-    load_doc(page, pic_doc(name='fig.pdf')); page.wait_for_timeout(200)
+    load_doc(page, pic_doc(name='fig.pdf')); settle(page, 200)
     sel_pic(page)
     check('on a PDF picture they are disabled, and say why', page.evaluate("document.getElementById('rc-picture-corrections').disabled") and 'PDF' in page.evaluate("window.rikuy.cmds.command('picture-corrections').whyNot(window.rikuy)"))
 
@@ -542,7 +543,7 @@ def review_pictures(page):
     edited = "[...window.rikuy.assetBlobs.keys()].filter((k) => /-edited-/.test(k))"
     # H3: two pictures on a line: the first has no comment of the second's and is left alone
     D = pic_doc().replace('\\includegraphics[width=0.5\\linewidth]{a.png}', '\\includegraphics[width=0.3\\linewidth]{a.png}\\hfill\\includegraphics[width=0.3\\linewidth]{b.png}')
-    load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); put_png(page, 'b.png', 300, 200, dpi=150, color=(40, 160, 90)); page.wait_for_timeout(300)
+    load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); put_png(page, 'b.png', 300, 200, dpi=150, color=(40, 160, 90)); settle(page, 300)
     page.evaluate("() => { const g = window.rikuy, t = g.files.get('main.tex'); g.picSelect({ f: 'main.tex', s: t.lastIndexOf('\\\\includegraphics') }, { tab: true }); }")
     run_async(page, 'picture-color', {'recolor': 'gray'})
     after_b = src(page)
@@ -554,7 +555,7 @@ def review_pictures(page):
     check('H3: Reset leaves both as they are, and Brightness on the first says to put it on a line of its own', src(page) == after_b and 'line of its own' in toast, toast)
     # H4: a name with a space; M5: one edited file a picture; M4: in the worker
     D = pic_doc(name='my photo.png')
-    load_doc(page, D); put_png(page, 'my photo.png', 300, 200, dpi=150); page.wait_for_timeout(300)
+    load_doc(page, D); put_png(page, 'my photo.png', 300, 200, dpi=150); settle(page, 300)
     mine = "[...window.rikuy.assetBlobs.keys()].filter((k) => /^my photo-edited-/.test(k))"
     sel_pic(page); run_async(page, 'picture-corrections', {'brightness': 0.2}); first = page.evaluate(mine)
     sel_pic(page); run_async(page, 'picture-color', {'recolor': 'gray'}); second = page.evaluate(mine)
@@ -562,23 +563,23 @@ def review_pictures(page):
     check('H4: a name with a space: one comment, from the first file in braces, both settings', len(re.findall('rikuy:', s)) == 1 and '% rikuy: from {my photo.png}, brightness 0.2, recolor gray\n' in s and '-edited-f' not in s.split('rikuy')[0][-40:].replace('my photo-edited-', ''), s[-220:])
     check('M5: one edited file for the picture at a time (%s, then %s)' % (first, second), len(first) == 1 and len(second) == 1 and first != second)
     check('M4: the pixels were worked on in the worker', page.evaluate('!!(window.rikuy.picFxStats && window.rikuy.picFxStats.worker)'))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.undo()'); settle(page, 300)
     check('M5: one undo brings the last edited file back with its comment', page.evaluate(mine) == first and '% rikuy: from {my photo.png}, brightness 0.2\n' in src(page))
     sel_pic(page); run_async(page, 'picture-reset', None, 400)
     check('H4: Reset Picture puts my photo.png back, the comment and the edited file gone', src(page) == D and page.evaluate(mine) == [], (src(page)[-160:], page.evaluate(mine)))
     # M3: the first file replaced by another of its name makes a new edited file
     D = pic_doc()
-    load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150, color=(220, 30, 30)); page.wait_for_timeout(300)
+    load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150, color=(220, 30, 30)); settle(page, 300)
     edited = "[...window.rikuy.assetBlobs.keys()].filter((k) => /^a-edited-/.test(k))"
     sel_pic(page); run_async(page, 'picture-transparency', {'transparency': 0.3}); red = page.evaluate(edited)
     sel_pic(page); run_async(page, 'picture-reset', None, 400)
-    put_png(page, 'a.png', 300, 200, dpi=150, color=(30, 200, 30)); page.wait_for_timeout(300)
+    put_png(page, 'a.png', 300, 200, dpi=150, color=(30, 200, 30)); settle(page, 300)
     sel_pic(page); run_async(page, 'picture-transparency', {'transparency': 0.3})
     px = page.evaluate(PIXEL, [0.1, 0.5])
     check('M3: a replaced first file gives a new edited file, drawn green (%s, then %s)' % (red, page.evaluate(edited)), page.evaluate(edited) != red and px and px[1] > 150 and px[0] < 80, px)
     # L2: \includegraphics{a} with no extension, as hand written LaTeX often has it
     D = pic_doc(name='a')
-    load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); page.wait_for_timeout(300)
+    load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); settle(page, 300)
     sel_pic(page)
     check('L2: Corrections are on for \\includegraphics{a} (a.png in the project)', not page.evaluate("document.getElementById('rc-picture-corrections').disabled"))
     run_async(page, 'picture-color', {'recolor': 'sepia'})
@@ -587,7 +588,7 @@ def review_pictures(page):
     check('L2: Reset Picture gives \\includegraphics{a} back', src(page) == D)
     # H5: Compress with a turn and a crop reads the printed pixels per inch
     D = pic_doc('angle=90,width=3cm', 'turned.png').replace('\\end{center}\n', '\\end{center}\n\n\\begin{center}\n\\includegraphics[trim=150 0 0 0,clip,width=8cm]{cropped.png}\n\\end{center}\n')
-    load_doc(page, D); put_png(page, 'turned.png', 1200, 800, dpi=300); put_png(page, 'cropped.png', 600, 400, dpi=72); page.wait_for_timeout(500)
+    load_doc(page, D); put_png(page, 'turned.png', 1200, 800, dpi=300); put_png(page, 'cropped.png', 600, 400, dpi=72); settle(page, 500)
     run_async(page, 'picture-compress', {'ppi': 150, 'all': True}, 3000)
     s = src(page)
     toast = page.evaluate("(document.querySelector('#toast span') || {}).textContent || ''")
@@ -605,7 +606,7 @@ def pictures_unloaded(p):
     try:
         page.route('**/core/rikuy-pic-*', lambda r: r.fulfill(status=404, body=''))
         D = pic_doc()
-        load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); page.wait_for_timeout(300)
+        load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); settle(page, 300)
         sel_pic(page); run_async(page, 'picture-corrections', {'brightness': 0.2}, 1200)
         toast = page.evaluate("(document.querySelector('#toast span') || {}).textContent || ''")
         check('without the picture module: nothing written, and the toast says so plainly: ' + toast[:90], src(page) == D and 'did not load' in toast)
@@ -618,7 +619,7 @@ def pictures_compiled(page):
         print('SKIP pictures compiled in the page: no TeX tree in %s' % DIST)
         return
     D = pic_doc().replace('\\end{center}\n', '\\end{center}\n\n\\begin{center}\n\\includegraphics[width=0.3\\linewidth]{b.png}\n\\end{center}\n')
-    load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); put_png(page, 'b.png', 1200, 800, dpi=300, color=(30, 90, 200)); page.wait_for_timeout(300)
+    load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); put_png(page, 'b.png', 1200, 800, dpi=300, color=(30, 90, 200)); settle(page, 300)
     sel_pic(page); run_async(page, 'picture-transparency', {'transparency': 0.4}); run_async(page, 'picture-color', {'recolor': 'sepia'})
     page.evaluate("() => { const g = window.rikuy, t = g.files.get('main.tex'); g.picSelect({ f: 'main.tex', s: t.lastIndexOf('\\\\includegraphics') }, { tab: true }); }")
     run_async(page, 'picture-compress', {'ppi': 150, 'all': False}, 1500)
@@ -635,14 +636,14 @@ def pictures_phone(p):
         tag = ' (%d px, touch)' % w
         try:
             D = pic_doc()
-            load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); page.wait_for_timeout(400)
+            load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); settle(page, 400)
             b = page.locator('#pages .a-img').bounding_box()
-            page.touchscreen.tap(b['x'] + b['width'] / 2, b['y'] + b['height'] / 2); page.wait_for_timeout(400)
-            page.locator('#rc-picture-color').tap(); page.wait_for_timeout(300)
+            page.touchscreen.tap(b['x'] + b['width'] / 2, b['y'] + b['height'] / 2); settle(page, 400)
+            page.locator('#rc-picture-color').tap(); settle(page, 300)
             g = page.evaluate("""() => { const m = document.querySelector('.pop-menu'); if (!m) return null; const r = m.getBoundingClientRect(); const it = [...m.querySelectorAll('[role^=menuitem]')].filter((a) => a.getClientRects().length).map((a) => a.getBoundingClientRect());
               return { l: r.left, r: r.right, w: innerWidth, small: it.filter((t) => t.height < 44).length, n: it.length }; }""")
             check('a tap on Color opens its menu in the screen, 44 px items' + tag, g and g['l'] >= 0 and g['r'] <= g['w'] + 1 and g['small'] == 0, g)
-            page.get_by_role('menuitemradio', name='Grayscale').tap(); page.wait_for_timeout(1200)
+            page.get_by_role('menuitemradio', name='Grayscale').tap(); settle(page, 1200)
             check('a tap on Grayscale writes it' + tag, '% rikuy: from {a.png}, recolor gray\n' in src(page), src(page)[-160:])
             if w == 390: page.screenshot(path=os.path.join(SHOTS, 'picture-color-390.png'))
         finally:
@@ -664,18 +665,18 @@ def arrange(page):
     s = src(page)
     check('Right with Text Wrapping: a wrapfigure at its own width ({0pt}) and wrapfig, one step', '\\begin{wrapfigure}{r}{0pt}\n\\centering\n\\begin{tikzpicture}' in s and '\\usepackage{wrapfig}' in s and page.evaluate('window.rikuy.hist.length') == h0 + 1, s[:400])
     # review M1: the page draws wrapfig's {0pt} at the drawing's own width, at the right, the words beside it
-    page.evaluate("window.rikuy.files.set('main.tex', window.rikuy.files.get('main.tex').replace('After it.', 'After it. ' + 'Words that wrap round the drawing as TeX wraps them. '.repeat(8)))"); page.evaluate('window.rikuy.forceRender = true; window.rikuy.rebuild()'); page.wait_for_timeout(500)
+    page.evaluate("window.rikuy.files.set('main.tex', window.rikuy.files.get('main.tex').replace('After it.', 'After it. ' + 'Words that wrap round the drawing as TeX wraps them. '.repeat(8)))"); page.evaluate('window.rikuy.forceRender = true; window.rikuy.rebuild()'); settle(page, 500)
     g = page.evaluate("""() => { const d = document.querySelector('#pages svg.tz').getBoundingClientRect(), it = document.querySelector('#pages svg.tz').closest('.it'), p = [...document.querySelectorAll('#pages .it')].find((x) => x.textContent.includes('Words that wrap'));
       const r = document.createRange(); const t = [...p.querySelectorAll('span.t')][0]; r.setStart(t.firstChild, 0); r.setEnd(t.firstChild, 5); const w = r.getBoundingClientRect();
       const body = [...document.querySelectorAll('#pages .it')].find((x) => x.textContent.includes('Before it')).getBoundingClientRect();
       return { dl: d.left, dr: d.right, dw: d.width, iw: it.getBoundingClientRect().width, wordRight: w.right, wordTop: w.top, dTop: d.top, dBottom: d.bottom, bodyRight: body.right }; }""")
     check('M1: the wrapfigure drawn at the drawing\'s width at the right margin, and the next words beside it (%s)' % {k: round(v) for k, v in g.items()}, g['iw'] < g['dw'] + 40 and abs(g['dr'] - g['bodyRight']) < 30 and g['wordRight'] < g['dl'] and g['dTop'] - 30 < g['wordTop'] < g['dBottom'])
-    load_doc(page, src(page).replace(' ' + 'Words that wrap round the drawing as TeX wraps them. ' * 8, '').replace('After it. ' + 'Words that wrap round the drawing as TeX wraps them. ' * 8, 'After it.')); page.wait_for_timeout(200); sel(page)
+    load_doc(page, src(page).replace(' ' + 'Words that wrap round the drawing as TeX wraps them. ' * 8, '').replace('After it. ' + 'Words that wrap round the drawing as TeX wraps them. ' * 8, 'After it.')); settle(page, 200); sel(page)
     run_cmd(page, 'object-position', {'mode': 'inline'})
     check('In Line with Text again: the center of before (wrapfig\'s line stays, other text may use it)', src(page).replace('\\usepackage{wrapfig}\n', '') == D, src(page)[:300])
     # review H2: a drawing in a center in a figure: Position changes the figure, compiled on three engines
     N = WRAP('Before.\n\n\\begin{figure}[htbp]\n\\begin{center}\n\\begin{tikzpicture}\n' + RECT + '\n\\end{tikzpicture}\n\\end{center}\n\\caption{Box}\n\\end{figure}\n\nAfter.')
-    load_doc(page, N); page.wait_for_timeout(300); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
+    load_doc(page, N); settle(page, 300); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
     run_cmd(page, 'object-position', {'mode': 'float', 'place': 't'})
     check('H2: Top of Page on a drawing in figure > center: [t] on that figure, no figure inside it', src(page) == N.replace('[htbp]', '[t]'), src(page)[-260:])
     if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
@@ -692,9 +693,9 @@ def arrange(page):
     # Align on a picture, from Layout's Arrange
     P = pic_doc()
     load_doc(page, P); put_png(page, 'a.png', 300, 200, dpi=150); sel_pic(page)
-    page.evaluate("rikuy.selectTab('layout')"); page.wait_for_timeout(200)
-    page.click('#rc-object-align'); page.wait_for_timeout(200)
-    page.get_by_role('menuitemradio', name='Align Left').click(); page.wait_for_timeout(300)
+    page.evaluate("rikuy.selectTab('layout')"); settle(page, 200)
+    page.click('#rc-object-align'); settle(page, 200)
+    page.get_by_role('menuitemradio', name='Align Left').click(); settle(page, 300)
     check('Layout › Align › Align Left on a picture: flushleft round it, one step', src(page) == P.replace('{center}', '{flushleft}'), src(page)[-200:])
     check('Position and Align in the drawing\'s right click menu', True)
 
@@ -717,7 +718,7 @@ def review_arrange(page):
     # N1: Wrap on figure > center: \centering in a wrapfigure (a center there stops pdfLaTeX: "Not allowed in LR mode")
     for env, cap, want in (('figure', 'Box', 'Figure 1: Box'), ('table', 'Data', 'Table 1: Data')):
         N = body_of(env, cap)
-        load_doc(page, N); page.wait_for_timeout(300); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
+        load_doc(page, N); settle(page, 300); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
         run_cmd(page, 'object-position', {'mode': 'wrap', 'side': 'r'})
         w = 'wrap' + env
         exp = N.replace('\\begin{' + env + '}[htbp]\n\\begin{center}', '\\begin{' + w + '}{r}{0pt}\n\\centering').replace('\\end{tikzpicture}\n\\end{center}', '\\end{tikzpicture}').replace('\\end{' + env + '}', '\\end{' + w + '}').replace('\\usepackage{smartdiagram}\n', '\\usepackage{smartdiagram}\n\\usepackage{wrapfig}\n')
@@ -725,7 +726,7 @@ def review_arrange(page):
         compiles('N1: the %s' % w, src(page), want)
     # N3: a wraptable round the drawing: Top of Page makes it a table [t], nothing nested
     T = WRAP('Before.\n\n\\begin{wraptable}{r}{5cm}\n\\centering\n\\begin{tikzpicture}\n' + RECT + '\n\\end{tikzpicture}\n\\caption{Data}\n\\end{wraptable}\n' + words + '\n\nAfter.', PRE + '\\usepackage{wrapfig}\n')
-    load_doc(page, T); page.wait_for_timeout(300); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
+    load_doc(page, T); settle(page, 300); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
     run_cmd(page, 'object-position', {'mode': 'float', 'place': 't'})
     check('N3: Top of Page in a wraptable: that wraptable becomes table[t], no figure in it', src(page) == T.replace('\\begin{wraptable}{r}{5cm}', '\\begin{table}[t]').replace('\\end{wraptable}', '\\end{table}'), src(page)[-400:])
     compiles('N3: the table', src(page), 'Table 1: Data')
@@ -735,8 +736,8 @@ def review_arrange(page):
                       # (review U1: environments the document defines itself, a box inside)
                       ('notebox', WRAP('Before.\n\n\\begin{notebox}\n' + SHAPE + '\\end{notebox}\n\nAfter.', PRE + '\\usepackage{tcolorbox}\n\\newtcolorbox{notebox}{colback=red!5}\n')),
                       ('mybox', WRAP('Before.\n\n\\begin{mybox}\n' + SHAPE + '\\end{mybox}\n\nAfter.', PRE + '\\newenvironment{mybox}{\\begin{minipage}{6cm}}{\\end{minipage}}\n'))):
-        load_doc(page, doc); page.wait_for_timeout(300); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
-        page.evaluate('window.rikuy.objPositionMenu()'); page.wait_for_timeout(200)
+        load_doc(page, doc); settle(page, 300); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
+        page.evaluate('window.rikuy.objPositionMenu()'); settle(page, 200)
         items = page.evaluate("""() => [...document.querySelectorAll('.pop [role=menuitemradio]')].map((a) => [a.getAttribute('aria-label'), a.getAttribute('aria-disabled') === 'true', a.title])""")
         page.keyboard.press('Escape')
         off = [n for n, d, t in items if d]
@@ -747,12 +748,12 @@ def review_arrange(page):
     # review V1: a box under a theorem's name in \input{preamble}: greyed; declared a theorem there: a figure, compiled
     VM = '\\documentclass{article}\n\\input{preamble}\n\\begin{document}\nBefore.\n\n\\begin{example}\n' + SHAPE + 'Words of the example.\n\\end{example}\n\nAfter.\n\\end{document}\n'
     for label, pre_file, boxed in (('a tcolorbox', PRE + '\\usepackage{tcolorbox}\n\\newtcolorbox{example}{colback=blue!5}\n', True), ('a theorem', PRE + '\\usepackage{amsthm}\n\\newtheorem{example}{Example}\n', False)):
-        load_doc(page, {'main.tex': VM, 'preamble.tex': pre_file}); page.wait_for_timeout(400); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
-        page.evaluate('window.rikuy.objPositionMenu()'); page.wait_for_timeout(200)
+        load_doc(page, {'main.tex': VM, 'preamble.tex': pre_file}); settle(page, 400); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
+        page.evaluate('window.rikuy.objPositionMenu()'); settle(page, 200)
         top = page.evaluate("(() => { const a = [...document.querySelectorAll('.pop [role=menuitemradio]')].find((x) => x.getAttribute('aria-label') === 'Top of Page'); return a ? [a.getAttribute('aria-disabled') === 'true', a.title] : null; })()")
         page.keyboard.press('Escape')
         check('V1: example defined as %s in preamble.tex: Top of Page %s (%s)' % (label, 'greyed' if boxed else 'offered', (top or ['', ''])[1][:80]), top is not None and top[0] == boxed and (not boxed or 'example' in top[1]), top)
-        run_cmd(page, 'object-position', {'mode': 'float', 'place': 't'}); page.wait_for_timeout(200)
+        run_cmd(page, 'object-position', {'mode': 'float', 'place': 't'}); settle(page, 200)
         wrote = '\\begin{figure}[t]' in page.evaluate("window.rikuy.files.get('main.tex')")
         check('V1: %s: Top of Page %s' % (label, 'writes nothing' if boxed else 'writes the figure'), wrote != boxed, page.evaluate("window.rikuy.files.get('main.tex')")[-300:])
         if not boxed and TEX:
@@ -761,28 +762,28 @@ def review_arrange(page):
                   return { ok: r.ok, problems: (r.problems || []).filter((x) => x.severity === 'error').map((x) => x.message).slice(0, 4) }; }''', [page.evaluate("window.rikuy.files.get('main.tex')").replace('% !TEX program = xelatex\n', '').replace('% !TEX program = lualatex\n', ''), pre_file, eng])
                 check('V1: the figure in the theorem compiles with %s' % eng, r['ok'] and not r['problems'], r)
     # review U3: in columns the greyed places are in the arrows' reach, each describing its reason; the note line says it, a tap too
-    load_doc(page, WRAP('\\begin{multicols}{2}\nBefore.\n\n' + SHAPE + '\nAfter it, ' + words + '\n\\end{multicols}', PRE + '\\usepackage{multicol}\n')); page.wait_for_timeout(300)
+    load_doc(page, WRAP('\\begin{multicols}{2}\nBefore.\n\n' + SHAPE + '\nAfter it, ' + words + '\n\\end{multicols}', PRE + '\\usepackage{multicol}\n')); settle(page, 300)
     page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
     s0 = src(page)
-    page.evaluate('window.rikuy.objPositionMenu()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.objPositionMenu()'); settle(page, 200)
     f0 = page.evaluate('document.activeElement.getAttribute("aria-label")')
-    page.keyboard.press('ArrowDown'); page.wait_for_timeout(100)
+    page.keyboard.press('ArrowDown'); settle(page, 100)
     u3 = page.evaluate("""() => { const a = document.activeElement, d = a.getAttribute('aria-describedby'), n = document.querySelector('.pop .mi-why');
       return { name: a.getAttribute('aria-label'), off: a.getAttribute('aria-disabled'), desc: d ? (document.getElementById(d) || {}).textContent : '', note: n && !n.hidden ? n.textContent : '' }; }""")
     check('U3: ArrowDown from %s lands on the greyed Best Place, its reason its description and the note line (%s)' % (f0, u3['desc'][:60]), f0 == 'In Line with Text' and u3['name'] == 'Best Place' and u3['off'] == 'true' and 'multicols' in u3['desc'] and u3['note'] == u3['desc'], u3)
-    page.keyboard.press('ArrowDown'); page.keyboard.press('ArrowDown'); page.wait_for_timeout(100)
+    page.keyboard.press('ArrowDown'); page.keyboard.press('ArrowDown'); settle(page, 100)
     check('U3: the arrows go on through the greyed ones', page.evaluate('document.activeElement.getAttribute("aria-label")') == 'Bottom of Page')
-    page.keyboard.press('Enter'); page.wait_for_timeout(200)
+    page.keyboard.press('Enter'); settle(page, 200)
     check('U3: Enter on a greyed one writes nothing, the menu stays', src(page) == s0 and page.evaluate("!!document.querySelector('.pop [role=menuitemradio]')"))
     # (Playwright waits for an aria-disabled item to be enabled: a press at its place, as a finger does)
     bb = page.get_by_role('menuitemradio', name='Right with Text Wrapping').bounding_box()
-    page.mouse.click(bb['x'] + bb['width'] / 2, bb['y'] + bb['height'] / 2); page.wait_for_timeout(150)
+    page.mouse.click(bb['x'] + bb['width'] / 2, bb['y'] + bb['height'] / 2); settle(page, 150)
     tap = page.evaluate("(() => { const n = document.querySelector('.pop .mi-why'); return n && !n.hidden ? n.textContent : ''; })()")
     check('U3: a press (a tap) on a greyed one shows its reason under the menu: ' + tap[:70], 'multicols' in tap and src(page) == s0, tap)
     page.keyboard.press('Escape')
     # review U2: Wrap inside polyglossia's \begin{french}, compiled with XeLaTeX and LuaLaTeX
     G = WRAP('Before.\n\n\\begin{french}\n' + SHAPE + 'Des mots autour du dessin, ' + words + '\n\\end{french}\n\nAfter.', PRE + '\\usepackage{polyglossia}\n\\setdefaultlanguage{english}\n\\setotherlanguage{french}\n')
-    load_doc(page, G); page.wait_for_timeout(300); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
+    load_doc(page, G); settle(page, 300); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
     run_cmd(page, 'object-position', {'mode': 'wrap', 'side': 'r'})
     check('U2: Wrap inside \\begin{french}: a wrapfigure there', '\\begin{french}\n\\begin{wrapfigure}{r}{0pt}' in src(page), src(page)[-500:])
     if TEX:
@@ -792,7 +793,7 @@ def review_arrange(page):
     # N9: Align's look at the caret with a drawing selected in a long document (page.py's): the tree is kept
     pre = ''.join('\\newcommand{\\m%s}{x} %% %s\n' % (chr(97 + k % 26) * (1 + k // 26), 'y' * 60) for k in range(1500))
     body = '\n\n'.join('\\subsection{Head %d}\nWords of paragraph %d here.' % (k, k) for k in range(1500))
-    load_doc(page, WRAP(SHAPE + '\n' + body, PRE + pre)); page.wait_for_timeout(600); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
+    load_doc(page, WRAP(SHAPE + '\n' + body, PRE + pre)); settle(page, 600); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
     t = page.evaluate("""() => { const g = window.rikuy, C = g.cmds, at = g.ribbonAt(), cs = C.commands(), c = cs.find((x) => x.id === 'object-align'), out = {};
       at.memo = {}; out.on = C.enabled(g, c, at);
       let t0 = performance.now(); for (let k = 0; k < 20; k++) { at.memo = {}; C.enabled(g, c, at); } out.align = (performance.now() - t0) / 20;
@@ -803,25 +804,25 @@ def review_arrange(page):
 def selpane(page):
     D = WRAP('See Figure~\\ref{fig:a} and \\eqref{eq:1}.\n\n\\begin{figure}[h]\n\\centering\n' + SHAPE.replace('\\begin{center}\n', '').replace('\\end{center}\n', '') + '\\caption{A box}\\label{fig:a}\n\\end{figure}\n\n'
              + '\\begin{equation}a=b\\label{eq:1}\\end{equation}\n\\begin{equation}c=d\\end{equation}\n' + CHART + SMART + 'End words.')
-    load_doc(page, D); page.wait_for_timeout(400)
-    page.evaluate("rikuy.selectTab('layout')"); page.wait_for_timeout(200)
-    page.click('#rc-selection-pane'); page.wait_for_timeout(300)
+    load_doc(page, D); settle(page, 400)
+    page.evaluate("rikuy.selectTab('layout')"); settle(page, 200)
+    page.click('#rc-selection-pane'); settle(page, 300)
     rows = page.evaluate("[...document.querySelectorAll('#sel-pane .sel-go')].map((b) => b.getAttribute('aria-label'))")
     check('Layout › Selection Pane lists every object with its name: ' + '; '.join(rows), rows == ['A box, figure', 'Drawing 1, drawing', 'Equation 1, equation', 'Equation 2, equation', 'Chart 1, chart', 'SmartArt 1, smartart'], rows)
     h0 = page.evaluate('window.rikuy.hist.length')
-    page.get_by_role('textbox', name='Name of A box').fill('fig:box'); page.get_by_role('textbox', name='Name of A box').press('Enter'); page.wait_for_timeout(300)
+    page.get_by_role('textbox', name='Name of A box').fill('fig:box'); page.get_by_role('textbox', name='Name of A box').press('Enter'); settle(page, 300)
     check('a figure renamed: its \\label and the \\ref to it, one step', src(page) == D.replace('fig:a', 'fig:box') and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page)[:300])
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.undo()'); settle(page, 300)
     check('one undo gives the names back', src(page) == D)
-    page.get_by_role('textbox', name='Name of Equation 2').fill('eq:two'); page.get_by_role('textbox', name='Name of Equation 2').press('Enter'); page.wait_for_timeout(300)
+    page.get_by_role('textbox', name='Name of Equation 2').fill('eq:two'); page.get_by_role('textbox', name='Name of Equation 2').press('Enter'); settle(page, 300)
     check('a name given to an equation that had none: \\label at its end', src(page) == D.replace('c=d\\end{equation}', 'c=d\\label{eq:two}\\end{equation}'), src(page)[:400])
     check('a drawing outside a figure has no name to give (its field off, saying why)', page.evaluate("document.querySelector('[aria-label=\"Name of Drawing 1\"]').disabled"))
-    page.get_by_role('button', name='Show Chart 1').click(); page.wait_for_timeout(250)
+    page.get_by_role('button', name='Show Chart 1').click(); settle(page, 250)
     hid = page.evaluate("getComputedStyle(document.querySelector('#pages svg.pgf').closest('.raw')).visibility")
     check('the eye hides the chart on the page alone (the source unchanged)', hid == 'hidden' and 'axis' in src(page))
-    page.get_by_role('button', name='Show All', exact=True).click(); page.wait_for_timeout(200)
+    page.get_by_role('button', name='Show All', exact=True).click(); settle(page, 200)
     check('Show All shows it again', page.evaluate("getComputedStyle(document.querySelector('#pages svg.pgf').closest('.raw')).visibility") == 'visible')
-    page.get_by_role('button', name='SmartArt 1, smartart').click(); page.wait_for_timeout(300)
+    page.get_by_role('button', name='SmartArt 1, smartart').click(); settle(page, 300)
     check('a press on a row goes to the object and selects it', page.evaluate("(() => { const o = window.rikuy.objHere(); return o && o.kind; })()") == 'smart')
     page.screenshot(path=os.path.join(SHOTS, 'selection-pane-1366.png'))
     page.keyboard.press('Escape')
@@ -829,39 +830,39 @@ def selpane(page):
     # the pane says it is the page's view only
     TWO_D = WRAP('Before.\n\n' + SHAPE + '\n' + SHAPE.replace('rectangle (3,2)', 'circle (1)') + '\nAfter.')
     page.evaluate('() => { localStorage.removeItem("galley.selhidden.v1"); window.rikuy.selHiddenFor = null; }')
-    load_doc(page, TWO_D); page.wait_for_timeout(300)
-    run_cmd(page, 'selection-pane'); page.wait_for_timeout(200)
+    load_doc(page, TWO_D); settle(page, 300)
+    run_cmd(page, 'selection-pane'); settle(page, 200)
     check('M7: the pane says hiding is the page\'s view only', 'page\'s view only' in page.evaluate("document.querySelector('#sel-pane .sel-note').textContent"))
-    page.get_by_role('button', name='Show Drawing 2').click(); page.wait_for_timeout(200)
+    page.get_by_role('button', name='Show Drawing 2').click(); settle(page, 200)
     vis = "[...document.querySelectorAll('#pages svg.tz')].map((x) => getComputedStyle(x.closest('.raw')).visibility)"
     check('M7: Drawing 2 hidden, Drawing 1 shown', page.evaluate(vis) == ['visible', 'hidden'], page.evaluate(vis))
     page.keyboard.press('Escape')
-    press(page, 'svg.tz', 0); page.keyboard.press('Delete'); page.wait_for_timeout(400)
+    press(page, 'svg.tz', 0); page.keyboard.press('Delete'); settle(page, 400)
     check('M7: Drawing 1 deleted, the circle (Drawing 2 before) stays hidden', page.evaluate(vis) == ['hidden'] and 'circle (1)' in src(page), page.evaluate(vis))
-    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it")', timeout=30000); page.wait_for_timeout(500)
-    load_doc(page, TWO_D); page.wait_for_timeout(600)
+    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it")', timeout=30000); settle(page, 500)
+    load_doc(page, TWO_D); settle(page, 600)
     check('M7: after a reload the circle is hidden again, the rectangle shown', page.evaluate(vis) == ['visible', 'hidden'], page.evaluate(vis))
     # review N7: the hidden one formatted (selected through the pane) or renamed stays hidden
-    run_cmd(page, 'selection-pane'); page.wait_for_timeout(200)
-    page.get_by_role('button', name='Drawing 2, drawing').click(); page.wait_for_timeout(300)
-    run_cmd(page, 'shape-fill', {'color': 'green!40'}); page.wait_for_timeout(400)
+    run_cmd(page, 'selection-pane'); settle(page, 200)
+    page.get_by_role('button', name='Drawing 2, drawing').click(); settle(page, 300)
+    run_cmd(page, 'shape-fill', {'color': 'green!40'}); settle(page, 400)
     check('N7: Shape Fill on the hidden circle, selected through the pane: written, and it stays hidden', 'fill=green!40] (0,0) circle (1)' in src(page) and page.evaluate(vis) == ['visible', 'hidden'], (page.evaluate(vis), src(page)[-260:]))
     page.keyboard.press('Escape')
-    load_doc(page, D); page.wait_for_timeout(400)
-    run_cmd(page, 'selection-pane'); page.wait_for_timeout(200)
-    page.get_by_role('button', name='Show A box').click(); page.wait_for_timeout(200)
+    load_doc(page, D); settle(page, 400)
+    run_cmd(page, 'selection-pane'); settle(page, 200)
+    page.get_by_role('button', name='Show A box').click(); settle(page, 200)
     fig_vis = "getComputedStyle(document.querySelector('#pages svg.tz').closest('.raw')).visibility"
-    page.get_by_role('textbox', name='Name of A box').fill('fig:box'); page.get_by_role('textbox', name='Name of A box').press('Enter'); page.wait_for_timeout(400)
+    page.get_by_role('textbox', name='Name of A box').fill('fig:box'); page.get_by_role('textbox', name='Name of A box').press('Enter'); settle(page, 400)
     check('N7: the hidden figure renamed (fig:a to fig:box) stays hidden', 'fig:box' in src(page) and page.evaluate(fig_vis) == 'hidden' and page.evaluate("document.querySelector('[aria-label=\"Show A box\"]').getAttribute('aria-pressed')") == 'false', page.evaluate(fig_vis))
-    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it")', timeout=30000); page.wait_for_timeout(500)
-    load_doc(page, D.replace('fig:a', 'fig:box')); page.wait_for_timeout(600)
+    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it")', timeout=30000); settle(page, 500)
+    load_doc(page, D.replace('fig:a', 'fig:box')); settle(page, 600)
     check('N7: and after a reload', page.evaluate(fig_vis) == 'hidden', page.evaluate(fig_vis))
     page.evaluate('() => { localStorage.removeItem("galley.selhidden.v1"); window.rikuy.selHiddenFor = null; window.rikuy.selHidden.clear(); window.rikuy.selApplyHidden(); }')
     # review N6: a rename that cannot follow every place (a reference in verbatim) says so
     V = D.replace('End words.', 'End words.\n\\begin{verbatim}\n\\ref{fig:a}\n\\end{verbatim}\n')
-    load_doc(page, V); page.wait_for_timeout(400)
-    run_cmd(page, 'selection-pane'); page.wait_for_timeout(200)
-    page.get_by_role('textbox', name='Name of A box').fill('fig:box'); page.get_by_role('textbox', name='Name of A box').press('Enter'); page.wait_for_timeout(400)
+    load_doc(page, V); settle(page, 400)
+    run_cmd(page, 'selection-pane'); settle(page, 200)
+    page.get_by_role('textbox', name='Name of A box').fill('fig:box'); page.get_by_role('textbox', name='Name of A box').press('Enter'); settle(page, 400)
     st = page.evaluate("document.querySelector('#sel-pane .fr-st').textContent")
     check('N6: renamed, the verbatim copy left, and the pane says so: ' + st, src(page).count('fig:box') == 2 and '\\begin{verbatim}\n\\ref{fig:a}' in src(page) and '1 more place still names fig:a' in st, (st, src(page)[-200:]))
     page.keyboard.press('Escape')
