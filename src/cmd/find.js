@@ -558,6 +558,10 @@ export const methods = {
   replaceOne() {
     const fs = this.findState();
     const before = fs.hits[fs.cur], stale = this.findFresh();
+    // (the words selected on the page are a hit, as when Ctrl+H took them into the box: Word
+    // replaces them at the first press; it only went to them, and a second press replaced)
+    const L = this.lastPagePos;
+    if (fs.on && fs.cur < 0 && L && L.selA != null) { const k = fs.hits.findIndex((x) => x.f === L.f && x.s === L.selA && x.e === L.selB); if (k >= 0) fs.cur = k; }
     if (!fs.on || fs.cur < 0) {
       this.findGo(1);
       if (stale && before) { fs.note = 'The text changed since: this is the next result; Replace again to replace it.'; this.findViews(); }

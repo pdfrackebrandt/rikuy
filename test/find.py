@@ -616,13 +616,27 @@ def r5_review(page):
         check('compiled in the page: what the fixed replacements wrote has no error', r['ok'] and not errs, errs[:2])
 
 
+def hunt(page):
+    """What a heavy Word user met in the bug hunt of 2026-11-22, each a regression check."""
+    # words selected, Ctrl+H, Replace: Word replaces them at the first press and shows the next
+    doc = WRAP('Alpha cat one. Beta cat two.')
+    load_doc(page, doc)
+    select_text(page, 'cat')
+    page.keyboard.press('Control+h'); settle(page, 250)
+    d = page.get_by_role('dialog', name='Find and Replace', exact=True)
+    d.get_by_label('Replace with', exact=True).fill('dog')
+    d.get_by_role('button', name='Replace one', exact=True).click(); settle(page, 250)
+    check('hunt: a selected hit, Ctrl+H, one press of Replace: it is replaced, the next one shown', src(page) == doc.replace('Alpha cat', 'Alpha dog') and summary(page) == 'Result 1 of 1', (src(page)[40:80], summary(page)))
+    page.keyboard.press('Escape'); settle(page, 150)
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         # (the page lays its pages out again 200 ms after the last of its fonts came, app.js's
         # loadingdone: that drops the caret's place, which Enter's first hit is counted from)
         until(page, "() => document.fonts.status === 'loaded'"); settle(page, 200, full=True)
-        for f in (ctrl_f, dialog, in_selection_and_source, review, go_to, select_and_words, para_marks, kinds, r5_review, pdf_check):
+        for f in (ctrl_f, dialog, in_selection_and_source, review, go_to, select_and_words, para_marks, kinds, r5_review, hunt, pdf_check):
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
@@ -633,4 +647,13 @@ def run():
 
 
 if __name__ == '__main__':
+    if sys.argv[1:] == ['hunt']:
+        with sync_playwright() as p:
+            browser, page, errors = open_page(p)
+            until(page, "() => document.fonts.status === 'loaded'"); settle(page, 200, full=True)
+            hunt(page)
+            check('no page errors', not errors, errors[:4])
+        bad = [r for r in results if not r[1]]
+        print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
+        sys.exit(1 if bad else 0)
     run()
