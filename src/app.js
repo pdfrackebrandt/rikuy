@@ -665,11 +665,14 @@ class App {
     // is chosen, the text block fills the width there and the margins are off to the sides:
     // half as large again, and a line is read without moving the page.
     // (prefs.phone: 'sheet' once the whole sheet was chosen with the zoom button there)
-    this.textFit = z === 'fit' && this.prefs.phone !== 'sheet' && window.innerWidth <= 520;
     // (Web Layout on a phone: the text at its actual size, the lines as wide as the screen)
     // (Mobile View, Web Layout under 700 px: the text at its actual size, whatever a phone's
     // sheet or text block setting is; a zoom chosen there scales it)
-    if (z === 'fit' && document.body.classList.contains('pg-web') && window.innerWidth < 700) px = PX_PER_PT;
+    const web = z === 'fit' && document.body.classList.contains('pg-web') && window.innerWidth < 700;
+    // (and no margins to scroll past there: textFit's scroll kept the text 46 px off the screen's
+    // left after Print Layout, view.py V3)
+    this.textFit = !web && z === 'fit' && this.prefs.phone !== 'sheet' && window.innerWidth <= 520;
+    if (web) px = PX_PER_PT;
     else if (this.textFit) px = Math.min(PX_PER_PT * 1.25, Math.max(avail / P.pw, (this.desk.clientWidth - 12) / P.tw));
     else if (z === 'fit') px = Math.min(PX_PER_PT * 1.25, avail / P.pw);
     else px = PX_PER_PT * z;
@@ -683,6 +686,7 @@ class App {
     $('#zoomv').setAttribute('aria-description', 'Zoom: ' + $('#zoomv').textContent);
     // with the text block as wide as the screen, the view starts at the text, not at the margin
     if (this.textFit && changed) requestAnimationFrame(() => { if (this.textFit) this.desk.scrollLeft = Math.max(0, P.ml * px - 6); });
+    else if (web && changed) requestAnimationFrame(() => { if (!this.textFit) this.desk.scrollLeft = 0; });
     return changed;
   }
 
