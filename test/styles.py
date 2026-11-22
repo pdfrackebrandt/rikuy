@@ -70,12 +70,14 @@ def styles(page):
     click_text(page, 'Opening', 3); style(page, 'p')
     check('Normal text on a heading leaves its words as a paragraph of their own', src(page) == DOC.replace('\\section{Opening}\nFirst', 'Opening\n\nFirst') and state(page)['style'] == 'p', src(page)[60:110])
     check('undo restores the heading byte for byte', undo_is(page, DOC))
-    # where a conversion is not safe it is not offered: a list or a table can be shown as its
-    # LaTeX source as a whole, and nothing else
-    for where, text in (('a list item', 'two'), ('a table cell', 'cell')):
+    # where a conversion is not safe it is not offered: a table can be shown as its LaTeX source as
+    # a whole, and nothing else; a list item of plain words may also be a heading, which takes it
+    # out of the list (item_heading), as Word gives a bullet a heading's style
+    heads = ['paragraph', 'part', 'section', 'subparagraph', 'subsection', 'subsubsection']
+    for where, text, more in (('a list item', 'two', heads), ('a table cell', 'cell', [])):
         click_text(page, text, 1); state(page)
         offered = page.evaluate('[...document.getElementById("rb-style").options].filter((o) => !o.hidden && !o.disabled).map((o) => o.value)')
-        check('in %s only LaTeX is offered, for the whole of it (and the list\'s two actions)' % where, sorted(offered) == ['', '__new', '__pane', 'latex'] and page.evaluate('document.getElementById("rb-style").value') == '', offered)
+        check('in %s only LaTeX is offered, for the whole of it (and the list\'s two actions)%s' % (where, ', and the headings' if more else ''), sorted(offered) == sorted(['', '__new', '__pane', 'latex'] + more) and page.evaluate('document.getElementById("rb-style").value') == '', offered)
     load_doc(page, '\\documentclass{article}\n\\title{A title}\n\\begin{document}\n\\maketitle\nWords.\n\\end{document}\n')
     click_text(page, 'A title', 2)
     st = state(page)
@@ -128,7 +130,7 @@ def gallery(page):
     check('in a heading its level is checked', page.evaluate(TILES)[1] == 'section*', page.evaluate(TILES))
     click_text(page, 'two', 1); state(page)
     t = page.evaluate(TILES)
-    check('in a list nothing is checked and only LaTeX applies (the list as its source)', t == ['p-', 'section-', 'subsection-', 'subsubsection-', 'latex', 'quote-'], t)
+    check('in a list item nothing is checked; LaTeX applies (the list as its source), and the headings (the item out of the list)', t == ['p-', 'section', 'subsection', 'subsubsection', 'latex', 'quote-'], t)
     click_text(page, 'cell', 1); state(page)
     t = page.evaluate(TILES)
     check('in a table the same', t == ['p-', 'section-', 'subsection-', 'subsubsection-', 'latex', 'quote-'], t)
