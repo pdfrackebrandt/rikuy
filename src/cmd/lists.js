@@ -15,7 +15,7 @@ import { BLOCKS } from '../render.js';
 import { diffEdit } from '../wrap.js';
 import { docClass, hasPackage, preambleEnd } from '../preamble.js';
 import { NOT_PLAIN } from '../styles.js';
-import { escapeTeX } from '../editor.js';
+import { escapeTeX, posFromDom } from '../editor.js';
 import { openMenu } from '../ui/kit.js';
 import { $ } from '../ui/dom.js';
 import { indentEdits, indentLen, INDENT_KEYS, bulletCode, textEngine, readLists, allLists, selectedItems, restartEdit, crlf, noindentBefore, maxStart, SYMBOLS, formatOf, labelEdits, startEdits, resumeEdits, sepEdits, kindEdits, demote, promote, unlist, listFrom, autoMarker, sortEdit,
@@ -183,6 +183,21 @@ onInstall((app) => {
     e.preventDefault(); e.stopImmediatePropagation();
     app.listLevel(d);
   }, true);
+  // The caret on an item's bullet or number (Right from the paragraph above, Left from the item's
+  // words, a press on the number) goes where it counts (src/editor.js posFromDom): the item's
+  // words' start, or with Left the end of what is above. It was drawn before the number, and the
+  // next Left or Right from there went back where it came from.
+  let left = 0;
+  app.root.addEventListener('keydown', (e) => { left = e.key === 'ArrowLeft' && !e.shiftKey ? performance.now() : 0; }, true);
+  document.addEventListener('selectionchange', () => {
+    const sel = getSelection();
+    if (!sel.rangeCount || !sel.isCollapsed || app.composing) return;
+    const n = sel.anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement), lbl = el && el.closest && el.closest('.lbl');
+    if (!lbl || !app.root.contains(lbl)) return;
+    const back = left && performance.now() - left < 500;
+    const P = posFromDom(lbl, back ? lbl.childNodes.length : 0, app.root);
+    if (P && !P.ghost && P.f != null) app.restoreCaret({ f: P.f, p: P.p, bias: back ? -1 : 1 }, true);
+  });
   // the libraries' tiles: the arrow keys move in two directions
   document.addEventListener('keydown', (e) => {
     const a = document.activeElement;

@@ -803,6 +803,25 @@ def r2_pdf(page):
     page.set_default_timeout(30000)
 
 
+def label_caret(page):
+    """(bugs 2026-11-22) Right from the end of the paragraph above a list put the caret on the first
+    item's number, which was taken for the end of that paragraph: what was typed went there. Left
+    from an item's words, and Right again, went back where they came from."""
+    P = WRAP('Hello.\n\n\\begin{enumerate}\n  \\item One\n  \\item Two\n\\end{enumerate}')
+    load_doc(page, P); click_text(page, 'Hello.', 6); key(page, 'ArrowRight'); page.keyboard.type('X'); settle(page, 200)
+    check('label_caret: Right from the paragraph above a list, then typing, writes at the first item\'s start', '\\item XOne' in src(page) and 'Hello.\n' in src(page), src(page)[40:])
+    load_doc(page, P); click_text(page, 'One', 3); key(page, 'ArrowRight'); page.keyboard.type('X'); settle(page, 200)
+    check('label_caret: Right at an item\'s end goes to the next item\'s start', '\\item One\n  \\item XTwo' in src(page), src(page)[40:])
+    load_doc(page, P); click_text(page, 'Two', 0); key(page, 'ArrowLeft'); page.keyboard.type('X'); settle(page, 200)
+    check('label_caret: Left at an item\'s start goes to the end of the item above', '\\item OneX\n  \\item Two' in src(page), src(page)[40:])
+    load_doc(page, P); click_text(page, 'Two', 0); key(page, 'ArrowLeft'); key(page, 'ArrowLeft'); page.keyboard.type('X'); settle(page, 200)
+    check('label_caret: and Left again goes on into its words', '\\item OnXe\n' in src(page), src(page)[40:])
+    load_doc(page, WRAP('Hello.\n\n\\begin{itemize}\n  \\item One\n  \\item \n  \\item Three\n\\end{itemize}')); click_text(page, 'One', 3); key(page, 'ArrowRight'); page.keyboard.type('X'); settle(page, 200)
+    check('label_caret: Right into an empty item writes in it', '\\item One\n  \\item X\n  \\item Three' in src(page), src(page)[40:])
+    caret = page.evaluate("(() => { const n = getSelection().anchorNode; return !!(n && (n.nodeType === 1 ? n : n.parentElement).closest('.lbl')); })()")
+    check('label_caret: the caret is never left drawn on a number', not caret)
+
+
 def r2_phone(p, w, h, dark=False):
     """Picture Bullet and Adjust List Indents on a phone: from the bullet library's menu by taps,
     the dialogs on the screen with 44 px controls, no sideways scroll; screenshots"""
@@ -841,7 +860,7 @@ def run_all():
     want = lambda n: not only or n in only
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf):
+        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf, label_caret):
             if not want(f.__name__): continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
