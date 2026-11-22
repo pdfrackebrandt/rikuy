@@ -36,14 +36,9 @@ ALL_NAMES = ['Normal*', 'Heading 1', 'Heading 2', 'Heading 3', 'Heading 4', 'Hea
 A = lambda body, pre='': '\\documentclass{article}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
 R = lambda body, pre='': '\\documentclass{report}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
 DIAG = """(() => { const L = window.__diag = [], t0 = performance.now(), now = () => Math.round(performance.now() - t0);
-  const pos = () => { try { const c = window.rikuy && window.rikuy.caretNow && window.rikuy.caretNow(); return c ? (c.collapsed ? 'p' + c.p : c.a + '-' + c.b) : 'none'; } catch (e) { return 'err'; } };
-  const sel = () => { const s = getSelection(); return s.rangeCount ? (s.anchorNode && (s.anchorNode.textContent || '').slice(0, 12)) + '@' + s.anchorOffset : '-'; };
-  const add = (k, x) => { L.push([k, now(), x || '', pos(), sel(), document.activeElement && (document.activeElement.id || document.activeElement.tagName)]); if (L.length > 400) L.shift(); };
-  for (const k of ['selectionchange', 'focusin', 'touchstart', 'touchend', 'mousedown', 'mouseup', 'click', 'change', 'keydown', 'input', 'beforeinput']) document.addEventListener(k, (e) => add(k, (e.target && (e.target.id || e.target.nodeName)) + (e.key ? ' ' + e.key : '') + (e.clientX != null ? ' ' + Math.round(e.clientX) + ',' + Math.round(e.clientY) : '')), true);
-  document.addEventListener('scroll', (e) => { const t = e.target === document ? document.scrollingElement : e.target; if (t && !/^(ribbon|rb-)/.test(t.id || '')) add('scroll', (t.id || t.tagName) + ' ' + Math.round(t.scrollTop)); }, true);
-  if (document.fonts) document.fonts.addEventListener('loadingdone', (e) => add('fonts', e.fontfaces.map((f) => f.family + ' ' + f.weight + ' ' + f.style).join('|')));
-  let app; Object.defineProperty(window, 'rikuy', { configurable: true, get: () => app, set: (v) => { app = v; for (const k of ['rebuild', 'relayout', 'restoreCaret', 'ribbonBack', 'runCommand', 'applyStyle', 'removeGhost', 'revealCaret']) { const f = v[k]; if (typeof f === 'function') v[k] = function (a) { add(k, a == null ? '' : JSON.stringify(a).slice(0, 80)); return f.apply(this, arguments); }; } } });
-  window.__mark = (m) => add('MARK', m); })()"""
+  const add = (k, x) => { L.push([k, now(), x || '']); if (L.length > 400) L.shift(); };
+  for (const k of ['selectionchange', 'focusin', 'touchstart', 'touchend', 'mousedown', 'click', 'change', 'keydown']) document.addEventListener(k, (e) => add(k, (e.target && (e.target.id || e.target.nodeName)) + (e.key ? ' ' + e.key : '') + (e.clientX != null ? ' ' + Math.round(e.clientX) + ',' + Math.round(e.clientY) : '')), { capture: true, passive: true });
+  window.__mark = (m) => { const s = getSelection(); add('MARK', m + ' ' + (s.rangeCount ? (s.anchorNode && (s.anchorNode.textContent || '').slice(0, 12)) + '@' + s.anchorOffset : '-') + ' ' + (document.activeElement && document.activeElement.id)); }; })()"""
 
 
 DIAGS = []
@@ -51,7 +46,7 @@ DIAGS = []
 
 def diag(page, label, ok):
     if not ok:
-        DIAGS.append('DIAG ' + label + ' ' + json.dumps(page.evaluate("window.__diag.filter((e) => !/^(rl-|rc-|rb-)/.test(e[2])).slice(-45)")))
+        DIAGS.append('DIAG ' + label + ' ' + json.dumps(page.evaluate("window.__diag.filter((e) => !/^(rl-|rc-|rb-)/.test(e[2])).slice(-45).concat([['caret', 0, JSON.stringify(window.rikuy.caretNow() && { p: window.rikuy.caretNow().p })]])")))
 
 P3 = 'Before it.\n\nWords here.\n\nAfter it.'
 
