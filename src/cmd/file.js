@@ -418,6 +418,9 @@ export const methods = {
     // (the collapsed headings, kept in localStorage under the same name: src/cmd/find.js)
     const folds = load('rikuy.fold.v1');
     if (folds && typeof folds === 'object') { let moved = false; for (const m of mains) { const k = from + '|' + m; if (k in folds) { folds[to + '|' + m] = folds[k]; delete folds[k]; moved = true; } } if (moved) store('rikuy.fold.v1', folds); }
+    // (and the place it was left at, which a reload goes back to: src/app.js leaving())
+    const places = load('rikuy.place.v1');
+    if (places && typeof places === 'object' && places[from]) { places[to] = places[from]; delete places[from]; store('rikuy.place.v1', places); }
     if (from === this.name) {
       this.name = to;
       if (this.linkCache) for (const m of mains) { const k = from + '|' + m; if (this.linkCache.has(k)) { this.linkCache.set(to + '|' + m, this.linkCache.get(k)); this.linkCache.delete(k); } }

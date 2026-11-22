@@ -118,7 +118,11 @@ def rename(page):
     check('renamed: every version under the new name, none under the old', n0 >= 1 and ns.count('My letter') == n0 and first not in ns, (n0, ns[:8]))
     check('its pictures kept in the browser go with it', ev(page, KV, 'bin:My letter|main.tex') not in (False, None) and ev(page, KV, 'bin:' + first + '|main.tex') is False)
     check('the open document stays open and untouched', ev(page, 'window.rikuy.name') == opened)
+    # (the place a reload goes back to is kept under the document's name: it follows the name)
+    page.evaluate('() => { const t = document.querySelector("#pages .it.p span.t"); document.getElementById("pages").focus(); getSelection().collapse(t.firstChild, 1); window.rikuy.leaving(); }')
     ok = ev(page, '(n) => window.rikuy.runCommand("recent", { rename: n, to: "Exam renamed" })', opened); settle(page, 500)
+    places = ev(page, 'JSON.parse(localStorage.getItem("rikuy.place.v1") || "{}")')
+    check('the place a reload goes back to follows the new name', 'Exam renamed' in places and opened not in places, list(places))
     rec = ev(page, KV, 'project')
     check('the open document renamed: the bar says it, its versions follow, the record a reload opens too',
           ok is True and ev(page, 'window.rikuy.name') == 'Exam renamed' and ev(page, "document.getElementById('docname').textContent") == 'Exam renamed'
