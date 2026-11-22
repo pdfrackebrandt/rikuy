@@ -643,10 +643,27 @@ export const methods = {
   // Alt+=: numbered on an empty line, in the line in text (Word's)
   eqAltEquals(at) {
     if (!at) return false;
+    // (over selected words of the text: they become the equation, as Word's Alt+= takes them;
+    // the words were thrown away for an empty field)
+    if (this.eqFromWords(at)) return true;
     // (on an empty line: the kind Equation Options chose, a numbered equation by default)
     if (at.c.ghost && !this.ghostRaw() && !tight(at) && !at.sty && at.ctx !== 'tex') this.newDisplayMath((this.prefs && this.prefs.eqNewEnv) || 'equation');
     else this.newMath();
     return true;
+  },
+  // Words selected in one paragraph, a^2+b_1=c^2 typed in a sentence, made a formula in the line
+  // as Word's linear format reads them: the words as the page shows them (the source has
+  // \textasciicircum{} and \_ for what was typed), TeX's special characters kept as characters.
+  // Not over a formula, a command, a line break or more than a paragraph's words: false, and
+  // Alt+= goes on as without a selection.
+  eqFromWords(at) {
+    const c = !at.c.ghost && this.caretNow();
+    if (!c || c.ghost || c.crossFile || c.a === c.b || at.ctx === 'tex') return false;
+    const S = this.src(c.f).slice(c.a, c.b);
+    if (S.length > 400 || /[$\n]|\\(?!(textasciicircum|textasciitilde)\{\}|[_&%#{}])/.test(S)) return false;
+    const tex = String(getSelection()).replace(/[\u200b\u00ad]/g, '').replace(/\s+/g, ' ').trim().replace(/[&%#]/g, '\\$&');
+    if (!tex || this.eqSafe(tex)) return false;
+    return this.eqInsertNew(tex);
   },
   // the Equation tab in front, as Word brings it with a new equation
   eqTab() {
