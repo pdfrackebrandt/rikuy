@@ -822,6 +822,37 @@ def label_caret(page):
     check('label_caret: the caret is never left drawn on a number', not caret)
 
 
+def item_edges(page):
+    """(bugs 2026-11-22) Backspace at an item's start and Delete at its end, as Word's. Between two
+    items' words the browser found only \\item to delete: the first Backspace moved the caret to the
+    end of the item above, the second took that item's last letter; Delete did nothing."""
+    I3 = WRAP('Intro.\n\n\\begin{itemize}\n  \\item One\n  \\item Two\n  \\item Three\n\\end{itemize}\n\nAfter.')
+    load_doc(page, I3); h0 = hist(page); click_text(page, 'Two', 0); key(page, 'Backspace')
+    check('item_edges: Backspace at an item\'s start takes its bullet away, its words a paragraph of the item above', src(page) == I3.replace('\\item One\n  \\item Two', '\\item One\n\n  Two'), src(page)[40:])
+    check('item_edges: one step', hist(page) == h0 + 1, hist(page) - h0)
+    check('item_edges: two bullets left on the page', labels(page) == ['•', '•'], labels(page))
+    key(page, 'Backspace')
+    check('item_edges: a second Backspace joins it to the item above', src(page) == I3.replace('\\item One\n  \\item Two', '\\item One Two'), src(page)[40:])
+    key(page, 'Control+z'); key(page, 'Control+z')
+    check('item_edges: two undos give the list back', src(page) == I3, src(page)[40:])
+    load_doc(page, I3); click_text(page, 'One', 0); key(page, 'Backspace')
+    check('item_edges: Backspace at the first item\'s start makes it a paragraph before the list', src(page) == I3.replace('\\begin{itemize}\n  \\item One\n', 'One\n\n\\begin{itemize}\n'), src(page)[40:])
+    load_doc(page, I3); click_text(page, 'One', 3); key(page, 'Delete')
+    check('item_edges: Delete at an item\'s end brings the next item\'s words up', src(page) == I3.replace('\\item One\n  \\item Two', '\\item One Two'), src(page)[40:])
+    load_doc(page, I3); click_text(page, 'Three', 5); key(page, 'Delete')
+    check('item_edges: Delete at the last item\'s end brings the paragraph after the list into it', src(page) == I3.replace('\\item Three\n\\end{itemize}\n\nAfter.', '\\item Three After.\n\\end{itemize}'), src(page)[40:])
+    load_doc(page, I3); click_text(page, 'After.', 0); key(page, 'Backspace'); page.keyboard.type('X'); settle(page, 200)
+    check('item_edges: Backspace at the start of the paragraph after a list joins it to the last item, the caret where they meet', src(page) == I3.replace('\\item Three\n\\end{itemize}\n\nAfter.', '\\item Three XAfter.\n\\end{itemize}'), src(page)[40:])
+    E = WRAP('\\begin{enumerate}\n  \\item One\n  \\item \n  \\item Three\n\\end{enumerate}')
+    load_doc(page, E); click_text(page, 'One', 3); key(page, 'ArrowDown'); key(page, 'Backspace'); page.keyboard.type('X'); settle(page, 200)
+    check('item_edges: Backspace in an empty item takes it away, the caret at the end of the item above', src(page) == E.replace('\\item One\n  \\item \n', '\\item OneX\n'), src(page)[40:])
+    load_doc(page, WRAP('Hello.')); click_text(page, 'Hello.', 6); key(page, 'Enter'); page.keyboard.type('1. '); settle(page, 300)
+    key(page, 'Backspace'); page.keyboard.type('Plain'); settle(page, 200)
+    check('item_edges: "1. " typed, then Backspace takes the number away and what is typed is a paragraph', '\\begin{enumerate}' not in src(page) and 'Hello.\n\nPlain' in src(page), src(page)[40:])
+    load_doc(page, WRAP('Hello.\n\n\\begin{itemize}\n  \\item One\n    \\begin{itemize}\n      \\item Two\n      \\item Three\n    \\end{itemize}\n\\end{itemize}')); click_text(page, 'Three', 0); key(page, 'Backspace')
+    check('item_edges: in a nested list too, the words a paragraph of the item above at its level', '\\item Two\n\n      Three\n    \\end{itemize}' in src(page), src(page)[40:])
+
+
 def r2_phone(p, w, h, dark=False):
     """Picture Bullet and Adjust List Indents on a phone: from the bullet library's menu by taps,
     the dialogs on the screen with 44 px controls, no sideways scroll; screenshots"""
@@ -860,7 +891,7 @@ def run_all():
     want = lambda n: not only or n in only
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf, label_caret):
+        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf, label_caret, item_edges):
             if not want(f.__name__): continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])

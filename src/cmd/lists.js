@@ -214,6 +214,12 @@ onInstall((app) => {
 
 const tile = (name, html, checked, run, cols, title) => ({ name, label: '', html, title: title || name, checked: !!checked, radio: true, cls: 'li-tile li-c' + cols, run });
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// an item's words (after \item and its label), trimmed; where they start; its own label as words, as
+// Bulleted list off keeps it (src/lists.js unlist); the end of the spaces after p on its line
+const itemWords = (src, it) => src.slice(it.cmdE, it.e).trim();
+const textStart = (src, it) => { let t = it.cmdE; while (t < it.e && /\s/.test(src[t])) t++; return t; };
+const labelWords = (src, it) => { if (!it.lab) return ''; const l = src.slice(it.lab.is, it.lab.ie).trim().replace(/^\{([\s\S]*)\}$/, '$1'); return l ? l + ' ' : ''; };
+const lineRest = (src, p) => { while (src[p] === ' ' || src[p] === '\t') p++; return p; };
 
 export const methods = {
   // ---- where the caret is ---------------------------------------------------------------------
@@ -300,6 +306,110 @@ export const methods = {
   listCaret(f, edits, p, q) {
     const map = (x) => { let d = 0; for (const e of edits) if (e.e <= x) d += e.t.length - (e.e - e.s); return x + d; };
     return q != null && q !== p ? { f, selA: map(p), selB: map(q) } : { f, p: map(p), bias: -1 };
+  },
+
+  // ---- Backspace, Delete and Enter at an item's edges, as Word's --------------------------------
+  // Backspace at an item's start takes its bullet or number away (deleteInput asks here first): its
+  // words stay where they are, a paragraph of the item above (under that item's words, the items
+  // after it numbered on), or on a list's first item a paragraph before the list; a second
+  // Backspace joins them as at any paragraph's start. An empty item goes, the caret at the end of
+  // the item above (or, the list's first, in an empty paragraph above the list). Delete at an
+  // item's end brings the next item's words up into it, and the paragraph after the list into its
+  // last item; Backspace at that paragraph's start does the same. Between two items' words the
+  // browser found only \item to delete, which is no visible text: the first Backspace moved the
+  // caret to the end of the item above and the second took that item's last letter, and Delete
+  // did nothing. True where it did it.
+  listDelete(back) {
+    const at = this.ribbonAt();
+    if (!at || !at.c || !at.c.collapsed || at.c.ghost || at.cell || !at.it || !at.B || at.c.f !== at.B.f) return false;
+    const f = at.B.f, src = this.src(f), p = at.c.a, NL = /\r\n/.test(src) ? '\r\n' : '\n';
+    if (!at.it.dataset.li) return back ? this.listJoinAfter(at, f, src, p) : false;
+    const I = this.listAt(at);
+    if (!I || !I.L || I.L.kind === 'desc' || !I.L.editable || !I.L.closed) return false;
+    const { L, k } = I, it = L.items[k], words = itemWords(src, it), empty = !words && !it.lists.length;
+    const gapOk = (s, e) => !/\S/.test(src.slice(s, e));
+    // (after \item and its label: cmdE is past the spaces after them, past the line's end in an
+    // empty item, whose caret stands before it)
+    const head = it.lab ? it.lab.e : it.s + 5;
+    if (back) {
+      if (p < head || /\S/.test(src.slice(head, p))) return false;
+      if (k > 0) {
+        const prev = L.items[k - 1];
+        if (!gapOk(prev.e, it.s)) return false;
+        if (empty) return this.listCommit(f, [{ s: prev.e, e: lineRest(src, Math.max(it.e, p)), t: '' }], [], { f, p: prev.e, bias: -1 });
+        const ind = indentAt(src, it.s) || '', t = NL + NL + ind + labelWords(src, it);
+        return this.listCommit(f, [{ s: prev.e, e: textStart(src, it), t }], [], { f, p: prev.e + NL.length * 2 + ind.length, bias: 1 });
+      }
+      if (empty) return this.listEmptyFirst(I, f, src, NL);
+      const r = unlist(src, I.B.s, I.B.e, p, p, this.model && this.model.userSigs);
+      if (!r) return false;
+      return this.listCommit(f, [{ s: r.s, e: r.e, t: r.t }], [], { f, p: r.a ?? r.s, bias: 1 });
+    }
+    // Delete at the end of the item's words
+    if (it.lists.length || p < head || /\S/.test(src.slice(p, Math.max(p, it.e)))) return false;
+    if (k + 1 < L.items.length) {
+      const next = L.items[k + 1], nw = itemWords(src, next);
+      if (!gapOk(it.e, next.s) || next.lists.length) return false;
+      const t = nw ? (words ? ' ' : '') + labelWords(src, next) : '';
+      return this.listCommit(f, [{ s: it.e, e: nw ? textStart(src, next) : lineRest(src, next.e), t }], [], { f, p, bias: -1 });
+    }
+    return I.chain.length === 1 ? this.listJoinPara(L, it, f, src, p, null) : false;
+  },
+  // Backspace at the start of a plain paragraph right after a list: it joins the list's last item
+  listJoinAfter(at, f, src, p) {
+    const r = this.plainPara(at.B, at.it);
+    if (!r || p > r.s || /\S/.test(src.slice(p, r.s))) return false;
+    const m = /\\end\s*\{(itemize|enumerate)\}\s*$/.exec(src.slice(Math.max(0, r.s - 300), r.s));
+    if (!m) return false;
+    const end = r.s - (m[0].length - m[0].trimEnd().length);
+    let X = null;
+    for (const B of this.renderer.blocks) if (B.f === f && B.s < end && B.e >= end && (!X || B.s > X.s)) X = B;
+    const L = X && allLists(readLists(src, X.s, X.e, this.model && this.model.userSigs)).find((x) => x.e === end);
+    if (!L || L.parent || !L.editable || !L.closed || !L.items.length) return false;
+    const it = L.items[L.items.length - 1];
+    if (it.lists.length) return false;
+    return this.listJoinPara(L, it, f, src, null, r);
+  },
+  // the plain paragraph after list L joined to its last item it: the caret at p (Delete) or where
+  // the two meet (Backspace)
+  listJoinPara(L, it, f, src, p, r) {
+    if (!r) {
+      let X = null;
+      for (const B of this.renderer.blocks) if (B.f === f && B.s >= L.e && (!X || B.s < X.s)) X = B;
+      const el = X && X.items[0] && X.items[0].el;
+      r = el ? this.plainPara(X, el) : null;
+    }
+    if (!r || r.s < L.e || /\S/.test(src.slice(L.e, r.s))) return false;
+    const sp = itemWords(src, it) ? ' ' : '';
+    return this.listCommit(f, [{ s: it.e, e: r.e, t: sp + src.slice(r.s, r.e) + src.slice(it.e, L.e) }], [], { f, p: p != null ? p : it.e + sp.length, bias: p != null ? -1 : 1 });
+  },
+  // an empty first item: it goes (its list too where it was the only item), and the caret is in an
+  // empty paragraph where it stood, above the list, as Word's
+  listEmptyFirst(I, f, src, NL) {
+    const { L } = I, it = L.items[0];
+    if (I.chain.length > 1) {
+      // (a nested list's: the caret back at the end of the item above's words)
+      if (L.items.length > 1) return false;
+      let s = L.s;
+      while (s > 0 && /[ \t\r\n]/.test(src[s - 1])) s--;
+      return this.listCommit(f, [{ s, e: L.e, t: '' }], [], { f, p: s, bias: -1 });
+    }
+    let pos;
+    if (L.items.length === 1) {
+      let s = L.s, e = L.e;
+      while (s > 0 && /[ \t\r\n]/.test(src[s - 1])) s--;
+      while (e < src.length && /[ \t\r\n]/.test(src[e])) e++;
+      const t = s > 0 && e < src.length ? NL + NL : '';
+      this.listCommit(f, [{ s, e, t }], [], { f, p: s, bias: -1 });
+      pos = s + (t ? NL.length : 0);
+    } else {
+      this.listCommit(f, [{ s: it.s, e: L.items[1].s, t: '' }], [], { f, p: it.s, bias: 1 });
+      pos = L.s;
+    }
+    this.ghostAt(f, pos);
+    // (a place for the caret, not a step of its own: Undo gives the item back)
+    if (this.ghost) this.ghost.place = true;
+    return true;
   },
 
   // ---- Bulleted list, Numbered list, Description list --------------------------------------------
