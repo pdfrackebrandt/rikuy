@@ -19,7 +19,7 @@ survive a reload."""
 import os, sys, io, re, json, zlib, base64, zipfile, tempfile, traceback, time, socket, threading
 sys.path.insert(0, os.path.dirname(__file__))
 import serve
-from browser import settle, ROUTES, check, results, click_text, download
+from browser import settle, saved, TIMERS, ROUTES, check, results, click_text, download
 from playwright.sync_api import sync_playwright
 
 PORT = 8797
@@ -50,6 +50,9 @@ def make_zip(path, files):
 def open_app(p):
     b = p.chromium.launch()
     ctx = b.new_context(viewport={'width': 1400, 'height': 1000}, accept_downloads=True, device_scale_factor=1)
+    # (the page's timers, as open_page() tracks them, so settle() waits for those due; in the page
+    # alone: a widget's frame keeps its own window as the page gives it)
+    ctx.add_init_script('if (window === window.top) ' + TIMERS)
     page = ctx.new_page()
     errors = []
     page.on('console', lambda m: errors.append(m.text) if m.type == 'error' and 'Failed to load resource' not in m.text else None)
@@ -393,7 +396,9 @@ try:
         rtc = lambda: page.evaluate('window.__rtc')
         page.evaluate("(t) => { const g = window.rikuy; g.files.set('widgets/clt.html', t); g.rebuild(); }", RTC_PROBE)
         page.wait_for_function('window.__rtc.some((d) => d.rtcProbe)', timeout=10000)
-        settle(page, 1500)
+        # (the time is under test: the checks below are of what must not come in it, a child frame's
+        # message or a STUN packet, and nothing marks that it will not)
+        page.wait_for_timeout(1500)
         pr = next(d['rtcProbe'] for d in rtc() if 'rtcProbe' in d)
         check('a widget\'s new RTCPeerConnection() throws: it and every RTC interface are gone from its window', pr['rtc'] == 'refused' and not pr['left'], pr)
         check('a srcdoc frame the widget adds (in its markup, by script, in a shadow root it attaches) is taken out before it runs', not [d for d in rtc() if 'rtcChild' in d], [d['rtcChild'] for d in rtc() if 'rtcChild' in d])
@@ -402,7 +407,8 @@ try:
         check('document.open() and write() bring none of it back', [d['rtcWrite'] for d in rtc() if 'rtcWrite' in d] == ['undefined undefined'], [d['rtcWrite'] for d in rtc() if 'rtcWrite' in d])
         for t in (RTC_LEAVE, RTC_REFRESH):
             page.evaluate("(t) => { const g = window.rikuy; g.files.set('widgets/clt.html', t); g.rebuild(); }", t)
-            settle(page, 1500)
+            # (the time is under test, as above: what the frame's way out would bring must not come)
+            page.wait_for_timeout(1500)
         check('the widget cannot take its frame to a document of its own, by location or a refresh <meta>: the page refuses it', not [d for d in rtc() if d.get('rtcChild') in ('location', 'refresh')], [d['rtcChild'] for d in rtc() if 'rtcChild' in d])
         check('no STUN request from any of them reached the test\'s server', not stun_packets, len(stun_packets))
         browser.close()
@@ -433,10 +439,11 @@ try:
         check('a share link carries all of them, byte for byte', all(lf.get('widgets/w%d.html' % k) == big['widgets/w%d.html' % k] for k in range(5)))
         note = page.evaluate("(u) => window.rikuy.linkNote({ url: u, figures: 6 })", url)
         print('   share link: %d characters for %d KB of widgets' % (len(url), sum(sizes) // 1024))
-        check('the link\'s note says when a link is long', len(url) < 60000 or 'long' in note, (len(url), note))
+        # (the link carries the time it was made: its length moves by a few characters from run to run)
+        check('the link\'s note says when a link is long', len(url) < 60000 or 'long' in note, ('%d thousand characters' % (len(url) // 1000), note))
         huge = page.evaluate("() => window.rikuy.linkNote({ url: 'x'.repeat(2200000), figures: 0 })")
         check('and past what Chrome opens from its address bar, to paste it or send the .zip', 'pastes it onto this page' in huge and '.zip' in huge, huge)
-        settle(page, 1200)  # the project is kept in this browser (persist waits 700 ms)
+        saved(page)  # the project is kept in this browser (persist waits 700 ms)
         page.reload()
         page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=30000)
         check('after a reload all six run again from what the browser kept, with no second click', wait_frames(page, 6) and not page.evaluate("document.querySelector('.w-run')"))

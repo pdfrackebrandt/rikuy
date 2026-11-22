@@ -12,7 +12,7 @@ comes in written in base32 and runs nothing where a document stopped % being a c
 reading of the source finds (\\csname, \\scantokens, Lua), compiled in the page (S5)."""
 import base64, io, json, os, sys, zipfile, zlib
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, open_page, check, results, src, wait_src, click_text, select_text, download
+from browser import settle, until, open_page, check, results, src, wait_src, click_text, select_text, download
 from playwright.sync_api import sync_playwright
 
 # what the page would ask the TeX worker for: compile() is replaced by one that notes its
@@ -35,6 +35,22 @@ def said(page, w):
     return page.evaluate('(w) => [...window.rikuy.files.values()].some((t) => typeof t === "string" && t.includes(w)) || window.rikuy.allComments().some((c) => [c.who, c.quote, c.body, ...c.replies.map((r) => r.who + " " + r.body)].join(" ").includes(w))', w)
 
 
+# a link opened in a page that already shows the editor changes only the fragment: the page's
+# hashchange opens it (src/collab.js) and nothing says when that is done, so the test counts the
+# links opened or refused to the end
+LINKS = '''() => { const g = window.rikuy; if (g.__links == null) { g.__links = 0;
+  for (const k of ['openSharedLink', 'openTexLink']) { const f = g[k]; g[k] = async function (...a) { try { return await f.apply(this, a); } finally { g.__links++; } }; } }
+  return g.__links; }'''
+
+
+def go_link(page, url):
+    """Open url, a link to the page itself, in a page that already shows the editor, and wait until
+    the page has opened or refused what it carries."""
+    n = page.evaluate(LINKS)
+    page.goto(url)
+    until(page, '(n) => window.rikuy.__links > n', n, timeout=20000)
+
+
 def share_link(page, name, button):
     page.click('#b-share')
     page.wait_for_selector('.pop-share')
@@ -52,9 +68,11 @@ def run():
         A, page, errs = open_page(p)
         base_src = src(page)
         link = share_link(page, 'Pedro', 'Copy link')
-        check('share makes a link to this page with the document in it', link.startswith('https://rikuy.test/#share=1.'), link[:80])
+        # (the details leave out what the link carries: its packed bytes, and so its length, move with
+        # the time it was made)
+        check('share makes a link to this page with the document in it', link.startswith('https://rikuy.test/#share=1.'), link[:28])
         # (the sample's live graph travels as its description, not its 85 kB file: CI on ab27d09)
-        check('the link is short for the whole sample', len(link) < 12000, len(link))
+        check('the link is short for the whole sample', len(link) < 12000, '%d thousand characters' % (len(link) // 1000))
 
         # ---- the coauthor: a browser that has never seen the document
         B, page2, errs2 = open_page(p, clear=False)
@@ -96,7 +114,8 @@ def run():
         wait_src(page2, '% comment (Ana)')
         s2 = src(page2)
         check('a comment is a comment line under its line', '\n% comment (Ana) on "source map": Is this the usual term?\n' in s2, s2[s2.find('% comment'):][:90])
-        settle(page2, 500)
+        # (the margin's comments are drawn 200 ms after the edit: commentsSoon)
+        settle(page2, 500, full=True)
         check('and changes nothing on the page', page2.evaluate(PAGE_TEXT) == before)
         check('it shows in the margin', page2.locator('.cm-mark').count() == 1)
         page2.evaluate('() => window.rikuy.toggleNav(true, "changes")')
@@ -124,7 +143,7 @@ def run():
         click_text(page, 'every edit is computed back', 0)
         page.keyboard.type('AUTHOR ')
         check('the author edits another line', 'AUTHOR every edit' in src(page))
-        page.goto(back)
+        go_link(page, back)
         page.wait_for_function('() => window.rikuy.files.get("main.tex").includes("quickly")', timeout=20000)
         settle(page, 500)
         s = src(page)
@@ -167,7 +186,8 @@ def run():
         uri = (form.get('snip_uri') or [''])[0]
         ok = uri.startswith('data:application/zip;base64,')
         names = zipfile.ZipFile(io.BytesIO(base64.b64decode(uri.split(',', 1)[1]))).namelist() if ok else []
-        check('Open in Overleaf posts the project as a .zip', ok and names == ['paper.tex'], (uri[:60], names))
+        # (the .zip's bytes carry the time it was made: the detail shows its kind)
+        check('Open in Overleaf posts the project as a .zip', ok and names == ['paper.tex'], (uri[:uri.find(',') + 1] if ok else uri[:60], names))
         check('naming its main file', (form.get('main_document') or [''])[0] == 'paper.tex')
 
         # ---- the author tries their own link: the project with its figure stays as it was
@@ -278,7 +298,7 @@ def comments_only():
         page2.click('.pop-share button.btn:not(.ghost) >> text=Copy the link for Pedro')
         page2.wait_for_function('() => (document.querySelector(".pop-share .share-link") || {}).value', timeout=8000)
         back = page2.eval_on_selector('.pop-share .share-link', 'e => e.value')
-        page.goto(back)
+        go_link(page, back)
         page.wait_for_function('() => window.rikuy.allComments().some((c) => c.body === "Clearer?")', timeout=20000)
         settle(page, 400)
         s = src(page)
@@ -287,7 +307,7 @@ def comments_only():
         # (security review) a copy back that names another version than the one shared: not opened over the document
         s_before = src(page)
         forged = page2.evaluate("async () => { const g = window.rikuy; g.shareCtx.base = 'forged-version'; g.shareCtx.rid = null; g.files.set('main.tex', g.files.get('main.tex').replace('Second line', 'SECOND LINE')); return (await g.makeShareLink('back')).url; }")
-        page.goto(forged); settle(page, 2500)
+        go_link(page, forged); settle(page, 2500)
         check('comments only: a copy back naming a version this browser never shared does not open over the document', src(page) == s_before and 'not opened' in page.evaluate('() => [...document.querySelectorAll(".toast")].map((t) => t.textContent).join(" ")'), src(page)[:200])
         bad = [e for e in errs + errs2 if 'clipboard' not in e.lower()]
         check('comments only: no page errors', not bad, bad[:3])
@@ -344,7 +364,7 @@ def comments_attacks():
           g.files.set('refs.bib', g.files.get('refs.bib') + '% comment (Eve): see @preamble{ "\\textbf{BIBINJECTED}" }\n');
           g.files.set('extra.sty', '\\textbf{NEWFILEINJECTED}'); }""")
         back = share(page2, 'back')
-        page.goto(back)
+        go_link(page, back)
         page.wait_for_function('() => window.rikuy.allComments().some((c) => c.body === "OKCOMMENT")', timeout=20000)
         settle(page, 500)
         m, b = src(page), src(page, 'refs.bib')
@@ -355,7 +375,7 @@ def comments_attacks():
         # H1: a lone carriage return in a comment line: nothing of that copy comes in
         page2.evaluate(r"""() => { const g = window.rikuy;
           g.files.set('main.tex', g.files.get('main.tex').replace('Second line stays.\n', 'Second line stays.\n% comment (Eve): looks fine\r\\textbf{CRINJECTED}\n% comment (Eve): ALSO\n')); }""")
-        page.goto(share(page2, 'back'))
+        go_link(page, share(page2, 'back'))
         settle(page, 2500)
         m = src(page)
         check('attacks: a comment line with a lone carriage return brings nothing, not even the comments beside it', not said(page, 'CRINJECTED') and not said(page, 'ALSO') and '\r' not in m, repr(m[-300:]))
@@ -367,7 +387,7 @@ def comments_attacks():
         # M1: the reader relabels the copy as a new link of their own: it opens beside the author's project
         page2.evaluate("() => { const g = window.rikuy; g.shareCtx = null; g.files.set('main.tex', g.files.get('main.tex').replace('Second line stays.', 'SECOND LINE REWRITTEN.')); }")
         before = src(page)
-        page.goto(share(page2, 'coauthor')); settle(page, 2500)
+        go_link(page, share(page2, 'coauthor')); settle(page, 2500)
         st = page.evaluate('async () => { const g = window.rikuy; const v = (await g.allSnaps()).filter((x) => x.name === "cmonly" && x.main === "main.tex"); const f = v.length ? new Map(await g.versionFiles(v[0])) : null; return { name: g.name, own: f && f.get("main.tex") }; }')
         check('attacks: a copy relabelled as a new link opens as a project of its own, the author\'s kept as it was', st['name'].startswith('cmonly (from '), st['name'])
         check('attacks: the author\'s project still has its own text', st['own'] == before and 'REWRITTEN' not in (st['own'] or ''), (st['own'] or '')[:200])
@@ -380,7 +400,7 @@ def comments_attacks():
         page2.wait_for_function('window.rikuy && window.rikuy.name === "catdoc" && document.body.classList.contains("guest")', timeout=20000)
         page2.evaluate(r"""() => { const g = window.rikuy;
           g.files.set('main.tex', g.files.get('main.tex').replace('Rates are 5% and 7%.\n', 'Rates are 5% and 7%.\n% comment (Eve): \\textbf{CATINJECTED}\n').replace('End of text.\n', 'End of text.\n% comment (Eve): fine\n')); }""")
-        page.goto(share(page2, 'back'))
+        go_link(page, share(page2, 'back'))
         settle(page, 2500)
         check('attacks: where a group makes % a letter, no comment line comes in', src(page) == CAT_DOC and page.evaluate('() => window.rikuy.name') == 'catdoc', src(page)[-200:])
         if TEX:
@@ -451,7 +471,7 @@ def comments_catcodes():
             page2.wait_for_function('window.rikuy && document.body.classList.contains("guest") && window.rikuy.shareCtx && window.rikuy.shareCtx.role === "comments"', timeout=20000)
             settle(page2, 300)
             page2.evaluate('(l) => { const g = window.rikuy; g.files.set("main.tex", g.files.get("main.tex").replace("First line.\\n", "First line.\\n" + l)); }', INJECT)
-            page.goto(share(page2, 'back'))
+            go_link(page, share(page2, 'back'))
             page.wait_for_function('() => window.rikuy.allComments().some((c) => c.body === "\\\\uppercase{rkinjected}")', timeout=20000)
             settle(page, 300)
             m = src(page)

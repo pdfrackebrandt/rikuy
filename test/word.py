@@ -21,7 +21,7 @@ Word support is and fetches nothing of it."""
 import os, sys, io, re, json, base64, zipfile, tempfile, traceback, time, subprocess, shutil, difflib
 sys.path.insert(0, os.path.dirname(__file__))
 import serve
-from browser import settle, ROUTES, check, results, click_text, load_doc, undo_all, download
+from browser import settle, until, TIMERS, ROUTES, check, results, click_text, load_doc, undo_all, download
 from playwright.sync_api import sync_playwright
 import word_fixture
 
@@ -127,6 +127,9 @@ def open_app(p, url=URL):
     b = p.chromium.launch()
     # (1920 px: Home's row has room for the three downloads there since its Paragraph group, B2)
     ctx = b.new_context(viewport={'width': 1920, 'height': 1000}, accept_downloads=True, device_scale_factor=1)
+    # (the page's timers, as open_page() tracks them, so settle() waits for those due; in the page
+    # alone: a live figure's frame keeps its own window)
+    ctx.add_init_script('if (window === window.top) ' + TIMERS)
     page = ctx.new_page()
     errors, reqs = [], []
     page.on('console', lambda m: errors.append(m.text) if m.type == 'error' and 'Failed to load resource' not in m.text else None)
@@ -164,6 +167,9 @@ def open_file(page, path):
     page.set_input_files('#fileinput', path)
     settle(page, 300)
     wait_idle(page, 120000)
+    # (a picture is measured again once it has loaded, and the pages laid out again 40 ms later)
+    until(page, "() => [...document.querySelectorAll('#pages img')].every((i) => i.complete)")
+    settle(page, 300)
 
 
 def src(page, f='main.tex'):
@@ -190,6 +196,12 @@ def edit_docx(path, out, ops):
         for n, b in P.items():
             z.writestr(n, b)
     return out
+
+
+def timed(ms, limit):
+    """A time for a check's detail: itself when it is over the limit, else that it was under (under
+    the limit it moves from run to run)."""
+    return round(ms) if ms >= limit else 'under %d ms' % limit
 
 
 def changed_lines(a, b):
@@ -361,7 +373,7 @@ try:
         out_tr = save_docx(page, os.path.join(TMP, 'tracked-out.docx'))
         dd = parts(out_tr)['word/document.xml'].decode()
         check('and it goes out to Word as Ana\'s tracked change: w:del of finding, w:ins of result', re.search(r'<w:del w:id="\d+" w:author="Ana" w:date="[^"]+"><w:r><w:delText xml:space="preserve">finding</w:delText>', dd) is not None
-              and re.search(r'<w:ins w:id="\d+" w:author="Ana" w:date="[^"]+">(?:(?!</w:ins>).)*>result</w:t>', dd, re.S) is not None and 'rkIns' not in dd, re.findall(r'<w:(?:ins|del) [^>]*>', dd)[:4])
+              and re.search(r'<w:ins w:id="\d+" w:author="Ana" w:date="[^"]+">(?:(?!</w:ins>).)*>result</w:t>', dd, re.S) is not None and 'rkIns' not in dd, [re.sub(r' w:date="[^"]*"', '', x) for x in re.findall(r'<w:(?:ins|del) [^>]*>', dd)[:4]])
 
         # ---- many tracked changes, many authors (the second review of Track Changes): the layer of
         # who wrote what made in the worker, the page not held up (M2: 3000 changes stalled it for
@@ -381,13 +393,13 @@ try:
         open_file(page, body_docx('Many.docx', many)); settle(page, 800)
         gap = page.evaluate('window.__gap')
         ch = page.evaluate("window.rikuy.realChanges().map((c) => window.rikuy.rvName(c.who))")
-        check('3000 tracked changes come in each its author\'s, the page never held up for a second (review M2: 1.8 s)', len(ch) > 2500 and set(ch) == {'Ana', 'Bo'} and gap < 1000, (len(ch), sorted(set(ch)), gap))
+        check('3000 tracked changes come in each its author\'s, the page never held up for a second (review M2: 1.8 s)', len(ch) > 2500 and set(ch) == {'Ana', 'Bo'} and gap < 1000, (len(ch), sorted(set(ch)), timed(gap, 1000)))
         # (Reject by author and Reject All move the layer in one pass: they held the page 0.9 and 1.5 s; N3)
         page.evaluate("window.__gap = 0"); page.evaluate("window.rikuy.rejectChanges(window.rikuy.realChanges().filter((c) => window.rikuy.rvName(c.who) === 'Bo'))"); settle(page, 500)
         g_bo, left = page.evaluate('window.__gap'), page.evaluate("window.rikuy.realChanges().map((c) => window.rikuy.rvName(c.who))")
         page.evaluate("window.__gap = 0"); page.evaluate("window.rikuy.rejectAllChanges(false)"); settle(page, 500)
         g_all = page.evaluate('window.__gap')
-        check('Reject by Bo and then Reject All on them hold the page under half a second each (review N3: 0.9 and 1.5 s)', set(left) == {'Ana'} and len(left) >= 60 and g_bo < 500 and g_all < 500 and not page.evaluate("window.rikuy.realChanges().length") and src(page) == page.evaluate("window.rikuy.base.files.get('main.tex')"), (len(left), round(g_bo), round(g_all)))
+        check('Reject by Bo and then Reject All on them hold the page under half a second each (review N3: 0.9 and 1.5 s)', set(left) == {'Ana'} and len(left) >= 60 and g_bo < 500 and g_all < 500 and not page.evaluate("window.rikuy.realChanges().length") and src(page) == page.evaluate("window.rikuy.base.files.get('main.tex')"), (len(left), timed(g_bo, 500), timed(g_all, 500)))
         people = ''.join(tins('Author number %d' % k, 'x', 10 + k) + run('w%d ' % k) for k in range(300))
         # (Eve first: past the sixth, authors share the last step and its joined name)
         open_file(page, body_docx('People.docx', '<w:p>' + run('Then ') + tins('\u202eEve\u2066', 'cc ', 400) + run('end.') + '</w:p>' + '<w:p>' + run('Start ') + people + '</w:p>'))
@@ -617,7 +629,8 @@ try:
         own = save_docx(page, os.path.join(TMP, 'own.docx'))
         P = parts(own)
         rk = [k for k in P if re.match(r'customXml/item\d+\.xml$', k) and b'<rikuy' in P[k]][0]
-        check('the Word file carries the files its text comes from, not the whole project', b'SECRET-CHAPTER' not in P[rk] and b'Editing in Print' in P[rk], len(P[rk]))
+        # (its size moves with what the moment drew: the detail is what the check reads)
+        check('the Word file carries the files its text comes from, not the whole project', b'SECRET-CHAPTER' not in P[rk] and b'Editing in Print' in P[rk], (b'SECRET-CHAPTER' in P[rk], b'Editing in Print' in P[rk]))
         before = src(page)
         # the same file with its Rikuy data changed: the first block mapped onto the preamble, and
         # a word edited in Word so that there is something to bring back
@@ -637,8 +650,10 @@ try:
         open_file(page, forged)
         toast = page.inner_text('#toast')
         info = page.evaluate('window.rikuy.linkInfo()')
+        # (the detail without its note on pictures: whether the opening graph's picture was drawn again
+        # before the export, 700 ms after the page, is the moment's; the record without its time and id)
         check('a Word file whose Rikuy data this browser did not write merges nothing: it opens as a document of its own, as someone else\'s',
-              'did not make' in toast and page.evaluate('window.rikuy.name') == 'forged' and bool(info) and info.get('origin') == 'docx' and not info.get('allowed'), (toast[:200], info))
+              'did not make' in toast and page.evaluate('window.rikuy.name') == 'forged' and bool(info) and info.get('origin') == 'docx' and not info.get('allowed'), (re.sub(r', with \d+ pictures? in figures/', '', toast)[:200], {k: v for k, v in info.items() if k not in ('t', 'id')} if isinstance(info, dict) else info))
         snaps = page.evaluate('''async () => { const g = window.rikuy; const all = await g.allSnaps(); const v = all.find((x) => x.name !== 'forged' && x.main === 'main.tex');
           return v ? new Map(await g.versionFiles(v)).get('main.tex') : null; }''')
         check('and the project it claimed to edit is as it was, in History', snaps == before, (snaps or '')[:120])

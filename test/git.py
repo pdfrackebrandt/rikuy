@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 # the test page (https://rikuy.test) talks to a git server on 127.0.0.1, which Chrome's local
 # network checks would otherwise hold for a permission prompt
 os.environ['CHROME_ARGS'] = '--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults,BlockInsecurePrivateNetworkRequests'
-from browser import settle, open_page, check, results, src, SHOTS, download
+from browser import settle, until, landed, open_page, check, results, src, SHOTS, download
 import git_server
 from playwright.sync_api import sync_playwright
 
@@ -105,6 +105,50 @@ check('the git server lets the test page read its answers, refuses another origi
       asked == [(200, 'https://rikuy.test'), (403, None), (403, None), (200, 'https://rikuy.test')], asked)
 
 
+# Git runs in a module the page loads when the panel first opens, its repositories in IndexedDB:
+# each step below waits for what it promised, then for the panel drawn again (renderGit is async;
+# gitRendering is true while it draws)
+DRAWN = "() => !!document.querySelector('#nav-body .git') && !window.rikuy.gitRendering"
+# a repository's panel (the author fields are in it, hidden once they are filled in)
+REPO = "() => !!document.querySelector('#nav-body .git-who') && !window.rikuy.gitRendering"
+COMMITTED = "(n) => document.querySelectorAll('#nav-body .git-c').length >= n && !window.rikuy.gitRendering"
+ON_BRANCH = "(b) => (document.querySelector('#nav-body .git-branch') || {}).value === b && !window.rikuy.gitRendering"
+# the page's messages, counted: opening a project ends with one that says what was opened
+TOASTS = """() => { const g = window.rikuy; if (g.__toasts == null) { g.__toasts = 0; const t = g.toast;
+  g.toast = function (...a) { g.__toasts++; g.__toast = String(a[0]); return t.apply(this, a); }; } return g.__toasts; }"""
+OPENED = "(n) => window.rikuy.__toasts > n && /^Opened /.test(window.rikuy.__toast)"
+# Push and Pull: the button says what it is doing (busy) once the address is saved, and what it
+# is again when done, or the panel is drawn anew; the test watches the button it pressed
+WATCH = """(name) => { const b = [...document.querySelectorAll('.git-remote button')].find((x) => x.textContent === name);
+  const w = window.__git = { b, busy: false };
+  new MutationObserver((rs) => { if (rs.some((r) => r.oldValue === null)) w.busy = true; }).observe(b, { attributes: true, attributeOldValue: true, attributeFilter: ['disabled'] }); }"""
+RAN = "() => { const w = window.__git; return w.busy && (!w.b.isConnected || !w.b.disabled) && !window.rikuy.gitRendering; }"
+
+
+def remote(page, name, ms):
+    """Press Push or Pull in the Remote part and wait until it has run."""
+    page.evaluate(WATCH, name)
+    page.click('.git-remote button:has-text("%s")' % name)
+    until(page, RAN, timeout=20000)
+    settle(page, ms)
+
+
+def open_zip(page, path, ms):
+    """Open a .zip as the file input would, and wait for the message that says it is open."""
+    n = page.evaluate(TOASTS)
+    page.set_input_files('#fileinput', path)
+    until(page, OPENED, n, timeout=20000)
+    settle(page, ms)
+
+
+def commit(page, msg):
+    n = len(commits(page))
+    page.fill('.git-commit input', msg)
+    page.click('.git-commit button[type=submit]')
+    until(page, COMMITTED, n + 1)
+    settle(page, 1500)
+
+
 def foreign_zip(zf, names, path, cfg):
     """The repository saved above, as a stranger could send it: their own .git/config."""
     with zipfile.ZipFile(path, 'w') as z:
@@ -128,6 +172,7 @@ def edit(page, find, repl):
 
 def refresh(page):
     page.evaluate("window.rikuy.gitRefresh()")
+    until(page, DRAWN)
     settle(page, 700)
 
 
@@ -142,18 +187,16 @@ try:
         page.evaluate("window.rikuy.prefs.gitToken = 'DUMMY-OLD-TOKEN'")
         base = src(page)
         page.click('#b-nav'); settle(page, 200)
-        page.click('#nt-git'); settle(page, 1500)
+        page.click('#nt-git'); until(page, DRAWN); settle(page, 1500)
         check('git tab offers to start a repository', page.locator('#nav-body button:has-text("Start a repository")').count() == 1)
         page.click('#nav-body button:has-text("Start a repository")')
-        settle(page, 1500)
+        until(page, REPO); settle(page, 1500)
         check('after git init the whole project shows as new files', page.evaluate("document.querySelectorAll('#nav-body .git-file.added').length") >= 2,
               page.evaluate("document.getElementById('nav-body').innerText.slice(0, 300)"))
         check('author fields show before the first commit', page.evaluate("!document.querySelector('.git-who').hidden"))
         page.fill('.git-who input[type=text]', 'Ada Lovelace')
         page.fill('.git-who input[type=email]', 'ada@example.org')
-        page.fill('.git-commit input', 'First draft')
-        page.click('.git-commit button[type=submit]')
-        settle(page, 1500)
+        commit(page, 'First draft')
         check('first commit is in the history', commits(page) == ['First draft'], commits(page))
         check('clean after committing', 'Clean' in page.evaluate("document.querySelector('.git-st').textContent"))
 
@@ -161,23 +204,26 @@ try:
         refresh(page)
         check('an edit shows as a modified file', page.evaluate("[...document.querySelectorAll('.git-file.modified .git-path')].map(e => e.textContent)") == ['main.tex'])
         check('the tab counts uncommitted files', page.evaluate(GITSTAT) == '1', page.evaluate(GITSTAT))
-        page.fill('.git-commit input', 'Return trip')
-        page.click('.git-commit button[type=submit]')
-        settle(page, 1500)
+        commit(page, 'Return trip')
         check('second commit on top', commits(page) == ['Return trip', 'First draft'], commits(page))
 
         # compare with the first commit: the Changes tab shows the one edit
         page.locator('.git-c').nth(1).locator('button:has-text("Compare")').click()
+        # (the commit's files are read from the repository, then Changes opens against them)
+        until(page, "() => document.querySelector('#nt-changes').classList.contains('on') && !!document.querySelector('.chg-base')")
         settle(page, 900)
+        # (the detail without the commit's time and hash, which are the run's own)
         check('compare opens Changes against that commit', page.evaluate("document.querySelector('#nt-changes').classList.contains('on')") and
-              'Commit' in page.evaluate("document.querySelector('.chg-base').textContent"), page.evaluate("document.querySelector('.chg-base') && document.querySelector('.chg-base').textContent"))
+              'Commit' in page.evaluate("document.querySelector('.chg-base').textContent"), re.sub(r'^Changes since .* · Commit [0-9a-f]+', 'Changes since (then) · Commit (hash)', page.evaluate("document.querySelector('.chg-base') && document.querySelector('.chg-base').textContent") or ''))
         ins = page.evaluate("[...document.querySelectorAll('#nav-body .chg ins')].map(e => e.textContent)")
         check('the diff is the commit difference', any('return' in x for x in ins), ins)
 
         # restore the first commit's text (an undoable edit)
-        page.click('#nt-git'); settle(page, 900)
+        page.click('#nt-git'); until(page, DRAWN); settle(page, 900)
+        before, h = src(page), page.evaluate('window.rikuy.hist.length')
         page.locator('.git-c').nth(1).locator('button:has-text("Restore")').click()
-        settle(page, 700)
+        # (the commit's files are read from the repository and a version kept before the edit lands)
+        landed(page, before, h); settle(page, 700)
         check('restore puts the old text back', src(page) == base)
         page.evaluate('window.rikuy.undo()'); settle(page, 400)
         check('undo brings the newer text back', 'return trip' in src(page))
@@ -187,15 +233,13 @@ try:
         settle(page, 200)
         page.fill('.git-newbranch input', 'draft')
         page.click('.git-newbranch button[type=submit]')
-        settle(page, 1200)
+        until(page, ON_BRANCH, 'draft'); settle(page, 1200)
         check('a new branch is current', page.evaluate("document.querySelector('.git-branch').value") == 'draft')
         edit(page, 'return trip', 'branch trip')
         refresh(page)
-        page.fill('.git-commit input', 'On draft')
-        page.click('.git-commit button[type=submit]')
-        settle(page, 1500)
+        commit(page, 'On draft')
         page.select_option('.git-branch', 'main')
-        settle(page, 2500)
+        until(page, ON_BRANCH, 'main'); settle(page, 2500)
         check('switching to main loads its files', 'return trip' in src(page) and 'branch trip' not in src(page), src(page)[:200])
         refresh(page)
         check('main history does not have the draft commit', commits(page) == ['Return trip', 'First draft'], commits(page))
@@ -204,8 +248,7 @@ try:
         page.click('.git-remote summary'); settle(page, 200)
         page.fill('.git-remote input[type=url] >> nth=0', URL)
         page.fill('.git-remote input[aria-label="CORS proxy"]', '')
-        page.click('.git-remote button:has-text("Push")')
-        settle(page, 3000)
+        remote(page, 'Push', 3000)
         print('  toast:', page.evaluate("[...document.querySelectorAll('.toast, #toast')].map(e => e.textContent).join(' | ')"))
         log = subprocess.run(['git', '--git-dir', ROOT + '/paper.git', 'log', '--format=%s|%an', 'main'], capture_output=True, text=True).stdout.split('\n')
         check('push reaches the server with both commits', log[:2] == ['Return trip|Ada Lovelace', 'First draft|Ada Lovelace'], log)
@@ -221,8 +264,7 @@ try:
         subprocess.run(['git', '-C', work, '-c', 'user.name=Bob', '-c', 'user.email=bob@example.org', 'commit', '-qam', 'From the desktop'], check=True)
         subprocess.run(['git', '-C', work, 'push', '-q', 'origin', 'main'], check=True)
         page.fill('.git-remote input[aria-label="Access token"]', 'DUMMY-NEW-TOKEN')
-        page.click('.git-remote button:has-text("Pull")')
-        settle(page, 4000)
+        remote(page, 'Pull', 4000)
         check('pull brings the remote commit into the editor', 'remote trip' in src(page), src(page)[:200])
         kept = page.evaluate(PREFS)
         # the old token names no host, so it was never filled in here: it stays, offered only on a click
@@ -238,7 +280,8 @@ try:
         zbytes = open(dl.value.path(), 'rb').read()
         zf = zipfile.ZipFile(io.BytesIO(zbytes))
         names = zf.namelist()
-        check('the .zip holds .git and the files', '.git/HEAD' in names and 'main.tex' in names, names[:10])
+        # (a pack's name is its hash, which the commits' times move: the detail leaves it out)
+        check('the .zip holds .git and the files', '.git/HEAD' in names and 'main.tex' in names, [re.sub(r'pack-[0-9a-f]+', 'pack-(hash)', n) for n in names[:10]])
         tmpd = tempfile.mkdtemp(prefix='gitzip-')
         zf.extractall(tmpd)
         out = subprocess.run(['git', '-C', tmpd, 'log', '--format=%s'], capture_output=True, text=True)
@@ -252,10 +295,9 @@ try:
 
         browser, page, errors2 = open_page(p, width=1440, height=900, connect=STANDINS)
         page.evaluate("indexedDB.deleteDatabase('galley-git')")
-        page.set_input_files('#fileinput', zpath)
-        settle(page, 3000)
+        open_zip(page, zpath, 3000)
         page.click('#b-nav'); settle(page, 200)
-        page.click('#nt-git'); settle(page, 2000)
+        page.click('#nt-git'); until(page, DRAWN); settle(page, 2000)
         check('opening a .zip with .git brings its history', commits(page)[:3] == ['From the desktop', 'Return trip', 'First draft'], commits(page))
 
         # A .zip's .git/config is whoever made it. Its remote gets no token filled in, even one
@@ -268,39 +310,33 @@ try:
         check('a remote that came in an opened .zip gets no token filled in, though its host has one', page.input_value(TOKEN) == '' and page.locator('.git-foreign').count() == 1,
               (page.input_value(TOKEN), page.locator('.git-foreign').count()))
         cfg = zf.read('.git/config').decode()
-        page.set_input_files('#fileinput', foreign_zip(zf, names, os.path.join(tmpd, '..', 'stranger.zip'), cfg.replace(URL, FOREIGN + '/paper.git')))
-        settle(page, 3000)
+        open_zip(page, foreign_zip(zf, names, os.path.join(tmpd, '..', 'stranger.zip'), cfg.replace(URL, FOREIGN + '/paper.git')), 3000)
         open_remote(page)
         check('a stranger\'s remote shows with no token, though an old one is kept', page.input_value('.git-remote input[aria-label="Remote URL"]') == FOREIGN + '/paper.git' and page.input_value(TOKEN) == '',
               (page.input_value('.git-remote input[aria-label="Remote URL"]'), page.input_value(TOKEN)))
-        page.click('.git-remote button:has-text("Push")')
-        settle(page, 2500)
+        remote(page, 'Push', 2500)
         check('pushing to it sends no token', seen and not [x for x in seen if x[2]], seen[:4])
         del seen[:]
         # the same remote, quoted with a space in front: the URL field drops the space, so the address
         # looked changed by the user and got the host's token, and a pull made it the user's own
         spaced = cfg.replace('url = ' + URL, 'url = " ' + URL + '"')
         assert spaced != cfg, cfg
-        page.set_input_files('#fileinput', foreign_zip(zf, names, os.path.join(tmpd, '..', 'spaced.zip'), spaced))
-        settle(page, 3000)
+        open_zip(page, foreign_zip(zf, names, os.path.join(tmpd, '..', 'spaced.zip'), spaced), 3000)
         open_remote(page)
         legacy = page.locator('details.git-remote', has_text='Push').locator('.git-legacy')
         check('a stranger\'s remote written with a space in front is still theirs: no token, no old token offered',
               page.input_value(TOKEN) == '' and page.locator('.git-foreign').count() == 1 and not legacy.is_visible(), (page.input_value(TOKEN), page.locator('.git-foreign').count()))
-        page.click('.git-remote button:has-text("Pull")')
-        settle(page, 2500)
+        remote(page, 'Pull', 2500)
         open_remote(page)
         check('and a pull does not make it the user\'s', page.input_value(TOKEN) == '' and page.locator('.git-foreign').count() == 1, (page.input_value(TOKEN), page.locator('.git-foreign').count()))
         twisted = re.sub(r'(\[remote "origin"\]\n)', lambda m: m.group(1) + '\tpushurl = ' + FOREIGN + '/push.git\n', cfg).rstrip('\n') + '\n[http]\n\tcorsProxy = ' + FOREIGN + '/proxy\n'
         # and the branch a push goes to: isomorphic-git takes branch.<name>.merge from the config
         twisted = re.sub(r'\[branch "main"\]\n(\t[^\n]*\n)*', '', twisted) + '[branch "main"]\n\tremote = origin\n\tmerge = refs/heads/strangers-pick\n'
         assert 'pushurl = ' in twisted, cfg
-        page.set_input_files('#fileinput', foreign_zip(zf, names, os.path.join(tmpd, '..', 'twisted.zip'), twisted))
-        settle(page, 3000)
+        open_zip(page, foreign_zip(zf, names, os.path.join(tmpd, '..', 'twisted.zip'), twisted), 3000)
         open_remote(page)
         page.fill(TOKEN, 'DUMMY-HOST-TOKEN')
-        page.click('.git-remote button:has-text("Push")')
-        settle(page, 2500)
+        remote(page, 'Push', 2500)
         toast = page.evaluate("document.getElementById('toast').innerText")
         check('a pushurl and http.corsProxy in its .git/config do not take the push elsewhere', not seen and 'Pushed' in toast, (seen[:4], toast))
         heads = subprocess.run(['git', '--git-dir', ROOT + '/paper.git', 'for-each-ref', '--format=%(refname)', 'refs/heads'], capture_output=True, text=True).stdout.split()
@@ -364,8 +400,7 @@ try:
         legacy.click()
         settle(page, 200)
         check('the button fills it in and goes away', page.input_value(TOKEN) == 'DUMMY-OLD-TOKEN' and not legacy.is_visible(), page.input_value(TOKEN))
-        page.click('.git-remote button:has-text("Pull")')
-        settle(page, 3000)
+        remote(page, 'Pull', 3000)
         kept = page.evaluate(PREFS)
         check('the private host takes it, and the old token now belongs to that host only', kept.get('gitTokens') == {'http://127.0.0.1:8812': 'DUMMY-OLD-TOKEN'} and 'gitToken' not in kept,
               (kept.get('gitTokens'), kept.get('gitToken'), page.evaluate("document.getElementById('toast').innerText")))
@@ -390,8 +425,8 @@ try:
             route.fulfill(response=route.fetch(url='http://127.0.0.1:8815' + r.url[len('https://rikuy.test'):]))
         page.context.route('https://rikuy.test/git/**', own)
         page.click('#b-nav'); settle(page, 200)
-        page.click('#nt-git'); settle(page, 1200)
-        page.click('#nav-body button:has-text("Start a repository")'); settle(page, 1500)
+        page.click('#nt-git'); until(page, DRAWN); settle(page, 1200)
+        page.click('#nav-body button:has-text("Start a repository")'); until(page, REPO); settle(page, 1500)
         open_remote(page)
         check('the Git panel\'s CORS proxy is the site\'s own, /git', page.input_value('.git-remote input[aria-label="CORS proxy"]') == 'https://rikuy.test/git', page.input_value('.git-remote input[aria-label="CORS proxy"]'))
         got = page.evaluate('''async (url) => { const g = window.rikuy, G = await g.loadGit(), out = {};
@@ -414,7 +449,7 @@ try:
             shown = 'Download is starting' not in str(e)
         resp = answers[0] if answers else None
         check('a link to /git opens no page: refused, as an attachment of text that runs nothing', not shown and resp and resp.status == 403 and resp.headers.get('content-type', '').startswith('text/plain')
-              and resp.headers.get('content-security-policy') == "default-src 'none'; sandbox" and resp.headers.get('content-disposition') == 'attachment', (shown, resp and resp.status, resp and resp.headers))
+              and resp.headers.get('content-security-policy') == "default-src 'none'; sandbox" and resp.headers.get('content-disposition') == 'attachment', (shown, resp and resp.status, resp and {k: v for k, v in resp.headers.items() if k != 'date'}))
         nav.close()
         stand.kill()
         browser.close()
