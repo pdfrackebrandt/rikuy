@@ -24,6 +24,9 @@ import { openFontDialog, openRubyDialog } from '../ui/fontdialog.js';
 
 const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + '</svg>';
 const can = (app, at) => !!at && !at.c.ghost && at.ctx !== 'tex';
+// (the toggles and colours also on the blank paragraph Enter showed: Word's empty paragraph takes
+// Bold and the rest for its first words, which went in plain)
+const canG = (app, at) => !!at && at.ctx !== 'tex' && (!at.c.ghost || !!app.ghostFmt());
 const WHY = 'Click in the text of the page first (a LaTeX paragraph is formatted in its source).';
 // the wrappers around the caret or the selection, read from the source once for each look at the
 // ribbon (every toggle asks): one walk back for all the kinds, the forms written by hand among them
@@ -42,6 +45,7 @@ const cellOn = (t, [a, b, s, e], group, max) => F.allOn(t.slice(s, e), a - s, b 
 const BLOCK_CELLS = 5000;
 // on with the caret in words that have a wrapper of the group; a block of cells: all its cells
 const on = (group) => (app, at) => {
+  if (at && at.c.ghost) { const G = app.ghostFmt(); return !!G && F.chainAt(G.text, G.a, G.a).some((x) => groupNames(group).includes(x.W.cmd)); }
   if (!can(app, at)) return false;
   const cells = blockOf(app, at);
   if (cells && cells.length > 1) { const t = app.src(at.c.f); return cells.length <= BLOCK_MAX && cells.every((x) => cellOn(t, x, group)); }
@@ -97,28 +101,28 @@ register(
     when: can, whyNot: () => WHY, run: (app) => app.clearFormatting(false) },
 
   { id: 'bold', name: 'Bold', order: 10, title: 'Bold (Ctrl+B): make the selected text bold', tab: 'home', group: 'font', el: 'rb-b', kind: 'toggle', glyph: '<b aria-hidden="true">B</b>', keys: ['Ctrl+B'], menu: { selection: 20 },
-    keysQuiet: ['Ctrl+Shift+B'], synonyms: ['Strong', 'textbf'], when: can, on: on('bold'), run: (app) => app.fmtToggle('bold'),
+    keysQuiet: ['Ctrl+Shift+B'], synonyms: ['Strong', 'textbf'], when: canG, on: on('bold'), run: (app) => app.fmtToggle('bold'),
     palette: { k: 'textbf', d: 'Bold', order: 60, t: { open: '\\textbf{', close: '}' } } },
   { id: 'italic', name: 'Italic', order: 20, title: 'Italic (Ctrl+I): make the selected text italic', tab: 'home', group: 'font', el: 'rb-i', kind: 'toggle', glyph: '<i aria-hidden="true">I</i>', keys: ['Ctrl+I'], menu: { selection: 30 },
-    keysQuiet: ['Ctrl+Shift+I'], synonyms: ['Emphasis', 'emph', 'textit'], when: can, on: on('italic'), run: (app) => app.fmtToggle('italic'),
+    keysQuiet: ['Ctrl+Shift+I'], synonyms: ['Emphasis', 'emph', 'textit'], when: canG, on: on('italic'), run: (app) => app.fmtToggle('italic'),
     palette: { k: 'emph', d: 'Emphasis', order: 50, t: { open: '\\emph{', close: '}' } } },
   { id: 'underline', name: 'Underline', order: 30, title: 'Underline (Ctrl+U): \\uline, which breaks across lines; the arrow for double, wave, dashed, dotted and a colour', tab: 'home', group: 'font', el: 'rb-u', kind: 'split', glyph: '<u aria-hidden="true">U</u>', keys: ['Ctrl+U'], keysQuiet: ['Ctrl+Shift+U'],
-    synonyms: ['underline', 'uline', 'Double underline', 'Wave underline', 'Underline color'], when: can, on: on('underline'), run: (app, args) => (args && args.cmd ? app.fmtSet('underline', { cmd: args.cmd }) : app.fmtToggle('underline')),
+    synonyms: ['underline', 'uline', 'Double underline', 'Wave underline', 'Underline color'], when: canG, on: on('underline'), run: (app, args) => (args && args.cmd ? app.fmtSet('underline', { cmd: args.cmd }) : app.fmtToggle('underline')),
     menuItems: (app, at) => app.underlineMenu(at) },
   { id: 'double-underline', name: 'Double Underline', keys: ['Ctrl+Shift+D'],
     title: 'Double underline (Ctrl+Shift+D): \\uuline, ulem\'s double line', synonyms: ['uuline', 'Double'],
     when: can, whyNot: () => WHY, run: (app) => app.doubleUnderline() },
   { id: 'strikethrough', name: 'Strikethrough', order: 40, title: 'Strikethrough (Ctrl+Shift+X): \\sout', tab: 'home', group: 'font', kind: 'toggle', glyph: ICON.strike, keys: ['Ctrl+Shift+X'],
-    synonyms: ['Strike', 'Cross out', 'sout'], when: can, on: on('strike'), run: (app) => app.fmtToggle('strike') },
+    synonyms: ['Strike', 'Cross out', 'sout'], when: canG, on: on('strike'), run: (app) => app.fmtToggle('strike') },
   { id: 'subscript', name: 'Subscript', order: 50, title: 'Subscript (Ctrl+,): \\textsubscript', tab: 'home', group: 'font', kind: 'toggle', glyph: ICON.sub, keys: ['Ctrl+,'],
-    synonyms: ['textsubscript', 'Lower'], when: can, on: on('sub'), run: (app) => app.fmtToggle('sub', { other: 'sup' }) },
+    synonyms: ['textsubscript', 'Lower'], when: canG, on: on('sub'), run: (app) => app.fmtToggle('sub', { other: 'sup' }) },
   { id: 'superscript', name: 'Superscript', order: 60, title: 'Superscript (Ctrl+.): \\textsuperscript', tab: 'home', group: 'font', kind: 'toggle', glyph: ICON.sup, keys: ['Ctrl+.'],
-    synonyms: ['textsuperscript', 'Raise', 'Exponent'], when: can, on: on('sup'), run: (app) => app.fmtToggle('sup', { other: 'sub' }) },
+    synonyms: ['textsuperscript', 'Raise', 'Exponent'], when: canG, on: on('sup'), run: (app) => app.fmtToggle('sup', { other: 'sub' }) },
   { id: 'highlight', name: 'Text Highlight Color', order: 70, title: 'Text Highlight Color (Ctrl+Alt+H): \\hl, in yellow or the colour picked last', tab: 'home', group: 'font', kind: 'split', glyph: ICON.highlight, keys: ['Ctrl+Alt+H'],
-    synonyms: ['Highlight', 'Highlighter', 'Marker', 'hl'], when: can, whyNot: () => WHY, on: on('highlight'),
+    synonyms: ['Highlight', 'Highlighter', 'Marker', 'hl'], when: canG, whyNot: () => WHY, on: on('highlight'),
     run: (app, args) => app.highlight(args && 'color' in args ? args.color : undefined), menuItems: (app, at) => app.highlightMenu(at) },
   { id: 'font-color', name: 'Font Color', order: 80, title: 'Font Color: \\textcolor, in the colour picked last; the arrow for every colour', tab: 'home', group: 'font', kind: 'split', glyph: ICON.color,
-    synonyms: ['Text color', 'Colour', 'textcolor'], when: can, whyNot: () => WHY,
+    synonyms: ['Text color', 'Colour', 'textcolor'], when: canG, whyNot: () => WHY,
     run: (app, args) => app.fontColor(args && 'pick' in args ? args.pick : undefined), menuItems: (app, at) => [{ name: 'Font Colors…', title: 'Every colour: Word\'s, xcolor\'s, dvipsnames and any other', run: () => app.fontColorPicker(at) }] },
   { id: 'font-more', name: 'More Font Effects', order: 90, tab: 'home', group: 'font', kind: 'menu', icon: '<path d="M5.5 10h.01M10 10h.01M14.5 10h.01"/>',
     title: 'More Font Effects: small caps, all caps, double strikethrough, border, shading, enclosed characters, ruby', synonyms: ['Effects', 'Text effects'],
@@ -158,7 +162,8 @@ export const methods = {
   // done as one commit, the preamble's lines with it. false when nothing could change.
   fmtCommit(steps, o = {}) {
     const at = o.at || this.ribbonAt(), c = at && at.c;
-    if (!c || c.ghost || this.texHere()) return false;
+    if (c && c.ghost) return this.fmtGhost(steps);
+    if (!c || this.texHere()) return false;
     // (Select all: the main file's body, not the page's last drawn character, which may be a
     // footnote's, and the whole of each file it reads in that the page draws (\input, \include);
     // a selection over two files has a caret for its place, so Select all is read off the page)
@@ -248,6 +253,39 @@ export const methods = {
     return true;
   },
 
+  // The blank paragraph Enter showed has no source until a character is typed in it: the formats
+  // set there wait on it (ghost.wrap, written round its first words by ghostInsert, with the
+  // preamble's lines they need), as Word's empty paragraph keeps Bold for what is typed next.
+  // ghostFmt: their text and the caret's place in it, or null where the paragraph is LaTeX's
+  ghostFmt() {
+    const g = this.ghost;
+    if (!g || this.ghostRaw()) return null;
+    const W = g.wrap || { open: '', close: '' };
+    return { text: W.open + W.close, a: W.open.length };
+  },
+  fmtGhost(steps) {
+    const G = this.ghostFmt();
+    if (!G) return false;
+    const needs = [...((this.ghost.wrap || {}).needs || [])];
+    let x = { text: G.text, a: G.a, b: G.a };
+    for (const step of steps) {
+      const r = step(x.text, x.a, x.b, x);
+      if (!r) continue;
+      if (r.error) { this.toast(r.error === 'crosses' || r.error === 'split' ? 'Type the words first, then format them.' : r.error); return false; }
+      x = { ...x, ...r };
+      if (r.need) needs.push(...[].concat(r.need));
+    }
+    this.ghost.wrap = x.text ? { open: x.text.slice(0, x.a), close: x.text.slice(x.a), needs } : null;
+    this.ribbonSoon && this.ribbonSoon();
+    return true;
+  },
+  // the preamble's lines for what a blank paragraph's formats need, as edits of the main file
+  fmtNeedsEdits(needs) {
+    if (!needs || !needs.length) return [];
+    const main = this.main, others = this.preambleOthers ? this.preambleOthers() : [];
+    return (F.preambleFor(this.src(main), needs, { others }) || []).map((x) => ({ f: main, s: x.s, e: x.e, t: x.t }));
+  },
+
   // Bold, Italic, Underline and the rest: on or off where the caret is
   fmtToggle(group, o = {}) {
     // A caret at the end of a wrapper's words (Ctrl+B, "bold", Ctrl+B): Word ends the format for
@@ -316,9 +354,11 @@ export const methods = {
   // the same value again takes it off (Character Shading, the highlighter's colour)
   fmtSetToggle(group, w) {
     const at = this.ribbonAt(), c = at && at.c;
-    if (!c || c.ghost) return false;
-    const W = F.around(this.src(c.f), c.a, c.b, group);
-    if (W && (c.collapsed || (c.a >= W.is && c.b <= W.ie)) && W.cmd === w.cmd && (W.args || []).join() === (w.args || []).join() && (W.opt || '') === (w.opt || '')) return this.fmtSet(group, null);
+    // (on the blank paragraph after Enter: the formats waiting there)
+    const G = c && c.ghost ? this.ghostFmt() : null;
+    if (!c || (c.ghost && !G)) return false;
+    const W = G ? F.around(G.text, G.a, G.a, group) : F.around(this.src(c.f), c.a, c.b, group);
+    if (W && (c.collapsed || G || (c.a >= W.is && c.b <= W.ie)) && W.cmd === w.cmd && (W.args || []).join() === (w.args || []).join() && (W.opt || '') === (w.opt || '')) return this.fmtSet(group, null);
     return this.fmtSet(group, w);
   },
 

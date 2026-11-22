@@ -2414,8 +2414,9 @@ class App {
     const close = isEnvStyle(g.style) ? '\n\\end{' + envOf(g.style) + '}' : '';
     // (the formats the paragraph above ended in, Enter's: the words go in them, the caret before
     // their closing braces; not a paste of paragraphs, which they would hold over a blank line)
+    // (or set on it with Ctrl+B and the rest, with the preamble's lines they need: fmtGhost)
     const W = g.style !== 'latex' && g.wrap && !/\n[ \t]*\n/.test(tex) ? g.wrap : null;
-    if (W) tex = W.open + tex + W.close;
+    if (W) { tex = W.open + tex + W.close; if (W.needs && this.fmtNeedsEdits) extra = [...extra, ...this.fmtNeedsEdits(W.needs)]; }
     const src = this.src(g.f);
     // comment lines right under the paragraph belong to it (a review comment is about the line
     // above it): the new paragraph goes after them (not for one before a block: those are its own)

@@ -821,6 +821,34 @@ def enter_formats(page):
     check('Enter after \\fbox{four}: y plain after it', '\\fbox{four}\n\ny\n\nEnd.' in body(page), body(page))
 
 
+def blank_formats(page):
+    """Bold, Italic, Underline, a colour on the blank paragraph Enter shows: its first words get them."""
+    k = page.keyboard
+    load_doc(page, DOC); click_text(page, 'here.', 5)
+    k.press('Enter'); settle(page, 150); k.press('Control+b'); settle(page, 120)
+    check('Ctrl+B on the blank paragraph after Enter: Bold shows pressed, nothing written yet', pressed(page, 'bold') is True and body(page) == BODY, body(page))
+    k.type('Bold words'); settle(page, 200)
+    check('what is typed next is bold, in its own paragraph', body(page) == 'Some plain words here.\n\n\\textbf{Bold words}\n\nAnother paragraph.', body(page))
+    k.press('Control+b'); settle(page, 80); k.type(' plain'); settle(page, 200)
+    check('Ctrl+B again ends it there', body(page) == 'Some plain words here.\n\n\\textbf{Bold words} plain\n\nAnother paragraph.', body(page))
+    load_doc(page, DOC); click_text(page, 'here.', 5)
+    k.press('Enter'); settle(page, 150); k.press('Control+i'); settle(page, 80); k.press('Control+u'); settle(page, 80); k.type('It'); settle(page, 250)
+    check('Ctrl+I and Ctrl+U there: \\emph{\\uline{It}}, ulem in the preamble, in one step', '\n\n\\emph{\\uline{It}}\n\n' in body(page) and '\\usepackage[normalem]{ulem}' in pre(page), src(page))
+    page.keyboard.press('Control+z'); settle(page, 200)
+    check('one undo gives the document back, the package too', src(page) == DOC, src(page))
+    load_doc(page, DOC); click_text(page, 'here.', 5)
+    k.press('Enter'); settle(page, 150); k.press('Control+b'); settle(page, 80); k.press('Control+b'); settle(page, 80); k.type('x'); settle(page, 200)
+    check('Ctrl+B twice there: x plain', body(page) == 'Some plain words here.\n\nx\n\nAnother paragraph.', body(page))
+    load_doc(page, DOC); click_text(page, 'here.', 5)
+    k.press('Enter'); settle(page, 150); run_cmd(page, 'font-color', {'pick': {'name': 'blue'}}); k.type('Blue'); settle(page, 200)
+    check('Font Color there: \\textcolor{blue}{Blue}, xcolor loaded', '\n\n\\textcolor{blue}{Blue}\n\n' in body(page) and '\\usepackage{xcolor}' in pre(page), src(page))
+    load_doc(page, WRAP('Some \\textbf{bold}\n\nAnother.')); click_text(page, 'bold', 4)
+    k.press('Enter'); settle(page, 150)
+    check('after Enter at a bold word\'s end Bold shows pressed', pressed(page, 'bold') is True)
+    k.press('Control+b'); settle(page, 80); k.type('x'); settle(page, 200)
+    check('and Ctrl+B there turns it off for what is typed', body(page) == 'Some \\textbf{bold}\n\nx\n\nAnother.', body(page))
+
+
 def phone_box(page, sel):
     """The rect of the last element sel matches, the smallest of its controls, and the page's sideways overflow."""
     return page.evaluate("""(sel) => { const all = [...document.querySelectorAll(sel)].filter((x) => x.offsetParent || getComputedStyle(x).position === 'fixed'); const p = all[all.length - 1];
@@ -986,7 +1014,7 @@ def phones(p):
 
 def run():
     with sync_playwright() as p:
-        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, phones, compiles, r2_compiles)
+        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, phones, compiles, r2_compiles)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             if fn is phones:
                 phones(p)
