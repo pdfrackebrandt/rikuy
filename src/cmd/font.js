@@ -295,6 +295,14 @@ export const methods = {
     const w = this.rbEmpty, on = w && w.fmt && w.f === f && W && W.s === w.s && this.hist.length === w.h0 + w.n + 1 ? w : null;
     this.rbEmpty = !W ? null : on ? { ...on, t: t.slice(W.s, W.e), n: on.n + 1 } : { f, s: W.s, t: t.slice(W.s, W.e), ...mark, n: 1, fmt: true };
   },
+  // What is pasted at p of file f, less the toggles the words there already have: italic pasted
+  // into italic stayed \emph in \emph, which TeX and the page set upright, and bold into bold was
+  // \textbf twice. Word's pasted words are italic there either way.
+  pasteInFormats(f, p, t) {
+    const kinds = new Set(F.chainAt(this.src(f), p, p).map((x) => x.group).filter((g) => /^(bold|italic|underline|strike|dstrike|smallcaps|allcaps|sub|sup|mono)$/.test(g)));
+    for (const g of kinds) { const r = F.clearKinds(t, 0, t.length, [g]); if (!r.error) t = r.text; }
+    return t;
+  },
   // the preamble's lines for what a blank paragraph's formats need, as edits of the main file
   fmtNeedsEdits(needs) {
     if (!needs || !needs.length) return [];

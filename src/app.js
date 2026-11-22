@@ -2813,6 +2813,8 @@ class App {
     // (landing in a LaTeX paragraph from a selection that started outside it: as source)
     const raw = this.texAt(c.f, at);
     let t = raw ? (latex || plain).replace(/\r\n?/g, '\n') : this.pasteKept(latex, c.f, at) || rich();
+    // (italic into italic words stays italic: pasteInFormats, src/cmd/font.js)
+    if (!raw && this.pasteInFormats) t = this.pasteInFormats(c.f, at, t);
     // (paragraphs into formatted words: split there; a list, a table or a display stays on the line)
     if (fmtOnly && !raw && /\n[ \t]*\n/.test(t)) {
       if (/\\begin\s*\{|\\\[|\$\$/.test(t)) t = t.replace(/\s*\n\s*\n\s*/g, ' ').replace(/\n/g, ' ');

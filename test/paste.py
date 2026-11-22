@@ -46,11 +46,14 @@ try:
         for name, doc, at, html, plain, want in (
                 ('plain paragraphs into a bold word', 'Some \\textbf{boldword} here.', ('boldword', 4), None, 'P1\n\nP2', 'Some \\textbf{boldP1}\n\n\\textbf{P2word} here.'),
                 ('Word\'s paragraphs into an italic word', 'Some \\emph{italic} here.', ('italic', 3), '<p class=MsoNormal>A<o:p></o:p></p><p class=MsoNormal>B<o:p></o:p></p>', 'A\r\nB', 'Some \\emph{itaA}\n\n\\emph{Blic} here.'),
-                ('paragraphs into \\textbf{\\emph{..}}', 'Some \\textbf{\\emph{nested}} here.', ('nested', 3), None, 'X\n\nY', 'Some \\textbf{\\emph{nesX}}\n\n\\textbf{\\emph{Yted}} here.')):
+                ('paragraphs into \\textbf{\\emph{..}}', 'Some \\textbf{\\emph{nested}} here.', ('nested', 3), None, 'X\n\nY', 'Some \\textbf{\\emph{nesX}}\n\n\\textbf{\\emph{Yted}} here.'),
+                # (italic into italic words stays italic: \emph in \emph is upright; bold into bold is bold once)
+                ('italic into an italic word', 'Some \\emph{italic} here.', ('italic', 3), '<i>XY</i>', 'XY', 'Some \\emph{itaXYlic} here.'),
+                ('bold and italic into a bold word', 'Some \\textbf{boldword} here.', ('boldword', 4), '<b>X</b> and <i>Y</i>', 'X and Y', 'Some \\textbf{boldX and \\emph{Y}word} here.')):
             load_doc(page, W(doc)); click_text(page, *at)
             page.evaluate(PASTE, [html, plain]); settle(page, 250)
             s = src(page)
-            check('paste ' + name + ': two paragraphs, the format on both', s == W(want), s[s.find('Some'):][:80])
+            check('paste ' + name + ': ' + repr(want), s == W(want), s[s.find('Some'):][:80])
             page.keyboard.press('Control+z'); settle(page, 150)
             check('undo after ' + name, src(page) == W(doc))
         load_doc(page, base)
