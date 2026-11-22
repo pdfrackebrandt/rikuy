@@ -635,7 +635,8 @@ export const methods = {
     // A numbered list goes on numbering after the heading, as Word's list keeps its numbers round a
     // heading: where its start is not written, enumitem's resume (it began again at 1)
     const L = I.L, name = L && L.name;
-    if (L && L.kind === 'enum' && I.k + 1 < L.items.length && !formatOf(src, L, this.listCfg()).startFrom && this.listMech() === 'enumitem') {
+    // (only where the list was split: on its first item nothing stands before the heading to go on from)
+    if (L && L.kind === 'enum' && I.k > 0 && I.k + 1 < L.items.length && !formatOf(src, L, this.listCfg()).startFrom && this.listMech() === 'enumitem') {
       const z = r.a + head.length, m = new RegExp('^\\s*\\\\begin\\{' + name.replace('*', '\\*') + '\\}(\\[)?').exec(t.slice(z, z + 200));
       if (m) { const q = z + m[0].length; t = t.slice(0, q) + (m[1] ? 'resume, ' : '[resume]') + t.slice(q); pkgs = ['enumitem']; }
     }

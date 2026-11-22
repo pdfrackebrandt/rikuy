@@ -1490,6 +1490,9 @@ def review_joins(page):
     check('review_joins: a numbered item made a heading: the rest of the list numbered on, its \\label after the heading',
           '\\section{Two}\\label{t}\n\n\\begin{enumerate}[resume]\n  \\item Three' in s and '\\usepackage{enumitem}' in s, s)
     check('review_joins: the page numbers Three 2.', page.evaluate("[...document.querySelectorAll('#pages .lbl')].map((x) => x.textContent)") == ['1.', '2.'])
+    # (on the first item nothing is split: nothing to resume, which numbered the list after another one on)
+    load_doc(page, A('\\begin{enumerate}\n  \\item A\n  \\item B\n\\end{enumerate}\n\nMid.\n\n\\begin{enumerate}\n  \\item One\n  \\item Two\n\\end{enumerate}')); click_text(page, 'One', 1); page.keyboard.press('Control+Alt+1'); settle(page, 250)
+    check('review_joins: the first numbered item made a heading: the list after it starts at 1 again, no resume', '\\section{One}' in src(page) and 'resume' not in src(page) and page.evaluate("[...document.querySelectorAll('#pages .lbl')].map((x) => x.textContent)") == ['1.', '2.', '1.'], src(page)[40:])
     load_doc(page, A('\\section{Head}\\label{s}\nBody.\n\nNext.')); click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 200)
     check('review_joins: Backspace at the paragraph under a heading with its \\label joins it, the label kept once', src(page) == A('\\section{Head Body.}\\label{s}\n\nNext.'), src(page)[40:])
 

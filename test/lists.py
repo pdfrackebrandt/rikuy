@@ -949,6 +949,8 @@ def review_edges(page):
     check('review_edges: in a theorem, Enter twice at a list\'s end: what is typed is not in its last item', '\\item TwoPara' not in src(page) and 'Para' in src(page), src(page)[40:])
     load_doc(page, WRAP('\\begin{itemize}\n  \\item[Step:] One\n\\end{itemize}')); click_text(page, 'Step', 2); page.keyboard.type('X'); settle(page, 200)
     check('review_edges: a label of the item\'s own takes what is typed in it', '\\item[StXep:] One' in src(page), src(page)[40:])
+    load_doc(page, WRAP('\\begin{itemize}\n  \\item One\n  \\item \n  \\item[{[a]}] Two\n\\end{itemize}')); click_text(page, 'One', 3); key(page, 'ArrowDown'); key(page, 'Delete')
+    check('review_edges: Delete in an empty item before \\item[{[a]}]: the label\'s braces kept, so [a] stays words', '\\item {[a]} Two' in src(page), src(page)[40:])
     load_doc(page, WRAP('Hello.\n\n\\begin{enumerate}\n  \\item \n\\end{enumerate}\n\nTail.')); click_text(page, 'Tail.', 0); key(page, 'ArrowUp'); key(page, 'Backspace'); page.keyboard.type('Plain'); settle(page, 200)
     check('review_edges: Backspace in a list\'s only, empty item takes the list away; what is typed is a paragraph there', src(page) == WRAP('Hello.\n\nPlain\n\nTail.'), src(page)[40:])
 

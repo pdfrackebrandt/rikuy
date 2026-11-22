@@ -220,7 +220,8 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 // Bulleted list off keeps it (src/lists.js unlist); the end of the spaces after p on its line
 const itemWords = (src, it) => src.slice(it.cmdE, it.e).trim();
 const textStart = (src, it) => { let t = it.cmdE; while (t < it.e && /\s/.test(src[t])) t++; return t; };
-const labelWords = (src, it) => { if (!it.lab) return ''; const l = src.slice(it.lab.is, it.lab.ie).trim().replace(/^\{([\s\S]*)\}$/, '$1'); return l ? l + ' ' : ''; };
+// (braces kept round a label that begins with [: right after \item it would be read as one again)
+const labelWords = (src, it) => { if (!it.lab) return ''; const r = src.slice(it.lab.is, it.lab.ie).trim(), l = /^\{\s*\[/.test(r) ? r : r.replace(/^\{([\s\S]*)\}$/, '$1'); return l ? l + ' ' : ''; };
 const lineRest = (src, p) => { while (src[p] === ' ' || src[p] === '\t') p++; return p; };
 // a comment on p's line before p (words written at p would be in it), or anywhere in t
 const inComment = (src, p) => /(^|[^\\])(\\\\)*%/.test(src.slice(src.lastIndexOf('\n', p - 1) + 1, p));
