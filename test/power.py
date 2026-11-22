@@ -286,7 +286,10 @@ def latex(page):
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
         key(page, 'Enter'); key(page, 'Alt+Equal', 600)
-        page.keyboard.type('x=1\\text{', delay=15); settle(page, 200)
+        # (full: the box's push of x=1 focuses the field again, and MathLive focuses its keyboard
+        # sink 60 ms later; a composition begun before that lost the focus to it, its ひ left in the
+        # box as text and 日本 at the box's start: the app's race, reported, not this step's to test)
+        page.keyboard.type('x=1\\text{', delay=15); settle(page, 200, full=True)
         if how == 'dictation': cdp.send('Input.insertText', {'text': text})
         else: cdp.send('Input.imeSetComposition', {'text': 'ひ', 'selectionStart': 1, 'selectionEnd': 1}); settle(page, 150); cdp.send('Input.insertText', {'text': text})
         settle(page, 250)
@@ -370,7 +373,7 @@ def latex(page):
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
         key(page, 'Enter'); key(page, 'Alt+Equal', 600)
-        page.keyboard.type('x=1\\text{', delay=15); settle(page, 200)
+        page.keyboard.type('x=1\\text{', delay=15); settle(page, 200, full=True)
         cdp.send('Input.imeSetComposition', {'text': 'ひ', 'selectionStart': 1, 'selectionEnd': 1}); settle(page, 150); cdp.send('Input.insertText', {'text': '日本'})
         settle(page, 250); page.keyboard.type('}+y', delay=15); settle(page, 300)
         key(page, how, 400)
