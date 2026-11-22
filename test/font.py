@@ -917,6 +917,20 @@ def deleted_formats(page):
     check('typed in after the deletion, it stays bold', body(page) == 'Some \\textbf{X} and plain.', body(page))
 
 
+def between_words(page):
+    """Ctrl+B between two words of a bold sentence: the bold ends for what is typed there, the words stay bold."""
+    k = page.keyboard
+    T = WRAP('Some \\textbf{many bold words} here.')
+    load_doc(page, T); click_text(page, 'bold', 4); k.press('Control+b'); settle(page, 150)
+    check('Ctrl+B after "bold" in \\textbf{many bold words}: the sentence stays bold, Bold shows off', body(page) == 'Some \\textbf{many bold}\\textbf{ words} here.' and pressed(page, 'bold') is False, body(page))
+    k.type(' plain'); settle(page, 200)
+    check('what is typed there is plain', body(page) == 'Some \\textbf{many bold} plain\\textbf{ words} here.', body(page))
+    load_doc(page, T); click_text(page, 'bold', 4); k.press('Control+b'); settle(page, 120); click_text(page, 'here', 2); settle(page, 200, full=True)
+    check('left untyped: the wrapper is one again, no step left', src(page) == T and page.evaluate('window.rikuy.hist.length') == 0, body(page))
+    load_doc(page, T); click_text(page, 'bold', 4); k.press('Control+b'); settle(page, 120); k.press('Control+b'); settle(page, 120); k.type('X'); settle(page, 200)
+    check('Ctrl+B twice there: X bold in the one wrapper', body(page) == 'Some \\textbf{many boldX words} here.', body(page))
+
+
 def phone_box(page, sel):
     """The rect of the last element sel matches, the smallest of its controls, and the page's sideways overflow."""
     return page.evaluate("""(sel) => { const all = [...document.querySelectorAll(sel)].filter((x) => x.offsetParent || getComputedStyle(x).position === 'fixed'); const p = all[all.length - 1];
@@ -1082,7 +1096,7 @@ def phones(p):
 
 def run():
     with sync_playwright() as p:
-        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, caret_formats, word_formats, switch_space, deleted_formats, phones, compiles, r2_compiles)
+        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, caret_formats, word_formats, switch_space, deleted_formats, between_words, phones, compiles, r2_compiles)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             if fn is phones:
                 phones(p)

@@ -330,7 +330,27 @@ export const methods = {
     // again after the bold, the caret in them, as Ctrl+B on a caret opens an empty \textbf{}.
     const at = this.ribbonAt(), c = at && at.c;
     if (!o.force && c && !c.ghost && c.collapsed && c.f != null && !this.texHere() && !(this.wholeDoc && this.wholeDoc()) && !this.blockCells(at)) {
+      // (pressed again where it was just ended: the split goes again, the words one wrapper as they were)
+      const S = this.rbEmpty;
+      if (S && S.split === group && S.f === c.f && c.a === S.s + 1 && this.hist.length === S.h0 + 1 && this.src(c.f).slice(S.s, S.s + S.t.length) === S.t) {
+        this.rbEmpty = null; this.undo(); this.redoStack = S.redo0; this.updateUndoUI && this.updateUndoUI(); this.ribbonSoon && this.ribbonSoon();
+        return true;
+      }
       const t = this.src(c.f), W = F.around(t, c.a, c.a, group);
+      // A caret between words inside the format (\textbf{many bold| words}): Word ends it for what
+      // is typed there and leaves the words bold. It took the bold off the whole sentence. The
+      // wrapper is closed and opened again at the caret, which stands between; left untyped, the
+      // step goes again (dropEmpty). Not where other braces open between (a nested format).
+      const w = W && W.is < c.a && c.a < W.ie ? F.wordAt(t, c.a) : null;
+      if (W && W.is < c.a && c.a < W.ie && W.e === W.ie + 1 && t[W.ie] === '}' && !(w && w[0] < c.a && c.a < w[1]) && !/[{}]/.test(t.slice(W.is, c.a).replace(/\\./g, ''))) {
+        const ins = '}' + t.slice(W.s, W.is), mark = { h0: this.hist.length, redo0: this.redoStack };
+        this.closeGroup();
+        this.commit([{ f: c.f, s: c.a, e: c.a, t: ins }], { f: c.f, p: c.a + 1, bias: -1 }, 'format');
+        this.closeGroup();
+        this.rbEmpty = { f: c.f, s: c.a, t: ins, ...mark, n: 1, fmt: true, split: group };
+        this.ribbonSoon && this.ribbonSoon();
+        return true;
+      }
       if (W && W.is < c.a && W.e === W.ie + 1 && t[W.ie] === '}' && /^\}*$/.test(t.slice(c.a, W.ie))) {
         if (c.a === W.ie) { this.restoreCaret({ f: c.f, p: W.e, bias: -1 }); this.ribbonSoon && this.ribbonSoon(); return true; }
         // (each brace between closes a group opened inside the bold: its command, outermost first)
