@@ -2296,9 +2296,14 @@ class App {
         // (words right after the list, in the paragraph the list is part of, get a paragraph of
         // their own too: what is typed on the new line stays apart from them, as Word's empty
         // paragraph after a list does; it ran into them, "Out After the list...")
-        const glued = /^[ \t]*(?:\r?\n[ \t]*)?(?!\r?\n|%|\\(?:end|begin|item|par|paragraph|(?:sub){0,2}section|chapter|part)(?![A-Za-z])|\\\[)\S/.test(src.slice(listEnd));
-        const ins = NL + NL + (glued ? NL : '');
-        this.commit([{ f, s: s2, e, t: '' }, { f, s: listEnd, e: listEnd, t: ins }], { f, p: listEnd - removed + NL.length * 2, bias: 1 }, 'enter');
+        // (a comment on \end's line stays on it, and the lines go in after it: before it, what
+        // was typed met the comment, and the words after it, "Out%" then "After")
+        const at = listEnd + (/^[ \t]*%[^\n]*/.exec(src.slice(listEnd)) || [''])[0].replace(/\r$/, '').length;
+        const glued = /^[ \t]*(?:\r?\n[ \t]*)?(?!\r?\n|%|\\(?:end|begin|item|par|paragraph|(?:sub){0,2}section|chapter|part)(?![A-Za-z])|\\\[)\S/.exec(src.slice(at));
+        // (as many line breaks after the caret as make a blank line before those words: two where
+        // they stood on \end's own line)
+        const ins = NL + NL + (glued ? NL.repeat(2 - (glued[0].match(/\n/g) || []).length) : '');
+        this.commit([{ f, s: s2, e, t: '' }, { f, s: at, e: at, t: ins }], { f, p: at - removed + NL.length * 2, bias: 1 }, 'enter');
         return;
       }
       const NL = /\r\n/.test(src) ? '\r\n' : '\n';

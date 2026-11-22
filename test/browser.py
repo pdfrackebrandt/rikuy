@@ -1908,6 +1908,12 @@ def word_typing(page):
     load_doc(page, WORD_DOC)
     click_text(page, 'Banana two', 10); k.press('Enter'); k.press('Enter'); k.type('Out'); settle(page, 100)
     check('Enter twice at a list\'s end, then words: a paragraph between the list and the words after it', src(page) == WORD_DOC.replace('\\end{itemize}\nAfter', '\\end{itemize}\n\nOut\n\nAfter'), src(page)[250:380])
+    # (also where those words stand on \end's own line, or after a comment there: review of 3185b2f3)
+    for was, now in ((' After', '\n\nOut\n\n After'), ('%\nAfter', '%\n\nOut\n\nAfter')):
+        D = WORD_DOC.replace('\\end{itemize}\nAfter', '\\end{itemize}' + was)
+        load_doc(page, D)
+        click_text(page, 'Banana two', 10); k.press('Enter'); k.press('Enter'); k.type('Out'); settle(page, 100)
+        check('Enter twice at a list\'s end followed by %r, then words: a paragraph of their own' % was, src(page) == D.replace('\\end{itemize}' + was, '\\end{itemize}' + now), src(page)[250:380])
     # (and one that starts in a heading's words, Ctrl+Shift+Home here: the paragraphs it holds
     # whole go whole, their bold and italic wrappers, formula and footnote with them)
     load_doc(page, WORD_DOC)
