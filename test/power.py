@@ -29,7 +29,7 @@ Each part is a function; `python3 power.py
 footnote` runs one."""
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, until, open_page, check, results, src, click_text, select_text, load_doc
+from browser import settle, until, fonts_settled, open_page, check, results, src, click_text, select_text, load_doc
 from playwright.sync_api import sync_playwright
 
 
@@ -768,7 +768,10 @@ def accept(page):
         check('accept: Ctrl+End from inside a paragraph goes to the end of the text' + w, 'Last para.ZZ\n' in src(page), src(page)[-60:])
         # (3) Alt+= on an empty paragraph and LaTeX typed at once: a display, its structure as typed
         fresh(page); click_text(page, 'ends here.', 10); key(page, 'Enter', 100); key(page, 'Alt+Equal', 0)
-        typ(page, FRAC, how); settle(page, 400); key(page, 'Enter', 500)
+        # (a font the field's formula brings, KaTeX_Fraktur, lays the page out again 200 ms after it
+        # came, and that relayout drops the line after a display closed meanwhile, the next words
+        # then on \end{equation}'s line: the app's race, reported; here, as before, it comes first)
+        typ(page, FRAC, how); fonts_settled(page); settle(page, 400); key(page, 'Enter', 500)
         s = src(page); i, j = s.find('\\begin{equation}'), s.find('\\end{equation}')
         body = ''.join(s[i + 16:j].split()) if 0 <= i < j else None
         check('accept: Alt+= on an empty paragraph, LaTeX at full speed: a display equation, as typed' + w,
