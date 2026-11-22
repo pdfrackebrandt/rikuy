@@ -621,7 +621,7 @@ export const methods = {
       const gap = (c) => { const b = c.getBoundingClientRect(); return x < b.left ? b.left - x : x > b.right ? x - b.right : 0; };
       to = tds.reduce((m, c) => (gap(c) < gap(m) ? c : m));
     }
-    if (!to) return false;
+    if (!to) return this.tableLeave(this.tablePieces(td.closest('table')), dir, x, extend);
     const there = lines(to);
     if (!there.length) return false;
     const line = dir > 0 ? there.reduce((m, q) => (q.top < m.top ? q : m)) : there.reduce((m, q) => (q.bottom > m.bottom ? q : m));
@@ -633,6 +633,28 @@ export const methods = {
     else if (sp) { node = sp.firstChild || sp; off = 0; }
     // (a cell of a formula alone: before it or after it, by the side x is on, as a click there puts it)
     else { node = to; off = x > line.left + line.width / 2 ? to.childNodes.length : 0; }
+    if (extend) sel.extend(node, off); else sel.collapse(node, off);
+    this.tableGoal = { node, off, x };
+    return true;
+  },
+  // Down from a table's last row, Up from its first: the line below or above the table, at x, as
+  // Word's (its caption, the next paragraph). Chromium's own went to the cell beside the caret's.
+  // false where no text is there (the document's end: the browser's move).
+  tableLeave(pieces, dir, x, extend) {
+    const tbl = pieces[dir > 0 ? pieces.length - 1 : 0];
+    if (!tbl) return false;
+    const ok = (sp) => !sp.classList.contains('gh') && !sp.closest('.atom') && !pieces.some((t) => t.contains(sp)) && sp.firstChild && sp.getClientRects().length;
+    const all = [...this.root.querySelectorAll('.it span.t')];
+    let sp = null;
+    if (dir > 0) sp = all.find((y) => (tbl.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) && ok(y));
+    else for (let k = all.length - 1; k >= 0 && !sp; k--) if ((tbl.compareDocumentPosition(all[k]) & Node.DOCUMENT_POSITION_PRECEDING) && ok(all[k])) sp = all[k];
+    if (!sp) return false;
+    const rs = [...sp.getClientRects()], line = rs[dir > 0 ? 0 : rs.length - 1];
+    const hit = document.caretRangeFromPoint(x, line.top + line.height / 2);
+    let node = sp.firstChild, off = dir > 0 ? 0 : sp.firstChild.length || 0;
+    const h = hit && hit.startContainer;
+    if (h && h.nodeType === 3 && h.parentElement.closest('span.t') && ok(h.parentElement.closest('span.t'))) { node = h; off = hit.startOffset; }
+    const sel = getSelection();
     if (extend) sel.extend(node, off); else sel.collapse(node, off);
     this.tableGoal = { node, off, x };
     return true;
