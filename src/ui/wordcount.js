@@ -22,20 +22,42 @@ function linesOf(range) {
   return tops.size;
 }
 
+// The words of the document as Word counts them: every heading, cell, list item and paragraph,
+// footnotes and captions as the box says. The status bar shows it beside this dialog's: it counted
+// the paragraphs alone, two numbers for one document.
+export function docWords(model, notes) {
+  let words = 0;
+  for (const r of proseRuns(model, { code: true, notes, noMap: true })) words += count(r.text);
+  return words;
+}
+// The words of a selection, counted over the text the page draws inside it by the same rules
+// (headings and cells too, the contents' list not, a footnote's and a caption's as the box says)
+export function selWords(root, r, notes) {
+  const parts = [];
+  for (const span of root.querySelectorAll('span.t')) {
+    if (!r.intersectsNode(span) || span.classList.contains('ph') || span.closest('.toc') || (!notes && span.closest('[data-ctx="cap"], .fn'))) continue;
+    const node = span.firstChild;
+    if (!node) continue;
+    const a = node === r.startContainer ? r.startOffset : 0, b = node === r.endContainer ? r.endOffset : node.length;
+    parts.push(node.data.slice(a, b));
+  }
+  return count(parts.join(' '));
+}
+
 export function wordStats(app, notes, sel) {
   const out = { pages: app.layout ? app.layout.pages.length : 0 };
   const s = sel ? getSelection() : null;
   if (s && s.rangeCount && !s.isCollapsed && app.root.contains(s.anchorNode)) {
     const r = s.getRangeAt(0), t = String(s);
     out.sel = true;
-    out.words = count(t);
+    out.words = selWords(app.root, r, notes);
     out.chars = t.replace(/[\n\r]/g, '').length;
     out.charsNoSpace = t.replace(/\s/g, '').length;
     out.paras = [...app.root.querySelectorAll('.it')].filter((el) => r.intersectsNode(el) && /\S/.test(el.textContent)).length;
     out.lines = linesOf(r);
     return out;
   }
-  const runs = proseRuns(app.model, { code: true, notes });
+  const runs = proseRuns(app.model, { code: true, notes, noMap: true });
   let words = 0, chars = 0, ns = 0;
   for (const r of runs) { const t = r.text.replace(/\s+/g, ' '); words += count(t); chars += t.length; ns += t.replace(/\s/g, '').length; }
   out.words = words; out.chars = chars; out.charsNoSpace = ns;
@@ -68,7 +90,8 @@ export function openWordCount(app) {
       tab.append(tr);
     }
   };
-  cb.addEventListener('change', () => { app.prefs.countNotes = cb.checked; app.savePrefs(); fill(); });
+  // (the status bar's count follows the box, as Word's does)
+  cb.addEventListener('change', () => { app.prefs.countNotes = cb.checked; app.savePrefs(); fill(); if (app.wordStatus) app.wordStatus(); });
   const row = mk('div', 'pop-row');
   const close = mk('button', 'btn sm', 'Close'); close.type = 'button';
   close.addEventListener('click', () => app.closePop());

@@ -22,6 +22,7 @@ DOC = ('\\documentclass{article}\n\\begin{document}\n'
        '% comment (Bo): Shorter?\n'
        '\\end{document}\n')
 N = "window.rikuy.realChanges().length"
+WRAP = lambda body: '\\documentclass{article}\n\\begin{document}\n' + body + '\n\\end{document}\n'
 
 
 def edit(page, find, repl, kind='type'):
@@ -148,6 +149,20 @@ def hunt(p):
     s = src(page)
     check('hunt: New Comment with the caret in the third paragraph hangs there, not under the words selected before',
           s.find('Caret note') > s.find('third paragraph') and s.replace('% comment (Ana): Caret note\n', '') == DOC, s[-200:])
+    # the status bar counts what Word Count counts: the headings, a cell, a caption, a footnote
+    load_doc(page, WRAP('\\section{Opening words}\nThe first paragraph has words.\\footnote{Two notes.}\n\n'
+                        '\\begin{table}[h]\\centering\\begin{tabular}{ll}Cell one & Cell two\\\\\\end{tabular}\\caption{A caption}\\end{table}\n\n\\section{End}\nLast one.'))
+    settle(page, 200, full=True)
+    page.evaluate("window.rikuy.runCommand('word-count')"); settle(page, 300)
+    dlg = page.evaluate("[...document.querySelectorAll('.rv-count tr')].map(r => r.textContent)")
+    bar = page.inner_text('#st-words')
+    check('hunt: the status bar gives the words Word Count gives (headings, cells, a caption and a footnote too): 18', bar == '18 words' and 'Words18' in dlg, (bar, dlg))
+    page.locator('#rv-count-notes').uncheck(); settle(page, 150)
+    bar = page.inner_text('#st-words')
+    check('hunt: and without footnotes and captions as the box says, both: 14', bar == '14 words' and 'Words14' in page.evaluate("[...document.querySelectorAll('.rv-count tr')].map(r => r.textContent)"), bar)
+    page.locator('#rv-count-notes').check(); page.keyboard.press('Escape'); settle(page, 150)
+    select_text(page, 'Opening words'); settle(page, 200, full=True)
+    check('hunt: a heading selected counts its words in the status bar: 2 of 18', page.inner_text('#st-words') == '2 of 18 words', page.inner_text('#st-words'))
     check('hunt: no page errors', not errors, errors[:5])
     browser.close()
 

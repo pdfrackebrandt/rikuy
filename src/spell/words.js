@@ -29,7 +29,8 @@ const SKIP_KEYS = new Set(['map', 'rel', 'keys', 'cols', 'rules', 'tags', 'def',
 // start and end (map[2k], map[2k+1]; -1 for a space Rikuy put between two runs of one line);
 // a run ends at anything that is not text.
 // o.code: count code too (Word Count counts \texttt's words); o.notes: false leaves footnotes
-// and captions out (Word Count's box)
+// and captions out (Word Count's box); o.noMap: the text alone, no map (counting words: the maps
+// cost ten times the walk, every keystroke on a long document)
 export function proseRuns(model, o = {}) {
   const runs = [];
   for (const B of model.blocks || []) blockRuns(B, o, runs);
@@ -43,7 +44,7 @@ export function blockRuns(B, o = {}, runs = []) {
     const f = x.f;
     if (!cur || cur.f !== f) { flush(); cur = { f, text: '', map: [] }; }
     cur.text += x.t;
-    for (let i = 0; i < 2 * x.t.length; i++) cur.map.push(x.map[i]);
+    if (!o.noMap) for (let i = 0; i < 2 * x.t.length; i++) cur.map.push(x.map[i]);
   };
   const walk = (v, depth) => {
     if (!v || typeof v !== 'object' || depth > 60) return;

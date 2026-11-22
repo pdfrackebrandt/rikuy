@@ -20,6 +20,7 @@ import { absAtom, posFromDom, diff, endsWithControlWord } from '../editor.js';
 import { $, load, store } from '../ui/dom.js';
 import { openMenu } from '../ui/kit.js';
 import { openFindDialog, closeFindDialog, findDialogSync } from '../ui/finddialog.js';
+import { docWords, selWords } from '../ui/wordcount.js';
 
 const isMacUA = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const plural = (n, a, b) => n.toLocaleString('en-US') + ' ' + (n === 1 ? a : b);
@@ -710,23 +711,15 @@ export const methods = {
   wordStatus() {
     const w = $('#st-words');
     if (!w || this.stWords == null) return;
-    const total = this.stWords.toLocaleString('en-US');
+    // (the words Word Count counts, with footnotes and captions as its box says, once a model:
+    // the model's own count is its paragraphs', no heading, cell or note, and the status bar
+    // and the dialog gave two numbers)
+    const notes = this.prefs.countNotes !== false;
+    if (this.model && (this.wcOf !== this.model || this.wcNotes !== notes)) { this.wcOf = this.model; this.wcNotes = notes; this.wcTotal = docWords(this.model, notes); }
+    const total = (this.model ? this.wcTotal : this.stWords).toLocaleString('en-US');
     const s = getSelection();
     let t = total + ' words';
-    if (s.rangeCount && !s.isCollapsed && this.root.contains(s.anchorNode)) {
-      // the words of the page's text inside the selection, counted as the model counts them
-      const r = s.getRangeAt(0), parts = [];
-      // (the words the total counts: a paragraph's, not a heading's, a caption's or a cell's)
-      for (const span of this.root.querySelectorAll('.it.p span.t')) {
-        if (!r.intersectsNode(span) || span.classList.contains('ph') || span.closest('td, [data-ctx="cap"]')) continue;
-        const node = span.firstChild;
-        if (!node) continue;
-        const a = node === r.startContainer ? r.startOffset : 0, b = node === r.endContainer ? r.endOffset : node.length;
-        parts.push(node.data.slice(a, b));
-      }
-      const n = (parts.join(' ').match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}‌‍'’-]*/gu) || []).length;
-      t = n.toLocaleString('en-US') + ' of ' + total + ' words';
-    }
+    if (s.rangeCount && !s.isCollapsed && this.root.contains(s.anchorNode)) t = selWords(this.root, s.getRangeAt(0), notes).toLocaleString('en-US') + ' of ' + total + ' words';
     if (w.textContent !== t) w.textContent = t;
   },
 
