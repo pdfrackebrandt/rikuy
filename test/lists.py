@@ -893,6 +893,21 @@ def item_spans(page):
     check('item_spans: Enter over them leaves two items, no empty one between', src(page) == I3.replace('One\n  \\item Two', 'On\n  \\item wo'), src(page)[40:])
 
 
+def join_after_list(page):
+    """(bugs 2026-11-22) Backspace at the start of a heading or a quote right after a list, or Delete
+    at the list's last item before one: its words join the last item, as a paragraph's do. The caret
+    only moved to the item's end, and a second Backspace took its last letter."""
+    L = lambda after: WRAP('\\begin{itemize}\n  \\item One\n  \\item Two\n\\end{itemize}\n\n' + after)
+    load_doc(page, L('\\section{Head}\nBody.')); click_text(page, 'Head', 0); key(page, 'Backspace'); page.keyboard.type('X'); settle(page, 200)
+    check('join_after_list: Backspace at a heading\'s start after a list joins its words to the last item', src(page) == WRAP('\\begin{itemize}\n  \\item One\n  \\item Two XHead\n\\end{itemize}\n\nBody.'), src(page)[40:])
+    load_doc(page, L('\\section{Head}\nBody.')); click_text(page, 'Two', 3); key(page, 'Delete')
+    check('join_after_list: Delete at the last item\'s end before a heading does the same', src(page) == WRAP('\\begin{itemize}\n  \\item One\n  \\item Two Head\n\\end{itemize}\n\nBody.'), src(page)[40:])
+    load_doc(page, L('\\begin{quote}\nQ words.\n\\end{quote}\n\nZ.')); click_text(page, 'Q words', 0); key(page, 'Backspace')
+    check('join_after_list: and at a quote\'s start', src(page) == WRAP('\\begin{itemize}\n  \\item One\n  \\item Two Q words.\n\\end{itemize}\n\nZ.'), src(page)[40:])
+    key(page, 'Control+z')
+    check('join_after_list: one undo gives them back', src(page) == L('\\begin{quote}\nQ words.\n\\end{quote}\n\nZ.'), src(page)[40:])
+
+
 def r2_phone(p, w, h, dark=False):
     """Picture Bullet and Adjust List Indents on a phone: from the bullet library's menu by taps,
     the dialogs on the screen with 44 px controls, no sideways scroll; screenshots"""
@@ -931,7 +946,7 @@ def run_all():
     want = lambda n: not only or n in only
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf, label_caret, item_edges, empty_items, item_spans):
+        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf, label_caret, item_edges, empty_items, item_spans, join_after_list):
             if not want(f.__name__): continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])

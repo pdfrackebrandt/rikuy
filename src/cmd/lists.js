@@ -14,7 +14,7 @@ import { register, onInsertText, onInstall, command, enabled, run as runCmd } fr
 import { BLOCKS } from '../render.js';
 import { diffEdit } from '../wrap.js';
 import { docClass, hasPackage, preambleEnd } from '../preamble.js';
-import { NOT_PLAIN } from '../styles.js';
+import { NOT_PLAIN, isHeading, isEnvStyle } from '../styles.js';
 import { isBalanced } from '../parser.js';
 import { escapeTeX, posFromDom } from '../editor.js';
 import { openMenu } from '../ui/kit.js';
@@ -356,33 +356,46 @@ export const methods = {
     }
     return I.chain.length === 1 ? this.listJoinPara(L, it, f, src, p, null) : false;
   },
-  // Backspace at the start of a plain paragraph right after a list: it joins the list's last item
+  // Backspace at the start of the block right after a list (a paragraph, a heading, a quote or a
+  // theorem of one paragraph): its words join the list's last item
   listJoinAfter(at, f, src, p) {
-    const r = this.plainPara(at.B, at.it);
-    if (!r || p > r.s || /\S/.test(src.slice(p, r.s))) return false;
-    const m = /\\end\s*\{(itemize|enumerate)\}\s*$/.exec(src.slice(Math.max(0, r.s - 300), r.s));
+    const X = this.listJoinable(at.B, at.it);
+    if (!X || p > X.ws || p < X.s || /\S/.test(src.slice(p, X.ws))) return false;
+    const m = /\\end\s*\{(itemize|enumerate)\}\s*$/.exec(src.slice(Math.max(0, X.s - 300), X.s));
     if (!m) return false;
-    const end = r.s - (m[0].length - m[0].trimEnd().length);
-    let X = null;
-    for (const B of this.renderer.blocks) if (B.f === f && B.s < end && B.e >= end && (!X || B.s > X.s)) X = B;
-    const L = X && allLists(readLists(src, X.s, X.e, this.model && this.model.userSigs)).find((x) => x.e === end);
+    const end = X.s - (m[0].length - m[0].trimEnd().length);
+    let Y = null;
+    for (const B of this.renderer.blocks) if (B.f === f && B.s < end && B.e >= end && (!Y || B.s > Y.s)) Y = B;
+    const L = Y && allLists(readLists(src, Y.s, Y.e, this.model && this.model.userSigs)).find((x) => x.e === end);
     if (!L || L.parent || !L.editable || !L.closed || !L.items.length) return false;
     const it = L.items[L.items.length - 1];
     if (it.lists.length) return false;
-    return this.listJoinPara(L, it, f, src, null, r);
+    return this.listJoinPara(L, it, f, src, null, X);
   },
-  // the plain paragraph after list L joined to its last item it: the caret at p (Delete) or where
-  // the two meet (Backspace)
-  listJoinPara(L, it, f, src, p, r) {
-    if (!r) {
-      let X = null;
-      for (const B of this.renderer.blocks) if (B.f === f && B.s >= L.e && (!X || B.s < X.s)) X = B;
-      const el = X && X.items[0] && X.items[0].el;
-      r = el ? this.plainPara(X, el) : null;
+  // what of block B can join a list item: a paragraph's words, a heading's, a quote's or a
+  // theorem's of one paragraph (src/cmd/styles.js styleOfBlock): { s, ws, we, e } (e past a
+  // heading's \label), or null
+  listJoinable(B, it) {
+    const st = B && it && this.styleOfBlock ? this.styleOfBlock(B, it) : null, b = st && st.b;
+    if (!b || b.ws == null || st.opt || st.code || st.item) return null;
+    const words = this.src(B.f).slice(b.ws, b.we);
+    const ok = st.v === 'p' || isHeading(st.v) || (isEnvStyle(st.v) && !/^(verbatim|abstract)$/.test(st.v) && !/\n[ \t]*\n/.test(words.trim()));
+    return ok && words.trim() ? { s: b.s, ws: b.ws, we: b.we, e: b.after ?? b.e, label: b.after != null ? this.src(B.f).slice(b.e, b.after).trim() : '' } : null;
+  },
+  // the block after list L joined to its last item it: the caret at p (Delete) or where the two
+  // meet (Backspace); what followed the block keeps a blank line from the list
+  listJoinPara(L, it, f, src, p, X) {
+    if (!X) {
+      let Y = null;
+      for (const B of this.renderer.blocks) if (B.f === f && B.s >= L.e && (!Y || B.s < Y.s)) Y = B;
+      const el = Y && this.root.querySelector('.it[data-b="' + Y.id + '"]');
+      X = el ? this.listJoinable(Y, el) : null;
     }
-    if (!r || r.s < L.e || /\S/.test(src.slice(L.e, r.s))) return false;
-    const sp = itemWords(src, it) ? ' ' : '';
-    return this.listCommit(f, [{ s: it.e, e: r.e, t: sp + src.slice(r.s, r.e) + src.slice(it.e, L.e) }], [], { f, p: p != null ? p : it.e + sp.length, bias: p != null ? -1 : 1 });
+    if (!X || X.s < L.e || /\S/.test(src.slice(L.e, X.s))) return false;
+    const sp = itemWords(src, it) ? ' ' : '', NL = /\r\n/.test(src) ? '\r\n' : '\n';
+    const m = /^[ \t]*(\r?\n)?[ \t]*(?=[^\s%])(?!\\(?:end|begin|part|chapter|(?:sub)*section|(?:sub)?paragraph|item|par|label)\b)/.exec(src.slice(X.e, X.e + 200));
+    const t = sp + src.slice(X.ws, X.we).trim() + X.label + src.slice(it.e, L.e) + (m ? (m[1] ? NL : NL + NL) : '');
+    return this.listCommit(f, [{ s: it.e, e: X.e, t }], [], { f, p: p != null ? p : it.e + sp.length, bias: p != null ? -1 : 1 });
   },
   // A selection from one item's words into a later item's of the same list (deletionEdits asks
   // here): deleted whole, \item and all, so the two items become one, as Word joins the paragraphs
