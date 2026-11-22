@@ -20,7 +20,7 @@ with KOMA-Script and memoir; and, where dist/tex holds a TeX tree, all of it com
 Run it alone with names to run some: python3 styles.py gallery design."""
 import os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, ready, TIMERS, MOTION_OFF, _settled, ROOT, SKELETON_HEAD, ROUTES, open_page, check, results, src, wait_src, click_text, select_text, load_doc, roundtrip, pressed, place, PRINT_LAYOUT, policy
+from browser import settle, tap, ready, TIMERS, MOTION_OFF, _settled, ROOT, SKELETON_HEAD, ROUTES, open_page, check, results, src, wait_src, click_text, select_text, load_doc, roundtrip, pressed, place, PRINT_LAYOUT, policy
 from ribbon import DOC, DIST, state, style, undo_is, TILES, WRAP, body, boxes
 from playwright.sync_api import sync_playwright
 
@@ -709,7 +709,7 @@ def tap_text(page, text, k=0):
     """A tap in the words, k characters in (where click_text would click)."""
     box = page.evaluate("""([t, k]) => { const sp = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(t)); if (!sp) return null;
       sp.scrollIntoView({ block: 'center' }); const i = sp.textContent.indexOf(t) + k, r = document.createRange(); r.setStart(sp.firstChild, i); r.setEnd(sp.firstChild, i + 1); const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }""", [text, k])
-    page.touchscreen.tap(box[0], box[1]); settle(page, 250)
+    tap(page, (box[0], box[1]), 250)
 
 
 FITS = """(sel) => { const e = document.querySelector(sel); if (!e) return null; const r = e.getBoundingClientRect();
@@ -742,35 +742,35 @@ def phone(p):
             check('the Styles pane opens as a sheet inside the screen, every target 44 px or more, each style\'s options in sight' + tag, sheet and sheet['inside'] and not small and vis == '1', (sheet, small[:4], vis))
             page.locator('#stylespane [role=option][aria-label="Quote"]').scroll_into_view_if_needed()
             tap_text(page, 'Second words', 2)
-            page.locator('#stylespane [role=option][aria-label="Quote"]').tap(); settle(page, 300)
+            tap(page, page.locator('#stylespane [role=option][aria-label="Quote"]'), 300)
             check('a tap on Quote there makes the tapped paragraph a quote' + tag, '\\begin{quote}\nSecond words here.\n\\end{quote}' in src(page), src(page)[-140:])
             tap_text(page, 'Intro', 2)
-            page.get_by_role('button', name='Heading 1 options').tap(); settle(page, 300)
+            tap(page, page.get_by_role('button', name='Heading 1 options'), 300)
             m = page.get_by_role('menu', name='Heading 1 style')
             names = [x.get_attribute('aria-label') for x in m.locator('[role^=menuitem]').all()]
             check('a heading\'s options by a tap: Update to Match, Modify, Unnumbered heading, Select All Instances (what a right click gives elsewhere)' + tag, all(n in names for n in ('Modify…', 'Unnumbered heading', 'Select All Instances')), names)
-            m.get_by_role('menuitemcheckbox', name='Unnumbered heading').tap(); settle(page, 300)
+            tap(page, m.get_by_role('menuitemcheckbox', name='Unnumbered heading'), 300)
             check('Unnumbered heading by a tap: \\section*' + tag, '\\section*{Intro}' in src(page), src(page)[-160:])
-            page.get_by_role('button', name='Heading 1 options').tap(); settle(page, 300)
-            page.get_by_role('menu', name='Heading 1 style').get_by_role('menuitem', name='Modify…').tap(); settle(page, 350)
+            tap(page, page.get_by_role('button', name='Heading 1 options'), 300)
+            tap(page, page.get_by_role('menu', name='Heading 1 style').get_by_role('menuitem', name='Modify…'), 350)
             dlg = page.evaluate(FITS, '.pop-modstyle')
             small = page.evaluate(SMALL, '.pop-modstyle select, .pop-modstyle .ms-c, .pop-modstyle .fd-btns .btn')
             check('Modify Style fits the screen and scrolls, its fields and buttons 44 px or more' + tag, dlg and dlg['inside'] and dlg['scrolls'] and not small, (dlg, small[:4]))
             page.select_option('#ms-family', 'sf')
-            page.locator('.pop-modstyle').get_by_role('button', name='OK').tap(); settle(page, 350)
+            tap(page, page.locator('.pop-modstyle').get_by_role('button', name='OK'), 350)
             check('OK by a tap writes the heading\'s look' + tag, '\\titleformat*{\\section}{\\normalfont\\Large\\bfseries\\sffamily}' in src(page) and page.evaluate('document.querySelectorAll(".pop").length') == 0, src(page)[:260])
-            page.get_by_role('button', name='Close').first.tap(); settle(page, 250)
+            tap(page, page.get_by_role('button', name='Close').first, 250)
             check('the pane closes by a tap' + tag, page.evaluate('!document.getElementById("stylespane")'))
             tap_text(page, 'Second words', 2); page.select_option('#rb-style', '__new'); settle(page, 350)
             cd = page.evaluate(FITS, '.pop-modstyle')
             check('the list\'s Create a Style opens its dialog inside the screen, the list back at the paragraph\'s style' + tag, cd and cd['inside'] and page.get_by_role('dialog', name='Create a Style').count() == 1 and page.evaluate('document.getElementById("rb-style").value') != '__new', cd)
-            page.get_by_role('dialog', name='Create a Style').get_by_role('button', name='Cancel').tap(); settle(page, 250)
+            tap(page, page.get_by_role('dialog', name='Create a Style').get_by_role('button', name='Cancel'), 250)
             # the Design tab, by the tab list a phone has
             page.select_option('#rb-tabsel', 'design'); settle(page, 300)
-            page.get_by_role('button', name='Style Set').tap(); settle(page, 300)
+            tap(page, page.get_by_role('button', name='Style Set'), 300)
             g = page.evaluate(FITS, '.pop-design')
             check('on the Design tab Style Set opens its gallery inside the screen' + tag, g and g['inside'], g)
-            page.get_by_role('menu', name='Style Set').get_by_role('menuitemradio', name='Lines').tap(); settle(page, 350)
+            tap(page, page.get_by_role('menu', name='Style Set').get_by_role('menuitemradio', name='Lines'), 350)
             check('and a tap on Lines writes it, the page not scrolling sideways' + tag, '[\\titlerule]' in src(page) and page.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth') <= 0, src(page)[:300])
             if w == 390:
                 for dark in (False, True):
@@ -778,11 +778,11 @@ def phone(p):
                     page.select_option('#rb-tabsel', 'home'); settle(page, 200)
                     tap_text(page, 'Intro', 2); page.select_option('#rb-style', '__pane'); settle(page, 300)
                     page.screenshot(path='/tmp/B4-shots/phone-pane-390%s.png' % ('-dark' if dark else ''))
-                    page.get_by_role('button', name='Heading 1 options').tap(); settle(page, 250)
-                    page.get_by_role('menu', name='Heading 1 style').get_by_role('menuitem', name='Modify…').tap(); settle(page, 300)
+                    tap(page, page.get_by_role('button', name='Heading 1 options'), 250)
+                    tap(page, page.get_by_role('menu', name='Heading 1 style').get_by_role('menuitem', name='Modify…'), 300)
                     page.screenshot(path='/tmp/B4-shots/phone-modify-390%s.png' % ('-dark' if dark else ''))
                     page.keyboard.press('Escape'); settle(page, 150)
-                    page.get_by_role('button', name='Close').first.tap(); settle(page, 200)
+                    tap(page, page.get_by_role('button', name='Close').first, 200)
         except Exception as e:
             check('phone%s runs to its end' % tag, False, e)
         check('no console errors (phone%s)' % tag, not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
@@ -970,7 +970,7 @@ def review_phone(p):
         page.select_option('#rb-style', '__pane'); settle(page, 300)
         small = page.evaluate(SMALL, '#stylespane .pop-x, #rb-style')
         check('L4: the sheet\'s Close and the style list are 44 px or more', not small, small)
-        page.get_by_role('button', name='Normal options').tap(); settle(page, 250)
+        tap(page, page.get_by_role('button', name='Normal options'), 250)
         small = page.evaluate(SMALL, '.pop-menu [role^=menuitem]')
         check('L4: a style\'s menu items are 44 px tall', not small, small)
     except Exception as e:
@@ -1367,7 +1367,7 @@ def r2_phone(p):
         browser, page, errors = open_phone(p, w, h, dark)
         try:
             D = WRAP('Before.\n\n\\begin{verbatim}\nSome code words here.\n\\end{verbatim}\n\nAfter.')
-            load_doc(page, D); page.locator('#pages .it.verb').first.tap(); settle(page, 300)
+            load_doc(page, D); tap(page, page.locator('#pages .it.verb').first, 300)
             v = page.evaluate("document.querySelector('#rb-style') && document.querySelector('#rb-style').value")
             page.screenshot(path=os.path.join(shots, 'styles-code-%d-%s.png' % (w, 'dark' if dark else 'light')))
             page.select_option('#rb-style', 'p'); settle(page, 300)
@@ -1380,7 +1380,7 @@ def r2_phone(p):
             f = page.evaluate(FITS, '.pop-modstyle'); small = page.evaluate(SMALL, '.pop-modstyle input, .pop-modstyle button')
             page.screenshot(path=os.path.join(shots, 'styles-rename-%d-%s.png' % (w, 'dark' if dark else 'light')))
             check('Rename Style fits the screen, its field and buttons 44 px' + tag, f and f['inside'] and not small, (f, small))
-            page.get_by_role('textbox', name='New name').fill('sidenote'); page.get_by_role('button', name='OK').tap(); settle(page, 400)
+            page.get_by_role('textbox', name='New name').fill('sidenote'); tap(page, page.get_by_role('button', name='OK'), 400)
             check('and renames by a tap on OK' + tag, '\\begin{sidenote}' in src(page) and '{aside}' not in src(page), src(page)[:200])
             check('no sideways scroll' + tag, page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
             check('no console errors' + tag, not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:3])

@@ -24,7 +24,7 @@ KeyTips of a tab's controls.
 RIKUY_DIST names another dist/."""
 import os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, until, ready, wait_src, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, place, pressed
+from browser import settle, tap, until, ready, wait_src, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, place, pressed
 from playwright.sync_api import sync_playwright
 
 WRAP = lambda body, pre='': '\\documentclass{article}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
@@ -900,10 +900,10 @@ def frontier(p):
     browser, page, errors = open_page(p, width=390, height=800, touch=True)
     load_doc(page, DOC)
     page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label='References'); settle(page, 200)
-    page.locator('#rc-frontier').tap(); settle(page, 250)
+    tap(page, page.locator('#rc-frontier'), 250)
     d = page.get_by_role('dialog', name='Frontier', exact=True)
     t1 = d.count() == 1 and d.locator('.btn').bounding_box()['height'] >= 44
-    d.get_by_role('button', name='Close', exact=True).last.tap(); settle(page, 250)
+    tap(page, d.get_by_role('button', name='Close', exact=True).last, 250)
     check('Frontier by tap on a phone (390 px): the popover opens, its Close 44 px tall, a tap closes it', t1 and page.get_by_role('dialog', name='Frontier').count() == 0)
     browser.close()
 
