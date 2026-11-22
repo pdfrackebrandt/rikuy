@@ -2057,15 +2057,26 @@ class App {
           }
         }
       }
-      // Inside a run of spaces the page draws as one (a word deleted letter by letter leaves "The
-      // paragraph" with two): Backspace takes the space before the caret and Delete the one after
-      // it, as Word takes one of its two spaces. The browser's range is the drawn space, which
-      // named the letter before it (that letter went) or the whole run (nothing went).
-      const P = this.pending, S = this.src(c.f), back = /Backward/.test(type);
-      if (P && P.f === c.f && P.p === c.a && /[ \t]/.test(S[back ? c.a - 1 : c.a] || '') && /[ \t\n]/.test(S[back ? c.a : c.a - 1] || '') && S[c.a - 2] !== '\\') {
-        const k = back ? c.a - 1 : c.a;
-        this.commit([{ f: c.f, s: k, e: k + 1, t: '' }], { f: c.f, p: k, bias: back ? -1 : 1 }, 'del');
-        return;
+      // Inside a run of spaces in the source (a word deleted letter by letter leaves "The
+      // paragraph" with two; a space typed at a source line's end, "The \nparagraph"; a control
+      // space and a space, "Dr.\  Smith"): Backspace takes the space or line end before the caret
+      // and Delete the one after it, as Word takes one of its two spaces. The browser's range is a
+      // drawn space, which named the letter before it (that letter went), the letter after it (a
+      // space the browser does not draw is skipped), or the whole run (nothing went). Only a run
+      // inside a paragraph (no blank line in it), and only Backspace and Delete themselves:
+      // Ctrl+Backspace takes the word as ever. Backspace after a control space (\ ) takes it whole.
+      const S = this.src(c.f), back = type === 'deleteContentBackward', ws = (ch) => ch === ' ' || ch === '\t' || ch === '\n';
+      if ((back || type === 'deleteContentForward') && ws(S[c.a - 1]) && ws(S[c.a])) {
+        let i = c.a, j = c.a;
+        while (i > 0 && ws(S[i - 1])) i--;
+        while (j < S.length && ws(S[j])) j++;
+        if (!/\n[ \t]*\n/.test(S.slice(i, j))) {
+          let k = back ? c.a - 1 : c.a, n = 0;
+          if (back && S[k] === ' ') while (S[k - 1 - n] === '\\') n++;
+          if (n % 2) k--;
+          this.commit([{ f: c.f, s: k, e: back ? c.a : c.a + 1, t: '' }], { f: c.f, p: k, bias: back ? -1 : 1 }, 'del');
+          return;
+        }
       }
       const tr = ranges && ranges[0];
       let r = tr ? this.rangeToSrc(tr) : null;
@@ -2091,6 +2102,10 @@ class App {
       // what is after it. At the start of a theorem's body the browser names a range that begins
       // past the generated "Theorem 1." label, which maps to the paragraph's end: taken as it
       // came, one Backspace deleted the whole paragraph.
+      // (from inside a run of spaces drawn as one, Ctrl+Backspace's word reaches the run's end:
+      // the part of it past the caret is spaces only, and is left; the whole range was refused,
+      // and nothing went)
+      if (r && r.f === c.f && r.a < c.a && c.a < r.b && !(/Backward/.test(type) ? S.slice(c.a, r.b) : S.slice(r.a, c.a)).trim()) r = /Backward/.test(type) ? { ...r, b: c.a } : { ...r, a: c.a };
       if (r && (/Backward/.test(type) ? r.b > c.a : r.a < c.a)) r = null;
       if (!r) {
         // Nothing the browser would delete: paragraph boundary or atom edge.
