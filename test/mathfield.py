@@ -124,6 +124,16 @@ try:
         settle(page, 200)
         check('one undo brings the equation back', '\\begin{equation}\n  E = mc^2\n\\end{equation}\nMore text.' in src(page), src(page)[src(page).find('beta'):][:80])
 
+        # --- Enter at the end of the line above a display, then words: a paragraph above the
+        # display, the display going on under it as in Word; a blank line before it printed an
+        # empty line above the equation (TeX begins a paragraph for the display alone)
+        load_doc(page, EMPTIED)
+        click_text(page, 'Alpha', 0); page.keyboard.press('End'); settle(page, 150)
+        page.keyboard.press('Enter'); settle(page, 150)
+        page.keyboard.type('New'); settle(page, 300, full=True)
+        s6 = src(page)
+        check('words typed on a new line above a display: no blank line before the display', 'beta.\n\nNew\n\\begin{equation}' in s6, s6[s6.find('beta'):][:60])
+
         # --- dark mode look
         check('no console errors', not errors, errors[:5])
         browser.close()

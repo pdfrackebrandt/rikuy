@@ -2417,7 +2417,11 @@ class App {
     let nlA = 0; for (let k = g.pos; k < src.length && /\s/.test(src[k]); k++) if (src[k] === '\n') nlA++;
     // no blank lines at the very start or end of a file: there is no paragraph to keep apart
     const pre = g.pos === 0 ? '' : '\n'.repeat(Math.max(0, (g.line ? 1 : 2) - nlB));
-    const post = g.pos >= src.length ? '' : '\n'.repeat(Math.max(0, (g.line ? 1 : 2) - nlA));
+    // (before a display that went on the paragraph above, one line break: the display goes on
+    // the new paragraph, as in Word it stands under it; a blank line before it is a paragraph TeX
+    // begins for the display alone, an empty line printed above the equation)
+    const disp = /^[ \t]*\r?\n[ \t]*(?:\\\[|\\begin\s*\{(?:equation|align|alignat|gather|multline|flalign|eqnarray|displaymath)\*?\})/.test(src.slice(g.pos));
+    const post = g.pos >= src.length ? '' : '\n'.repeat(Math.max(0, (g.line || disp ? 1 : 2) - nlA));
     this.removeGhost();
     const grew = extra.filter((x) => x.f === g.f && x.s <= g.pos).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
     this.commit([...extra, { f: g.f, s: g.pos, e: g.pos, t: pre + open + tex + close + post }], { f: g.f, p: g.pos + grew + pre.length + open.length + tex.length, bias: -1 }, 'type');
