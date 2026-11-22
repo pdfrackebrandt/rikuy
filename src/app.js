@@ -1900,8 +1900,9 @@ class App {
     return { f: A.f, a: Math.min(A.p, B.p), b: Math.max(A.p, B.p) };
   }
 
-  // Build deletion edits for [a,b) in f without breaking markup.
-  deletionEdits(f, a, b) {
+  // Build deletion edits for [a,b) in f without breaking markup. sel: [a, b) is a selection made
+  // on the page (typed over, deleted, cut, pasted over), not what one key takes at the caret.
+  deletionEdits(f, a, b, sel) {
     if (a >= b) return [];
     const src = this.src(f);
     const slice = src.slice(a, b);
@@ -1924,7 +1925,12 @@ class App {
       const kept = lines.filter((l, i) => i === 0 || (i === lines.length - 1 ? !mark(l) : l.trim() !== '' && !mark(l)));
       return [{ f, s: a, e: b, t: kept.join('\n') }];
     }
-    if (isBalanced(src, a, b) && !/\\(begin|end)\s*\{(document)\}/.test(slice) && !/\\(section|subsection|subsubsection|chapter|part|maketitle|item|bibliography)\b/.test(slice)) {
+    // A selection that holds whole headings or list items takes them, as Word's takes the
+    // paragraphs it holds: their words alone went, and an empty numbered heading or empty bullets
+    // were left standing between the two paragraphs it joined. One key at the caret still never
+    // takes a heading's or an item's command (Backspace at an item's start).
+    const keep = sel ? /\\(maketitle|bibliography)\b/ : /\\(section|subsection|subsubsection|chapter|part|maketitle|item|bibliography)\b/;
+    if (isBalanced(src, a, b) && !/\\(begin|end)\s*\{(document)\}/.test(slice) && !keep.test(slice)) {
       return [{ f, s: a, e: b, t: '' }];
     }
     const vr = visibleRanges(this.renderer.blocks, f, a, b);
@@ -1994,7 +2000,7 @@ class App {
     if (c.ghost) { this.ghostInsert(raw ? data : escapeTeX(data, ' ')); return; }
     const f = range ? range.f : c.f;
     let a = range ? range.a : c.a, b = range ? range.b : c.b;
-    const edits = this.deletionEdits(f, a, b);
+    const edits = this.deletionEdits(f, a, b, true);
     let at = a;
     // If deletion collapsed to visible ranges, insertion goes where the first visible char was
     if (edits.length && edits[0].s > a && edits.length > 0 && edits[0].t === '') at = edits[0].s;
@@ -2115,7 +2121,7 @@ class App {
       const atom = this.soleAtom(f, a, b, vr);
       if (atom) { this.arm(atom); return; }
     }
-    const edits = this.deletionEdits(f, a, b);
+    const edits = this.deletionEdits(f, a, b, !c.collapsed);
     if (!edits.length) {
       const p = /Backward/.test(type) || !c.collapsed ? a : b;
       this.restoreCaret({ f, p, bias: /Backward/.test(type) ? -1 : 1 });
@@ -2203,7 +2209,7 @@ class App {
     const kind = ctxEl ? ctxEl.dataset.ctx : 'p';
     const f = c.f;
     const src = this.src(f);
-    let edits = c.collapsed ? [] : this.deletionEdits(f, c.a, c.b);
+    let edits = c.collapsed ? [] : this.deletionEdits(f, c.a, c.b, true);
     const p = c.a;
     if (soft) {
       if (kind === 'cell') { this.commit([...edits, { f, s: p, e: p, t: '\\newline ' }], { f, p: p + 9 }, 'type'); return; }
@@ -2667,7 +2673,7 @@ class App {
     this.compTex = null;
     if (T && T.f === c.f) { this.texEdit(T, c.a, c.b, data, 'type'); return; }
     const src = this.src(c.f);
-    const edits = c.collapsed ? [] : this.deletionEdits(c.f, c.a, c.b);
+    const edits = c.collapsed ? [] : this.deletionEdits(c.f, c.a, c.b, true);
     const raw = this.texAt(c.f, c.a);
     let t = raw ? data : escapeTeX(data, src[c.a - 1] || ' ');
     if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, c.a)) t = '{}' + t;
@@ -2742,7 +2748,7 @@ class App {
       if (whole) { this.replaceBody(whole, '', 'cut'); return; }
       const T = this.texHere();
       if (T && T.f === c.f) { this.texEdit(T, c.a, c.b, '', 'cut'); return; }
-      const edits = this.deletionEdits(c.f, c.a, c.b);
+      const edits = this.deletionEdits(c.f, c.a, c.b, true);
       this.commit(edits, { f: c.f, p: c.a }, 'cut');
     }
   }
@@ -2802,7 +2808,7 @@ class App {
     }, { greek: !greekSet });
     if (c.ghost) { const t = latex || rich(); this.ghostInsert(t, this.pastePackages(t)); return; }
     if (whole) { const t = latex || rich(), pk = this.pastePackages(t); this.replaceBody(whole, t, 'paste'); if (pk.length) this.commit(pk, null, 'paste'); return; }
-    const edits = this.deletionEdits(c.f, c.a, c.b);
+    const edits = this.deletionEdits(c.f, c.a, c.b, true);
     const at = edits.length && edits[0].s >= c.a ? edits[0].s : c.a;
     // (landing in a LaTeX paragraph from a selection that started outside it: as source)
     const raw = this.texAt(c.f, at);

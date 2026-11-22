@@ -1835,6 +1835,22 @@ def word_typing(page):
         place(page, (a, z)); k.press('Control+c'); settle(page, 50)
         click_text(page, end, len(end)); k.press('Control+v'); settle(page, 100)
         check('copied from "%s" to "%s" and pasted: %r' % (a, z, want), src(page) == WORD_DOC.replace(end, end + want), src(page)[-80:])
+    # 4: a selection holding whole headings or list items takes them with its words, as Word's
+    # takes the paragraphs it holds; their words alone went, and an empty numbered heading or two
+    # empty bullets stayed between the two paragraphs the deletion joined
+    for a, z, key, old_, new_ in (('paragraph is', 'After', 'Backspace', 'paragraph is plain text only.\n\\begin{itemize}\n\\item Apple one\n\\item Banana two\n\\end{itemize}\nAfter', ''),
+                                  ('display', 'Last', 'Z', 'display text.\n\n\\section{Background}\\label{sec:b}\nLast', 'Z'),
+                                  ('one', 'Banana', 'Delete', 'one\n\\item Banana', '')):
+        load_doc(page, WORD_DOC)
+        place(page, (a, z))
+        if len(key) == 1: k.type(key)
+        else: k.press(key)
+        settle(page, 100)
+        check('selected from "%s" to "%s", then %s: what it held is gone, the paragraphs at its ends joined' % (a, z, key), src(page) == WORD_DOC.replace(old_, new_), src(page)[200:420])
+    # (one key at an item's start still takes no \item)
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Banana', 0); k.press('Backspace'); settle(page, 100)
+    check('Backspace at a list item\'s start leaves the list as it was', src(page) == WORD_DOC, src(page)[250:350])
 
 if __name__ == '__main__':
     sys.exit(run())
