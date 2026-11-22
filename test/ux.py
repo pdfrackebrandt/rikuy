@@ -1278,6 +1278,11 @@ def android_input(page, w):
     tap(page, page.locator('#rb-b'), 250)
     cdp.send('Input.insertText', {'text': 'Z'}); settle(page, 150)
     check(f'a key after a command run while the keyboard marks a word goes in ({w})', 'Second paragraph he\\textbf{Z}re.' in src(page), body_of(page)[-50:])
+    # a line break a keyboard or dictation writes as text: a new paragraph, as Enter makes
+    load_doc(page, doc); tap_text(page, 'paragraph here.', 4)
+    cdp.send('Input.insertText', {'text': '\n'}); settle(page, 200)
+    cdp.send('Input.insertText', {'text': 'ab\ncd'}); settle(page, 200)
+    check(f'a line break written as text makes a new paragraph ({w})', 'Second para\n\nab\n\ncdgraph here.' in src(page), body_of(page)[-50:])
 
 
 

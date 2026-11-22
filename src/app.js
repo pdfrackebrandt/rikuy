@@ -1830,6 +1830,13 @@ class App {
         let data = e.data;
         if (data == null && e.dataTransfer) data = e.dataTransfer.getData('text/plain');
         if (data == null) return;
+        // (a line break a keyboard writes as text, a dictated "new line": Enter, a new paragraph
+        // as Word makes it; it went into the source as a newline, a space on the page)
+        if (t === 'insertText' && /[\r\n]/.test(data)) {
+          this.typeFlush();
+          data.replace(/\r\n?/g, '\n').split('\n').forEach((part, i) => { if (i) this.enter(false); if (part) this.typeIn(part, null); });
+          break;
+        }
         let range = null;
         if (t === 'insertReplacementText' && e.getTargetRanges) {
           const tr = e.getTargetRanges()[0];
