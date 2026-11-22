@@ -364,6 +364,17 @@ def formula_cells(page):
     check('Down into a formula\'s cell: the caret beside the formula', s in ('\\midrule\n$x^2$ & two \\\\\nthree & X$y$ \\\\\n', '\\midrule\n$x^2$ & two \\\\\nthree & $y$X \\\\\n'), s)
 
 
+def caret_after_ops(page):
+    """After Delete Rows and Split Table the caret is in a cell's words: what is typed goes there
+    (it went where the operation left its place, between two rows or after the new \\toprule)."""
+    doc = DOC.replace('three & four \\\\\n', 'three & four \\\\\nfive & six \\\\\n')
+    for cmd, where, want in (('delete-rows', 'three', 'one & two \\\\\nQfive & six'), ('split-table', 'three', '\\begin{tabular}{ll}\n\\toprule\nQthree & four')):
+        load_doc(page, doc); at_src(page, where, 1); run_cmd(page, cmd); settle(page, 250)
+        page.keyboard.type('Q'); settle(page, 200)
+        s = src(page)
+        check('%s, then typing: the letter in the cell under the caret' % cmd, want in s, s[s.find('\\midrule'):s.find('\\caption')])
+
+
 def caption_enter(page):
     """Enter at the end of a table's caption: a paragraph after the float, as Word's; it did
     nothing, and a table at the document's end had no way past it."""
@@ -865,7 +876,7 @@ def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         names = sys.argv[1:]
-        for f in (inserting, tabs_and_trips, keys_and_select, cell_edges, updown, formula_cells, paste_cells, caption_enter, the_rest, drawing, reviewed, verified, compiled, r3_tables):
+        for f in (inserting, tabs_and_trips, keys_and_select, cell_edges, updown, formula_cells, paste_cells, caption_enter, caret_after_ops, the_rest, drawing, reviewed, verified, compiled, r3_tables):
             if names and f.__name__ not in names:
                 continue
             try: f(page)

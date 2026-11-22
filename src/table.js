@@ -501,7 +501,7 @@ export function barsOf(src, T) {
 // A row's text as a person reads it: each cell's words (for sorting, converting, merging)
 export const cellText = (src, c) => (c.empty ? '' : src.slice(c.mc ? (c.mr ? c.mr.textS : c.mc.textS) : c.mr ? c.mr.textS : c.ks, c.mc ? (c.mr ? c.mr.textE : c.mc.textE) : c.mr ? c.mr.textE : c.ce));
 // where those words stand in the source: [s, e] (s === e in an empty cell)
-const cellWords = (c) => (c.empty ? [c.ks, c.ks] : [c.mc ? (c.mr ? c.mr.textS : c.mc.textS) : c.mr ? c.mr.textS : c.ks, c.mc ? (c.mr ? c.mr.textE : c.mc.textE) : c.mr ? c.mr.textE : c.ce]);
+export const cellWords = (c) => (c.empty ? [c.ks, c.ks] : [c.mc ? (c.mr ? c.mr.textS : c.mc.textS) : c.mr ? c.mr.textS : c.ks, c.mc ? (c.mr ? c.mr.textE : c.mc.textE) : c.mr ? c.mr.textE : c.ce]);
 
 // [a, b] of a table's body reaching over a cell's edge: { T, A, Z } (the cells at its two ends),
 // else null. (The & and \\ a deletion over an edge took joined two cells, or two rows, into one.)

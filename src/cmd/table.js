@@ -410,6 +410,10 @@ export const methods = {
       if (q < c.s || q > c.e) continue;
       const r = document.createRange();
       if (!c.empty && p >= c.ks && p <= c.ce) { this.restoreCaret({ f, p }); return; }
+      // (a place outside the words, between two rows after Delete Rows, under a rule after Split
+      // Table: at the words' start. The caret was drawn there, but what was typed went where the
+      // place was, outside the cell: "two \\Q", "\toprule{}Q")
+      if (!c.empty) { const [ws, we] = X.cellWords(c); this.restoreCaret({ f, p: Math.min(Math.max(p, ws), we), bias: p < ws ? 1 : -1 }); return; }
       r.setStart(sp.firstChild || sp, sp.firstChild && info.seg.ph ? sp.firstChild.length : 0);
       r.collapse(true);
       const sel = getSelection();
