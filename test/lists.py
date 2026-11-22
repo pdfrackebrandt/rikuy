@@ -26,9 +26,9 @@ themselves, no side scroll, and automatic lists from an on-screen keyboard (the 
 space at once, an autocorrected dash, an IME's composition).
 
 RIKUY_DIST names another dist/."""
-import os, sys, base64, io, re
+import os, sys, base64, io, re, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, open_page, check, results, src, load_doc, click_text, select_text, roundtrip
+from browser import settle, until, open_page, check, results, src, load_doc, click_text, select_text, roundtrip
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -511,17 +511,53 @@ def review(page):
     page.set_default_timeout(30000)
 
 
+# Chromium counts a tap that comes within 400 ms of the last one and near it as the second of a
+# double tap (the word selected) or the third of a triple (the paragraph). The suite's taps are
+# separate ones, as a person's are: one near the last waits out what is left of that time (the
+# gesture's own time, which no event marks; the fixed waits once kept the taps apart).
+DOUBLE_TAP, NEAR = 0.45, 100
+_taps = {}
+LAST_DBG, DBG_FAILS = [None], []
+
+
+def finger(page, at, do):
+    """A tap at the point at, made by do(), and the click Chromium makes of it: the tap gesture
+    comes from the touchstart and touchend after the tap call has returned, and the click (the
+    caret placed, a button pressed) with it."""
+    last = _taps.get(id(page))
+    if last and abs(at[0] - last[1]) < NEAR and abs(at[1] - last[2]) < NEAR and time.monotonic() - last[0] < DOUBLE_TAP:
+        page.wait_for_timeout((DOUBLE_TAP - (time.monotonic() - last[0])) * 1000)
+    page.evaluate('() => { window.__rkTap = 0; addEventListener("click", () => { window.__rkTap = 1; }, { capture: true, once: true }); }')
+    do()
+    _taps[id(page)] = (time.monotonic(), at[0], at[1])
+    until(page, '() => window.__rkTap === 1', timeout=300)
+
+
 def tap_text(page, text, off=0):
     """A finger's tap on the page's text: offset characters into the first span holding text"""
     xy = page.evaluate('''([t, o]) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(t)); const n = s.firstChild, i = n.textContent.indexOf(t) + o;
       const r = document.createRange(); r.setStart(n, i); r.setEnd(n, Math.min(n.length, i + 1)); const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }''', [text, off])
-    page.touchscreen.tap(xy[0], xy[1]); settle(page, 300)
+    pre = page.evaluate('() => { const T = window.__rkT, t = performance.now(); window.__rkDbg = []; window.__rkDbgT = t; const at = (ev) => window.__rkDbg.push(ev); const c = () => { const c = window.rikuy.caretNow(); return c ? c.a + "," + c.b : null; };'
+                       ' if (!window.__rkDbgOn) { window.__rkDbgOn = 1; document.addEventListener("selectionchange", () => at(["sel", Math.round(performance.now() - window.__rkDbgT), c()]));'
+                       ' for (const ev of ["pointerdown", "mousedown", "focus", "click", "touchstart", "touchend", "contextmenu", "dblclick"]) addEventListener(ev, (e) => at([ev, Math.round(performance.now() - window.__rkDbgT), e.detail, ev === "pointerdown" || ev === "mousedown" ? [Math.round(e.clientX), Math.round(e.clientY)] : 0]), true); }'
+                       ' return [c(), document.fonts.status, T ? [...T.due.values()].map((d) => Math.round(d - t)).sort((x, y) => x - y).slice(0, 8) : null]; }')
+    t0 = time.monotonic()
+    finger(page, xy, lambda: page.touchscreen.tap(xy[0], xy[1])); t1 = time.monotonic(); settle(page, 300)
+    xy2 = page.evaluate('''([t, o]) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(t)); const n = s.firstChild, i = n.textContent.indexOf(t) + o;
+      const r = document.createRange(); r.setStart(n, i); r.setEnd(n, Math.min(n.length, i + 1)); const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }''', [text, off])
+    LAST_DBG[0] = ('DBG tap_text', text, off, xy, xy2, pre, round((t1 - t0) * 1000), page.evaluate('window.__rkTap'), page.evaluate('window.__rkDbg'), page.evaluate("(() => { const c = window.rikuy.caretNow(); return c ? [c.a, c.b] : null; })()"), page.evaluate('getSelection().toString()'))
+
+
+def tap_on(page, loc):
+    """A tap on a control where it is, and its click"""
+    b = loc.bounding_box() or {'x': -1e3, 'y': -1e3, 'width': 0, 'height': 0}
+    finger(page, (b['x'] + b['width'] / 2, b['y'] + b['height'] / 2), loc.tap)
 
 
 def tap(page, loc):
     """A tap on a control, the ribbon's row swiped to it first (a phone shows part of the row)"""
     loc.evaluate('(e) => e.scrollIntoView({ block: "nearest", inline: "center" })'); settle(page, 150)
-    loc.tap(); settle(page, 300)
+    tap_on(page, loc); settle(page, 300)
 
 
 def no_side_scroll(page):
@@ -544,7 +580,7 @@ def phone_run(p, w, h, dark=False):
         # list level without Tab: Increase Indent and Decrease Indent, tapped
         load_doc(page, L3); tap_text(page, 'Two', 1)
         c = page.evaluate("(() => { const c = window.rikuy.caretNow(); return c && window.rikuy.src('main.tex').slice(c.a - 1, c.a + 2); })()")
-        check('a tap puts the caret in the item' + tag, c is not None and 'w' in c, c)
+        if not check('a tap puts the caret in the item' + tag, c is not None and 'w' in c, c): DBG_FAILS.append(LAST_DBG[0])
         h0 = hist(page)
         tap(page, page.get_by_role('button', name='Increase Indent', exact=True))
         check('Increase Indent tapped: the item one level down, one step' + tag, src(page) == L3N and hist(page) == h0 + 1, src(page)[40:])
@@ -786,21 +822,21 @@ def r2_phone(p, w, h, dark=False):
     try:
         load_doc(page, WRAP(B3)); put_picture(page, 'figures/dot.png'); tap_text(page, 'Two', 1)
         tap(page, page.locator('#rb-ul-x')); settle(page, 200)
-        page.locator('.pop-menu [aria-label="Picture Bullet…"], .pop-menu [aria-label="Picture Bullet"]').first.tap(); settle(page, 300)
+        tap_on(page, page.locator('.pop-menu [aria-label="Picture Bullet…"], .pop-menu [aria-label="Picture Bullet"]').first); settle(page, 300)
         f = fits(page, '.pop-list')
         small = page.evaluate("Math.min(...[...document.querySelectorAll('.pop-list .ld-pic, .pop-list .btn')].filter((x) => x.offsetParent).map((x) => Math.min(x.getBoundingClientRect().height, x.getBoundingClientRect().width)))")
         page.screenshot(path=os.path.join(shots, 'lists-picture-bullet-%d-%s.png' % (w, 'dark' if dark else 'light')))
         check('Picture Bullet by taps from the library\'s menu: on the screen, its tiles and buttons 44 px' + tag, f and f['across'] and f['down'] and small >= 44, (f, small))
-        page.get_by_role('radio', name='figures/dot.png').tap(); page.get_by_role('button', name='OK').tap(); settle(page, 400)
+        tap_on(page, page.get_by_role('radio', name='figures/dot.png')); tap_on(page, page.get_by_role('button', name='OK')); settle(page, 400)
         check('and a tap on a picture and OK writes the bullet' + tag, 'label={\\includegraphics[height=1.6ex]{figures/dot.png}}' in src(page), src(page)[-160:])
         tap_text(page, 'Two', 1)
         tap(page, page.locator('#rb-ul-x')); settle(page, 200)
-        page.locator('.pop-menu [aria-label="Adjust List Indents…"], .pop-menu [aria-label="Adjust List Indents"]').first.tap(); settle(page, 300)
+        tap_on(page, page.locator('.pop-menu [aria-label="Adjust List Indents…"], .pop-menu [aria-label="Adjust List Indents"]').first); settle(page, 300)
         f = fits(page, '.pop-list')
         small = page.evaluate("Math.min(...[...document.querySelectorAll('.pop-list input, .pop-list select, .pop-list .btn')].filter((x) => x.offsetParent).map((x) => x.getBoundingClientRect().height))")
         page.screenshot(path=os.path.join(shots, 'lists-indents-%d-%s.png' % (w, 'dark' if dark else 'light')))
         check('Adjust List Indents by taps: on the screen, its fields and buttons 44 px tall' + tag, f and f['across'] and f['down'] and small >= 44, (f, small))
-        fld = page.get_by_role('spinbutton', name='Text indent'); fld.tap(); fld.fill('4'); page.get_by_role('button', name='OK').tap(); settle(page, 400)
+        fld = page.get_by_role('spinbutton', name='Text indent'); tap_on(page, fld); fld.fill('4'); tap_on(page, page.get_by_role('button', name='OK')); settle(page, 400)
         check('a value typed and OK tapped writes the indents' + tag, 'leftmargin=4em,labelwidth=2em,labelsep=0.5em' in src(page), src(page)[-200:])
         check('no sideways scroll' + tag, no_side_scroll(page))
         check('no page errors' + tag, not errors, errors[:3])
@@ -828,6 +864,8 @@ def run_all():
                 try: r2_phone(p, w, h, dark)
                 except Exception as e: check('the R2 phone run at %dx%d runs to its end' % (w, h), False, str(e)[:400])
     bad = [r for r in results if not r[1]]
+    for r in bad: print('FAILED CHECK', r[0], str(r[2])[:200])
+    for d in DBG_FAILS: print(d)
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     sys.exit(1 if bad else 0)
 
