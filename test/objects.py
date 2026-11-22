@@ -23,7 +23,7 @@ Run: python3 objects.py [section ...] (sections: shapes, charts, smart, menus, c
 pictures_compiled, arrange, selpane, phones, shots, pictures_unloaded, pictures_phone)."""
 import os, sys, re, base64
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, open_page, check, results, src, load_doc, roundtrip, pressed
+from browser import settle, ready, until, tap, open_page, check, results, src, load_doc, roundtrip, pressed
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -346,13 +346,13 @@ def phones(p):
             D = DOC(SHAPE)
             load_doc(page, D); settle(page, 400)
             b = obj_box(page)
-            page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2); settle(page, 300)
+            tap(page, (b[0] + b[2] / 2, b[1] + b[3] / 2), 300)
             check('a tap selects the drawing: Shape Format shows' + tag, tab_shown(page, 'shape-format') and page.evaluate('!!window.rikuy.objHere()'))
             hs = page.evaluate("[...document.querySelectorAll('.shape-layer .shape-h')].filter((h) => !h.hidden).map((h) => parseFloat(getComputedStyle(h, '::before').width))")
             check('its handles are 44 px targets' + tag, hs and all(x >= 44 for x in hs), hs)
             check('the tap opened Shape Format (the "Ribbon tab" list says so)' + tag, page.evaluate("[window.rikuy.rbTab, document.getElementById('rb-tabsel').value]") == ['shape-format', 'shape-format'])
-            page.locator('#rc-shape-fill').tap(); settle(page, 250)
-            page.get_by_role('menuitemradio', name='green!40', exact=True).tap(); settle(page, 350)
+            tap(page, page.locator('#rc-shape-fill'), 250)
+            tap(page, page.get_by_role('menuitemradio', name='green!40', exact=True), 350)
             check('taps on Shape Fill and a colour write it' + tag, src(page) == D.replace('fill=blue!20', 'fill=green!40'), body(page))
             check('the page never scrolls sideways' + tag, page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1'))
             # review H6: every visible control of each new tab a 44 px target; L6: the colour grid's tiles too
@@ -361,16 +361,16 @@ def phones(p):
               .map((e) => { const b = e.getBoundingClientRect(); return [e.id || e.getAttribute('aria-label') || e.className, Math.round(b.width), Math.round(b.height)]; }).filter((x) => x[1] < 44 || x[2] < 44)"""
             for obj, sel_, tabs in ((SHAPE, 'svg.tz', ['shape-format']), (CHART, 'svg.pgf', ['chart-design', 'chart-format']), (SMART, 'svg.smart', ['smart-design', 'smart-format'])):
                 load_doc(page, DOC(obj)); settle(page, 400)
-                b = obj_box(page, sel_); page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2); settle(page, 300)
+                b = obj_box(page, sel_); tap(page, (b[0] + b[2] / 2, b[1] + b[3] / 2), 300)
                 for t in tabs:
                     page.evaluate('(t) => rikuy.selectTab(t)', t); settle(page, 250)
                     n = page.evaluate("(t) => [...document.querySelectorAll('#rp-' + t + ' button, #rp-' + t + ' input')].filter((e) => e.getClientRects().length && e.offsetParent && !e.closest('.rb-dl')).length", t)
                     small = page.evaluate(SMALL, t)
                     check('H6: every one of %s\'s %d controls is a 44 px target%s' % (t, n, tag), n > 0 and not small, small[:6])
             load_doc(page, DOC(SHAPE)); settle(page, 300)
-            b = obj_box(page); page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2); settle(page, 300)
+            b = obj_box(page); tap(page, (b[0] + b[2] / 2, b[1] + b[3] / 2), 300)
             page.evaluate("rikuy.selectTab('shape-format')"); settle(page, 200)
-            page.locator('#rc-shape-fill').tap(); settle(page, 300)
+            tap(page, page.locator('#rc-shape-fill'), 300)
             g = page.evaluate("""() => { const m = document.querySelector('.pop-colors'); const t = [...m.querySelectorAll('.gal-tile')].filter((a) => a.getClientRects().length).map((a) => a.getBoundingClientRect()); return { n: t.length, rows: new Set(t.map((r) => Math.round(r.top))).size, small: t.filter((r) => r.width < 44 || r.height < 44).length, right: Math.max(...t.map((r) => r.right)), w: innerWidth }; }""")
             check('L6: the colour grid in rows of tiles, 44 px each, inside the screen (%d tiles in %d rows)%s' % (g['n'], g['rows'], tag), g['rows'] < g['n'] / 4 and g['small'] == 0 and g['right'] <= g['w'] + 1, g)
             page.keyboard.press('Escape'); settle(page, 150)
@@ -392,12 +392,12 @@ def phones(p):
                   return { names: [...m.querySelectorAll('[role^=menuitem]')].map((a) => a.getAttribute('aria-label')), l: r.left, r: r.right, b: r.bottom, w: innerWidth, h: innerHeight, small: it.filter((t) => t.height < 44).length }; }""")
                 check('a long press on the %s opens its menu, in the screen, 44 px items%s' % (sel_, tag), g and name in g['names'] and g['l'] >= 0 and g['r'] <= g['w'] + 1 and g['small'] == 0, g)
                 if g:
-                    page.get_by_role('menuitem', name=name).tap(); settle(page, 300)
+                    tap(page, page.get_by_role('menuitem', name=name), 300)
                     check('and a tap on %s opens its dialog' % name + tag, page.evaluate("!!document.querySelector('.pop-dlg')"))
                     page.keyboard.press('Escape'); settle(page, 150)
             if w == 390:
                 load_doc(page, DOC(CHART)); settle(page, 300); b = obj_box(page, 'svg.pgf')
-                page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2); settle(page, 300)
+                tap(page, (b[0] + b[2] / 2, b[1] + b[3] / 2), 300)
                 page.screenshot(path=os.path.join(SHOTS, 'chart-design-390.png'))
             check('no page errors' + tag, not [e for e in errs if 'tree.wasm' not in e], errs[:3])
         finally:
@@ -414,9 +414,8 @@ def shots(p):
             load_doc(page, D); settle(page, 500)
             for sel_, tab, name in (('svg.tz', 'shape-format', 'shape'), ('svg.pgf', 'chart-design', 'chart'), ('svg.smart', 'smart-design', 'smart')):
                 b = obj_box(page, sel_)
-                if touch: page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2)
-                else: page.mouse.click(b[0] + b[2] / 2, b[1] + b[3] / 2)
-                settle(page, 250)
+                if touch: tap(page, (b[0] + b[2] / 2, b[1] + b[3] / 2), 250)
+                else: page.mouse.click(b[0] + b[2] / 2, b[1] + b[3] / 2); settle(page, 250)
                 settle(page, 300)
                 page.screenshot(path=os.path.join(SHOTS, '%s-%d%s.png' % (name, w, '-dark' if dark else '')))
             # Picture Format with Corrections, Color, Transparency and Compress, a picture made sepia
@@ -639,12 +638,14 @@ def pictures_phone(p):
             D = pic_doc()
             load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); settle(page, 400)
             b = page.locator('#pages .a-img').bounding_box()
-            page.touchscreen.tap(b['x'] + b['width'] / 2, b['y'] + b['height'] / 2); settle(page, 400)
-            page.locator('#rc-picture-color').tap(); settle(page, 300)
+            tap(page, (b['x'] + b['width'] / 2, b['y'] + b['height'] / 2), 400)
+            tap(page, page.locator('#rc-picture-color'), 300)
             g = page.evaluate("""() => { const m = document.querySelector('.pop-menu'); if (!m) return null; const r = m.getBoundingClientRect(); const it = [...m.querySelectorAll('[role^=menuitem]')].filter((a) => a.getClientRects().length).map((a) => a.getBoundingClientRect());
               return { l: r.left, r: r.right, w: innerWidth, small: it.filter((t) => t.height < 44).length, n: it.length }; }""")
             check('a tap on Color opens its menu in the screen, 44 px items' + tag, g and g['l'] >= 0 and g['r'] <= g['w'] + 1 and g['small'] == 0, g)
-            page.get_by_role('menuitemradio', name='Grayscale').tap(); settle(page, 1200)
+            tap(page, page.get_by_role('menuitemradio', name='Grayscale'), 1200)
+            # (the pixels made in the picture module's worker, no timer: the edit lands when they come)
+            until(page, "() => (window.rikuy.files.get('main.tex') || '').includes('% rikuy: from {a.png}, recolor gray')")
             check('a tap on Grayscale writes it' + tag, '% rikuy: from {a.png}, recolor gray\n' in src(page), src(page)[-160:])
             if w == 390: page.screenshot(path=os.path.join(SHOTS, 'picture-color-390.png'))
         finally:
@@ -715,7 +716,8 @@ def review_arrange(page):
         for eng in ('pdflatex', 'xelatex', 'lualatex'):
             r = compile_pdf(page, ('% !TEX program = ' + eng + '\n' if eng != 'pdflatex' else '') + doc)
             t = pdf_text(r)
-            check('%s compiles with %s, %s in the PDF' % (label, eng, want), r['ok'] and not r['problems'] and want in t, (r['problems'], t[:200]))
+            # (spaces aside: the pypdf CI pins, 5.9.0, reads XeLaTeX's kerned "Ta" and "Wo" as "T a" and "W o")
+            check('%s compiles with %s, %s in the PDF' % (label, eng, want), r['ok'] and not r['problems'] and re.sub(r'\s', '', want) in re.sub(r'\s', '', t), (r['problems'], t[:200]))
     # N1: Wrap on figure > center: \centering in a wrapfigure (a center there stops pdfLaTeX: "Not allowed in LR mode")
     for env, cap, want in (('figure', 'Box', 'Figure 1: Box'), ('table', 'Data', 'Table 1: Data')):
         N = body_of(env, cap)
@@ -799,18 +801,7 @@ def review_arrange(page):
       at.memo = {}; out.on = C.enabled(g, c, at);
       let t0 = performance.now(); for (let k = 0; k < 20; k++) { at.memo = {}; C.enabled(g, c, at); } out.align = (performance.now() - t0) / 20;
       t0 = performance.now(); for (let k = 0; k < 5; k++) { at.memo = {}; for (const x of cs) { C.enabled(g, x, at); if (x.on) x.on(g, at); } } out.all = (performance.now() - t0) / 5; return out; }""")
-    # (the times on a line of their own: a check's words and what it saw are set beside another run's,
-    # RIKUY_CHECK_LOG, and a time differs every run)
-    print('N9: Align\'s when %.2f ms a look, every command\'s %.0f ms' % (t['align'], t['all']))
-    ok = t['on'] and t['align'] < 5 and t['all'] < 40
-    check('N9: with a drawing selected in a long document, Align\'s when takes under 5 ms a look, every command\'s under 40 ms', ok, '' if ok else t)
-
-
-def reload(page):
-    # (the project read back from this browser's storage once rikuy.ready has settled, as open_page() waits:
-    # a document loaded before that could be replaced by it)
-    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=30000)
-    page.evaluate('() => window.rikuy.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))'); settle(page, 500)
+    check('N9: with a drawing selected in a long document, Align\'s when takes %.2f ms a look (under 5), every command\'s %.0f ms (under 40)' % (t['align'], t['all']), t['on'] and t['align'] < 5 and t['all'] < 40, t)
 
 
 def selpane(page):
@@ -853,7 +844,8 @@ def selpane(page):
     page.keyboard.press('Escape')
     press(page, 'svg.tz', 0); page.keyboard.press('Delete'); settle(page, 400)
     check('M7: Drawing 1 deleted, the circle (Drawing 2 before) stays hidden', page.evaluate(vis) == ['hidden'] and 'circle (1)' in src(page), page.evaluate(vis))
-    reload(page)
+    # (a document loaded before rikuy.ready could be replaced by the project init reads back: ready())
+    page.reload(); ready(page); settle(page, 500)
     load_doc(page, TWO_D); settle(page, 600, full=True)
     check('M7: after a reload the circle is hidden again, the rectangle shown', page.evaluate(vis) == ['visible', 'hidden'], page.evaluate(vis))
     # review N7: the hidden one formatted (selected through the pane) or renamed stays hidden
@@ -868,7 +860,7 @@ def selpane(page):
     fig_vis = "getComputedStyle(document.querySelector('#pages svg.tz').closest('.raw')).visibility"
     page.get_by_role('textbox', name='Name of A box').fill('fig:box'); page.get_by_role('textbox', name='Name of A box').press('Enter'); settle(page, 400, full=True)
     check('N7: the hidden figure renamed (fig:a to fig:box) stays hidden', 'fig:box' in src(page) and page.evaluate(fig_vis) == 'hidden' and page.evaluate("document.querySelector('[aria-label=\"Show A box\"]').getAttribute('aria-pressed')") == 'false', page.evaluate(fig_vis))
-    reload(page)
+    page.reload(); ready(page); settle(page, 500)
     load_doc(page, D.replace('fig:a', 'fig:box')); settle(page, 600)
     check('N7: and after a reload', page.evaluate(fig_vis) == 'hidden', page.evaluate(fig_vis))
     page.evaluate('() => { localStorage.removeItem("galley.selhidden.v1"); window.rikuy.selHiddenFor = null; window.rikuy.selHidden.clear(); window.rikuy.selApplyHidden(); }')
