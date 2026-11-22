@@ -1667,6 +1667,18 @@ class App {
       if (k === 'a' && !e.shiftKey) { e.preventDefault(); this.selectAllText(); return; }
       if (e.key === 'End' && this.textEnd(e.shiftKey)) { e.preventDefault(); return; }
     }
+    // (Home and End in the mark of an empty format, Ctrl+B's \textbf{} waiting for words: the mark
+    // is a box of its own, and the browser's Home and End stayed in it or stopped beside it; from
+    // just outside it, the mark drawn inline while the browser moves, they go to the line's ends)
+    if ((e.key === 'Home' || e.key === 'End') && !mod && !e.altKey) {
+      const s = getSelection(), n = s.rangeCount ? s.focusNode : null, ph = n && (n.nodeType === 1 ? n : n.parentElement).closest('span.t.ph');
+      if (ph && this.root.contains(ph)) {
+        const p = ph.parentNode, i = [...p.childNodes].indexOf(ph) + (e.key === 'End' ? 1 : 0);
+        if (e.shiftKey) s.extend(p, i); else s.collapse(p, i);
+        ph.style.display = 'inline';
+        setTimeout(() => { ph.style.display = ''; }, 0);
+      }
+    }
     // out of a footnote at the page's foot: Esc, or Right at its end (Shift+F5 too: goBack)
     if ((e.key === 'Escape' && !this.pop) || (e.key === 'ArrowRight' && !e.shiftKey && !mod && !e.altKey)) {
       const F = this.footnoteHere(), c = F && this.caretNow();

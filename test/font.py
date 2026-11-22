@@ -849,6 +849,25 @@ def blank_formats(page):
     check('and Ctrl+B there turns it off for what is typed', body(page) == 'Some \\textbf{bold}\n\nx\n\nAnother.', body(page))
 
 
+def caret_formats(page):
+    """Ctrl+B with nothing selected, then the caret moved away untyped: nothing stays in the source."""
+    k = page.keyboard
+    at = lambda: page.evaluate('(() => { const c = window.rikuy.caretNow(); return c && c.a; })()')
+    steps = lambda: page.evaluate('window.rikuy.hist.length')
+    load_doc(page, DOC); click_text(page, 'plain', 5); k.press('Control+b'); settle(page, 120)
+    check('Ctrl+B at a word\'s end: an empty \\textbf{} waits there', 'Some plain\\textbf{} words' in body(page), body(page))
+    click_text(page, 'Another', 3); settle(page, 200, full=True)
+    check('a click elsewhere: it goes, no step left, the caret where clicked', src(page) == DOC and steps() == 0 and at() == DOC.index('Another') + 3, (body(page), steps(), at()))
+    load_doc(page, DOC); click_text(page, 'plain', 5); k.press('Control+u'); settle(page, 120); click_text(page, 'Another', 3); settle(page, 200, full=True)
+    check('Ctrl+U, then away: \\uline{} and the ulem line it brought both go, the caret where clicked', src(page) == DOC and at() == DOC.index('Another') + 3, (src(page), at()))
+    load_doc(page, DOC); click_text(page, 'plain', 5); k.press('Control+b'); settle(page, 80); k.press('Control+i'); settle(page, 80); k.press('End'); settle(page, 200, full=True)
+    check('Ctrl+B, Ctrl+I, End: both go and the caret is at the line\'s end', src(page) == DOC and steps() == 0 and at() == DOC.index('here.') + 5, (body(page), steps(), at()))
+    load_doc(page, DOC); click_text(page, 'plain', 5); k.press('Control+b'); settle(page, 80); k.press('Home'); settle(page, 200, full=True)
+    check('Ctrl+B, Home: it goes and the caret is at the line\'s start', src(page) == DOC and at() == DOC.index('Some'), (body(page), at()))
+    load_doc(page, DOC); click_text(page, 'plain', 5); k.press('Control+b'); settle(page, 300, full=True); k.type('xy'); settle(page, 120); click_text(page, 'Another', 3); settle(page, 200, full=True)
+    check('typed in, it stays: \\textbf{xy}', 'Some plain\\textbf{xy} words' in body(page), body(page))
+
+
 def phone_box(page, sel):
     """The rect of the last element sel matches, the smallest of its controls, and the page's sideways overflow."""
     return page.evaluate("""(sel) => { const all = [...document.querySelectorAll(sel)].filter((x) => x.offsetParent || getComputedStyle(x).position === 'fixed'); const p = all[all.length - 1];
@@ -1014,7 +1033,7 @@ def phones(p):
 
 def run():
     with sync_playwright() as p:
-        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, phones, compiles, r2_compiles)
+        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, caret_formats, phones, compiles, r2_compiles)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             if fn is phones:
                 phones(p)

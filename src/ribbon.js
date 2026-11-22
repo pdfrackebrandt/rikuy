@@ -184,14 +184,17 @@ export const ribbon = {
     if (this.src(w.f).slice(w.s, w.s + w.t.length) !== w.t) { this.rbEmpty = null; return; }
     if (c && !c.ghost && c.f === w.f && c.collapsed && c.a > w.s && c.a < w.s + w.t.length) return;
     this.rbEmpty = null;
-    const at = c && !c.ghost ? { f: c.f, p: c.f === w.f && c.a >= w.s + w.t.length ? c.a - w.t.length : c.a, bias: -1 } : null;
-    if (this.hist.length === w.h0 + 1) {
-      const h = this.hist.pop();
-      for (const d of h.files) { const s = this.files.get(d.f) ?? ''; this.files.set(d.f, s.slice(0, d.s) + d.del + s.slice(d.s + d.ins.length)); }
+    // (n: the steps that made it, a caret's formats one each, src/cmd/font.js watchFormat; a
+    // package one needed goes with them, before the body: the caret moves by what went before it)
+    const n = w.n || 1, L0 = this.src(w.f).length;
+    if (this.hist.length === w.h0 + n) {
+      for (const h of this.hist.splice(w.h0, n).reverse()) for (const d of h.files) { const s = this.files.get(d.f) ?? ''; this.files.set(d.f, s.slice(0, d.s) + d.del + s.slice(d.s + d.ins.length)); }
+      const gone = L0 - this.src(w.f).length;
+      const at = c && !c.ghost ? { f: c.f, p: c.f !== w.f ? c.a : Math.max(0, c.a - (c.a >= w.s + w.t.length ? gone : gone - w.t.length)), bias: -1 } : null;
       this.redoStack = w.redo0;
       this.rebuild(at);
       this.pushToSource(); this.saveSoon(); this.updateUndoUI();
-    } else this.commit([{ f: w.f, s: w.s, e: w.s + w.t.length, t: '' }], at, 'insert');
+    } else this.commit([{ f: w.f, s: w.s, e: w.s + w.t.length, t: '' }], c && !c.ghost ? { f: c.f, p: c.f === w.f && c.a >= w.s + w.t.length ? c.a - w.t.length : c.a, bias: -1 } : null, 'insert');
   },
 
   // The focus back on the page after a list or a menu took it: the place as it is now if the

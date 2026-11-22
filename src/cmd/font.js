@@ -246,8 +246,10 @@ export const methods = {
     const caret = a !== b && (!c.collapsed || o.keepWord) ? { f, p: b, selA: a, selB: b }
       : st.word != null ? { f, p: Math.min(a + st.word, b), bias: -1 } : { f, p: a === b ? a : b, bias: a === b && r && r.on ? 1 : -1 };
     this.closeGroup();
+    const mark = { h0: this.hist.length, redo0: this.redoStack };
     this.commit(edits, caret, 'format');
     this.closeGroup();
+    if (c.collapsed && a === b && st.word == null && !whole && !cells) this.watchFormat(f, a, mark);
     // (all of it stays selected, every file's)
     if (whole && this.selectAllText) this.selectAllText();
     return true;
@@ -278,6 +280,17 @@ export const methods = {
     this.ghost.wrap = x.text ? { open: x.text.slice(0, x.a), close: x.text.slice(x.a), needs } : null;
     this.ribbonSoon && this.ribbonSoon();
     return true;
+  },
+  // A caret's format (Ctrl+B with nothing selected) is an empty \textbf{} for what is typed next.
+  // Left empty, it goes again with the steps that made it (src/ribbon.js dropEmpty), as Word's
+  // waiting format leaves nothing behind: a \textbf{} stayed wherever the caret had been, drawn as
+  // nothing on the page. A second format on the same empty one (Ctrl+B, then Ctrl+I) joins its watch.
+  watchFormat(f, p, mark) {
+    const t = this.src(f);
+    let W = null;
+    for (const { W: X } of F.chainAt(t, p, p).reverse()) { if (W ? X.is === W.s && X.ie === W.e : X.is === p && X.ie === p) W = X; else break; }
+    const w = this.rbEmpty, on = w && w.fmt && w.f === f && W && W.s === w.s && this.hist.length === w.h0 + w.n + 1 ? w : null;
+    this.rbEmpty = !W ? null : on ? { ...on, t: t.slice(W.s, W.e), n: on.n + 1 } : { f, s: W.s, t: t.slice(W.s, W.e), ...mark, n: 1, fmt: true };
   },
   // the preamble's lines for what a blank paragraph's formats need, as edits of the main file
   fmtNeedsEdits(needs) {
@@ -310,8 +323,9 @@ export const methods = {
           opens.unshift(m[0] + '{');
         }
         if (opens.length) {
-          const ins = opens.join('') + '}'.repeat(opens.length);
+          const ins = opens.join('') + '}'.repeat(opens.length), mark = { h0: this.hist.length, redo0: this.redoStack };
           this.commit([{ f: c.f, s: W.e, e: W.e, t: ins }], { f: c.f, p: W.e + opens.join('').length, bias: -1 }, 'format');
+          this.watchFormat(c.f, W.e + opens.join('').length, mark);
         } else this.restoreCaret({ f: c.f, p: W.e, bias: -1 });
         this.ribbonSoon && this.ribbonSoon();
         return true;
