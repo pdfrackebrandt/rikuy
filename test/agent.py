@@ -132,6 +132,14 @@ def share(o):
     return HOME + '#share=1.' + payload
 
 
+def steady(o):
+    """A check's detail without what changes from run to run (a link's time and id, the seconds TeX
+    took), so the checks of two runs can be set side by side (dev/suite_runs.py's verify)."""
+    if isinstance(o, dict):
+        return {k: '-' if k in ('t', 'id') else steady(v) for k, v in o.items()}
+    return re.sub(r'\b\d+(\.\d+)? s\b', '- s', o) if isinstance(o, str) else o
+
+
 def toast(page):
     return page.evaluate("document.getElementById('toast').hidden ? '' : document.getElementById('toast').textContent")
 
@@ -339,7 +347,8 @@ def names(page, width):
     check('every control in view has its one name, and no other control has it' + w, not wrong and not twice and set(seen) == want, (wrong, twice, sorted(set(seen) ^ want)))
     if width > 1000:
         # (the gallery's tiles: Home's Find is found loosely with its arrow, Find options, as Word's)
-        loose = {NAMES[i]: page.get_by_role('button', name=NAMES[i]).count() for i in GALLERY if i.startswith('rb-st-') and page.locator('#' + i).is_visible()}
+        # (in a set order: GALLERY is a set, whose order changes from one run of Python to the next)
+        loose = {NAMES[i]: page.get_by_role('button', name=NAMES[i]).count() for i in sorted(GALLERY) if i.startswith('rb-st-') and page.locator('#' + i).is_visible()}
         check('each style button in view is found by its name also without exact matching ("LaTeX source", not "Download LaTeX")' + w, loose and all(v == 1 for v in loose.values()), loose)
     check('each keeps its longer hint as a title' + w, page.evaluate('(ids) => ids.every((i) => { const b = document.getElementById(i); return b.title.length > 3 && b.getAttribute("aria-label").length <= b.title.length + 12; })', [i for i in NAMES if i not in ('b-new', 'b-sample') and ROLE[i] != 'group']))
     check('no glyph is read as part of a name' + w, page.evaluate('''() => [...document.querySelectorAll('#bar svg, #ribbon svg, #ribbon b, #ribbon i, #ribbon u, #bubble b, #bubble i')].every((x) => x.getAttribute('aria-hidden') === 'true')'''))
@@ -607,7 +616,7 @@ def audit(page, cdp, width):
     page.wait_for_function('!window.rikuy.compiling && document.getElementById("pdf-live").textContent.length > 5', timeout=400000 if TREE else 30000)
     said = status.inner_text()
     check('what TeX did, or why it could not, is in the status region "PDF status", which is polite' + w, status.count() == 1 and status.get_attribute('aria-live') == 'polite'
-          and (('pdfLaTeX' in said and 'page' in said) if TREE else said.startswith('TeX could not run here.')) and page.evaluate("document.getElementById('pdf-status').textContent.trim().length > 0"), said)
+          and (('pdfLaTeX' in said and 'page' in said) if TREE else said.startswith('TeX could not run here.')) and page.evaluate("document.getElementById('pdf-status').textContent.trim().length > 0"), steady(said))
     close_all(page)
     # the ribbon's other tabs, the search box's list, the right click menu
     for name in ('Insert', 'References', 'Review', 'View', 'Help'):
@@ -800,11 +809,11 @@ def links(p):
     s = page.evaluate("({ name: rikuy.name, files: [...rikuy.files.keys()], guest: document.body.classList.contains('guest'), bar: document.getElementById('guest').hidden, mark: rikuy.linkCache.get(rikuy.name + '|main.tex'), href: location.href })")
     # (a document called main.tex is kept from the #tex= links above: this one opens beside it)
     check('a #share= link with no "name" and no "by" opens as one\'s own document, named by its main file, beside a kept one of that name', src(page) == DOC and s['name'].startswith('main.tex (from a link') and s['files'] == ['main.tex', 'refs.bib'] and s['guest'] is False and s['bar'] is True
-          and s['mark']['by'] == '' and s['mark']['allowed'] is False and s['href'] == HOME, s)
+          and s['mark']['by'] == '' and s['mark']['allowed'] is False and s['href'] == HOME, steady(s))
     go(page, share({'v': 1, 'name': 'Our paper', 'main': 'main.tex', 'files': [['main.tex', DOC]], 'by': 'An agent'}))
     s = page.evaluate("({ name: rikuy.name, guest: document.body.classList.contains('guest'), msg: document.getElementById('guest-msg').textContent, mark: rikuy.linkCache.get('Our paper|main.tex') })")
     check('with "by" it opens as that sender\'s guest: the bar names them and has Send back', s['name'] == 'Our paper' and s['guest'] and s['msg'].startswith('An agent shared this document with you.') and s['mark']['by'] == 'An agent'
-          and page.get_by_role('button', name='Send back', exact=True).is_visible(), s)
+          and page.get_by_role('button', name='Send back', exact=True).is_visible(), steady(s))
     go(page, HOME + '#share=1.' + 'A' * 40)
     check('a broken #share= link says so and keeps the open document', toast(page).startswith('Could not open the link: ') and page.evaluate('rikuy.name') == 'Our paper', toast(page))
     # a second link under the same name is a revised document, not "the one already open"
@@ -950,7 +959,9 @@ def webmcp(p):
     allow.click()
     settle(page, 100)
     early = page.get_by_role('dialog', name='Allow the AI agent?', exact=True).count()
-    settle(page, 500)
+    # (the time is under test: a press counts only once the question has stood half a second, ARM
+    # in src/agent.js, measured by the clock and not by a timer of the page's)
+    page.wait_for_timeout(500)
     allow.click()
     r = answered(page)
     check('the question says what goes (the file, how much, the words it starts with); a press in its first half second counts for nothing (a click meant for what was there before)',
@@ -1054,7 +1065,9 @@ def review(p):
         page.on('download', lambda d: downloads.append(d.suggested_filename))
         page.context.on('page', lambda q: popups.append(q.url))
         out = {i: quick(page, 'run_command', {'id': i}) for i in ('download-latex', 'save-as', 'download-pdf', 'export-as', 'help-report', 'ask-grok', 'new-document', 'load-sample')}
-        settle(page, 1500)
+        # (the time is under test: no download, window or other document may come in it, and a
+        # wrongly run command would bring them by work of its own, not by a timer of the page's)
+        page.wait_for_timeout(1500)
         check('H1, L1: a download, Save As, Export, a report or question on another site, another document: never run by a tool, no question, the person told where to press it (personOnly)',
               all(r.get('personOnly') is True and r.get('ran') is False and 'Only the person does this' in r.get('why', '') and r.get('undoSteps') == 0 for r in out.values())
               and 'F12' in out['save-as']['why'] and 'Download menu' in out['download-pdf']['why'] and not downloads and not popups and page.locator('dialog.rk-agent-ask').count() == 0 and src(page) == DOC,
@@ -1065,7 +1078,8 @@ def review(p):
         check('H1: Share is prepared, not done: the Share panel opens and the person presses Copy link there; no link made',
               sh.get('personOnly') and sh.get('prepared') is True and 'Copy link' in sh['why'] and panel == 1 and page.locator('.share-link').count() in (0, 1) and not page.evaluate("!!(document.querySelector('.share-link') && document.querySelector('.share-link').value)"), sh)
         lk = page.evaluate("() => { const g = window.rikuy; g.agentDepth = 1; try { return g.openLink('https://example.org/'); } finally { g.agentDepth = 0; } }")
-        settle(page, 300)
+        # (the time is under test: no window may open in it)
+        page.wait_for_timeout(300)
         check('H1: while a tool runs the page opens no link (App.openLink), whatever command asked', lk is False and not popups, (lk, popups))
     def h1_m1_question():
         # H1: the question says it is the person's and an agent must not answer it
@@ -1073,12 +1087,15 @@ def review(p):
         q = page.get_by_role('dialog', name='Allow the AI agent?').inner_text()
         focus = page.evaluate('document.activeElement.textContent')
         # M1: a person typing when the question comes answers nothing: Tab, a letter, Space, Enter
-        settle(page, 600)
+        # (the time is under test: the question has stood past its first half second, ARM in
+        # src/agent.js, so what holds the keys after Tab is the focus's own half second)
+        page.wait_for_timeout(600)
         page.keyboard.press('Tab'); on = page.evaluate('document.activeElement.textContent')
         page.keyboard.type('b'); page.keyboard.press(' '); page.keyboard.press('Enter')
         settle(page, 200)
         open1 = page.get_by_role('dialog', name='Allow the AI agent?', exact=True).count()
-        settle(page, 300); page.keyboard.press(' '); settle(page, 700); page.keyboard.press(' ')
+        # (the time is under test: Space pressed again well after Allow's half second answers nothing)
+        page.wait_for_timeout(300); page.keyboard.press(' '); page.wait_for_timeout(700); page.keyboard.press(' ')
         settle(page, 200)
         open2 = page.get_by_role('dialog', name='Allow the AI agent?', exact=True).count()
         page.keyboard.press('Escape'); r = answered(page)
@@ -1086,7 +1103,8 @@ def review(p):
         check("M1: Allow never has the focus first; Tab to it, a letter, Space and Enter as a person types answer nothing; Space never answers",
               focus == "Don't allow" and on == 'Allow' and open1 == 1 and open2 == 1 and r.get('refused') and src(page) == DOC, (focus, on, open1, open2, r))
         asking(page, 'set_source', {'text': DOC + '\n'})
-        settle(page, 600); page.keyboard.press('Tab'); settle(page, 700); page.keyboard.press('Enter')
+        # (the time is under test: Enter counts once Allow has held the focus half a second)
+        settle(page, 600); page.keyboard.press('Tab'); page.wait_for_timeout(700); page.keyboard.press('Enter')
         r = answered(page)
         check('M1: Enter on Allow once it has held the focus half a second answers yes', r.get('undoSteps') == 1 and src(page) == DOC + '\n', r)
         mcp(page, 'undo', {})
