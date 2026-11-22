@@ -639,7 +639,10 @@ export const collab = {
       const head = mk('button', 'cm-head'); head.type = 'button';
       head.append(mk('b', '', t.who), document.createTextNode(' ' + t.body));
       if (t.quote) head.prepend(mk('span', 'cm-q', '“' + t.quote + '” '));
-      head.addEventListener('click', () => { this.goTo(t.f, t.as); this.flashComment(t); });
+      // (the caret to the comment on the page, as Next Comment puts it and Word's pane does: the
+      // press only scrolled, and the next key or Delete Comment acted where the caret had been;
+      // a finger's tap brings no keyboard up)
+      head.addEventListener('click', () => { this.goTo(t.f, t.as); if (!matchMedia('(pointer: coarse)').matches) this.restoreCaret({ f: t.f, p: t.as, bias: 1 }, true); this.flashComment(t); });
       card.append(head);
       for (const r of t.replies) { const x = mk('div', 'cm-reply'); x.append(mk('b', '', r.who), document.createTextNode(' ' + r.body)); card.append(x); }
       const row = mk('div', 'pop-row');

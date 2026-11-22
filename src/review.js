@@ -611,7 +611,14 @@ export const review = {
     txt.append(mk('span', 'ctx', flat(pre)));
     for (const [op, v] of c.parts) txt.append(op === ' ' ? document.createTextNode(flat(clip(v))) : mk(op === '-' ? 'del' : 'ins', '', flat(clip(v)) || '¶'));
     txt.append(mk('span', 'ctx', flat(post)));
-    txt.addEventListener('click', () => { this.goTo(c.f, c.bs); if (window.innerWidth <= 860) this.toggleNav(false); });
+    // (the change selected on the page, as Next Change selects it and Word's Reviewing Pane does:
+    // the press only scrolled, and Accept or Reject then acted on the change at the old caret;
+    // a finger's tap brings no keyboard up)
+    txt.addEventListener('click', () => {
+      this.goTo(c.f, c.bs);
+      if (!matchMedia('(pointer: coarse)').matches) this.restoreCaret(c.be > c.bs ? { f: c.f, p: c.be, selA: c.bs, selB: c.be } : { f: c.f, p: c.bs }, true);
+      if (window.innerWidth <= 860) this.toggleNav(false);
+    });
     const row = mk('div', 'chg-row');
     const kind = !c.a ? 'Added' : !c.b ? 'Deleted' : 'Changed';
     row.append(mk('span', 'where', kind + ' · ' + this.rvName(c.who) + ' · ' + c.f + ':' + c.line), mk('span', 'grow'),

@@ -169,6 +169,25 @@ def hunt(p):
     page.keyboard.type('X'); settle(page, 150)
     check('hunt: and typing goes after the space', 'The Xparagraph has more words.' in src(page), src(page)[40:110])
     page.evaluate("window.rikuy.setTracking(false)")
+    # a change pressed in the Changes list is selected on the page: Reject then rejects that one
+    fresh(page)
+    page.evaluate("window.rikuy.setTracking(true)")
+    edit(page, 'some words', 'few words'); edit(page, 'more words', 'many words')
+    click_text(page, 'first paragraph', 0)
+    page.evaluate("window.rikuy.toggleNav(true, 'changes')"); settle(page, 300)
+    page.locator('#nav-body .chg-txt', has_text='many').first.click(); settle(page, 200)
+    sel = page.evaluate('String(getSelection())')
+    page.evaluate("window.rikuy.runCommand('change-reject')"); settle(page, 250)
+    check('hunt: a change pressed in the Changes list is selected on the page, and Reject rejects that one', sel == 'many' and 'few words' in src(page) and 'more words' in src(page), (sel, src(page)[40:130]))
+    page.evaluate("window.rikuy.setTracking(false)")
+    # a comment pressed in the pane: the caret goes to it, and Delete Comment deletes that one
+    fresh(page)
+    click_text(page, 'first paragraph', 0)
+    page.evaluate("window.rikuy.toggleNav(true, 'changes')"); settle(page, 300)
+    page.locator('#nav-body .cm-head', has_text='Shorter').first.click(); settle(page, 200)
+    page.evaluate("window.rikuy.runCommand('comment-delete')"); settle(page, 250)
+    check('hunt: a comment pressed in the pane puts the caret there: Delete Comment deletes that one', src(page) == DOC.replace('% comment (Bo): Shorter?\n', ''), src(page)[-160:])
+    page.evaluate("window.rikuy.toggleNav(false)")
     # the status bar counts what Word Count counts: the headings, a cell, a caption, a footnote
     load_doc(page, WRAP('\\section{Opening words}\nThe first paragraph has words.\\footnote{Two notes.}\n\n'
                         '\\begin{table}[h]\\centering\\begin{tabular}{ll}Cell one & Cell two\\\\\\end{tabular}\\caption{A caption}\\end{table}\n\n\\section{End}\nLast one.'))
