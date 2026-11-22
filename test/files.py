@@ -70,9 +70,12 @@ def marks():
             page.evaluate(SAID)
             page.set_input_files('#fileinput', path)
             page.wait_for_function('(m) => window.rikuy.main === m && window.rikuy.files.has(m)', arg=main, timeout=10000)
-            # (the open's last step is its message, after what it keeps in this browser)
+            # (the open's last step is its message, after what it keeps in this browser; what it says
+            # is that message and those before it: a message after it answers a write of its own, as
+            # another tab's copy found in storage, which one that is depends on when the test's other
+            # tab, closed a moment before, finished its last save)
             until(page, "() => window.rikuy.__said.some((t) => t.startsWith('Opened '))")
-            said = page.inner_text('#toast')
+            said = page.evaluate("() => { const s = window.rikuy.__said, k = s.findIndex((t) => t.startsWith('Opened ')); return s.slice(0, k + 1).join(' | '); }")
             settle(page, 500)
             return {**page.evaluate(FLAGS), 'said': said}
         def openv(name, main):
