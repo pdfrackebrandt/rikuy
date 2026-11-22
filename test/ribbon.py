@@ -13,6 +13,7 @@ Styles gallery itself (its tiles, widths, paging, keys, More, Quote) is test/sty
 
 RIKUY_DIST names another dist/ (the claude.ai copy, built with RIKUY_SHARE, has the same ribbon)."""
 import os, re, sys, zipfile
+os.environ['RIKUY_WAIT_SHADOW'] = '1'  # DEBUG
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from browser import settle, ROOT, open_page, check, results, src, wait_src, click_text, select_text, load_doc
 from playwright.sync_api import sync_playwright
@@ -661,9 +662,16 @@ def latex_after_ghost(page):
     doc = WRAP('Before it.\n\n% rikuy: latex\nalpha line\n  beta line\n  gamma line\n\nAfter it.')
     AT = """([w, o]) => { const s = [...document.querySelectorAll('#pages span.t')].find((s) => s.textContent.includes(w)); const n = s.firstChild, i = n.data.indexOf(w) + o;
       const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + 1); const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }"""
+    page.evaluate("""() => { window.__log = []; const T = () => Math.round(performance.now()); const g = window.rikuy; const rg = g.removeGhost.bind(g); g.removeGhost = function () { if (g.ghost) window.__log.push('removeGhost ' + T() + ' ' + new Error().stack.split('\\n').slice(2, 7).map((s) => s.trim().slice(0, 60)).join(' | ')); return rg(); };
+      const rl = g.relayout.bind(g); g.relayout = function (...a) { window.__log.push('relayout ' + T() + ' ' + new Error().stack.split('\\n').slice(2, 5).map((s) => s.trim().slice(0, 60)).join(' | ')); return rl(...a); };
+      document.fonts.addEventListener('loadingdone', (e) => window.__log.push('fontsdone ' + T() + ' ' + e.fontfaces.map((f) => f.style + ' ' + f.weight + ' ' + f.family).join(', ')));
+      new ResizeObserver(() => window.__log.push('desk ' + T() + ' ' + document.getElementById('desk').clientWidth + 'x' + document.getElementById('desk').clientHeight)).observe(document.getElementById('desk'));
+      document.addEventListener('selectionchange', () => window.__log.push('sel ' + T() + ' ghost ' + !!g.ghost)); }""")
     def ghost_under_beta():
-        load_doc(page, doc); click_text(page, 'beta line', 9); page.keyboard.press('Enter'); settle(page, 150)
-        return page.evaluate('!!window.rikuy.ghost && window.rikuy.ghost.tex') == 'after'
+        load_doc(page, doc); click_text(page, 'beta line', 9); page.evaluate('() => window.__log.push("enter " + Math.round(performance.now()))'); page.keyboard.press('Enter'); settle(page, 150)
+        r = page.evaluate('!!window.rikuy.ghost && window.rikuy.ghost.tex') == 'after'
+        page.evaluate('() => window.__log.push("read " + Math.round(performance.now()))')
+        return r
     for what, word, off, act, want in (('a click after the line to come, then typing', 'gamma', 2, 'Z', '  gaZmma line'), ('a click before it, then typing', 'alpha', 2, 'Z', 'alZpha line'),
                                        ('a double click on a word after it, then typing', 'gamma', 2, 'W', '  W line'), ('a double click on a word before it, then Backspace', 'alpha', 2, 'Backspace', '% rikuy: latex\n line\n')):
         ok = ghost_under_beta()
@@ -671,7 +679,9 @@ def latex_after_ghost(page):
         (page.mouse.dblclick if 'double' in what else page.mouse.click)(x, y); settle(page, 250)
         page.keyboard.press(act) if act == 'Backspace' else page.keyboard.type(act)
         settle(page, 200)
-        check('after a line to come: %s acts where it was put' % what, ok and want in src(page) and len(boxes(page)) == 1, body(page))
+        check('after a line to come: %s acts where it was put' % what, ok and want in src(page) and len(boxes(page)) == 1, (ok, boxes(page), body(page)))
+        if not (ok and want in src(page) and len(boxes(page)) == 1): print('DEBUG', what, page.evaluate('window.__log'))
+        page.evaluate('() => { window.__log = []; }')
     load_doc(page, doc); click_text(page, 'alpha line', 10); page.keyboard.press('Enter'); page.keyboard.press('ArrowDown'); settle(page, 150)
     page.keyboard.type('Z'); settle(page, 200)
     check('after a line to come: ArrowDown and typing write in the next line', 'gamma lineZ' not in src(page) and 'Z' in body(page).split('alpha line')[1].split('gamma')[0], body(page))
