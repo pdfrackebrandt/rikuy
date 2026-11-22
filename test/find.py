@@ -627,6 +627,11 @@ def hunt(page):
     d.get_by_label('Replace with', exact=True).fill('dog')
     d.get_by_role('button', name='Replace one', exact=True).click(); settle(page, 250)
     check('hunt: a selected hit, Ctrl+H, one press of Replace: it is replaced, the next one shown', src(page) == doc.replace('Alpha cat', 'Alpha dog') and summary(page) == 'Result 1 of 1', (src(page)[40:80], summary(page)))
+    # Replace All where the replacement holds the words found: none is left, all are replaced
+    d.get_by_label('Replace with', exact=True).fill('cats')
+    d.get_by_role('button', name='Replace All', exact=True).click(); settle(page, 300)
+    st = d.get_by_role('status').first.inner_text()
+    check('hunt: Replace All of cat with cats says Replaced 1 place, not that the new one is left', src(page) == doc.replace('Alpha cat', 'Alpha dog').replace('cat two', 'cats two') and st == 'Replaced 1 place.', (src(page)[40:80], st))
     page.keyboard.press('Escape'); settle(page, 150)
 
 

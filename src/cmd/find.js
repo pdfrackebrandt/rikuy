@@ -386,7 +386,7 @@ export const methods = {
   findSummary() {
     const fs = this.findState();
     // (what Replace did, until the next search or step)
-    if (fs.note) return fs.note + (fs.hits.length ? ' ' + plural(fs.hits.length, 'result is', 'results are') + ' left.' : '');
+    if (fs.note) { const n = fs.noteLeft && fs.noteLeft.note === fs.note ? fs.noteLeft.n : fs.hits.length; return fs.note + (n ? ' ' + plural(n, 'result is', 'results are') + ' left.' : ''); }
     if (fs.msg && !fs.hits.length) return fs.msg;
     if (!fs.on || (!fs.q && !fs.o.fmt)) return '';
     if (!fs.hits.length) return fs.o.insel ? 'Not found in the selection.' : 'Not found.';
@@ -612,8 +612,15 @@ export const methods = {
     this.commit(edits, c && c.f != null ? { f: c.f, p: c.a } : null, 'replace-all');
     this.closeGroup();
     const n = ok.length;
+    // (where the replacements stand now: a hit found again inside one is the new text, none left
+    // to replace; "cat" to "cats" said "2 results are left", "the" to "THE" 4,220)
+    const now = new Map();
+    for (const ed of edits) { if (!now.has(ed.f)) now.set(ed.f, []); now.get(ed.f).push(ed); }
+    for (const [f, list] of now) { let d = 0; now.set(f, list.sort((x, y) => x.s - y.s).map((ed) => { const r = [ed.s + d, ed.s + d + ed.t.length]; d += ed.t.length - (ed.e - ed.s); return r; })); }
+    const inNew = (h) => { const R = now.get(h.f); if (!R) return false; let lo = 0, hi = R.length - 1, k = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (R[m][0] <= h.s) { k = m; lo = m + 1; } else hi = m - 1; } return k >= 0 && h.e <= R[k][1]; };
     this.findRun();
     fs.note = 'Replaced ' + plural(n, 'place', 'places') + left + '.';
+    fs.noteLeft = { note: fs.note, n: fs.hits.filter((h) => !inNew(h)).length };
     this.findPaint();
     this.findViews();
     return n;
