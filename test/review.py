@@ -135,8 +135,26 @@ def r4(p):
         browser.close()
 
 
+def hunt(p):
+    """What a heavy Word user met in the bug hunt of 2026-11-22, each a regression check."""
+    browser, page, errors = open_page(p, width=1366, height=900)
+    # a comment goes where the caret is: a word selected earlier and left was where it went
+    fresh(page)
+    page.evaluate("window.rikuy.prefs.who = 'Ana'")
+    select_text(page, 'second paragraph'); settle(page, 100)
+    click_text(page, 'third paragraph', 4)
+    page.keyboard.press('Control+Alt+m'); settle(page, 250)
+    page.keyboard.type('Caret note'); page.keyboard.press('Control+Enter'); settle(page, 250)
+    s = src(page)
+    check('hunt: New Comment with the caret in the third paragraph hangs there, not under the words selected before',
+          s.find('Caret note') > s.find('third paragraph') and s.replace('% comment (Ana): Caret note\n', '') == DOC, s[-200:])
+    check('hunt: no page errors', not errors, errors[:5])
+    browser.close()
+
+
 def run():
     with sync_playwright() as p:
+        hunt(p)
         browser, page, errors = open_page(p, width=1366, height=900)
         fresh(page)
         st = lambda: page.evaluate("document.getElementById('st-track').textContent")
@@ -460,9 +478,9 @@ def run():
 
 
 if __name__ == '__main__':
-    if sys.argv[1:] == ['r4']:
+    if sys.argv[1:] in (['r4'], ['hunt']):
         with sync_playwright() as p:
-            r4(p)
+            (r4 if sys.argv[1] == 'r4' else hunt)(p)
         bad = [r for r in results if not r[1]]
         print(f"{len(results) - len(bad)}/{len(results)} passed")
         sys.exit(1 if bad else 0)
