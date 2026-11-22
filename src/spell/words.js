@@ -48,7 +48,9 @@ export function blockRuns(B, o = {}, runs = []) {
   };
   const walk = (v, depth) => {
     if (!v || typeof v !== 'object' || depth > 60) return;
-    if (Array.isArray(v)) { for (const x of v) walk(x, depth + 1); return; }
+    // (a list of lists is fields of their own, as a title's authors: "A. Author" and "B. Author"
+    // ran together into one word, AuthorB)
+    if (Array.isArray(v)) { for (const x of v) { walk(x, depth + 1); if (Array.isArray(x)) flush(); } return; }
     if (v.k === 'seg') { seg(v); return; }
     if (v.k === 'sty') {
       if (v.ro || (!o.code && (CODE_ST.has(v.st) || CODE_CMDS.has(v.cmd)))) { flush(); return; }

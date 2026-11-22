@@ -149,6 +149,16 @@ def hunt(p):
     s = src(page)
     check('hunt: New Comment with the caret in the third paragraph hangs there, not under the words selected before',
           s.find('Caret note') > s.find('third paragraph') and s.replace('% comment (Ana): Caret note\n', '') == DOC, s[-200:])
+    # (review of PR 119) a click inside the words selected before is a caret of its own too: the
+    # comment hangs under the clicked line, not under the old selection's last line
+    two = WRAP('The second paragraph\nhas more words here.\n\nThe end.')
+    fresh(page, two)
+    page.evaluate("window.rikuy.prefs.who = 'Ana'")
+    select_text(page, 'paragraph has more'); settle(page, 100)
+    click_text(page, 'paragraph has more', 3)
+    page.keyboard.press('Control+Alt+m'); settle(page, 250)
+    page.keyboard.type('Inside note'); page.keyboard.press('Control+Enter'); settle(page, 250)
+    check('hunt: a click inside the words selected before, then New Comment: the comment at the caret\'s line, no quote of the old words', 'The second paragraph\n% comment (Ana): Inside note\nhas more' in src(page), src(page)[40:180])
     # a word deleted letter by letter, Track Changes on, then one more Backspace: the space goes,
     # not the letter before it; Delete there takes the space after
     fresh(page)
@@ -169,6 +179,29 @@ def hunt(p):
     page.keyboard.type('X'); settle(page, 150)
     check('hunt: and typing goes after the space', 'The Xparagraph has more words.' in src(page), src(page)[40:110])
     page.evaluate("window.rikuy.setTracking(false)")
+    # (review of PR 119) a space typed at a source line's end, then Delete or Backspace: the
+    # space or the line's end goes, never the next line's first letter; a word deleted at a line's
+    # start, then Backspace; a control space; Ctrl+Backspace takes the word
+    def keys(doc, at, k, typed=''):
+        load_doc(page, WRAP(doc)); settle(page, 100)
+        click_text(page, at[0], at[1])
+        if typed: page.keyboard.type(typed)
+        for x in k: page.keyboard.press(x)
+        settle(page, 150)
+        b = src(page)
+        return b[b.index('document}\n') + 10:b.rindex('\n\\end{doc')]
+    got = keys('The\nparagraph here.', ('The', 3), ['Delete'], ' ')
+    check('hunt: a space typed at a line\'s end, then Delete: "The paragraph", not the p of the next line', got == 'The paragraph here.', got)
+    got = keys('The\nparagraph here.', ('The', 3), ['Backspace'], ' ')
+    check('hunt: and Backspace there takes the typed space', got == 'The\nparagraph here.', got)
+    got = keys('The\nsecond paragraph.', ('second', 6), ['Backspace'] * 7)
+    check('hunt: a word deleted at a line\'s start, then Backspace: the line\'s end goes ("The paragraph")', got == 'The paragraph.', got)
+    got = keys('Dr.\\ second Smith.', ('second', 6), ['Backspace'] * 7)
+    check('hunt: after a control space (\\ ) Backspace takes it whole, not its backslash alone', got == 'Dr. Smith.', got)
+    got = keys('Dr.\\ second Smith.', ('second', 6), ['Backspace'] * 6 + ['Delete'])
+    check('hunt: and Delete there takes the space after it, not the S of "Smith" (a space the browser does not draw)', got == 'Dr.\\ Smith.', got)
+    got = keys('The\nparagraph here.', ('The', 3), ['Control+Backspace'], ' ')
+    check('hunt: Ctrl+Backspace there takes the word before ("The "), not one space', got == '\nparagraph here.', got)
     # a change pressed in the Changes list is selected on the page: Reject then rejects that one
     fresh(page)
     page.evaluate("window.rikuy.setTracking(true)")
@@ -214,6 +247,13 @@ def hunt(p):
     page.locator('#rv-count-notes').check(); page.keyboard.press('Escape'); settle(page, 150)
     select_text(page, 'Opening words'); settle(page, 200, full=True)
     check('hunt: a heading selected counts its words in the status bar: 2 of 18', page.inner_text('#st-words') == '2 of 18 words', page.inner_text('#st-words'))
+    # (review of PR 119) Ctrl+A counts what the total counts: a word split over \textbf, a word the
+    # line cut, the authors of a title apart
+    load_doc(page, '\\documentclass{article}\n\\title{T}\\author{A. Author \\and B. Author}\n\\begin{document}\n\\maketitle\nA \\textbf{well}-known and \\emph{don\'t}s word. ' + ' '.join(['Extraordinarily'] * 60) + '\n\\end{document}\n')
+    settle(page, 200, full=True)
+    click_text(page, 'known', 0); page.keyboard.press('Control+a'); settle(page, 300, full=True)
+    bar = page.inner_text('#st-words')
+    check('hunt: Ctrl+A says as many words as the document has (well-known one word, the authors apart): 70 of 70', bar == '70 of 70 words', bar)
     check('hunt: no page errors', not errors, errors[:5])
     browser.close()
 
