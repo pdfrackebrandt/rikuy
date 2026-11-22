@@ -102,7 +102,9 @@ export const methods = {
       this.ribbonBack();
     });
     if (this.pop) this.pop.spellKey = sp ? sp.key : null;
-    this.ctxT = Date.now();
+    // (the guard is for the contextmenu event the menu key itself fires after Shift+F10 or the key:
+    // a menu opened by a right click set it too, and a second right click within 400 ms did nothing)
+    this.ctxT = x == null ? Date.now() : 0;
     return true;
   }
 };
