@@ -1235,6 +1235,19 @@ def android_input(page, w):
     load_doc(page, doc); tap_text(page, 'paragraph', 3)
     page.evaluate(REGION, ['paragraph', 'paragraphs', 10]); comp_end(page, 'paragraphs')
     check(f'a suggestion taken for the marked word replaces it ({w})', 'First paragraphs here' in src(page), body_of(page)[:60])
+    # a suggestion that keeps the old word's last letters ("here" to "there"), and a selected word
+    # typed over with a word ending as it did ("here" to "the"): the caret after the whole new word
+    load_doc(page, doc); tap_text(page, 'here.', 2)
+    page.evaluate(REGION, ['here', 'there', 5]); comp_end(page, 'there')
+    page.keyboard.type('Q'); settle(page, 200)
+    check(f'after a suggestion ending as the old word did, the caret is after it ({w})', 'Second paragraph thereQ.' in src(page), body_of(page)[-40:])
+    load_doc(page, doc); select_text(page, 'here', 1)
+    cdp = page.context.new_cdp_session(page)
+    for t in ('t', 'th', 'the'):
+        cdp.send('Input.imeSetComposition', {'text': t, 'selectionStart': len(t), 'selectionEnd': len(t)}); settle(page, 40)
+    cdp.send('Input.insertText', {'text': 'the'}); settle(page, 100)
+    cdp.send('Input.insertText', {'text': ' x'}); settle(page, 150)
+    check(f'a word composed over a selection ending as it did leaves the caret after it ({w})', 'Second paragraph the x.' in src(page), body_of(page)[-40:])
     # words composed one by one, as a keyboard types them, at the end of a paragraph before a list:
     # the second after a space that ends the paragraph so far (the page draws that caret at the
     # list's start, caretNow() knows the place)

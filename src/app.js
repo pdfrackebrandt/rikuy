@@ -2663,7 +2663,7 @@ class App {
       if (!P || P.ghost || P.f !== r.f || (map.length && P.p < map[map.length - 1])) return r;
       map.push(P.p);
     }
-    return { ...r, old, map };
+    return { ...r, old, map, n, o: tr.startOffset };
   }
   onCompEnd(e) {
     this.composing = false;
@@ -2679,24 +2679,32 @@ class App {
     if (c.ghost) { if (data && this.ghost) this.ghostInsert(this.ghostRaw() ? data : escapeTeX(data, ' ')); else this.relayout(true); return; }
     // what the composition replaced, where its first change said (a word marked on Android, the
     // caret in it elsewhere): only the letters that differ, so a format inside the word stays
+    // (the caret goes where the keyboard left it in the composed word, kept letters included:
+    // "here" selected and "the" typed keeps the old "e", and the caret after it, not before;
+    // at, a place before the letters written, or past, kept letters it is after)
+    let at = null, past = 0;
     if (F && F.f === c.f) {
       let a = F.a, b = F.b;
       if (F.map) {
-        const o = F.old;
+        const o = F.old, s = getSelection();
         let P = 0, S = 0;
         while (P < o.length && P < data.length && o[P] === data[P]) P++;
         while (S < o.length - P && S < data.length - P && o[o.length - 1 - S] === data[data.length - 1 - S]) S++;
         a = F.map[P]; b = F.map[o.length - S];
+        const q = s.rangeCount && s.isCollapsed && s.focusNode === F.n && s.focusOffset >= F.o && s.focusOffset <= F.o + data.length ? s.focusOffset - F.o : data.length;
+        if (q < P) at = F.map[q];
+        else if (q > data.length - S) past = F.map[o.length - (data.length - q)] - b;
         data = data.slice(P, data.length - S);
       }
       c = { f: F.f, a, b, collapsed: a === b };
     }
     // The browser mutated the DOM; rebuild from source regardless.
     this.forceRender = true;
-    if (!data && c.collapsed) { this.rebuild({ f: c.f, p: c.a }); return; }
+    if (!data && c.collapsed) { this.rebuild({ f: c.f, p: at ?? c.a + past }); return; }
     const T = this.compTex;
     this.compTex = null;
-    if (T && T.f === c.f) { this.texEdit(T, c.a, c.b, data, 'type'); return; }
+    // (LaTeX shown as it is: the composed word over what it replaced, the caret after it)
+    if (T && T.f === c.f) { if (F && F.f === c.f) this.texEdit(T, F.a, F.b, e.data || '', 'type'); else this.texEdit(T, c.a, c.b, data, 'type'); return; }
     const src = this.src(c.f);
     const edits = c.collapsed ? [] : this.deletionEdits(c.f, c.a, c.b);
     const raw = this.texAt(c.f, c.a);
@@ -2704,7 +2712,7 @@ class App {
     if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, c.a)) t = '{}' + t;
     // the deletions of a replaced selection lie after c.a: they do not move the caret back
     const removedBefore = edits.filter((ed) => ed.e <= c.a).reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
-    this.commit(t ? [...edits, { f: c.f, s: c.a, e: c.a, t }] : edits, { f: c.f, p: c.a - removedBefore + t.length }, 'type');
+    this.commit(t ? [...edits, { f: c.f, s: c.a, e: c.a, t }] : edits, { f: c.f, p: at ?? c.a - removedBefore + t.length + past }, 'type');
   }
 
   // ---- clipboard ------------------------------------------------------------------
