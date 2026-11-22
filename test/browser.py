@@ -1831,21 +1831,24 @@ def word_typing(page):
     x, y = at('First paragraph'); page.mouse.click(x, y, click_count=3); settle(page, 120, full=True)
     k.type('Z'); settle(page, 100)
     first = WORD_DOC[WORD_DOC.index('First paragraph'):WORD_DOC.index('\n\nSecond')]
-    check('a triple click on a paragraph with a formula, a footnote, a reference and a citation selects all of it: a letter replaces it', src(page) == WORD_DOC.replace(first, 'Z'), src(page)[40:200])
+    para = src(page)
     load_doc(page, WORD_DOC)
     x, y = at('Background'); page.mouse.click(x, y, click_count=3); settle(page, 120, full=True)
     k.type('Z'); settle(page, 100)
-    check('a triple click on a heading, then a letter: the heading\'s words are replaced, the heading stays', src(page) == WORD_DOC.replace('{Background}', '{Z}'), src(page)[300:])
+    check('a triple click on a paragraph with a formula, a footnote, a reference and a citation, then a letter, replaces all of it; on a heading, its words, the heading staying',
+          para == WORD_DOC.replace(first, 'Z') and src(page) == WORD_DOC.replace('{Background}', '{Z}'), (para[40:200], src(page)[300:]))
     # 3: words copied from two paragraphs are pasted as two paragraphs, as Word's are: copied from
     # a paragraph into the list item or the paragraph after a heading, they came as one run of
     # words, "only.Apple one" (only a blank line in the source counted as a paragraph's end)
     page.context.grant_permissions(['clipboard-read', 'clipboard-write'])
     end = 'of the document.'
+    bad = []
     for a, z, want in (('Second', 'Apple one', 'Second paragraph is plain text only.\n\nApple one'), ('Background', 'Last', '\\section{Background}\n\nLast'), ('bold', 'italic', 'bold words and italic')):
         load_doc(page, WORD_DOC)
         place(page, (a, z)); k.press('Control+c'); settle(page, 50)
         click_text(page, end, len(end)); k.press('Control+v'); settle(page, 100)
-        check('copied from "%s" to "%s" and pasted: %r' % (a, z, want), src(page) == WORD_DOC.replace(end, end + want), src(page)[-80:])
+        if src(page) != WORD_DOC.replace(end, end + want): bad.append((a, z, src(page)[-80:]))
+    check('copied from a paragraph into a list item or from a heading into a paragraph, pasted: two paragraphs; across bold and italic in one paragraph: one line', not bad, bad)
     # (and what a selection holds whole goes with its formatting and structure, as Word's copy
     # keeps the paragraphs it holds: Select All, Copy, Paste gave every heading as plain words,
     # every list as paragraphs and every bold word plain)
@@ -1873,16 +1876,19 @@ def word_typing(page):
     load_doc(page, WORD_DOC.replace('of the document.', 'of the document.\\footnote{A note.}'))
     place(page, ('comes', 'After display')); k.press('Control+c'); settle(page, 50)
     click_text(page, 'A note', 2); k.press('Control+v'); settle(page, 100)
-    fn = src(page)[src(page).index('\\footnote{A'):]
-    check('a display copied into a footnote stays a display there', fn.startswith('\\footnote{A comes text.\n\\[ a = b \\]\nAfter displaynote.}'), fn[:80])
+    fn1 = src(page)[src(page).index('\\footnote{A'):]
     load_doc(page, WORD_DOC.replace('of the document.', 'of the document.\\footnote{A note.}'))
     place(page, ('Second', 'Apple one')); k.press('Control+c'); settle(page, 50)
     click_text(page, 'A note', 2); k.press('Control+v'); settle(page, 100)
     fn = src(page)[src(page).index('\\footnote{A'):]
-    check('two paragraphs copied into a footnote stay two paragraphs', fn.startswith('\\footnote{A Second paragraph is plain text only.\n\nApple onenote.}'), fn[:80])
+    check('copied into a footnote, a display stays a display and two paragraphs stay two', fn1.startswith('\\footnote{A comes text.\n\\[ a = b \\]\nAfter displaynote.}') and fn.startswith('\\footnote{A Second paragraph is plain text only.\n\nApple onenote.}'), (fn1[:80], fn[:80]))
     # 4: a selection holding whole headings or list items takes them with its words, as Word's
     # takes the paragraphs it holds; their words alone went, and an empty numbered heading or two
     # empty bullets stayed between the two paragraphs the deletion joined
+    # (one key at an item's start still takes no \item)
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Banana', 0); k.press('Backspace'); settle(page, 100)
+    kept = src(page) == WORD_DOC
     for a, z, key, old_, new_ in (('paragraph is', 'After', 'Backspace', 'paragraph is plain text only.\n\\begin{itemize}\n\\item Apple one\n\\item Banana two\n\\end{itemize}\nAfter', ''),
                                   ('display', 'Last', 'Z', 'display text.\n\n\\section{Background}\\label{sec:b}\nLast', 'Z'),
                                   ('one', 'Banana', 'Delete', 'one\n\\item Banana', '')):
@@ -1891,18 +1897,22 @@ def word_typing(page):
         if len(key) == 1: k.type(key)
         else: k.press(key)
         settle(page, 100)
-        check('selected from "%s" to "%s", then %s: what it held is gone, the paragraphs at its ends joined' % (a, z, key), src(page) == WORD_DOC.replace(old_, new_), src(page)[200:420])
+        check('selected from "%s" to "%s", then %s: what it held is gone, the paragraphs at its ends joined' % (a, z, key) + ('; Backspace at an item\'s start alone leaves the list as it was' if key == 'Delete' else ''),
+              src(page) == WORD_DOC.replace(old_, new_) and (key != 'Delete' or kept), (kept, src(page)[200:420]))
     # 5: Enter at a heading's start puts an empty paragraph above it and the caret stays, as
     # Word's: the empty paragraph showed below the heading, and words typed went after it
     load_doc(page, WORD_DOC)
     click_text(page, 'Background', 0); k.press('Enter'); k.type('Q'); settle(page, 100)
-    check('Enter at a heading\'s start, then a letter: it goes in the heading, at its start', src(page) == WORD_DOC.replace('{Background}', '{QBackground}'), src(page)[330:420])
+    check('Enter at a heading\'s start, then a letter: it goes in the heading, at its start (as at a paragraph\'s start, the empty paragraph is written only when typed in)', src(page) == WORD_DOC.replace('{Background}', '{QBackground}'), src(page)[330:420])
     load_doc(page, WORD_DOC)
     click_text(page, 'Background', 0); k.press('Enter'); k.press('ArrowUp'); k.type('New'); settle(page, 100)
     check('Enter at a heading\'s start, Up, words: a paragraph of their own above the heading', src(page) == WORD_DOC.replace('\\section{Background}', 'New\n\n\\section{Background}'), src(page)[330:420])
     load_doc(page, WORD_DOC)
-    click_text(page, 'Background', 0); k.press('Enter'); k.press('Backspace'); settle(page, 100)
-    check('Enter at a heading\'s start, then Backspace: as it was', src(page) == WORD_DOC, src(page)[330:420])
+    click_text(page, 'Background', 0); k.press('Enter'); settle(page, 100)
+    above = page.evaluate("() => { const h = [...document.querySelectorAll('#pages .it.h')].find((x) => x.textContent.includes('Background')); return !!h && !!h.previousElementSibling && h.previousElementSibling.classList.contains('ghostp') && !document.querySelectorAll('#pages .ghostp')[1]; }")
+    k.press('Backspace'); settle(page, 100)
+    gone = page.evaluate("() => !document.querySelector('#pages .ghostp')")
+    check('Enter at a heading\'s start shows the empty paragraph above it; Backspace takes it away, the source as it was', above and gone and src(page) == WORD_DOC, (above, gone, src(page)[330:420]))
     # 6: Enter twice at a list's end leaves it; the words typed next are a paragraph of their own,
     # also where the list's paragraph goes on after it: they ran into those words
     load_doc(page, WORD_DOC)
@@ -1935,10 +1945,6 @@ def word_typing(page):
     say = page.inner_text('#toast')
     k.press('Delete'); settle(page, 100)
     check('Delete before a display: "Press Delete again", and a second Delete takes the display', 'Press Delete again' in say and src(page) == WORD_DOC.replace('\\[ a = b \\]', ''), (say[:50], src(page)[300:380]))
-    # (one key at an item's start still takes no \item)
-    load_doc(page, WORD_DOC)
-    click_text(page, 'Banana', 0); k.press('Backspace'); settle(page, 100)
-    check('Backspace at a list item\'s start leaves the list as it was', src(page) == WORD_DOC, src(page)[250:350])
 
 if __name__ == '__main__':
     sys.exit(run())
