@@ -149,6 +149,26 @@ def hunt(p):
     s = src(page)
     check('hunt: New Comment with the caret in the third paragraph hangs there, not under the words selected before',
           s.find('Caret note') > s.find('third paragraph') and s.replace('% comment (Ana): Caret note\n', '') == DOC, s[-200:])
+    # a word deleted letter by letter, Track Changes on, then one more Backspace: the space goes,
+    # not the letter before it; Delete there takes the space after
+    fresh(page)
+    page.evaluate("window.rikuy.setTracking(true)")
+    click_text(page, 'second', 6)
+    for _ in range(6): page.keyboard.press('Backspace')
+    settle(page, 150)
+    caret = page.evaluate("(() => { const s = getSelection(); return s.anchorNode.data.slice(0, s.anchorOffset); })()")
+    check('hunt: the word "second" deleted letter by letter: the caret after the space it stood after', caret.endswith('The '), caret)
+    page.keyboard.press('Backspace'); settle(page, 150)
+    check('hunt: one more Backspace takes a space ("The paragraph"), never the e of "The"', 'The paragraph has more words.' in src(page) and page.evaluate(N) == 1, src(page)[40:110])
+    page.evaluate("window.rikuy.rejectAllChanges(false)"); settle(page, 200)
+    check('hunt: and Reject All gives the bytes back', src(page) == DOC, src(page)[40:110])
+    click_text(page, 'second', 6)
+    for _ in range(6): page.keyboard.press('Backspace')
+    page.keyboard.press('Delete'); settle(page, 150)
+    check('hunt: Delete there takes the space after the caret, not the p of "paragraph"', 'The paragraph has more words.' in src(page), src(page)[40:110])
+    page.keyboard.type('X'); settle(page, 150)
+    check('hunt: and typing goes after the space', 'The Xparagraph has more words.' in src(page), src(page)[40:110])
+    page.evaluate("window.rikuy.setTracking(false)")
     # the status bar counts what Word Count counts: the headings, a cell, a caption, a footnote
     load_doc(page, WRAP('\\section{Opening words}\nThe first paragraph has words.\\footnote{Two notes.}\n\n'
                         '\\begin{table}[h]\\centering\\begin{tabular}{ll}Cell one & Cell two\\\\\\end{tabular}\\caption{A caption}\\end{table}\n\n\\section{End}\nLast one.'))

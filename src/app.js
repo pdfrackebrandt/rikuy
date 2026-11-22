@@ -2049,6 +2049,16 @@ class App {
           }
         }
       }
+      // Inside a run of spaces the page draws as one (a word deleted letter by letter leaves "The
+      // paragraph" with two): Backspace takes the space before the caret and Delete the one after
+      // it, as Word takes one of its two spaces. The browser's range is the drawn space, which
+      // named the letter before it (that letter went) or the whole run (nothing went).
+      const P = this.pending, S = this.src(c.f), back = /Backward/.test(type);
+      if (P && P.f === c.f && P.p === c.a && /[ \t]/.test(S[back ? c.a - 1 : c.a] || '') && /[ \t\n]/.test(S[back ? c.a : c.a - 1] || '') && S[c.a - 2] !== '\\') {
+        const k = back ? c.a - 1 : c.a;
+        this.commit([{ f: c.f, s: k, e: k + 1, t: '' }], { f: c.f, p: k, bias: back ? -1 : 1 }, 'del');
+        return;
+      }
       const tr = ranges && ranges[0];
       let r = tr ? this.rangeToSrc(tr) : null;
       if (r && r.a === r.b) r = null;
