@@ -18,7 +18,7 @@ list that cannot be fetched said so, and fetched again), Update to Match Selecti
 with KOMA-Script and memoir; and, where dist/tex holds a TeX tree, all of it compiled in the page.
 
 Run it alone with names to run some: python3 styles.py gallery design."""
-import os, re, sys
+import os, re, sys, json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from browser import settle, ready, TIMERS, MOTION_OFF, _settled, ROOT, SKELETON_HEAD, ROUTES, open_page, check, results, src, wait_src, click_text, select_text, load_doc, roundtrip, pressed, place, PRINT_LAYOUT, policy
 from ribbon import DOC, DIST, state, style, undo_is, TILES, WRAP, body, boxes
@@ -35,6 +35,18 @@ ALL_NAMES = ['Normal*', 'Heading 1', 'Heading 2', 'Heading 3', 'Heading 4', 'Hea
              'Theorem', 'Lemma', 'Proposition', 'Corollary', 'Definition', 'Example', 'Remark', 'Proof']
 A = lambda body, pre='': '\\documentclass{article}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
 R = lambda body, pre='': '\\documentclass{report}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
+DIAG = """(() => { const L = window.__diag = [], t0 = performance.now(), now = () => Math.round(performance.now() - t0);
+  document.addEventListener('selectionchange', (e) => L.push(['sel', now(), e.target && (e.target.id || e.target.nodeName)]), true);
+  document.addEventListener('focusin', (e) => L.push(['focusin', now(), e.target.id || e.target.tagName]), true);
+  if (document.fonts) document.fonts.addEventListener('loadingdone', (e) => L.push(['fonts', now(), e.fontfaces.map((f) => f.family + ' ' + f.weight + ' ' + f.style + ' ' + f.unicodeRange.slice(0, 16)).join('|')]));
+  let app; Object.defineProperty(window, 'rikuy', { configurable: true, get: () => app, set: (v) => { app = v; for (const k of ['ribbonSync', 'relayout', 'rebuild', 'ribbonSoon']) { const f = v[k]; if (typeof f === 'function') v[k] = function () { L.push([k, now(), k === 'ribbonSync' ? String(!!(this.caretNow && this.caretNow())) + ' ' + (document.activeElement && document.activeElement.id) : '']); return f.apply(this, arguments); }; } } });
+  window.__mark = (m) => L.push([m, now()]); })()"""
+
+
+def diag(page, label, ok):
+    if not ok:
+        print('DIAG ' + label + ' ' + json.dumps(page.evaluate('window.__diag.slice(-80)')))
+
 P3 = 'Before it.\n\nWords here.\n\nAfter it.'
 
 
@@ -49,9 +61,15 @@ def create_style(page):
 
 
 def styles(page):
+    page.evaluate('__mark("start")')
     load_doc(page, DOC)
+    page.evaluate('__mark("loaded")')
     click_text(page, 'First paragraph', 6)
-    check('with the caret in a paragraph the style shows Normal text', state(page)['style'] == 'p')
+    page.evaluate('__mark("clicked")')
+    s0 = state(page)['style']
+    page.evaluate('__mark("checked")')
+    diag(page, 'styles', s0 == 'p')
+    check('with the caret in a paragraph the style shows Normal text', s0 == 'p')
     for value, cmd in (('section', '\\section'), ('subsection', '\\subsection'), ('subsubsection', '\\subsubsection')):
         load_doc(page, DOC); click_text(page, 'First paragraph', 6)
         style(page, value)
@@ -97,9 +115,12 @@ def styles(page):
 
 def gallery(page):
     """The Styles gallery: Word's look and behaviour, with Rikuy's styles."""
-    load_doc(page, DOC); click_text(page, 'First paragraph', 6)
+    page.evaluate('__mark("start")')
+    load_doc(page, DOC); page.evaluate('__mark("loaded")'); click_text(page, 'First paragraph', 6); page.evaluate('__mark("clicked")')
     st = state(page)
     tiles = page.evaluate(TILES)
+    page.evaluate('__mark("checked")')
+    diag(page, 'gallery', tiles == ['p*', 'section', 'subsection', 'subsubsection', 'latex', 'quote'])
     check('the gallery shows Normal, Heading 1 to 3, LaTeX and Quote in that order, Normal checked', tiles == ['p*', 'section', 'subsection', 'subsubsection', 'latex', 'quote'], tiles)
     look = page.evaluate("""() => { const g = document.getElementById('rb-gallery'), f = (id) => getComputedStyle(document.querySelector('#' + id + ' > span'));
       const cap = document.querySelector('.rb-cap'), cr = cap.getBoundingClientRect(), gr = g.getBoundingClientRect();
@@ -1403,7 +1424,7 @@ def run():
         if len(sys.argv) < 2 or 'r2_phone' in sys.argv[1:]:
             r2_phone(p)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
-            browser, page, errors = open_page(p, width=1920 if fn in wide else 1400)
+            browser, page, errors = open_page(p, width=1920 if fn in wide else 1400, init=DIAG if fn in (styles, gallery) else None)
             try:
                 fn(page)
             except Exception as e:
