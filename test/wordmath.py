@@ -235,6 +235,13 @@ try:
         # (Tab from the last box steps out of it: MathLive's selected the whole formula, which the
         # next key replaced, \frac{a}{b} lost for +c)
         (['\\frac', '@Space', 'a', '@Tab', 'b', '@Tab', '+c'], '\\frac{a}{b}+c'),
+        # (review of the above: a command named after \bm's Space is its argument, not \}alpha;
+        # a name ends at the first key that is no letter; a root the caret went back into takes
+        # what is typed there)
+        (['\\bm', '@Space', '\\alpha+1'], '\\bm{\\alpha}+1'),
+        # (the field writes the name upright inside: _x after it, not in it)
+        (['\\operatorname', '@Space', 'argmax', '@Space', '_x'], '\\operatorname{\\mathrm{argmax}}_x'),
+        (['\\sqrt', '@Space', 'x+1', '@ArrowLeft', '@ArrowLeft', '@ArrowLeft', '-2'], '\\sqrt{x-2}+1'),
     ]
     for seq, want in cases:
         fresh_row()
@@ -244,6 +251,11 @@ try:
         check('build-up: ' + ' '.join(seq) + ' -> ' + want, got == want or got == want.replace('^2', '^{2}') or one(got) == one(want), got)
         k.press('Escape'); settle(frame, 150)
         k.press('Control+z'); settle(frame, 150)
+    # (the cases compare without spaces: \text's own space checked here, as typed)
+    fresh_row(); typed(['\\text', '@Space', 'if x}+y'])
+    check('\\text Space keeps the words\' spaces', '\\text{if x}' in val(), val())
+    k.press('Escape'); settle(frame, 150)
+    k.press('Control+z'); settle(frame, 150)
     check('build-up tests leave the source as it was', src() == base)
 
     # Word brackets: typed pairs grow with their content, the source stays plain unless tall
