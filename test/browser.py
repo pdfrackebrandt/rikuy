@@ -60,11 +60,23 @@ results = []
 _CHECK_LOG = os.environ.get('RIKUY_CHECK_LOG')
 
 
+# (the log is for setting two runs side by side, so what is measured in time, which differs from
+# run to run, is written as <t>: a number with ms or s after it, a float with the long tail of
+# performance.now() arithmetic (layout's own fractions stop at 1/64 px, six places), and the
+# whole detail of a check whose name gives a time in ms, a latency or a long task)
+_TIMED = re.compile(r'\d\s?ms\b|\bms\b|latency|long(est)? tasks?|median', re.I)
+
+
+def _steady(text):
+    text = re.sub(r'\d+(?:\.\d+)?(?=\s?(?:ms|s)\b)', '<t>', text)
+    return re.sub(r'\d+\.\d{8,}', '<t>', text)
+
+
 def check(name, cond, detail=''):
     results.append((name, bool(cond), detail))
     if _CHECK_LOG:
         with open(_CHECK_LOG, 'a') as f:
-            f.write(json.dumps([name, bool(cond), repr(detail)[:4000]]) + '\n')
+            f.write(json.dumps([_steady(name), bool(cond), '<timed>' if _TIMED.search(name) else _steady(repr(detail)[:4000])]) + '\n')
     print(('PASS ' if cond else 'FAIL ') + name + ('' if cond else '  :: ' + str(detail)[:300]))
     return bool(cond)
 
@@ -74,13 +86,18 @@ def check(name, cond, detail=''):
 # way through a 150 ms entrance; test/motion.py runs with it on (open_page(motion=True)), and
 # RIKUY_MOTION=1 runs any suite with motion on.
 # What the page's timers will do and when (every context open_page() makes): each setTimeout that
-# has not yet run, by the time it is due. settle(page, ms) waits for those due within ms, the work
+# has not yet run, by the time it is due; and how many of its IndexedDB writes (readwrite
+# transactions) have not yet come back, for stored(). settle(page, ms) waits for those due within ms, the work
 # a fixed wait of ms let run, and no others. The test's own waits use the timers kept raw here, so
 # they wait on nothing of their own. Transparent to the page: same ids, same calls, same order.
 TIMERS = """(() => { if (window.__rkT) return; const raw = { st: setTimeout.bind(window), ct: clearTimeout.bind(window) }, due = new Map();
   window.setTimeout = function (fn, ms, ...a) { const id = raw.st(function () { due.delete(id); if (typeof fn === 'function') return fn.apply(this, a); }, ms); due.set(id, performance.now() + Math.max(0, Number(ms) || 0)); return id; };
   window.clearTimeout = function (id) { due.delete(id); return raw.ct(id); };
-  window.__rkT = { raw, due }; })()"""
+  const w = { n: 0 }, tx = IDBDatabase.prototype.transaction;
+  IDBDatabase.prototype.transaction = function (stores, mode, ...r) { const t = tx.call(this, stores, mode, ...r);
+    if (mode === 'readwrite') { w.n++; let open = true; const end = () => { if (open) { open = false; w.n--; } }; t.addEventListener('complete', end); t.addEventListener('abort', end); }
+    return t; };
+  window.__rkT = { raw, due, writes: w }; })()"""
 # (the raw timer where TIMERS is in, for the test's own waits: no timer of the page's)
 _RAW = '(window.__rkT ? window.__rkT.raw.st : setTimeout)'
 
@@ -294,11 +311,19 @@ def landed(page, before, h, f='main.tex', timeout=5000, ms=0):
     settle(page, ms)
 
 
-_FRAME = '() => new Promise((r) => requestAnimationFrame(() => RAW(r, 0)))'.replace('RAW', _RAW)
+# (a frame, then a task; where frames do not come, a page in the background, 100 ms instead)
+_FRAME = """() => new Promise((r) => { const st = RAW; let n = 0; const go = () => { if (!n++) st(r, 0); }; requestAnimationFrame(go); st(go, 100); })""".replace('RAW', _RAW)
 # (frames until no timer of the page's due by then waits; once one ran, a frame more for what it queued)
-_SETTLE = """(ms) => new Promise((done) => { const T = window.__rkT, end = performance.now() + ms, st = T ? T.raw.st : setTimeout; let ran = false;
-  const busy = () => !!T && [...T.due.values()].some((d) => d <= end);
-  const step = () => requestAnimationFrame(() => st(() => { if (busy()) { ran = true; step(); } else if (ran) { ran = false; step(); } else done(); }, 0)); step(); })"""
+_SETTLE = """([ms, after, writes]) => new Promise((done) => { const T = window.__rkT, g = window.rikuy, end = performance.now() + ms, st = T ? T.raw.st : setTimeout; let ran = false;
+  const busy = () => (!!T && [...T.due.values()].some((d) => d <= end)) || after.some((k) => g && g[k] && g[k].pending && g[k].pending()) || (writes && !!T && T.writes.n > 0);
+  const next = (f) => { let n = 0; const go = () => { if (!n++) st(f, 0); }; requestAnimationFrame(go); st(go, 100); };
+  const t0 = performance.now(), step = () => next(() => { if (busy()) { ran = true; if (performance.now() - t0 > 10000) done(false); else step(); } else if (ran) { ran = false; step(); } else done(true); }); step(); })"""
+
+
+def _settled(page, arg):
+    # (work named in after, or a write, that never stops waiting is a bug of its own: raised)
+    if page.evaluate(_SETTLE, arg) is False:
+        raise RuntimeError('the page never settled in 10 s: %r' % (arg,))
 
 
 def frame(page):
@@ -311,7 +336,12 @@ def frame(page):
 SOON = 80
 
 
-def settle(page, ms=0, full=False):
+# (the repaints every rebuild of the page sets going: Track Changes' marks at 180 ms, comments at
+# 200; settle(page, ms, after=REPAINTS) before a check on them, cheaper than full=True)
+REPAINTS = ('marksSoon', 'commentsSoon')
+
+
+def settle(page, ms=0, full=False, after=()):
     """The wait after a step, for what the step set going: its next frame (a menu placed, the
     ribbon fitted, the letters typed in one batch) and the page's timers due within SOON ms (the
     ribbon's refresh after the caret moved), then the frame after them. With full, every timer due
@@ -320,8 +350,9 @@ def settle(page, ms=0, full=False):
     the time the step once slept. Work that is not a timer (a fetch, a worker, a module loaded,
     IndexedDB) needs a condition of its own. RIKUY_WAIT_SHADOW=1 waits ms as well and prints SHADOW
     where the page still moved; RIKUY_CHECK_LOG keeps what every check saw, to set beside a run
-    with the old times."""
-    page.evaluate(_SETTLE, (ms or 0) if full else min(ms or 0, SOON))
+    with the old times. after names the page's debounced work to wait for as well, whenever it
+    is due (rikuy[name].pending(): REPAINTS, srcRebuild, syncSoon, problemsSoon...)."""
+    _settled(page, [(ms or 0) if full else min(ms or 0, SOON), list(after), False])
     if _SHADOW and ms:
         # (where: the line that waited, and the line that called it when that was a suite's helper)
         f, at = sys._getframe(1), []
@@ -331,11 +362,56 @@ def settle(page, ms=0, full=False):
         shadow(page, ms, '<'.join(at))
 
 
-def saved(page, ms=1200):
-    """The project kept in this browser, as a reload reads it: the save's timer (700 ms after the
-    last edit) has run, and its write has come back (the status bar's Saved)."""
+# (saved(): a save's writes have all come back when persist() calls noteSaveState with what they
+# kept, the status bar's Saved; the hook counts those calls, the page's own call going on as before)
+_SAVE_HOOK = """() => { const g = window.rikuy; if (!g.__rkSaveHook) { const f = g.noteSaveState;
+  g.noteSaveState = function (kept) { if (kept !== undefined) g.__rkSaves = (g.__rkSaves || 0) + 1; return f.apply(this, arguments); }; g.__rkSaveHook = true; }
+  g.__rkSaves0 = g.__rkSaves || 0; return !!g.unsaved; }"""
+# (no edit waiting to be saved, and the copy IndexedDB holds is the one this tab last wrote or
+# took, savedT: its own save back, or another tab's taken in; read in turns of 50 ms for at most
+# timeout ms, as a read made after a write of the page's sees that write)
+_KEPT = """(timeout) => new Promise((done) => { const g = window.rikuy, st = RAW, t0 = performance.now();
+  const kept = () => new Promise((ok) => { if (g.unsaved) return ok(false); if (g.noIdb || !g.savedT) return ok(true);
+    const r = indexedDB.open('galley'); r.onerror = () => ok(false);
+    r.onsuccess = () => { const db = r.result; try { const q = db.transaction('kv').objectStore('kv').get('project'); q.onsuccess = () => { db.close(); ok(!!q.result && q.result.t === g.savedT); }; q.onerror = () => { db.close(); ok(false); }; } catch (e) { db.close(); ok(false); } }; });
+  const turn = () => kept().then((y) => y ? done(true) : performance.now() - t0 > timeout ? done(false) : st(turn, 50)); turn(); })""".replace('RAW', _RAW)
+
+
+def kept(page, timeout=5000):
+    """This tab's copy and IndexedDB's agree (_KEPT): what it saved is written, or what another
+    tab saved is taken in (on being shown). Whether they came to: the next check reports one that
+    never did."""
+    return page.evaluate(_KEPT, timeout)
+
+
+def stored(page, ms=0):
+    """What the page writes to IndexedDB has been written: its timers due within ms run (full),
+    then no readwrite transaction of its own still open (the project, Undo's history, versions,
+    Track Changes' base, a coauthor's names). A write started after an await on something else
+    is not seen in between: wait for the step's own sign first where there is one."""
     settle(page, ms, full=True)
-    until(page, "() => !window.rikuy.unsaved && (document.getElementById('savestate') || {}).textContent === 'Saved'")
+    _settled(page, [0, [], True])
+
+
+def saved(page, ms=1200):
+    """The project kept in this browser, as a reload or another tab reads it: an edit waiting to be
+    saved has been, its writes all back (the version another tab's text became too), or, with
+    none waiting, the copy in IndexedDB is this tab's last. Whether it was: a save that never comes
+    back is the next check's to report."""
+    waiting = page.evaluate(_SAVE_HOOK)
+    settle(page, ms, full=True)
+    ok = until(page, '() => (window.rikuy.__rkSaves || 0) > window.rikuy.__rkSaves0') if waiting else kept(page)
+    # (and any other write the save set going: the version another tab's text became)
+    _settled(page, [0, [], True])
+    return ok
+
+
+def ready(page):
+    """The page loaded (again) has gone through init: its boot screen gone is not yet that (the
+    review, a shared link, the source pane a setting keeps and the first caret come after it),
+    rikuy.ready is (rikuy.api.whenReady())."""
+    page.wait_for_function('window.rikuy && window.rikuy.ready && document.getElementById("boot").hidden', timeout=30000)
+    page.evaluate('() => window.rikuy.ready.then(() => true)')
 
 
 def until(page, fn, arg=None, timeout=5000):
@@ -915,7 +991,7 @@ def first_visit(p):
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto('https://rikuy.test/')
             page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
-            settle(page, 300)
+            ready(page); settle(page, 300)
             return page
         dist = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
         doc = SKELETON_HEAD + open(os.path.join(dist, 'rikuy.html'), encoding='utf8').read() + '</body></html>'
@@ -929,26 +1005,26 @@ def first_visit(p):
             f = os.path.join(dist, rel) if rel else ''
             return route.fulfill(status=200, content_type='text/html; charset=utf-8' if rel.endswith('.html') else 'text/javascript', headers=policy(dist, '/' + rel), body=open(f, 'rb').read()) if f and os.path.isfile(f) else route.abort()
         on = 'document.body.classList.contains("src-on")'
-        ctx = browser.new_context(viewport={'width': 1400, 'height': 900}); ctx.route('**/*', serve)
+        ctx = browser.new_context(viewport={'width': 1400, 'height': 900}); ctx.route('**/*', serve); ctx.add_init_script(TIMERS)
         page = visit(ctx)
         check('a first visit on a wide screen shows the page without the source pane', not page.evaluate(on) and page.is_visible('#b-src'))
         page.click('#b-help'); settle(page, 200)
         first = page.evaluate('document.querySelector(".pop-help p").textContent')
         check('Help starts by saying what Rikuy is, before any word about LaTeX source', first.startswith('Rikuy is a writing app for papers') and 'source' not in first, first)
         page.keyboard.press('Escape')
-        page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); settle(page, 300)
+        page.reload(); ready(page); settle(page, 300)
         check('a second visit with nothing chosen is the same', not page.evaluate(on))
         page.click('#b-src'); settle(page, 300)
-        page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); settle(page, 500)
+        page.reload(); ready(page); settle(page, 500)
         check('the Source button opens the pane and the choice is kept', page.evaluate(on))
         # here before the change: a project kept in this browser, no settings ever written
         click_text(page, 'Click anywhere'); page.keyboard.type('Mine. '); saved(page, 1200)
         page.evaluate('localStorage.removeItem(Object.keys(localStorage).find((k) => /pref/i.test(k)))')
-        page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); settle(page, 500)
+        page.reload(); ready(page); settle(page, 500)
         check('someone with a document kept and no settings keeps the source pane of a wide screen', page.evaluate(on) and 'Mine. ' in src(page), page.evaluate('Object.keys(localStorage)'))
         ctx.close()
         for w in (360, 390, 430):
-            ctx = browser.new_context(viewport={'width': w, 'height': 800}, has_touch=True, is_mobile=True); ctx.route('**/*', serve)
+            ctx = browser.new_context(viewport={'width': w, 'height': 800}, has_touch=True, is_mobile=True); ctx.route('**/*', serve); ctx.add_init_script(TIMERS)
             page = visit(ctx)
             geo = '(() => { const d = document.getElementById("desk"), r = document.querySelector("#pages .it.p").getBoundingClientRect(); return { font: parseFloat(getComputedStyle(document.querySelector("#pages .it.p")).fontSize), left: r.left, right: r.right, w: d.clientWidth, label: document.getElementById("zoomv").textContent, src: ' + on + ', web: document.body.classList.contains("pg-web") }; })()'
             m = page.evaluate(geo)
@@ -971,11 +1047,11 @@ def first_visit(p):
                 check('the zoom button there goes to actual size, the whole sheet, and back', seen[0] == '100%' and seen[1].endswith('%') and int(seen[1][:-1]) < int(m['label'][:-1]) and seen[2] == m['label'], seen)
                 page.tap('#zoomv'); page.tap('#zoomv'); settle(page, 300)
                 z = page.evaluate('JSON.parse(localStorage.getItem("galley.prefs.v1")).zoom')
-                page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); settle(page, 300)
+                page.reload(); ready(page); settle(page, 300)
                 check('the whole sheet, once chosen, is kept too, under a zoom the previous version reads', page.inner_text('#zoomv') == seen[1] and z == 'fit', (page.inner_text('#zoomv'), z))
                 page.tap('#zoomv'); settle(page, 300)
                 page.tap('#zoomv'); settle(page, 300)
-                page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); settle(page, 300)
+                page.reload(); ready(page); settle(page, 300)
                 check('and a zoom that was chosen is the one the next visit opens with', page.inner_text('#zoomv') == '100%', page.inner_text('#zoomv'))
             ctx.close()
     finally:
@@ -1386,7 +1462,8 @@ def run():
         check('page edit mirrors into source pane', page.evaluate('window.rikuy.cm.getValue()') == src(page) and 'MathW' in src(page))
         page.keyboard.press('Control+z')
         page.evaluate('''() => { const cm = window.rikuy.cm; const d = cm.getDoc(); const i = d.getValue().indexOf('Math is an object'); d.replaceRange('Algebra ', d.posFromIndex(i)); }''')
-        settle(page, 600)
+        # (the source pane's edit reaches the page after its pause, srcRebuild's 260 ms)
+        settle(page, 600, full=True)
         has = page.evaluate('[...document.querySelectorAll("#pages span.t")].some(s => s.textContent.includes("Algebra Math is"))')
         check('source edit re-typesets page', has)
         page.screenshot(path=SHOTS + '/02-source.png')
@@ -1448,11 +1525,13 @@ def run():
             t.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
             t.goto('https://rikuy.test/')
             t.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
-            settle(t, 300)
+            ready(t); settle(t, 300)
             return t
         def vis(t, state):
             t.evaluate('''(s) => { Object.defineProperty(document, 'visibilityState', {value: s, configurable: true}); document.dispatchEvent(new Event('visibilitychange')); }''', state)
-            settle(t, 300)
+            # (hidden, the tab writes what it has; shown, it takes in what another tab wrote: both
+            # through IndexedDB, done when its copy and IndexedDB's agree)
+            settle(t, 300); kept(t)
         B = tab()
         vis(B, 'hidden')
         click_text(A, 'Click anywhere in this paragraph', 5)
@@ -1463,18 +1542,18 @@ def run():
         B.keyboard.type('BBB')
         vis(B, 'hidden'); vis(A, 'visible')
         check('and back again, keeping its own', 'MathBBB' in src(A) and 'ClickAAA' in src(A))
-        settle(A, 900)
+        saved(A, 900)
         C = tab()
         click_text(C, 'start typing', 3)
         C.keyboard.type('CCC')
-        settle(C, 1000)
+        saved(C, 1000)
         B.close(run_before_unload=True)  # B changed nothing since it last saved
         D = tab()
         check('closing a tab that changed nothing keeps what another tab saved', 'staCCCrt typing' in src(D) and 'ClickAAA' in src(D) and 'MathBBB' in src(D))
         # both visible (side by side): A types without having seen C's text
         click_text(A, 'Rikuy escapes', 3)
         A.keyboard.type('Z')
-        settle(A, 1200)
+        saved(A, 1200)
         vs = A.evaluate('window.rikuy.allSnaps().then(async vs => { for (const v of vs) { const f = new Map(await window.rikuy.versionFiles(v) || []); if (v.label === "From another tab" && (f.get("main.tex") || "").includes("staCCCrt")) return true; } return false; })')
         check('a tab that writes over another tab\'s text keeps that text as a version', vs)
         # a phone hides the page, then kills it without unload
@@ -1570,9 +1649,10 @@ def zoom_gestures(page):
     z1 = lab()
     page.keyboard.press('Control+Minus'); settle(page, 200)
     check('on the page Ctrl+0 is actual size, Ctrl+= and Ctrl+- step in and out', (z0, z1, lab()) == ('100%', '110%', '100%'), (z0, z1, lab()))
-    page.keyboard.down('Control'); page.mouse.wheel(0, -300); page.keyboard.up('Control'); settle(page, 500)
+    # (the zoom is written to the settings after the wheel stops, by a timer)
+    page.keyboard.down('Control'); page.mouse.wheel(0, -300); page.keyboard.up('Control'); settle(page, 500, full=True)
     kept = lab()
-    page.reload(); page.wait_for_function('window.rikuy && window.rikuy.model', timeout=30000); settle(page, 500)
+    page.reload(); ready(page); settle(page, 500)
     check('a zoom made with the wheel is the one the next visit opens with', lab() == kept, (kept, lab()))
     page.click('#b-src'); settle(page, 500)
     box = page.evaluate("(() => { const r = document.getElementById('srcpane').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
