@@ -192,10 +192,17 @@ Pick the checks by what you touched, and run them before you call it done:
 - The browser tests' helpers wait on conditions, not on time: `open_page()` returns once
   `rikuy.ready` has settled, `load_doc()` once the pages are drawn (`rebuild()` is synchronous),
   `click_text()`, `select_text()` and `place()` once their `selectionchange` has reached the page's
-  handlers, and `roundtrip()` once each step's edit has landed (`landed()`). A new wait waits on a
-  condition; a fixed `wait_for_timeout` is for where the time itself is under test, with a comment
-  saying so. `RIKUY_WAIT_SHADOW=1` waits the old time as well after each such condition and prints
-  `SHADOW` where something still moved. `open_page()` shares one Chromium per process: each call
+  handlers, and `roundtrip()` once each step's edit has landed (`landed()`). After any other step,
+  `settle(page, ms)` (ms: the time the step once slept): the next frame, and the page's timers due
+  within 80 ms (`SOON`: the ribbon's refresh after the caret moved), seen through the timers every
+  context of `open_page()` tracks (`TIMERS`); `settle(page, ms, full=True)` waits for every timer due
+  within ms instead (a refit after a resize, a debounced push). Work that is no timer (a module, a
+  worker, a fetch, IndexedDB) gets a condition of its own: `until(page, fn)`, which leaves a promise
+  that never comes to the next check, or `saved(page)` before a reload. A fixed `wait_for_timeout`
+  is for where the time itself is under test, with a comment saying so. `RIKUY_WAIT_SHADOW=1` waits
+  the old time as well after each such condition and prints `SHADOW` with what still moved and the
+  timers then due; `RIKUY_CHECK_LOG=file` writes what each check saw, so a fast run and a shadow run
+  can be compared check by check. `open_page()` shares one Chromium per process: each call
   gets a context of its own, and the browser it returns closes that call's contexts, not the
   shared one.
 - This machine's Python may be linked with zlib-ng, whose gzip bytes differ from stock zlib's: packs
