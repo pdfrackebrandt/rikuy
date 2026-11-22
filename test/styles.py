@@ -1442,9 +1442,25 @@ def block_join(page):
     check('block_join: and at a theorem\'s start', 'Alpha para. Stated words.' in src(page) and '\\begin{theorem}\n' not in src(page), src(page)[40:])
 
 
+def item_heading(page):
+    """(bugs 2026-11-22) Heading 1 to 3 on a list item (its keys, the gallery): Word gives the bullet's
+    paragraph the heading's style. The style was refused and the key did nothing; now the item
+    leaves the list as a heading, the list going on around it, in one step."""
+    L = A('Intro.\n\n\\begin{itemize}\n  \\item One\n  \\item Two words\n  \\item Three\n\\end{itemize}')
+    load_doc(page, L); click_text(page, 'Two words', 3); page.keyboard.press('Control+Alt+1'); settle(page, 250)
+    check('item_heading: Ctrl+Alt+1 on a list item makes it a heading between the two halves of the list',
+          src(page) == A('Intro.\n\n\\begin{itemize}\n  \\item One\n\\end{itemize}\n\n\\section{Two words}\n\n\\begin{itemize}\n  \\item Three\n\\end{itemize}'), src(page)[40:])
+    page.keyboard.type('X'); settle(page, 200)
+    check('item_heading: the caret stays in its words', '\\section{TwoX words}' in src(page), src(page)[40:])
+    page.keyboard.press('Control+z'); settle(page, 200); page.keyboard.press('Control+z'); settle(page, 200)
+    check('item_heading: one undo gives the item back', src(page) == L, src(page)[40:])
+    load_doc(page, L); click_text(page, 'One', 1); run_cmd(page, 'style-heading2')
+    check('item_heading: Heading 2 from the gallery on the first item: the heading above the list', src(page) == A('Intro.\n\n\\subsection{One}\n\n\\begin{itemize}\n  \\item Two words\n  \\item Three\n\\end{itemize}'), src(page)[40:])
+
+
 def run():
     with sync_playwright() as p:
-        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter, block_join)
+        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter, block_join, item_heading)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style)
         # (names given on the command line run those alone)

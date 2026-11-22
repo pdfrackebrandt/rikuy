@@ -14,6 +14,7 @@ import { escapeTeX } from '../editor.js';
 import { defines, packageLine, packageOptions, preambleEnd, stripComments } from '../preamble.js';
 import { wrapBlockEdits } from '../blockenv.js';
 import { diffEdit } from '../wrap.js';
+import { readLists, chainAt, unlist } from '../lists.js';
 import { methods as pane } from '../ui/stylespane.js';
 import { methods as design } from '../ui/design.js';
 import { THEMES } from '../looks.js';
@@ -483,6 +484,19 @@ export const methods = {
     // (an environment only for a paragraph that starts its line: after \noindent or the like on the
     // same line, the environment would go in after it, and the way back would not be byte for byte)
     if (r) return { v: 'p', to: latex(new Set([...heads, ...(startsLine(src, r.s) ? envs : [])])), b: { v: 'p', s: r.s, ws: r.s, we: r.e, e: r.e, spot } };
+    // A list item's words (its first paragraph, of plain words, in a list of the text's own level):
+    // a heading takes it out of the list, as Word gives a bullet the heading's style (the list
+    // goes on around it). It was refused, the key and the gallery doing nothing.
+    if (it.dataset.li && /,0$/.test(it.dataset.li)) {
+      const lists = readLists(src, B.s, B.e, this.model && this.model.userSigs), ch = chainAt(lists, +it.dataset.li.split(',')[0] + B.base);
+      const I = ch.length === 1 ? ch[0] : null, item = I && I.L.items[I.k];
+      if (item && I.L.editable && I.L.closed && I.L.kind !== 'desc' && !item.lab && !item.lists.length) {
+        let ws = item.cmdE;
+        while (ws < item.e && /\s/.test(src[ws])) ws++;
+        const words = src.slice(ws, item.e);
+        if (words && !NOT_PLAIN.test(words) && !/\n[ \t]*\n/.test(words) && !/(^|[^\\])%/.test(words)) return { v: '', to: latex(new Set(heads)), item: { B, ws, we: item.e }, b: { spot } };
+      }
+    }
     if (ctx === 'p' && B.items.length === 1 && !/\bthm\b/.test(it.className)) {
       // a paragraph with a footnote or a display in it: no heading can hold it, an environment can
       let s = B.s, e = B.e;
@@ -521,6 +535,11 @@ export const methods = {
     if (!list.length) return { v: '', to: none, why: WHY.multi };
     const sts = list.map((x) => ({ ...x, st: this.styleOfBlock(x.B, x.it) }));
     const vs = new Set(sts.map((x) => x.st.v)), v = vs.size === 1 ? [...vs][0] : '';
+    // (a list item's heading is for the item alone: in a selection over several items or blocks
+    // the list is one of them, which no heading holds)
+    const sel = getSelection(), one = (n) => (n.nodeType === 1 ? n : n.parentElement).closest('.it');
+    const items = sel.rangeCount && one(sel.getRangeAt(0).startContainer) === one(sel.getRangeAt(0).endContainer) ? 1 : 2;
+    for (const x of sts) if (x.st.item && (list.length > 1 || items > 1)) x.st = { v: '', to: new Set(), b: x.st.b };
     if (list.length === 1) return sts[0].st;
     // each may take it, or has it already
     const to = new Set();
@@ -569,6 +588,7 @@ export const methods = {
       return;
     }
     if (cur.many) { this.setManyStyle(cur, to, c); this.closeGroup(); return; }
+    if (cur.item && (isHeading(to) || to === 'part')) return this.itemToHeading(cur.item, to);
     // a heading on one paragraph of an abstract or a quote of several: that paragraph alone, the
     // environment split around it (Word styles the paragraph, not its neighbours)
     if (cur.split && (isHeading(to) || to === 'part')) {
@@ -582,6 +602,19 @@ export const methods = {
     if (!r) return;
     const needs = this.styleNeeds(to), grow = needs.filter((x) => x.f === f && x.s <= cur.b.s).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
     this.commit([...needs, ...r.edits.map((x) => ({ f, ...x }))], { f, p: r.p + grow, bias: -1 }, 'block');
+    this.closeGroup();
+  },
+  // a list item made a heading: the list split round it (src/lists.js unlist), its words wrapped
+  itemToHeading(I, to) {
+    const f = I.B.f, src = this.src(f), r = unlist(src, I.B.s, I.B.e, I.ws, I.ws, this.model && this.model.userSigs);
+    if (!r || r.a == null) return;
+    const after = src.slice(0, r.s) + r.t + src.slice(r.e), words = src.slice(I.ws, I.we);
+    if (after.slice(r.a, r.a + words.length) !== words) return;
+    const open = '\\' + to + '{', d = diffEdit(src, after.slice(0, r.a) + open + words + '}' + after.slice(r.a + words.length));
+    if (!d) return;
+    this.closeGroup();
+    const c = this.caretNow(), k = c && c.f === f && c.a != null ? Math.min(Math.max(c.a - I.ws, 0), words.length) : 0;
+    this.commit([{ f, s: d.s, e: d.e, t: d.t }], { f, p: r.a + open.length + k, bias: -1 }, 'block');
     this.closeGroup();
   },
   // (R2) a Code block to Normal: its lines out of verbatim, LaTeX's specials in them escaped as
