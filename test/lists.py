@@ -816,10 +816,12 @@ def label_caret(page):
     check('label_caret: Left at an item\'s start goes to the end of the item above', '\\item OneX\n  \\item Two' in src(page), src(page)[40:])
     load_doc(page, P); click_text(page, 'Two', 0); key(page, 'ArrowLeft'); key(page, 'ArrowLeft'); page.keyboard.type('X'); settle(page, 200)
     check('label_caret: and Left again goes on into its words', '\\item OnXe\n' in src(page), src(page)[40:])
-    load_doc(page, WRAP('Hello.\n\n\\begin{itemize}\n  \\item One\n  \\item \n  \\item Three\n\\end{itemize}')); click_text(page, 'One', 3); key(page, 'ArrowRight'); page.keyboard.type('X'); settle(page, 200)
-    check('label_caret: Right into an empty item writes in it', '\\item One\n  \\item X\n  \\item Three' in src(page), src(page)[40:])
+    load_doc(page, WRAP('Hello.\n\n\\begin{itemize}\n  \\item One\n  \\item \n  \\item Three\n\\end{itemize}')); click_text(page, 'One', 3); key(page, 'ArrowRight')
+    # (looked at before anything is typed, which would move the caret into text anyway)
     caret = page.evaluate("(() => { const n = getSelection().anchorNode; return !!(n && (n.nodeType === 1 ? n : n.parentElement).closest('.lbl')); })()")
-    check('label_caret: the caret is never left drawn on a number', not caret)
+    check('label_caret: the caret is not left drawn on a number', not caret)
+    page.keyboard.type('X'); settle(page, 200)
+    check('label_caret: Right into an empty item writes in it', '\\item One\n  \\item X\n  \\item Three' in src(page), src(page)[40:])
 
 
 def item_edges(page):
@@ -926,6 +928,31 @@ def item_paste(page):
     check('item_paste: from a web page, inside an item\'s words: the item split round them', src(page) == I2.replace('\\item One\n', '\\item Onp1\n  \\item p2e\n'), src(page)[40:])
 
 
+def review_edges(page):
+    """(review of PR 117) Where the edge fixes above met comments, environments and labels of an
+    item's own: a word joined after a trailing % went into the comment; inside a theorem the empty
+    paragraph Enter shows had no place, and what was typed joined the item above or stood before
+    the first \\item (a LaTeX error); Delete over an item ending in a comment deleted it and glued
+    the words; a label of an item's own (\\item[Step:]) could not be typed in."""
+    load_doc(page, WRAP('\\begin{itemize}\n  \\item One % c\n\\end{itemize}\n\nAfter.')); click_text(page, 'After.', 0); key(page, 'Backspace'); page.keyboard.type('X'); settle(page, 200)
+    check('review_edges: Backspace after a list whose last item ends in a comment: the words on a line after it, not in it', '\\item One % c\n  XAfter.\n\\end{itemize}' in src(page), src(page)[40:])
+    load_doc(page, WRAP('\\begin{itemize}\n  \\item One % c\n  \\item Two\n\\end{itemize}')); click_text(page, 'One', 3); key(page, 'Delete')
+    check('review_edges: Delete at an item\'s end before its comment: the comment kept, the next words on the line after it', '\\item One % c\n  Two\n\\end{itemize}' in src(page), src(page)[40:])
+    TH = lambda b: WRAP('\\begin{theorem}\n' + b + '\n\\end{theorem}', '\\newtheorem{theorem}{Theorem}\n')
+    load_doc(page, TH('\\begin{enumerate}\n  \\item One\n  \\item Two\n  \\item Three\n\\end{enumerate}')); click_text(page, 'Two', 3); key(page, 'Enter'); key(page, 'Enter'); page.keyboard.type('Mid'); settle(page, 200)
+    s = src(page)
+    check('review_edges: in a theorem, Enter on an empty middle item: what is typed is not in an item, and the list is not split', '\\item TwoMid' not in s and 'resume' not in s and 'Mid' in s, s[40:])
+    load_doc(page, TH('Say.\n\\begin{itemize}\n  \\item \n  \\item One\n\\end{itemize}')); click_text(page, 'One', 0); key(page, 'ArrowUp'); key(page, 'Enter'); page.keyboard.type('Top'); settle(page, 200)
+    s = src(page)
+    check('review_edges: in a theorem, Enter on an empty first item: nothing typed before the first \\item', not re.search(r'\\begin\{itemize\}\s*[^\s\\]', s), s[40:])
+    load_doc(page, TH('\\begin{itemize}\n  \\item One\n  \\item Two\n\\end{itemize}\nAfter.')); click_text(page, 'Two', 3); key(page, 'Enter'); key(page, 'Enter'); page.keyboard.type('Para'); settle(page, 200)
+    check('review_edges: in a theorem, Enter twice at a list\'s end: what is typed is not in its last item', '\\item TwoPara' not in src(page) and 'Para' in src(page), src(page)[40:])
+    load_doc(page, WRAP('\\begin{itemize}\n  \\item[Step:] One\n\\end{itemize}')); click_text(page, 'Step', 2); page.keyboard.type('X'); settle(page, 200)
+    check('review_edges: a label of the item\'s own takes what is typed in it', '\\item[StXep:] One' in src(page), src(page)[40:])
+    load_doc(page, WRAP('Hello.\n\n\\begin{enumerate}\n  \\item \n\\end{enumerate}\n\nTail.')); click_text(page, 'Tail.', 0); key(page, 'ArrowUp'); key(page, 'Backspace'); page.keyboard.type('Plain'); settle(page, 200)
+    check('review_edges: Backspace in a list\'s only, empty item takes the list away; what is typed is a paragraph there', src(page) == WRAP('Hello.\n\nPlain\n\nTail.'), src(page)[40:])
+
+
 def r2_phone(p, w, h, dark=False):
     """Picture Bullet and Adjust List Indents on a phone: from the bullet library's menu by taps,
     the dialogs on the screen with 44 px controls, no sideways scroll; screenshots"""
@@ -964,7 +991,7 @@ def run_all():
     want = lambda n: not only or n in only
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf, label_caret, item_edges, empty_items, item_spans, join_after_list, item_paste):
+        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf, label_caret, item_edges, empty_items, item_spans, join_after_list, item_paste, review_edges):
             if not want(f.__name__): continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])

@@ -194,7 +194,8 @@ onInstall((app) => {
     const sel = getSelection();
     if (!sel.rangeCount || !sel.isCollapsed || app.composing) return;
     const n = sel.anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement), lbl = el && el.closest && el.closest('.lbl');
-    if (!lbl || !app.root.contains(lbl)) return;
+    // (a label of the item's own, \item[Step:], is words to edit: only a number or a bullet is passed over)
+    if (!lbl || !app.root.contains(lbl) || lbl.querySelector('span.t')) return;
     const back = left && performance.now() - left < 500;
     const P = posFromDom(lbl, back ? lbl.childNodes.length : 0, app.root);
     if (P && !P.ghost && P.f != null) app.restoreCaret({ f: P.f, p: P.p, bias: back ? -1 : 1 }, true);
@@ -221,6 +222,9 @@ const itemWords = (src, it) => src.slice(it.cmdE, it.e).trim();
 const textStart = (src, it) => { let t = it.cmdE; while (t < it.e && /\s/.test(src[t])) t++; return t; };
 const labelWords = (src, it) => { if (!it.lab) return ''; const l = src.slice(it.lab.is, it.lab.ie).trim().replace(/^\{([\s\S]*)\}$/, '$1'); return l ? l + ' ' : ''; };
 const lineRest = (src, p) => { while (src[p] === ' ' || src[p] === '\t') p++; return p; };
+// a comment on p's line before p (words written at p would be in it), or anywhere in t
+const inComment = (src, p) => /(^|[^\\])(\\\\)*%/.test(src.slice(src.lastIndexOf('\n', p - 1) + 1, p));
+const hasComment = (t) => /(^|[^\\])(\\\\)*%/.test(t);
 
 export const methods = {
   // ---- where the caret is ---------------------------------------------------------------------
@@ -346,12 +350,14 @@ export const methods = {
       if (!r) return false;
       return this.listCommit(f, [{ s: r.s, e: r.e, t: r.t }], [], { f, p: r.a ?? r.s, bias: 1 });
     }
-    // Delete at the end of the item's words
-    if (it.lists.length || p < head || /\S/.test(src.slice(p, Math.max(p, it.e)))) return false;
+    // Delete at the end of the item's words (a comment after them on their line: the next words go
+    // on a line of their own after it, or the comment would take them)
+    const rest = src.slice(p, Math.max(p, it.e)), cm = /^[ \t]*%[^\n]*$/.test(rest);
+    if (it.lists.length || p < head || (/\S/.test(rest) && !cm)) return false;
     if (k + 1 < L.items.length) {
       const next = L.items[k + 1], nw = itemWords(src, next);
       if (!gapOk(it.e, next.s) || next.lists.length) return false;
-      const t = nw ? (words ? ' ' : '') + labelWords(src, next) : '';
+      const t = nw ? (cm ? NL + (indentAt(src, next.s) ?? '') : words ? ' ' : '') + labelWords(src, next) : '';
       return this.listCommit(f, [{ s: it.e, e: nw ? textStart(src, next) : lineRest(src, next.e), t }], [], { f, p, bias: -1 });
     }
     return I.chain.length === 1 ? this.listJoinPara(L, it, f, src, p, null) : false;
@@ -378,7 +384,10 @@ export const methods = {
   listJoinable(B, it) {
     const st = B && it && this.styleOfBlock ? this.styleOfBlock(B, it) : null, b = st && st.b;
     if (!b || b.ws == null || st.opt || st.code || st.item) return null;
+    // (a heading's short title, \section[S]{...}, would be lost)
+    if (isHeading(st.v) && this.src(B.f).slice(b.s, b.ws).includes('[')) return null;
     const words = this.src(B.f).slice(b.ws, b.we);
+    if (b.after != null && hasComment(words)) return null;
     const ok = st.v === 'p' || isHeading(st.v) || (isEnvStyle(st.v) && !/^(verbatim|abstract)$/.test(st.v) && !/\n[ \t]*\n/.test(words.trim()));
     return ok && words.trim() ? { s: b.s, ws: b.ws, we: b.we, e: b.after ?? b.e, label: b.after != null ? this.src(B.f).slice(b.e, b.after).trim() : '' } : null;
   },
@@ -392,7 +401,9 @@ export const methods = {
       X = el ? this.listJoinable(Y, el) : null;
     }
     if (!X || X.s < L.e || /\S/.test(src.slice(L.e, X.s))) return false;
-    const sp = itemWords(src, it) ? ' ' : '', NL = /\r\n/.test(src) ? '\r\n' : '\n';
+    const NL = /\r\n/.test(src) ? '\r\n' : '\n';
+    // (after a comment ending the item: on a line of their own, or the comment would take them)
+    const sp = inComment(src, it.e) ? NL + (indentAt(src, it.s) ?? '') : itemWords(src, it) ? ' ' : '';
     const m = /^[ \t]*(\r?\n)?[ \t]*(?=[^\s%])(?!\\(?:end|begin|part|chapter|(?:sub)*section|(?:sub)?paragraph|item|par|label)\b)/.exec(src.slice(X.e, X.e + 200));
     const t = sp + src.slice(X.ws, X.we).trim() + X.label + src.slice(it.e, L.e) + (m ? (m[1] ? NL : NL + NL) : '');
     return this.listCommit(f, [{ s: it.e, e: X.e, t }], [], { f, p: p != null ? p : it.e + sp.length, bias: p != null ? -1 : 1 });
@@ -411,7 +422,9 @@ export const methods = {
     const it = I && I.L.items[I.k];
     if (!it || !I.L.editable || I.L.kind === 'desc' || at < (it.lab ? it.lab.e : it.s + 5) || at > it.e || !isBalanced(src, it.cmdE, at)) return t;
     const NL = /\r\n/.test(src) ? '\r\n' : '\n', ind = indentAt(src, it.s) ?? '  ';
-    return t.replace(/^\s+|\s+$/g, '').replace(/[ \t]*\r?\n[ \t]*(?:\r?\n[ \t]*)+/g, NL + ind + '\\item ');
+    // (only a blank line outside braces: one inside \textbf{...} would put \item in its group)
+    const depth = (x, i) => { let d = 0; for (let k = 0; k < i; k++) { if (x[k] === '\\') k++; else if (x[k] === '{') d++; else if (x[k] === '}') d--; } return d; };
+    return t.replace(/^\s+|\s+$/g, '').replace(/[ \t]*\r?\n[ \t]*(?:\r?\n[ \t]*)+/g, (m, i, x) => (depth(x, i) ? m : NL + ind + '\\item '));
   },
   // A selection from one item's words into a later item's of the same list (deletionEdits asks
   // here): deleted whole, \item and all, so the two items become one, as Word joins the paragraphs
@@ -419,7 +432,8 @@ export const methods = {
   // over such a selection left an empty item between the two halves. The edits, or null.
   listSpan(f, a, b) {
     const src = this.src(f), slice = src.slice(a, b);
-    if (!/\\item\b/.test(slice) || /\\(?:part|chapter|(?:sub)*section|paragraph|maketitle|bibliography|end\s*\{document\})\b/.test(slice) || !isBalanced(src, a, b)) return null;
+    // (a comment in it: deleted with it, and the words met with no space; the old way keeps it)
+    if (!/\\item\b/.test(slice) || hasComment(slice) || /\\(?:part|chapter|(?:sub)*section|paragraph|maketitle|bibliography|end\s*\{document\})\b/.test(slice) || !isBalanced(src, a, b)) return null;
     let X = null;
     for (const B of this.renderer.blocks) if (B.f === f && B.s <= a && b <= B.e && (!X || B.s > X.s)) X = B;
     if (!X) return null;
@@ -429,6 +443,13 @@ export const methods = {
     const head = (it) => (it.lab ? it.lab.e : it.s + 5);
     if (a < head(x.L.items[x.k]) || b < head(z.L.items[z.k])) return null;
     return [{ f, s: a, e: b, t: '' }];
+  },
+  // whether list L (from s to e) is a block of the page of its own: the empty paragraph Enter shows
+  // stands between blocks, and one inside a theorem, a quote or a minipage would have none to stand
+  // by (enter in src/app.js asks too)
+  listAlone(f, s, e) {
+    const src = this.src(f);
+    return this.renderer.blocks.some((B) => B.f === f && B.s <= s && e <= B.e && !/\S/.test(src.slice(B.s, s)) && !/\S/.test(src.slice(e, B.e)));
   },
   // an empty first item: it goes (its list too where it was the only item), and the caret is in an
   // empty paragraph where it stood, above the list, as Word's
@@ -441,6 +462,7 @@ export const methods = {
       while (s > 0 && /[ \t\r\n]/.test(src[s - 1])) s--;
       return this.listCommit(f, [{ s, e: L.e, t: '' }], [], { f, p: s, bias: -1 });
     }
+    if (!this.listAlone(f, L.s, L.e)) return false;
     let pos;
     if (L.items.length === 1) {
       let s = L.s, e = L.e;
@@ -467,7 +489,7 @@ export const methods = {
     const at = this.ribbonAt(), I = at && this.listAt(at);
     if (!I || !I.L || !I.L.editable || !I.L.closed || I.chain.length > 1 || I.L.kind === 'desc') return false;
     const { L, k, f, src } = I, it = L.items[k];
-    if (itemWords(src, it) || it.lists.length || it.lab || k + 1 >= L.items.length) return false;
+    if (itemWords(src, it) || it.lists.length || it.lab || k + 1 >= L.items.length || !this.listAlone(f, L.s, L.e)) return false;
     const NL = /\r\n/.test(src) ? '\r\n' : '\n';
     if (k === 0) return this.listEmptyFirst(I, f, src, NL);
     const prev = L.items[k - 1], next = L.items[k + 1];

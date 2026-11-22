@@ -69,7 +69,8 @@ export function posFromDom(node, off, root) {
   // a number. It was taken for the end of that paragraph, and what was typed next went there.
   // (at the label's end, where Left puts it from the item's words: the end of what is above)
   const lbl = (node.nodeType === 1 ? node : node.parentElement)?.closest?.('.lbl');
-  if (lbl && lbl !== root && root.contains(lbl) && labelStart(lbl, node, off)) for (let n = lbl.nextSibling; n; n = n.nextSibling) { const r = firstPos(n); if (r) return r; }
+  // (a label of the item's own, \item[Step:], holds words to edit: not passed over)
+  if (lbl && lbl !== root && root.contains(lbl) && !lbl.querySelector('span.t') && labelStart(lbl, node, off)) for (let n = lbl.nextSibling; n; n = n.nextSibling) { const r = firstPos(n); if (r) return r; }
   if (node.nodeType === 3) {
     const span = node.parentNode;
     if (span && span.classList && span.classList.contains('t')) {
