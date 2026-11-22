@@ -39,6 +39,21 @@ try:
         settle(page, 200)
         check('paste into a heading stays inline', '\\section{Howone two to use it}' in src(page), src(page)[src(page).find('\\section'):][:60])
         page.keyboard.press('Control+z'); settle(page, 150)
+        # paragraphs pasted inside bold or italic words stay paragraphs: the format closes before the
+        # blank line and opens again after it (they ran into one line); a list stays on the line
+        from browser import load_doc
+        W = lambda b: '\\documentclass{article}\n\\begin{document}\n' + b + '\n\\end{document}\n'
+        for name, doc, at, html, plain, want in (
+                ('plain paragraphs into a bold word', 'Some \\textbf{boldword} here.', ('boldword', 4), None, 'P1\n\nP2', 'Some \\textbf{boldP1}\n\n\\textbf{P2word} here.'),
+                ('Word\'s paragraphs into an italic word', 'Some \\emph{italic} here.', ('italic', 3), '<p class=MsoNormal>A<o:p></o:p></p><p class=MsoNormal>B<o:p></o:p></p>', 'A\r\nB', 'Some \\emph{itaA}\n\n\\emph{Blic} here.'),
+                ('paragraphs into \\textbf{\\emph{..}}', 'Some \\textbf{\\emph{nested}} here.', ('nested', 3), None, 'X\n\nY', 'Some \\textbf{\\emph{nesX}}\n\n\\textbf{\\emph{Yted}} here.')):
+            load_doc(page, W(doc)); click_text(page, *at)
+            page.evaluate(PASTE, [html, plain]); settle(page, 250)
+            s = src(page)
+            check('paste ' + name + ': two paragraphs, the format on both', s == W(want), s[s.find('Some'):][:80])
+            page.keyboard.press('Control+z'); settle(page, 150)
+            check('undo after ' + name, src(page) == W(doc))
+        load_doc(page, base)
         # Ctrl+Shift+V pastes plain text
         click_text(page, 'Click anywhere in this paragraph', 0)
         page.keyboard.down('Control'); page.keyboard.down('Shift'); page.keyboard.press('KeyV'); page.keyboard.up('Shift'); page.keyboard.up('Control')

@@ -2782,7 +2782,12 @@ class App {
     const whole = c.ghost ? null : this.wholeDoc();
     const inArg = c.ghost || whole ? false : braceDepth(src, at0) > 0;
     const el = getSelection().anchorNode && (getSelection().anchorNode.nodeType === 1 ? getSelection().anchorNode : getSelection().anchorNode.parentElement);
-    const inline = inArg || (!whole && !!(el && el.closest && el.closest('td, .it.h, .cap')));
+    // (inside bold or italic words, braces of formats alone: paragraphs stay paragraphs, each format
+    // closed before the blank line and opened again after it, as Enter splits them; a paste there
+    // ran its paragraphs into one line)
+    const fw = inArg && c.collapsed && el && el.closest && !el.closest('td, .it.h, .cap') ? this.wrapBreak(el, c.f, at0) : null;
+    const fmtOnly = !!fw && braceDepth(src, fw.p) === (fw.close.match(/\}/g) || []).length;
+    const inline = (inArg && !fmtOnly) || (!whole && !!(el && el.closest && el.closest('td, .it.h, .cap')));
     const pre = this.src(this.main).split(/\\begin\s*\{document\}/)[0];
     const o = { prev: src[at0 - 1] || ' ', hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*hyperref/.test(pre), booktabs: /\\usepackage(\[[^\]]*\])?\{[^}]*booktabs/.test(pre), inlineOnly: inline };
     // (a PDF's ligatures as letters; its Greek and symbols as formulas where pdfLaTeX compiles it: escapeTeX)
@@ -2800,10 +2805,15 @@ class App {
     if (c.ghost) { const t = latex || rich(); this.ghostInsert(t, this.pastePackages(t)); return; }
     if (whole) { const t = latex || rich(), pk = this.pastePackages(t); this.replaceBody(whole, t, 'paste'); if (pk.length) this.commit(pk, null, 'paste'); return; }
     const edits = this.deletionEdits(c.f, c.a, c.b);
-    const at = edits.length && edits[0].s >= c.a ? edits[0].s : c.a;
+    let at = edits.length && edits[0].s >= c.a ? edits[0].s : c.a;
     // (landing in a LaTeX paragraph from a selection that started outside it: as source)
     const raw = this.texAt(c.f, at);
     let t = raw ? (latex || plain).replace(/\r\n?/g, '\n') : this.pasteKept(latex, c.f, at) || rich();
+    // (paragraphs into formatted words: split there; a list, a table or a display stays on the line)
+    if (fmtOnly && !raw && /\n[ \t]*\n/.test(t)) {
+      if (/\\begin\s*\{|\\\[|\$\$/.test(t)) t = t.replace(/\s*\n\s*\n\s*/g, ' ').replace(/\n/g, ' ');
+      else { t = t.replace(/\s*\n[ \t]*\n\s*/g, fw.close + '\n\n' + fw.open); at = fw.p; }
+    }
     if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!raw && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
     const removedBefore = edits.filter((ed) => ed.e <= at).reduce((s, ed) => s + (ed.e - ed.s), 0);
