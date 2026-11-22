@@ -2147,7 +2147,9 @@ class App {
         return;
       }
       const atom = this.soleAtom(f, a, b, vr);
-      if (atom) { this.arm(atom); return; }
+      // (the key that selected it is the one the toast names: Delete before a formula said
+      // "Press Backspace again")
+      if (atom) { this.arm({ ...atom, key: /Backward/.test(type) ? 'Backspace' : 'Delete' }); return; }
     }
     const edits = this.deletionEdits(f, a, b, !c.collapsed);
     if (!edits.length) {
@@ -2209,7 +2211,7 @@ class App {
       s.removeAllRanges(); s.addRange(r);
     }
     if (atom.kind === 'code') { this.toast('Code selected: Normal in Styles makes it text again; press it again or Enter to edit its source.', 2400); return; }
-    this.toast('Press Backspace again to delete this ' + ({ math: 'equation', cite: 'citation', ref: 'reference', fn: 'footnote', img: 'figure', widget: 'live figure', chip: 'command', raw: 'block' }[atom.kind] || 'item') + (atom.kind === 'br' || atom.kind === 'sp' ? '.' : ', or Enter to edit it.'), 1800);
+    this.toast('Press ' + (atom.key || 'Backspace') + ' again to delete this ' + ({ math: 'equation', cite: 'citation', ref: 'reference', fn: 'footnote', img: 'figure', widget: 'live figure', chip: 'command', raw: 'block' }[atom.kind] || 'item') + (atom.kind === 'br' || atom.kind === 'sp' ? '.' : ', or Enter to edit it.'), 1800);
   }
   disarm() {
     if (this.armed && this.armed.el) this.armed.el.classList.remove('sel');

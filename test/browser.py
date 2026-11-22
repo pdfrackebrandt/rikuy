@@ -1893,6 +1893,13 @@ def word_typing(page):
     k.press('Control+z'); settle(page, 100)
     sel = page.evaluate('getSelection().toString()')
     check('typed over a selection: Ctrl+Z takes the last word, a second gives the selection back, selected', one == WORD_DOC.replace('plain text', 'new ') and src(page) == WORD_DOC and sel == 'plain text', (one[250:300], src(page)[250:300], sel))
+    # 8: Delete before a display selects it first, and the note says Delete, the key pressed
+    # (it said "Press Backspace again"); a second Delete takes it
+    load_doc(page, WORD_DOC)
+    click_text(page, 'comes text.', 11); k.press('Delete'); settle(page, 100)
+    say = page.inner_text('#toast')
+    k.press('Delete'); settle(page, 100)
+    check('Delete before a display: "Press Delete again", and a second Delete takes the display', 'Press Delete again' in say and src(page) == WORD_DOC.replace('\\[ a = b \\]', ''), (say[:50], src(page)[300:380]))
     # (one key at an item's start still takes no \item)
     load_doc(page, WORD_DOC)
     click_text(page, 'Banana', 0); k.press('Backspace'); settle(page, 100)
