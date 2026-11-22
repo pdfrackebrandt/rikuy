@@ -976,7 +976,32 @@ class App {
   relayout(force) {
     if (!this.model) return;
     const c = this.caretNow();
+    // (Enter's new line, and the place after a display, are on the page alone until something is
+    // typed: the pass takes them away, so with the caret on one it comes back where it was, with
+    // what it holds. A font that came, the window resized (a phone's keyboard), a pane opened
+    // after Enter lost it, and the next words went on the end of the line above)
+    const G = c && c.ghost && this.ghost && !this.ghost.tex && !this.ghost.sticky ? { ...this.ghost } : null;
+    // (a dialog's field with the focus, the Font dialog's size box: the page's selection is not
+    // there to read, so what the dialog acts on is read from its own range, to be put on the new
+    // nodes; it kept the old ones and OK formatted the document's start. A dialog's alone: a pane's
+    // search box leaves the range an older press of the ribbon left, and Esc went there, ux.py)
+    const fe = document.activeElement, field = fe && /^(INPUT|TEXTAREA|SELECT)$/.test(fe.tagName) && fe.closest('.pop');
+    const RA = field && this.rbRange && this.root.contains(this.rbRange.startContainer) ? posFromDom(this.rbRange.startContainer, this.rbRange.startOffset, this.root) : null;
+    const RB = RA && posFromDom(this.rbRange.endContainer, this.rbRange.endOffset, this.root);
     this.layoutPass(force);
+    if (RA && RB && !RA.ghost && !RB.ghost && RA.f === RB.f) {
+      const x = this.index.find(RA.f, RA.p, 1), y = this.index.find(RB.f, RB.p, -1);
+      if (x && x.node && y && y.node) { const r = document.createRange(); r.setStart(x.node, x.offset); r.setEnd(y.node, y.offset); this.rbRange = r; }
+    }
+    if (G && !this.ghost) {
+      this.ghostAt(G.f, G.pos, G.style, G.line);
+      if (this.ghost) {
+        const el = this.ghost.el;
+        Object.assign(this.ghost, G, { el });
+        if (G.pend) this.paintGhost();
+        return;
+      }
+    }
     // (a selection stays one: a relayout, for the window's width or fonts that came, put it back as
     // a caret at its start, and the status bar's "3 of 12 words" went back to "12 words")
     if (c && document.activeElement === this.root) this.restoreCaret(c.collapsed || c.crossFile ? c : { ...c, selA: c.a, selB: c.b }, true);
