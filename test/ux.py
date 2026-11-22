@@ -1183,6 +1183,60 @@ def keyboard_room(page, w):
 
 
 
+
+# An Android keyboard's composition as Chrome reports it (setComposingRegion, then setComposingText):
+# the word around the caret marked as composing with no change (compositionstart with no data, an
+# update with the word) while the selection stays a caret; a key then a beforeinput whose target
+# range is that word, the browser's own change of the word, the caret put after the letter typed.
+# CDP's Input.imeSetComposition always selects what it replaces, so these are the page's events.
+REGION = """([word, data, caretAfter]) => { const R = document.getElementById('pages'), s = getSelection(), n = s.focusNode, o = s.focusOffset;
+  let a = o; while (a > 0 && /[\\p{L}\\p{N}]/u.test(n.data[a - 1])) a--;
+  const st = n.data.indexOf(word, a); if (st !== a) return false;
+  const fire = (t, d) => R.dispatchEvent(new CompositionEvent(t, { data: d, bubbles: true }));
+  fire('compositionstart', ''); fire('compositionupdate', word);
+  if (data == null) return true;
+  fire('compositionupdate', data);
+  const sr = new StaticRange({ startContainer: n, startOffset: st, endContainer: n, endOffset: st + word.length });
+  R.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertCompositionText', data, isComposing: true, targetRanges: [sr], bubbles: true }));
+  n.replaceData(st, word.length, data); s.collapse(n, st + caretAfter);
+  R.dispatchEvent(new InputEvent('input', { inputType: 'insertCompositionText', data, isComposing: true, bubbles: true }));
+  return true; }"""
+
+
+def comp_end(page, data):
+    page.evaluate("(d) => document.getElementById('pages').dispatchEvent(new CompositionEvent('compositionend', { data: d, bubbles: true }))", data)
+    settle(page, 250)
+
+
+def body_of(page):
+    s = src(page)
+    return s[s.find('\\section'):s.find('\\end{document}')]
+
+
+def android_input(page, w):
+    """Writing with an Android phone's keyboard as Chrome hands it over. A tap in a word makes the
+    keyboard mark that word as composing (for its suggestions) and end the composition, the word
+    unchanged, when the caret moves on: Word's text stays as it was. A letter typed inside the
+    marked word, a suggestion taken for it, or a letter at the end of a bold word changes only those
+    letters, the format kept."""
+    doc = DOC.replace('bold word', '\\textbf{bold} word')
+    load_doc(page, doc); settle(page, 300)
+    before = body_of(page)
+    tap_text(page, 'here.', 2)
+    page.evaluate(REGION, ['here', None, 0]); comp_end(page, 'here')
+    check(f'a word an Android keyboard marked, ended unchanged, is written once ({w})', body_of(page) == before, body_of(page)[-40:])
+    load_doc(page, doc); tap_text(page, 'here.', 2)
+    page.evaluate(REGION, ['here', 'hexre', 3]); comp_end(page, 'hexre')
+    page.keyboard.type('Q'); settle(page, 200)
+    check(f'a letter typed in the marked word goes where it was typed, the caret after it ({w})', 'Second paragraph hexQre.' in src(page), body_of(page)[-40:])
+    load_doc(page, doc); tap_text(page, 'bold', 3)
+    page.evaluate(REGION, ['bold', 'bolds', 5]); comp_end(page, 'bolds')
+    check(f'a letter at the end of a marked bold word stays bold ({w})', 'with a \\textbf{bolds} word.' in src(page), body_of(page)[:80])
+    load_doc(page, doc); tap_text(page, 'paragraph', 3)
+    page.evaluate(REGION, ['paragraph', 'paragraphs', 10]); comp_end(page, 'paragraphs')
+    check(f'a suggestion taken for the marked word replaces it ({w})', 'First paragraphs here' in src(page), body_of(page)[:60])
+
+
 SPACING = "*:not(#pages *):not(#pages) { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p:not(#pages *) { margin-bottom: 2em !important; }"
 CUT = """(sel) => { const out = []; for (const root of document.querySelectorAll(sel)) for (const e of [root, ...root.querySelectorAll('*')]) {
   if (!e.checkVisibility || !e.checkVisibility() || !e.textContent.trim() || e.matches('.sr, .sr *')) continue; const c = getComputedStyle(e);
@@ -1260,7 +1314,8 @@ def tooltips(page, w):
     page.keyboard.press('Escape')
 
 
-PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
+PARTS = {'android_input': (android_input, [(390, False), (360, True)]),
+         'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
          'bar_room': (bar_room, None),
          'motion': (motion, [(1366, False)]),
          'tooltips': (tooltips, [(1366, False)]),
@@ -1294,7 +1349,7 @@ PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False)
 
 
 # the parts that meet a phone's own default, Mobile View (the others open in Print Layout, as the suites written for it do)
-MOBILE = {'mobile_view', 'first_visit', 'doc_name', 'sample_spelling', 'place_kept'}
+MOBILE = {'android_input', 'mobile_view', 'first_visit', 'doc_name', 'sample_spelling', 'place_kept'}
 # the parts on tablets: a touch screen at any width
 TOUCH = {'lows'}
 

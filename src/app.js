@@ -1783,6 +1783,8 @@ class App {
   onBeforeInput(e) {
     const t = e.inputType;
     if (this.armed && this.armed.kind === 'code' && /^insert/.test(t)) { e.preventDefault(); this.codeOpen(); return; }
+    // (a composition's first change says what it replaces: onCompEnd)
+    if (t === 'insertCompositionText' && this.composing && this.compFrom === undefined) this.compFrom = this.compRange(e);
     if (e.isComposing || t === 'insertCompositionText' || t === 'deleteCompositionText' || t === 'insertFromComposition') return;
     e.preventDefault();
     if (this.composing) return;
@@ -2636,17 +2638,59 @@ class App {
     this.composing = true;
     this.compCaret = this.caretNow();
     this.compTex = this.compCaret && !this.compCaret.ghost ? this.texHere() : null;
+    // (an Android keyboard starts a composition over the word a finger put the caret in, changing
+    // nothing, and the selection stays a caret: what it replaces is known at its first change,
+    // compFrom; the text node is kept to tell whether the page changed without one)
+    this.compFrom = undefined;
+    const s = getSelection(), n = s.rangeCount ? s.focusNode : null;
+    this.compNode = n && n.nodeType === 3 ? { n, data: n.data } : null;
+  }
+  // The text a composition's first change replaces (its beforeinput's target range): the caret,
+  // the selection, or the word an Android keyboard marked; in the source, with the page's text of
+  // it and the source place of each of its characters, so only what changed is written
+  compRange(e) {
+    const tr = e.getTargetRanges ? e.getTargetRanges()[0] : null;
+    const r = tr ? this.rangeToSrc(tr) : null;
+    if (!r) return null;
+    const n = tr.startContainer;
+    if (n !== tr.endContainer || n.nodeType !== 3) return r;
+    const old = n.data.slice(tr.startOffset, tr.endOffset), map = [];
+    for (let i = 0; i <= old.length; i++) {
+      const P = posFromDom(n, tr.startOffset + i, this.root);
+      if (!P || P.ghost || P.f !== r.f || (map.length && P.p < map[map.length - 1])) return r;
+      map.push(P.p);
+    }
+    return { ...r, old, map };
   }
   onCompEnd(e) {
     this.composing = false;
-    const c = this.compCaret;
-    this.compCaret = null;
-    const data = e.data || '';
+    let c = this.compCaret;
+    const F = this.compFrom, N = this.compNode;
+    this.compCaret = null; this.compFrom = undefined; this.compNode = null;
+    let data = e.data || '';
+    // A composition that never changed the text: Android's keyboard marks the word the caret was
+    // put in as composing and ends that when the caret moves on, with the word as data. It went in
+    // a second time at the caret ("here" became "heherere"); the page is as it was
+    if (F === undefined && c && !c.ghost && !(N && N.n.isConnected && N.n.data !== N.data)) { this.compTex = null; return; }
     if (!c) { this.forceRender = true; this.rebuild(); return; }
     if (c.ghost) { if (data && this.ghost) this.ghostInsert(this.ghostRaw() ? data : escapeTeX(data, ' ')); else this.relayout(true); return; }
+    // what the composition replaced, where its first change said (a word marked on Android, the
+    // caret in it elsewhere): only the letters that differ, so a format inside the word stays
+    if (F && F.f === c.f) {
+      let a = F.a, b = F.b;
+      if (F.map) {
+        const o = F.old;
+        let P = 0, S = 0;
+        while (P < o.length && P < data.length && o[P] === data[P]) P++;
+        while (S < o.length - P && S < data.length - P && o[o.length - 1 - S] === data[data.length - 1 - S]) S++;
+        a = F.map[P]; b = F.map[o.length - S];
+        data = data.slice(P, data.length - S);
+      }
+      c = { f: F.f, a, b, collapsed: a === b };
+    }
     // The browser mutated the DOM; rebuild from source regardless.
     this.forceRender = true;
-    if (!data) { this.rebuild({ f: c.f, p: c.a }); return; }
+    if (!data && c.collapsed) { this.rebuild({ f: c.f, p: c.a }); return; }
     const T = this.compTex;
     this.compTex = null;
     if (T && T.f === c.f) { this.texEdit(T, c.a, c.b, data, 'type'); return; }
@@ -2657,7 +2701,7 @@ class App {
     if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, c.a)) t = '{}' + t;
     // the deletions of a replaced selection lie after c.a: they do not move the caret back
     const removedBefore = edits.filter((ed) => ed.e <= c.a).reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
-    this.commit([...edits, { f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a - removedBefore + t.length }, 'type');
+    this.commit(t ? [...edits, { f: c.f, s: c.a, e: c.a, t }] : edits, { f: c.f, p: c.a - removedBefore + t.length }, 'type');
   }
 
   // ---- clipboard ------------------------------------------------------------------
