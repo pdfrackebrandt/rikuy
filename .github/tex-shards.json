@@ -7,47 +7,54 @@
  "shards": [
   {
    "name": "1",
-   "p95_seconds": 593,
-   "minutes": 15,
+   "p95_seconds": 444,
+   "minutes": 12,
    "commands": [
-    {"name": "pdfLaTeX in the PDF pane, under the host's policy", "argv": ["python3", "pdf.py"], "p95": 67.4},
-    {"name": "Find and Replace, then the PDF has the text replaced", "argv": ["python3", "find.py"], "p95": 51.0},
-    {"name": "The outline, then the PDF has the heading at the level it was given", "argv": ["python3", "outline.py"], "p95": 47.1},
-    {"name": "Every format of the Font group compiles in the page", "argv": ["python3", "font.py", "compiles"], "p95": 9.3},
-    {"name": "Lists, then every kind Rikuy writes compiles with pdfLaTeX, XeLaTeX and LuaLaTeX and prints the page's labels", "argv": ["python3", "lists.py"], "p95": 108.4},
-    {"name": "The Equation tab (what it writes compiled on the three engines)", "argv": ["python3", "eqtab.py"], "p95": 163.0},
-    {"name": "Objects formatted after they are in, and pictures corrected, compiled on pdfLaTeX, XeLaTeX and LuaLaTeX", "argv": ["python3", "objects.py", "compiled", "pictures_compiled"], "p95": 27.8},
-    {"name": "An interactive graph compiles on pdfLaTeX, XeLaTeX and LuaLaTeX with its picture", "argv": ["python3", "insert.py", "graph_compiles"], "p95": 9.3}
+    {"name": "pdfLaTeX in the PDF pane, under the host's policy", "argv": ["python3", "pdf.py"], "p95": 73.0, "n": 1},
+    {"name": "Find and Replace, then the PDF has the text replaced", "argv": ["python3", "find.py"], "p95": 43.4, "n": 1},
+    {"name": "The Equation tab (what it writes compiled on the three engines)", "argv": ["python3", "eqtab.py"], "p95": 151.9, "n": 1},
+    {"name": "Pictures and objects compiled in the page, the picture's box in the PDF against the page's", "argv": ["python3", "picture.py", "compiled"], "p95": 6.8, "n": 1},
+    {"name": "A whole session under the hosted policy (three engines, asy, minted, biber, Word, spelling, grammar, a live figure), nothing refused", "argv": ["python3", "csp.py"], "p95": 44.9, "n": 1},
+    {"name": "The PDF view by SyncTeX both ways, and Learn Rikuy compiled in the page", "argv": ["python3", "view.py", "views", "help_tab"], "p95": 13.9, "n": 1}
    ]
   },
   {
    "name": "2",
-   "p95_seconds": 593,
-   "minutes": 15,
+   "p95_seconds": 445,
+   "minutes": 12,
    "commands": [
-    {"name": "The ribbon, with Download PDF compiling and saving the file", "argv": ["python3", "ribbon.py"], "p95": 109.5},
-    {"name": "Rikuy as an agent meets it, with rikuy.api.compile making a real PDF", "argv": ["python3", "agent.py"], "p95": 144.8},
-    {"name": "The preamble's format gives the pass an ordinary compile gives", "argv": ["python3", "preamble.py"], "p95": 82.7},
-    {"name": "Tables, every construct the table commands write compiled in the page", "argv": ["python3", "table.py", "reviewed", "verified", "compiled"], "p95": 29.1},
-    {"name": "The page's set up in TeX's PDF (paper size, header, line numbers) and Print", "argv": ["python3", "page.py", "compile_pdf"], "p95": 15.9},
-    {"name": "Pictures and objects compiled in the page, the picture's box in the PDF against the page's", "argv": ["python3", "picture.py", "compiled"], "p95": 7.1},
-    {"name": "Review, and the copy with markup (changes, todonotes) compiled in the page", "argv": ["python3", "review.py"], "p95": 58.1},
-    {"name": "References (contents, lists, notes, sources, the bibliography, captions, cross references, the index, links) compiled with pdfLaTeX, XeLaTeX and LuaLaTeX, biblatex with biber", "argv": ["python3", "refs.py", "compiled"], "p95": 35.9}
+    {"name": "Objects formatted after they are in, and pictures corrected, compiled on pdfLaTeX, XeLaTeX and LuaLaTeX", "argv": ["python3", "objects.py", "compiled", "pictures_compiled"], "p95": 29.3, "n": 1},
+    {"name": "An interactive graph compiles on pdfLaTeX, XeLaTeX and LuaLaTeX with its picture", "argv": ["python3", "insert.py", "graph_compiles"], "p95": 11.1, "n": 1},
+    {"name": "The preamble's format gives the pass an ordinary compile gives", "argv": ["python3", "preamble.py"], "p95": 82.7, "n": 1},
+    {"name": "Engines and shell escape in the page", "argv": ["python3", "engines.py"], "p95": 125.0, "n": 1},
+    {"name": "The installed app, Make available offline, then a compile with no network", "argv": ["python3", "offline.py"], "p95": 69.3, "n": 1},
+    {"name": "The graphs' PGF pictures on pdfLaTeX, XeLaTeX and LuaLaTeX, TeX's picture against the live figure in pixels", "argv": ["python3", "graphs.py", "compiles"], "p95": 17.5, "n": 1}
    ]
   },
   {
    "name": "3",
-   "p95_seconds": 594,
-   "minutes": 15,
+   "p95_seconds": 447,
+   "minutes": 12,
    "commands": [
-    {"name": "Engines and shell escape in the page", "argv": ["python3", "engines.py"], "p95": 124.2},
-    {"name": "The installed app, Make available offline, then a compile with no network", "argv": ["python3", "offline.py"], "p95": 69.5},
-    {"name": "A whole session under the hosted policy (three engines, asy, minted, biber, Word, spelling, grammar, a live figure), nothing refused", "argv": ["python3", "csp.py"], "p95": 45.9},
-    {"name": "Paragraphs, then the PDF sets each word where the page draws it", "argv": ["python3", "para.py"], "p95": 135.5},
-    {"name": "Styles, every heading, environment, look and style Rikuy writes compiled in the page with pdfLaTeX and LuaLaTeX", "argv": ["python3", "styles.py", "compile_all"], "p95": 6.3},
-    {"name": "The graphs' PGF pictures on pdfLaTeX, XeLaTeX and LuaLaTeX, TeX's picture against the live figure in pixels", "argv": ["python3", "graphs.py", "compiles"], "p95": 21.2},
-    {"name": "The PDF view by SyncTeX both ways, and Learn Rikuy compiled in the page", "argv": ["python3", "view.py", "views", "help_tab"], "p95": 19.0},
-    {"name": "Every template of File, New compiles in the page, and a tagged PDF", "argv": ["python3", "file.py", "new_docs", "accessibility"], "p95": 62.7}
+    {"name": "The outline, then the PDF has the heading at the level it was given", "argv": ["python3", "outline.py"], "p95": 43.9, "n": 1},
+    {"name": "Every format of the Font group compiles in the page", "argv": ["python3", "font.py", "compiles"], "p95": 10.3, "n": 1},
+    {"name": "Lists, then every kind Rikuy writes compiles with pdfLaTeX, XeLaTeX and LuaLaTeX and prints the page's labels", "argv": ["python3", "lists.py"], "p95": 97.3, "n": 1},
+    {"name": "Rikuy as an agent meets it, with rikuy.api.compile making a real PDF", "argv": ["python3", "agent.py"], "p95": 117.0, "n": 1},
+    {"name": "The page's set up in TeX's PDF (paper size, header, line numbers) and Print", "argv": ["python3", "page.py", "compile_pdf"], "p95": 14.4, "n": 1},
+    {"name": "Every template of File, New compiles in the page, and a tagged PDF", "argv": ["python3", "file.py", "new_docs", "accessibility"], "p95": 53.7, "n": 1}
+   ]
+  },
+  {
+   "name": "4",
+   "p95_seconds": 448,
+   "minutes": 12,
+   "commands": [
+    {"name": "The ribbon, with Download PDF compiling and saving the file", "argv": ["python3", "ribbon.py"], "p95": 107.1, "n": 1},
+    {"name": "Tables, every construct the table commands write compiled in the page", "argv": ["python3", "table.py", "reviewed", "verified", "compiled"], "p95": 25.9, "n": 1},
+    {"name": "Review, and the copy with markup (changes, todonotes) compiled in the page", "argv": ["python3", "review.py"], "p95": 50.6, "n": 1},
+    {"name": "References (contents, lists, notes, sources, the bibliography, captions, cross references, the index, links) compiled with pdfLaTeX, XeLaTeX and LuaLaTeX, biblatex with biber", "argv": ["python3", "refs.py", "compiled"], "p95": 34.1, "n": 1},
+    {"name": "Paragraphs, then the PDF sets each word where the page draws it", "argv": ["python3", "para.py"], "p95": 113.9, "n": 1},
+    {"name": "Styles, every heading, environment, look and style Rikuy writes compiled in the page with pdfLaTeX and LuaLaTeX", "argv": ["python3", "styles.py", "compile_all"], "p95": 6.4, "n": 1}
    ]
   }
  ]

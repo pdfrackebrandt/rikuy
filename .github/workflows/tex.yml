@@ -162,9 +162,10 @@ jobs:
       matrix:
         # shards: written by dev/ci_balance.py from .github/tex-shards.json
         include:
-          - {shard: 1, minutes: 15}
-          - {shard: 2, minutes: 15}
-          - {shard: 3, minutes: 15}
+          - {shard: 1, minutes: 12}
+          - {shard: 2, minutes: 12}
+          - {shard: 3, minutes: 12}
+          - {shard: 4, minutes: 12}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
