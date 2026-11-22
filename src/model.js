@@ -3143,7 +3143,8 @@ class Builder {
       }
       switch (nd.t) {
         case 'text': this.text(nd, ctx, acc); break;
-        case 'par': acc.ch(' ', nd.s, nd.e); break;
+        // (a blank line in a footnote: a paragraph of its own, drawn as a break, see footnote below)
+        case 'par': if (this.fnPar) { acc.flush(); out.push(this.atom(ctx, { k: 'br', s: nd.s, e: nd.e })); } else acc.ch(' ', nd.s, nd.e); break;
         case 'comment': acc.flush(); break;
         case 'special': {
           if (nd.ch === '~') acc.ch(' ', nd.s, nd.e);
@@ -3402,9 +3403,18 @@ class Builder {
       this.use('f' + num);
       const saveT = this.lastTarget;
       this.lastTarget = { num, kind: 'footnote' };
+      // A blank line in a footnote starts a paragraph of its own there, as TeX sets it and as Enter
+      // in a footnote writes it: drawn as a break. It was drawn as a space, the paragraphs ran
+      // together, and after Enter the caret had no place in the footnote: it showed in the text
+      // after the mark while what was typed next went on in the footnote. An empty last paragraph
+      // gets a place for the caret.
+      const fnWas = this.fnPar;
+      this.fnPar = true;
       const kids = a ? this.inl(a.nodes, ctx, fns) : [];
+      this.fnPar = fnWas;
       trimInl(kids);
       if (a && !kids.length) kids.push(this.ph(ctx, a.is));
+      else if (a && kids[kids.length - 1].k === 'br') kids.push(this.ph(ctx, a.ie));
       this.lastTarget = saveT;
       const th = name === 'thanks' || !!this.thanksMode;
       const mark = this.atom(ctx, { k: 'fn', s: nd.s, e: nd.e, num, is: a ? a.is : null, ie: a ? a.ie : null, ...(th ? { th: true } : {}) });

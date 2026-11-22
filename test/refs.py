@@ -144,6 +144,21 @@ def notes(page):
     hw = D('A\\endnote{one} b.\n\n\\theendnotes', '\\usepackage{endnotes}\n')
     load_doc(page, hw); settle(page, 200)
     check('the endnotes package\'s \\theendnotes drawn with its raised numbers', texts(page, '.en-endnotes') == ['1one'] and page.locator('.en-endnotes sup.en-n').count() == 1, texts(page, '.en-e'))
+    # Enter in a footnote at the page's foot, as Word's: a paragraph of its own in the footnote (a
+    # blank line, as TeX reads one), drawn on a line of its own with the caret in it. The
+    # paragraphs ran together, the caret showed in the text after the mark, and what was typed
+    # there went on in the footnote; Backspace takes the paragraph back, Esc leaves it.
+    load_doc(page, doc); click_text(page, 'Words of', 5)
+    page.keyboard.press('Control+Alt+f'); page.keyboard.type('First part'); page.keyboard.press('Enter'); settle(page, 300)
+    caret = lambda: page.evaluate('(() => { const s = getSelection(), n = s.anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement); return !!(el && el.closest(".fn")); })()')
+    check('Enter in a footnote: the caret on a new line in the footnote', caret() and page.locator('.fn .a-br').count() == 1, page.evaluate('[...document.querySelectorAll(".fn")].map((e) => e.innerText)'))
+    page.keyboard.type('Second part'); settle(page, 300)
+    check('what is typed then is the footnote\'s second paragraph, drawn below the first', '\\footnote{First part\n\nSecond part}' in src(page) and page.evaluate('[...document.querySelectorAll(".fn")].map((e) => e.innerText)') == ['1First part\nSecond part'], (src(page)[40:120], page.evaluate('[...document.querySelectorAll(".fn")].map((e) => e.innerText)')))
+    for _ in range(len('second part') + 1): page.keyboard.press('Backspace')
+    settle(page, 300)
+    check('Backspace takes the paragraph back, the caret at the first one\'s end in the footnote', '\\footnote{First part}' in src(page) and caret(), src(page)[40:120])
+    page.keyboard.press('Escape'); page.keyboard.type(' X'); settle(page, 300)
+    check('Esc leaves the footnote: the words after its mark', '\\footnote{First part} X of' in src(page), src(page)[40:120])
     # Next Footnote, Previous, Show Notes
     fn = D('One\\footnote{first} two\\footnote{second} three.\n\nFour\\endnote{e1} five.\n\\printendnotes', '\\usepackage{enotez}\n')
     load_doc(page, fn); click_text(page, 'One', 0)

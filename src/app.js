@@ -1916,7 +1916,9 @@ class App {
       // (a blank line still on either side, where an empty paragraph's text went: no paragraphs
       // join, and a space put there stood at the end of the paragraph before; review V8)
       const apart = /\n[ \t\r]*\n[ \t\r]*$/.test(src.slice(Math.max(0, a - 100), a)) || /^[ \t\r]*\n[ \t\r]*\n/.test(src.slice(b, b + 100));
-      if (!apart && (slice.match(/\n/g) || []).length >= 2) return [{ f, s: a, e: b, t: ' ' }];
+      // (an empty last paragraph of a footnote joined to the one before: nothing after it in its
+      // braces to keep apart, and a space left there had no place on the page for the caret)
+      if (!apart && (slice.match(/\n/g) || []).length >= 2 && src[b] !== '}') return [{ f, s: a, e: b, t: ' ' }];
       return [{ f, s: a, e: b, t: '' }];
     }
     // Only comment lines between two paragraphs (a note, a review comment): joining them takes
