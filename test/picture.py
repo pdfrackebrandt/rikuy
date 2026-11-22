@@ -484,6 +484,8 @@ def reviewed(page):
     load_doc(page, WRAP('\n\n'.join('P %d.\n\n\\begin{center}\n\\includegraphics[height=1cm]{f%d.png}\n\\end{center}' % (k, k) for k in range(40))))
     until(page, DRAWN); settle(page, 1500)
     n = page.evaluate('window.__rb')
+    # (2 or 3: the page draws again once for the sizes read before a frame, and once more for those
+    # read after it, picNatSoon in src/cmd/picture.js; which, the reads' timing decides)
     check('H5: forty pictures sized from their files: at most 3 rebuilds (one for the document, one for the sizes that came)', n <= 3, n)
     # M2: the first Crop on a fresh picture opens
     asset(page, 'fresh.png', png(120, 80, dpi=144))
@@ -629,8 +631,8 @@ def phones(p):
         page.on('pageerror', lambda e: errs.append(str(e)))
         page.goto('https://rikuy.test/')
         page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=30000)
-        # (the page the test's once rikuy.ready has settled and drawn, as open_page() waits)
-        page.evaluate('() => window.rikuy.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))')
+        # (init goes on after the boot screen hides: the page is the test's once rikuy.ready has settled)
+        B.ready(page)
         tag = ' (%d px, touch)' % w
         asset(page)
         load_doc(page, DOC); settle(page, 600)
@@ -913,7 +915,8 @@ def r3_compiled(page):
     for eng in ('pdflatex', 'xelatex', 'lualatex'):
         doc = ('% !TEX program = ' + eng + '\n' if eng != 'pdflatex' else '') + WRAP(body_, pre)
         r = compile_pdf(page, doc)
-        check('R3 pictures compile with %s: a coloured, weighted border on a picture turned 30°, a moved drawing, a chart written again, a wrapfigure' % eng, r['ok'] and not r['problems'] and 'Words beside it' in pdf_text(r), r['problems'])
+        # (spaces aside: the pypdf CI pins, 5.9.0, reads XeLaTeX's kerned "Wo" as "W o")
+        check('R3 pictures compile with %s: a coloured, weighted border on a picture turned 30°, a moved drawing, a chart written again, a wrapfigure' % eng, r['ok'] and not r['problems'] and 'Wordsbesideit' in re.sub(r'\s', '', pdf_text(r)), (r['problems'], pdf_text(r)[:200]))
     one = WRAP('\\begin{center}\n\\includegraphics[width=0.4\\linewidth,angle=30]{a.png}\n\\end{center}')
     rr = compile_pdf(page, one)
     settle(page, 500)
