@@ -14,7 +14,7 @@ import { installWordTyping, wordShortcuts, makeDialect, classifyMacros, resolveC
 import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
 import { minimalRow, makeSame } from './minimal.js';
-import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
+import { htmlToTeX, plainToTeX, unwrapMath, oneLineLatex, headingsAsWords } from './paste.js';
 import { chainAt } from './charfmt.js';
 import { mapPos } from './wrap.js';
 import { findProblems, missingFigures } from './problems.js';
@@ -2866,13 +2866,12 @@ class App {
     const inArg = c.ghost || whole ? false : braceDepth(src, at0) > 0;
     const el = getSelection().anchorNode && (getSelection().anchorNode.nodeType === 1 ? getSelection().anchorNode : getSelection().anchorNode.parentElement);
     const inline = inArg || (!whole && !!(el && el.closest && el.closest('td, .it.h, .cap')));
-    // (copied LaTeX put in a heading, a cell or a caption: its paragraphs join with a space, and
-    // what is more than a line's words, a heading, a list, a display, comes as its words. Pasted
-    // as it was, \section{Intro\section{Background}...} and a list inside a heading stopped TeX)
-    if (latex && inline) {
-      const one = latex.replace(/\s*\n\s*\n\s*/g, ' ').replace(/\n/g, ' ').trim();
-      latex = /\\(?:begin|end|item|par|part|chapter|(?:sub){0,2}section|(?:sub)?paragraph|maketitle|caption|label)(?![A-Za-z])|\\\[|\$\$/.test(one) ? '' : one;
-    }
+    // (copied LaTeX put in a heading, a table's cell or a caption, whose argument a paragraph
+    // break ends, goes in as one line: src/paste.js oneLineLatex. Pasted as it was,
+    // \section{Intro\section{Background}...} or a list in a heading stopped TeX. A footnote or a
+    // bold word holds paragraphs, displays and lists: there it goes as it is.)
+    if (latex && !whole && el && el.closest && el.closest('td, th, .it.h, .cap')) latex = oneLineLatex(latex);
+    else if (latex && inArg) latex = headingsAsWords(latex);
     const pre = this.src(this.main).split(/\\begin\s*\{document\}/)[0];
     const o = { prev: src[at0 - 1] || ' ', hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*hyperref/.test(pre), booktabs: /\\usepackage(\[[^\]]*\])?\{[^}]*booktabs/.test(pre), inlineOnly: inline };
     // (a PDF's ligatures as letters; its Greek and symbols as formulas where pdfLaTeX compiles it: escapeTeX)

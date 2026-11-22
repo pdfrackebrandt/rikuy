@@ -1856,12 +1856,30 @@ def word_typing(page):
     check('Select All, Copy, then Paste at the end: headings, the list, bold, italic and the display come again as they are', all(s2.count(x) == 2 for x in ('\\section{Introduction}', '\\section{Background}', '\\begin{itemize}\n\\item Apple one\n\\item Banana two\n\\end{itemize}', '\\textbf{bold words}', '\\emph{italic words}', '\\[ a = b \\]', '\\footnote{The note.}')), s2[-300:])
     # (into a heading's words what is copied goes as one line of words: a heading or a list
     # pasted there as it was nested \section{Intro\section{...}} or a list in it, and TeX stopped)
-    for a, z, want in (('Background', 'Last', 'IntroBackground Lastduction'), ('Second', 'After', 'IntroSecond paragraph is plain text only.')):
+    for a, z, want in (('Background', 'Last', 'Intro{Background} Lastduction'), ('Second', 'After', 'IntroSecond paragraph is plain text only.')):
         load_doc(page, WORD_DOC)
         place(page, (a, z)); k.press('Control+c'); settle(page, 50)
         click_text(page, 'Introduction', 5); k.press('Control+v'); settle(page, 100)
         h = src(page)[src(page).index('\\section{'):]; h = h[:h.index('\n')]
         check('copied from "%s" to "%s", pasted into a heading: one line of words in its braces' % (a, z), want in h and h.count('\\section') == 1 and '\\begin' not in h and h.endswith('}'), h)
+    # (review of 996ae58b: a comment in what is copied ends at its line's end, so joined into
+    # the heading's one line it took the closing brace with it; a footnote holds paragraphs and
+    # displays, which were flattened and lost there)
+    D1 = '\\documentclass{article}\n\\begin{document}\n\\section{Intro}\nSome words% joined\nmore words here.\n\n\\section{Next}\nTail para.\\footnote{A note.}\n\\end{document}\n'
+    load_doc(page, D1)
+    place(page, ('Some', 'here.')); k.press('Control+c'); settle(page, 50)
+    click_text(page, 'Next', 4); k.press('Control+v'); settle(page, 100)
+    check('words with a comment line pasted into a heading: one line as TeX reads them, the heading closed', src(page) == D1.replace('\\section{Next}', '\\section{NextSome wordsmore words here.}'), src(page)[60:160])
+    load_doc(page, WORD_DOC.replace('of the document.', 'of the document.\\footnote{A note.}'))
+    place(page, ('comes', 'After display')); k.press('Control+c'); settle(page, 50)
+    click_text(page, 'A note', 2); k.press('Control+v'); settle(page, 100)
+    fn = src(page)[src(page).index('\\footnote{A'):]
+    check('a display copied into a footnote stays a display there', fn.startswith('\\footnote{A comes text.\n\\[ a = b \\]\nAfter displaynote.}'), fn[:80])
+    load_doc(page, WORD_DOC.replace('of the document.', 'of the document.\\footnote{A note.}'))
+    place(page, ('Second', 'Apple one')); k.press('Control+c'); settle(page, 50)
+    click_text(page, 'A note', 2); k.press('Control+v'); settle(page, 100)
+    fn = src(page)[src(page).index('\\footnote{A'):]
+    check('two paragraphs copied into a footnote stay two paragraphs', fn.startswith('\\footnote{A Second paragraph is plain text only.\n\nApple onenote.}'), fn[:80])
     # 4: a selection holding whole headings or list items takes them with its words, as Word's
     # takes the paragraphs it holds; their words alone went, and an empty numbered heading or two
     # empty bullets stayed between the two paragraphs the deletion joined

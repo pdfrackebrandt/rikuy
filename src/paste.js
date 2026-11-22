@@ -270,3 +270,31 @@ export function unwrapMath(t) {
   if ((m = /^\\begin\{(equation|align|gather|multline|displaymath|math|eqnarray|flalign|alignat)(\*?)\}(?:\{\d+\})?([\s\S]*)\\end\{\1\2\}$/.exec(s)) && !m[3].includes('\\end{' + m[1])) return m[3].trim();
   return fence ? s : null;
 }
+
+// Copied LaTeX made one line, for a place whose argument a paragraph break ends (a heading, a
+// table's cell, a caption): comments go as TeX reads them (with the line's end, so the lines they
+// joined stay joined and no brace after them is commented out), a heading leaves its words in a
+// group, a label goes, a display becomes a formula in the line, a list's items words in a row,
+// paragraphs and lines join with a space. '' where something is left that the line cannot hold
+// (an align, a figure): then the words alone are pasted.
+export function oneLineLatex(t) {
+  let s = String(t || '').replace(/\r\n?/g, '\n');
+  // (a % after an even number of backslashes starts a comment; \% is a percent sign)
+  s = s.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*(?:\n[ \t]*)?/g, '$1$2');
+  s = headingsAsWords(s);
+  s = s.replace(/\\label\s*\{[^{}]*\}/g, '');
+  s = s.replace(/\\\[([\s\S]*?)\\\]/g, (m, x) => '$' + x.trim() + '$');
+  s = s.replace(/\$\$([\s\S]*?)\$\$/g, (m, x) => '$' + x.trim() + '$');
+  s = s.replace(/\\begin\s*\{(equation|displaymath)(\*?)\}([\s\S]*?)\\end\s*\{\1\2\}/g, (m, e, st, x) => '$' + x.trim() + '$');
+  s = s.replace(/\\(?:begin|end)\s*\{(?:itemize|enumerate|description)\}(?:\[[^\]\n]*\])?/g, ' ');
+  s = s.replace(/\\item(?![A-Za-z])\s*(?:\[([^\]\n]*)\])?/g, (m, lab) => ' ' + (lab ? lab + ' ' : ''));
+  s = s.replace(/\s*\n\s*/g, ' ').replace(/[ \t]{2,}/g, ' ').trim();
+  return /\\(?:begin|end|par|maketitle|caption)(?![A-Za-z])/.test(s) ? '' : s;
+}
+
+// A heading copied with what is pasted inside another command's argument (a footnote, a bold
+// word): its words stay, in a group, and the command goes, which TeX takes nowhere but at a
+// paragraph's level of the text
+export function headingsAsWords(t) {
+  return String(t || '').replace(/\\(?:part|chapter|(?:sub){0,2}section|(?:sub)?paragraph)\*?\s*(?:\[[^\]\n]*\]\s*)?(?=\{)/g, '');
+}
