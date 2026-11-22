@@ -1169,13 +1169,15 @@ class App {
     if (!r.collapsed) {
       // The footnotes at a page's foot are a text of their own, as Word's are: a selection from
       // the page's last lines into them (Shift+Down there, a drag) ends where the page's text
-      // ends, and one from a footnote out of them at that footnote area's end. Their words come
+      // ends, and one from a footnote out of it ends at that footnote's end. Their words come
       // earlier in the source, so the selection reached back over half the document before, and
-      // typing over it deleted all that.
-      const fnsOf = (n) => { const e = n && (n.nodeType === 1 ? n : n.parentElement); return e && e.closest ? e.closest('.fns') : null; };
-      const fs = fnsOf(r.startContainer), fe = fnsOf(r.endContainer);
+      // typing over it deleted all that. (Not at the footnote area's end: its last footnote's
+      // mark is in the body, far from the first's, and the body between went.)
+      const up = (n, q) => { const e = n && (n.nodeType === 1 ? n : n.parentElement); return e && e.closest ? e.closest(q) : null; };
+      const fs = up(r.startContainer, '.fns'), fe = up(r.endContainer, '.fns'), ns = up(r.startContainer, '.fn');
       let end = [r.endContainer, r.endOffset];
-      if (fe && fe !== fs) end = [fe, 0];
+      if (ns && up(r.endContainer, '.fn') !== ns) end = [ns, ns.childNodes.length];
+      else if (fe && fe !== fs) end = [fe, 0];
       else if (fs && fe !== fs) end = [fs, fs.childNodes.length];
       // (the end read as an end: what is before it on the page; where that is before the start,
       // nothing of the page's text lies between them, and the place read as before is kept)

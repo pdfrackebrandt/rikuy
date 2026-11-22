@@ -1814,6 +1814,17 @@ def word_typing(page):
     load_doc(page, WORD_DOC)
     click_text(page, 'Last paragraph', 0); k.press('Shift+ArrowDown'); k.type('Z'); settle(page, 100)
     check('Shift+Down on the last line above the footnotes, then a letter: only that line is replaced', src(page) == WORD_DOC.replace('Last paragraph of the document.', 'Z'), src(page)[150:])
+    # (and one from a footnote's words into the next page ends at that footnote's end: it ended
+    # at the last footnote of the page, whose mark is in the body, and the body between went)
+    fill = '\n\n'.join('Filler paragraph number %d with enough words to take a few lines on the page so pages fill up quickly here.' % i for i in range(40))
+    D3 = '\\documentclass{article}\n\\begin{document}\nPara Alpha has a note\\footnote{Note one text.} and more.\n\nPara Bravo in between with words.\n\nPara Charlie has a note\\footnote{Note two text.} end.\n\n' + fill + '\n\nZeta last words.\n\\end{document}\n'
+    load_doc(page, D3)
+    page.evaluate("""() => { const sp = [...document.querySelectorAll('#pages span.t')];
+      const a = sp.find((s) => s.textContent.includes('Note one')), z = sp.find((s) => s.textContent.includes('number 30'));
+      const r = document.createRange(); r.setStart(a.firstChild, a.textContent.indexOf('one')); r.setEnd(z.firstChild, 3);
+      document.getElementById('pages').focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }""")
+    settle(page, 100, full=True); k.type('Z'); settle(page, 100)
+    check('from a footnote\'s words into the next page, then a letter: only that footnote\'s words after the place go', src(page) == D3.replace('Note one text.', 'Note Z'), src(page)[40:260])
     # 2: a triple click selects the whole paragraph, as Word's: the browser's stopped at the first
     # formula in it, and the letter typed over it left the rest of the paragraph standing
     load_doc(page, WORD_DOC)
