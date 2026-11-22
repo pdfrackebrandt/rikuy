@@ -292,16 +292,54 @@ export const methods = {
     const t = this.src(f);
     let W = null;
     for (const { W: X } of F.chainAt(t, p, p).reverse()) { if (W ? X.is === W.s && X.ie === W.e : X.is === p && X.ie === p) W = X; else break; }
-    const w = this.rbEmpty, on = w && w.fmt && w.f === f && W && W.s === w.s && this.hist.length === w.h0 + w.n + 1 ? w : null;
+    const w = this.rbEmpty, on = w && w.fmt && !w.split && w.f === f && W && W.s === w.s && this.hist.length === w.h0 + w.n + 1 ? w : null;
+    // (Ctrl+B and Ctrl+B again with nothing typed: the text is as it was, and the two steps that
+    // changed nothing go, as Word's toggle at a caret leaves no undo step)
+    if (!W && w && w.fmt && !w.split && w.f === f && this.hist.length === w.h0 + w.n + 1) {
+      let x = t;
+      for (const h of this.hist.slice(w.h0).reverse()) for (const d of h.files) if (x != null) x = d.f === f ? x.slice(0, d.s) + d.del + x.slice(d.s + d.ins.length) : null;
+      if (x === t) { this.hist.splice(w.h0); this.redoStack = w.redo0; if (this.updateUndoUI) this.updateUndoUI(); }
+    }
     this.rbEmpty = !W ? null : on ? { ...on, t: t.slice(W.s, W.e), n: on.n + 1 } : { f, s: W.s, t: t.slice(W.s, W.e), ...mark, n: 1, fmt: true };
   },
   // What is pasted at p of file f, less the toggles the words there already have: italic pasted
   // into italic stayed \emph in \emph, which TeX and the page set upright, and bold into bold was
   // \textbf twice. Word's pasted words are italic there either way.
-  pasteInFormats(f, p, t) {
-    const kinds = new Set(F.chainAt(this.src(f), p, p).map((x) => x.group).filter((g) => /^(bold|italic|underline|strike|dstrike|smallcaps|allcaps|sub|sup|mono)$/.test(g)));
-    for (const g of kinds) { const r = F.clearKinds(t, 0, t.length, [g]); if (!r.error) t = r.text; }
+  // (src and p: a text and a place in it, the blank paragraph's waiting formats among them.) A kind
+  // goes in all its forms (italic in italic turns upright); a line only as the same line (a double
+  // underline pasted into a single one stays double). Not through a footnote's text, which TeX sets
+  // in its own font: none is taken off where the paste holds one.
+  pasteInFormats(f, p, t, src) {
+    if (/\\(?:footnote|footnotetext|marginpar|thanks|todo|endnote|sidenote)\b/.test(t)) return t;
+    for (const { group, W } of F.chainAt(src ?? this.src(f), p, p)) {
+      if (!/^(bold|italic|underline|strike|dstrike|smallcaps|allcaps|sub|sup|mono)$/.test(group)) continue;
+      const names = group === 'underline' || group === 'strike' || group === 'dstrike' ? (/^(uline|underline)$/.test(W.cmd) ? ['uline', 'underline'] : [W.cmd]) : groupNames(group);
+      const r = F.clearInside(t, 0, t.length, names);
+      if (r && !r.error && r.text != null) t = r.text;
+    }
     return t;
+  },
+  // The formats round p of file f, as src/app.js wrapBreak reads them off the page, but from the
+  // source, so a declaration's group ({\bfseries ..}, which the page marks no element for) counts:
+  // { p, close, open }, p moved out past those that end or start at it
+  formatsBreak(f, p) {
+    const t = this.src(f);
+    let close = '', open = '';
+    for (const { W } of F.chainAt(t, p, p).reverse()) {
+      if (!close && p === W.ie) { p = W.e; continue; }
+      if (!open && p === W.is) { p = W.s; continue; }
+      close += t.slice(W.ie, W.e);
+      open = t.slice(W.s, W.is) + open;
+    }
+    return { p, close, open };
+  },
+  // A paragraph of text a format's braces can hold: no list, heading, display or table, no footnote
+  // (ulem's lines cannot cross one), no comment (it would hide the closing brace), its braces balanced
+  wrappable(x) {
+    if (!x.trim() || /\\(?:begin|end|item|part|chapter|(?:sub)*section|(?:sub)?paragraph|caption|footnote|marginpar|par)\b|\\\[|\$\$/.test(x) || /(?:^|[^\\])%/.test(x)) return false;
+    let d = 0;
+    for (let i = 0; i < x.length; i++) { if (x[i] === '\\') { i++; continue; } if (x[i] === '{') d++; else if (x[i] === '}' && --d < 0) return false; }
+    return d === 0;
   },
   // The empty format a deletion left at p, \textbf{} once its words were cut or deleted: kept for
   // what is typed next, as Word's, and taken out in the deletion's own step when the caret leaves
@@ -342,8 +380,14 @@ export const methods = {
       // wrapper is closed and opened again at the caret, which stands between; left untyped, the
       // step goes again (dropEmpty). Not where other braces open between (a nested format).
       const w = W && W.is < c.a && c.a < W.ie ? F.wordAt(t, c.a) : null;
-      if (W && W.is < c.a && c.a < W.ie && W.e === W.ie + 1 && t[W.ie] === '}' && !(w && w[0] < c.a && c.a < w[1]) && !/[{}]/.test(t.slice(W.is, c.a).replace(/\\./g, ''))) {
-        const ins = '}' + t.slice(W.s, W.is), mark = { h0: this.hist.length, redo0: this.redoStack };
+      // (braces closed again before the caret, \emph{b} or \cite{k}, are no bar: the depth is what counts)
+      const depth0 = (x) => { let d = 0; for (let i = 0; i < x.length; i++) { if (x[i] === '\\') { i++; continue; } if (x[i] === '{') d++; else if (x[i] === '}' && --d < 0) return false; } return d === 0; };
+      if (W && W.is < c.a && c.a < W.ie && W.e === W.ie + 1 && t[W.ie] === '}' && !(w && w[0] < c.a && c.a < w[1]) && depth0(t.slice(W.is, c.a))) {
+        // (a declaration's group, {\bfseries many bold| words}: opened again as {\bfseries{}, or TeX
+        // skips the space before "words" with the switch's own, and the PDF read "plainwords")
+        let open = t.slice(W.s, W.is);
+        if (/\\[A-Za-z]+[ \t]+$/.test(open) && /^[ \t]/.test(t.slice(c.a))) open = open.replace(/[ \t]+$/, '') + '{}';
+        const ins = '}' + open, mark = { h0: this.hist.length, redo0: this.redoStack };
         this.closeGroup();
         this.commit([{ f: c.f, s: c.a, e: c.a, t: ins }], { f: c.f, p: c.a + 1, bias: -1 }, 'format');
         this.closeGroup();

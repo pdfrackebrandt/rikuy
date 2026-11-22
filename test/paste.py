@@ -71,6 +71,47 @@ try:
             click_text(page, 'plain', 5); page.evaluate(LAST); settle(page, 250)
             s = src(page)
             check('copy %s..%s over a bold word\'s brace, paste: %r' % (sel[0], sel[1], want), s == W(want), s[s.find('\\begin{document}') + 17:][:90])
+        # the hostile review: a block never goes inside a format's braces. On the blank paragraph after
+        # a formatted word (Enter), a list or a heading goes in as it is, italic into italic is italic
+        # once, two paragraphs after Ctrl+B are both bold; inside a \\uline word a list or a heading is
+        # flattened onto the line as before, paragraphs of text still split
+        UL = '\\usepackage[normalem]{ulem}\n'
+        W2 = lambda b, pre='': '\\documentclass{article}\n' + pre + '\\begin{document}\n' + b + '\n\\end{document}\n'
+        LIST = '<ul><li>one</li><li>two</li></ul>'
+        made = []
+        for name, pre, doc, word, keys, html, plain, want in (
+                ('B2 italic after Enter at \\emph{italic}', '', 'Some \\emph{italic}\n\nEnd.', 'italic', ('Enter',), '<i>XY</i>', 'XY', 'Some \\emph{italic}\n\n\\emph{XY}\n\nEnd.'),
+                ('B3 a list after Enter at \\uline{ul}', UL, 'Some \\uline{ul}\n\nEnd.', 'ul', ('Enter',), LIST, 'one\ntwo', 'Some \\uline{ul}\n\n\\begin{itemize}\n  \\item one\n  \\item two\n\\end{itemize}\n\nEnd.'),
+                ('B3 a heading after Enter at \\textbf{bold}', '', 'Some \\textbf{bold}\n\nEnd.', 'bold', ('Enter',), '<h1>Head</h1>', 'Head', 'Some \\textbf{bold}\n\n\\section{Head}\n\nEnd.'),
+                ('B4 a list into a \\uline word', UL, 'Some \\uline{ulword} here.', ('ulword', 2), (), LIST, 'one\ntwo', 'Some \\uline{ulone twoword} here.'),
+                ('B4 a heading into a \\uline word', UL, 'Some \\uline{ulword} here.', ('ulword', 2), (), '<h1>Head</h1>', 'Head', 'Some \\uline{ulHeadword} here.'),
+                ('paragraphs into a \\uline word', UL, 'Some \\uline{ulword} here.', ('ulword', 2), (), None, 'P1\n\nP2', 'Some \\uline{ulP1}\n\n\\uline{P2word} here.'),
+                ('paragraphs into {\\bfseries ..}', '', 'Some {\\bfseries boldword} here.', ('boldword', 4), (), None, 'P1\n\nP2', 'Some {\\bfseries boldP1}\n\n{\\bfseries P2word} here.'),
+                ('N5 two paragraphs after Enter and Ctrl+B', '', 'Some words.\n\nEnd.', 'words.', ('Enter', 'Control+b'), None, 'P1\n\nP2', 'Some words.\n\n\\textbf{P1}\n\n\\textbf{P2}\n\nEnd.'),
+                ('N4 a double underline into \\uline stays double', UL, 'Some \\uline{ulword} here.', ('ulword', 2), (), None, None, 'Some \\uline{ul\\uuline{x}word} here.'),
+                ('N4 a footnote\'s bold into bold stays', '', 'Some \\textbf{boldword} here.', ('boldword', 4), (), None, None, 'Some \\textbf{boldX\\footnote{see \\textbf{this}}word} here.')):
+            load_doc(page, W2(doc, pre))
+            if isinstance(word, tuple): click_text(page, *word)
+            else: click_text(page, word, len(word))
+            for key in keys: page.keyboard.press(key); settle(page, 120)
+            if html is None and plain is None:
+                # (LaTeX copied on the page: what the paste keeps of it)
+                lt = 'X\\footnote{see \\textbf{this}}' if 'footnote' in name else '\\uuline{x}'
+                page.evaluate('''(t) => { const d = new DataTransfer(); d.setData('text/plain', 'x'); d.setData('text/x-galley-latex', t);
+                  document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: d, bubbles: true, cancelable: true })); }''', lt)
+            else: page.evaluate(PASTE, [html, plain])
+            settle(page, 250)
+            s = src(page)
+            check('review %s: %r' % (name, want), s == W2(want, pre), s[s.find('\\begin{document}') + 17:][:120])
+            made.append((name, s))
+        if os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist', 'tex', 'tree.wasm')):
+            page.set_default_timeout(600000)
+            for name, t in made:
+                r = page.evaluate('async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile(); return r.ok; }', t)
+                check('review %s compiles' % name, r, t[t.find('begin{document}'):][:160])
+            page.set_default_timeout(30000)
+        else:
+            print('SKIP the compiles of the review cases: no TeX tree in dist')
         load_doc(page, base)
         # Ctrl+Shift+V pastes plain text
         click_text(page, 'Click anywhere in this paragraph', 0)

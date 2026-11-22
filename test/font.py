@@ -931,6 +931,61 @@ def between_words(page):
     check('Ctrl+B twice there: X bold in the one wrapper', body(page) == 'Some \\textbf{many boldX words} here.', body(page))
 
 
+def pdf_of(page, t):
+    """The source t compiled in the page: (ok, the PDF's text), or None without a TeX tree."""
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        return None
+    page.set_default_timeout(600000)
+    r = page.evaluate("""async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile();
+      let s = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) s += String.fromCharCode(...r.pdf.subarray(i, i + 8192));
+      return { ok: r.ok, pdf: s ? btoa(s) : '' }; }""", t)
+    page.set_default_timeout(30000)
+    try:
+        import base64, io, pypdf
+        text = ' '.join(pg.extract_text() for pg in pypdf.PdfReader(io.BytesIO(base64.b64decode(r['pdf']))).pages) if r['pdf'] else ''
+    except ImportError:
+        text = None
+    return r['ok'], text
+
+
+def review3(page):
+    """The hostile review of the branch: declaration groups, ulem, braces before the caret, other commands at a paragraph's end."""
+    k = page.keyboard
+    steps = lambda: page.evaluate('window.rikuy.hist.length')
+    made = []
+    # B1: {\bfseries ..} split between words: the space before "words" kept ({\bfseries{})
+    load_doc(page, WRAP('Some {\\bfseries many bold words} here.')); click_text(page, 'bold', 4)
+    k.press('Control+b'); settle(page, 120); k.type(' plain'); settle(page, 200)
+    check('review B1: Ctrl+B between words of {\\bfseries ..}, " plain": the group opened again as {\\bfseries{}', body(page) == 'Some {\\bfseries many bold} plain{\\bfseries{} words} here.', body(page))
+    made.append(('B1', src(page), 'bold plain words'))
+    # N1: a brace closed before the caret is no bar to the split
+    for doc, want in (('\\textbf{a \\emph{b} many bold words} here.', '\\textbf{a \\emph{b} many bold}\\textbf{ words} here.'),
+                      ('\\textbf{see \\ref{k} many bold words} here.', '\\textbf{see \\ref{k} many bold}\\textbf{ words} here.')):
+        load_doc(page, WRAP(doc)); click_text(page, 'bold', 4); k.press('Control+b'); settle(page, 150)
+        check('review N1: Ctrl+B between words after a closed brace: %s' % want, body(page) == want, body(page))
+    # \uline split, Ctrl+U between words
+    load_doc(page, WRAP('Some \\uline{many under words} here.', ULEM)); click_text(page, 'under', 5)
+    k.press('Control+u'); settle(page, 120); k.type(' x'); settle(page, 200)
+    check('review: Ctrl+U between words of \\uline{..}, " x": \\uline{many under} x\\uline{ words}', body(page) == 'Some \\uline{many under} x\\uline{ words} here.', body(page))
+    made.append(('uline split', src(page), 'under x words'))
+    # N2: Enter at the end of \textsl and \href: the new paragraph after their braces
+    for pre, doc, word, want in (('', 'Some \\textsl{slant}\n\nEnd.', 'slant', 'Some \\textsl{slant}\n\nx\n\nEnd.'),
+                                 ('\\usepackage{hyperref}\n', 'Some \\href{https://example.org}{link}\n\nEnd.', 'link', 'Some \\href{https://example.org}{link}\n\nx\n\nEnd.')):
+        load_doc(page, WRAP(doc, pre)); click_text(page, word, len(word)); k.press('Enter'); settle(page, 150); k.type('x'); settle(page, 200)
+        check('review N2: Enter at the end of %s, x: a paragraph after it' % word, body(page) == want, body(page))
+        made.append(('N2 ' + word, src(page), 'x'))
+    # N6: Ctrl+B twice at a caret, then away: no step left
+    load_doc(page, DOC); click_text(page, 'Some', 4); k.press('Control+b'); settle(page, 80); k.press('Control+b'); settle(page, 80)
+    click_text(page, 'words', 2); settle(page, 200, full=True)
+    check('review N6: Ctrl+B, Ctrl+B at a caret: no step left', src(page) == DOC and steps() == 0, (body(page), steps()))
+    for name, t, words in made:
+        r = pdf_of(page, t)
+        if r is None:
+            print('SKIP the compile of review %s: no TeX tree in %s' % (name, DIST))
+            continue
+        check('review %s compiles, the PDF reads "%s"' % (name, words), r[0] and (r[1] is None or words in ' '.join(r[1].split())), (r[0], (r[1] or '')[:120], t[t.find('begin{document}'):][:120]))
+
+
 def phone_box(page, sel):
     """The rect of the last element sel matches, the smallest of its controls, and the page's sideways overflow."""
     return page.evaluate("""(sel) => { const all = [...document.querySelectorAll(sel)].filter((x) => x.offsetParent || getComputedStyle(x).position === 'fixed'); const p = all[all.length - 1];
@@ -1096,7 +1151,7 @@ def phones(p):
 
 def run():
     with sync_playwright() as p:
-        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, caret_formats, word_formats, switch_space, deleted_formats, between_words, phones, compiles, r2_compiles)
+        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, caret_formats, word_formats, switch_space, deleted_formats, between_words, review3, phones, compiles, r2_compiles)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             if fn is phones:
                 phones(p)

@@ -2266,6 +2266,10 @@ class App {
       // goes after the closing brace. It went inside, and what was typed next ran the bold over a
       // blank line, drawn as one paragraph; its words take the formats on, as Word's do)
       const E = this.formatsEnding ? this.formatsEnding(f, p) : { p, wrap: null };
+      // (and out of any other command's words ending there, \textsl, \enquote, \href: written
+      // plain after them; \textsl{..} round a blank line stopped TeX, which takes no paragraph there)
+      const out = this.wrapBreak(el, f, E.p);
+      if (!out.close) E.p = out.p;
       this.showGhost(itemEl, f, E.p);
       if (E.wrap && this.ghost) this.ghost.wrap = E.wrap;
       this.enterAct();
@@ -2433,8 +2437,20 @@ class App {
     // (the formats the paragraph above ended in, Enter's: the words go in them, the caret before
     // their closing braces; not a paste of paragraphs, which they would hold over a blank line)
     // (or set on it with Ctrl+B and the rest, with the preamble's lines they need: fmtGhost)
-    const W = g.style !== 'latex' && g.wrap && !/\n[ \t]*\n/.test(tex) ? g.wrap : null;
-    if (W) { tex = W.open + tex + W.close; if (W.needs && this.fmtNeedsEdits) extra = [...extra, ...this.fmtNeedsEdits(W.needs)]; }
+    // Each paragraph of text goes in them; a list, a heading, a display, a table goes in as it is
+    // (\uline{\begin{itemize}..} stopped TeX), and the formats they have already come off what is
+    // pasted (\emph in \emph is upright: pasteInFormats)
+    const W = g.style !== 'latex' && g.wrap ? g.wrap : null;
+    let back = 0;
+    if (W) {
+      if (this.pasteInFormats) tex = this.pasteInFormats(g.f, W.open.length, tex, W.open + W.close);
+      const parts = tex.split(/(\s*\n[ \t]*\n\s*)/), ok = (x) => (this.wrappable ? this.wrappable(x) : !/[\\{}%$]/.test(x));
+      if (parts.some((x, i) => !(i % 2) && ok(x))) {
+        tex = parts.map((x, i) => (!(i % 2) && ok(x) ? W.open + x + W.close : x)).join('');
+        back = ok(parts[parts.length - 1]) ? W.close.length : 0;
+        if (W.needs && this.fmtNeedsEdits) extra = [...extra, ...this.fmtNeedsEdits(W.needs)];
+      }
+    }
     const src = this.src(g.f);
     // comment lines right under the paragraph belong to it (a review comment is about the line
     // above it): the new paragraph goes after them (not for one before a block: those are its own)
@@ -2448,7 +2464,7 @@ class App {
     const post = g.pos >= src.length ? '' : '\n'.repeat(Math.max(0, (g.line ? 1 : 2) - nlA));
     this.removeGhost();
     const grew = extra.filter((x) => x.f === g.f && x.s <= g.pos).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
-    this.commit([...extra, { f: g.f, s: g.pos, e: g.pos, t: pre + open + tex + close + post }], { f: g.f, p: g.pos + grew + pre.length + open.length + tex.length - (W ? W.close.length : 0), bias: -1 }, 'type');
+    this.commit([...extra, { f: g.f, s: g.pos, e: g.pos, t: pre + open + tex + close + post }], { f: g.f, p: g.pos + grew + pre.length + open.length + tex.length - back, bias: -1 }, 'type');
   }
 
   // ---- LaTeX paragraphs (src/styles.js) ----------------------------------------------
@@ -2801,21 +2817,23 @@ class App {
     // (inside bold or italic words, braces of formats alone: paragraphs stay paragraphs, each format
     // closed before the blank line and opened again after it, as Enter splits them; a paste there
     // ran its paragraphs into one line)
-    const fw = inArg && c.collapsed && el && el.closest && !el.closest('td, .it.h, .cap') ? this.wrapBreak(el, c.f, at0) : null;
+    const fw = inArg && c.collapsed && el && el.closest && !el.closest('td, .it.h, .cap') ? (this.formatsBreak ? this.formatsBreak(c.f, at0) : this.wrapBreak(el, c.f, at0)) : null;
     const fmtOnly = !!fw && braceDepth(src, fw.p) === (fw.close.match(/\}/g) || []).length;
-    const inline = (inArg && !fmtOnly) || (!whole && !!(el && el.closest && el.closest('td, .it.h, .cap')));
+    const inline = inArg || (!whole && !!(el && el.closest && el.closest('td, .it.h, .cap')));
     const pre = this.src(this.main).split(/\\begin\s*\{document\}/)[0];
     const o = { prev: src[at0 - 1] || ' ', hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*hyperref/.test(pre), booktabs: /\\usepackage(\[[^\]]*\])?\{[^}]*booktabs/.test(pre), inlineOnly: inline };
     // (a PDF's ligatures as letters; its Greek and symbols as formulas where pdfLaTeX compiles it: escapeTeX)
     const pdfText = !this.textEngine().unicode;
     // (a preamble that sets Greek up for pdfLaTeX's text: Greek pasted there stays letters)
     const greekSet = /\\usepackage\s*\[[^\]]*\b(greek|polutonikogreek|LGR)\b[^\]]*\]\s*\{(babel|fontenc)\}|\\usepackage\s*(\[[^\]]*\])?\s*\{[^}]*\b(textgreek|alphabeta|teubner|greektex|lgrx)\b|\\DeclareUnicodeCharacter\s*\{0?3[9AaBbCc][0-9A-Fa-f]\}|\\newunicodechar\s*\{[\u0370-\u03FF]\}/.test(pre);
-    const rich = () => withPdfText(pdfText, () => {
+    // (flat: on one line, as a heading, a cell or a command's argument takes it)
+    const rich = (flat = inline) => withPdfText(pdfText, () => {
       if (plainOnly) return textToTeX(plain, o.prev);
+      const q = { ...o, inlineOnly: flat };
       let t = '';
-      if (html && /<[a-z]/i.test(html)) { try { t = htmlToTeX(html, o); } catch (err) { t = ''; } }
-      if (!t.trim()) t = plainToTeX(plain, o.prev, o);
-      if (inline) t = t.replace(/\s*\n\s*\n\s*/g, ' ').replace(/\n/g, ' ');
+      if (html && /<[a-z]/i.test(html)) { try { t = htmlToTeX(html, q); } catch (err) { t = ''; } }
+      if (!t.trim()) t = plainToTeX(plain, o.prev, q);
+      if (flat) t = t.replace(/\s*\n\s*\n\s*/g, ' ').replace(/\n/g, ' ');
       return t;
     }, { greek: !greekSet });
     if (c.ghost) { const t = latex || rich(); this.ghostInsert(t, this.pastePackages(t)); return; }
@@ -2827,10 +2845,12 @@ class App {
     let t = raw ? (latex || plain).replace(/\r\n?/g, '\n') : this.pasteKept(latex, c.f, at) || rich();
     // (italic into italic words stays italic: pasteInFormats, src/cmd/font.js)
     if (!raw && this.pasteInFormats) t = this.pasteInFormats(c.f, at, t);
-    // (paragraphs into formatted words: split there; a list, a table or a display stays on the line)
-    if (fmtOnly && !raw && /\n[ \t]*\n/.test(t)) {
-      if (/\\begin\s*\{|\\\[|\$\$/.test(t)) t = t.replace(/\s*\n\s*\n\s*/g, ' ').replace(/\n/g, ' ');
-      else { t = t.replace(/\s*\n[ \t]*\n\s*/g, fw.close + '\n\n' + fw.open); at = fw.p; }
+    // (paragraphs of text alone into formatted words: split there, each in the formats. Anything
+    // else, a list, a heading, a table, a display, a comment, stays flattened on the line as before:
+    // \uline{..\begin{itemize}..} stopped TeX)
+    if (fmtOnly && !raw) {
+      const u = this.pasteInFormats(c.f, fw.p, latex ? this.pasteKept(latex, c.f, fw.p) : rich(false)), parts = u.split(/\s*\n[ \t]*\n\s*/);
+      if (parts.length > 1 && this.wrappable && parts.every((x) => this.wrappable(x))) { t = parts.join(fw.close + '\n\n' + fw.open); at = fw.p; }
     }
     if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!raw && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
