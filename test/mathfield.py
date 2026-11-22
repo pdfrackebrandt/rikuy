@@ -21,7 +21,8 @@ try:
         check('field has focus', page.evaluate("document.activeElement && document.activeElement.id === 'pop-field'"))
         # type at the end of the field
         page.keyboard.type('+1')
-        settle(page, 400)
+        # (the box writes the source 140 ms after its last change: the page's timer, waited for)
+        settle(page, 400, full=True)
         ta = page.evaluate("document.getElementById('pop-tex').value")
         s1 = src(page)
         print('textarea after field edit:\n' + ta)
@@ -73,7 +74,7 @@ try:
         settle(page, 200)
         page.keyboard.press('End')
         page.keyboard.type('+1')
-        settle(page, 400)
+        settle(page, 400, full=True)
         s2 = src(page)
         check('inline field edit reaches source', '\\gamma+1$' in s2.replace(' ', ''), s2[s2.find('Click $'):][:50])
         page.keyboard.press('Enter')

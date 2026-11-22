@@ -3,7 +3,7 @@ Shift+Enter rows, wrapping a selection, pasting with delimiters, Copy for Word, 
 comma in German documents, chemistry with \\ce."""
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, open_page, check, results, src, SHOTS
+from browser import settle, until, open_page, check, results, src, SHOTS
 from playwright.sync_api import sync_playwright
 
 with sync_playwright() as p:
@@ -98,6 +98,9 @@ Wasser ist \ce{H2O}. Es gilt $x = 1$ und $f(0,1) + x$.
     init = "window.__seed = " + repr(de).replace("'", '"') if False else None
     browser, page, errors = open_page(p, width=1400, height=900)
     page.evaluate("""(t) => { const g = window.rikuy; g.files = new Map([['main.tex', t]]); g.main = 'main.tex'; g.forceRender = true; g.rebuild(); }""", de)
+    # (\ce draws once KaTeX's mhchem, fetched the first time a document uses it, has come and the
+    # page is drawn again with it: a script loaded, no timer)
+    until(page, "() => { try { window.katex.renderToString('\\\\ce{H2O}'); return true; } catch (e) { return false; } }", timeout=1500)
     settle(page, 1500)
     chem = page.evaluate("(() => { const a = [...document.querySelectorAll('.it.p [data-a]')]; return a.map(e => e.textContent).join('|'); })()")
     check('\\ce renders as a formula', 'H' in chem and '2' in chem and 'O' in chem and '\\ce' not in chem, chem)

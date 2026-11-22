@@ -29,7 +29,7 @@ Each part is a function; `python3 power.py
 footnote` runs one."""
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, until, open_page, check, results, src, click_text, select_text, load_doc
+from browser import settle, until, fonts_settled, open_page, check, results, src, click_text, select_text, load_doc
 from playwright.sync_api import sync_playwright
 
 
@@ -185,7 +185,8 @@ def dollars(page):
         fresh(page, MATH)
         click_text(page, 'gamma.', 6)
         for ch in ' costs $5 each': page.keyboard.type(ch); settle(page, 250 if ch == '$' else 60)
-        settle(page, 500)
+        # (the box's 5 reaches the source by its timer, 140 ms after it was typed)
+        settle(page, 500, full=True)
         s = src(page)
         h = page.evaluate("(() => { const P = window.rikuy.pop; const e = P && P.el.querySelector('.hint'); if (!e) return null; const r = e.getBoundingClientRect(); return [e.textContent, r.width > 0 && r.right <= innerWidth + 1]; })()")
         f = page.evaluate("(() => { const t = window.rikuy.pop && window.rikuy.pop.el.querySelector('textarea'); return t && t.value; })()")
@@ -285,11 +286,15 @@ def latex(page):
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
         key(page, 'Enter'); key(page, 'Alt+Equal', 600)
-        page.keyboard.type('x=1\\text{', delay=15); settle(page, 200)
+        # (full: the box's push of x=1 focuses the field again, and MathLive focuses its keyboard
+        # sink 60 ms later; a composition begun before that lost the focus to it, its ひ left in the
+        # box as text and 日本 at the box's start: the app's race, reported, not this step's to test)
+        page.keyboard.type('x=1\\text{', delay=15); settle(page, 200, full=True)
         if how == 'dictation': cdp.send('Input.insertText', {'text': text})
         else: cdp.send('Input.imeSetComposition', {'text': 'ひ', 'selectionStart': 1, 'selectionEnd': 1}); settle(page, 150); cdp.send('Input.insertText', {'text': text})
         settle(page, 250)
-        page.keyboard.type('}+y', delay=15); settle(page, 500)
+        # (the field open: its box writes the source 140 ms after the last key, the page's timer)
+        page.keyboard.type('}+y', delay=15); settle(page, 500, full=True)
         s = src(page); body = ''.join(s[s.find('\\begin{equation}'):s.find('\\end{equation}')].split())
         check('latex: ' + how + ' in \\text{…} keeps it in the \\text', ('\\text{' + text.strip() + '}+y') in body, body)
         key(page, 'Escape', 300)
@@ -303,7 +308,7 @@ def latex(page):
         click_text(page, 'gamma.', 6)
         key(page, 'Enter'); key(page, 'Alt+Equal', 20)
         page.keyboard.type('x=1\\text{'); cdp.send('Input.insertText', {'text': 'if '}); settle(page, 250)
-        page.keyboard.type('}+y', delay=15); settle(page, 500)
+        page.keyboard.type('}+y', delay=15); settle(page, 500, full=True)
         s = src(page); body = ''.join(s[s.find('\\begin{equation}'):s.find('\\end{equation}')].split())
         if 'x=1\\text{if}+y' not in body: bad.append(body)
         key(page, 'Escape', 300)
@@ -368,7 +373,7 @@ def latex(page):
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
         key(page, 'Enter'); key(page, 'Alt+Equal', 600)
-        page.keyboard.type('x=1\\text{', delay=15); settle(page, 200)
+        page.keyboard.type('x=1\\text{', delay=15); settle(page, 200, full=True)
         cdp.send('Input.imeSetComposition', {'text': 'ひ', 'selectionStart': 1, 'selectionEnd': 1}); settle(page, 150); cdp.send('Input.insertText', {'text': '日本'})
         settle(page, 250); page.keyboard.type('}+y', delay=15); settle(page, 300)
         key(page, how, 400)
@@ -658,6 +663,8 @@ def quickopen(page):
     c = caret(page)
     check('quickopen: a few letters and Enter put the caret in that file on the page', c and c[0] == 'model.tex' and active(page) == 'pages', (c, active(page)))
     key(page, 'Control+p', 400); typed(page, 'refs'); key(page, 'Enter', 1200)
+    # (the source pane shows it once CodeMirror, fetched the first time the pane opens, has come)
+    until(page, "() => window.rikuy.srcFile === 'refs.bib' && document.body.classList.contains('src-on')", timeout=1200)
     check('quickopen: a file the page does not draw opens in the source pane', page.evaluate('window.rikuy.srcFile') == 'refs.bib' and page.evaluate("document.body.classList.contains('src-on')"), page.evaluate('window.rikuy.srcFile'))
     page.evaluate('window.rikuy.toggleSource(false)'); settle(page, 300)
     click_text(page, 'Alpha', 0)
@@ -761,7 +768,10 @@ def accept(page):
         check('accept: Ctrl+End from inside a paragraph goes to the end of the text' + w, 'Last para.ZZ\n' in src(page), src(page)[-60:])
         # (3) Alt+= on an empty paragraph and LaTeX typed at once: a display, its structure as typed
         fresh(page); click_text(page, 'ends here.', 10); key(page, 'Enter', 100); key(page, 'Alt+Equal', 0)
-        typ(page, FRAC, how); settle(page, 400); key(page, 'Enter', 500)
+        # (a font the field's formula brings, KaTeX_Fraktur, lays the page out again 200 ms after it
+        # came, and that relayout drops the line after a display closed meanwhile, the next words
+        # then on \end{equation}'s line: the app's race, reported; here, as before, it comes first)
+        typ(page, FRAC, how); fonts_settled(page); settle(page, 400); key(page, 'Enter', 500)
         s = src(page); i, j = s.find('\\begin{equation}'), s.find('\\end{equation}')
         body = ''.join(s[i + 16:j].split()) if 0 <= i < j else None
         check('accept: Alt+= on an empty paragraph, LaTeX at full speed: a display equation, as typed' + w,
