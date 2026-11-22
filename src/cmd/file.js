@@ -310,10 +310,17 @@ export const methods = {
     this.toast('A new document. The one you had is under Review, Versions.', 5000);
     return true;
   },
-  newFromTemplate(id) {
+  async newFromTemplate(id) {
     const t = TEMPLATES.find((x) => x[0] === id);
     if (!t) return false;
-    return this.newFromText(t[3], t[1], 'New ' + t[1].toLowerCase());
+    const ok = await this.newFromText(t[3], t[1], 'New ' + t[1].toLowerCase());
+    // the template's first words to replace (Title, Their name, Your name) selected, as a Word
+    // template's placeholder is: what is typed replaces them. The caret stood before them, and a
+    // title typed there read "My paperTitle", the template's word left to find and delete.
+    const c = ok && this.caretNow(), s = c && !c.ghost && c.collapsed ? this.src(c.f) : null;
+    const m = s && /^[^{}\\\n%$]*[^{}\\\s%$]/.exec(s.slice(c.a, c.a + 120));
+    if (m) this.restoreCaret({ f: c.f, selA: c.a, selB: c.a + m[0].length });
+    return ok;
   },
   // the blank document: the default preamble kept by Set as default, or Rikuy's article
   defaultPreambleDoc() {

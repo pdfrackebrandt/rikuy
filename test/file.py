@@ -47,6 +47,11 @@ def new_docs(page):
     items = page.get_by_role('menuitem').all_inner_texts()
     check('New from template lists eight templates', [i.split('\n')[0] for i in items] == ['Article', 'Report', 'Book or thesis', 'Letter', 'KOMA-Script article', 'Slides', 'Exam', 'CV'], items)
     page.keyboard.press('Escape')
+    # the template's first words selected, as a Word template's placeholder is: typed over (the
+    # caret stood before them, and the title read "My paperTitle")
+    ev(page, '(t) => window.rikuy.runCommand("new-template", t)', 'article'); settle(page, 900)
+    page.keyboard.type('My paper'); settle(page, 300)
+    check('a new template\'s first words (Title) are selected: what is typed replaces them', '\\title{My paper}\n' in src(page), src(page)[:120])
     for tid in ('article', 'report', 'book', 'letter', 'scrartcl', 'beamer', 'exam', 'cv'):
         ev(page, '(t) => window.rikuy.runCommand("new-template", t)', tid); settle(page, 900)
         s = src(page)
