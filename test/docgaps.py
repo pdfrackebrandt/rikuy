@@ -8,9 +8,9 @@ phones at 390 and 360 px with touch; screenshots in $RIKUY_SHOTS (default /tmp/g
 python3 docgaps.py [section ...]: tables, tables_compiled, tables_phones, shots, headfoot, headfoot_forms, footer_sheet, headfoot_refused, headfoot_compiled,
 headfoot_phones, headfoot_shots, view, split_long, refs_update, equation, equation_linear, insert_text, rest_compiled, rest_phones,
 rest_shots."""
-import os, sys, base64, io, re as _re
+import os, sys, base64, re as _re
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, open_page, check, results, src, load_doc, roundtrip, pressed, click_text
+from browser import settle, until, open_page, check, results, src, load_doc, roundtrip, pressed, click_text
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -275,8 +275,15 @@ def pdf_of(page, doc):
       let b = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) b += String.fromCharCode(...r.pdf.subarray(i, i + 8192));
       return { ok: r.ok, engine: r.engine, pdf: btoa(b), problems: (r.problems || []).filter((x) => x.severity === 'error').map((x) => x.message).slice(0, 4) }; }''', doc)
     page.set_default_timeout(30000)
-    from pypdf import PdfReader
-    r['text'] = ' '.join(p.extract_text() or '' for p in PdfReader(io.BytesIO(base64.b64decode(r['pdf']))).pages) if r['pdf'] else ''
+    # (the PDF's words as poppler reads them, as pdf_tops and pdf_foot do: pypdf 5.9, the version CI
+    # pins, splits a kerned pair of XeTeX's glyphs, "T otal" and "W rapped", which pypdf 6 and
+    # poppler read whole)
+    r['text'] = ''
+    if r['pdf']:
+        import subprocess, tempfile
+        d = tempfile.mkdtemp()
+        open(os.path.join(d, 'a.pdf'), 'wb').write(base64.b64decode(r['pdf']))
+        r['text'] = subprocess.run(['pdftotext', os.path.join(d, 'a.pdf'), '-'], check=True, capture_output=True, text=True).stdout
     return r
 
 
@@ -674,7 +681,10 @@ def view(page):
     page.evaluate("document.getElementById('split-view').scrollTop = 2000"); settle(page, 100)
     tops = page.evaluate("[document.getElementById('desk').scrollTop, document.getElementById('split-view').scrollTop]")
     check('each view scrolled on its own', tops[0] != tops[1], tops)
-    page.evaluate("() => { const g = window.rikuy, s = g.files.get('main.tex'); g.commit([{ f: 'main.tex', s: s.indexOf('The end.'), e: s.indexOf('The end.') + 8, t: 'The very end.' }], null, 'test'); }"); settle(page, 800)
+    page.evaluate("() => { const g = window.rikuy, s = g.files.get('main.tex'); g.commit([{ f: 'main.tex', s: s.indexOf('The end.'), e: s.indexOf('The end.') + 8, t: 'The very end.' }], null, 'test'); }")
+    # (the second view copies a changed page after a quiet 400 ms and then an idle time: no timer
+    # alone, so its words are the condition, within the 800 ms the step once slept)
+    until(page, "() => document.getElementById('split-view').textContent.includes('The very end.')", timeout=800)
     check('an edit shows in the second view too', page.evaluate("document.getElementById('split-view').textContent.includes('The very end.')"))
     ok = page.evaluate("""(() => { const v = document.getElementById('split-view'); const sp = [...v.querySelectorAll('[data-g]')].find((x) => x.textContent.includes('second part')); if (!sp) return false; sp.dispatchEvent(new MouseEvent('click', { bubbles: true })); const c = window.rikuy.caretNow(); return !!c && window.rikuy.files.get('main.tex').slice(c.a - 40, c.a + 40).includes('second part'); })()""")
     check('a press in the second view puts the caret there in the first', ok)
@@ -742,7 +752,7 @@ def split_long(page):
         res[on] = (page.evaluate('window.__lt'), len(src(page)) - n0)
         page.wait_for_timeout(2000)
     off, on = res[False][0], res[True][0]
-    check('typing ten letters with Split on a 125 page document: the long tasks no longer than without Split, but for 40 ms (%d ms in all, %d without)' % (sum(on), sum(off)),
+    check('typing ten letters with Split on a 125 page document: the long tasks no longer than without Split, but for 40 ms (%d ms in all, %d ms without)' % (sum(on), sum(off)),
           res[False][1] == 10 and res[True][1] == 10 and (max(on) if on else 0) <= (max(off) if off else 0) + 40 and sum(on) <= 1.5 * sum(off) + 150, ([round(x) for x in on], [round(x) for x in off]))
     page.evaluate("window.rikuy.runCommand('split-view')"); page.wait_for_timeout(300)
 
@@ -790,7 +800,9 @@ def equation(page):
     v = page.get_by_role('textbox', name='The equation, in Word\'s linear format', exact=True).input_value()
     check('Convert › Linear (Unicode): the equation as Word types it, (a+b)/c=x^2', v == '(a+b)/c=x^2', v)
     box = page.get_by_role('textbox', name='The equation, in Word\'s linear format', exact=True)
-    box.fill('(a+b)/c=√(x+1)'); settle(page, 400)
+    # (what is typed in the field or its boxes reaches the source by a debounced push, 140 to 220 ms:
+    # full, every timer the old wait let run)
+    box.fill('(a+b)/c=√(x+1)'); settle(page, 400, full=True)
     s = src(page)
     check('typed in linear: x^{2} becomes \\sqrt{x+1}, the rest of the line\'s bytes kept', '  \\frac{a+b}{c} = \\sqrt{x+1}\n' in s, s[s.find('equation'):][:100])
     page.evaluate("window.rikuy.runCommand('eq-convert', { to: 'professional' })"); settle(page, 300)
@@ -805,7 +817,7 @@ def equation(page):
     page.evaluate("document.querySelector('.pop-math math-field').focus(); document.querySelector('.pop-math math-field').executeCommand('moveToMathfieldEnd')")
     page.evaluate("window.rikuy.runCommand('eq-normal-text')"); settle(page, 100)
     check('Normal Text pressed: the field types words', pressed(page, 'eq-normal-text') is True)
-    page.keyboard.type(' if'); settle(page, 500)
+    page.keyboard.type(' if'); settle(page, 500, full=True)
     s = src(page)
     check('typed words come as \\text{…} in the source', '\\text{ if}' in s or '\\text{if}' in s, s[s.find('equation'):][:120])
     page.keyboard.press('Escape'); settle(page, 300)
@@ -832,14 +844,14 @@ def equation_linear(page):
     box = page.get_by_role('textbox', name='The equation, in Word\'s linear format', exact=True)
     v = box.input_value()
     check('Linear shows commands it has no form for as written, a fraction with a script in Word\'s 〖 〗', v == '\\hat{x}=〖a/b〗^2←\\mathbf{v}', v)
-    box.press('End'); page.keyboard.type(' '); settle(page, 500)
+    box.press('End'); page.keyboard.type(' '); settle(page, 500, full=True)
     check('a space typed at the end: the source byte for byte as it was', src(page) == doc, body(src(page))[:160])
     h0 = hist(page)
-    page.keyboard.type('+1'); settle(page, 500)
+    page.keyboard.type('+1'); settle(page, 500, full=True)
     s1 = src(page)
     check('+1 typed: only +1 added, the rest of the equation\'s bytes kept', s1 == doc.replace(LIN_EQ, LIN_EQ + '+1'), body(s1)[:160])
     page.keyboard.press('Home'); page.keyboard.type('y=')
-    settle(page, 500)
+    settle(page, 500, full=True)
     s2 = src(page)
     check('y= typed at the start: written before \\hat, nothing else moved', s2 == doc.replace(LIN_EQ, 'y=' + LIN_EQ + '+1'), body(s2)[:160])
     page.keyboard.press('Escape'); settle(page, 400)
@@ -851,10 +863,10 @@ def equation_linear(page):
     settle(page, 200)
     run_cmd(page, 'eq-convert', {'to': 'linear'}); settle(page, 300)
     box = page.get_by_role('textbox', name='The equation, in Word\'s linear format', exact=True)
-    box.press('End'); page.keyboard.type('y'); settle(page, 500)
+    box.press('End'); page.keyboard.type('y'); settle(page, 500, full=True)
     note = page.evaluate("(() => { const n = document.getElementById('pop-lin-note'); return n && !n.hidden ? n.textContent : ''; })()")
     check('typing there writes nothing yet, and says Enter will', src(page) == doc and 'Enter writes' in note, note)
-    page.keyboard.press('Enter'); settle(page, 500)
+    page.keyboard.press('Enter'); settle(page, 500, full=True)
     s3 = src(page)
     check('Enter writes it, as Word builds an equation up on Enter', '\\frac{1}{m}+xy' in s3, body(s3)[-120:])
     page.keyboard.press('Escape'); settle(page, 300)
