@@ -14,7 +14,7 @@ import { escapeTeX } from '../editor.js';
 import { defines, packageLine, packageOptions, preambleEnd, stripComments } from '../preamble.js';
 import { wrapBlockEdits } from '../blockenv.js';
 import { diffEdit } from '../wrap.js';
-import { readLists, chainAt, unlist } from '../lists.js';
+import { readLists, chainAt, unlist, formatOf } from '../lists.js';
 import { methods as pane } from '../ui/stylespane.js';
 import { methods as design } from '../ui/design.js';
 import { THEMES } from '../looks.js';
@@ -41,6 +41,10 @@ export const SLOT_EL = { p: 'rb-st-p', title: 'rb-st-title', h1: 'rb-st-section'
 // the environments of several paragraphs a heading on one of them splits (splitEnvEdits): no title
 // or counter of their own to print again, and the abstract, which ends before the heading
 const SPLITS = /^(?:quote|quotation|verse|abstract)$/;
+// words a heading's argument cannot hold however plain they look (TeX stops on \verb there), and a
+// comment in a text (an unescaped %)
+const VERBISH = /\\(?:verb|Verb|lstinline|mintinline)(?![A-Za-z])/;
+const COMMENT = /(^|[^\\])(\\\\)*%/;
 // a name for an environment of the document's own that Rikuy writes in a regular expression
 const SAFE_NAME = /^[A-Za-z]{1,40}$/;
 // classes that have no abstract environment
@@ -389,7 +393,15 @@ export const methods = {
     const kind = (st) => (!st || !st.b || st.b.ws == null || st.opt || st.code ? null : st.v === 'p' ? 'p' : isHeading(st.v) || st.v === 'part' ? 'h' : isEnvStyle(st.v) && st.v !== 'verbatim' && st.v !== 'abstract' ? 'env' : null);
     const kw = kind(sw), kx = kind(sx);
     if (!kw || !kx || (kw === 'p' && kx === 'p')) return false;
-    const w = sw.b, x = sx.b, wEnd = w.after ?? w.e, xEnd = x.after ?? x.e;
+    const w = sw.b, x = { ...sx.b }, wEnd = w.after ?? w.e, xEnd = x.after ?? x.e;
+    // (a \label right after a heading starts the paragraph under it on the page's side: it stays
+    // with the heading, after it, and the words after it join)
+    const lead = kw === 'h' ? /^\\label\s*\{[^{}]*\}\s*/.exec(src.slice(x.ws, x.we)) : null;
+    if (lead) x.ws += lead[0].length;
+    // (one on the heading's own line is the heading's already: written once)
+    const leadLab = lead && !(w.after != null && x.s < wEnd) ? lead[0].trim() : '';
+    // (a heading's short title, \section[S]{...}, would be lost)
+    if (kx === 'h' && src.slice(x.s, x.ws).includes('[')) return false;
     // (the caret at the second block's words' start, or the first's words' end)
     if (back ? p > x.ws || /\S/.test(src.slice(p, x.ws)) || p < x.s : p < w.we || /\S/.test(src.slice(w.we, p)) || p > wEnd) return false;
     if (/\S/.test(src.slice(wEnd, x.s))) return false;
@@ -404,17 +416,20 @@ export const methods = {
       words = words.slice(0, gap.index);
     }
     if (!words) return false;
-    if (kw === 'h' && (NOT_PLAIN.test(words) || /(^|[^\\])%/.test(words) || words[0] === '%')) return false;
-    const close = src.slice(w.we, wEnd), sp = src.slice(w.ws, w.we).trim() ? ' ' : '';
+    if (kw === 'h' && (NOT_PLAIN.test(words) || VERBISH.test(words) || /(^|[^\\])%/.test(words) || words[0] === '%')) return false;
+    if (label && COMMENT.test(words)) return false;
+    // (after a comment that ends the first block's words: on a line of their own, or the comment
+    // would take them off the page)
+    const NL = /\r\n/.test(src) ? '\r\n' : '\n', close = src.slice(w.we, wEnd);
+    const sp = COMMENT.test(src.slice(src.lastIndexOf('\n', w.we - 1) + 1, w.we)) ? NL : src.slice(w.ws, w.we).trim() ? ' ' : '';
     // (joined into a paragraph, which ends nowhere of its own: what came after the second block
     // keeps a blank line from it, or it would run on in the same paragraph)
     let tail = reopen;
     if (!close && !reopen) {
       const m = /^[ \t]*(\r?\n)?[ \t]*(?=[^\s%])(?!\\(?:end|begin|part|chapter|(?:sub)*section|(?:sub)?paragraph|item|par|label)\b)/.exec(src.slice(E, E + 200));
-      const NL = /\r\n/.test(src) ? '\r\n' : '\n';
       if (m) tail = m[1] ? NL : NL + NL;
     }
-    const t = sp + words + label + close + tail;
+    const t = sp + words + label + close + leadLab + tail;
     this.closeGroup();
     this.commit([{ f, s: w.we, e: E, t }], back ? { f, p: w.we + sp.length, bias: 1 } : { f, p: w.we, bias: -1 }, 'del');
     return true;
@@ -496,7 +511,7 @@ export const methods = {
         let ws = item.cmdE;
         while (ws < item.e && /\s/.test(src[ws])) ws++;
         const words = src.slice(ws, item.e);
-        if (words && !NOT_PLAIN.test(words) && !/\n[ \t]*\n/.test(words) && !/(^|[^\\])%/.test(words)) return { v: '', to: latex(new Set(heads)), item: { B, ws, we: item.e }, b: { spot } };
+        if (words && !NOT_PLAIN.test(words) && !VERBISH.test(words) && !/\n[ \t]*\n/.test(words) && !/(^|[^\\])%/.test(words)) return { v: '', to: latex(new Set(heads)), item: { B, ws, we: item.e, L: I.L, k: I.k }, b: { spot } };
       }
     }
     if (ctx === 'p' && B.items.length === 1 && !/\bthm\b/.test(it.className)) {
@@ -612,12 +627,22 @@ export const methods = {
     if (!r || r.a == null) return;
     const after = src.slice(0, r.s) + r.t + src.slice(r.e), words = src.slice(I.ws, I.we);
     if (after.slice(r.a, r.a + words.length) !== words) return;
-    const open = '\\' + to + '{', d = diffEdit(src, after.slice(0, r.a) + open + words + '}' + after.slice(r.a + words.length));
+    // (a \label in the item's words goes after the heading: in its argument it would be printed
+    // in the contents)
+    const labs = words.match(/\\label\s*\{[^{}]*\}/g) || [], body = labs.length ? words.replace(/[ \t]*\\label\s*\{[^{}]*\}[ \t]*/g, ' ').trim() : words;
+    const open = '\\' + to + '{', head = open + body + '}' + labs.join('');
+    let t = after.slice(0, r.a) + head + after.slice(r.a + words.length), pkgs = [];
+    // A numbered list goes on numbering after the heading, as Word's list keeps its numbers round a
+    // heading: where its start is not written, enumitem's resume (it began again at 1)
+    const L = I.L, name = L && L.name;
+    if (L && L.kind === 'enum' && I.k + 1 < L.items.length && !formatOf(src, L, this.listCfg()).startFrom && this.listMech() === 'enumitem') {
+      const z = r.a + head.length, m = new RegExp('^\\s*\\\\begin\\{' + name.replace('*', '\\*') + '\\}(\\[)?').exec(t.slice(z, z + 200));
+      if (m) { const q = z + m[0].length; t = t.slice(0, q) + (m[1] ? 'resume, ' : '[resume]') + t.slice(q); pkgs = ['enumitem']; }
+    }
+    const d = diffEdit(src, t);
     if (!d) return;
-    this.closeGroup();
-    const c = this.caretNow(), k = c && c.f === f && c.a != null ? Math.min(Math.max(c.a - I.ws, 0), words.length) : 0;
-    this.commit([{ f, s: d.s, e: d.e, t: d.t }], { f, p: r.a + open.length + k, bias: -1 }, 'block');
-    this.closeGroup();
+    const c = this.caretNow(), k = c && c.f === f && c.a != null ? Math.min(Math.max(c.a - I.ws, 0), body.length) : 0;
+    this.listCommit(f, [{ s: d.s, e: d.e, t: d.t }], pkgs, { f, p: r.a + open.length + k, bias: -1 });
   },
   // (R2) a Code block to Normal: its lines out of verbatim, LaTeX's specials in them escaped as
   // typing escapes them (Rikuy's own Code has none: the bytes of before)

@@ -1471,9 +1471,32 @@ def style_why(page):
         check('style_why: Heading 1 refused in %s says why, not "Click in the text"' % ('a nested item' if t == 'A' else 'a table cell'), r['ran'] is False and 'Click in the text' not in r['why'] and 'list' in r['why'], r)
 
 
+def review_joins(page):
+    """(review of PR 117) Joins and headings where comments, \\verb, \\label and numbering are: words
+    joined after a trailing % went into the comment; \\verb was moved into a heading's argument (a
+    LaTeX error); a numbered item made a heading restarted the rest of the list at 1, its \\label in
+    the heading's argument; a heading with \\label on its line did not join the paragraph under it."""
+    load_doc(page, A('Alpha. % note\n\n\\section{Head}\nBody.')); click_text(page, 'Head', 0); page.keyboard.press('Backspace'); settle(page, 200); page.keyboard.type('X'); settle(page, 200)
+    check('review_joins: a heading joined to a paragraph ending in a comment: its words on a line after the comment', src(page) == A('Alpha. % note\nXHead\n\nBody.'), src(page)[40:])
+    load_doc(page, A('\\begin{quote}\nQ words. % c\n\\end{quote}\n\nAfter.')); click_text(page, 'After.', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('review_joins: and a paragraph joined into a quote ending in one', src(page) == A('\\begin{quote}\nQ words. % c\nAfter.\n\\end{quote}'), src(page)[40:])
+    V = A('\\section{Head}\nBody \\verb|x|.')
+    load_doc(page, V); click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('review_joins: a paragraph with \\verb is not joined into a heading', '\\section{Head}\n' in src(page) and '\\section{Head Body' not in src(page), src(page)[40:])
+    load_doc(page, A('\\begin{itemize}\n  \\item One \\verb|x|\n\\end{itemize}')); click_text(page, 'One', 1); page.keyboard.press('Control+Alt+1'); settle(page, 250)
+    check('review_joins: nor is an item with \\verb made a heading', '\\section' not in src(page), src(page)[40:])
+    load_doc(page, A('\\begin{enumerate}\n  \\item One\n  \\item Two \\label{t}\n  \\item Three\n\\end{enumerate}')); click_text(page, 'Two', 1); page.keyboard.press('Control+Alt+1'); settle(page, 250)
+    s = src(page)
+    check('review_joins: a numbered item made a heading: the rest of the list numbered on, its \\label after the heading',
+          '\\section{Two}\\label{t}\n\n\\begin{enumerate}[resume]\n  \\item Three' in s and '\\usepackage{enumitem}' in s, s)
+    check('review_joins: the page numbers Three 2.', page.evaluate("[...document.querySelectorAll('#pages .lbl')].map((x) => x.textContent)") == ['1.', '2.'])
+    load_doc(page, A('\\section{Head}\\label{s}\nBody.\n\nNext.')); click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('review_joins: Backspace at the paragraph under a heading with its \\label joins it, the label kept once', src(page) == A('\\section{Head Body.}\\label{s}\n\nNext.'), src(page)[40:])
+
+
 def run():
     with sync_playwright() as p:
-        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter, block_join, item_heading, style_why)
+        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter, block_join, item_heading, style_why, review_joins)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style)
         # (names given on the command line run those alone)
