@@ -728,6 +728,9 @@ export function installWordTyping(mf, opts) {
     arg = null; draw();
     // (a backslash alone, ended before its name: nothing, never \bm{\})
     put('\\' + t.name + '{' + (t.cmd && t.text === '\\' ? '' : t.text) + '}', { selectionMode: 'after' });
+    // (the font is the argument's alone: MathLive gave the next letters typed the style of the
+    // atom before them, \bm \beta then x was \bm{\beta x}, \mathrm d then x \mathrm{dx})
+    try { mf.applyStyle({}, { operation: 'set' }); } catch (e) { /* the field's own style goes on */ }
     // (after \text{…} what follows is math again, not more of the text)
     try { if (mf.mode !== 'math') mf.executeCommand(['switchMode', 'math']); } catch (e) { /* ignore */ }
   };

@@ -242,6 +242,10 @@ try:
         # (the field writes the name upright inside: _x after it, not in it)
         (['\\operatorname', '@Space', 'argmax', '@Space', '_x'], '\\operatorname{\\mathrm{argmax}}_x'),
         (['\\sqrt', '@Space', 'x+1', '@ArrowLeft', '@ArrowLeft', '@ArrowLeft', '-2'], '\\sqrt{x-2}+1'),
+        # (a font named with Space is its one symbol's alone: the field gave the letters typed
+        # after it the same style, \bm{\beta x}, \mathrm{dx})
+        (['\\bm', '@Space', '\\beta', '@Space', 'x'], '\\bm{\\beta}x'),
+        (['\\mathrm', '@Space', 'dx'], '\\mathrm{d}x'),
     ]
     for seq, want in cases:
         fresh_row()
