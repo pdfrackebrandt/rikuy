@@ -1825,6 +1825,16 @@ def word_typing(page):
     x, y = at('Background'); page.mouse.click(x, y, click_count=3); settle(page, 120, full=True)
     k.type('Z'); settle(page, 100)
     check('a triple click on a heading, then a letter: the heading\'s words are replaced, the heading stays', src(page) == WORD_DOC.replace('{Background}', '{Z}'), src(page)[300:])
+    # 3: words copied from two paragraphs are pasted as two paragraphs, as Word's are: copied from
+    # a paragraph into the list item or the paragraph after a heading, they came as one run of
+    # words, "only.Apple one" (only a blank line in the source counted as a paragraph's end)
+    page.context.grant_permissions(['clipboard-read', 'clipboard-write'])
+    end = 'of the document.'
+    for a, z, want in (('Second', 'Apple one', 'Second paragraph is plain text only.\n\nApple one'), ('Background', 'Last', 'Background\n\nLast'), ('bold', 'italic', 'bold words and italic')):
+        load_doc(page, WORD_DOC)
+        place(page, (a, z)); k.press('Control+c'); settle(page, 50)
+        click_text(page, end, len(end)); k.press('Control+v'); settle(page, 100)
+        check('copied from "%s" to "%s" and pasted: %r' % (a, z, want), src(page) == WORD_DOC.replace(end, end + want), src(page)[-80:])
 
 if __name__ == '__main__':
     sys.exit(run())

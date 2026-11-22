@@ -2709,12 +2709,21 @@ class App {
     const src = this.src(c.f);
     if (isBalanced(src, c.a, c.b)) return src.slice(c.a, c.b);
     const vr = visibleRanges(this.renderer.blocks, c.f, c.a, c.b);
+    // (the paragraph on the page each piece is in: words of two paragraphs stay two paragraphs, as
+    // Word's paste keeps them. Only a blank line between them in the source counted, and a
+    // paragraph copied with the list item, the heading or the display after it was pasted as one
+    // run of words, "only.Apple one". A paragraph a page cuts is one.)
+    if (this.index.dirty) this.index.build();
+    const paraOf = (p) => { const h = this.index.find(c.f, p, 1), sp = h && h.entry && h.entry.span; return sp ? sp.closest('td, th, .cap, .fn, .it') : null; };
+    const apart = (P, Q) => P && Q && P !== Q && !(Q.classList.contains('split-b') && P.dataset.b != null && P.dataset.b === Q.dataset.b);
     let out = '';
-    let last = null;
+    let last = null, lastP = null;
     for (const [s, e] of vr) {
-      if (last != null && /\n\s*\n/.test(src.slice(last, s))) out += '\n\n';
+      const P = paraOf(s);
+      if (last != null && (/\n\s*\n/.test(src.slice(last, s)) || apart(lastP, P))) out += '\n\n';
       out += src.slice(s, e);
       last = e;
+      lastP = paraOf(Math.max(s, e - 1)) || P;
     }
     return out;
   }
