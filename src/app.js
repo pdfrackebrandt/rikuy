@@ -1944,6 +1944,9 @@ class App {
     if (isBalanced(src, a, b) && !/\\(begin|end)\s*\{(document)\}/.test(slice) && !keep.test(slice)) {
       return [{ f, s: a, e: b, t: '' }];
     }
+    // (from one list item's words into another's: src/cmd/lists.js listSpan)
+    const items = this.listSpan(f, a, b);
+    if (items) return items;
     const vr = visibleRanges(this.renderer.blocks, f, a, b);
     if (!sel) return vr.map(([s, e]) => ({ f, s, e, t: '' }));
     // A selection whose ends cannot go as LaTeX (it starts in a heading's words, or ends in a
@@ -2078,6 +2081,10 @@ class App {
     if (!c) return;
     const T = this.texHere();
     if (T && c.f === T.f && this.texDelete(T, c, type, ranges)) return;
+    // (Backspace at a list item's start, Delete at its end, as Word's: src/cmd/lists.js listDelete)
+    if (c.collapsed && this.listDelete(/Backward/.test(type))) return;
+    // (Backspace and Delete where a heading, a quote or a theorem meets a paragraph: src/cmd/styles.js blockJoin)
+    if (c.collapsed && this.blockJoin(/Backward/.test(type))) return;
     let f = c.f, a = c.a, b = c.b;
     if (c.collapsed) {
       // Caret in an empty placeholder: remove the empty wrapper it belongs to.
@@ -2290,6 +2297,34 @@ class App {
       }
       // the \label on the heading's next line stays with the heading: the new paragraph goes after it
       const lab = B && /^\s*\\label\s*\{[^}]*\}/.exec(src.slice(B.e));
+      const m = B && c.collapsed && B.f === f && src[B.e - 1] === '}' ? /^\\[A-Za-z]+\*?\s*(\[[^\]]*\]\s*)?\{\s*/.exec(src.slice(B.s, B.e)) : null;
+      const ws = m ? B.s + m[0].length : 0, we = B.e - 1;
+      // Enter at the heading's start: an empty paragraph above it, the caret staying on the
+      // heading, as Word's and as at a paragraph's start. It was shown below the heading, and
+      // what was typed next was written there, after the heading.
+      if (m && p <= ws) {
+        const keep = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+        this.showGhost(itemEl, f, B.s, { before: true });
+        if (keep) { sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true; if (this.ghost) this.ghost.keepAt = keep; }
+        this.enterAct();
+        return;
+      }
+      // Enter inside its words splits it in two headings of its level, as Word splits a paragraph
+      // and both keep its style (a \label stays with the first). Only at the top level of its
+      // words, outside braces and math, and not in a heading with a short title for the contents.
+      // It showed the empty paragraph below the heading, the words after the caret left in it.
+      if (m && !m[1] && p > ws && p < we && src.slice(p, we).trim() && isBalanced(src, ws, p) && isBalanced(src, p, we) &&
+        ((src.slice(ws, p).replace(/\\./g, '').match(/\$/g) || []).length % 2 === 0)) {
+        let s0 = p, e0 = p;
+        while (s0 > ws && /[ \t\r\n]/.test(src[s0 - 1])) s0--;
+        while (e0 < we && /[ \t\r\n]/.test(src[e0])) e0++;
+        const NL = /\r\n/.test(src) ? '\r\n' : '\n', open = m[0].trimEnd();
+        const t = '}' + (lab ? lab[0] : '') + NL + NL + open;
+        const edits = [{ f, s: s0, e: e0, t }];
+        if (lab) edits.push({ f, s: B.e, e: B.e + lab[0].length, t: '' });
+        this.commit(edits, { f, p: s0 + t.length, bias: 1 }, 'enter');
+        return;
+      }
       if (B) { this.showGhost(itemEl, f, B.e + (lab ? lab[0].length : 0)); this.enterAct(); }
       return;
     }
@@ -2299,6 +2334,8 @@ class App {
       const base = B.base;
       const itemText = src.slice(+cmdE + base, +ie + base);
       if (!itemText.trim() && c.collapsed) {
+        // (an empty item before the list's last: src/cmd/lists.js listEnterEmpty)
+        if (this.listEnterEmpty()) return;
         // exit the list: remove empty item, continue after the list
         const s = +is + base, e0 = +ie + base;
         // (the empty item's line goes and one line break stays: \end{itemize} was glued to the
@@ -2310,12 +2347,22 @@ class App {
         const listEnd = +le + base;
         const removed = e - s2;
         const NL = /\r\n/.test(src) ? '\r\n' : '\n';
+        // (a comment on \end's line stays on it, and what follows goes in after it: before it, what
+        // was typed met the comment, and the words after it, "Out%" then "After")
+        const at = listEnd + (/^[ \t]*%[^\n]*/.exec(src.slice(listEnd)) || [''])[0].replace(/\r$/, '').length;
+        // Text on the line after \end goes on the paragraph the list stands in: what was typed at
+        // a caret put before it joined it ("Para After."). The empty paragraph is shown there
+        // instead, and what is typed in it is written as a paragraph of its own.
+        // (a list of its own on the page: inside a theorem or a quote no empty paragraph can stand by it)
+        if (this.listAlone(f, +ls + base, listEnd) && /^[ \t]*(?:\r?\n)?[ \t]*(?!\\end\b|%)\S/.test(src.slice(at, at + 200))) {
+          this.commit([{ f, s: s2, e, t: '' }], { f, p: s2, bias: -1 }, 'enter');
+          this.ghostAt(f, at - removed);
+          if (this.ghost) this.ghost.place = true;
+          return;
+        }
         // (words right after the list, in the paragraph the list is part of, get a paragraph of
         // their own too: what is typed on the new line stays apart from them, as Word's empty
         // paragraph after a list does; it ran into them, "Out After the list...")
-        // (a comment on \end's line stays on it, and the lines go in after it: before it, what
-        // was typed met the comment, and the words after it, "Out%" then "After")
-        const at = listEnd + (/^[ \t]*%[^\n]*/.exec(src.slice(listEnd)) || [''])[0].replace(/\r$/, '').length;
         const glued = /^[ \t]*(?:\r?\n[ \t]*)?(?!\r?\n|%|\\(?:end|begin|item|par|paragraph|(?:sub){0,2}section|chapter|part)(?![A-Za-z])|\\\[)\S/.exec(src.slice(at));
         // (as many line breaks after the caret as make a blank line before those words: two where
         // they stood on \end's own line)
@@ -2928,6 +2975,8 @@ class App {
     let t = raw ? (latex || plain).replace(/\r\n?/g, '\n') : this.pasteKept(latex, c.f, at) || rich();
     if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!raw && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
+    // (paragraphs pasted into a list item: items of its list, src/cmd/lists.js listPaste)
+    if (!raw) t = this.listPaste(c.f, at, t);
     const removedBefore = edits.filter((ed) => ed.e <= at).reduce((s, ed) => s + (ed.e - ed.s), 0);
     const pk = raw ? [] : this.pastePackages(t), grew = pk.filter((x) => x.f === c.f && x.s <= at).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
     this.commit([...edits, { f: c.f, s: at, e: at, t }, ...pk], { f: c.f, p: at - removedBefore + t.length + grew }, 'paste');

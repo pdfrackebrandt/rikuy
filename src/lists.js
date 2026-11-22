@@ -942,8 +942,8 @@ function endsWith(src, C, I) {
 }
 // The options and set up of a list split off list L after its first k items: its own, with its
 // start going on from where those k leave off where the list set its start itself (start=,
-// \setcounter), and no continuation of another list
-function splitHead(src, L, k) {
+// \setcounter), and no continuation of another list (also src/cmd/lists.js: Enter on an empty item)
+export function splitHead(src, L, k) {
   const f = L.kind === 'enum' ? formatOf(src, L, null) : null;
   let setup = L.setupE > L.be ? src.slice(L.be, L.setupE).trim() : '';
   if (!f) return { open: keepOpts(src, L), setup };

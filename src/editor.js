@@ -66,6 +66,13 @@ const isSkippable = (el) => el.nodeType === 1 && (el.classList.contains('chr') |
 // it on the page (posFromDom below)
 export function posFromDom(node, off, root, end) {
   if (!node) return null;
+  // At the start of a list item's bullet or number, where Right puts the caret from the end of
+  // the paragraph above: the start of the item's own words, as Word's caret never stands before
+  // a number. It was taken for the end of that paragraph, and what was typed next went there.
+  // (at the label's end, where Left puts it from the item's words: the end of what is above)
+  const lbl = (node.nodeType === 1 ? node : node.parentElement)?.closest?.('.lbl');
+  // (a label of the item's own, \item[Step:], holds words to edit: not passed over)
+  if (lbl && lbl !== root && root.contains(lbl) && !lbl.querySelector('span.t') && labelStart(lbl, node, off)) for (let n = lbl.nextSibling; n; n = n.nextSibling) { const r = firstPos(n); if (r) return r; }
   if (node.nodeType === 3) {
     const span = node.parentNode;
     if (span && span.classList && span.classList.contains('t')) {
@@ -110,6 +117,12 @@ export function posFromDom(node, off, root, end) {
   return before(el, root) || after(el, root);
 }
 
+// whether (node, off) inside label lbl has none of its characters before it
+function labelStart(lbl, node, off) {
+  const r = document.createRange();
+  r.setStart(lbl, 0); r.setEnd(node, off);
+  return r.toString() === '';
+}
 function lastPos(n) {
   if (n.nodeType === 3) {
     const span = n.parentNode;

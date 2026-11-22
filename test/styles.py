@@ -70,12 +70,14 @@ def styles(page):
     click_text(page, 'Opening', 3); style(page, 'p')
     check('Normal text on a heading leaves its words as a paragraph of their own', src(page) == DOC.replace('\\section{Opening}\nFirst', 'Opening\n\nFirst') and state(page)['style'] == 'p', src(page)[60:110])
     check('undo restores the heading byte for byte', undo_is(page, DOC))
-    # where a conversion is not safe it is not offered: a list or a table can be shown as its
-    # LaTeX source as a whole, and nothing else
-    for where, text in (('a list item', 'two'), ('a table cell', 'cell')):
+    # where a conversion is not safe it is not offered: a table can be shown as its LaTeX source as
+    # a whole, and nothing else; a list item of plain words may also be a heading, which takes it
+    # out of the list (item_heading), as Word gives a bullet a heading's style
+    heads = ['paragraph', 'part', 'section', 'subparagraph', 'subsection', 'subsubsection']
+    for where, text, more in (('a list item', 'two', heads), ('a table cell', 'cell', [])):
         click_text(page, text, 1); state(page)
         offered = page.evaluate('[...document.getElementById("rb-style").options].filter((o) => !o.hidden && !o.disabled).map((o) => o.value)')
-        check('in %s only LaTeX is offered, for the whole of it (and the list\'s two actions)' % where, sorted(offered) == ['', '__new', '__pane', 'latex'] and page.evaluate('document.getElementById("rb-style").value') == '', offered)
+        check('in %s only LaTeX is offered, for the whole of it (and the list\'s two actions)%s' % (where, ', and the headings' if more else ''), sorted(offered) == sorted(['', '__new', '__pane', 'latex'] + more) and page.evaluate('document.getElementById("rb-style").value') == '', offered)
     load_doc(page, '\\documentclass{article}\n\\title{A title}\n\\begin{document}\n\\maketitle\nWords.\n\\end{document}\n')
     click_text(page, 'A title', 2)
     st = state(page)
@@ -128,7 +130,7 @@ def gallery(page):
     check('in a heading its level is checked', page.evaluate(TILES)[1] == 'section*', page.evaluate(TILES))
     click_text(page, 'two', 1); state(page)
     t = page.evaluate(TILES)
-    check('in a list nothing is checked and only LaTeX applies (the list as its source)', t == ['p-', 'section-', 'subsection-', 'subsubsection-', 'latex', 'quote-'], t)
+    check('in a list item nothing is checked; LaTeX applies (the list as its source), and the headings (the item out of the list)', t == ['p-', 'section', 'subsection', 'subsubsection', 'latex', 'quote-'], t)
     click_text(page, 'cell', 1); state(page)
     t = page.evaluate(TILES)
     check('in a table the same', t == ['p-', 'section-', 'subsection-', 'subsubsection-', 'latex', 'quote-'], t)
@@ -1392,9 +1394,112 @@ def r2_phone(p):
             check('R2 phone run%s runs to its end' % tag, False, str(e)[:400])
         browser.close()
 
+def heading_enter(page):
+    """(bugs 2026-11-22) Enter at a heading's start: Word puts an empty paragraph above it and the
+    caret stays on the heading; Rikuy showed the empty paragraph below it, and what was typed next
+    was written after the heading. Enter inside a heading's words: Word splits it in two headings
+    of its style; Rikuy left the words after the caret in it and made a paragraph below."""
+    H = A('Alpha.\n\n\\section{Head}\nBody.')
+    load_doc(page, H); click_text(page, 'Head', 0); page.keyboard.press('Enter'); settle(page, 150); page.keyboard.type('X'); settle(page, 200)
+    check('heading_enter: Enter at a heading\'s start, then typing: the caret stayed on the heading', src(page) == H.replace('{Head}', '{XHead}'), src(page)[40:])
+    load_doc(page, H); click_text(page, 'Head', 0); page.keyboard.press('Enter'); settle(page, 150); page.keyboard.press('ArrowUp'); settle(page, 150); page.keyboard.type('Y'); settle(page, 200)
+    check('heading_enter: and Up goes into the empty paragraph above it', src(page) == H.replace('Alpha.\n\n', 'Alpha.\n\nY\n\n'), src(page)[40:])
+    S = A('\\section*{Head line}\\label{s:h}\nBody.')
+    load_doc(page, S); h0 = page.evaluate('window.rikuy.hist.length'); click_text(page, 'Head line', 4); page.keyboard.press('Enter'); settle(page, 200)
+    check('heading_enter: Enter inside a heading\'s words splits it in two headings of its level, the \\label with the first', src(page) == A('\\section*{Head}\\label{s:h}\n\n\\section*{line}\nBody.'), src(page)[40:])
+    page.keyboard.type('X'); settle(page, 200)
+    check('heading_enter: the caret at the second one\'s start', '\\section*{Xline}' in src(page), src(page)[40:])
+    page.keyboard.press('Control+z'); settle(page, 150); page.keyboard.press('Control+z'); settle(page, 150)
+    check('heading_enter: undo gives the heading back whole', src(page) == S and page.evaluate('window.rikuy.hist.length') == h0, src(page)[40:])
+    load_doc(page, A('\\section{Head \\textbf{bold words} end}\nBody.')); click_text(page, 'bold words', 4); page.keyboard.press('Enter'); settle(page, 150); page.keyboard.type('Z'); settle(page, 200)
+    check('heading_enter: Enter inside a bold run of a heading splits nothing in it: a paragraph after it, as before', '\\section{Head \\textbf{bold words} end}\n\nZ' in src(page), src(page)[40:])
+
+
+def block_join(page):
+    """(bugs 2026-11-22) Backspace at the start of a heading, a quote or a theorem, or of the paragraph
+    after one, and Delete at the end of the block before: the two join, the second's words taking
+    the first's style, as Word keeps the first paragraph's formatting. Backspace only moved the
+    caret to the end of the block above, and a second one took its last letter."""
+    H = A('Alpha para.\n\n\\section{Head}\nBody text.\n\nGamma.')
+    load_doc(page, H); h0 = page.evaluate('window.rikuy.hist.length'); click_text(page, 'Head', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('block_join: Backspace at a heading\'s start joins its words to the paragraph above, as text', src(page) == H.replace('Alpha para.\n\n\\section{Head}\nBody', 'Alpha para. Head\n\nBody'), src(page)[40:])
+    check('block_join: in one step', page.evaluate('window.rikuy.hist.length') == h0 + 1)
+    page.keyboard.type('X'); settle(page, 200)
+    check('block_join: the caret where they meet', 'Alpha para. XHead' in src(page), src(page)[40:])
+    load_doc(page, H); click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('block_join: Backspace at the start of the paragraph after a heading joins it to the heading', src(page) == H.replace('{Head}\nBody text.', '{Head Body text.}'), src(page)[40:])
+    page.keyboard.press('Control+z'); settle(page, 200)
+    check('block_join: one undo gives both back', src(page) == H, src(page)[40:])
+    load_doc(page, H); click_text(page, 'Head', 4); page.keyboard.press('Delete'); settle(page, 200)
+    check('block_join: Delete at a heading\'s end does the same', src(page) == H.replace('{Head}\nBody text.', '{Head Body text.}'), src(page)[40:])
+    Q = A('Alpha para.\n\n\\begin{quote}\nQuoted words.\n\\end{quote}\n\nGamma.')
+    load_doc(page, Q); click_text(page, 'Quoted', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('block_join: Backspace at a quote\'s start joins its words to the paragraph above', src(page) == A('Alpha para. Quoted words.\n\nGamma.'), src(page)[40:])
+    load_doc(page, Q); click_text(page, 'Gamma.', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('block_join: Backspace at the paragraph after a quote joins it into the quote', src(page) == A('Alpha para.\n\n\\begin{quote}\nQuoted words. Gamma.\n\\end{quote}'), src(page)[40:])
+    load_doc(page, A('Alpha.\n\n\\begin{quote}\nOne.\n\nTwo.\n\\end{quote}')); click_text(page, 'One.', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('block_join: on a quote of two paragraphs, its first leaves it and the second stays a quote', src(page) == A('Alpha. One.\n\n\\begin{quote}\nTwo.\n\\end{quote}'), src(page)[40:])
+    T = A('Alpha para.\n\n\\begin{theorem}\nStated words.\n\\end{theorem}', '\\newtheorem{theorem}{Theorem}\n')
+    load_doc(page, T); click_text(page, 'Stated', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('block_join: and at a theorem\'s start', 'Alpha para. Stated words.' in src(page) and '\\begin{theorem}\n' not in src(page), src(page)[40:])
+
+
+def item_heading(page):
+    """(bugs 2026-11-22) Heading 1 to 3 on a list item (its keys, the gallery): Word gives the bullet's
+    paragraph the heading's style. The style was refused and the key did nothing; now the item
+    leaves the list as a heading, the list going on around it, in one step."""
+    L = A('Intro.\n\n\\begin{itemize}\n  \\item One\n  \\item Two words\n  \\item Three\n\\end{itemize}')
+    load_doc(page, L); click_text(page, 'Two words', 3); page.keyboard.press('Control+Alt+1'); settle(page, 250)
+    check('item_heading: Ctrl+Alt+1 on a list item makes it a heading between the two halves of the list',
+          src(page) == A('Intro.\n\n\\begin{itemize}\n  \\item One\n\\end{itemize}\n\n\\section{Two words}\n\n\\begin{itemize}\n  \\item Three\n\\end{itemize}'), src(page)[40:])
+    page.keyboard.type('X'); settle(page, 200)
+    check('item_heading: the caret stays in its words', '\\section{TwoX words}' in src(page), src(page)[40:])
+    page.keyboard.press('Control+z'); settle(page, 200); page.keyboard.press('Control+z'); settle(page, 200)
+    check('item_heading: one undo gives the item back', src(page) == L, src(page)[40:])
+    load_doc(page, L); click_text(page, 'One', 1); run_cmd(page, 'style-heading2')
+    check('item_heading: Heading 2 from the gallery on the first item: the heading above the list', src(page) == A('Intro.\n\n\\subsection{One}\n\n\\begin{itemize}\n  \\item Two words\n  \\item Three\n\\end{itemize}'), src(page)[40:])
+
+
+def style_why(page):
+    """(bugs 2026-11-22) A style the caret's place cannot take says why (the search box's toast, an
+    agent's answer): it said "Click in the text of the page first" with the caret in a nested list
+    item or a table cell, since the command asked without the caret's place."""
+    load_doc(page, A('Intro.\n\n\\begin{itemize}\n  \\item One\n    \\begin{itemize}\n      \\item A\n    \\end{itemize}\n\\end{itemize}\n\n\\begin{tabular}{ll}\nx & y \\\\\n\\end{tabular}'))
+    for t in ('A', 'x'):
+        click_text(page, t, 0); settle(page, 150)
+        r = page.evaluate("window.rikuy.api.callTool('run_command', { id: 'style-heading1' })")
+        check('style_why: Heading 1 refused in %s says why, not "Click in the text"' % ('a nested item' if t == 'A' else 'a table cell'), r['ran'] is False and 'Click in the text' not in r['why'] and 'list' in r['why'], r)
+
+
+def review_joins(page):
+    """(review of PR 117) Joins and headings where comments, \\verb, \\label and numbering are: words
+    joined after a trailing % went into the comment; \\verb was moved into a heading's argument (a
+    LaTeX error); a numbered item made a heading restarted the rest of the list at 1, its \\label in
+    the heading's argument; a heading with \\label on its line did not join the paragraph under it."""
+    load_doc(page, A('Alpha. % note\n\n\\section{Head}\nBody.')); click_text(page, 'Head', 0); page.keyboard.press('Backspace'); settle(page, 200); page.keyboard.type('X'); settle(page, 200)
+    check('review_joins: a heading joined to a paragraph ending in a comment: its words on a line after the comment', src(page) == A('Alpha. % note\nXHead\n\nBody.'), src(page)[40:])
+    load_doc(page, A('\\begin{quote}\nQ words. % c\n\\end{quote}\n\nAfter.')); click_text(page, 'After.', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('review_joins: and a paragraph joined into a quote ending in one', src(page) == A('\\begin{quote}\nQ words. % c\nAfter.\n\\end{quote}'), src(page)[40:])
+    V = A('\\section{Head}\nBody \\verb|x|.')
+    load_doc(page, V); click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('review_joins: a paragraph with \\verb is not joined into a heading', '\\section{Head}\n' in src(page) and '\\section{Head Body' not in src(page), src(page)[40:])
+    load_doc(page, A('\\begin{itemize}\n  \\item One \\verb|x|\n\\end{itemize}')); click_text(page, 'One', 1); page.keyboard.press('Control+Alt+1'); settle(page, 250)
+    check('review_joins: nor is an item with \\verb made a heading', '\\section' not in src(page), src(page)[40:])
+    load_doc(page, A('\\begin{enumerate}\n  \\item One\n  \\item Two \\label{t}\n  \\item Three\n\\end{enumerate}')); click_text(page, 'Two', 1); page.keyboard.press('Control+Alt+1'); settle(page, 250)
+    s = src(page)
+    check('review_joins: a numbered item made a heading: the rest of the list numbered on, its \\label after the heading',
+          '\\section{Two}\\label{t}\n\n\\begin{enumerate}[resume]\n  \\item Three' in s and '\\usepackage{enumitem}' in s, s)
+    check('review_joins: the page numbers Three 2.', page.evaluate("[...document.querySelectorAll('#pages .lbl')].map((x) => x.textContent)") == ['1.', '2.'])
+    # (on the first item nothing is split: nothing to resume, which numbered the list after another one on)
+    load_doc(page, A('\\begin{enumerate}\n  \\item A\n  \\item B\n\\end{enumerate}\n\nMid.\n\n\\begin{enumerate}\n  \\item One\n  \\item Two\n\\end{enumerate}')); click_text(page, 'One', 1); page.keyboard.press('Control+Alt+1'); settle(page, 250)
+    check('review_joins: the first numbered item made a heading: the list after it starts at 1 again, no resume', '\\section{One}' in src(page) and 'resume' not in src(page) and page.evaluate("[...document.querySelectorAll('#pages .lbl')].map((x) => x.textContent)") == ['1.', '2.', '1.'], src(page)[40:])
+    load_doc(page, A('\\section{Head}\\label{s}\nBody.\n\nNext.')); click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('review_joins: Backspace at the paragraph under a heading with its \\label joins it, the label kept once', src(page) == A('\\section{Head Body.}\\label{s}\n\nNext.'), src(page)[40:])
+
+
 def run():
     with sync_playwright() as p:
-        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review)
+        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter, block_join, item_heading, style_why, review_joins)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style)
         # (names given on the command line run those alone)
