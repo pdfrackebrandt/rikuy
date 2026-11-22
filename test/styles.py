@@ -20,7 +20,7 @@ with KOMA-Script and memoir; and, where dist/tex holds a TeX tree, all of it com
 Run it alone with names to run some: python3 styles.py gallery design."""
 import os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, TIMERS, MOTION_OFF, _SETTLE, ROOT, SKELETON_HEAD, ROUTES, open_page, check, results, src, wait_src, click_text, select_text, load_doc, roundtrip, pressed, place, PRINT_LAYOUT, policy
+from browser import settle, ready, TIMERS, MOTION_OFF, _settled, ROOT, SKELETON_HEAD, ROUTES, open_page, check, results, src, wait_src, click_text, select_text, load_doc, roundtrip, pressed, place, PRINT_LAYOUT, policy
 from ribbon import DOC, DIST, state, style, undo_is, TILES, WRAP, body, boxes
 from playwright.sync_api import sync_playwright
 
@@ -648,19 +648,14 @@ def big(page):
       const cs = C.commands().filter((c) => mine.test(c.id)), t0 = performance.now();
       for (let k = 0; k < 20; k++) { at.memo = {}; for (const c of cs) { C.enabled(g, c, at); if (c.on) c.on(g, at); if (c.sync) c.sync(g, at); } }
       return Math.round((performance.now() - t0) / 20); }""")
-    # (a time measured is printed on a line of its own, outside the check's name: two runs then log
-    # the same check, as dev/suite_runs.py's verify compares them; a failure still says the time)
-    print('TIME the styles\' commands look at the caret in %d ms' % t)
-    check('with a preamble of %d characters and 3000 paragraphs the styles\' commands look at the caret in under 30 ms' % len(pre), t < 30, '' if t < 30 else t)
+    check('with a preamble of %d characters and 3000 paragraphs the styles\' commands look at the caret in %d ms (under 30)' % (len(pre), t), t < 30, t)
     page.set_viewport_size({'width': 1920, 'height': 1000}); settle(page, 300, full=True)
     t0 = page.evaluate('performance.now()')
     # (settle()'s own wait without its shadow, which would time RIKUY_WAIT_SHADOW's fixed wait and its
     # look at the whole page too: the same time in a fast and in a shadow run)
-    page.click('#rb-st-subsection', button='right'); page.evaluate(_SETTLE, 50)
+    page.click('#rb-st-subsection', button='right'); _settled(page, [50, [], False])
     t1 = page.evaluate('performance.now()')
-    ok = page.get_by_role('menu', name='Heading 2 style').count() == 1 and t1 - t0 < 600
-    print('TIME a tile\'s menu opens in %d ms' % (t1 - t0))
-    check('and a tile\'s menu opens in under 600 ms', ok, '' if ok else t1 - t0)
+    check('and a tile\'s menu opens in %d ms (under 600)' % (t1 - t0), page.get_by_role('menu', name='Heading 2 style').count() == 1 and t1 - t0 < 600, t1 - t0)
     page.keyboard.press('Escape')
     page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300, full=True)
 
@@ -704,8 +699,8 @@ def open_phone(p, width, height, dark=False):
     page.evaluate('localStorage.clear()')
     page.reload()
     page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
-    # (the page is the test's once rikuy.ready has settled and it is drawn, as open_page waits)
-    page.evaluate('() => window.rikuy.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))')
+    # (the page is the test's once rikuy.ready has settled, as open_page waits)
+    ready(page)
     settle(page, 300)
     return browser, page, errors
 
@@ -1078,7 +1073,7 @@ def lazy_names(page):
     page.route('**/texnames-*.txt', lambda r: r.fulfill(status=404, body='gone'))
     page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
     # (rikuy.ready settled, as open_page waits: what the page reads back from storage comes first)
-    page.evaluate('() => window.rikuy.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))')
+    ready(page)
     load_doc(page, doc); select_text(page, 'key words'); run_cmd(page, 'create-style')
     page.wait_for_function('window.rikuy.texNamesState() === "failed"', timeout=10000)
     page.fill('#cs-name', 'keyterm'); settle(page, 30)

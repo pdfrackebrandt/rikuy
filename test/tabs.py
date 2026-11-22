@@ -24,7 +24,7 @@ KeyTips of a tab's controls.
 RIKUY_DIST names another dist/."""
 import os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, until, wait_src, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, place, pressed
+from browser import settle, until, ready, wait_src, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, place, pressed
 from playwright.sync_api import sync_playwright
 
 WRAP = lambda body, pre='': '\\documentclass{article}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
@@ -510,9 +510,9 @@ def review_fixes(page):
     page.keyboard.press('Control+F1'); settle(page, 200)
     page.reload()
     page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
-    # (the page is the test's once rikuy.ready has settled and it is drawn, as open_page waits: the
-    # project read back from storage comes after the boot screen hides, and would replace load_doc's)
-    page.evaluate('() => window.rikuy.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))')
+    # (the page is the test's once rikuy.ready has settled, as open_page waits: the project read
+    # back from storage comes after the boot screen hides, and would replace load_doc's)
+    ready(page)
     settle(page, 300)
     a = page.evaluate('[document.body.classList.contains("rb-collapsed"), !!document.getElementById("ribbon").offsetParent, document.getElementById("rb-collapse").getAttribute("aria-pressed")]')
     load_doc(page, DOC)
