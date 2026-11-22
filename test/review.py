@@ -188,6 +188,18 @@ def hunt(p):
     page.evaluate("window.rikuy.runCommand('comment-delete')"); settle(page, 250)
     check('hunt: a comment pressed in the pane puts the caret there: Delete Comment deletes that one', src(page) == DOC.replace('% comment (Bo): Shorter?\n', ''), src(page)[-160:])
     page.evaluate("window.rikuy.toggleNav(false)")
+    # Next Change goes in reading order: a chapter's file where \\input reads it
+    fresh(page, {'main.tex': WRAP('Main text here.\n\\input{ch1}\n\nEnd text.'), 'ch1.tex': 'Chapter text in a file.\n'})
+    page.evaluate("window.rikuy.setTracking(true)")
+    for at, word in (('Chapter', 'New '), ('End', 'The '), ('Main', 'A ')):
+        click_text(page, at, 0); page.keyboard.type(word); settle(page, 150)
+    click_text(page, 'Main', 0)
+    seen = []
+    for _ in range(3):
+        page.evaluate("window.rikuy.runCommand('change-next')"); settle(page, 150)
+        seen.append(page.evaluate('String(getSelection())'))
+    check('hunt: Next Change goes in reading order, the \\input file\'s change between the main file\'s two', seen == ['New ', 'The ', 'A '], seen)
+    page.evaluate("window.rikuy.setTracking(false)")
     # the status bar counts what Word Count counts: the headings, a cell, a caption, a footnote
     load_doc(page, WRAP('\\section{Opening words}\nThe first paragraph has words.\\footnote{Two notes.}\n\n'
                         '\\begin{table}[h]\\centering\\begin{tabular}{ll}Cell one & Cell two\\\\\\end{tabular}\\caption{A caption}\\end{table}\n\n\\section{End}\nLast one.'))
