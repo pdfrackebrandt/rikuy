@@ -34,11 +34,16 @@ const here = (app, at) => {
   return m.table;
 };
 const inTable = (app, at) => !!here(app, at);
-// The rows of the first table of a clipboard's HTML, each cell's text (a line break a space; a
-// merged cell's columns after it empty), or null
+// The rows of a clipboard's HTML when it holds one table and nothing else, each cell's text (a line
+// break a space; a merged cell's columns after it empty), or null
 const htmlRows = (html) => {
-  const t = new DOMParser().parseFromString(html, 'text/html').querySelector('table');
-  if (!t) return null;
+  const d = new DOMParser().parseFromString(html, 'text/html'), t = d.querySelector('table');
+  if (!t || d.querySelectorAll('table').length !== t.querySelectorAll('table').length + 1) return null;
+  // (only a table and nothing else: words round it, "Intro" and "Outro", were dropped; a sheet's
+  // <style> in the body, as Google Sheets sends it, is no words)
+  for (const x of d.querySelectorAll('style, script, template, title, meta')) x.remove();
+  const all = (d.body.textContent || '').replace(/\s+/g, ''), inT = (t.textContent || '').replace(/\s+/g, '');
+  if (all.length !== inT.length) return null;
   const rows = [...t.rows].slice(0, 100000).map((tr) => [...tr.cells].flatMap((td) => {
     for (const br of td.querySelectorAll('br')) br.replaceWith(' ');
     return [td.textContent, ...Array(Math.max(0, Math.min(100, (+td.colSpan || 1) - 1))).fill('')];
@@ -591,8 +596,11 @@ export const methods = {
     if (!h) return false;
     let grid = X.tabularCells(latex);
     if (!grid) {
+      // (plain text is read as cells only with no HTML beside it, as a terminal or a .tsv gives: a
+      // spreadsheet or Word sends its table as HTML, an editor its code as HTML without one; and
+      // only a grid, every line as many cells, none starting with a tab: tab indented code is text)
       let rows = html && html.length < 4e6 && /<table[\s>]/i.test(html) ? htmlRows(html) : null;
-      if (!rows) { const s = X.sheetRows(plain); rows = s && s.length > 1 && s[0].length > 1 && s.every((x) => x.length === s[0].length) ? s : null; }
+      if (!rows && !/<[a-z]/i.test(html || '')) { const s = X.sheetRows(plain); rows = s && s.length > 1 && s[0].length > 1 && s.every((x) => x.length === s[0].length && x[0] !== '') ? s : null; }
       if (!rows || !rows.length || (rows.length < 2 && rows[0].length < 2)) return false;
       grid = rows.map((x) => x.map((w) => escapeTeX(w.replace(/\s+/g, ' ').trim(), ' ')));
     }

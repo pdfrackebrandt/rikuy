@@ -558,21 +558,22 @@ export function blockTabular(src, a, b) {
 }
 
 // A selection [a, b] over several cells deleted or typed over: the words of the cells of the block
-// it shows (Word's), the cells and the rows kept, from a on: what types, pastes or cuts over a
-// selection writes at a and counts on nothing before a going (a cell's words before a, or a whole
-// cell before it in the block, stay). [{ s, e }] in order, or null where it is not one.
+// it shows (Word's), the cells and the rows kept, from a to the end of b's cell: what types, pastes
+// or cuts over a selection writes at a and counts on nothing before a going (a cell's words before
+// a, or a whole cell of the block before it, stay; as the block's cells after b's cell do).
+// [{ s, e }] in order, or null where it is not one.
 export function clearCells(src, a, b) {
   const o = overCells(src, a, b);
   if (!o) return null;
   const { T, A, Z } = o;
   const R = grow(T, { r0: Math.min(A.r, Z.r), r1: Math.max(A.r, Z.r), c0: Math.min(A.cell.col, Z.cell.col), c1: Math.max(A.cell.col + A.cell.span - 1, Z.cell.col + Z.cell.span - 1) });
-  const out = [];
+  const out = [], end = Math.max(b, cellWords(Z.cell)[1]);
   for (let r = R.r0; r <= R.r1; r++) {
     const row = T.rows[r];
     if (!row || row.kind !== 'row') continue;
     for (const c of row.cells) {
       if (c.col < R.c0 || c.col + c.span - 1 > R.c1) continue;
-      const [s0, e] = cellWords(c), s = Math.max(s0, a);
+      const [s0, e0] = cellWords(c), s = Math.max(s0, a), e = Math.min(e0, end);
       if (e > s) out.push({ s, e });
     }
   }
@@ -791,7 +792,8 @@ export function tabularCells(latex) {
   if (!/^\\begin\s*\{tabular\}/.test(t)) return null;
   const T = parseTable(t, 0);
   if (!T || T.e !== t.length) return null;
-  const rows = T.rows.filter((x) => x.kind === 'row').map((x) => x.cells.map((c) => cellText(t, c).trim()));
+  // (a merged cell's columns after it empty, so the cells after it keep their columns)
+  const rows = T.rows.filter((x) => x.kind === 'row').map((x) => x.cells.flatMap((c) => [cellText(t, c).trim(), ...Array(Math.max(0, Math.min(1000, c.span - 1))).fill('')]));
   return rows.length ? rows : null;
 }
 
