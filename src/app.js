@@ -3601,6 +3601,10 @@ class App {
         ta.dispatchEvent(new Event('input'));
       }
     });
+    // Copied or cut from a formula in the line, the plain text is that formula, $…$, as Word pastes
+    // a piece of an equation in the line as one: MathLive writes $$ … $$, which the page pasted as
+    // a display in the middle of a sentence. (Its own handler, inside the field, has run by now.)
+    if (!opts.display) for (const type of ['copy', 'cut']) mf.addEventListener(type, (e) => { const d = e.clipboardData, x = d && d.getData('application/x-latex').trim(); if (x) d.setData('text/plain', '$' + x + '$'); });
     mf.addEventListener('keydown', (e) => {
       if (wt.active() || mf.mode === 'latex') return;
       if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); pull(); opts.onEscape(); }

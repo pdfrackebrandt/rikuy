@@ -71,6 +71,15 @@ with sync_playwright() as p:
     settle(page, 300)
     got = page.evaluate("window.__copied['text/plain']")
     check('Copy for Word puts MathML on the clipboard', got and got.startswith('<math') and '<mfrac>' in got and 'annotation' not in got, (got or '')[:120])
+    # Ctrl+C and Ctrl+X in a formula in the line: the plain text is the formula as $…$ (MathLive's
+    # $$ … $$ pasted as a display in the middle of a sentence)
+    page.click('#pop-field'); settle(page, 100)
+    page.evaluate("window.__copied = {}")
+    k.press('Control+a'); k.press('Control+c'); settle(page, 150)
+    got = page.evaluate("window.__copied['text/plain']")
+    k.press('End'); k.press('Shift+Home'); k.press('Control+x'); settle(page, 150)
+    cut = page.evaluate("window.__copied['text/plain']")
+    check('copied or cut from a formula in the line, the plain text is $...$', got == '$\\frac{a}{b}$' and cut == '$\\frac{a}{b}$', (got, cut))
     k.press('Escape'); settle(page, 300)
 
     # display: Shift+Enter makes a new row
