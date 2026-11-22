@@ -323,7 +323,7 @@ def review(page):
     load_doc(page, WRAP('\\section{A heading}\nFirst words here.\n\nSecond words.'))
     click_text(page, 'First', 1); page.keyboard.press('Control+a'); settle(page, 350, full=True)
     w = page.inner_text('#st-words')
-    check('low: Ctrl+A counts as many words as the document has, headings left out as the total leaves them (5 of 5 words)', w == '5 of 5 words', w)
+    check('low: Ctrl+A counts as many words as the document has, its heading\'s too as Word counts them (7 of 7 words)', w == '7 of 7 words', w)
     # low: the folded group Editing's menu has Find's other choices too (it folds below 861 px:
     # where Home's other groups, the Font group's and the lists', leave it the room, 700 px at most)
     for w in (860, 820, 780, 740, 700):
@@ -624,6 +624,12 @@ def hunt(page):
     select_text(page, 'cat')
     page.keyboard.press('Control+h'); settle(page, 250)
     d = page.get_by_role('dialog', name='Find and Replace', exact=True)
+    # (the options the parts before left as they were)
+    for o in ('Match case', 'Find whole words only', 'Use wildcards', 'Use regular expressions', 'In LaTeX source', 'In selection'):
+        if d.get_by_label(o, exact=True).is_checked(): d.get_by_label(o, exact=True).uncheck()
+    if d.get_by_role('button', name='No formatting', exact=True).is_enabled(): d.get_by_role('button', name='No formatting', exact=True).click()
+    settle(page, 250, full=True)
+    check('hunt: Ctrl+H takes the selected words into the box', d.get_by_label('Find what', exact=True).input_value() == 'cat', d.get_by_label('Find what', exact=True).input_value())
     d.get_by_label('Replace with', exact=True).fill('dog')
     d.get_by_role('button', name='Replace one', exact=True).click(); settle(page, 250)
     check('hunt: a selected hit, Ctrl+H, one press of Replace: it is replaced, the next one shown', src(page) == doc.replace('Alpha cat', 'Alpha dog') and summary(page) == 'Result 1 of 1', (src(page)[40:80], summary(page)))
