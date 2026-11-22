@@ -1707,6 +1707,11 @@ def run():
             check('no console errors (Enter kept, %d px)' % w, not errors, errors[:5])
             browser.close()
 
+        browser, page, errors = open_page(p, width=1366, height=900)
+        word_typing(page)
+        check('no console errors (typing as in Word)', not errors, errors[:5])
+        browser.close()
+
     bad = [r for r in results if not r[1]]
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     return 1 if bad else 0
@@ -1766,6 +1771,48 @@ def enter_kept(page, w):
     got = page.evaluate("window.rikuy.rbRange ? window.rikuy.rbRange.toString() : null")
     check('a relayout with a dialog\'s field focused keeps what the dialog acts on (%d px)' % w, got == 'Second one', got)
     page.keyboard.press('Escape'); settle(page, 200)
+
+
+# A short document with what a paragraph's edges meet: a heading, bold and italic words, an inline
+# formula, a footnote, a reference, a citation, a list and a display
+WORD_DOC = r"""\documentclass{article}
+\begin{document}
+\section{Introduction}
+First paragraph with \textbf{bold words} and \emph{italic words} here.
+A formula $x^2+y$ sits inline, a note\footnote{The note.} too, see Section~\ref{sec:b} and \cite{knuth}.
+
+Second paragraph is plain text only.
+\begin{itemize}
+\item Apple one
+\item Banana two
+\end{itemize}
+After the list comes text.
+\[ a = b \]
+After display text.
+
+\section{Background}\label{sec:b}
+Last paragraph of the document.
+\end{document}
+"""
+
+
+def word_typing(page):
+    """Everyday typing as a Word user does it at 1366 px: selections by mouse and keys typed over."""
+    k = page.keyboard
+    def at(text, off=1):
+        return page.evaluate("""([text, off]) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(text));
+          const i = s.textContent.indexOf(text) + off, r = document.createRange(); r.setStart(s.firstChild, i); r.setEnd(s.firstChild, i + 1);
+          const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }""", [text, off])
+    # 1: the page's last paragraph above its footnotes. A triple click there, or Shift+Down on its
+    # last line, ends the selection at the footnotes' start, which was read as the footnote's own
+    # words, earlier in the source: typing over it deleted everything from the footnote to here
+    load_doc(page, WORD_DOC)
+    x, y = at('Last paragraph'); page.mouse.click(x, y, click_count=3); settle(page, 120, full=True)
+    k.type('Z'); settle(page, 100)
+    check('a triple click on the paragraph above the footnotes, then a letter: the paragraph alone is replaced', src(page) == WORD_DOC.replace('Last paragraph of the document.', 'Z'), src(page)[150:])
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Last paragraph', 0); k.press('Shift+ArrowDown'); k.type('Z'); settle(page, 100)
+    check('Shift+Down on the last line above the footnotes, then a letter: only that line is replaced', src(page) == WORD_DOC.replace('Last paragraph of the document.', 'Z'), src(page)[150:])
 
 if __name__ == '__main__':
     sys.exit(run())

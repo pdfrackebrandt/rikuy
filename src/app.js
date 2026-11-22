@@ -1166,7 +1166,23 @@ class App {
     const A = posFromDom(r.startContainer, r.startOffset, this.root);
     if (!A || A.ghost) return null;
     let Bp = A;
-    if (!r.collapsed) { Bp = posFromDom(r.endContainer, r.endOffset, this.root); if (!Bp || Bp.ghost) Bp = A; }
+    if (!r.collapsed) {
+      // The footnotes at a page's foot are a text of their own, as Word's are: a selection from
+      // the page's last lines into them (Shift+Down there, a drag) ends where the page's text
+      // ends, and one from a footnote out of them at that footnote area's end. Their words come
+      // earlier in the source, so the selection reached back over half the document before, and
+      // typing over it deleted all that.
+      const fnsOf = (n) => { const e = n && (n.nodeType === 1 ? n : n.parentElement); return e && e.closest ? e.closest('.fns') : null; };
+      const fs = fnsOf(r.startContainer), fe = fnsOf(r.endContainer);
+      let end = [r.endContainer, r.endOffset];
+      if (fe && fe !== fs) end = [fe, 0];
+      else if (fs && fe !== fs) end = [fs, fs.childNodes.length];
+      // (the end read as an end: what is before it on the page; where that is before the start,
+      // nothing of the page's text lies between them, and the place read as before is kept)
+      Bp = posFromDom(end[0], end[1], this.root, true);
+      if (Bp && !Bp.ghost && Bp.f === A.f && Bp.p < A.p) Bp = end[0] === r.endContainer ? posFromDom(end[0], end[1], this.root) : A;
+      if (!Bp || Bp.ghost) Bp = A;
+    }
     if (Bp.f !== A.f) return { f: A.f, p: A.p, a: A.p, b: A.p, collapsed: true, crossFile: true };
     const a = Math.min(A.p, Bp.p), b = Math.max(A.p, Bp.p);
     return { f: A.f, p: A.p, a, b, collapsed: r.collapsed || a === b, range: r };
