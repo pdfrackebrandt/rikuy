@@ -24,7 +24,7 @@ KeyTips of a tab's controls.
 RIKUY_DIST names another dist/."""
 import os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, wait_src, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, place, pressed
+from browser import settle, until, wait_src, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, place, pressed
 from playwright.sync_api import sync_playwright
 
 WRAP = lambda body, pre='': '\\documentclass{article}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
@@ -393,6 +393,12 @@ def context_menu(page):
     # in a table: its own items first
     load_doc(page, TABLE)
     r = page.evaluate('''() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('cell')); const b = s.getBoundingClientRect(); return [b.left + 3, b.top + b.height / 2]; }''')
+    # (the page swallows a right click that comes within 400 ms of its menu's last opening: a guard
+    # for the contextmenu the menu key sends after Shift+F10 or that key opened it (src/ui/menu.js,
+    # ctxT), set as well when a right click opened it. A bug, reported: a person who picks Bold and
+    # right clicks again at once gets no menu. The steps before once slept 520 ms; the guard's end
+    # is waited for here, at most 400 ms, so this check tests the table's items, its subject)
+    until(page, '() => Date.now() - (window.rikuy.ctxT || 0) >= 400', timeout=1000)
     page.mouse.click(r[0], r[1], button='right'); settle(page, 200)
     first = page.get_by_role('menu', name='Context menu', exact=True).get_by_role('menuitem').first.get_attribute('aria-label')
     check('in a table cell the table\'s items come first (Insert below)', first == 'Insert below', first)
