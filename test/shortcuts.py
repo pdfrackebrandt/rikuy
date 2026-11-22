@@ -15,7 +15,7 @@ has it (Cmd, Word for Mac's own chords, ⌘ in tooltips). Screenshots in $RIKUY_
 /tmp/keys-shots): Help's list and a tooltip, at 1920 and 1366 px light and dark, and 390 px."""
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, open_page, check, results, src, click_text, select_text, load_doc
+from browser import settle, until, saved, ready, open_page, check, results, src, click_text, select_text, load_doc
 from playwright.sync_api import sync_playwright
 
 SHOTS = os.environ.get('RIKUY_SHOTS', '/tmp/keys-shots')
@@ -26,6 +26,12 @@ DOC = ('\\documentclass{article}\n\\begin{document}\n\\section{Opening}\nFirst p
        '\\subsection{Inner}\nThird paragraph here.\n\n\\section{Closing}\nFourth paragraph here.\n\n'
        '\\begin{tabular}{ll}\na & b \\\\\nc & d \\\\\ne & f \\\\\n\\end{tabular}\n\\end{document}\n')
 MAC = "Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel' })"
+
+
+# (the page lays its pages out again 200 ms after the last of its fonts came, app.js's loadingdone
+# listener, and that relayout drops a selection, a caret's place and a line to come: open_page()
+# returns before it, so a page's first step waits for the fonts and that relayout)
+FONTS = "() => document.fonts.status === 'loaded'"
 
 
 def key(page, k, wait=200):
@@ -542,8 +548,10 @@ def lows(page):
     c = caret(page)
     check('Shift+F5 after an undo goes to the undone edit\'s place', c and abs(c[1] - DOC.index('Third paragraph') - 5) <= 2, (c, DOC.index('Third paragraph') + 5))
     heads = '\\documentclass{article}\n\\begin{document}\n\\section{Only heading}\n\\end{document}\n'
-    load_doc(page, heads); page.evaluate('window.rikuy.persist()'); settle(page, 500)
-    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); settle(page, 500)
+    # (persist() writes to IndexedDB: the reload waits for that copy to be the one kept, saved(),
+    # and the page reloaded for init to be through, ready(): the first caret comes after the boot screen)
+    load_doc(page, heads); page.evaluate('window.rikuy.persist()'); saved(page, 500)
+    page.reload(); ready(page); until(page, FONTS); settle(page, 200, full=True); settle(page, 500)
     page.keyboard.type('Z'); settle(page, 300)
     check('after a reload, a document of headings alone takes the first keys in its first heading', '\\section{ZOnly heading}' in src(page), src(page)[30:120])
 
@@ -562,6 +570,7 @@ def tips_and_help(page, mac=False, tag=''):
 
 def mac_keys(p):
     browser, page, errors = open_page(p, init=MAC)
+    until(page, FONTS); settle(page, 200, full=True)
     try:
         check('Mac: the page knows it is on a Mac', page.evaluate("/Mac/.test(navigator.platform)"))
         load_doc(page, DOC); select_text(page, 'Second paragraph')
@@ -601,6 +610,7 @@ def mac_keys(p):
 def shots(p):
     for w, h, dark in ((1920, 1080, False), (1920, 1080, True), (1366, 768, False), (1366, 768, True), (390, 844, False)):
         browser, page, errors = open_page(p, width=w, height=h, dark=dark, touch=w < 500)
+        until(page, FONTS); settle(page, 200, full=True)
         try:
             tag = '%d%s' % (w, '-dark' if dark else '')
             load_doc(page, DOC)
@@ -630,6 +640,7 @@ def run():
     only = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
+        until(page, FONTS); settle(page, 200, full=True)
         for f in (paragraphs, references, finding, views, typing, fields, headings, tables, files, caret_keys, paste_format, source_pane, access_keys, lows):
             if only and f.__name__ not in only: continue
             try: f(page)
