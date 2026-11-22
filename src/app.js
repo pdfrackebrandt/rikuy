@@ -1934,7 +1934,30 @@ class App {
       return [{ f, s: a, e: b, t: '' }];
     }
     const vr = visibleRanges(this.renderer.blocks, f, a, b);
-    return vr.map(([s, e]) => ({ f, s, e, t: '' }));
+    if (!sel) return vr.map(([s, e]) => ({ f, s, e, t: '' }));
+    // A selection whose ends cannot go as LaTeX (it starts in a heading's words, or ends in a
+    // list's item: Ctrl+Shift+Home, Shift+Page Down, a drag) still takes whole the paragraphs,
+    // headings, lists and displays it holds from end to end; of the two at its ends, the words
+    // selected go, as before. Their words alone went, and empty headings and bullets stayed.
+    const inside = this.renderer.blocks.filter((B) => B.f === f && a <= B.s && B.e <= b && B.s < B.e).sort((x, y) => x.s - y.s);
+    const runs = [];
+    for (const B of inside) {
+      const L = runs[runs.length - 1];
+      if (L && L[1] <= B.s && !src.slice(L[1], B.s).trim()) L[1] = B.e; else runs.push([B.s, B.e]);
+    }
+    const ok = ([s, e]) => isBalanced(src, s, e) && !/\\(begin|end)\s*\{document\}|\\(maketitle|bibliography)\b/.test(src.slice(s, e));
+    const gone = [];
+    for (const R of runs) {
+      if (ok(R)) gone.push(R);
+      else for (const B of inside) if (R[0] <= B.s && B.e <= R[1] && ok([B.s, B.e])) gone.push([B.s, B.e]);
+    }
+    gone.sort((x, y) => x[0] - y[0]);
+    const out = gone.map(([s, e]) => ({ f, s, e, t: '' }));
+    for (let [s, e] of vr) {
+      for (const [x, y] of gone) { if (y <= s || x >= e) continue; if (x > s) out.push({ f, s, e: x, t: '' }); s = Math.max(s, y); }
+      if (s < e) out.push({ f, s, e, t: '' });
+    }
+    return out.sort((u, v) => u.s - v.s);
   }
 
   // Everything on the page is selected: what is typed, pasted or deleted then replaces the

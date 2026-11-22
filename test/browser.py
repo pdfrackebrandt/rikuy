@@ -1863,6 +1863,12 @@ def word_typing(page):
     load_doc(page, WORD_DOC)
     click_text(page, 'Banana two', 10); k.press('Enter'); k.press('Enter'); k.type('Out'); settle(page, 100)
     check('Enter twice at a list\'s end, then words: a paragraph between the list and the words after it', src(page) == WORD_DOC.replace('\\end{itemize}\nAfter', '\\end{itemize}\n\nOut\n\nAfter'), src(page)[250:380])
+    # (and one that starts in a heading's words, Ctrl+Shift+Home here: the paragraphs it holds
+    # whole go whole, their bold and italic wrappers, formula and footnote with them)
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Second paragraph', 3); k.press('Control+Shift+Home'); k.type('Z'); settle(page, 100)
+    held = WORD_DOC[WORD_DOC.index('Introduction'):WORD_DOC.index('ond paragraph')]
+    check('from a paragraph, Ctrl+Shift+Home, then a letter: the heading\'s words become it, the paragraph between goes whole', src(page) == WORD_DOC.replace(held, 'Z}\n\n'), src(page)[30:120])
     # (one key at an item's start still takes no \item)
     load_doc(page, WORD_DOC)
     click_text(page, 'Banana', 0); k.press('Backspace'); settle(page, 100)
