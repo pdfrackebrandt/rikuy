@@ -2017,6 +2017,10 @@ class App {
     let t = lands ? data : escapeTeX(data, src[at - 1] || ' ');
     if (!lands && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!lands && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
+    // (a space after a control word and the space that ends it, as in {\large |} the size box
+    // opened at a caret: TeX skips it, and the page drew "plainbig" as TeX would; {} keeps it)
+    // (a font's switches only: after \item or \noindent a space is no word's)
+    if (!lands && /^[ \t]/.test(t)) { let k = at; while (k > 0 && (src[k - 1] === ' ' || src[k - 1] === '\t')) k--; if (k < at && endsWithControlWord(src, k) && /\\(?:tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge|selectfont|[a-z]{2}(?:family|series|shape)|em|bf|it|sc|sf|tt|rm|sl)$/.test(src.slice(Math.max(0, k - 14), k))) t = '{}' + t; }
     return t;
   }
 

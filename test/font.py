@@ -887,6 +887,20 @@ def word_formats(page):
     check('and again: one \\textbf as before', src(page) == T, body(page))
 
 
+def switch_space(page):
+    """A size set at a caret, then a space typed first: the space is kept (TeX skipped it after \\large)."""
+    k = page.keyboard
+    paras = lambda: page.evaluate("[...document.querySelectorAll('#pages .it')].map((e) => e.textContent)")
+    load_doc(page, DOC); click_text(page, 'plain', 5)
+    k.press('Control+Shift+Period'); settle(page, 150); k.type(' big'); settle(page, 250)
+    check('Increase Font Size at a word\'s end, then " big": the space kept ({} after the switch), on the page too', body(page).startswith('Some plain{\\large {} big} words') and paras()[0].startswith('Some plain big words'), (body(page), paras()[0]))
+    load_doc(page, DOC); click_text(page, 'plain', 5)
+    page.fill('#rb-size', '14'); page.press('#rb-size', 'Enter'); settle(page, 250); k.type(' big'); settle(page, 250)
+    check('14 in the size box, then " big": the space kept', '\\selectfont {} big} words' in body(page) and paras()[0].startswith('Some plain big words'), (body(page), paras()[0]))
+    load_doc(page, WRAP('\\noindent Text here.')); click_text(page, 'Text', 0); k.type(' '); settle(page, 200)
+    check('a space after \\noindent is written as before', body(page) == '\\noindent  Text here.', body(page))
+
+
 def phone_box(page, sel):
     """The rect of the last element sel matches, the smallest of its controls, and the page's sideways overflow."""
     return page.evaluate("""(sel) => { const all = [...document.querySelectorAll(sel)].filter((x) => x.offsetParent || getComputedStyle(x).position === 'fixed'); const p = all[all.length - 1];
@@ -1052,7 +1066,7 @@ def phones(p):
 
 def run():
     with sync_playwright() as p:
-        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, caret_formats, word_formats, phones, compiles, r2_compiles)
+        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, caret_formats, word_formats, switch_space, phones, compiles, r2_compiles)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             if fn is phones:
                 phones(p)
