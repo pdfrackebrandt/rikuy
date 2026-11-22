@@ -58,4 +58,5 @@ jobs:
         env:
           SUITES: ${{ inputs.suites }}
           REPEAT: ${{ inputs.repeat }}
-        run: python3 dev/suite_runs.py "$REPEAT" $SUITES
+        # (split on spaces into an array: no globbing, as shellcheck asks)
+        run: read -ra S <<< "$SUITES" && python3 dev/suite_runs.py "$REPEAT" "${S[@]}"
