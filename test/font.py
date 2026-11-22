@@ -662,7 +662,11 @@ def cells(page):
     load_doc(page, WRAP(big)); settle(page, 1500); click_text(page, 'b0', 1); run_cmd(page, 'select-column'); settle(page, 1000)
     ms = page.evaluate("() => { const t0 = performance.now(); window.rikuy.runCommand('bold'); return performance.now() - t0; }")
     settle(page, 1000)
-    check('cells: Bold on a column of 3000 rows in under 4 s, every cell of it and no other', ms < 4000 and src(page).count('\\textbf{b') == 3000 and src(page).count('\\textbf{') == 3000, round(ms))
+    # (the time on a line of its own: what the check saw is the same on every run that passes, so a
+    # run waiting the old fixed times can be set beside it check by check; a slow one says its time)
+    print('cells: Bold on a column of 3000 rows took %d ms' % round(ms))
+    check('cells: Bold on a column of 3000 rows in under 4 s, every cell of it and no other', ms < 4000 and src(page).count('\\textbf{b') == 3000 and src(page).count('\\textbf{') == 3000,
+          ('under 4 s' if ms < 4000 else round(ms), src(page).count('\\textbf{b'), src(page).count('\\textbf{')))
     # a stranger's table of more than 5000 cells in the block: refused, said, nothing written
     huge = '\\begin{tabular}{ll}\n' + ''.join('a%d & b%d \\\\\n' % (k, k) for k in range(5100)) + '\\end{tabular}'
     load_doc(page, WRAP(huge)); settle(page, 2000); click_text(page, 'b0', 1); run_cmd(page, 'select-column'); settle(page, 1000)
@@ -886,7 +890,8 @@ def phone(page, w, h):
     tap_text(page, 'plain')
     check(tag + 'the Format Painter armed by a tap paints the word tapped next', armed and body(page) == 'Some \\textbf{bold} and \\textbf{plain} words here.', (armed, body(page)))
     select_text(page, 'bold'); page.tap('#rc-format-painter'); settle(page, 250)
-    select_text(page, 'words here'); settle(page, 1400)
+    # (a touch's selection paints once it has rested: font.js's timer of 900 ms, waited for in full)
+    select_text(page, 'words here'); settle(page, 1400, full=True)
     check(tag + 'and words selected by a long press (no click) once the selection rests', body(page) == 'Some \\textbf{bold} and \\textbf{plain} \\textbf{words here}.', body(page))
     # every key's command has a control a finger reaches
     load_doc(page, WRAP('Some \\textbf{\\emph{plain}} words.')); settle(page, 200); select_text(page, 'plain')
