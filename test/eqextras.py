@@ -76,6 +76,16 @@ with sync_playwright() as p:
     reset('y=')
     page.evaluate(PASTE, [' a = b c = d ', '\\begin{align}\n  a &= b \\\\\n  c &= d\n\\end{align}']); settle(page, 250)
     check('pasted into a formula in the line: a copied equation without its label, rows refused', lab == 'y=z' and val() == 'y=', (lab, val()))
+    k.press('Escape'); settle(page, 300)
+    # (nor into an equation of one row, where the & came in as a literal \&)
+    page.evaluate("document.querySelectorAll('.it.dm')[0].scrollIntoView({block:'center'})")
+    page.locator('.it.dm').nth(0).click()
+    page.wait_for_selector('#pop-field', timeout=10000); settle(page, 300)
+    before = val()
+    page.evaluate(PASTE, [' a = b c = d ', '\\begin{align}\n  a &= b \\\\\n  c &= d\n\\end{align}']); settle(page, 250)
+    check('rows pasted into an equation of one row are refused', val() == before and '\\&' not in val(), (before[-40:], val()[-40:]))
+    k.press('Escape'); settle(page, 300)
+    open_inline()
     # paste into the LaTeX box
     page.evaluate("""(() => { const t = document.getElementById('pop-tex'); t.focus(); t.setSelectionRange(t.value.length, t.value.length); const dt = new DataTransfer(); dt.setData('text/plain', '\\\\[ z+1 \\\\]');
       t.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); })()""")

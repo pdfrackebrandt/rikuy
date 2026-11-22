@@ -3587,10 +3587,10 @@ class App {
       e.preventDefault(); e.stopImmediatePropagation();
       // (a copy of an equation of this document leaves its label and tag with the equation: pasted
       // too, the label was defined twice; rows and alignment marks outside an inner environment
-      // cannot stand in a formula in the line, which got a\&=b\\c\&=d)
+      // cannot stand in a formula in the line or a one-row equation, which got a\&=b\\c\&=d)
       if (own != null) inner = inner.replace(/\\(label|tag\*?)\s*\{[^{}]*\}/g, '').replace(/\\(nonumber|notag)(?![A-Za-z])/g, '').trim();
-      if (!opts.display && /\\\\|(^|[^\\])&/.test(inner.replace(/\\begin\s*\{([A-Za-z*]+)\}[\s\S]*?\\end\s*\{\1\}/g, ''))) {
-        this.toast('Rows cannot go into a formula in the line: paste them on a line of their own.');
+      if ((!opts.display || !st.multi) && /\\\\|(^|[^\\])&/.test(inner.replace(/\\begin\s*\{([A-Za-z*]+)\}[\s\S]*?\\end\s*\{\1\}/g, ''))) {
+        this.toast(opts.display ? 'Rows cannot go into this equation: make it Aligned in its menu first, or paste them on a line of their own.' : 'Rows cannot go into a formula in the line: paste them on a line of their own.');
         return;
       }
       mf.insert(D.toField(inner), { format: 'latex', insertionMode: 'replaceSelection', selectionMode: 'after', mode: 'math' });
