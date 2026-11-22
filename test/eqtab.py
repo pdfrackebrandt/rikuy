@@ -320,6 +320,15 @@ def context_menu(page):
 
 
 def alt_equals(page):
+    # (over selected words: they become the formula, as Word's Alt+= takes them; they were thrown
+    # away for an empty field, and a^2 typed in the text is \textasciicircum{}2 in its source;
+    # first, so the steps after it leave Track Changes' base as they did, for reviewed())
+    load_doc(page, WRAP('Pythagoras: a\\textasciicircum{}2+b\\_1=c\\textasciicircum{}2 holds.')); select_text(page, 'a^2+b_1=c^2')
+    page.keyboard.press('Alt+='); page.wait_for_selector('.pop-math'); settle(page, 300)
+    page.keyboard.press('Escape'); settle(page, 200)
+    one = src(page)
+    page.keyboard.press('Control+z'); settle(page, 200)
+    check('Alt+= over selected words: they become the formula, in one undo step', 'Pythagoras: $a^2+b_1=c^2$ holds.' in one and 'Pythagoras: a\\textasciicircum{}2+b\\_1=c' in src(page), (one[-70:], src(page)[-80:]))
     load_doc(page, DOC); click_text(page, 'Second paragraph.', 17); page.keyboard.press('Enter'); settle(page, 120)
     page.keyboard.press('Alt+='); page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000); settle(page, 150)
     head, sel = page.evaluate('document.querySelector(".pop-math .pop-h span").textContent'), page.evaluate(TAB)
@@ -330,14 +339,6 @@ def alt_equals(page):
     head = page.evaluate('document.querySelector(".pop-math .pop-h span").textContent')
     page.keyboard.type('x'); settle(page, 400); page.keyboard.press('Enter'); settle(page, 200)
     check('Alt+= in text: a formula in the line', head == 'New inline math' and 'Some$x$ text' in src(page), (head, src(page)[-60:]))
-    # (over selected words: they become the formula, as Word's Alt+= takes them; they were thrown
-    # away for an empty field, and a^2 typed in the text is \textasciicircum{}2 in its source)
-    load_doc(page, WRAP('Pythagoras: a\\textasciicircum{}2+b\\_1=c\\textasciicircum{}2 holds.')); select_text(page, 'a^2+b_1=c^2')
-    page.keyboard.press('Alt+='); page.wait_for_selector('.pop-math'); settle(page, 300)
-    page.keyboard.press('Escape'); settle(page, 200)
-    one = src(page)
-    page.keyboard.press('Control+z'); settle(page, 200)
-    check('Alt+= over selected words: they become the formula, in one undo step', 'Pythagoras: $a^2+b_1=c^2$ holds.' in one and 'Pythagoras: a\\textasciicircum{}2+b\\_1=c' in src(page), (one[-70:], src(page)[-80:]))
     load_doc(page, WRAP('\\section{Title}\n\nText.')); click_text(page, 'Title', 5)
     page.keyboard.press('Alt+='); page.wait_for_selector('.pop-math'); settle(page, 150)
     check('Alt+= in a heading: in the line (a display cannot stand there)', page.evaluate('document.querySelector(".pop-math .pop-h span").textContent') == 'New inline math')
