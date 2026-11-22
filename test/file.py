@@ -18,7 +18,7 @@ and its dialogs on the screen at 390 px.
 RIKUY_DIST names another dist/."""
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import open_page, check, results, src, load_doc, click_text, roundtrip
+from browser import settle, tap, open_page, check, results, src, load_doc, click_text, roundtrip
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -39,16 +39,16 @@ def props(v):
 
 
 def new_docs(page):
-    page.get_by_role('tab', name='File', exact=True).click(); page.wait_for_timeout(300)
+    page.get_by_role('tab', name='File', exact=True).click(); settle(page, 300)
     for n in ('Blank document', 'New from template', 'Browse', 'Recent documents', 'Properties', 'Check accessibility', 'Export as', 'Print PDF', 'Set as default'):
         check('File has ' + n, page.get_by_role('button', name=n, exact=True).count() == 1)
     page.screenshot(path=os.path.join(SHOTS, 'file-tab-1366.png'))
-    page.get_by_role('button', name='New from template', exact=True).click(); page.wait_for_timeout(300)
+    page.get_by_role('button', name='New from template', exact=True).click(); settle(page, 300)
     items = page.get_by_role('menuitem').all_inner_texts()
     check('New from template lists eight templates', [i.split('\n')[0] for i in items] == ['Article', 'Report', 'Book or thesis', 'Letter', 'KOMA-Script article', 'Slides', 'Exam', 'CV'], items)
     page.keyboard.press('Escape')
     for tid in ('article', 'report', 'book', 'letter', 'scrartcl', 'beamer', 'exam', 'cv'):
-        ev(page, '(t) => window.rikuy.runCommand("new-template", t)', tid); page.wait_for_timeout(900)
+        ev(page, '(t) => window.rikuy.runCommand("new-template", t)', tid); settle(page, 900)
         s = src(page)
         ok = s.startswith('\\documentclass') and '\\begin{document}' in s and ev(page, 'window.rikuy.files.size') == 1
         if not TEX: print('SKIP template ' + tid + ' compiled: no TeX tree in %s' % DIST)
@@ -61,32 +61,32 @@ def new_docs(page):
     names = ev(page, '(async () => (await window.rikuy.allSnaps()).map((v) => v.name))()')
     check('each template opened as a new document, the others kept', 'Report' in names and 'Slides' in names and ev(page, 'window.rikuy.name') == 'CV', names[:12])
     # Recent documents: the others, newest first; one opens
-    page.get_by_role('tab', name='File', exact=True).click(); page.wait_for_timeout(200)
-    page.get_by_role('button', name='Recent documents', exact=True).click(); page.wait_for_timeout(500)
+    page.get_by_role('tab', name='File', exact=True).click(); settle(page, 200)
+    page.get_by_role('button', name='Recent documents', exact=True).click(); settle(page, 500)
     items = page.get_by_role('menuitem').all_inner_texts()
     check('Recent documents lists the others, newest first, not the open one', items and items[0].startswith('Exam') and not any(i.startswith('CV') for i in items), items)
-    page.get_by_role('menuitem', name='Report', exact=True).click(); page.wait_for_timeout(900)
+    page.get_by_role('menuitem', name='Report', exact=True).click(); settle(page, 900)
     check('a press opens it', ev(page, 'window.rikuy.name') == 'Report' and '\\documentclass[11pt]{report}' in src(page))
     # L6: Remove takes the document's pictures out of the browser too (Learn Rikuy has one)
-    ev(page, "window.rikuy.runCommand('help-tour')"); page.wait_for_timeout(1200)
+    ev(page, "window.rikuy.runCommand('help-tour')"); settle(page, 1200)
     tour = ev(page, 'window.rikuy.name')
-    ev(page, '() => window.rikuy.runCommand("new-template", "article")'); page.wait_for_timeout(1200)
+    ev(page, '() => window.rikuy.runCommand("new-template", "article")'); settle(page, 1200)
     KV = "(k) => new Promise((ok) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const t = q.result.transaction('kv').objectStore('kv').get(k); t.onsuccess = () => ok(!!t.result); t.onerror = () => ok(null); }; q.onerror = () => ok(null); })"
     had = ev(page, KV, 'bin:' + tour + '|main.tex')
-    ev(page, '(n) => window.rikuy.runCommand("recent", { remove: n })', tour); page.wait_for_timeout(300)
-    page.click('#toast button'); page.wait_for_timeout(800)
+    ev(page, '(n) => window.rikuy.runCommand("recent", { remove: n })', tour); settle(page, 300)
+    page.click('#toast button'); settle(page, 800)
     check('L6: Remove takes the document\'s versions and its pictures', had is True and ev(page, KV, 'bin:' + tour + '|main.tex') is False and tour not in ev(page, '(async () => (await window.rikuy.allSnaps()).map((v) => v.name))()'), (had, tour))
     # Set as default
     load_doc(page, DOC)
     ev(page, 'window.rikuy.runCommand("set-default", "set")')
-    ev(page, 'window.rikuy.runCommand("new-blank")'); page.wait_for_timeout(900)
+    ev(page, 'window.rikuy.runCommand("new-blank")'); settle(page, 900)
     check('Set as default: a blank document starts with this preamble', src(page) == DOC[:DOC.index('\\begin{document}')].rstrip() + '\n\n\\begin{document}\n\n\\end{document}\n', src(page))
     load_doc(page, {'main.tex': DOC.replace('\\usepackage{amsmath}', '\\input{macros}'), 'macros.tex': '\\newcommand\\R{x}\n'})
     check('L9: Set as default refuses a preamble that reads the project\'s files', ev(page, 'window.rikuy.runCommand("set-default", "set")') is False)
     load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\makeatletter\\def\\input@path{{figs/}}\\makeatother'))
     check('V8: Set as default takes a preamble with \\input@path (it reads no file)', ev(page, 'window.rikuy.runCommand("set-default", "set")') is True)
     ev(page, 'window.rikuy.runCommand("set-default", "reset")')
-    ev(page, 'window.rikuy.runCommand("new-blank")'); page.wait_for_timeout(900)
+    ev(page, 'window.rikuy.runCommand("new-blank")'); settle(page, 900)
     check('Forget the default: a plain article again', src(page).startswith('\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}'), src(page))
 
 
@@ -97,28 +97,28 @@ def rename(page):
     names = lambda: ev(page, '(async () => (await window.rikuy.allSnaps()).map((v) => v.name))()')
     KV = "(k) => new Promise((ok) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const t = q.result.transaction('kv').objectStore('kv').get(k); t.onsuccess = () => ok(t.result === undefined ? false : t.result); t.onerror = () => ok(null); }; q.onerror = () => ok(null); })"
     PUT = "([k, v]) => new Promise((ok) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const t = q.result.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => ok(true); t.onerror = () => ok(false); }; })"
-    ev(page, '() => window.rikuy.runCommand("new-template", "letter")'); page.wait_for_timeout(900)
+    ev(page, '() => window.rikuy.runCommand("new-template", "letter")'); settle(page, 900)
     first = ev(page, 'window.rikuy.name')
-    ev(page, '() => window.rikuy.runCommand("new-template", "exam")'); page.wait_for_timeout(900)
+    ev(page, '() => window.rikuy.runCommand("new-template", "exam")'); settle(page, 900)
     opened = ev(page, 'window.rikuy.name')
     n0 = names().count(first)
     ev(page, PUT, ['bin:' + first + '|main.tex', {'assets': [], 'extra': [], 'orig': []}])
-    page.get_by_role('tab', name='File', exact=True).click(); page.wait_for_timeout(200)
-    page.get_by_role('button', name='Recent documents', exact=True).click(); page.wait_for_timeout(500)
-    page.get_by_role('menuitem', name='Rename a document…', exact=True).click(); page.wait_for_timeout(300)
+    page.get_by_role('tab', name='File', exact=True).click(); settle(page, 200)
+    page.get_by_role('button', name='Recent documents', exact=True).click(); settle(page, 500)
+    page.get_by_role('menuitem', name='Rename a document…', exact=True).click(); settle(page, 300)
     items = page.get_by_role('menuitem').all_inner_texts()
     check('Rename a document… lists the open document and the others', any(i.startswith('Rename ' + opened + ' (open)') for i in items) and any(i.startswith('Rename ' + first) for i in items), items)
-    page.get_by_role('menuitem', name='Rename ' + first, exact=True).click(); page.wait_for_timeout(300)
+    page.get_by_role('menuitem', name='Rename ' + first, exact=True).click(); settle(page, 300)
     dlg = page.get_by_role('dialog', name='Rename a document')
     field = dlg.get_by_role('textbox', name='New name')
     check('a dialog "Rename a document", its field "New name" holding the name now', dlg.count() == 1 and field.input_value() == first)
     page.screenshot(path=os.path.join(SHOTS, 'file-rename-1366.png'))
-    field.fill('My letter'); dlg.get_by_role('button', name='Rename', exact=True).click(); page.wait_for_timeout(900)
+    field.fill('My letter'); dlg.get_by_role('button', name='Rename', exact=True).click(); settle(page, 900)
     ns = names()
     check('renamed: every version under the new name, none under the old', n0 >= 1 and ns.count('My letter') == n0 and first not in ns, (n0, ns[:8]))
     check('its pictures kept in the browser go with it', ev(page, KV, 'bin:My letter|main.tex') not in (False, None) and ev(page, KV, 'bin:' + first + '|main.tex') is False)
     check('the open document stays open and untouched', ev(page, 'window.rikuy.name') == opened)
-    ok = ev(page, '(n) => window.rikuy.runCommand("recent", { rename: n, to: "Exam renamed" })', opened); page.wait_for_timeout(500)
+    ok = ev(page, '(n) => window.rikuy.runCommand("recent", { rename: n, to: "Exam renamed" })', opened); settle(page, 500)
     rec = ev(page, KV, 'project')
     check('the open document renamed: the bar says it, its versions follow, the record a reload opens too',
           ok is True and ev(page, 'window.rikuy.name') == 'Exam renamed' and ev(page, "document.getElementById('docname').textContent") == 'Exam renamed'
@@ -127,7 +127,7 @@ def rename(page):
     check('security: a | in a new name (records are kept under name|main) becomes a space', ev(page, '() => window.rikuy.runCommand("recent", { rename: "Exam renamed", to: "a|main.tex" })') is True and ev(page, 'window.rikuy.name') == 'a main.tex')
     ev(page, '() => window.rikuy.runCommand("recent", { rename: "a main.tex", to: "Exam renamed" })')
     check('an empty name is refused', ev(page, '() => window.rikuy.runCommand("recent", { rename: "My letter", to: "   " })') is False and 'My letter' in names())
-    ev(page, '() => window.rikuy.runCommand("recent", { open: "My letter" })'); page.wait_for_timeout(900)
+    ev(page, '() => window.rikuy.runCommand("recent", { open: "My letter" })'); settle(page, 900)
     check('the renamed document opens under its name, its text as it was', ev(page, 'window.rikuy.name') == 'My letter' and '\\documentclass' in src(page) and 'letter' in src(page)[:60], src(page)[:60])
 
 
@@ -139,17 +139,17 @@ def rename_atomic(page):
     PUT = "([k, v]) => new Promise((ok) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const t = q.result.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => ok(true); }; })"
     docs = []
     for tid in ('letter', 'exam', 'report'):
-        ev(page, '(t) => window.rikuy.runCommand("new-template", t)', tid); page.wait_for_timeout(900)
+        ev(page, '(t) => window.rikuy.runCommand("new-template", t)', tid); settle(page, 900)
         docs.append(ev(page, 'window.rikuy.name'))
     a, b = docs[0], docs[1]
     for n in (a, b): ev(page, PUT, ['bin:' + n + '|main.tex', {'assets': [n], 'extra': [], 'orig': []}])
     # the storage full as the pictures' record moves
     ev(page, """() => { const put = IDBObjectStore.prototype.put; window.__put = put; IDBObjectStore.prototype.put = function (v, k) { if (typeof k === 'string' && k.startsWith('bin:Moved')) { this.transaction.abort(); return null; } return put.call(this, v, k); }; }""")
-    ok = ev(page, '(n) => window.rikuy.runCommand("recent", { rename: n, to: "Moved" })', a); page.wait_for_timeout(400)
+    ok = ev(page, '(n) => window.rikuy.runCommand("recent", { rename: n, to: "Moved" })', a); settle(page, 400)
     ev(page, "() => { IDBObjectStore.prototype.put = window.__put; }")
     toast = ev(page, "(document.getElementById('toast') || {}).textContent || ''")
     check('M4: storage refusing halfway: nothing renamed, the pictures where they were, and it says so', ok is False and a in names() and 'Moved' not in names() and ev(page, KV, 'bin:' + a + '|main.tex') not in (False, None) and ev(page, KV, 'bin:Moved|main.tex') is False and 'nothing was renamed' in toast, (ok, toast))
-    r = ev(page, '([x, y]) => Promise.all([window.rikuy.runCommand("recent", { rename: x, to: "Same" }), window.rikuy.runCommand("recent", { rename: y, to: "Same" })])', [a, b]); page.wait_for_timeout(400)
+    r = ev(page, '([x, y]) => Promise.all([window.rikuy.runCommand("recent", { rename: x, to: "Same" }), window.rikuy.runCommand("recent", { rename: y, to: "Same" })])', [a, b]); settle(page, 400)
     left = names()
     pics = ev(page, KV, 'bin:Same|main.tex')
     check('two renames to one name at once: one done, one refused, no versions merged, no pictures lost',
@@ -177,14 +177,14 @@ def properties(page):
     # H1: only what was changed is written; the author's comment, line breaks and & stay
     auth = '\\documentclass{article}\n\\title{A study}\n\\author{%\n  Jane Doe\\thanks{Funded by X.}\\\\\n  Department of Y % office 3\n  \\and\n  John Roe}\n\\begin{document}\\maketitle Text.\\end{document}\n'
     load_doc(page, auth); h = ev(page, 'window.rikuy.hist.length')
-    page.get_by_role('tab', name='File', exact=True).click(); page.wait_for_timeout(200)
-    page.get_by_role('button', name='Properties', exact=True).click(); page.wait_for_timeout(300)
-    page.get_by_role('dialog', name='Properties', exact=True).get_by_role('button', name='Apply', exact=True).click(); page.wait_for_timeout(300)
+    page.get_by_role('tab', name='File', exact=True).click(); settle(page, 200)
+    page.get_by_role('button', name='Properties', exact=True).click(); settle(page, 300)
+    page.get_by_role('dialog', name='Properties', exact=True).get_by_role('button', name='Apply', exact=True).click(); settle(page, 300)
     check('H1: Apply with nothing changed writes nothing', src(page) == auth and ev(page, 'window.rikuy.hist.length') == h)
-    page.get_by_role('button', name='Properties', exact=True).click(); page.wait_for_timeout(300)
+    page.get_by_role('button', name='Properties', exact=True).click(); settle(page, 300)
     dlg = page.get_by_role('dialog', name='Properties', exact=True)
     dlg.get_by_role('textbox', name='Keywords', exact=True).fill('economics, AI')
-    dlg.get_by_role('button', name='Apply', exact=True).click(); page.wait_for_timeout(300)
+    dlg.get_by_role('button', name='Apply', exact=True).click(); settle(page, 300)
     a0 = auth[auth.index('\\author'):auth.index('\\begin')]
     check('H1: Keywords alone leave the commented, multi-line author byte for byte', a0 in src(page) and 'pdfkeywords={economics, AI}' in src(page), src(page)[:260])
     # V1: two changes typed in one field: the source between them (a % comment, a tabular &) stays
@@ -192,13 +192,13 @@ def properties(page):
     for d0, edits, want in ((auth, (('Jane Doe', ' Jr'), ('John Roe', 'x')), auth.replace('Jane Doe', 'Jane Doe Jr').replace('John Roe', 'John Roex')),
                             (tab, (('Ann', ' & Co'), ('ETH', ' Zurich')), tab.replace('Ann', 'Ann \\& Co').replace('ETH', 'ETH Zurich'))):
         load_doc(page, d0)
-        page.get_by_role('tab', name='File', exact=True).click(); page.wait_for_timeout(200)
-        page.get_by_role('button', name='Properties', exact=True).click(); page.wait_for_timeout(300)
+        page.get_by_role('tab', name='File', exact=True).click(); settle(page, 200)
+        page.get_by_role('button', name='Properties', exact=True).click(); settle(page, 300)
         box = page.get_by_role('dialog', name='Properties', exact=True).get_by_role('textbox', name='Author', exact=True)
         for word, typed in edits:
             box.evaluate('(t, w) => { t.focus(); const i = t.value.indexOf(w) + w.length; t.setSelectionRange(i, i); }', word)
             page.keyboard.type(typed)
-        page.get_by_role('dialog', name='Properties', exact=True).get_by_role('button', name='Apply', exact=True).click(); page.wait_for_timeout(300)
+        page.get_by_role('dialog', name='Properties', exact=True).get_by_role('button', name='Apply', exact=True).click(); settle(page, 300)
         check('V1: two changes typed in the Author box write those two, the source between them as it was (& typed escaped)', src(page) == want, src(page)[:220])
     if not TEX: print('SKIP the review\'s Properties documents compiled (and acmart\'s PDF Info): no TeX tree in %s' % DIST)
     if TEX:
@@ -208,7 +208,7 @@ def properties(page):
         for name, d in cases:
             load_doc(page, d)
             if 'economics' not in d:
-                ev(page, '() => window.rikuy.runCommand("properties", { subject: "Uber" })'); page.wait_for_timeout(300)
+                ev(page, '() => window.rikuy.runCommand("properties", { subject: "Uber" })'); settle(page, 300)
             r = ev(page, 'window.rikuy.api.compile()')
             errs = [x for x in r['problems'] if x.get('severity') == 'error']
             check('Properties on ' + name + ': compiles in the page without an error', r['ok'] and not errs and ('Uber' in src(page) or 'economics' in src(page)), (errs[:2], src(page)[:200]))
@@ -216,17 +216,18 @@ def properties(page):
                 import base64, io, pypdf
                 b = ev(page, '(async () => { const r = await window.rikuy.api.compile(); let s = ""; for (const x of r.pdf) s += String.fromCharCode(x); return btoa(s); })()')
                 meta = pypdf.PdfReader(io.BytesIO(base64.b64decode(b))).metadata or {}
-                check('V2: acmart: the Subject reaches the PDF (pypdf reads its Info)', (meta.get('/Subject') or '') == 'Uber', dict(meta))
+                # (the detail without the PDF's dates, which are the run's own)
+                check('V2: acmart: the Subject reaches the PDF (pypdf reads its Info)', (meta.get('/Subject') or '') == 'Uber', {k: v for k, v in dict(meta).items() if 'Date' not in k})
     # read back: a hand written \hypersetup
     load_doc(page, hs.replace('colorlinks=true', 'colorlinks=true, pdfsubject = {Hand, written}, pdfkeywords=one'))
-    page.get_by_role('tab', name='File', exact=True).click(); page.wait_for_timeout(200)
-    page.get_by_role('button', name='Properties', exact=True).click(); page.wait_for_timeout(300)
+    page.get_by_role('tab', name='File', exact=True).click(); settle(page, 200)
+    page.get_by_role('button', name='Properties', exact=True).click(); settle(page, 300)
     dlg = page.get_by_role('dialog', name='Properties', exact=True)
     vals = [dlg.get_by_role('textbox', name=n, exact=True).input_value() for n in ('Title', 'Author', 'Subject', 'Keywords')]
     check('the dialog reads what is written by hand', vals == ['Old title', 'Ann', 'Hand, written', 'one'], vals)
     page.screenshot(path=os.path.join(SHOTS, 'file-properties-1366.png'))
     dlg.get_by_role('textbox', name='Title', exact=True).fill('Typed in the dialog')
-    dlg.get_by_role('button', name='Apply', exact=True).click(); page.wait_for_timeout(300)
+    dlg.get_by_role('button', name='Apply', exact=True).click(); settle(page, 300)
     check('Apply writes the changed field only', '\\title{Typed in the dialog}' in src(page) and 'pdfsubject = {Hand, written}' in src(page) and page.get_by_role('dialog').count() == 0)
 
 
@@ -237,15 +238,15 @@ def accessibility(page):
     check('Check accessibility finds no title, no language, a picture without alt text, a skipped level, a table without a header row, no tagging', ks == ['title', 'lang', 'alt', 'heads', 'table', 'tagging'], ks)
     t = ev(page, 'window.rikuy.accessibilityIssues().find((x) => x.k === "alt").t')
     check('it counts: 1 of 2 pictures', t.startswith('1 of 2'), t)
-    page.get_by_role('tab', name='File', exact=True).click(); page.wait_for_timeout(200)
-    page.get_by_role('button', name='Check accessibility', exact=True).click(); page.wait_for_timeout(300)
+    page.get_by_role('tab', name='File', exact=True).click(); settle(page, 200)
+    page.get_by_role('button', name='Check accessibility', exact=True).click(); settle(page, 300)
     dlg = page.get_by_role('dialog', name='Check accessibility', exact=True)
     page.screenshot(path=os.path.join(SHOTS, 'file-a11y-1366.png'))
     h = ev(page, 'window.rikuy.hist.length')
-    dlg.get_by_role('button', name='Tag the PDF', exact=True).click(); page.wait_for_timeout(300)
+    dlg.get_by_role('button', name='Tag the PDF', exact=True).click(); settle(page, 300)
     check('Tag the PDF: \\DocumentMetadata before \\documentclass, one step', src(page) == '\\DocumentMetadata{lang=en,pdfstandard=ua-2,tagging=on}\n' + d and ev(page, 'window.rikuy.hist.length') == h + 1, src(page)[:90])
     check('and no second time; the check finds it tagged', ev(page, 'window.rikuy.runCommand("check-accessibility", "tagging")') is False and 'tagging' not in ev(page, 'window.rikuy.accessibilityIssues().map((x) => x.k)'))
-    ev(page, 'window.rikuy.undo()'); page.wait_for_timeout(200)
+    ev(page, 'window.rikuy.undo()'); settle(page, 200)
     check('one undo: the bytes of before', src(page) == d)
     # a \DocumentMetadata already there (CRLF, a comment, a group in a value, tagging=off) gets
     # tagging=on among its keys; one commented out is no \DocumentMetadata
@@ -260,7 +261,7 @@ def accessibility(page):
         ks = ev(page, 'window.rikuy.accessibilityIssues().map((x) => x.k)')
         r = ev(page, 'window.rikuy.runCommand("check-accessibility", "tagging")')
         ok = 'tagging' in ks and r is True and src(page) == after
-        ev(page, 'window.rikuy.undo()'); page.wait_for_timeout(200)
+        ev(page, 'window.rikuy.undo()'); settle(page, 200)
         check('Tag the PDF on a \\DocumentMetadata with ' + name + ': tagging=on, the rest as written; one undo back', ok and src(page) == before, (ks, r, src(page)[:120]))
     load_doc(page, '\\DocumentMetadata{testphase={a,b},lang=en,tagging=on}\n\\documentclass{article}\n\\begin{document}\nText.\n\\end{document}\n')
     check('a group in a value does not hide the lang and tagging=on after it', 'tagging' not in ev(page, 'window.rikuy.accessibilityIssues().map((x) => x.k)') and 'lang' not in ev(page, 'window.rikuy.accessibilityIssues().map((x) => x.k)'))
@@ -270,7 +271,8 @@ def accessibility(page):
     # a stranger's file of spaces after \\includegraphics and \\usepackage: read in a moment
     load_doc(page, '\\documentclass{article}\n\\usepackage' + ' ' * 200000 + 'x\n\\begin{document}\n' + '\\includegraphics' + ' ' * 200000 + 'y\n\\end{document}\n')
     ms = ev(page, '(() => { const t = performance.now(); window.rikuy.accessibilityIssues(); return performance.now() - t; })()')
-    check('Check accessibility on 400 KB of hostile spaces takes well under a second (a scan, no backtracking)', ms < 500, ms)
+    # (the time itself only when it is too long: under that it moves from run to run)
+    check('Check accessibility on 400 KB of hostile spaces takes well under a second (a scan, no backtracking)', ms < 500, ms if ms >= 500 else 'under 500 ms')
     good = '\\DocumentMetadata{lang=en,pdfstandard=ua-2,tagging=on}\n\\documentclass{article}\n\\usepackage{booktabs}\n\\title{T}\n\\begin{document}\n\\section{A}\n\\subsection{B}\n\\begin{tabular}{ll}\n\\toprule\na & b \\\\\n\\midrule\nc & d\n\\end{tabular}\n\\end{document}\n'
     load_doc(page, good)
     check('a document with a title, a language, tagging, its levels and header rows: nothing found', ev(page, 'window.rikuy.accessibilityIssues().length') == 0, ev(page, 'window.rikuy.accessibilityIssues()'))
@@ -325,7 +327,9 @@ def export(page):
         page.wait_for_function('!window.rikuy.wordBusy', timeout=120000)
         e = ev(page, '(async () => { const x = window.rikuy.lastExport; return x ? { name: x.name, size: x.size, text: (await x.blob.text()).slice(0, 4000) } : null; })()')
         good = e and e['name'].endswith('.' + {'markdown': 'md'}.get(fmt, fmt)) and e['size'] > 50 and (needle is None or needle in e['text']) and (fmt not in ('odt', 'epub') or e['text'].startswith('PK'))
-        check('Export as ' + fmt + ': a file with the document in it', good, e and (e['name'], e['size'], e['text'][:80]))
+        # (an .odt or an .epub is a .zip, whose bytes carry the time it was made: its detail is its
+        # name, its first bytes and whether it has any size)
+        check('Export as ' + fmt + ': a file with the document in it', good, e and ((e['name'], e['text'][:2], e['size'] > 50) if fmt in ('odt', 'epub') else (e['name'], e['size'], e['text'][:80])))
     ev(page, '() => window.rikuy.runCommand("export-as", "markdown")'); page.wait_for_function('!window.rikuy.wordBusy', timeout=120000)
     md = ev(page, '(async () => (await window.rikuy.lastExport.blob.text()))()')
     check('M1: the Markdown has none of Word\'s anchors', 'Some words here' in md and '{#Rk' not in md and '[Some' not in md, md[:200])
@@ -339,15 +343,15 @@ def export(page):
 
 def phones(p):
     browser, page, errors = open_page(p, 390, 844, touch=True)
-    ev(page, "window.rikuy.selectTab('file')"); page.wait_for_timeout(300)
+    ev(page, "window.rikuy.selectTab('file')"); settle(page, 300)
     r = ev(page, "[...document.querySelectorAll('#rp-file .btn')].filter((b) => b.offsetParent).map((b) => { const r = b.getBoundingClientRect(); return [b.getAttribute('aria-label'), Math.round(r.width), Math.round(r.height)]; })")
     check('the File tab\'s buttons are 44 px under a finger (390 px)', r and all(x[1] >= 44 and x[2] >= 44 for x in r), r)
-    page.locator('#rf-props').tap(); page.wait_for_timeout(400)
+    tap(page, page.locator('#rf-props'), 400)
     dl = ev(page, "(() => { const d = document.querySelector('.pop'); const r = d.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.bottom), innerHeight]; })()")
     check('Properties fits a phone\'s screen (390 px)', dl[0] >= 0 and dl[1] <= 390 and dl[2] <= dl[3], dl)
     page.screenshot(path=os.path.join(SHOTS, 'phone-390-properties.png'))
-    page.keyboard.press('Escape'); page.wait_for_timeout(200)
-    ev(page, '() => window.rikuy.runCommand("recent", { rename: window.rikuy.name })'); page.wait_for_timeout(400)
+    page.keyboard.press('Escape'); settle(page, 200)
+    ev(page, '() => window.rikuy.runCommand("recent", { rename: window.rikuy.name })'); settle(page, 400)
     dl = ev(page, "(() => { const d = document.querySelector('.pop-rename'); if (!d) return null; const r = d.getBoundingClientRect(), b = d.querySelector('button[aria-label=Rename]').getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.bottom), innerHeight, Math.round(b.height)]; })()")
     check('F4: Rename a document fits a phone\'s screen, its button 44 px (390 px)', dl and dl[0] >= 0 and dl[1] <= 390 and dl[2] <= dl[3] and dl[4] >= 44, dl)
     page.screenshot(path=os.path.join(SHOTS, 'phone-390-rename.png'))

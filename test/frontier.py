@@ -2,7 +2,7 @@
 rich HTML, equation edits that keep the source spelling."""
 import os, sys, io, traceback
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import open_page, check, results, src, click_text, select_text, SHOTS
+from browser import settle, open_page, check, results, src, click_text, select_text, SHOTS
 from playwright.sync_api import sync_playwright
 try:
     import pypdf  # reads the printed PDF back; without it only the PDF's size can be checked
@@ -16,7 +16,7 @@ try:
         # ---- print at the document's paper size
         n_pages = page.evaluate("document.querySelectorAll('#pages .page').length")
         page.evaluate("window.rikuy.preparePrint()")
-        page.wait_for_timeout(300)
+        settle(page, 300)
         size = page.evaluate("document.getElementById('print-page').textContent")
         pdf = page.pdf(prefer_css_page_size=True, print_background=True)
         page.evaluate("window.rikuy.endPrint()")
@@ -32,10 +32,12 @@ try:
             print('SKIP PDF sheets, paper size and text: pypdf is not installed (pip install pypdf)')
             check('pdf produced', len(pdf) > 10000)
         # ---- outline
-        page.click('#b-nav'); page.wait_for_timeout(300)
+        # (the panel narrows the pages' desk: they are fitted again 150 ms after it resized)
+        page.click('#b-nav'); settle(page, 300, full=True)
         items = page.evaluate("[...document.querySelectorAll('.nav-item')].map(b => b.textContent)")
         check('outline lists the sections', items[:2] == ['1How to use it', '2The round trip'] and len(items) == 5, items)
-        page.click('.nav-item >> nth=3'); page.wait_for_timeout(300)
+        # (the scroll marks the current heading 80 ms after it)
+        page.click('.nav-item >> nth=3'); settle(page, 300, full=True)
         vis = page.evaluate("(() => { const h = [...document.querySelectorAll('.it.h')].find(e => e.textContent.includes('Keyboard')); const r = h.getBoundingClientRect(); return r.top > 40 && r.top < 300; })()")
         check('outline click scrolls to the section', vis)
         check('current section is marked', page.evaluate("document.querySelector('.nav-item.cur') && document.querySelector('.nav-item.cur').textContent") == '4Keyboard')
@@ -44,16 +46,17 @@ try:
         page.keyboard.type('See ')
         page.evaluate("""(() => { const g = window.rikuy; const f = 'main.tex'; const s = g.files.get(f); const at = s.indexOf('See ') + 4;
           g.commit([{ f, s: at, e: at, t: 'Table~\\\\ref{tab:nope} and \\\\citet{nobody}. ' }], null, 'type'); })()""")
-        page.wait_for_timeout(700)
+        # (the status bar counts the problems 350 ms after the edit: problemsSoon)
+        settle(page, 700, full=True)
         check('status counts the problems', page.evaluate("document.getElementById('st-warn').textContent") == '2 problems', page.evaluate("document.getElementById('st-warn').textContent"))
-        page.click('#st-warn'); page.wait_for_timeout(300)
+        page.click('#st-warn'); settle(page, 300)
         probs = page.evaluate("[...document.querySelectorAll('.prob')].map(b => b.textContent)")
         check('problems name the label and the citation', any('tab:nope' in x for x in probs) and any('nobody' in x for x in probs), probs)
-        page.evaluate("window.rikuy.undo()"); page.wait_for_timeout(200)
-        page.evaluate("window.rikuy.undo()"); page.wait_for_timeout(600)
+        page.evaluate("window.rikuy.undo()"); settle(page, 200)
+        page.evaluate("window.rikuy.undo()"); settle(page, 600, full=True)
         check('problems clear when fixed', page.evaluate("document.getElementById('st-warn').hidden"), page.evaluate("document.getElementById('st-warn').textContent"))
         check('source back to the start', src(page) == base)
-        page.click('#nav-close'); page.wait_for_timeout(500)  # closing the panel lays the pages out again
+        page.click('#nav-close'); settle(page, 500)  # closing the panel lays the pages out again
         # ---- copy as rich HTML
         select_text(page, 'bold')
         html = page.evaluate("""(() => { const dt = new DataTransfer(); document.getElementById('pages').dispatchEvent(new ClipboardEvent('copy', { clipboardData: dt, bubbles: true, cancelable: true })); return dt.getData('text/html'); })()""")

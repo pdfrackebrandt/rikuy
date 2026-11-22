@@ -19,7 +19,7 @@ survive a reload."""
 import os, sys, io, re, json, zlib, base64, zipfile, tempfile, traceback, time, socket, threading
 sys.path.insert(0, os.path.dirname(__file__))
 import serve
-from browser import ROUTES, check, results, click_text, download
+from browser import settle, saved, TIMERS, ROUTES, check, results, click_text, download
 from playwright.sync_api import sync_playwright
 
 PORT = 8797
@@ -50,6 +50,9 @@ def make_zip(path, files):
 def open_app(p):
     b = p.chromium.launch()
     ctx = b.new_context(viewport={'width': 1400, 'height': 1000}, accept_downloads=True, device_scale_factor=1)
+    # (the page's timers, as open_page() tracks them, so settle() waits for those due; in the page
+    # alone: a widget's frame keeps its own window as the page gives it)
+    ctx.add_init_script('if (window === window.top) ' + TIMERS)
     page = ctx.new_page()
     errors = []
     page.on('console', lambda m: errors.append(m.text) if m.type == 'error' and 'Failed to load resource' not in m.text else None)
@@ -76,7 +79,7 @@ def src(page, f='main.tex'):
 def open_zip(page, path):
     page.set_input_files('#fileinput', path)
     page.wait_for_function("window.rikuy.main === 'main.tex' && window.rikuy.files.has('widgets/clt.html') && document.querySelector('.w-live')", timeout=15000)
-    page.wait_for_timeout(300)
+    settle(page, 300)
 
 
 def run_widgets(page, n_frames):
@@ -230,7 +233,7 @@ try:
         page.wait_for_selector('#pop-raw', timeout=3000)
         check('a click on that picture opens its command, as a figure\'s does', page.evaluate("document.getElementById('pop-raw').value") == CMD)
         page.keyboard.press('Escape')
-        page.wait_for_timeout(200)
+        settle(page, 200)
         ran = run_widgets(page, 1)
         check('one click runs it, and it posts its height', ran, page.evaluate("[...window.rikuy.widgets.heights]"))
         info = page.evaluate("""async () => { const f = document.querySelector('#wlayer iframe'); if (!f) return null;
@@ -258,7 +261,7 @@ try:
         page.mouse.move(fb['x'] - 30, fb['y'] + fb['height'] - 20); page.mouse.move(fb['x'] + 20, fb['y'] + fb['height'] - 20, steps=6)
         fl.locator('label[for=n]').click()
         fl.locator('#n').press('ArrowRight')
-        page.wait_for_timeout(150)
+        settle(page, 150)
         check('moving its slider in the frame changes it', fl.locator('#v').inner_text() == 'n = 5', fl.locator('#v').inner_text())
         check('no errors so far (an inline script the policy blocked would show here)', not errors, errors[:3])
 
@@ -268,21 +271,21 @@ try:
         steps0 = page.evaluate('window.rikuy.hist.length')
         click_text(page, 'Histogram', 9)
         page.keyboard.type(' (live)')
-        page.wait_for_timeout(300)
+        settle(page, 300)
         check('typing in the caption patches only the typed text', src(page) == orig.replace('Histogram of', 'Histogram (live) of', 1), src(page)[-700:-500])
         check('the widget keeps running through its figure being redrawn', page.evaluate(KEPT) and fl.locator('#v').inner_text() == 'n = 5')
         check('and its frame still lies over its box', aligned(page))
         click_text(page, 'four thousand', 4)
         page.keyboard.type(' or so')
-        page.wait_for_timeout(300)
+        settle(page, 300)
         want = orig.replace('Histogram of', 'Histogram (live) of', 1).replace('four thousand', 'four or so thousand', 1)
         check('typing in the paragraph before patches only the typed text', src(page) == want, src(page)[:900])
         # (typing is undone word by word: as many Undo presses as the typing made steps)
         steps = page.evaluate('window.rikuy.hist.length') - steps0
         for _ in range(steps):
             page.click('#b-undo')
-            page.wait_for_timeout(150)
-        page.wait_for_timeout(150)
+            settle(page, 150)
+        settle(page, 150)
         check('undo gives the source back byte for byte', 2 <= steps <= 4 and src(page) == orig, steps)
         check('the widget kept its state through the edits and the undo', page.evaluate(KEPT) and fl.locator('#v').inner_text() == 'n = 5')
 
@@ -292,30 +295,30 @@ try:
         page.wait_for_selector('#pop-raw', timeout=3000)
         check('the tab opens the widget\'s command', page.evaluate("document.getElementById('pop-raw').value") == CMD, page.evaluate("document.getElementById('pop-raw').value"))
         page.keyboard.press('Escape')
-        page.wait_for_timeout(200)
+        settle(page, 200)
         check('closing it changes nothing', src(page) == orig)
         page.click('.w-src', modifiers=['Alt'])
         page.wait_for_function('window.rikuy.cm && document.body.classList.contains("src-on")', timeout=10000)
-        page.wait_for_timeout(300)
+        settle(page, 300)
         line = page.evaluate('window.rikuy.cm.getCursor().line')
         check('Alt+click on the tab shows its line in the source', line == orig[:orig.index(CMD)].count('\n'), (line, orig[:orig.index(CMD)].count('\n')))
-        page.wait_for_timeout(400)
+        settle(page, 400)
         check('the widget survives the source pane opening', page.evaluate(KEPT) and aligned(page))
 
         # zoom and pagination move the box: the frame follows and keeps its state
         s0 = page.evaluate("document.querySelector('.wbox').style.transform")
         page.click('#b-zin')
-        page.wait_for_timeout(500)
+        settle(page, 500)
         check('zoom: the frame is scaled with the page and still lies over its box', aligned(page) and page.evaluate("document.querySelector('.wbox').style.transform") != s0, (s0, page.evaluate("document.querySelector('.wbox').style.transform")))
         page.click('#zoomv')
-        page.wait_for_timeout(400)
+        settle(page, 400)
         longer = orig.replace('\\begin{figure}', ('Filler text to push the figure onward. ' * 12 + '\n\n') * 8 + '\\begin{figure}', 1)
         page.evaluate("(t) => { const g = window.rikuy; g.files.set('main.tex', t); g.rebuild(); }", longer)
-        page.wait_for_timeout(500)
+        settle(page, 500)
         pg = page.evaluate("[...document.querySelectorAll('#pages .page')].findIndex((p) => p.querySelector('.w-live'))")
         check('a figure moved to another page keeps its widget running, over its box', pg >= 1 and page.evaluate(KEPT) and aligned(page) and fl.locator('#v').inner_text() == 'n = 5', pg)
         page.evaluate("(t) => { const g = window.rikuy; g.files.set('main.tex', t); g.rebuild(); }", orig)
-        page.wait_for_timeout(400)
+        settle(page, 400)
 
         # leaving: the .zip and a share link carry the widget
         with page.expect_download() as d:
@@ -344,14 +347,14 @@ try:
 
         # missing files: the fallback, then a quiet placeholder; Problems names them
         page.evaluate("() => { const g = window.rikuy; g.files.delete('widgets/clt.html'); g.forceRender = true; g.rebuild(); }")
-        page.wait_for_timeout(400)
+        settle(page, 400)
         fb = page.evaluate("() => { const s = document.querySelector('#pages .a-widget'); const i = s && s.querySelector('img'); return s && { cls: s.className, img: i && i.src.startsWith('blob:') && i.complete && i.naturalWidth > 0, frames: document.querySelectorAll('#wlayer iframe').length }; }")
         check('without its widget file the fallback image shows, and no frame', fb and 'a-img' in fb['cls'] and fb['img'] and fb['frames'] == 0, fb)
         check('and the pages hold it at the height it is drawn', measured(page))
         probs = page.evaluate("window.rikuy.computeProblems().map((x) => x.msg)")
         check('Problems says the widget file is missing', any('widgets/clt.html' in m and 'not in the project' in m for m in probs), probs)
         page.evaluate("() => { const g = window.rikuy; g.assetBlobs.delete('figures/clt.png'); g.assets.delete('figures/clt.png'); g.forceRender = true; g.rebuild(); }")
-        page.wait_for_timeout(300)
+        settle(page, 300)
         ph = page.evaluate("() => { const s = document.querySelector('#pages .a-widget'); return s && [s.className, s.textContent]; }")
         check('without the fallback either, a quiet placeholder with the path', ph and 'img-missing' in ph[0] and 'widgets/clt.html' in ph[1], ph)
         page.evaluate("(t) => { const g = window.rikuy; g.files.set('widgets/clt.html', t); g.files.delete('rikuy.sty'); g.forceRender = true; g.rebuild(); }", CLT)
@@ -362,7 +365,7 @@ try:
         # a widget edited in the source runs from its new text
         page.evaluate("(t) => { const g = window.rikuy; g.files.set('widgets/clt.html', t); g.rebuild(); }", CLT.replace('value="4"', 'value="9"'))
         wait_frames(page, 1)
-        page.wait_for_timeout(300)
+        settle(page, 300)
         check('a widget edited in the source starts again from its new text', page.frame_locator('#wlayer iframe.rk-widget').first.locator('#v').inner_text() == 'n = 9')
 
         # isolation, from a widget's own script under the page's real policy; foreign messages
@@ -370,7 +373,7 @@ try:
         page.evaluate("(t) => { const g = window.rikuy; g.files.set('widgets/clt.html', t); g.rebuild(); }", PROBE)
         page.wait_for_function('window.__probe', timeout=10000)
         pr = page.evaluate('window.__probe')
-        page.wait_for_timeout(300)
+        settle(page, 300)
         check('inside the frame inline script runs, and eval (the widget\'s own policy)', pr.get('evalOk') is True, pr)
         check('its origin is opaque and it reaches no storage and not the page', pr.get('origin') == 'null' and pr.get('storage') == 'blocked' and pr.get('parent') == 'blocked', pr)
         check('no connection and no picture from the network (refused by the frame\'s policy); data pictures load', pr.get('fetch') == 'blocked' and pr.get('img') == 'blocked' and pr.get('dataImg') == 'open' and 'connect-src' in pr.get('violations', []) and 'img-src' in pr.get('violations', []), pr)
@@ -382,7 +385,7 @@ try:
         page.evaluate("""() => { window.postMessage({ rikuy: 'height', px: 333 }, '*');
           const f = document.createElement('iframe'); f.setAttribute('sandbox', 'allow-scripts');
           f.srcdoc = '<script>parent.postMessage({rikuy: "height", px: 222}, "*")<\\/script>'; document.body.appendChild(f); }""")
-        page.wait_for_timeout(400)
+        settle(page, 400)
         check('height messages from the page itself or another frame are ignored', page.evaluate("JSON.stringify([...window.rikuy.widgets.heights])") == before)
         errors[:] = [e for e in errors if 'Content Security Policy' not in e and 'Blocked opening' not in e and 'sandboxed' not in e and 'Unsafe attempt' not in e]
         check('no page errors (beyond what the probe was refused)', not errors, errors[:3])
@@ -393,6 +396,8 @@ try:
         rtc = lambda: page.evaluate('window.__rtc')
         page.evaluate("(t) => { const g = window.rikuy; g.files.set('widgets/clt.html', t); g.rebuild(); }", RTC_PROBE)
         page.wait_for_function('window.__rtc.some((d) => d.rtcProbe)', timeout=10000)
+        # (the time is under test: the checks below are of what must not come in it, a child frame's
+        # message or a STUN packet, and nothing marks that it will not)
         page.wait_for_timeout(1500)
         pr = next(d['rtcProbe'] for d in rtc() if 'rtcProbe' in d)
         check('a widget\'s new RTCPeerConnection() throws: it and every RTC interface are gone from its window', pr['rtc'] == 'refused' and not pr['left'], pr)
@@ -402,6 +407,7 @@ try:
         check('document.open() and write() bring none of it back', [d['rtcWrite'] for d in rtc() if 'rtcWrite' in d] == ['undefined undefined'], [d['rtcWrite'] for d in rtc() if 'rtcWrite' in d])
         for t in (RTC_LEAVE, RTC_REFRESH):
             page.evaluate("(t) => { const g = window.rikuy; g.files.set('widgets/clt.html', t); g.rebuild(); }", t)
+            # (the time is under test, as above: what the frame's way out would bring must not come)
             page.wait_for_timeout(1500)
         check('the widget cannot take its frame to a document of its own, by location or a refresh <meta>: the page refuses it', not [d for d in rtc() if d.get('rtcChild') in ('location', 'refresh')], [d['rtcChild'] for d in rtc() if 'rtcChild' in d])
         check('no STUN request from any of them reached the test\'s server', not stun_packets, len(stun_packets))
@@ -433,10 +439,11 @@ try:
         check('a share link carries all of them, byte for byte', all(lf.get('widgets/w%d.html' % k) == big['widgets/w%d.html' % k] for k in range(5)))
         note = page.evaluate("(u) => window.rikuy.linkNote({ url: u, figures: 6 })", url)
         print('   share link: %d characters for %d KB of widgets' % (len(url), sum(sizes) // 1024))
-        check('the link\'s note says when a link is long', len(url) < 60000 or 'long' in note, (len(url), note))
+        # (the link carries the time it was made: its length moves by a few characters from run to run)
+        check('the link\'s note says when a link is long', len(url) < 60000 or 'long' in note, ('%d thousand characters' % (len(url) // 1000), note))
         huge = page.evaluate("() => window.rikuy.linkNote({ url: 'x'.repeat(2200000), figures: 0 })")
         check('and past what Chrome opens from its address bar, to paste it or send the .zip', 'pastes it onto this page' in huge and '.zip' in huge, huge)
-        page.wait_for_timeout(1200)  # the project is kept in this browser (persist waits 700 ms)
+        saved(page)  # the project is kept in this browser (persist waits 700 ms)
         page.reload()
         page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=30000)
         check('after a reload all six run again from what the browser kept, with no second click', wait_frames(page, 6) and not page.evaluate("document.querySelector('.w-run')"))
@@ -480,6 +487,8 @@ try:
           const b = new Blob([Uint8Array.from(atob(png), (ch) => ch.charCodeAt(0))], { type: 'image/png' }); g.assetBlobs.set('figures/clt.png', b); g.assets.set('figures/clt.png', URL.createObjectURL(b));
           g.main = 'main.tex'; g.forceRender = true; g.rebuild(); }""",
                       [MAIN, STY, CLT, base64.b64encode(PNG).decode()])
+        # (the time is under test: a live figure whose frame never answers is called stalled after its
+        # wait, SHELL_WAIT in src/widget.js, and shows its picture)
         page.wait_for_timeout(9500)
         st = page.evaluate("""() => { const ph = document.querySelector('.w-live'), fb = ph && ph.querySelector('.wfb');
           return { stalled: !!(ph && ph.classList.contains('w-stalled')), picture: fb ? getComputedStyle(fb).visibility : null,

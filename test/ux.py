@@ -6,7 +6,7 @@ $RIKUY_SHOTS (default /tmp/ux-shots).
 Run: cd test && python3 ux.py [part ...]   (no part: all of them)"""
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import open_page, load_doc, click_text, select_text, src, check, results
+from browser import TIMERS, frame, settle, tap, until, open_page, load_doc, click_text, select_text, src, check, results
 from playwright.sync_api import sync_playwright
 
 SHOTS = os.environ.get('RIKUY_SHOTS', '/tmp/ux-shots')
@@ -21,7 +21,7 @@ def shot(page, name):
 
 def run_cmd(page, cmd):
     page.evaluate('(c) => window.rikuy.runCommand(c)', cmd)
-    page.wait_for_timeout(250)
+    settle(page, 250)
 
 
 def dialog_open(page):
@@ -37,20 +37,20 @@ def dialogs_give_the_caret_back(page, w):
         click_text(page, 'Second paragraph', 3)
         run_cmd(page, cmd)
         opened = dialog_open(page)
-        page.keyboard.press('Escape'); page.wait_for_timeout(200)
-        page.keyboard.type('Z'); page.wait_for_timeout(250)
+        page.keyboard.press('Escape'); settle(page, 200)
+        page.keyboard.type('Z'); settle(page, 250)
         check(f'{cmd} closed with Esc: the next key types at the caret it opened on ({w})', opened and not dialog_open(page) and 'SecZond paragraph' in src(page), src(page)[-90:])
     # the selection, kept through Cancel
     load_doc(page, DOC)
     select_text(page, 'bold')
     run_cmd(page, 'font-dialog')
-    page.locator('body > .pop button', has_text='Cancel').click(); page.wait_for_timeout(200)
+    page.locator('body > .pop button', has_text='Cancel').click(); settle(page, 200)
     check(f'Font dialog closed with Cancel: the selection is still the word it was on ({w})', page.evaluate("getSelection().toString()") == 'bold' and page.evaluate("document.activeElement.id") == 'pages')
     # its Close button
     click_text(page, 'First paragraph', 5)
     run_cmd(page, 'paragraph-settings')
-    page.locator('body > .pop .pop-x').first.click(); page.wait_for_timeout(200)
-    page.keyboard.type('Q'); page.wait_for_timeout(250)
+    page.locator('body > .pop .pop-x').first.click(); settle(page, 200)
+    page.keyboard.type('Q'); settle(page, 250)
     check(f'Paragraph dialog closed with its Close button: typing goes on at the caret ({w})', 'FirstQ paragraph' in src(page), src(page)[-120:])
     # a press outside: the caret goes where the press is, not back
     load_doc(page, DOC)
@@ -62,14 +62,14 @@ def dialogs_give_the_caret_back(page, w):
         for (let i = 1; i < t.length; i++) { const r = document.createRange(); r.setStart(t, i); r.setEnd(t, i + 1); const b = r.getBoundingClientRect();
           if (b.width && b.top > 0 && b.bottom < innerHeight && (b.right < P.left || b.left > P.right || b.bottom < P.top || b.top > P.bottom)) return [b.left + 1, b.top + b.height / 2, t.data.slice(0, i)]; } }
       return null; })()''')
-    page.mouse.click(box[0], box[1]); page.wait_for_timeout(250)
-    page.keyboard.type('Y'); page.wait_for_timeout(250)
+    page.mouse.click(box[0], box[1]); settle(page, 250)
+    page.keyboard.type('Y'); settle(page, 250)
     check(f'a press outside a dialog puts the caret where it lands, not back where it opened ({w})', box and (box[2] + 'Y' in src(page) or box[2][:-1] + 'Y' in src(page)) and 'YSecond' not in src(page), (box, src(page)[-90:]))
     # a dialog that changed the document puts the caret where the change leaves it (OK)
     load_doc(page, DOC)
     click_text(page, 'Second paragraph', 3)
     run_cmd(page, 'insert-table-dialog')
-    page.locator('body > .pop button', has_text='OK').click(); page.wait_for_timeout(300)
+    page.locator('body > .pop button', has_text='OK').click(); settle(page, 300)
     check(f'Insert Table with OK: a table in the source, the caret on the page ({w})', '\\begin{tabular}' in src(page) and page.evaluate("document.activeElement.id") == 'pages', src(page)[-160:])
 
 
@@ -80,11 +80,11 @@ def phone_dialogs(page, w):
     click_text(page, 'Second paragraph', 3)
     run_cmd(page, 'font-dialog')
     shot(page, f'dialog-font-{w}')
-    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    page.keyboard.press('Escape'); settle(page, 200)
     check(f'on a phone, a dialog opened while typing gives the page back ({w})', page.evaluate("document.activeElement.id") == 'pages')
     page.evaluate("document.getElementById('pages').blur()")
     run_cmd(page, 'font-dialog')
-    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    page.keyboard.press('Escape'); settle(page, 200)
     check(f'on a phone, a dialog opened with the keyboard down leaves it down ({w})', page.evaluate("document.activeElement.id") != 'pages')
 
 
@@ -95,7 +95,7 @@ def first_visit(page, w):
     shot(page, f'first-visit-{w.replace(" ", "").replace(",", "-")}')
     top = page.evaluate("document.getElementById('desk').scrollTop")
     before = src(page)
-    page.keyboard.type('Z'); page.wait_for_timeout(300)
+    page.keyboard.type('Z'); settle(page, 300)
     if touch:
         check(f'on a phone the first visit leaves the keyboard down: the page has no focus ({w})', page.evaluate("document.activeElement.id") != 'pages' and src(page) == before)
         return
@@ -106,7 +106,7 @@ def first_visit(page, w):
           src(page) != before and src(page) == before.replace('\\begin{abstract}\n' + first, '\\begin{abstract}\nZ' + first, 1) and first.startswith('The graph above is live'),
           src(page)[:0] or [l for l in src(page).splitlines() if 'Z' in l][:2])
     check(f'and the page did not scroll to it ({w})', page.evaluate("document.getElementById('desk').scrollTop") == top)
-    page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+    page.keyboard.press('Control+z'); settle(page, 200)
     check(f'one Undo takes it back ({w})', src(page) == before)
 
 
@@ -115,9 +115,11 @@ def open_tab(page, name, touch=False):
         page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label=name)
     else:
         page.get_by_role('tablist', name='Ribbon', exact=True).get_by_role('tab', name=name, exact=True).click()
-    page.wait_for_timeout(250)
+    settle(page, 250)
 
 
+# File's Recent list: the documents kept in this browser, read from IndexedDB a moment after File opens
+RECENT = "() => { const l = document.querySelector('#rf-home .rf-recent-list'); return !!l && l.childElementCount > 0; }"
 FILE_GEOM = """(() => { const r = document.getElementById('ribbon').getBoundingClientRect(), s = document.getElementById('status').getBoundingClientRect(),
   d = document.getElementById('desk').getBoundingClientRect(), b = document.getElementById('rf-back');
   return { open: document.body.classList.contains('file-open'), bottom: Math.round(r.bottom), status: Math.round(s.top), desk: Math.round(d.height),
@@ -140,7 +142,7 @@ def file_view(page, w):
     # H1, M2 of the review: the keys, Tab and a screen reader stay in the view, not in the page under it
     before = src(page)
     u = page.evaluate("[document.activeElement.id, document.getElementById('main').inert, document.getElementById('status').inert]")
-    page.keyboard.type('xyz'); page.wait_for_timeout(200)
+    page.keyboard.type('xyz'); settle(page, 200)
     # (on a phone File opens from the tab list, which keeps the focus: it is in the view's row too)
     check(f'File takes the keys: the focus on Back (or a phone\'s tab list), the page and the status bar inert, typing writes nothing ({w})', u[0] in (('rf-back', 'rb-tabsel') if touch else ('rf-back',)) and u[1:] == [True, True] and src(page) == before, (u, src(page)[-60:]))
     if not touch:
@@ -148,33 +150,33 @@ def file_view(page, w):
         check(f'Tab from Back stays in the view, never in the page under it ({w})', page.evaluate("!!document.activeElement.closest('#rp-file, #rb-top, #bar')"), page.evaluate("document.activeElement.id"))
     check(f'File has a Back button "Back to the document"{", 44 px under a finger" if touch else ""} ({w})', g['back'] and g['back'][0] == 'Back to the document' and (not touch or g['back'][1] >= 44), g['back'])
     if not touch:
-        page.keyboard.press('Escape'); page.wait_for_timeout(250)
+        page.keyboard.press('Escape'); settle(page, 250)
         g = page.evaluate(FILE_GEOM)
-        page.keyboard.type('Z'); page.wait_for_timeout(250)
+        page.keyboard.type('Z'); settle(page, 250)
         check(f'Esc leaves File for the tab open before it (Insert), and the next key types at the caret ({w})', not g['open'] and g['tab'] == 'insert' and g['desk'] > 100 and 'SecZond paragraph' in src(page), (g, src(page)[-60:]))
         check(f'and the page was not laid out again at another size ({w})', page.evaluate('window.rikuy.px') == px)
-        page.keyboard.press('Control+z'); page.wait_for_timeout(150)
+        page.keyboard.press('Control+z'); settle(page, 150)
         open_tab(page, 'File')
     click_text(page, 'Second paragraph', 3) if not touch else None
-    (page.locator('#rf-back').tap() if touch else page.locator('#rf-back').click()); page.wait_for_timeout(250)
+    (tap(page, page.locator('#rf-back'), 250) if touch else (page.locator('#rf-back').click(), settle(page, 250)))
     g = page.evaluate(FILE_GEOM)
     check(f'Back leaves File ({w})', not g['open'] and g['tab'] == 'insert' and g['desk'] > 100, g)
     if not touch:
-        page.keyboard.type('Q'); page.wait_for_timeout(250)
+        page.keyboard.type('Q'); settle(page, 250)
         check(f'and the caret is where it was ({w})', 'SecQond paragraph' in src(page), src(page)[-60:])
-        page.keyboard.press('Control+z'); page.wait_for_timeout(150)
+        page.keyboard.press('Control+z'); settle(page, 150)
     # a command run from the view closes it; a menu of the view opening keeps it
     open_tab(page, 'File', touch)
-    page.locator('#rf-template').click(); page.wait_for_timeout(250)
+    page.locator('#rf-template').click(); settle(page, 250)
     check(f'Templates opens its menu and File stays open under it ({w})', page.evaluate(FILE_GEOM)['open'] and page.locator('body > .pop [role=menu], body > [role=menu], .pop[role=menu]').count() >= 1)
-    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    page.keyboard.press('Escape'); settle(page, 200)
     check(f'Esc closes the menu first, File stays, and the keys stay in it, not on the page under it ({w})', page.evaluate(FILE_GEOM)['open'] and not dialog_open(page) and page.evaluate("document.activeElement.id") != 'pages', page.evaluate("document.activeElement.id"))
-    (page.locator('#rf-props').tap() if touch else page.locator('#rf-props').click()); page.wait_for_timeout(300)
+    (tap(page, page.locator('#rf-props'), 300) if touch else (page.locator('#rf-props').click(), settle(page, 300)))
     g = page.evaluate(FILE_GEOM)
     check(f'Properties opens its dialog over File, which stays behind it as Word\'s Info does ({w})', g['open'] and dialog_open(page), g)
-    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    page.keyboard.press('Escape'); settle(page, 200)
     check(f'Esc closes the dialog first, File stays ({w})', page.evaluate(FILE_GEOM)['open'] and not dialog_open(page))
-    (page.locator('#rf-blank').tap() if touch else page.locator('#rf-blank').click()); page.wait_for_timeout(500)
+    (tap(page, page.locator('#rf-blank')) if touch else page.locator('#rf-blank').click()); until(page, "() => !window.rikuy.files.get('main.tex').includes('Second paragraph')"); settle(page, 500)
     g = page.evaluate(FILE_GEOM)
     check(f'Blank document makes the new document and shows it ({w})', not g['open'] and g['desk'] > 100 and '\\begin{document}' in src(page) and 'Second paragraph' not in src(page), g)
     check(f'no sideways scroll ({w})', page.evaluate('document.documentElement.scrollWidth') <= page.viewport_size['width'])
@@ -182,27 +184,27 @@ def file_view(page, w):
         return
     # Alt, F, a letter (Word's way to File's New): the letter writes nothing into the document
     load_doc(page, DOC); click_text(page, 'Second paragraph', 3); before = src(page)
-    page.keyboard.press('Alt'); page.wait_for_timeout(150); page.keyboard.press('f'); page.wait_for_timeout(300)
+    page.keyboard.press('Alt'); settle(page, 150); page.keyboard.press('f'); settle(page, 300)
     opened = page.evaluate(FILE_GEOM)['open']
-    page.keyboard.press('n'); page.wait_for_timeout(250)
+    page.keyboard.press('n'); settle(page, 250)
     check(f'Alt, F opens File, and a letter typed then writes nothing into the document ({w})', opened and src(page) == before, (opened, src(page)[-60:]))
-    page.keyboard.press('Escape'); page.wait_for_timeout(200)
-    if page.evaluate(FILE_GEOM)['open']: page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    page.keyboard.press('Escape'); settle(page, 200)
+    if page.evaluate(FILE_GEOM)['open']: page.keyboard.press('Escape'); settle(page, 200)
     # M1: Esc closes File with the Styles pane docked under it
     run_cmd(page, 'styles-pane'); click_text(page, 'Second paragraph', 3)
-    open_tab(page, 'File'); page.keyboard.press('Escape'); page.wait_for_timeout(250)
+    open_tab(page, 'File'); page.keyboard.press('Escape'); settle(page, 250)
     check(f'Esc closes File while the Styles pane is docked under it ({w})', not page.evaluate(FILE_GEOM)['open'])
     run_cmd(page, 'styles-pane')
     # L4: the browser's Back closes it (a phone's Back button too)
-    open_tab(page, 'File'); page.go_back(); page.wait_for_timeout(400)
+    open_tab(page, 'File'); page.go_back(); settle(page, 400)
     check(f'the browser\'s Back closes File and leaves Rikuy open ({w})', not page.evaluate(FILE_GEOM)['open'] and page.evaluate('!!window.rikuy && !!document.querySelector(".page")'))
     # M6: a template from File opens with the caret in it
-    open_tab(page, 'File'); page.locator('#rf-template').click(); page.wait_for_timeout(250)
-    page.locator('body > .pop[role=menu] [role^=menuitem]').first.click(); page.wait_for_timeout(1200)
-    k = src(page); page.keyboard.type('Q'); page.wait_for_timeout(300)
+    open_tab(page, 'File'); page.locator('#rf-template').click(); settle(page, 250)
+    k0 = src(page); page.locator('body > .pop[role=menu] [role^=menuitem]').first.click(); until(page, '(k) => window.rikuy.files.get(window.rikuy.main) !== k', k0); settle(page, 1200)
+    k = src(page); page.keyboard.type('Q'); settle(page, 300)
     check(f'a template chosen from File opens with the caret in it: the first key lands ({w})', not page.evaluate(FILE_GEOM)['open'] and src(page) != k, page.evaluate('document.activeElement.id'))
     # the view's Home, as Word's backstage: a page for each template beside the commands, and the documents kept here
-    open_tab(page, 'File'); page.wait_for_timeout(400)
+    open_tab(page, 'File'); settle(page, 400); until(page, RECENT)
     h = page.evaluate("""(() => { const h = document.getElementById('rf-home'), r = h && h.checkVisibility() ? h.getBoundingClientRect() : null, c = document.querySelector('#rp-file > .rb-tb').getBoundingClientRect();
       return { home: r && [Math.round(r.left), Math.round(r.width)], rail: Math.round(c.right), tiles: [...document.querySelectorAll('#rf-home .rf-tile')].map((t) => t.getAttribute('aria-label')),
                recent: [...document.querySelectorAll('#rf-home .rf-doc')].map((t) => t.getAttribute('aria-label')) }; })()""")
@@ -213,16 +215,16 @@ def file_view(page, w):
     page.focus('#rf-back')
     keys = []
     for k in ('ArrowDown', 'ArrowDown', 'ArrowUp', 'Tab', 'ArrowRight', 'Tab', 'Tab'):
-        page.keyboard.press(k); page.wait_for_timeout(60)
+        page.keyboard.press(k); settle(page, 60)
         keys.append(page.evaluate("document.activeElement.getAttribute('aria-label') || document.activeElement.id"))
     check(f'in File the keys go along the column (Down, Up), Tab to the pages, Right along them, Tab to Recent and round to the column ({w})',
           keys[0] == 'Blank document' and keys[1] == 'New from template' and keys[2] == 'Blank document' and keys[3] == 'New blank document' and keys[4] == 'Article template' and keys[5].startswith('Open ') and keys[6] == 'Blank document', keys)
     # N3: a dialog opened from File by the keys and closed with Esc gives the focus back to its command
-    page.focus('#rf-props'); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    page.focus('#rf-props'); page.keyboard.press('Enter'); settle(page, 300)
     opened = dialog_open(page)
-    page.keyboard.press('Escape'); page.wait_for_timeout(250)
+    page.keyboard.press('Escape'); settle(page, 250)
     check(f'Properties opened from File by the keys and closed with Esc: the focus back on Properties ({w})', opened and page.evaluate("document.activeElement.id") == 'rf-props', page.evaluate("document.activeElement.id"))
-    page.get_by_role('button', name='Report template', exact=True).click(); page.wait_for_timeout(1200)
+    page.get_by_role('button', name='Report template', exact=True).click(); until(page, "() => /report/.test((window.rikuy.files.get(window.rikuy.main) || '').slice(0, 200))"); settle(page, 1200)
     check(f'a press on a template\'s page makes the document and closes File ({w})', not page.evaluate(FILE_GEOM)['open'] and '\\documentclass' in src(page) and 'report' in src(page)[:200], src(page)[:120])
 
 
@@ -238,12 +240,14 @@ def status_bar(p):
         for width, dark in ((1920, False), (1366, False), (1366, True), (1280, False), (1100, True), (900, False), (800, True), (700, False)):
             w = '%d px%s' % (width, ', dark' if dark else '')
             ctx = browser.new_context(viewport={'width': width, 'height': 800}, color_scheme='dark' if dark else 'light')
+            # (the page's timers seen, as in open_page()'s contexts: settle() waits for them)
+            ctx.add_init_script(TIMERS)
             page = ctx.new_page()
             errors = []
             page.on('pageerror', lambda e: errors.append(str(e)))
             page.goto('http://127.0.0.1:%d/' % port)
             page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=60000)
-            page.wait_for_timeout(1200)
+            page.evaluate('() => window.rikuy.ready'); settle(page, 1200)
             g = page.evaluate("""(() => { const s = document.getElementById('status').getBoundingClientRect(), r = (id) => { const e = document.getElementById(id); return e && e.offsetParent ? e.getBoundingClientRect() : null; };
               const v = r('st-views'), z = r('st-zoomv'), sv = document.getElementById('st-save');
               return { right: Math.round(s.right), views: v && [Math.round(v.left), Math.round(v.right)], zoom: z && Math.round(z.right), save: !!sv.offsetParent, saveText: sv.textContent,
@@ -252,10 +256,10 @@ def status_bar(p):
             check(f'the views and the zoom number are whole at the right end of the status bar ({w})', g['views'] and g['zoom'] and g['zoom'] <= g['right'] - 4 and g['views'][1] <= g['right'], g)
             check(f'the line does not say "Saved in this browser" beside the title\'s Saved; the title\'s tooltip says it ({w})', not g['save'] and g['title'].startswith('Saved in this browser'), g)
             if width == 1366 and not dark:
-                page.evaluate("document.getElementById('st-save').textContent = 'Not kept in this browser. Save the project as .zip.'"); page.wait_for_timeout(100)
+                page.evaluate("document.getElementById('st-save').textContent = 'Not kept in this browser. Save the project as .zip.'"); settle(page, 100)
                 check(f'a storage warning still shows in the status bar ({w})', page.evaluate("!!document.getElementById('st-save').offsetParent"))
                 page.evaluate("document.getElementById('st-save').textContent = 'Saved in this browser'")
-                page.click('#st-words'); page.wait_for_timeout(400)
+                page.click('#st-words'); settle(page, 400)
                 check(f'a click on the word count opens Word Count ({w})', page.evaluate("[...document.querySelectorAll('body > .pop')].some((d) => /Word Count/.test(d.textContent))"))
                 page.keyboard.press('Escape')
             check(f'no page errors ({w})', not errors, errors[:3])
@@ -263,11 +267,12 @@ def status_bar(p):
         # a phone: no room in its status line for Make available offline; the menu panel has it
         for width in (390, 360):
             ctx = browser.new_context(viewport={'width': width, 'height': 800}, has_touch=True, is_mobile=True)
+            ctx.add_init_script(TIMERS)
             page = ctx.new_page()
             page.goto('http://127.0.0.1:%d/' % port)
             page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=60000)
-            page.wait_for_timeout(800)
-            page.locator('#b-nav').tap(); page.wait_for_timeout(300)
+            page.evaluate('() => window.rikuy.ready'); settle(page, 800)
+            tap(page, page.locator('#b-nav'), 300)
             item = page.get_by_role('menuitem', name='Make available offline', exact=True)
             check(f'on a phone the menu panel has Make available offline, 44 px under a finger ({width} px)', item.count() == 1 and item.is_visible() and item.bounding_box()['height'] >= 44)
             shot(page, 'menu-offline-%dpx' % width)
@@ -278,6 +283,11 @@ def status_bar(p):
 
 
 PANES = (('styles-pane', '#stylespane'), ('spelling', '#sp-pane'), ('thesaurus', '.th-pane'))
+# (the spelling worker has answered for every word of the open document: the Spelling pane then
+# shows what it found, not what it has so far)
+SPELLED = """() => { const g = window.rikuy, S = g.sp; return !!S && !!S.plan && S.planModel === g.model && [...S.plan.words].every(([d, ws]) => S.failed.has(d) || [...ws].every((w) => S.known.has(d) && S.known.get(d).has(w))); }"""
+# (the thesaurus worker has answered the word looked up: the pane has its meanings, at its full height)
+LOOKED_UP = "() => { const s = document.querySelector('#th-pane .fr-st'); return !!s && !/^Looking up/.test(s.textContent); }"
 GEOM = """(sel) => { const p = document.querySelector(sel), r = p && p.checkVisibility() ? p.getBoundingClientRect() : null, rb = document.getElementById('ribbon').getBoundingClientRect(),
   st = document.getElementById('status').getBoundingClientRect(), d = document.getElementById('desk').getBoundingClientRect();
   return r && { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), ribbon: Math.round(rb.bottom), status: Math.round(st.top), desk: Math.round(d.right), win: innerWidth }; }"""
@@ -293,7 +303,11 @@ def panes(page, w):
     click_text(page, 'Second paragraph', 3)
     for cmd, sel in PANES:
         click_text(page, 'Second paragraph', 3)
-        run_cmd(page, cmd); page.wait_for_timeout(700)
+        if cmd == 'spelling':
+            until(page, SPELLED)
+        run_cmd(page, cmd); settle(page, 700)
+        if cmd == 'thesaurus':
+            until(page, LOOKED_UP)
         g = page.evaluate(GEOM, sel)
         shot(page, f'pane-{cmd}-{tag}')
         if not touch:
@@ -303,7 +317,7 @@ def panes(page, w):
             check(f'{cmd}: a sheet inside the screen ({w})', g and g['left'] >= 0 and g['right'] <= g['win'] and g['bottom'] <= page.viewport_size['height'], g)
         page.keyboard.press('Escape') if cmd != 'styles-pane' else run_cmd(page, 'styles-pane')
         page.evaluate("(s) => { const p = document.querySelector(s); if (p && p.checkVisibility()) { const x = p.querySelector('.pop-x'); if (x) x.click(); } }", sel)
-        page.wait_for_timeout(300)
+        settle(page, 300)
         g = page.evaluate(GEOM, sel)
         check(f'{cmd}: closed, the page has the width back ({w})', g is None, g)
     check(f'no sideways scroll ({w})', page.evaluate('document.documentElement.scrollWidth') <= page.viewport_size['width'])
@@ -319,12 +333,12 @@ def doc_name(page, w):
     shown = page.evaluate("(() => { const d = document.getElementById('docname'); const r = d.getBoundingClientRect(); return d.checkVisibility() ? Math.round(r.width) : 0; })()")
     if width >= 520:
         check(f'the bar shows the document\'s name, a few words of it at least ({w})', shown >= 80, shown)
-    page.locator('#b-nav').click(); page.wait_for_timeout(300)
+    page.locator('#b-nav').click(); settle(page, 300)
     shot(page, f'menu-panel-{tag}')
     head = page.evaluate("(() => { const d = document.getElementById('nav-doc'); return d.checkVisibility() ? d.innerText : ''; })()")
     if width <= 980:
         check(f'the menu panel starts with the document\'s name and Saved ({w})', head.startswith(name) and 'Saved' in head, (name, head))
-    page.locator('#nav-close').click(); page.wait_for_timeout(200)
+    page.locator('#nav-close').click(); settle(page, 200)
     check(f'no sideways scroll ({w})', page.evaluate('document.documentElement.scrollWidth') <= width)
 
 
@@ -349,10 +363,11 @@ def pdf_bar(page, w):
         page.wait_for_function('document.querySelector("#pdf-host canvas, #pdf-host .pdfpage, #pdf-host img") || /could not|error/i.test(document.getElementById("pdf-status").textContent)', timeout=120000)
     except Exception:
         pass
-    page.wait_for_timeout(800)
+    settle(page, 800)
     g = page.evaluate("""(() => { const W = innerWidth, s = document.getElementById('pdf-status');
       const box = (id) => { const e = document.getElementById(id), r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.height)]; };
       return { cut: s.scrollWidth > s.clientWidth + 1, status: s.textContent, W, x: box('pdf-x'), re: box('pdf-re'), dl: box('pdf-dl'), eng: box('pdf-engine'),
+               sh: (() => { const r = document.querySelector('.pdf-shell').getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.top)]; })(),
                shell: document.querySelector('.pdf-shell').innerText.trim(), bar: Math.round(document.querySelector('.pdf-bar').getBoundingClientRect().height) }; })()""")
     shot(page, f'pdf-bar-{tag}')
     check(f'the PDF bar says what TeX made in full ({w})', not g['cut'] and g['status'], g)
@@ -371,17 +386,21 @@ def download_pdf(page, w):
     with page.expect_download(timeout=180000) as d:
         if touch:
             # (a phone's one Download button, then its menu's Download PDF)
-            page.locator('#rb-dl-menu').tap(); page.wait_for_timeout(250)
-            page.locator('body > .pop [role=menuitem][aria-label="Download PDF"]').tap()
+            tap(page, page.locator('#rb-dl-menu'), 250)
+            tap(page, page.locator('body > .pop [role=menuitem][aria-label="Download PDF"]'))
         else:
             page.click('#rb-pdf')
+        # (a sample of the status bar every 250 ms while TeX works: what it says over that time is under test)
         for _ in range(60):
             page.wait_for_timeout(250)
             t = page.evaluate("(() => { const s = document.getElementById('st-save'); return s.checkVisibility() ? s.textContent : ''; })()")
             if t: seen.append(t)
             if not page.evaluate("window.rikuy.pdfBusy"): break
     shot(page, 'download-pdf-' + w.replace(' ', '').replace(',', '-'))
-    check(f'while Download PDF compiles, the status bar says what TeX is doing ({w})', any(x.startswith('Making the PDF: ') and len(x) > 18 for x in seen), seen[:4])
+    # (what it said is a sample every 250 ms of TeX's own progress, which steps it catches differing
+    # from run to run whatever the waits: kept where the check fails, for the failure's words)
+    said = any(x.startswith('Making the PDF: ') and len(x) > 18 for x in seen)
+    check(f'while Download PDF compiles, the status bar says what TeX is doing ({w})', said, '' if said else seen[:4])
     check(f'the PDF comes, and the status bar is quiet again ({w})', d.value.suggested_filename.endswith('.pdf') and not page.evaluate("document.getElementById('st-save').checkVisibility()"), d.value.suggested_filename)
 
 
@@ -391,28 +410,28 @@ def first_comment(page, w):
     touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
     load_doc(page, DOC)
     select_text(page, 'bold word')
-    run_cmd(page, 'comment-new'); page.wait_for_timeout(300)
+    run_cmd(page, 'comment-new'); settle(page, 300)
     TEXT = "document.activeElement.matches('input[type=text], input:not([type]), textarea')"
     if touch:
         # (under a finger the box opens with no field focused, so the phone's keyboard does not
         # cover it; a tap on the name brings it)
         check(f'on a phone the comment opens with no text field focused ({w})', not page.evaluate(TEXT))
-        page.locator('.pop-comment .share-name').tap(); page.wait_for_timeout(150)
+        tap(page, page.locator('.pop-comment .share-name'), 150)
     first = page.evaluate("document.activeElement.getAttribute('aria-label')")
     check(f'the first comment\'s box starts at the name ({w})', first == 'Your name, shown with your comments and changes', first)
     page.locator('.pop-comment textarea').fill('Is this the right word?')
-    page.locator('.pop-comment').get_by_role('button', name='Comment', exact=True).click(); page.wait_for_timeout(250)
+    page.locator('.pop-comment').get_by_role('button', name='Comment', exact=True).click(); settle(page, 250)
     g = page.evaluate("[document.activeElement.getAttribute('aria-invalid'), (document.querySelector('.cm-hint') || {}).textContent, document.querySelector('.cm-hint').checkVisibility()]")
     shot(page, 'first-comment-' + w.replace(' ', '').replace(',', '-'))
     check(f'Comment with no name says to type one, the name box marked ({w})', g[0] == 'true' and g[2] and 'your name' in (g[1] or '').lower(), g)
-    page.keyboard.type('Ana'); page.keyboard.press('Enter'); page.wait_for_timeout(150)
+    page.keyboard.type('Ana'); page.keyboard.press('Enter'); settle(page, 150)
     check(f'Enter in the name box goes on to the comment ({w})', page.evaluate("document.activeElement.tagName") == 'TEXTAREA' and not page.evaluate("document.querySelector('.cm-hint').checkVisibility()"))
-    page.keyboard.press('Control+Enter'); page.wait_for_timeout(300)
+    page.keyboard.press('Control+Enter'); settle(page, 300)
     check(f'Ctrl+Enter sends it into the source ({w})', 'Ana' in src(page) and 'Is this the right word?' in src(page), src(page)[-200:])
-    run_cmd(page, 'comment-new'); page.wait_for_timeout(300)
+    run_cmd(page, 'comment-new'); settle(page, 300)
     if touch:
         check(f'on a phone the next one too opens with no text field focused ({w})', not page.evaluate(TEXT))
-        page.locator('.pop-comment textarea').tap(); page.wait_for_timeout(150)
+        tap(page, page.locator('.pop-comment textarea'), 150)
     check(f'the next comment starts at the comment, the name known ({w})', page.evaluate("document.activeElement.tagName") == 'TEXTAREA' and page.locator('.pop-comment .share-name').count() == 0)
     page.keyboard.press('Escape')
 
@@ -428,7 +447,7 @@ def tap_text(page, text, k=0):
     at = page.evaluate("""([t, k]) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(t)); if (!s) return null;
       s.scrollIntoView({ block: 'center' }); const i = s.textContent.indexOf(t) + k, r = document.createRange(); r.setStart(s.firstChild, i); r.setEnd(s.firstChild, i + 1);
       const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }""", [text, k])
-    page.touchscreen.tap(at[0], at[1]); page.wait_for_timeout(250)
+    tap(page, (at[0], at[1]), 250)
 
 
 def mobile_view(page, w):
@@ -441,47 +460,47 @@ def mobile_view(page, w):
     shot(page, f'mobile-view-{tag}')
     check(f'a phone opens in Mobile View, its toggle pressed and 44 px in the status bar ({w})', g['web'] and g['pressed'] == 'true' and g['shown'] and g['tap'] >= 44, g)
     check(f'the text at its actual size or more, every line inside the screen, no sideways scroll ({w})', g['font'] >= 13 and g['out'] == 0 and g['scroll'] <= 0 and g['desk'] <= 1 and g['zoom'] == '100%', g)
-    load_doc(page, DOC); page.wait_for_timeout(300)
+    load_doc(page, DOC); settle(page, 300)
     # typing, by a tap
     tap_text(page, 'Second paragraph', 3)
-    page.keyboard.type('Z'); page.wait_for_timeout(250)
+    page.keyboard.type('Z'); settle(page, 250)
     check(f'a tap puts the caret in the words and typing lands there ({w})', 'SecZond paragraph' in src(page), src(page)[-80:])
-    page.keyboard.press('Backspace'); page.wait_for_timeout(200)
-    page.keyboard.press('Enter'); page.keyboard.type('New one.'); page.wait_for_timeout(300)
+    page.keyboard.press('Backspace'); settle(page, 200)
+    page.keyboard.press('Enter'); page.keyboard.type('New one.'); settle(page, 300)
     check(f'Enter makes a new paragraph ({w})', 'Sec\n\nNew one.ond paragraph' in src(page), src(page)[-80:])
-    page.evaluate('window.rikuy.undo()'); page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); page.evaluate('window.rikuy.undo()'); settle(page, 200)
     # the phone's ribbon row on a selection
-    select_text(page, 'bold word'); page.wait_for_timeout(200)
-    page.locator('#rb-b').tap(); page.wait_for_timeout(250)
+    select_text(page, 'bold word'); settle(page, 200)
+    tap(page, page.locator('#rb-b'), 250)
     check(f'Bold in the phone\'s ribbon row on a selection ({w})', '\\textbf{bold word}' in src(page), src(page)[-120:])
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    page.evaluate('window.rikuy.undo()'); settle(page, 150)
     tap_text(page, 'Second paragraph', 2)
-    page.locator('#rb-style').select_option('section'); page.wait_for_timeout(300)
+    page.locator('#rb-style').select_option('section'); settle(page, 300)
     check(f'the style list makes the paragraph Heading 1 ({w})', '\\section{Second paragraph here.}' in src(page), src(page)[-120:])
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    page.evaluate('window.rikuy.undo()'); settle(page, 150)
     # the on-screen keyboard (a phone's browser reports it as a shorter visual viewport): the caret stays in sight above it
     tap_text(page, 'Second paragraph', 6)
     page.evaluate("""() => { const vv = visualViewport, H = innerHeight - 320; Object.defineProperty(vv, 'height', { configurable: true, get: () => H }); vv.dispatchEvent(new Event('resize')); }""")
-    page.wait_for_timeout(300)
-    page.keyboard.type('Y'); page.wait_for_timeout(400)
+    settle(page, 300)
+    page.keyboard.type('Y'); settle(page, 400)
     caret = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom), innerHeight - 320]; })()")
     check(f'with the on-screen keyboard up, typing lands and the caret is above it ({w})', 'SecondY paragraph' in src(page) and caret[1] <= caret[2] and caret[0] >= 0, (caret, src(page)[-60:]))
     page.evaluate("() => { delete visualViewport.height; visualViewport.dispatchEvent(new Event('resize')); }")
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    page.evaluate('window.rikuy.undo()'); settle(page, 150)
     # the zoom button: the text a quarter larger, and back
     seen = []
     for _ in range(2):
-        page.locator('#zoomv').tap(); page.wait_for_timeout(300); seen.append(page.evaluate(MV))
+        tap(page, page.locator('#zoomv'), 300); seen.append(page.evaluate(MV))
     check(f'the zoom button makes the text a quarter larger and back, lines still inside the screen ({w})', seen[0]['zoom'] == '125%' and seen[0]['font'] > g['font'] * 1.2 and seen[0]['out'] == 0 and seen[0]['desk'] <= 1 and seen[1]['zoom'] == '100%', [(x['zoom'], x['font'], x['out']) for x in seen])
     # Print Layout one tap away, kept on this device
-    page.locator('#sv-mobile').tap(); page.wait_for_timeout(400)
+    tap(page, page.locator('#sv-mobile'), 400)
     g2 = page.evaluate(MV)
     shot(page, f'mobile-view-off-{tag}')
     check(f'a tap on Mobile View gives Print Layout, TeX\'s pages ({w})', not g2['web'] and g2['pressed'] == 'false' and page.evaluate("document.querySelectorAll('#pages .page').length") >= 1, g2)
-    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); page.wait_for_timeout(400)
+    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); settle(page, 400)
     check(f'Print Layout, chosen, is what this phone opens with next ({w})', not page.evaluate(MV)['web'])
-    page.locator('#sv-mobile').tap(); page.wait_for_timeout(400)
-    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); page.wait_for_timeout(400)
+    tap(page, page.locator('#sv-mobile'), 400)
+    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); settle(page, 400)
     check(f'and Mobile View again, once chosen again ({w})', page.evaluate(MV)['web'])
 
 
@@ -506,33 +525,33 @@ def help_pane(page, w):
     touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
     load_doc(page, DOC)
     if touch:
-        page.locator('#b-nav').tap(); page.wait_for_timeout(250)
-        page.get_by_role('menu', name='Actions', exact=True).get_by_role('menuitem', name='Help', exact=True).tap(); page.wait_for_timeout(400)
+        tap(page, page.locator('#b-nav'), 250)
+        tap(page, page.get_by_role('menu', name='Actions', exact=True).get_by_role('menuitem', name='Help', exact=True), 400)
         g = page.evaluate(HELP)
         shot(page, f'help-{tag}')
         check(f'on a phone Help is the sheet it was, inside the screen ({w})', g['pop'] and not g['pane'], g)
-        page.get_by_role('dialog', name='How Rikuy works', exact=True).get_by_role('button', name='Close', exact=True).tap()
+        tap(page, page.get_by_role('dialog', name='How Rikuy works', exact=True).get_by_role('button', name='Close', exact=True))
         return
-    page.locator('#b-help').click(); page.wait_for_timeout(400)
+    page.locator('#b-help').click(); settle(page, 400)
     g = page.evaluate(HELP)
     shot(page, f'help-{tag}')
     d = page.get_by_role('dialog', name='How Rikuy works', exact=True)
     check(f'Help opens as a pane at the right, under the ribbon to the status bar, the page beside it ({w})', g['pane'] and not g['pop'] and g['pane']['right'] == g['win'] and g['pane']['top'] >= g['ribbon'] - 1 and abs(g['pane']['bottom'] - g['status']) <= 1 and g['desk'] <= g['pane']['left'] + 1 and 'Download gives you the paper' in g['text'], g)
     check(f'it is the dialog "How Rikuy works", not modal, with its Close button ({w})', d.count() == 1 and d.get_attribute('aria-modal') is None and d.get_by_role('button', name='Close', exact=True).count() == 1)
     click_text(page, 'Second paragraph', 3)
-    page.keyboard.type('Z'); page.wait_for_timeout(250)
+    page.keyboard.type('Z'); settle(page, 250)
     check(f'a press on the page and typing leave the pane open ({w})', page.evaluate(HELP)['pane'] and 'SecZond paragraph' in src(page), src(page)[-60:])
-    page.locator('#b-help').click(); page.wait_for_timeout(300)
+    page.locator('#b-help').click(); settle(page, 300)
     check(f'Help pressed again closes it ({w})', not page.evaluate(HELP)['pane'])
-    page.locator('#b-help').click(); page.wait_for_timeout(300)
-    page.locator('#helppane').get_by_role('button', name='Close', exact=True).click(); page.wait_for_timeout(250)
+    page.locator('#b-help').click(); settle(page, 300)
+    page.locator('#helppane').get_by_role('button', name='Close', exact=True).click(); settle(page, 250)
     check(f'its Close button closes it, the page whole again ({w})', not page.evaluate(HELP)['pane'] and page.evaluate(HELP)['desk'] == page.evaluate('innerWidth') or not page.evaluate(HELP)['pane'], page.evaluate(HELP))
-    page.locator('#b-help').click(); page.wait_for_timeout(300)
-    page.locator('#helppane .pop-x').focus(); page.keyboard.press('Escape'); page.wait_for_timeout(250)
+    page.locator('#b-help').click(); settle(page, 300)
+    page.locator('#helppane .pop-x').focus(); page.keyboard.press('Escape'); settle(page, 250)
     check(f'Esc in it closes it ({w})', not page.evaluate(HELP)['pane'])
     # the Help tab's How it works opens the same pane
     page.evaluate("window.rikuy.runCommand('help-how')")
-    page.wait_for_timeout(300)
+    settle(page, 300)
     check(f'the Help tab opens the same pane ({w})', page.evaluate(HELP)['pane'])
     page.evaluate('window.rikuy.closeHelpPane()')
 
@@ -545,13 +564,15 @@ def caret_back(page, w):
     Thesaurus or the status bar's Word Count close with Esc, though a docked pane laid the page out
     again at a new zoom; a pane opening keeps the caret's line on the screen."""
     def lands(name, mark):
-        page.keyboard.type(mark); page.wait_for_timeout(250)
+        page.keyboard.type(mark); settle(page, 250)
         t = src(page)
         # (Spelling selects the misspelling it shows, as Word's Editor does: the key types over it)
         ok = ('Words of part 4%s' % mark) in t or ('Words of part %s4' % mark) in t or (name.startswith('Spelling') and 'Here is a %s word.' % mark in t)
         check(f'{name}, then Esc: the next key lands at the caret (Spelling: over the misspelling it showed), not at the start ({w})', ok and '\\section{%sPart' % mark not in t, [l for l in t.splitlines() if mark in l][:2])
-        page.keyboard.press('Control+z'); page.wait_for_timeout(150)
-    load_doc(page, LONG); page.wait_for_timeout(400)
+        page.keyboard.press('Control+z'); settle(page, 150)
+    load_doc(page, LONG); settle(page, 400)
+    # (F7 opens at the misspelling after the caret, once the spelling worker has found it)
+    until(page, "() => ((window.rikuy.sp || {}).bad || []).some((x) => x.w === 'mispeled')")
     for name, how in (('Spelling (F7), docked', lambda: page.keyboard.press('F7')),
                       ('Find and Replace (Ctrl+H)', lambda: page.keyboard.press('Control+h')),
                       ('Go To (Ctrl+G)', lambda: page.keyboard.press('Control+g')),
@@ -560,18 +581,20 @@ def caret_back(page, w):
                       ('Word Count from the status bar', lambda: page.locator('#st-words').click())):
         click_text(page, 'Words of part 4', 15)
         page.evaluate("document.getElementById('pages').focus()")
-        how(); page.wait_for_timeout(900)
-        page.keyboard.press('Escape'); page.wait_for_timeout(400)
+        # (full: the page laid out again at the docked pane's zoom, 150 ms after the desk narrowed,
+        # before Esc, and again once it widened, before the key: what this part is about)
+        how(); settle(page, 900, full=True)
+        page.keyboard.press('Escape'); settle(page, 400, full=True)
         if page.evaluate("!!document.querySelector('#sp-pane:not([hidden]), .th-pane:not([hidden])') && document.activeElement.id !== 'pages'"):
-            page.keyboard.press('Escape'); page.wait_for_timeout(300)
+            page.keyboard.press('Escape'); settle(page, 300)
         lands(name, 'Q')
         page.evaluate("window.rikuy.toggleNav && window.rikuy.toggleNav(false)"); page.evaluate("document.querySelectorAll('#sp-pane, .th-pane').forEach((d) => d.hidden = true)")
     # a pane docked on a long document: the caret's line stays on the screen
     click_text(page, 'Words of part 40', 5)
     page.evaluate("(() => { const s = getSelection().getRangeAt(0).getBoundingClientRect(); document.getElementById('desk').scrollTop += s.top - 300; })()")
-    page.wait_for_timeout(200)
+    settle(page, 200)
     y0 = page.evaluate("getSelection().getRangeAt(0).getBoundingClientRect().top")
-    run_cmd(page, 'styles-pane'); page.wait_for_timeout(900)
+    run_cmd(page, 'styles-pane'); settle(page, 900, full=True)
     y1 = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(), d = document.getElementById('desk').getBoundingClientRect(); return [Math.round(r.top), Math.round(d.top), Math.round(d.bottom)]; })()")
     check(f'the Styles pane docking keeps the caret\'s line on the screen, near where it was ({w})', y1[1] <= y1[0] <= y1[2] and abs(y1[0] - y0) < 120, (y0, y1))
     run_cmd(page, 'styles-pane')
@@ -585,16 +608,16 @@ def pane_room(page, w):
       return { desk: Math.round(d.clientWidth), panes: ps.map((e) => e.id || e.className.split(' ')[0]), float: ps.map((e) => e.classList.contains('pane-float')), scroll: document.documentElement.scrollWidth - innerWidth,
                right: Math.max(0, ...ps.map((e) => Math.round(e.getBoundingClientRect().right))) - innerWidth }; })()"""
     load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
-    run_cmd(page, 'styles-pane'); page.wait_for_timeout(500)
-    page.keyboard.press('F7'); page.wait_for_timeout(900)
+    run_cmd(page, 'styles-pane'); settle(page, 500)
+    page.keyboard.press('F7'); settle(page, 900)
     g = page.evaluate(G)
     check(f'Spelling asked for with Styles docked takes its place: one pane at a time ({w})', g['panes'] == ['sp-pane'] and g['scroll'] <= 0, g)
-    page.evaluate('window.rikuy.toggleNav(true)'); page.keyboard.press('Shift+F7'); page.wait_for_timeout(900)
+    page.evaluate('window.rikuy.toggleNav(true)'); page.keyboard.press('Shift+F7'); settle(page, 900)
     g = page.evaluate(G)
     check(f'with the side panel and the Thesaurus too, nothing runs past the window ({w})', len(g['panes']) == 1 and g['scroll'] <= 0 and g['right'] <= 0, g)
-    page.evaluate('window.rikuy.toggleNav(false)'); page.evaluate("document.querySelectorAll('#sp-pane, .th-pane').forEach((d) => d.hidden = true)"); page.wait_for_timeout(300)
-    page.evaluate('window.rikuy.togglePdf(true)'); page.wait_for_timeout(600)
-    click_text(page, 'Second paragraph', 3); run_cmd(page, 'styles-pane'); page.wait_for_timeout(800)
+    page.evaluate('window.rikuy.toggleNav(false)'); page.evaluate("document.querySelectorAll('#sp-pane, .th-pane').forEach((d) => d.hidden = true)"); settle(page, 300)
+    page.evaluate('window.rikuy.togglePdf(true)'); settle(page, 600)
+    click_text(page, 'Second paragraph', 3); run_cmd(page, 'styles-pane'); settle(page, 800)
     g = page.evaluate(G)
     shot(page, 'pane-room-' + w.replace(' ', '').replace(',', '-'))
     want_float = page.viewport_size['width'] < 1400
@@ -607,10 +630,10 @@ def lows(page, w):
     bar has its views in sight; the zoom number and the comment boxes are 44 px under a finger."""
     width = page.viewport_size['width']
     if width <= 520:
-        page.locator('#b-nav').tap(); page.wait_for_timeout(250)
+        tap(page, page.locator('#b-nav'), 250)
         z = page.evaluate("(() => { const a = document.querySelector('#nav-acts [data-for=zoomv]'); return a ? a.querySelectorAll('svg').length : -1; })()")
         check(f'the menu panel\'s zoom item has no icon of another action ({w})', z == 0, z)
-        page.locator('#nav-close').tap(); page.wait_for_timeout(200)
+        tap(page, page.locator('#nav-close'), 200)
         load_doc(page, DOC); select_text(page, 'bold word'); run_cmd(page, 'comment-new')
         h = page.evaluate("[...document.querySelectorAll('.pop-comment .share-name, .pop-comment textarea')].map((e) => Math.round(e.getBoundingClientRect().height))")
         check(f'a comment\'s name and text boxes are 44 px under a finger ({w})', h and min(h) >= 44, h)
@@ -632,21 +655,21 @@ def place_kept(page, w):
     """Mobile View off and on (a phone) and View › Web Layout on and off (a desktop) lay every line
     out again: the reader's place stays on the screen (the text at the top, or the caret)."""
     touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
-    load_doc(page, LONG); page.wait_for_timeout(500)
+    load_doc(page, LONG); settle(page, 500)
     page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('Words of part 37')); document.getElementById('desk').scrollTop += s.getBoundingClientRect().top - document.getElementById('desk').getBoundingClientRect().top - 30; })()")
-    page.wait_for_timeout(300)
+    settle(page, 300)
     t0 = page.evaluate(TOP)
-    flip = (lambda: page.locator('#sv-mobile').tap()) if touch else (lambda: run_cmd(page, 'web-layout'))
+    flip = (lambda: tap(page, page.locator('#sv-mobile'))) if touch else (lambda: run_cmd(page, 'web-layout'))
     seen = []
     for _ in range(2):
-        flip(); page.wait_for_timeout(700); seen.append(page.evaluate(TOP))
+        flip(); settle(page, 700); seen.append(page.evaluate(TOP))
     check(f'{"Mobile View off and on" if touch else "Web Layout on and off"}: the text at the window\'s top stays the same part ({w})', t0 == 37 and all(x is not None and abs(x - 37) <= 1 for x in seen), (t0, seen))
     # with the caret in view: it stays in view, near where it was
     if not touch:
         click_text(page, 'Words of part 40', 4)
-        page.evaluate("(() => { const q = getSelection().getRangeAt(0).getBoundingClientRect(), d = document.getElementById('desk'); d.scrollTop += q.top - d.getBoundingClientRect().top - 200; })()"); page.wait_for_timeout(300)
+        page.evaluate("(() => { const q = getSelection().getRangeAt(0).getBoundingClientRect(), d = document.getElementById('desk'); d.scrollTop += q.top - d.getBoundingClientRect().top - 200; })()"); settle(page, 300)
         y0 = page.evaluate("getSelection().getRangeAt(0).getBoundingClientRect().top")
-        run_cmd(page, 'web-layout'); page.wait_for_timeout(700)
+        run_cmd(page, 'web-layout'); settle(page, 700)
         y1 = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(), d = document.getElementById('desk').getBoundingClientRect(); return [Math.round(r.top), Math.round(d.top), Math.round(d.bottom)]; })()")
         check(f'Web Layout with the caret in view: the caret stays in view, near where it was ({w})', y1[1] <= y1[0] <= y1[2] and abs(y1[0] - y0) < 60, (y0, y1))
         run_cmd(page, 'web-layout')
@@ -659,13 +682,13 @@ def verify_lows(page, w):
     again; File's Download row stays in its column."""
     g = page.evaluate("[document.getElementById('zoomv').textContent, document.getElementById('st-zoomv').textContent]")
     check(f'the top bar\'s zoom and the status bar\'s say the same percentage ({w})', g[0] == g[1] and g[0].endswith('%'), g)
-    page.locator('#b-help').click(); page.wait_for_timeout(400)
-    page.set_viewport_size({'width': 900, 'height': 800}); page.wait_for_timeout(600)
+    page.locator('#b-help').click(); settle(page, 400)
+    page.set_viewport_size({'width': 900, 'height': 800}); settle(page, 600)
     h = page.evaluate("(() => { const p = document.getElementById('helppane'), r = p.getBoundingClientRect(), d = document.getElementById('desk'); return [getComputedStyle(p).position, Math.round(r.left), Math.round(r.right), innerWidth, d.clientWidth]; })()")
     check(f'Help narrowed below 1000 px is a sheet at the corner, the page not squeezed ({w})', h[0] == 'fixed' and h[1] >= 0 and h[2] <= h[3] and h[4] > 700, h)
     page.evaluate('window.rikuy.closeHelpPane()')
-    page.set_viewport_size({'width': 1366, 'height': 800}); page.wait_for_timeout(500)
-    open_tab(page, 'File'); page.wait_for_timeout(300)
+    page.set_viewport_size({'width': 1366, 'height': 800}); settle(page, 500)
+    open_tab(page, 'File'); settle(page, 300)
     d = page.evaluate("(() => { const c = document.querySelector('#rp-file > .rb-tb').getBoundingClientRect(), b = [...document.querySelectorAll('#rp-file .rb-dl button')].filter((x) => x.offsetParent); return [Math.round(c.right), Math.max(...b.map((x) => Math.round(x.getBoundingClientRect().right)))]; })()")
     check(f'File\'s Download row stays inside its column ({w})', d[1] <= d[0], d)
     page.keyboard.press('Escape')
@@ -677,8 +700,8 @@ def widen(p):
     browser, page, errors = open_page(p, width=600, height=800, layout='mobile')
     web = lambda: page.evaluate("[document.body.classList.contains('pg-web'), document.getElementById('sv-mobile').checkVisibility()]")
     a = web()
-    page.set_viewport_size({'width': 1366, 'height': 800}); page.wait_for_timeout(500); b = web()
-    page.set_viewport_size({'width': 600, 'height': 800}); page.wait_for_timeout(500); c = web()
+    page.set_viewport_size({'width': 1366, 'height': 800}); settle(page, 500); b = web()
+    page.set_viewport_size({'width': 600, 'height': 800}); settle(page, 500); c = web()
     check('a window opened at 600 px is in Mobile View, its toggle shown; widened to 1366 px, Print Layout and no toggle; narrowed, Mobile View again', a == [True, True] and b == [False, False] and c == [True, True], (a, b, c))
     check('no console errors (widen)', not errors, errors[:3])
     browser.close()
@@ -706,22 +729,22 @@ def consistency(page, w):
                small: v.filter((e) => r(e) < 44 || e.getBoundingClientRect().width < 44).map((e) => e.id) }; })()""")
     check(f'the status bar\'s words one size, its views one height with 4 px corners ({w})', st['words'] == ['12px'] and len(st['views']) == 1 and st['views'][0].endswith(' 4px') and (not touch or not st['small']), st)
     if not touch:
-        page.get_by_role('tab', name='File').click(); page.wait_for_timeout(400)
+        page.get_by_role('tab', name='File').click(); settle(page, 400)
         fv = page.evaluate("""(() => { const v = (q) => [...document.querySelectorAll(q)].filter((e) => e.offsetParent);
           return { col: [...new Set(v('#rp-file .rb-tb .btn').map((e) => Math.round(e.getBoundingClientRect().height) + ' ' + getComputedStyle(e).borderTopLeftRadius))],
                    tiles: [...new Set(v('.rf-tile').map((e) => Math.round(e.getBoundingClientRect().height) + ' ' + getComputedStyle(e).borderTopLeftRadius))] }; })()""")
         check(f'File: its column\'s commands 32 px with 4 px corners, its tiles one height ({w})', fv['col'] == ['32 4px'] and len(fv['tiles']) == 1 and fv['tiles'][0].endswith(' 4px'), fv)
-        page.keyboard.press('Escape'); page.wait_for_timeout(300)
+        page.keyboard.press('Escape'); settle(page, 300)
     seen = {}
     for cmd in ('font-dialog', 'paragraph-settings', 'page-setup', 'insert-table-dialog', 'share', 'properties'):
         click_text(page, 'Second paragraph', 3)
-        run_cmd(page, cmd); page.wait_for_timeout(300)
+        run_cmd(page, cmd); settle(page, 300)
         seen[cmd] = page.evaluate(KIND, 'body > .pop')
         if cmd == 'font-dialog' and not touch:
-            page.keyboard.press('Tab'); page.wait_for_timeout(80)
+            page.keyboard.press('Tab'); settle(page, 80)
             ring = page.evaluate("(() => { const a = document.activeElement, c = getComputedStyle(a); return [a.tagName, c.outlineStyle, c.outlineWidth]; })()")
             check(f'a control reached by Tab in a dialog has its ring as an outline, 2 px ({w})', ring[1] != 'none' and float(ring[2][:-2]) >= 2, ring)
-        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        page.keyboard.press('Escape'); settle(page, 150)
     bad = {k: v for k, v in seen.items() if not v or not v['btn'] or any(abs(x - H) > 1 for x in v['btn']) or v['radius'] != '8px'}
     check(f'every dialog\'s buttons {H} px tall, its corners 8 px ({w})', not bad and len(seen) == 6, bad or seen)
     badf = {k: v['field'] for k, v in seen.items() if v and v['field'] and min(v['field']) < H - 1}
@@ -746,10 +769,10 @@ def consistency(page, w):
         page.keyboard.press('Escape')
     else:
         click_text(page, 'Second paragraph', 3)
-        run_cmd(page, 'styles-pane'); page.wait_for_timeout(300)
+        run_cmd(page, 'styles-pane'); settle(page, 300)
         sp = page.evaluate(KIND, '#stylespane')
         run_cmd(page, 'styles-pane')
-        page.keyboard.press('Control+h'); page.wait_for_timeout(300)
+        page.keyboard.press('Control+h'); settle(page, 300)
         fr = page.evaluate(KIND, '#fr')
         page.keyboard.press('Escape')
         check(f'the Styles pane and Find and Replace: buttons 32 px, the same title style ({w})', sp['btn'] and fr['btn'] and all(abs(x - 32) <= 1 for x in sp['btn'] + fr['btn']) and tuple(sp['title']) == tuple(fr['title']) == ('14px', '600', '20px') and fr['radius'] == '8px', (sp, fr))
@@ -781,19 +804,19 @@ def dialog_kinds(page, w):
             load_doc(page, LIST)
         click_text(page, 'Two' if cmd.startswith(('list-', 'number-', 'bullet-', 'multilevel-')) else 'Second paragraph', 1 if cmd.startswith(('list-', 'number-', 'bullet-', 'multilevel-')) else 3)
         if cmd == 'find-replace':
-            page.keyboard.press('Control+h'); page.wait_for_timeout(300)
+            page.keyboard.press('Control+h'); settle(page, 300)
             seen[cmd] = page.evaluate(KINDS, '#fr')
         else:
-            run_cmd(page, cmd); page.wait_for_timeout(300)
+            run_cmd(page, cmd); settle(page, 300)
             seen[cmd] = page.evaluate(KINDS, 'body > .pop')
         if cmd == 'more-symbols' and not touch:
             for _ in range(4):
-                page.keyboard.press('Tab'); page.wait_for_timeout(60)
+                page.keyboard.press('Tab'); settle(page, 60)
                 if page.evaluate("document.activeElement.matches('.sym-b')"):
                     break
             ring = page.evaluate("(() => { const a = document.activeElement, c = getComputedStyle(a); return [a.className, c.outlineStyle, c.outlineWidth]; })()")
             check(f'a cell of the Symbols grid reached by Tab has its ring, an outline ({w})', ring[0] == 'sym-b' and ring[1] != 'none' and float(ring[2][:-2]) >= 2, ring)
-        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        page.keyboard.press('Escape'); settle(page, 150)
     missing = [k for k, v in seen.items() if not v]
     check(f'the sixteen dialogs open ({w})', not missing and len(seen) == 16, missing)
     bad = {k: [b for b in v['btns'] if abs(b[2] - H) > 1 or b[3] or (touch and b[1] < 44)] for k, v in seen.items() if v}
@@ -831,13 +854,13 @@ def contrast(page, w):
             page.keyboard.press('Control+h')
         else:
             run_cmd(page, cmd)
-        page.wait_for_timeout(300)
+        settle(page, 300)
         h = page.evaluate_handle("(n) => [...document.querySelectorAll('body > .pop .btn, #fr .btn')].find((b) => b.offsetParent && b.textContent.trim() === n)", name)
         got[cmd + ' ' + name] = page.evaluate(CONTRAST, h) if page.evaluate('(h) => !!h', h) else None
-        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        page.keyboard.press('Escape'); settle(page, 150)
     check(f'the dialogs\' primary buttons read at 4.5:1 or more ({w})', all(v and v >= 4.5 for v in got.values()), got)
-    page.locator('#bar .srch input').click() if not touch else page.tap('#bar .srch input')
-    page.keyboard.type('word count'); page.wait_for_timeout(400)
+    page.locator('#bar .srch input').click() if not touch else tap(page, page.locator('#bar .srch input'))
+    page.keyboard.type('word count'); settle(page, 400)
     h = page.evaluate_handle("document.querySelector('.srch-opt.on .srch-n') || document.querySelector('.srch-opt.on')")
     c = page.evaluate(CONTRAST, h) if page.evaluate('(h) => !!h', h) else None
     check(f'the selected search result reads at 4.5:1 or more ({w})', c and c >= 4.5, c)
@@ -856,10 +879,10 @@ def focus_rules(page, w):
     where = "(() => { const a = document.activeElement; return [!!(a && a.closest('body > .pop')), a.tagName, (a.getAttribute('aria-label') || a.textContent || '').trim().slice(0, 20)]; })()"
     click_text(page, 'Second paragraph', 3)
     open_tab(page, 'Review', touch)
-    (page.tap if touch else page.click)('#rr-a11y'); page.wait_for_timeout(400)
+    tap(page, page.locator('#rr-a11y'), 400) if touch else (page.click('#rr-a11y'), settle(page, 400))
     a = page.evaluate(where)
     check(f'Check accessibility from the ribbon takes the focus into its dialog ({w})', a[0] and (not touch or a[1] != 'INPUT'), a)
-    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    page.keyboard.press('Escape'); settle(page, 200)
     if touch:
         # (under a finger no dialog opens into a text field, not even one it focuses itself: the
         # phone's keyboard came up over it; the review of PR 90 found seven)
@@ -869,67 +892,67 @@ def focus_rules(page, w):
                 select_text(page, 'bold word')
             else:
                 click_text(page, 'Second paragraph', 3)
-            run_cmd(page, cmd); page.wait_for_timeout(500)
+            run_cmd(page, cmd); settle(page, 500)
             f = page.evaluate("(() => { const a = document.activeElement; return [!!a.closest('.pop, #fr'), a.matches('input:not([type]), input[type=text], input[type=search], input[type=number], textarea, [contenteditable]'), a.getAttribute('aria-label') || a.textContent.trim().slice(0, 20)]; })()")
             if not f[0] or f[1]:
                 typing[cmd] = f
-            page.keyboard.press('Escape'); page.wait_for_timeout(150)
+            page.keyboard.press('Escape'); settle(page, 150)
         check(f'seven dialogs open on a phone with the focus in them, never in a text field ({w})', not typing, typing)
         # (but a field the command names takes it on every device, as Word's: Indent Left opens the
         # Paragraph dialog at its Left field; table.py checks Alt Text's Description)
         click_text(page, 'Second paragraph', 3)
-        run_cmd(page, 'indent-left'); page.wait_for_timeout(500)
+        run_cmd(page, 'indent-left'); settle(page, 500)
         f = page.evaluate("(() => { const a = document.activeElement; return [!!a.closest('.pop'), a.tagName, a.hasAttribute('data-named'), a.getAttribute('aria-label')]; })()")
         check(f'on a phone a dialog opened at the field its command names (Indent Left) has the focus in that field ({w})', f[0] and f[1] == 'INPUT' and f[2], f)
-        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        page.keyboard.press('Escape'); settle(page, 150)
     if not touch:
-        page.click('#bar .srch input'); page.keyboard.type('AutoCorrect Options'); page.wait_for_timeout(300); page.keyboard.press('Enter'); page.wait_for_timeout(400)
+        page.click('#bar .srch input'); page.keyboard.type('AutoCorrect Options'); settle(page, 300); page.keyboard.press('Enter'); settle(page, 400)
         a = page.evaluate(where)
         check(f'AutoCorrect Options from the search box takes the focus into its dialog ({w})', a[0], a)
-        page.keyboard.press('Escape'); page.wait_for_timeout(200)
-        click_text(page, 'Second paragraph', 3); run_cmd(page, 'word-count'); page.wait_for_timeout(300)
+        page.keyboard.press('Escape'); settle(page, 200)
+        click_text(page, 'Second paragraph', 3); run_cmd(page, 'word-count'); settle(page, 300)
         walk = []
         for _ in range(7):
-            page.keyboard.press('Tab'); page.wait_for_timeout(40)
+            page.keyboard.press('Tab'); settle(page, 40)
             walk.append(page.evaluate(where))
         check(f'Tab goes round inside Word Count, never out of it ({w})', all(x[0] for x in walk), walk)
-        page.keyboard.press('Shift+Tab'); page.wait_for_timeout(40)
+        page.keyboard.press('Shift+Tab'); settle(page, 40)
         check(f'and Shift+Tab too ({w})', page.evaluate(where)[0])
-        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        page.keyboard.press('Escape'); settle(page, 200)
         # opened by the keys from a control of the ribbon: Esc gives the page its caret back, as Word's
         # ribbon does once its command has run (tabs.py's Frontier by keys; N7's opener is the page)
         click_text(page, 'Second paragraph', 3)
-        page.focus('#rr-a11y'); page.keyboard.press('Enter'); page.wait_for_timeout(400)
-        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        page.focus('#rr-a11y'); page.keyboard.press('Enter'); settle(page, 400)
+        page.keyboard.press('Escape'); settle(page, 200)
         back = page.evaluate("document.activeElement.id")
-        page.keyboard.type('Q'); page.wait_for_timeout(200)
+        page.keyboard.type('Q'); settle(page, 200)
         check(f'a dialog opened by the keys from a ribbon button gives the page its caret back, as Word ({w})', back == 'pages' and 'SecQond' in src(page), (back, src(page)[-60:]))
         # a dialog opened from another by the keys (Paragraph's Tabs…) gives back what that one would:
         # the caret, and the next key lands there (it went to the ribbon's launcher, the key lost)
         load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
-        page.keyboard.press('Shift+F10'); page.wait_for_timeout(300)
-        page.get_by_role('menuitem', name='Paragraph Settings', exact=True).focus(); page.keyboard.press('Enter'); page.wait_for_timeout(400)
+        page.keyboard.press('Shift+F10'); settle(page, 300)
+        page.get_by_role('menuitem', name='Paragraph Settings', exact=True).focus(); page.keyboard.press('Enter'); settle(page, 400)
         for _ in range(30):
             if page.evaluate("document.activeElement.textContent.trim() === 'Tabs…'"):
                 break
-            page.keyboard.press('Tab'); page.wait_for_timeout(30)
-        page.keyboard.press('Enter'); page.wait_for_timeout(400)
+            page.keyboard.press('Tab'); settle(page, 30)
+        page.keyboard.press('Enter'); settle(page, 400)
         nested = page.evaluate("(document.querySelector('body > .pop #pop-title') || {}).textContent || ''")
-        page.keyboard.press('Escape'); page.wait_for_timeout(300); page.keyboard.type('Z'); page.wait_for_timeout(300)
+        page.keyboard.press('Escape'); settle(page, 300); page.keyboard.type('Z'); settle(page, 300)
         check(f'Paragraph, then Tabs… by the keys, then Esc: the next key lands at the caret ({w})', nested == 'Tabs' and 'SecZond paragraph' in src(page), (nested, src(page)[-60:]))
         # one dialog at a time (N8)
-        click_text(page, 'Second paragraph', 3); run_cmd(page, 'font-dialog'); run_cmd(page, 'paragraph-settings'); page.wait_for_timeout(300)
+        click_text(page, 'Second paragraph', 3); run_cmd(page, 'font-dialog'); run_cmd(page, 'paragraph-settings'); settle(page, 300)
         n = page.evaluate("[...document.querySelectorAll('[role=dialog], [aria-modal=true]')].filter((d) => d.checkVisibility() && !d.closest('[hidden]') && d.getBoundingClientRect().width > 0).map((d) => d.id || d.className.slice(0, 30))")
         check(f'one dialog at a time: a second replaces the first ({w})', len(n) == 1, n)
-        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        page.keyboard.press('Escape'); settle(page, 200)
         # Back's ring: none after a press on File, shown after Alt, F
         # (the ring as drawn: the browser's :focus-visible guess for a focus the code moves differs
         # between Chromium's versions; the press is a real one, so the last input is the mouse)
-        page.get_by_role('tab', name='File').hover(); page.get_by_role('tab', name='File').click(); page.wait_for_timeout(400)
+        page.get_by_role('tab', name='File').hover(); page.get_by_role('tab', name='File').click(); settle(page, 400)
         r1 = page.evaluate("[document.activeElement.id, getComputedStyle(document.activeElement).outlineStyle]")
-        page.keyboard.press('Escape'); page.wait_for_timeout(300)
+        page.keyboard.press('Escape'); settle(page, 300)
         click_text(page, 'Second paragraph', 3)
-        page.keyboard.press('Alt'); page.wait_for_timeout(150); page.keyboard.press('f'); page.wait_for_timeout(400)
+        page.keyboard.press('Alt'); settle(page, 150); page.keyboard.press('f'); settle(page, 400)
         r2 = page.evaluate("[document.activeElement.id, getComputedStyle(document.activeElement).outlineStyle]")
         check(f'File\'s Back: no ring after a press on File, a ring after Alt, F ({w})', r1 == ['rf-back', 'none'] and r2[0] == 'rf-back' and r2[1] != 'none', (r1, r2))
         page.keyboard.press('Escape')
@@ -946,7 +969,7 @@ def bar_room(p):
     window 320 px wide, mouse or finger, scrolls neither way (WCAG 1.4.10)."""
     for width, touch in ((390, True), (360, True), (320, True), (320, False)):
         browser, page, errors = open_page(p, width=width, height=700, touch=touch, layout='mobile')
-        page.wait_for_timeout(600)
+        settle(page, 600)
         w = f'{width} px{", touch" if touch else ""}'
         sw = page.evaluate('[document.documentElement.scrollWidth, document.body.scrollWidth]')
         check(f'nothing wider than the window ({w})', max(sw) <= width, sw)
@@ -955,7 +978,7 @@ def bar_room(p):
             gaps = [b[1] - a[2] for a, b in zip(bar, bar[1:])]
             check(f'the bar\'s targets 44 by 44 px, 8 px apart, inside the screen ({w})', all(b[3] >= 44 and b[4] >= 44 for b in bar) and all(g >= 8 for g in gaps) and bar[0][1] >= 0 and bar[-1][2] <= width, (bar, gaps))
             if width < 380:
-                page.tap('#b-nav'); page.wait_for_timeout(400)
+                tap(page, page.locator('#b-nav'), 400)
                 check(f'Redo, not on the bar, is in the menu panel by name ({w})', page.get_by_role('menuitem', name='Redo', exact=True).count() == 1)
         check(f'no console errors (bar_room, {w})', not errors, errors[:3])
         browser.close()
@@ -969,7 +992,7 @@ def tap_alternatives(page, w):
     and Crop by Numbers."""
     load_doc(page, DOC)
     run_cmd(page, 'ruler') if not page.evaluate('!!window.rikuy.prefs.ruler') else None
-    click_text(page, 'Second paragraph', 3); page.wait_for_timeout(400)
+    click_text(page, 'Second paragraph', 3); settle(page, 400)
     got = {}
     for k in ('left', 'first', 'ml', 'mt'):
         loc = page.locator(f'#ruler .ru-mk.ru-{k}, #vruler .ru-mk.ru-{k}').first
@@ -981,18 +1004,18 @@ def tap_alternatives(page, w):
         r = loc.bounding_box()
         x = r['x'] + 3 if k == 'ml' else r['x'] + r['width'] / 2
         y = r['y'] + 2 if k == 'mt' else r['y'] + r['height'] / 2
-        page.mouse.dblclick(x, y); page.wait_for_timeout(400)
+        page.mouse.dblclick(x, y); settle(page, 400)
         got[k] = [page.evaluate("(document.querySelector('body > .pop #pop-title') || {}).textContent || ''"), title]
-        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        page.keyboard.press('Escape'); settle(page, 200)
         click_text(page, 'Second paragraph', 3)
     ok = got.get('left') and got['left'][0] == 'Paragraph' and got.get('first') and got['first'][0] == 'Paragraph' and got.get('ml') and got['ml'][0].startswith('Page') and 'double click' in got['left'][1] and 'Page setup' in got['ml'][1]
     # (the margin's grey part, 40 px out of the text, and 5 px out beside the indent markers: Page
     # setup, as Word's ruler; it did nothing there, and Paragraph beside the markers)
     for dx in (40, 5):
         xy = page.evaluate("(dx) => { const R = window.rikuy.ru, S = R.S, t = R.track.getBoundingClientRect(), h = R.hr.getBoundingClientRect(); return [t.left + S.ml * S.px - dx, h.top + h.height / 2]; }", dx)
-        page.mouse.dblclick(xy[0], xy[1]); page.wait_for_timeout(400)
+        page.mouse.dblclick(xy[0], xy[1]); settle(page, 400)
         got['margin %d px' % dx] = page.evaluate("(document.querySelector('body > .pop #pop-title') || {}).textContent || ''")
-        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        page.keyboard.press('Escape'); settle(page, 200)
         click_text(page, 'Second paragraph', 3)
     ok = ok and all(got['margin %d px' % dx].startswith('Page') for dx in (40, 5))
     check(f'a ruler marker double clicked opens its dialog: an indent the Paragraph dialog, a margin Page setup, as its tooltip says ({w})', ok, got)
@@ -1051,13 +1074,13 @@ def menus(page, w):
     seen = {}
     for ctx, word in (('text', 'Second paragraph'), ('heading', 'Opening')):
         load_doc(page, MENU_DOC); click_text(page, word, 2)
-        page.keyboard.press('Shift+F10'); page.wait_for_timeout(300)
+        page.keyboard.press('Shift+F10'); settle(page, 300)
         m = page.evaluate("""(() => { const m = document.querySelector('.pop-ctx'); if (!m) return null; const R = (e) => e.getBoundingClientRect(); const a = document.activeElement;
           return { radius: getComputedStyle(m).borderTopLeftRadius, ring: [a.matches('.pop-ctx [role^=menuitem]'), getComputedStyle(a).outlineStyle],
             items: [...m.querySelectorAll('[role^=menuitem]:not(.mi-hint)')].map((i) => [i.getAttribute('aria-label'), (i.querySelector('.mi-n') || {}).textContent || '', i.getAttribute('aria-disabled') === 'true', getComputedStyle(i).borderTopLeftRadius, i.getAttribute('aria-haspopup') === 'menu' && !!i.querySelector('.mi-sub')]),
             groups: [...m.children].reduce((g, e) => { if (e.getAttribute('role') === 'separator') g.push([]); else if (!e.classList.contains('mi-hint')) g[g.length - 1].push(e.getAttribute('aria-label')); return g; }, [[]]).filter((x) => x.length),
             keys: [...m.querySelectorAll('.mi-k')].map((k) => { const n = k.parentElement.querySelector('.mi-n'), r = document.createRange(); r.selectNodeContents(n); return [Math.round(R(k).right), Math.round(r.getBoundingClientRect().right), Math.round(R(k).left)]; }) }; })()""")
-        page.keyboard.press('Escape'); page.wait_for_timeout(100)
+        page.keyboard.press('Escape'); settle(page, 100)
         seen[ctx] = m
         dlg = {}
         sub = {}
@@ -1066,14 +1089,17 @@ def menus(page, w):
             if off or name in ('Paste', 'Cut', 'Copy', 'Ask Claude', 'Synonyms'):
                 continue
             load_doc(page, MENU_DOC); click_text(page, word, 2)
-            page.keyboard.press('Shift+F10'); page.wait_for_timeout(250)
-            page.locator('.pop-ctx [role^=menuitem]').and_(page.get_by_label(name, exact=True)).first.click(timeout=3000); page.wait_for_timeout(300)
+            page.keyboard.press('Shift+F10'); settle(page, 250)
+            page.locator('.pop-ctx [role^=menuitem]').and_(page.get_by_label(name, exact=True)).first.click(timeout=3000); settle(page, 300)
             dlg[label] = page.evaluate("!!document.querySelector('body > .pop.pop-dlg') || !!(document.getElementById('fr') && document.getElementById('fr').offsetParent)")
             sub[label] = [popup, page.evaluate("!!document.querySelector('body > .pop[role=menu]')")]
-            page.keyboard.press('Escape'); page.wait_for_timeout(100)
+            page.keyboard.press('Escape'); settle(page, 100)
             # (Show in Source opens the source pane, which keeps the focus: closed for the next)
             if page.evaluate("document.body.classList.contains('src-on')"):
-                page.evaluate("window.rikuy.toggleSource()"); page.wait_for_timeout(150)
+                # (and the page laid out again at the width it gave back: the desk's ResizeObserver
+                # sees it in the next frame and refits 150 ms later; a layout with the next menu
+                # open takes the focus out of it, to the page, so its ring was read off the page)
+                page.evaluate("window.rikuy.toggleSource()"); frame(page); settle(page, 150, full=True)
         wrong = {k: v for k, v in dlg.items() if k.endswith('…') != v}
         check(f'"…" on exactly the items that open a dialog, in the {ctx} menu ({w})', dlg and not wrong, wrong or dlg)
         wrong = {k: v for k, v in sub.items() if v[0] != v[1]}
@@ -1101,9 +1127,9 @@ def menus(page, w):
     r = page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('Second')); const b = s.getBoundingClientRect(); return [b.left + 10, b.top + b.height / 2]; })()")
     # (the ring as drawn, not the browser's :focus-visible guess, which differs between Chromium's
     # versions for a focus the code moves; a real move and press first, so the last input is the mouse)
-    page.mouse.move(r[0] + 2, r[1] + 2); page.mouse.click(r[0], r[1], button='right'); page.wait_for_timeout(300)
+    page.mouse.move(r[0] + 2, r[1] + 2); page.mouse.click(r[0], r[1], button='right'); settle(page, 300)
     mr = page.evaluate("(() => { const a = document.activeElement; return [a.matches('.pop-ctx [role^=menuitem]'), getComputedStyle(a).outlineStyle]; })()")
-    page.keyboard.press('ArrowDown'); page.wait_for_timeout(100)
+    page.keyboard.press('ArrowDown'); settle(page, 100)
     kr = page.evaluate("getComputedStyle(document.activeElement).outlineStyle")
     page.keyboard.press('Escape')
     check(f'a menu opened by a right click shows no ring on its first item; a key brings it ({w})', mr[0] and mr[1] == 'none' and kr != 'none', (mr, kr))
@@ -1117,14 +1143,14 @@ def empty_panes(page, w):
     makes the caret's paragraph a heading; File's Recent list, Open a file."""
     load_doc(page, '\\documentclass{article}\n\\begin{document}\nJust one paragraph of plain words.\n\\end{document}\n')
     click_text(page, 'one paragraph', 2)
-    run_cmd(page, 'navigation-pane'); page.wait_for_timeout(400)
+    run_cmd(page, 'navigation-pane'); settle(page, 400)
     e = page.evaluate("(() => { const e = [...document.querySelectorAll('#nav .nav-empty')].find((x) => x.offsetParent); if (!e) return null; const t = e.innerText.trim().split('\\n').filter(Boolean); return { lines: t, buttons: [...e.querySelectorAll('button')].map((b) => b.textContent.trim()) }; })()")
     one = lambda t: t and len([x for x in t[0].split('. ') if x]) == 1 and '\\' not in t[0]
     check(f'the empty Navigation pane: one sentence, no LaTeX in it, one button ({w})', e and one(e['lines']) and e['buttons'] == ['Apply Heading 1'], e)
     if e and e['buttons']:
-        page.locator('#nav .nav-empty button').click(); page.wait_for_timeout(500)
+        page.locator('#nav .nav-empty button').click(); settle(page, 500)
         check(f'which makes the caret\'s paragraph a heading, listed there ({w})', '\\section{Just one paragraph' in src(page) and page.evaluate("[...document.querySelectorAll('#nav .nv-row, #nav [role=treeitem]')].some((r) => r.offsetParent && r.textContent.includes('Just one'))"), src(page)[-120:])
-    open_tab(page, 'File', page.evaluate("matchMedia('(pointer: coarse)').matches")); page.wait_for_timeout(500)
+    open_tab(page, 'File', page.evaluate("matchMedia('(pointer: coarse)').matches")); settle(page, 500); until(page, RECENT)
     r = page.evaluate("(() => { const p = document.querySelector('.rf-none'); return p && p.offsetParent ? [p.textContent, [...p.parentElement.querySelectorAll('button')].filter((b) => b.offsetParent).map((b) => b.textContent.trim())] : null; })()")
     check(f'File\'s empty Recent list: one sentence and Open a file ({w})', r and one([r[0]]) and r[1] == ['Open a file'], r)
     if r:
@@ -1146,13 +1172,13 @@ def keyboard_room(page, w):
     800 px left): the field is still inside the window and inside every box that scrolls round it."""
     width = page.viewport_size['width']
     for cmd in ('page-setup', 'properties', 'share'):
-        page.set_viewport_size({'width': width, 'height': 800}); page.wait_for_timeout(200)
-        load_doc(page, DOC); run_cmd(page, cmd); page.wait_for_timeout(400)
-        page.locator('body > .pop input:not([type=checkbox]):not([type=radio])').last.focus(); page.wait_for_timeout(250)
-        page.set_viewport_size({'width': width, 'height': 430}); page.wait_for_timeout(500)
+        page.set_viewport_size({'width': width, 'height': 800}); settle(page, 200)
+        load_doc(page, DOC); run_cmd(page, cmd); settle(page, 400)
+        page.locator('body > .pop input:not([type=checkbox]):not([type=radio])').last.focus(); settle(page, 250)
+        page.set_viewport_size({'width': width, 'height': 430}); settle(page, 500)
         r = page.evaluate(SIGHT)
         check(f'{cmd}: its last field, focused, stays in sight above a keyboard ({w})', r[1] >= r[3] - 1 and r[2] <= r[4] + 1, r)
-        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        page.keyboard.press('Escape'); settle(page, 150)
     page.set_viewport_size({'width': width, 'height': 820})
 
 
@@ -1172,17 +1198,17 @@ def text_spacing(page, w):
     design at any spacing, and screen reader text is hidden on purpose)."""
     touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
     load_doc(page, DOC)
-    page.add_style_tag(content=SPACING); page.wait_for_timeout(300)
+    page.add_style_tag(content=SPACING); settle(page, 300)
     cut = {'bar and status bar': page.evaluate(CUT, '#bar, #status')}
     for cmd in ('font-dialog', 'paragraph-settings', 'page-setup', 'insert-table-dialog', 'share', 'properties', 'word-count', 'autocorrect-options'):
-        click_text(page, 'Second paragraph', 3); run_cmd(page, cmd); page.wait_for_timeout(300)
+        click_text(page, 'Second paragraph', 3); run_cmd(page, cmd); settle(page, 300)
         cut[cmd] = page.evaluate(CUT, 'body > .pop')
-        page.keyboard.press('Escape'); page.wait_for_timeout(100)
-    open_tab(page, 'File', touch); page.wait_for_timeout(400)
+        page.keyboard.press('Escape'); settle(page, 100)
+    open_tab(page, 'File', touch); settle(page, 400); until(page, RECENT)
     cut['File'] = page.evaluate(CUT, '#rp-file')
-    page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    page.keyboard.press('Escape'); settle(page, 300)
     if not touch:
-        run_cmd(page, 'styles-pane'); page.wait_for_timeout(300)
+        run_cmd(page, 'styles-pane'); settle(page, 300)
         cut['Styles pane'] = page.evaluate(CUT, '#stylespane')
     cut = {k: v for k, v in cut.items() if v}
     check(f'with WCAG\'s text spacing nothing of the bar, the status bar, eight dialogs, File or the Styles pane is cut off ({w})', not cut, cut)
@@ -1207,12 +1233,12 @@ def target_gaps(page, w):
     bad = {'status bar': page.evaluate(TARGET_GAPS, '#status :is(%s)' % TARGETS)}
     for cmd in ('paragraph-settings', 'insert-table-dialog', 'share', 'word-count', 'page-setup', 'font-dialog', 'autocorrect-options', 'more-symbols', 'replace', 'bookmark'):
         click_text(page, 'Second paragraph', 3)
-        run_cmd(page, cmd); page.wait_for_timeout(300)
+        run_cmd(page, cmd); settle(page, 300)
         root = '#fr' if cmd == 'replace' else 'body > .pop'
         bad[cmd] = page.evaluate(TARGET_GAPS, root + ' :is(%s)' % TARGETS)
         if not page.evaluate("(r) => !!document.querySelector(r) && document.querySelector(r).checkVisibility()", root):
             bad[cmd] = 'did not open'
-        page.keyboard.press('Escape'); page.wait_for_timeout(100)
+        page.keyboard.press('Escape'); settle(page, 100)
     bad = {k: v for k, v in bad.items() if v}
     check(f'every two targets 8 px apart in the status bar and ten dialogs ({w})', not bad and len(bad) == 0, bad)
 
@@ -1224,7 +1250,7 @@ def tooltips(page, w):
     titles had the description alone ("Show the PDF as TeX makes it, beside the page", without
     Ctrl+F2). Native tooltips: Esc and the pointer are the browser's (WCAG 1.4.13 leaves them to it)."""
     load_doc(page, DOC)
-    open_tab(page, 'File'); page.wait_for_timeout(400)
+    open_tab(page, 'File'); settle(page, 400); until(page, RECENT)
     tips = page.evaluate("""(() => { const reg = window.rikuy.cmds.commands(), byEl = new Map(reg.filter((c) => c.static && c.el).map((c) => [c.el, c]));
       return [...document.querySelectorAll('#bar button, #bar input, #status button, #status input, #rf-home button')].filter((e) => e.checkVisibility() && !['st-lang', 'st-track', 'st-words'].includes(e.id)).map((e) => { const c = byEl.get(e.id);
         return [e.id || e.className, c ? c.name : e.getAttribute('aria-label'), e.title, c ? !!((c.keys || []).length + (c.keysElsewhere || []).length) : false]; }); })()""")
@@ -1287,6 +1313,9 @@ def run(which):
                 check(f'no console errors ({name}, {width} px)', not errors, errors[:4])
                 browser.close()
     bad = [r for r in results if not r[1]]
+    # (the failures again at the end, where a runner's log keeps a long suite's last lines)
+    for r in bad:
+        print('FAILED ' + r[0] + '  :: ' + str(r[2])[:300])
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     return 1 if bad else 0
 

@@ -29,16 +29,16 @@ Each part is a function; `python3 power.py
 footnote` runs one."""
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import open_page, check, results, src, click_text, select_text, load_doc
+from browser import settle, until, fonts_settled, open_page, check, results, src, click_text, select_text, load_doc
 from playwright.sync_api import sync_playwright
 
 
 def key(page, k, wait=150):
-    page.keyboard.press(k); page.wait_for_timeout(wait)
+    page.keyboard.press(k); settle(page, wait)
 
 
 def typed(page, text, wait=200):
-    page.keyboard.type(text); page.wait_for_timeout(wait)
+    page.keyboard.type(text); settle(page, wait)
 
 
 def active(page):
@@ -88,8 +88,8 @@ def dollars(page):
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
         for ch in typed_:
-            page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 25)
-        page.wait_for_timeout(300)
+            page.keyboard.type(ch); settle(page, 250 if ch == '$' else 25)
+        settle(page, 300)
         s = src(page)
         check('dollars: ' + label + ' typed as in the source', 'gamma.' + want + '\n' in s, s[60:140])
         check('dollars: ' + label + ': the caret back on the page', active(page) == 'pages', active(page))
@@ -97,8 +97,8 @@ def dollars(page):
     load_doc(page, MATH)
     click_text(page, 'gamma.', 6); key(page, 'Enter')
     for ch in '$$x^2$$ end':
-        page.keyboard.type(ch); page.wait_for_timeout(300 if ch == '$' else 30)
-    page.wait_for_timeout(300)
+        page.keyboard.type(ch); settle(page, 300 if ch == '$' else 30)
+    settle(page, 300)
     s = src(page); i = s.find('gamma.')
     check('dollars: $$x^2$$ is a display, the text after it', '\\[' in s[i:] and 'x^2' in s[i:] and '\\]' in s[i:] and 'end' in s[s.find('\\]'):] and '\\$' not in s, s[i:i + 60])
     # $$ alone is a dollar sign at once, as before (features.py); a digit, a space, a sign or Esc
@@ -107,21 +107,21 @@ def dollars(page):
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
         for ch in typed_:
-            page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 25)
-        page.wait_for_timeout(300)
+            page.keyboard.type(ch); settle(page, 250 if ch == '$' else 25)
+        settle(page, 300)
         s = src(page)
         check('dollars: $$ then ' + label + ' is a dollar sign', 'gamma.' + want + '\n' in s and active(page) == 'pages', (s[60:140], active(page)))
     load_doc(page, MATH)
     click_text(page, 'gamma.', 6)
-    for ch in ' x$$': page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 25)
+    for ch in ' x$$': page.keyboard.type(ch); settle(page, 250 if ch == '$' else 25)
     check('dollars: $$ writes the dollar sign at once', 'gamma. x\\$\n' in src(page), src(page)[60:120])
     key(page, 'Escape', 200); typed(page, 'y')
     check('dollars: Esc after $$ keeps it', 'gamma. x\\$y\n' in src(page), src(page)[60:120])
     load_doc(page, MATH)
     click_text(page, 'gamma.', 6); key(page, 'Enter')
     for ch in '$$\\alpha+1$$ end':
-        page.keyboard.type(ch); page.wait_for_timeout(300 if ch == '$' else 30)
-    page.wait_for_timeout(300)
+        page.keyboard.type(ch); settle(page, 300 if ch == '$' else 30)
+    settle(page, 300)
     s = src(page); i = s.find('gamma.')
     check('dollars: $$\\alpha+1$$ is a display holding \\alpha', '\\[' in s[i:] and '\\alpha+1' in s[i:] and 'end' in s[s.find('\\]'):] and '\\$' not in s, s[i:i + 60])
     seen = []
@@ -142,8 +142,8 @@ def dollars(page):
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
         for ch in typed_:
-            page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
-        page.wait_for_timeout(300)
+            page.keyboard.type(ch); settle(page, 250 if ch == '$' else 40)
+        settle(page, 300)
         s = src(page)
         check('dollars: ' + typed_.strip() + ' gives' + want, 'gamma.' + want + '\n' in s and active(page) == 'pages', (s[60:130], active(page)))
     # (verification of eb14945, V1) the key after the space decides: a letter starting a word makes
@@ -157,8 +157,8 @@ def dollars(page):
         click_text(page, 'gamma.', 6)
         for ch in typed_.replace('\\b', '\x08'):
             if ch == '\x08': key(page, 'Backspace', 60); continue
-            page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
-        page.wait_for_timeout(300)
+            page.keyboard.type(ch); settle(page, 250 if ch == '$' else 40)
+        settle(page, 300)
         s = src(page)
         check('dollars: ' + typed_.strip().replace('\\b', '(Backspace)') + (' is a price' if '\\\\$' in want else ' stays a formula'),
               re.search('gamma\\.' + want + '\n', s) is not None and 'textbackslash' not in s and active(page) == 'pages', (s[60:130], active(page)))
@@ -168,15 +168,15 @@ def dollars(page):
         fresh(page, MATH)
         click_text(page, 'gamma.', 6)
         for ch in typed_:
-            page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
-        page.wait_for_timeout(300)
+            page.keyboard.type(ch); settle(page, 250 if ch == '$' else 40)
+        settle(page, 300)
         s = src(page)
         check('dollars: ' + typed_.strip() + (' is a price' if '%' in typed_ else ' stays a formula'), re.search('gamma\\.' + want + '\n', s) is not None and active(page) == 'pages', (s[60:130], active(page)))
     fresh(page, MATH)
     click_text(page, 'gamma.', 6)
-    for ch in ' costs $5 each': page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
+    for ch in ' costs $5 each': page.keyboard.type(ch); settle(page, 250 if ch == '$' else 40)
     xy = page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('Next')); const b = s.getBoundingClientRect(); return [b.left + 2, b.top + b.height / 2]; })()")
-    page.mouse.click(xy[0], xy[1]); page.wait_for_timeout(400)
+    page.mouse.click(xy[0], xy[1]); settle(page, 400)
     check('dollars: $5 each then a click away is a price', 'gamma. Costs \\$5 each\n' in src(page), src(page)[60:130])
     # (verification of befd04a, X2) while the word after "$5 " is typed, the page keeps $5$ and the
     # box says what the word waits for, the word with its space, never $5each$ in math italics
@@ -184,8 +184,9 @@ def dollars(page):
         page.set_viewport_size({'width': width, 'height': 1000})
         fresh(page, MATH)
         click_text(page, 'gamma.', 6)
-        for ch in ' costs $5 each': page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 60)
-        page.wait_for_timeout(500)
+        for ch in ' costs $5 each': page.keyboard.type(ch); settle(page, 250 if ch == '$' else 60)
+        # (the box's 5 reaches the source by its timer, 140 ms after it was typed)
+        settle(page, 500, full=True)
         s = src(page)
         h = page.evaluate("(() => { const P = window.rikuy.pop; const e = P && P.el.querySelector('.hint'); if (!e) return null; const r = e.getBoundingClientRect(); return [e.textContent, r.width > 0 && r.right <= innerWidth + 1]; })()")
         f = page.evaluate("(() => { const t = window.rikuy.pop && window.rikuy.pop.el.querySelector('textarea'); return t && t.value; })()")
@@ -203,21 +204,21 @@ def dollars(page):
         click_text(page, 'gamma.', 6)
         opened = False
         for k in keys:
-            if k == 'close': page.evaluate('window.rikuy.closePop(true, true)'); page.wait_for_timeout(300)
+            if k == 'close': page.evaluate('window.rikuy.closePop(true, true)'); settle(page, 300)
             elif len(k) > 1: key(page, k, 300)
-            else: page.keyboard.type(k); page.wait_for_timeout(300 if k == '$' else 60)
+            else: page.keyboard.type(k); settle(page, 300 if k == '$' else 60)
             opened = opened or 'Equation' in page.evaluate(TABS)
-        page.wait_for_timeout(500)
+        settle(page, 500)
         check('dollars: a formula closed ' + how + ' takes its Equation tab with it', opened and 'Equation' not in page.evaluate(TABS) and not page.evaluate('!!window.rikuy.pop'), page.evaluate(TABS))
     # (verification of befd04a, X1) Backspace deletes a formula's last character, then the formula,
     # as Word's does an equation: no stray \$, no undo step left for it, the caret where the $ was
     for typed_, n in ((' costs $x', 2), (' costs $ab+1', 5), (' costs $5', 2), (' costs $5 each', 7)):
         fresh(page, MATH)
         click_text(page, 'gamma.', 6)
-        for ch in typed_.split('$')[0]: page.keyboard.type(ch); page.wait_for_timeout(40)
-        page.wait_for_timeout(300); h0 = page.evaluate('window.rikuy.hist.length'); s0 = src(page)
-        for ch in '$' + typed_.split('$')[1]: page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 60)
-        page.wait_for_timeout(400)
+        for ch in typed_.split('$')[0]: page.keyboard.type(ch); settle(page, 40)
+        settle(page, 300); h0 = page.evaluate('window.rikuy.hist.length'); s0 = src(page)
+        for ch in '$' + typed_.split('$')[1]: page.keyboard.type(ch); settle(page, 250 if ch == '$' else 60)
+        settle(page, 400)
         for _ in range(n - 1): key(page, 'Backspace', 200)
         mid = page.evaluate("(() => { const P = window.rikuy.pop; const t = P && P.el.querySelector('textarea'); return t ? t.value : null; })()")
         key(page, 'Backspace', 400)
@@ -232,20 +233,20 @@ def dollars(page):
         page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
-        for ch in ' see $': page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
-        cdp.send('Input.insertText', {'text': ins_}); page.wait_for_timeout(400)
-        for ch in after: page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
-        page.wait_for_timeout(300)
+        for ch in ' see $': page.keyboard.type(ch); settle(page, 250 if ch == '$' else 40)
+        cdp.send('Input.insertText', {'text': ins_}); settle(page, 400)
+        for ch in after: page.keyboard.type(ch); settle(page, 250 if ch == '$' else 40)
+        settle(page, 300)
         s = src(page)
         check('dollars: ' + repr(ins_) + ' in one insert after $ keeps its words', re.search('gamma\\.' + want + '\n', s) is not None, s[60:130])
     for how, comp, commit in (('an input method', 'に', '日本'), ('a dead key', '´', 'é')):
         page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
-        for ch in ' price $5 ': page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
-        cdp.send('Input.imeSetComposition', {'text': comp, 'selectionStart': 1, 'selectionEnd': 1}); page.wait_for_timeout(200)
-        cdp.send('Input.insertText', {'text': commit}); page.wait_for_timeout(300)
-        page.keyboard.type(' ok'); page.wait_for_timeout(300)
+        for ch in ' price $5 ': page.keyboard.type(ch); settle(page, 250 if ch == '$' else 40)
+        cdp.send('Input.imeSetComposition', {'text': comp, 'selectionStart': 1, 'selectionEnd': 1}); settle(page, 200)
+        cdp.send('Input.insertText', {'text': commit}); settle(page, 300)
+        page.keyboard.type(' ok'); settle(page, 300)
         s = src(page)
         check('dollars: after "$5 " ' + how + '\'s word is the price\'s, the space kept', 'gamma. Price \\$5 ' + commit + ' ok\n' in s and active(page) == 'pages', (s[60:130], active(page)))
 
@@ -256,7 +257,7 @@ def field(page, keys):
     load_doc(page, MATH)
     click_text(page, 'gamma.', 6)
     key(page, 'Enter'); key(page, 'Alt+Equal', 600)
-    page.keyboard.type(keys, delay=15); page.wait_for_timeout(300)
+    page.keyboard.type(keys, delay=15); settle(page, 300)
     key(page, 'Enter', 400)
     s = src(page)
     i, j = s.find('\\begin{equation}'), s.find('\\end{equation}')
@@ -285,11 +286,15 @@ def latex(page):
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
         key(page, 'Enter'); key(page, 'Alt+Equal', 600)
-        page.keyboard.type('x=1\\text{', delay=15); page.wait_for_timeout(200)
+        # (full: the box's push of x=1 focuses the field again, and MathLive focuses its keyboard
+        # sink 60 ms later; a composition begun before that lost the focus to it, its ひ left in the
+        # box as text and 日本 at the box's start: the app's race, reported, not this step's to test)
+        page.keyboard.type('x=1\\text{', delay=15); settle(page, 200, full=True)
         if how == 'dictation': cdp.send('Input.insertText', {'text': text})
-        else: cdp.send('Input.imeSetComposition', {'text': 'ひ', 'selectionStart': 1, 'selectionEnd': 1}); page.wait_for_timeout(150); cdp.send('Input.insertText', {'text': text})
-        page.wait_for_timeout(250)
-        page.keyboard.type('}+y', delay=15); page.wait_for_timeout(500)
+        else: cdp.send('Input.imeSetComposition', {'text': 'ひ', 'selectionStart': 1, 'selectionEnd': 1}); settle(page, 150); cdp.send('Input.insertText', {'text': text})
+        settle(page, 250)
+        # (the field open: its box writes the source 140 ms after the last key, the page's timer)
+        page.keyboard.type('}+y', delay=15); settle(page, 500, full=True)
         s = src(page); body = ''.join(s[s.find('\\begin{equation}'):s.find('\\end{equation}')].split())
         check('latex: ' + how + ' in \\text{…} keeps it in the \\text', ('\\text{' + text.strip() + '}+y') in body, body)
         key(page, 'Escape', 300)
@@ -302,8 +307,8 @@ def latex(page):
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
         key(page, 'Enter'); key(page, 'Alt+Equal', 20)
-        page.keyboard.type('x=1\\text{'); cdp.send('Input.insertText', {'text': 'if '}); page.wait_for_timeout(250)
-        page.keyboard.type('}+y', delay=15); page.wait_for_timeout(500)
+        page.keyboard.type('x=1\\text{'); cdp.send('Input.insertText', {'text': 'if '}); settle(page, 250)
+        page.keyboard.type('}+y', delay=15); settle(page, 500, full=True)
         s = src(page); body = ''.join(s[s.find('\\begin{equation}'):s.find('\\end{equation}')].split())
         if 'x=1\\text{if}+y' not in body: bad.append(body)
         key(page, 'Escape', 300)
@@ -314,7 +319,7 @@ def latex(page):
     load_doc(page, MATH)
     click_text(page, 'gamma.', 6)
     key(page, 'Enter'); key(page, 'Alt+Equal', 800)
-    cdp.send('Input.insertText', {'text': 'x=1\\text{if }+y'}); page.wait_for_timeout(800); key(page, 'Enter', 600)
+    cdp.send('Input.insertText', {'text': 'x=1\\text{if }+y'}); settle(page, 800); key(page, 'Enter', 600)
     s = src(page); body = ''.join(s[s.find('\\begin{equation}'):s.find('\\end{equation}')].split())
     check('latex: x=1\\text{if }+y in one insert is written as it came', body == '\\begin{equation}x=1\\text{if}+y', body)
     # W3: a press on the field while the box holds \begin{ unfinished keeps the keys in the box
@@ -322,9 +327,9 @@ def latex(page):
     load_doc(page, MATH)
     click_text(page, 'gamma.', 6)
     key(page, 'Enter'); key(page, 'Alt+Equal', 800)
-    page.keyboard.type('x=\\begin{'); page.wait_for_timeout(200)
-    page.click('#pop-field', timeout=2000); page.wait_for_timeout(200)
-    page.keyboard.type('aligned}a&=b\\end{aligned}'); page.wait_for_timeout(800)
+    page.keyboard.type('x=\\begin{'); settle(page, 200)
+    page.click('#pop-field', timeout=2000); settle(page, 200)
+    page.keyboard.type('aligned}a&=b\\end{aligned}'); settle(page, 800)
     box = page.evaluate("(() => { const t = document.querySelector('#pop-tex'); return t && t.value; })()")
     check('latex: a press on the field with \\begin{ unfinished leaves the keys in the LaTeX box', (box or '').strip() == 'x=\\begin{aligned}a&=b\\end{aligned}' and active(page) == 'pop-tex', (box, active(page)))
     key(page, 'Escape', 400)
@@ -335,8 +340,8 @@ def latex(page):
     page.click('.a-math >> nth=0'); page.wait_for_selector('#pop-field')
     page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
     page.evaluate("(() => { const mf = document.querySelector('#pop-field'), ta = document.querySelector('#pop-tex'); ta.focus(); mf.focus(); const k = mf.shadowRoot && mf.shadowRoot.querySelector('.ML__keyboard-sink'); if (k) k.focus(); ta.focus(); })()")
-    page.wait_for_timeout(300)
-    a = active(page); page.keyboard.type('+z'); page.wait_for_timeout(400)
+    settle(page, 300)
+    a = active(page); page.keyboard.type('+z'); settle(page, 400)
     box = page.evaluate("(() => { const t = document.querySelector('#pop-tex'); return t && t.value; })()")
     check('latex: the field\'s late focus leaves the box the focus, the keys typed there', a == 'pop-tex' and box == 'x+y+z', (a, box))
     key(page, 'Escape', 400)
@@ -345,7 +350,7 @@ def latex(page):
         load_doc(page, MATH.replace('Alpha beta', 'Alpha $x+y$ beta'))
         page.click('.a-math >> nth=0'); page.wait_for_selector('#pop-field')
         page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
-        page.fill('#pop-tex', '\\alpha + \\beta = \\delta'); page.wait_for_timeout(600)
+        page.fill('#pop-tex', '\\alpha + \\beta = \\delta'); until(page, '(t) => window.rikuy.files.get("main.tex").includes(t)', '$\\alpha + \\beta = \\delta$'); settle(page, 600)
         s = src(page)
         if '$\\alpha + \\beta = \\delta$' not in s: break
         key(page, 'Escape', 300)
@@ -355,9 +360,9 @@ def latex(page):
     load_doc(page, MATH)
     click_text(page, 'gamma.', 6)
     key(page, 'Enter'); key(page, 'Alt+Equal', 600)
-    page.keyboard.type(r'\begin{', delay=15); page.wait_for_timeout(200)
+    page.keyboard.type(r'\begin{', delay=15); settle(page, 200)
     check('latex: \\begin{ moves on to the LaTeX box', active(page) == 'pop-tex', active(page))
-    page.keyboard.type(r'aligned}a&=b\\c&=d\end{aligned}', delay=10); page.wait_for_timeout(300)
+    page.keyboard.type(r'aligned}a&=b\\c&=d\end{aligned}', delay=10); settle(page, 300)
     # (review N2) a box the field handed over to keeps the field's keys: Enter is done
     key(page, 'Enter', 400); typed(page, ' Next words.')
     s = src(page)
@@ -368,15 +373,15 @@ def latex(page):
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
         key(page, 'Enter'); key(page, 'Alt+Equal', 600)
-        page.keyboard.type('x=1\\text{', delay=15); page.wait_for_timeout(200)
-        cdp.send('Input.imeSetComposition', {'text': 'ひ', 'selectionStart': 1, 'selectionEnd': 1}); page.wait_for_timeout(150); cdp.send('Input.insertText', {'text': '日本'})
-        page.wait_for_timeout(250); page.keyboard.type('}+y', delay=15); page.wait_for_timeout(300)
+        page.keyboard.type('x=1\\text{', delay=15); settle(page, 200, full=True)
+        cdp.send('Input.imeSetComposition', {'text': 'ひ', 'selectionStart': 1, 'selectionEnd': 1}); settle(page, 150); cdp.send('Input.insertText', {'text': '日本'})
+        settle(page, 250); page.keyboard.type('}+y', delay=15); settle(page, 300)
         key(page, how, 400)
         if how == 'Enter':
             typed(page, ' Next words.'); s = src(page)
             check('latex: after an input method in \\text{, Enter finishes the display', '\\text{日本}+y' in s and s.find('Next words.') > s.find('\\end{equation}') > 0 and active(page) == 'pages', (s[60:220], active(page)))
         else:
-            page.keyboard.type('z=2', delay=15); page.wait_for_timeout(300); key(page, 'Enter', 400); s = src(page)
+            page.keyboard.type('z=2', delay=15); settle(page, 300); key(page, 'Enter', 400); s = src(page)
             check('latex: and Ctrl+Enter there a new row, the display made one of rows', '\\begin{align}' in s and '+y \\\\' in s and 'z=2' in s and active(page) == 'pages', (s[60:240], active(page)))
     # (review N1) a chord with \text{ or \mathbb{ open ends the argument first; the field's own
     # insertion is never taken for typing
@@ -385,12 +390,12 @@ def latex(page):
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
         key(page, 'Enter'); key(page, 'Alt+Equal', 600)
-        page.keyboard.type(keys, delay=15); page.wait_for_timeout(200)
-        key(page, 'Control+Enter', 400); page.wait_for_timeout(300)
+        page.keyboard.type(keys, delay=15); settle(page, 200)
+        key(page, 'Control+Enter', 400); settle(page, 300)
         s = src(page)
         check('latex: Ctrl+Enter in ' + want[:-2] + '…} ends it, nothing else written', want in s and 'insertText' not in s, s[60:220])
         # (verification of eb14945, V5) and adds the row, as without the argument open
-        page.keyboard.type('z=2', delay=15); page.wait_for_timeout(300); key(page, 'Enter', 400)
+        page.keyboard.type('z=2', delay=15); settle(page, 300); key(page, 'Enter', 400)
         s = src(page); b = ''.join(s[s.find('\\begin{align}'):s.find('\\end{align}')].split())
         check('latex: Ctrl+Enter in ' + want[:-2] + '…} makes a new row, typed on in it', b.startswith('\\begin{align}') and (want + '\\\\z=2') in b, s[60:220])
         # (Enter closed it: an Esc now would be the page's, and its Tab the next part's, leaving the page)
@@ -449,7 +454,7 @@ def pickers(page):
     aria = page.evaluate("""(() => { const i = document.getElementById('pop-refsearch'), l = document.getElementById(i.getAttribute('aria-controls') || '-'), live = l && l.parentElement.querySelector('[aria-live=polite]');
       return [i.getAttribute('role'), l && l.getAttribute('role'), [...l.querySelectorAll('.pitem')].every((o) => o.getAttribute('role') === 'option'), !!document.getElementById(i.getAttribute('aria-activedescendant') || '-'), live && live.textContent]; })()""")
     check('pickers: a combobox, a listbox of options, the highlighted one named, the count said', aria == ['combobox', 'listbox', True, True, '1 match'], aria)
-    page.keyboard.press('Backspace'); page.keyboard.press('Backspace'); page.wait_for_timeout(150)
+    page.keyboard.press('Backspace'); page.keyboard.press('Backspace'); settle(page, 150)
     key(page, 'ArrowDown'); key(page, 'Enter', 400)
     check('pickers: Down, Enter takes the second label and closes the picker', 'See \\eqref{eq:euler}' in src(page) and active(page) == 'pages', (src(page)[src(page).find('See'):][:40], active(page)))
     typed(page, ' XYZ')
@@ -482,7 +487,7 @@ def follow(page):
         if how == 'F12': key(page, 'Shift+ArrowLeft')
         start = caret(page)
         if how == 'F12': key(page, 'F12', 400)
-        else: page.click('#pages .atom >> nth=1', modifiers=['Control']); page.wait_for_timeout(400)
+        else: page.click('#pages .atom >> nth=1', modifiers=['Control']); settle(page, 400)
         c = caret(page)
         check('follow: ' + how + ' on a reference goes to its label', c and there <= c[1] <= there + 60 and src(page) == FOLLOW, (c, start))
         key(page, 'Shift+F5', 300)
@@ -510,7 +515,7 @@ def modes(page):
     load_doc(page, MATH)
     for name in ('Focus', 'Read Mode'):
         click_text(page, 'Next', 2)
-        page.evaluate("window.rikuy.runCommand(%r)" % ('focus' if name == 'Focus' else 'read-mode')); page.wait_for_timeout(700)
+        page.evaluate("window.rikuy.runCommand(%r)" % ('focus' if name == 'Focus' else 'read-mode')); settle(page, 700)
         on = page.evaluate("document.body.classList.contains('focus') || window.rikuy.view === 'pdf'")
         key(page, 'Escape', 800)
         off = page.evaluate("!document.body.classList.contains('focus') && window.rikuy.view !== 'pdf'")
@@ -553,7 +558,7 @@ def palette(page):
     click_text(page, 'gamma', 1); key(page, 'Alt+q', 300)
     rows = page.evaluate("[...document.querySelectorAll('#rk-search-list .srch-opt')].map((o) => o.querySelector('.srch-n').textContent)")
     check('palette: the empty box lists the commands run last, newest first', rows[:2] == ['Italic', 'Bold'], rows)
-    page.keyboard.type('b'); page.wait_for_timeout(200)
+    page.keyboard.type('b'); settle(page, 200)
     first = page.evaluate("(document.querySelector('#rk-search-list .srch-opt .srch-n') || {}).textContent")
     check('palette: a command run lately comes first among matches as good', first == 'Bold', first)
     key(page, 'Escape'); key(page, 'Escape')
@@ -563,7 +568,7 @@ PLAIN = '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\nA
 
 
 def insert_list(page, q, wait=500):
-    typed(page, '\\', 300); page.fill('#pop-cmd', q); page.wait_for_timeout(150); key(page, 'Enter', wait)
+    typed(page, '\\', 300); page.fill('#pop-cmd', q); settle(page, 150); key(page, 'Enter', wait)
 
 
 def insertlist(page):
@@ -636,7 +641,7 @@ def repeat(page):
     n0 = page.evaluate('window.__errs = 0; 0')
     page.evaluate("window.addEventListener('error', () => { window.__errs++; })")
     click_text(page, 'gamma.', 6); key(page, 'Enter'); key(page, 'Alt+q', 300)
-    page.keyboard.type('theorem', delay=30); page.wait_for_timeout(300)
+    page.keyboard.type('theorem', delay=30); settle(page, 300)
     check('repeat: the search box throws nothing for a blank paragraph gone since', page.evaluate('window.__errs') == 0 and page.evaluate("document.querySelectorAll('#rk-search-list .srch-opt').length") > 0)
     key(page, 'Escape'); key(page, 'Escape')
 
@@ -658,8 +663,10 @@ def quickopen(page):
     c = caret(page)
     check('quickopen: a few letters and Enter put the caret in that file on the page', c and c[0] == 'model.tex' and active(page) == 'pages', (c, active(page)))
     key(page, 'Control+p', 400); typed(page, 'refs'); key(page, 'Enter', 1200)
+    # (the source pane shows it once CodeMirror, fetched the first time the pane opens, has come)
+    until(page, "() => window.rikuy.srcFile === 'refs.bib' && document.body.classList.contains('src-on')", timeout=1200)
     check('quickopen: a file the page does not draw opens in the source pane', page.evaluate('window.rikuy.srcFile') == 'refs.bib' and page.evaluate("document.body.classList.contains('src-on')"), page.evaluate('window.rikuy.srcFile'))
-    page.evaluate('window.rikuy.toggleSource(false)'); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.toggleSource(false)'); settle(page, 300)
     click_text(page, 'Alpha', 0)
     page.evaluate('window.__printed = 0; window.rikuy.pagePrint = () => { window.__printed = 1; }')
     key(page, 'Control+p', 400); key(page, 'Enter', 300)
@@ -689,11 +696,11 @@ BURST = '''([text, gap]) => new Promise((done) => {
 def burst(page):
     D = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dev', 'bench', 'long')
     files = {f: open(os.path.join(D, f)).read() for f in os.listdir(D) if f.endswith(('.tex', '.bib'))}
-    load_doc(page, files); page.wait_for_timeout(800)
+    load_doc(page, files); settle(page, 800)
     # (a phone's speed: a key's build is then far longer than the time between a typist's keys)
     cdp = page.context.new_cdp_session(page); cdp.send('Emulation.setCPUThrottlingRate', {'rate': 4})
     page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')].filter((s) => s.textContent.length > 40); const s = sp[Math.floor(sp.length / 2)]; s.scrollIntoView({ block: 'center' }); const r = document.createRange(); r.setStart(s.firstChild, s.textContent.indexOf('. ') + 1); r.collapse(true); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''')
-    page.wait_for_timeout(300)
+    settle(page, 300)
     before = src(page, files and 'main.tex')
     text = ' so the monday plan works'
     r = page.evaluate(BURST, [text, 5])
@@ -708,22 +715,22 @@ def burst(page):
     page.evaluate('''() => { const g = window.rikuy; g.keyLate = 50; const ev = (ch) => ({ inputType: 'insertText', data: ch, isComposing: false, preventDefault() {}, getTargetRanges: () => [] });
       g.onBeforeInput(ev('x')); g.onBeforeInput(ev('y')); g.onBeforeInput(ev('z'));
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true })); }''')
-    page.wait_for_timeout(100)
+    settle(page, 100)
     check('burst: a key that is no letter writes the letters waiting first', 'xyz' in src(page) and src(page).count('xyz') == 1, None)
     # (review M1) input with no key, Undo from a menu or a gesture, a paste from the Edit menu,
     # comes after the letters waiting: they go in first
     QUEUE = '''(more) => { const g = window.rikuy; g.keyLate = 50; const ev = (ch) => ({ inputType: 'insertText', data: ch, isComposing: false, preventDefault() {}, getTargetRanges: () => [] });
       for (const ch of 'QRS') g.onBeforeInput(ev(ch)); const waiting = g.typeQ; more(g); return waiting; }'''
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     base = src(page)
     waiting = page.evaluate(QUEUE.replace('(more) =>', '() =>').replace('more(g);', "g.onBeforeInput({ inputType: 'historyUndo', preventDefault() {}, getTargetRanges: () => [] });"))
-    page.wait_for_timeout(200)
+    settle(page, 200)
     check('burst: Undo with letters waiting takes back the typing whole, nothing else', bool(waiting) and src(page) == base, (waiting, src(page) == base))
-    page.evaluate('window.rikuy.redo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.redo()'); settle(page, 200)
     check('burst: and Redo gives the typing back once', src(page).count('QRS') == 1, None)
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     page.evaluate(QUEUE.replace('(more) =>', '() =>').replace('more(g);', "const dt = new DataTransfer(); dt.setData('text/plain', 'P'); g.root.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));"))
-    page.wait_for_timeout(200)
+    settle(page, 200)
     check('burst: a paste with letters waiting lands after them', 'QRSP' in src(page), None)
     cdp.send('Emulation.setCPUThrottlingRate', {'rate': 1})
 
@@ -753,47 +760,50 @@ def accept(page):
         w = ' (' + how + ')'
         # (1) a formula typed with the words around it in a new paragraph
         fresh(page); click_text(page, 'ends here.', 10); key(page, 'Enter', 100)
-        typ(page, 'New para $a^2+b^2=c^2$ then text.', how); page.wait_for_timeout(900)
+        typ(page, 'New para $a^2+b^2=c^2$ then text.', how); settle(page, 900)
         s = src(page)
         check('accept: a new paragraph typed at full speed keeps its formula' + w, '\n\nNew para $a^2+b^2=c^2$ then text.\n\n' in s and active(page) == 'pages', (s[s.find('ends'):][:90], active(page)))
         # (2) Ctrl+End from inside a paragraph: the end of the text
-        fresh(page); click_text(page, 'First', 2); key(page, 'Control+End', 100); typ(page, 'ZZ', how); page.wait_for_timeout(400)
+        fresh(page); click_text(page, 'First', 2); key(page, 'Control+End', 100); typ(page, 'ZZ', how); settle(page, 400)
         check('accept: Ctrl+End from inside a paragraph goes to the end of the text' + w, 'Last para.ZZ\n' in src(page), src(page)[-60:])
         # (3) Alt+= on an empty paragraph and LaTeX typed at once: a display, its structure as typed
         fresh(page); click_text(page, 'ends here.', 10); key(page, 'Enter', 100); key(page, 'Alt+Equal', 0)
-        typ(page, FRAC, how); page.wait_for_timeout(400); key(page, 'Enter', 500)
+        # (a font the field's formula brings, KaTeX_Fraktur, lays the page out again 200 ms after it
+        # came, and that relayout drops the line after a display closed meanwhile, the next words
+        # then on \end{equation}'s line: the app's race, reported; here, as before, it comes first)
+        typ(page, FRAC, how); fonts_settled(page); settle(page, 400); key(page, 'Enter', 500)
         s = src(page); i, j = s.find('\\begin{equation}'), s.find('\\end{equation}')
         body = ''.join(s[i + 16:j].split()) if 0 <= i < j else None
         check('accept: Alt+= on an empty paragraph, LaTeX at full speed: a display equation, as typed' + w,
               body in ('\\frac{\\partialu}{\\partialx_{k}}=\\sum_{i=1}^{n}\\alpha_{i}', '\\frac{\\partialu}{\\partialx_k}=\\sum_{i=1}^n\\alpha_i') and '$' not in s, (body, s[s.find('ends'):][:140]))
         # (4) after its Enter, the next words on a line of their own after it, in its paragraph, and
         # no blank line added; a second Enter, a new paragraph
-        typ(page, 'After.', how); page.wait_for_timeout(500)
+        typ(page, 'After.', how); settle(page, 500)
         s = src(page)
         check('accept: after Enter closes the display, what is typed goes on the next line, no blank line added' + w, '\\end{equation}\nAfter.\n\n\\begin{figure}' in s, s[s.find('\\end{equation}'):][:40])
         fresh(page); click_text(page, 'ends here.', 10); key(page, 'Enter', 100); key(page, 'Alt+Equal', 0)
-        typ(page, 'y=1', how); page.wait_for_timeout(400); key(page, 'Enter', 400); key(page, 'Enter', 200); typ(page, 'Para.', how); page.wait_for_timeout(400)
+        typ(page, 'y=1', how); settle(page, 400); key(page, 'Enter', 400); key(page, 'Enter', 200); typ(page, 'Para.', how); settle(page, 400)
         s = src(page)
         check('accept: a second Enter after the display, a new paragraph' + w, '\\end{equation}\n\nPara.\n\n\\begin{figure}' in s, s[s.find('\\end{equation}'):][:40])
         # (5) a formula at a heading's end, Enter, then End, Enter, Q: Q a paragraph after the heading
         for close in ('Enter', 'Escape'):
             fresh(page); click_text(page, 'How to use it', 13); key(page, 'Alt+Equal', 0)
-            typ(page, 'x+y', how); page.wait_for_timeout(400); key(page, close, 400)
-            key(page, 'End', 100); key(page, 'Enter', 100); typ(page, 'Q', how); page.wait_for_timeout(400)
+            typ(page, 'x+y', how); settle(page, 400); key(page, close, 400)
+            key(page, 'End', 100); key(page, 'Enter', 100); typ(page, 'Q', how); settle(page, 400)
             s = src(page)
             check('accept: a heading\'s formula closed by ' + close + ', then End, Enter, Q: Q after the heading' + w, '\\section{How to use it$x+y$}\n\nQ\n\nClick to make it \\textbf{bold} here.' in s and active(page) == 'pages', s[s.find('section'):][:90])
     # a display is never written inside a command's argument: after the heading, inline in a caption
     fresh(page); click_text(page, 'How to use it', 6); insert_list(page, 'equation', 600)
-    typ(page, 'E=mc^2', 'keys'); page.wait_for_timeout(300); key(page, 'Enter', 400)
+    typ(page, 'E=mc^2', 'keys'); settle(page, 300); key(page, 'Enter', 400)
     s = src(page)
     check('accept: an equation asked for in a heading goes after the heading', '\\section{How to use it}' in s and s.find('\\begin{equation}') > s.find('\\section{How to use it}') and 'E=mc^2' in s.replace(' ', ''), s[s.find('section'):][:120])
     fresh(page); click_text(page, 'Results here', 12); insert_list(page, 'equation', 600)
-    typ(page, 'x', 'keys'); page.wait_for_timeout(300); key(page, 'Enter', 400)
+    typ(page, 'x', 'keys'); settle(page, 300); key(page, 'Enter', 400)
     s = src(page)
     check('accept: an equation asked for in a caption is a formula in the line there', '\\caption{Results here$x$}' in s and '\\begin{equation}' not in s, s[s.find('caption'):][:60])
     # a display closed by Esc: the caret after it too; one closed empty goes, leaving no step
     fresh(page); click_text(page, 'ends here.', 10); key(page, 'Enter', 100); key(page, 'Alt+Equal', 400)
-    typ(page, 'y=2', 'keys'); page.wait_for_timeout(300); key(page, 'Escape', 400); typ(page, 'Then.', 'keys'); page.wait_for_timeout(300)
+    typ(page, 'y=2', 'keys'); settle(page, 300); key(page, 'Escape', 400); typ(page, 'Then.', 'keys'); settle(page, 300)
     check('accept: a display closed by Esc, what is typed goes on the next line', '\\end{equation}\nThen.\n\n' in src(page), src(page)[src(page).find('\\end{equation}'):][:30])
     fresh(page); n = page.evaluate('window.rikuy.hist.length')
     click_text(page, 'ends here.', 10); key(page, 'Enter', 100); key(page, 'Alt+Equal', 400); key(page, 'Escape', 400)
@@ -812,8 +822,8 @@ CTX2 = ('\\documentclass{article}\n\\usepackage{amsmath,tabularx,hyperref}\n\\be
 
 def slow(page, text, d=60):
     for ch in text:
-        page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else d)
-    page.wait_for_timeout(300)
+        page.keyboard.type(ch); settle(page, 250 if ch == '$' else d)
+    settle(page, 300)
 
 
 def pairs(page):
@@ -826,7 +836,7 @@ def pairs(page):
         fresh(page, CTX); click_text(page, at, off); slow(page, ' $$x^2$$ z')
         s = src(page)
         check('pairs: $$x^2$$ in ' + at + ' is a formula in the line, every key kept', want in s and '\\$' not in s and '\\[' not in s and active(page) == 'pages', (s[s.find(at.split()[0]) - 20:][:80], active(page)))
-    for ch in '$$': page.keyboard.type(ch); page.wait_for_timeout(250)
+    for ch in '$$': page.keyboard.type(ch); settle(page, 250)
     check('pairs: a $$ typed again after it is a dollar sign, not swallowed', '$x^2$ z\\$' in src(page), src(page)[src(page).find('Cell a'):][:60])
     # (verification of 5446132, W1) \href's text is an argument: a formula in the line; a display
     # in a p{} or X cell or a \parbox takes its second closing $ as one too
@@ -865,10 +875,10 @@ def paste(page):
     a formula, $..$ and $$..$$ alike; where a display cannot go $$..$$ is a formula in the line."""
     for txt, want in ((' costs $5 and $x^2$ here', ' costs \\$5 and $x^2$ here'), (' it costs $5 and $10.', ' it costs \\$5 and \\$10.'),
                       (' so $$x$$ and $y$ ok', ' so\n\\[\nx\n\\]\nand $y$ ok')):
-        fresh(page, CTX); click_text(page, 'Price text', 10); page.evaluate(PASTE, txt); page.wait_for_timeout(400)
+        fresh(page, CTX); click_text(page, 'Price text', 10); page.evaluate(PASTE, txt); settle(page, 400)
         s = src(page)
         check('paste: ' + repr(txt.strip()), 'Price text' + want + '.' in s, s[s.find('Price'):][:70])
-    fresh(page, CTX); click_text(page, 'Cap text', 8); page.evaluate(PASTE, ' then $$x$$ and $y$'); page.wait_for_timeout(400)
+    fresh(page, CTX); click_text(page, 'Cap text', 8); page.evaluate(PASTE, ' then $$x$$ and $y$'); settle(page, 400)
     s = src(page)
     check('paste: $$x$$ into a caption is a formula in the line', '\\caption{Cap text then $x$ and $y$.}' in s, s[s.find('caption'):][:60])
 

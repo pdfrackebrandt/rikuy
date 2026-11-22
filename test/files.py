@@ -5,7 +5,7 @@ Names in a zip that would leave the project are left out; a file that cannot be 
 page still opens and says the work is not kept."""
 import os, sys, io, zipfile, tempfile, traceback
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import open_page, check, results, src, click_text, download
+from browser import until, settle, open_page, check, results, src, click_text, download
 from playwright.sync_api import sync_playwright
 
 TMP = os.environ.get('TMPDIR_RIKUY', os.path.join(tempfile.gettempdir(), 'rikuy-files'))
@@ -29,6 +29,11 @@ with zipfile.ZipFile(zpath, 'w') as z:
     for n, b in files.items():
         z.writestr(n, b)
 
+def unstamped(link):
+    """A project's mark without the time and the id it was made with, which are the run's own."""
+    return {k: v for k, v in link.items() if k not in ('t', 'id')} if isinstance(link, dict) else link
+
+
 def saved(page):
     with page.expect_download() as d:
         download(page)
@@ -44,6 +49,8 @@ def saved(page):
 # .zip opened again (review I1, I2). The TeX worker is a stand-in that notes what it was asked.
 EVIL = '\\documentclass{article}\n\\begin{document}\n\\immediate\\write18{echo pwned > /tmp/x}\nEvil.\n\\end{document}\n'
 MINE = '\\documentclass{article}\n\\begin{document}\nMine.\n\\end{document}\n'
+# the page's messages as they come, each step's own (a later one may cover it on the screen)
+SAID = """() => { const g = window.rikuy; if (!g.__said) { g.__said = []; const t = g.toast; g.toast = function (...a) { g.__said.push(String(a[0])); return t.apply(this, a); }; } g.__said.length = 0; }"""
 STUB = """() => { const g = window.rikuy; window.__se = []; g.texEngine = () => ({ info: { v: 1, packs: 0 }, compile: async (o) => { window.__se.push({ shellEscape: o.shellEscape, untrusted: o.untrusted }); return { ok: false, runs: [], log: '', problems: [] }; } }); }"""
 # what the open project's compile is sent, its mark and its key
 FLAGS = """async () => { const g = window.rikuy; const li = await g.linkInfo(); window.__se = []; try { await g.compilePdf({}); } catch (e) {}
@@ -60,10 +67,16 @@ def marks():
         def put(name, data, main):
             path = os.path.join(TMP, name)
             open(path, 'wb').write(data)
+            page.evaluate(SAID)
             page.set_input_files('#fileinput', path)
             page.wait_for_function('(m) => window.rikuy.main === m && window.rikuy.files.has(m)', arg=main, timeout=10000)
-            page.wait_for_timeout(500)
-            said = page.inner_text('#toast')
+            # (the open's last step is its message, after what it keeps in this browser; what it says
+            # is that message and those before it: a message after it answers a write of its own, as
+            # another tab's copy found in storage, which one that is depends on when the test's other
+            # tab, closed a moment before, finished its last save)
+            until(page, "() => window.rikuy.__said.some((t) => t.startsWith('Opened '))")
+            said = page.evaluate("() => { const s = window.rikuy.__said, k = s.findIndex((t) => t.startsWith('Opened ')); return s.slice(0, k + 1).join(' | '); }")
+            settle(page, 500)
             return {**page.evaluate(FLAGS), 'said': said}
         def openv(name, main):
             return page.evaluate("""async ([n, m]) => { const g = window.rikuy; const v = (await g.allSnaps()).find((x) => x.name === n && x.main === m); if (!v) return 'no version';
@@ -80,7 +93,7 @@ def marks():
         page.wait_for_function("window.rikuy.main === 'talk/evil.tex'", timeout=5000)
         f = page.evaluate(FLAGS)
         check('marks: File, Main document keeps the restriction kept under the other document', f['key'] == 'notes|talk/evil.tex' and restricted(f), f)
-        page.evaluate('window.rikuy.newDocument()'); page.wait_for_timeout(600)
+        page.evaluate('window.rikuy.newDocument()'); settle(page, 600)
         openv('notes', 'notes.tex')
         f = page.evaluate(FLAGS)
         check('marks: one\'s own version under its own main file is still one\'s own', f['key'] == 'notes|notes.tex' and full(f), f)
@@ -88,12 +101,12 @@ def marks():
         openv('notes', 'talk/evil.tex')
         f = page.evaluate(FLAGS)
         check('marks: opening the version under the other main file keeps its restriction (review I1, repro A)', f['key'] == 'notes|talk/evil.tex' and restricted(f), f)
-        page.reload(); page.wait_for_function('window.rikuy && window.rikuy.model', timeout=20000); page.wait_for_timeout(500); page.evaluate(STUB)
+        page.reload(); page.wait_for_function('window.rikuy && window.rikuy.model', timeout=20000); settle(page, 500); page.evaluate(STUB)
         f = page.evaluate(FLAGS)
         check('marks: and after a reload', f['key'] == 'notes|talk/evil.tex' and restricted(f), f)
         # an Allow given here never lifts a restriction kept there
         f = put('draft.zip', zipped({'main.tex': MINE}), 'main.tex')
-        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        page.evaluate('window.rikuy.allowShellHere()'); settle(page, 200)
         f = page.evaluate(FLAGS)
         check('marks: a .zip allowed compiles with full shell escape', f['key'] == 'draft|main.tex' and f['mark'] == {'origin': 'zip', 'allowed': True} and f['se'] is True and f['untrusted'] is False, f)
         page.evaluate(stale, ['draft', 'evil.tex'])
@@ -101,7 +114,7 @@ def marks():
         page.wait_for_function("window.rikuy.main === 'evil.tex'", timeout=5000)
         f = page.evaluate(FLAGS)
         check('marks: File, Main document carries no Allow over a restriction kept there', f['key'] == 'draft|evil.tex' and restricted(f), f)
-        page.evaluate('window.rikuy.newDocument()'); page.wait_for_timeout(600)
+        page.evaluate('window.rikuy.newDocument()'); settle(page, 600)
         openv('draft', 'main.tex')
         page.evaluate(stale, ['draft', 'evil.tex'])
         openv('draft', 'evil.tex')
@@ -113,24 +126,24 @@ def marks():
         check('marks: a stranger\'s thesis.zip opens as a project of its own beside one\'s thesis, restricted', f['key'] == 'thesis|thesis.tex' and full(f) and z['key'] == 'thesis (2)|talk/evil.tex' and restricted(z)
               and 'This browser keeps a project named thesis, so this one is thesis (2).' in z['said'], (f, z))
         f = put('paper.zip', zipped({'main.tex': MINE}), 'main.tex')
-        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        page.evaluate('window.rikuy.allowShellHere()'); settle(page, 200)
         z = put('paper.zip', zipped({'evil.tex': EVIL}), 'evil.tex')
         check('marks: a second paper.zip opens as paper (2), restricted, the first one\'s Allow untouched', f['key'] == 'paper|main.tex' and z['key'] == 'paper (2)|evil.tex' and restricted(z)
               and page.evaluate("async () => (await window.rikuy.markOf('paper', 'main.tex')).allowed") is True, z)
         z = put('thesis|talk.zip', zipped({'main.tex': EVIL}), 'main.tex')
         check('marks: a .zip\'s name with a | in it (records are kept under name|main) opens with a space there', z['key'] == 'thesis talk|main.tex' and restricted(z), z)
         # git: a pull, or a branch, without the main file
-        page.evaluate("async (fs) => { const g = window.rikuy; await g.openRepoFiles('repo', new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)]))); }", [['main.tex', MINE]]); page.wait_for_timeout(400)
+        page.evaluate("async (fs) => { const g = window.rikuy; await g.openRepoFiles('repo', new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)]))); }", [['main.tex', MINE]]); settle(page, 400)
         f = page.evaluate(FLAGS)
         check('marks: a cloned repository is restricted', f['key'] == 'repo|main.tex' and restricted(f), f)
         def git(label, fs):
-            page.evaluate("async ([l, fs]) => { const g = window.rikuy; await g.loadGitFiles(new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)])), l); }", [label, fs]); page.wait_for_timeout(400)
+            page.evaluate("async ([l, fs]) => { const g = window.rikuy; await g.loadGitFiles(new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)])), l); }", [label, fs]); settle(page, 400)
             return page.evaluate(FLAGS)
         f = git('Pulled', [['paper.tex', EVIL]])
         check('marks: a pull that renamed main.tex keeps the restriction (review I2)', f['key'] == 'repo|paper.tex' and restricted(f), f)
         f = git('Switched to dev', [['a.tex', MINE], ['b.tex', EVIL], ['latexmkrc', "@default_files = ('b.tex');\n"]])
         check('marks: a branch whose latexmkrc names another document keeps it too', f['key'] == 'repo|b.tex' and restricted(f), f)
-        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        page.evaluate('window.rikuy.allowShellHere()'); settle(page, 200)
         page.evaluate("window.rikuy.markFromLink('', 'repo', 'c.tex', 'git')")
         f = git('Pulled', [['c.tex', EVIL]])
         check('marks: an Allow given here never lifts a restriction kept under the pull\'s main file', f['key'] == 'repo|c.tex' and restricted(f), f)
@@ -138,15 +151,15 @@ def marks():
         put('essay.tex', MINE.encode(), 'essay.tex')
         n = page.evaluate("async () => window.rikuy.cloneName ? [await window.rikuy.cloneName('https://github.com/x/essay.git'), await window.rikuy.cloneName('https://github.com/x/fresh|repo')] : null")
         check('marks: a clone beside one\'s own essay gets a name of its own (V1)', n == ['essay (2)', 'fresh repo'], n)
-        page.evaluate("(t) => window.rikuy.openWordProject({ tex: t }, 'essay.docx')", EVIL); page.wait_for_timeout(500)
+        page.evaluate("(t) => window.rikuy.openWordProject({ tex: t }, 'essay.docx')", EVIL); settle(page, 500)
         f = page.evaluate(FLAGS)
         check('marks: so does a Word file (V1)', f['key'] == 'essay (2)|main.tex' and restricted(f), f)
         # V1: a clone kept under the name of one's own project (as clones were named before): an Allow
         # given to one's own document there never reaches the clone
-        page.evaluate("(fs) => window.rikuy.loadProject(new Map(fs), 'essay.tex', 'essay', 'Opened')", [['essay.tex', MINE], ['talk/slides.tex', MINE.replace('Mine', 'My talk')]]); page.wait_for_timeout(300)
-        page.evaluate("async (fs) => { await window.rikuy.openRepoFiles('essay', new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)]))); }", [['talk/slides.tex', EVIL]]); page.wait_for_timeout(400)
+        page.evaluate("(fs) => window.rikuy.loadProject(new Map(fs), 'essay.tex', 'essay', 'Opened')", [['essay.tex', MINE], ['talk/slides.tex', MINE.replace('Mine', 'My talk')]]); settle(page, 300)
+        page.evaluate("async (fs) => { await window.rikuy.openRepoFiles('essay', new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)]))); }", [['talk/slides.tex', EVIL]]); settle(page, 400)
         openv('essay', 'essay.tex')
-        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        page.evaluate('window.rikuy.allowShellHere()'); settle(page, 200)
         own = page.evaluate(FLAGS)
         openv('essay', 'talk/slides.tex')
         f = page.evaluate(FLAGS)
@@ -157,22 +170,22 @@ def marks():
         page.evaluate("window.rikuy.runCommand('main-document', 'd.tex')"); page.wait_for_function("window.rikuy.main === 'd.tex'", timeout=5000)
         page.evaluate("window.rikuy.runCommand('main-document', 'main.tex')"); page.wait_for_function("window.rikuy.main === 'main.tex'", timeout=5000)
         page.evaluate("() => { const g = window.rikuy; g.markFromLink('', g.name, 'b.tex', 'git'); g.linkCache.set(g.name + '|c.tex', { by: '', t: 0, allowed: false, origin: 'zip' }); }")
-        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        page.evaluate('window.rikuy.allowShellHere()'); settle(page, 200)
         a = page.evaluate("async () => { const g = window.rikuy; const r = []; for (const m of ['main.tex', 'b.tex', 'c.tex', 'd.tex']) { const v = await g.markOf(g.name, m); r.push(v && v.allowed); } return r; }")
         check('marks: Allow lifts the same import\'s marks only, not another import\'s or one without an id', a == [True, False, False, True], a)
         # V2: two tabs on one project; an archive dropped into it in the other tab marks it there, and
         # this tab, bringing in that tab's text, compiles restricted too
         PAPER = '\\documentclass{article}\n\\usepackage{defs}\n\\begin{document}\nMine.\n\\end{document}\n'
-        page.evaluate("(fs) => { window.rikuy.loadProject(new Map(fs), 'paper.tex', 'tabs', 'Opened'); window.rikuy.persist(); }", [['paper.tex', PAPER], ['defs.sty', '\\ProvidesPackage{defs}\n']]); page.wait_for_timeout(600)
+        page.evaluate("(fs) => { window.rikuy.loadProject(new Map(fs), 'paper.tex', 'tabs', 'Opened'); window.rikuy.persist(); }", [['paper.tex', PAPER], ['defs.sty', '\\ProvidesPackage{defs}\n']]); settle(page, 600)
         one = page.evaluate(FLAGS)
         page2 = page.context.new_page()
-        page2.goto(page.url); page2.wait_for_function('window.rikuy && window.rikuy.model', timeout=30000); page2.wait_for_timeout(800); page2.evaluate(STUB)
+        page2.goto(page.url); page2.wait_for_function('window.rikuy && window.rikuy.model', timeout=30000); settle(page2, 800); page2.evaluate(STUB)
         path = os.path.join(TMP, 'defs.zip'); open(path, 'wb').write(zipped({'defs.sty': '\\ProvidesPackage{defs}\n\\immediate\\write18{echo pwned}\n'}))
         page2.set_input_files('#fileinput', path)
-        page2.wait_for_function("() => (window.rikuy.files.get('defs.sty') || '').includes('write18')", timeout=10000); page2.wait_for_timeout(300)
-        page2.evaluate('window.rikuy.persist()'); page2.wait_for_timeout(500)
+        page2.wait_for_function("() => (window.rikuy.files.get('defs.sty') || '').includes('write18')", timeout=10000); settle(page2, 300)
+        page2.evaluate('window.rikuy.persist()'); settle(page2, 500)
         two = page2.evaluate(FLAGS)
-        page.bring_to_front(); page.evaluate('window.rikuy.adoptOtherTab()'); page.wait_for_timeout(600)
+        page.bring_to_front(); page.evaluate('window.rikuy.adoptOtherTab()'); settle(page, 600)
         f = page.evaluate(FLAGS)
         check('marks: a tab that brings in another tab\'s archive compiles restricted, as that tab does (V2)', one['key'] == 'tabs|paper.tex' and full(one) and restricted(two)
               and 'write18' in page.evaluate("window.rikuy.files.get('defs.sty')") and restricted(f), (one, two, f))
@@ -182,8 +195,8 @@ def marks():
         page.evaluate("""(fs) => window.rikuy.openLinked({ v: 1, name: 'Duo', main: 'main.tex', by: 'Ana', base: 'b0', role: 'coauthor', files: fs })""", [['main.tex', MINE], ['talk/slides.tex', MINE.replace('Mine', 'Talk')]])
         page.wait_for_function("window.rikuy.name === 'Duo' && document.body.classList.contains('guest')", timeout=5000)
         page.evaluate("window.rikuy.runCommand('main-document', 'talk/slides.tex')")
-        page.wait_for_function("window.rikuy.main === 'talk/slides.tex'", timeout=5000); page.wait_for_timeout(300)
-        page.reload(); page.wait_for_function('window.rikuy && window.rikuy.model', timeout=20000); page.wait_for_timeout(800); page.evaluate(STUB)
+        page.wait_for_function("window.rikuy.main === 'talk/slides.tex'", timeout=5000); settle(page, 300)
+        page.reload(); page.wait_for_function('window.rikuy && window.rikuy.model', timeout=20000); settle(page, 800); page.evaluate(STUB)
         g = page.evaluate("({ key: window.rikuy.name + '|' + window.rikuy.main, guest: document.body.classList.contains('guest'), ctx: window.rikuy.shareCtx && [window.rikuy.shareCtx.by, window.rikuy.shareCtx.main] })")
         check('marks: a guest who changes the main document is still the guest of the link after a reload', g == {'key': 'Duo|talk/slides.tex', 'guest': True, 'ctx': ['Ana', 'talk/slides.tex']}, g)
         # the shell escape mode is part of what a PDF was made from, as the engine is (N3): after
@@ -195,18 +208,18 @@ def marks():
         check('marks: after Allow with the preview closed, the restricted PDF is stale: api.compile compiles again, with shell escape', r['was'] is False and r['stale'] is True and r['same'] is False and r['sent'] and all(r['sent']), r)
         # a pull or a branch that brings other TeX files takes an Allow back, as an archive dropped in
         # does; one that changes pictures only does not
-        page.evaluate("async (fs) => { await window.rikuy.openRepoFiles('pullrepo', new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)]))); }", [['main.tex', MINE]]); page.wait_for_timeout(300)
-        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        page.evaluate("async (fs) => { await window.rikuy.openRepoFiles('pullrepo', new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)]))); }", [['main.tex', MINE]]); settle(page, 300)
+        page.evaluate('window.rikuy.allowShellHere()'); settle(page, 200)
         pics = git('Pulled', [['main.tex', MINE], ['fig.png', 'x']])
         sty = page.evaluate("async ([l, fs]) => window.rikuy.loadGitFiles(new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)])), l)", ['Pulled', [['main.tex', MINE], ['fig.png', 'x'], ['x.sty', EVIL]]])
         f = page.evaluate(FLAGS)
-        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        page.evaluate('window.rikuy.allowShellHere()'); settle(page, 200)
         r = git('Switched to dev', [['paper.tex', MINE], ['fig.png', 'x'], ['x.sty', EVIL]])
         check('marks: a pull that changes pictures only keeps an Allow; one that adds a .sty, or a branch that renames main.tex, takes it back', pics['se'] is True and pics['mark']['allowed'] is True
               and 'restricted again' in (sty or '') and restricted(f) and r['key'] == 'pullrepo|paper.tex' and restricted(r), (pics, sty, f, r))
         # X1: a file outside TeX's text kinds (run.py) changed to other bytes of the same size takes it back too
-        page.evaluate("async (fs) => { await window.rikuy.openRepoFiles('pyrepo', new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)]))); }", [['main.tex', MINE], ['run.py', 'print("hello")\n']]); page.wait_for_timeout(300)
-        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        page.evaluate("async (fs) => { await window.rikuy.openRepoFiles('pyrepo', new Map(fs.map(([n, t]) => [n, new TextEncoder().encode(t)]))); }", [['main.tex', MINE], ['run.py', 'print("hello")\n']]); settle(page, 300)
+        page.evaluate('window.rikuy.allowShellHere()'); settle(page, 200)
         same = git('Pulled', [['main.tex', MINE], ['run.py', 'print("hello")\n']])
         f = git('Pulled', [['main.tex', MINE], ['run.py', 'import os;os.E\n']])
         check('marks: a pull that changes run.py to other bytes of the same size takes the Allow back (X1)', same['se'] is True and same['mark']['allowed'] is True and restricted(f), (same, f))
@@ -214,23 +227,23 @@ def marks():
         # still shows the text from before, is refused, and A compiles restricted
         PAPER = '\\documentclass{article}\n\\usepackage{defs}\n\\begin{document}\nTheirs.\n\\end{document}\n'
         put('proj.zip', zipped({'main.tex': PAPER, 'defs.sty': '\\ProvidesPackage{defs}\n'}), 'main.tex')
-        page.evaluate('window.rikuy.persist()'); page.wait_for_timeout(400)
+        page.evaluate('window.rikuy.persist()'); settle(page, 400)
         page2 = page.context.new_page()
-        page2.goto(page.url); page2.wait_for_function('window.rikuy && window.rikuy.model', timeout=30000); page2.wait_for_timeout(800); page2.evaluate(STUB)
+        page2.goto(page.url); page2.wait_for_function('window.rikuy && window.rikuy.model', timeout=30000); settle(page2, 800); page2.evaluate(STUB)
         b0 = page2.evaluate(FLAGS)
         path = os.path.join(TMP, 'defs.zip'); open(path, 'wb').write(zipped({'defs.sty': '\\ProvidesPackage{defs}\n\\immediate\\write18{echo pwned}\n'}))
         page.bring_to_front(); page.set_input_files('#fileinput', path)
-        page.wait_for_function("() => (window.rikuy.files.get('defs.sty') || '').includes('write18')", timeout=10000); page.wait_for_timeout(300)
-        page.evaluate('window.rikuy.persist()'); page.wait_for_timeout(400)
+        page.wait_for_function("() => (window.rikuy.files.get('defs.sty') || '').includes('write18')", timeout=10000); settle(page, 300)
+        page.evaluate('window.rikuy.persist()'); settle(page, 400)
         page2.bring_to_front()
-        page2.evaluate("document.getElementById('toast').hidden = true; window.rikuy.allowShellHere()"); page2.wait_for_timeout(400)
+        page2.evaluate("document.getElementById('toast').hidden = true; window.rikuy.allowShellHere()"); settle(page2, 400)
         said = page2.inner_text('#toast') if page2.is_visible('#toast') else ''
         page.bring_to_front()
         a = page.evaluate(FLAGS)
         check('marks: Allow in a tab showing the text from before another tab\'s archive is refused, and that tab compiles restricted (W2)', b0['key'] == 'proj|main.tex' and restricted(b0)
               and 'changed in another tab' in said and restricted(a) and 'write18' in page.evaluate("window.rikuy.files.get('defs.sty')"), (b0, said[:120], a))
-        page2.bring_to_front(); page2.evaluate('window.rikuy.adoptOtherTab()'); page2.wait_for_timeout(500)
-        page2.evaluate('window.rikuy.allowShellHere()'); page2.wait_for_timeout(300)
+        page2.bring_to_front(); page2.evaluate('window.rikuy.adoptOtherTab()'); settle(page2, 500)
+        page2.evaluate('window.rikuy.allowShellHere()'); settle(page2, 300)
         b1 = page2.evaluate(FLAGS)
         page.bring_to_front()
         a = page.evaluate(FLAGS)
@@ -239,15 +252,15 @@ def marks():
         # X2: the same with typing in B that is not saved yet, so B brings in nothing: B compiles
         # (restricted), and its Allow is still refused; storage keeps the restriction for A's archive
         put('proj2.zip', zipped({'main.tex': PAPER, 'defs.sty': '\\ProvidesPackage{defs}\n'}), 'main.tex')
-        page.evaluate('window.rikuy.persist()'); page.wait_for_timeout(400)
+        page.evaluate('window.rikuy.persist()'); settle(page, 400)
         page2 = page.context.new_page()
-        page2.goto(page.url); page2.wait_for_function('window.rikuy && window.rikuy.model', timeout=30000); page2.wait_for_timeout(800); page2.evaluate(STUB)
+        page2.goto(page.url); page2.wait_for_function('window.rikuy && window.rikuy.model', timeout=30000); settle(page2, 800); page2.evaluate(STUB)
         page.bring_to_front(); page.set_input_files('#fileinput', path)
-        page.wait_for_function("() => (window.rikuy.files.get('defs.sty') || '').includes('write18')", timeout=10000); page.wait_for_timeout(300)
-        page.evaluate('window.rikuy.persist()'); page.wait_for_timeout(400)
-        page2.bring_to_front(); page2.evaluate('window.rikuy.unsaved = true'); page2.evaluate('window.rikuy.adoptOtherTab()'); page2.wait_for_timeout(300)
+        page.wait_for_function("() => (window.rikuy.files.get('defs.sty') || '').includes('write18')", timeout=10000); settle(page, 300)
+        page.evaluate('window.rikuy.persist()'); settle(page, 400)
+        page2.bring_to_front(); page2.evaluate('window.rikuy.unsaved = true'); page2.evaluate('window.rikuy.adoptOtherTab()'); settle(page2, 300)
         b = page2.evaluate(FLAGS)
-        page2.evaluate("document.getElementById('toast').hidden = true; window.rikuy.allowShellHere()"); page2.wait_for_timeout(400)
+        page2.evaluate("document.getElementById('toast').hidden = true; window.rikuy.allowShellHere()"); settle(page2, 400)
         said = page2.inner_text('#toast') if page2.is_visible('#toast') else ''
         stored = page2.evaluate("""() => new Promise((res) => { const r = indexedDB.open('galley'); r.onsuccess = () => { const q = r.result.transaction('kv').objectStore('kv').get('link:proj2|main.tex'); q.onsuccess = () => { res(q.result ? q.result.allowed : null); r.result.close(); }; }; })""")
         check('marks: a tab that compiled but did not bring in the other tab\'s text still has its Allow refused (X2)', restricted(b) and 'write18' not in page2.evaluate("window.rikuy.files.get('defs.sty')")
@@ -259,7 +272,7 @@ def marks():
         f = put('evil.zip', zipped({'main.tex': EVIL}), 'main.tex')
         msgs = page.evaluate("window.rikuy.texIssues.map((x) => x.msg).join(' ')")
         check('marks: a mark storage refused is kept by the tab: restricted, and Problems says it was not kept (W1)', f['key'] == 'evil|main.tex' and restricted(f) and 'did not keep' in msgs, (f, msgs[:300]))
-        page.evaluate("""() => new Promise((r) => { const q = indexedDB.deleteDatabase('galley'); q.onsuccess = q.onerror = q.onblocked = () => r(); setTimeout(r, 3000); })"""); page.wait_for_timeout(500)
+        page.evaluate("""() => new Promise((r) => { const q = indexedDB.deleteDatabase('galley'); q.onsuccess = q.onerror = q.onblocked = () => r(); setTimeout(r, 3000); })"""); settle(page, 500)
         f = page.evaluate(FLAGS)
         check('marks: and after another tab deleted the database (W1)', f['key'] == 'evil|main.tex' and restricted(f), f)
         check('no page errors (marks)', not [e for e in errors if 'QuotaExceeded' not in e and 'full' not in e], errors[:5])
@@ -281,7 +294,7 @@ try:
         check('the Open dialog offers EPS figures', '.eps' in page.get_attribute('#fileinput', 'accept').split(','))
         page.set_input_files('#fileinput', zpath)
         page.wait_for_function("window.rikuy.main === 'main.tex' && window.rikuy.files.has('sec/intro.tex')", timeout=10000)
-        page.wait_for_timeout(600)
+        settle(page, 600)
         check('latin-1 file decodes', '\u00fc' in src(page), src(page)[:120])
         # a .zip is content from someone else, like a share link: it compiles with restricted
         # shell escape (the worker runs only TeX Live's safe programs) until the owner allows more
@@ -311,17 +324,17 @@ try:
         # edit main.tex on the page
         click_text(page, 'Hannover', 8)
         page.keyboard.type(' und Oxford')
-        page.wait_for_timeout(400)
+        settle(page, 400)
         check('edit marks the zip as out of date', page.evaluate("document.body.classList.contains('zip-dirty')"))
         out2 = saved(page)
         want = main.replace('Hannover', 'Hannover und Oxford').encode('latin-1')
         check('edited file keeps its Latin-1 encoding and CRLF', out2['main.tex'] == want, out2['main.tex'][:120])
         check('other files still identical after an edit', all(out2[n[len('paper/'):]] == b for n, b in files.items() if not n.endswith('main.tex')))
         # reload: text and binary files come back from this browser
-        page.wait_for_timeout(1200)
+        settle(page, 1200)
         page.reload()
         page.wait_for_function('window.rikuy && document.getElementById("boot").hidden', timeout=20000)
-        page.wait_for_timeout(500)
+        settle(page, 500)
         check('project survives a reload', 'und Oxford' in src(page) and page.evaluate("window.rikuy.extra.has('data.csv') && window.rikuy.assetBlobs.has('fig.png')"))
         check('image still shows after reload', page.evaluate("[...document.querySelectorAll('#pages img')].some(i => i.complete && i.naturalWidth > 0)"))
         out3 = saved(page)
@@ -338,7 +351,7 @@ try:
             z.writestr('win\\path.tex', 'kept, as win/path.tex')
         page.set_input_files('#fileinput', hpath)
         page.wait_for_function("window.rikuy.name === 'hostile'", timeout=10000)
-        page.wait_for_timeout(300)
+        settle(page, 300)
         names = sorted(page.evaluate('[...window.rikuy.files.keys(), ...window.rikuy.extra.keys()]'))
         check('no name from a zip leaves the project', names == ['abs/inside.tex', 'escape.tex', 'main.tex', 'win/path.tex'], names)
         check('and the user is told what was left out', 'Left out 1 file' in page.inner_text('#toast'), page.inner_text('#toast')[:160])
@@ -360,9 +373,7 @@ try:
         def drop(*fs):
             page.evaluate('document.getElementById("toast").hidden = true')
             page.evaluate(DROP, [[n, b64(b)] for n, b in fs])
-            for _ in range(40):
-                page.wait_for_timeout(100)
-                if page.is_visible('#toast'): break
+            until(page, "() => { const t = document.getElementById('toast'); return !!t && t.checkVisibility(); }", timeout=4000)
             return page.inner_text('#toast')
 
         def untouched():
@@ -382,7 +393,7 @@ try:
         check('beside a file that opens, the refused one is still named', 'Added more.bib' in toast and 'notes.rtf was not opened' in toast and page.evaluate('window.rikuy.files.has("more.bib")'), toast)
         toast = drop(('paper.pdf', b'%PDF-1.4\n%%EOF\n'))
         check('a PDF dropped alone joins as a figure, placed in the text, and the message says it cannot be edited', 'as a figure' in toast and 'cannot be opened for editing' in toast and '\\includegraphics[width=0.8\\linewidth]{paper.pdf}' in page.evaluate('window.rikuy.files.get("main.tex")'), toast)
-        page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+        page.keyboard.press('Control+z'); settle(page, 200)
         # a picture's name comes from outside: in the source it is letters, digits, dot, dash and
         # underscore, and the figure goes after the heading it was dropped on, not into its braces
         before = page.evaluate('window.rikuy.files.get("main.tex")')
@@ -396,7 +407,7 @@ try:
         import re as _re
         check('a dropped picture is kept under a name of letters, digits, dot, dash and underscore', len(names) == 1 and _re.fullmatch(r'[A-Za-z0-9_-]+\.png', names[0]), names)
         check('and placed after the heading it was dropped on, under that name', names and '\\section{How to use it}\n\n\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{%s}\n\\end{center}\n' % names[0] in after and after.count('\\end{document}') == 1 and after.count('%50') == 0, after[after.find('\\section{How'):][:200])
-        page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+        page.keyboard.press('Control+z'); settle(page, 200)
         check('one undo takes it out of the text again', page.evaluate('window.rikuy.files.get("main.tex")') == before)
         toast = drop(('art.svg', b'<svg xmlns="http://www.w3.org/2000/svg"/>'))
         check('a picture TeX cannot include as it is (SVG) joins the project and is not written into the text', 'Added art.svg' in toast and 'placed' not in toast and page.evaluate('window.rikuy.files.get("main.tex")') == before, toast)
@@ -404,66 +415,71 @@ try:
         # picture the project has: each keeps a name of its own, and no bytes are replaced
         BYTES = '(n) => window.rikuy.assetBlobs.get(n) ? window.rikuy.assetBlobs.get(n).arrayBuffer().then((b) => b.byteLength) : -1'
         click_text(page, 'References follow')
-        drop(('\u56fe\u4e00.png', PNG)); page.wait_for_timeout(300)
-        drop(('\u56fe\u4e8c.png', PNG + b'\0\0\0')); page.wait_for_timeout(300)
+        drop(('\u56fe\u4e00.png', PNG)); settle(page, 300)
+        drop(('\u56fe\u4e8c.png', PNG + b'\0\0\0')); settle(page, 300)
         s = page.evaluate('window.rikuy.files.get("main.tex")')
-        check('two pictures with names of no Latin letters are two files and two figures', page.evaluate(BYTES, 'figure.png') == len(PNG) and page.evaluate(BYTES, 'figure-2.png') == len(PNG) + 3 and '{figure.png}' in s and '{figure-2.png}' in s, (page.evaluate('[...window.rikuy.assetBlobs.keys()]'), page.evaluate(BYTES, 'figure.png')))
-        drop(('my-plot.png', PNG)); page.wait_for_timeout(300)
-        toast = drop(('my plot.png', PNG + b'\0' * 7)); page.wait_for_timeout(300)
-        check('a picture whose safe name the project already has does not replace that picture', page.evaluate(BYTES, 'my-plot.png') == len(PNG) and page.evaluate(BYTES, 'my-plot-2.png') == len(PNG) + 7 and 'my-plot-2.png' in toast, (toast, page.evaluate('[...window.rikuy.assetBlobs.keys()]')))
+        # (the details list the project's pictures sorted: the opening graph's picture is drawn again
+        # when the page is, and joins the list's end whenever that is)
+        check('two pictures with names of no Latin letters are two files and two figures', page.evaluate(BYTES, 'figure.png') == len(PNG) and page.evaluate(BYTES, 'figure-2.png') == len(PNG) + 3 and '{figure.png}' in s and '{figure-2.png}' in s, (sorted(page.evaluate('[...window.rikuy.assetBlobs.keys()]')), page.evaluate(BYTES, 'figure.png')))
+        drop(('my-plot.png', PNG)); settle(page, 300)
+        toast = drop(('my plot.png', PNG + b'\0' * 7)); settle(page, 300)
+        check('a picture whose safe name the project already has does not replace that picture', page.evaluate(BYTES, 'my-plot.png') == len(PNG) and page.evaluate(BYTES, 'my-plot-2.png') == len(PNG) + 7 and 'my-plot-2.png' in toast, (toast, sorted(page.evaluate('[...window.rikuy.assetBlobs.keys()]'))))
         # A picture dropped under exactly the name of one the project has is that picture made
         # again: its bytes are replaced and no second figure is placed.
         count = lambda: page.evaluate('window.rikuy.files.get("main.tex").split("\\\\includegraphics").length - 1')
         figs = count()
-        toast = drop(('my-plot.png', PNG + b'\0' * 2)); page.wait_for_timeout(300)
-        check('a picture dropped under the exact name of one in the project replaces its bytes and places no figure', page.evaluate(BYTES, 'my-plot.png') == len(PNG) + 2 and count() == figs and 'my-plot.png replaced' in toast and not page.evaluate('window.rikuy.assetBlobs.has("my-plot-3.png")'), (toast, count(), figs, page.evaluate('[...window.rikuy.assetBlobs.keys()]')))
+        toast = drop(('my-plot.png', PNG + b'\0' * 2)); settle(page, 300)
+        check('a picture dropped under the exact name of one in the project replaces its bytes and places no figure', page.evaluate(BYTES, 'my-plot.png') == len(PNG) + 2 and count() == figs and 'my-plot.png replaced' in toast and not page.evaluate('window.rikuy.assetBlobs.has("my-plot-3.png")'), (toast, count(), figs, sorted(page.evaluate('[...window.rikuy.assetBlobs.keys()]'))))
         # ... placed as usual when the text does not have it yet
         click_text(page, 'References follow')
-        drop(('solo.png', PNG)); page.wait_for_timeout(300)
-        page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+        drop(('solo.png', PNG)); settle(page, 300)
+        page.keyboard.press('Control+z'); settle(page, 300)
         gone = '{solo.png}' not in page.evaluate('window.rikuy.files.get("main.tex")')
         click_text(page, 'References follow')
-        toast = drop(('solo.png', PNG + b'\0' * 5)); page.wait_for_timeout(300)
+        toast = drop(('solo.png', PNG + b'\0' * 5)); settle(page, 300)
         check('replaced and placed when the text does not include it yet', gone and page.evaluate(BYTES, 'solo.png') == len(PNG) + 5 and page.evaluate('window.rikuy.files.get("main.tex")').count('{solo.png}') == 1 and not page.evaluate('window.rikuy.assetBlobs.has("solo-2.png")'), toast)
         # a pasted picture has no name of its own (every screenshot is image.png): always a new file
-        drop(('image.png', PNG)); page.wait_for_timeout(300)
+        drop(('image.png', PNG)); settle(page, 300)
         click_text(page, 'References follow')
         page.evaluate("""(b) => { const dt = new DataTransfer(); dt.items.add(new File([Uint8Array.from(atob(b), (c) => c.charCodeAt(0))], 'image.png', { type: 'image/png' }));
           document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }""", b64(PNG + b'\0' * 9))
-        page.wait_for_timeout(500)
+        # (the picture is read into the project before it is placed: openFiles is async)
+        until(page, "() => [...window.rikuy.assetBlobs.keys()].some((n) => n.startsWith('pasted-')) && window.rikuy.files.get('main.tex').includes('{pasted-')")
+        settle(page, 500)
         pasted = [n for n in page.evaluate('[...window.rikuy.assetBlobs.keys()]') if n.startswith('pasted-')]
-        check('a pasted picture never replaces a file, whatever the clipboard calls it', page.evaluate(BYTES, 'image.png') == len(PNG) and len(pasted) == 1 and page.evaluate(BYTES, pasted[0] if pasted else '') == len(PNG) + 9, pasted)
+        # (its name carries the time it came: the detail leaves that out)
+        check('a pasted picture never replaces a file, whatever the clipboard calls it', page.evaluate(BYTES, 'image.png') == len(PNG) and len(pasted) == 1 and page.evaluate(BYTES, pasted[0] if pasted else '') == len(PNG) + 9, [_re.sub(r'pasted-[a-z0-9]+', 'pasted-(time)', n) for n in pasted])
         # Typing while a version is being kept (the await before a replaced file is written): the
         # figure dropped with it must land after the caret's paragraph in the text as it is then,
         # not at an offset of the text as it was when the drop began.
         page.evaluate("""() => { const g = window.rikuy, keep = g.snapshot.bind(g); g.hookRan = 0; g.snapshot = async (...a) => { g.snapshot = keep; g.hookRan++;
           const s = g.files.get('main.tex'), at = s.indexOf('\\\\maketitle') + 10; g.commit([{ f: 'main.tex', s: at, e: at, t: '\\n\\nTyped meanwhile, forty characters or so.' }], g.caretNow(), 'type'); return keep(...a); }; }""")
         click_text(page, 'The page and the source never disagree')
-        drop(('my-plot.png', PNG + b'\0' * 3), ('with-it.png', PNG)); page.wait_for_timeout(500)
+        drop(('my-plot.png', PNG + b'\0' * 3), ('with-it.png', PNG)); settle(page, 500)
         s = page.evaluate('window.rikuy.files.get("main.tex")')
         k = s.rfind('\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{with-it.png}')
         check('(the version is kept and text is typed while the drop waits)', page.evaluate('window.rikuy.hookRan') == 1 and 'Typed meanwhile' in s, page.evaluate('window.rikuy.hookRan'))
         check('a figure placed while the text changes lands after its paragraph, not inside it', k > 0 and s[:k].endswith('every edit is computed back into it.\n\n'), s[max(0, k - 400):k + 30] if k > 0 else page.evaluate('[...window.rikuy.assetBlobs.keys()]'))
         # with the caret in a footnote the figure goes after the paragraph that holds the footnote
         click_text(page, 'edit this footnote')
-        drop(('in-note.png', PNG)); page.wait_for_timeout(400)
+        drop(('in-note.png', PNG)); settle(page, 400)
         s = page.evaluate('window.rikuy.files.get("main.tex")')
         k = s.find('{in-note.png}')
         check('with the caret in a footnote the figure goes after the paragraph of the footnote, not to the end', k > 0 and s[:k].endswith('one edited by hand.\n\n\\begin{center}\n\\includegraphics[width=0.8\\linewidth]') and k < s.find('\\section{Citations'), s[max(0, k - 120):k + 20])
         # the preamble ends where the parser says: a comment naming \begin{document} is not it
         page.evaluate("""() => { const g = window.rikuy; g.files = new Map([['main.tex', '\\\\documentclass{article}\\n% was: \\\\begin{document} here\\n\\\\usepackage{amsmath}\\n\\\\begin{document}\\nA paragraph.\\n\\\\end{document}\\n']]); g.main = 'main.tex'; g.hist = []; g.forceRender = true; g.rebuild(); }""")
         click_text(page, 'A paragraph')
-        drop(('late.png', PNG)); page.wait_for_timeout(400)
+        drop(('late.png', PNG)); settle(page, 400)
         s = page.evaluate('window.rikuy.files.get("main.tex")')
         check('graphicx goes after the last package, though a comment before it names \\begin{document}', s.startswith('\\documentclass{article}\n% was: \\begin{document} here\n\\usepackage{amsmath}\n\\usepackage{graphicx}\n\\begin{document}\nA paragraph.\n\n\\begin{center}'), s[:200])
-        page.evaluate('window.rikuy.doReset()'); page.wait_for_timeout(600)
+        page.evaluate('window.rikuy.doReset()'); settle(page, 600)
         # an archive with no document in it joins the project open now: it is someone else's
         # files all the same, and the project is marked so (shell escape restricted)
         cls = io.BytesIO()
         with zipfile.ZipFile(cls, 'w') as z: z.writestr('evil.cls', '\\ProvidesClass{evil}\n')
-        drop(('styles.zip', cls.getvalue())); page.wait_for_timeout(400)
+        drop(('styles.zip', cls.getvalue())); settle(page, 400)
         link = page.evaluate("window.rikuy.linkCache.get(window.rikuy.name + '|' + window.rikuy.main) || null")
-        check('a .zip holding only a class joins the project and marks it as holding someone else\'s files', page.evaluate('window.rikuy.files.has("evil.cls")') and bool(link) and link['origin'] == 'zip' and not link['allowed'], link)
+        check('a .zip holding only a class joins the project and marks it as holding someone else\'s files', page.evaluate('window.rikuy.files.has("evil.cls")') and bool(link) and link['origin'] == 'zip' and not link['allowed'], unstamped(link))
         many = io.BytesIO()
         with zipfile.ZipFile(many, 'w') as z:
             for i in range(30): z.writestr('pics/p%02d.png' % i, PNG)
@@ -489,7 +505,7 @@ try:
         page.wait_for_function("window.rikuy.name === 'half'", timeout=10000)
         link = page.evaluate("window.rikuy.linkCache.get(window.rikuy.name + '|' + window.rikuy.main) || null")
         check('a .zip damaged part way opens what was read and says the archive is damaged', page.evaluate('[...window.rikuy.files.keys()]') == ['main.tex'] and 'half.zip is not a .zip file this page can read' in page.inner_text('#toast'), page.inner_text('#toast'))
-        check('and stays someone else\'s project, with shell escape restricted', bool(link) and link['origin'] == 'zip' and not link['allowed'], link)
+        check('and stays someone else\'s project, with shell escape restricted', bool(link) and link['origin'] == 'zip' and not link['allowed'], unstamped(link))
         check('no page errors (dropped files)', not errors, errors[:5])
         browser.close()
 
@@ -507,10 +523,8 @@ try:
         def drop(*fs):
             page.evaluate('document.getElementById("toast").hidden = true')
             page.evaluate(DROP, [[n, b64(b)] for n, b in fs])
-            for _ in range(40):
-                page.wait_for_timeout(100)
-                if page.is_visible('#toast'): break
-            page.wait_for_timeout(200)
+            until(page, "() => { const t = document.getElementById('toast'); return !!t && t.checkVisibility(); }", timeout=4000)
+            settle(page, 200)
             return page.inner_text('#toast')
 
         def zipped(d):
@@ -527,19 +541,19 @@ try:
             toast = drop(('code.zip', zipped({name: body})))
             v = page.evaluate(LINK)
             check('a .zip that adds %s marks the project, and says so' % name, v and v['origin'] == 'zip' and not v['allowed'] and 'restricted' in toast, (v, toast))
-        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        page.evaluate('window.rikuy.allowShellHere()'); settle(page, 200)
         allowed = (page.evaluate(LINK) or {}).get('allowed')
         toast = drop(('later.zip', zipped({'later.cls': '\\ProvidesClass{later}\n'})))
         v = page.evaluate(LINK)
         check('a later archive with code takes an earlier Allow back, and the message says so', allowed is True and v and not v['allowed'] and 'restricted again' in toast, (allowed, v, toast))
-        page.evaluate('window.rikuy.doReset()'); page.wait_for_timeout(700)
+        page.evaluate('window.rikuy.doReset()'); settle(page, 700)
         check('loading the sample clears the mark: the sample holds nothing of a stranger\'s', page.evaluate(LINK) is None, page.evaluate(LINK))
-        page.evaluate("window.rikuy.markFromLink('Ana')"); page.wait_for_timeout(100)
+        page.evaluate("window.rikuy.markFromLink('Ana')"); settle(page, 100)
         marked = page.evaluate(LINK)
-        page.evaluate('window.rikuy.doReset()'); page.wait_for_timeout(700)
+        page.evaluate('window.rikuy.doReset()'); settle(page, 700)
         check('the same for a mark a shared link left under the sample\'s name', marked and page.evaluate(LINK) is None, (marked, page.evaluate(LINK)))
         page.evaluate("for (const n of ['Untitled', 'Untitled 2', 'Untitled 3', 'Untitled 4']) window.rikuy.markFromLink('', n, 'main.tex', 'zip')")
-        page.click('#b-new'); page.wait_for_function('window.rikuy.name.startsWith("Untitled")', timeout=5000); page.wait_for_timeout(300)
+        page.click('#b-new'); page.wait_for_function('window.rikuy.name.startsWith("Untitled")', timeout=5000); settle(page, 300)
         check('a new document carries no mark, whatever an earlier project of its name had', page.evaluate(LINK) is None, (page.evaluate('window.rikuy.name'), page.evaluate(LINK)))
         # with a document of its own a readable archive is someone else's project, as before;
         # a broken one dropped with the user's own document is not
@@ -572,7 +586,7 @@ try:
             open(path, 'wb').write(data)
             page.set_input_files('#fileinput', path)
             page.wait_for_function('(n) => window.rikuy.name === n', arg=name[:-4], timeout=10000)
-            page.wait_for_timeout(500)
+            settle(page, 500)
         LINKNOW = "(() => { const g = window.rikuy, v = g.linkCache && g.linkCache.get(g.name + '|' + g.main); return v ? { origin: v.origin, allowed: v.allowed } : null; })()"
         talk = ('\\documentclass{beamer}\n\\usepackage{../style/defs}\n\\graphicspath{{../figures/}}\n\\begin{document}\n\\begin{frame}{The question}\n\\begin{itemize}\n'
                 '\\item<1-> Why do regimes cycle?\n\\item<2-> When is $\\regime{D}$ saved?\n\\end{itemize}\n\\end{frame}\n\\end{document}\n')
@@ -586,18 +600,18 @@ try:
         check('an Overleaf .zip with a paper, a talk and a chapter opens the paper', page.evaluate('window.rikuy.main') == 'main.tex')
         items = page.evaluate("window.rikuy.cmds.command('main-document').menuItems(window.rikuy).map((x) => [x.name, x.checked])")
         check('Main document lists the project\'s documents, the main one ticked, the chapter last', items == [['main.tex', True], ['talk/slides.tex', False], ['sections/ch.tex', False]], items)
-        page.evaluate("window.rikuy.runCommand('main-document')"); page.wait_for_timeout(300)
+        page.evaluate("window.rikuy.runCommand('main-document')"); settle(page, 300)
         page.get_by_role('menuitemradio', name='talk/slides.tex', exact=True).click()
-        page.wait_for_function("window.rikuy.main === 'talk/slides.tex'", timeout=5000); page.wait_for_timeout(500)
+        page.wait_for_function("window.rikuy.main === 'talk/slides.tex'", timeout=5000); settle(page, 500)
         text = page.inner_text('#pages')
         check('picked there, the talk is the main document: the page shows it', 'Why do regimes cycle?' in text and 'The paper' not in text and page.evaluate('window.rikuy.srcFile') == 'talk/slides.tex', text[:200])
         check('the talk\'s ../style package is read on the page: its macro draws, no math error', not page.evaluate("document.querySelectorAll('#pages .merr').length") and page.evaluate("document.querySelectorAll('#pages .katex').length") >= 1,
               page.evaluate("[...document.querySelectorAll('#pages .merr')].map((e) => e.textContent)"))
         check('beamer\'s overlay specifications are not drawn as text, and stay in the source', '<1->' not in text and '<2->' not in text and '\\item<1-> Why' in src(page, 'talk/slides.tex'), text[:200])
         click_text(page, 'Why do', 0); page.keyboard.type('So, ')
-        page.wait_for_timeout(400)
+        settle(page, 400)
         check('typing at an item\'s start goes after its overlay', '\\item<1-> So, Why do' in src(page, 'talk/slides.tex'), src(page, 'talk/slides.tex')[120:220])
-        page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+        page.evaluate('window.rikuy.undo()'); settle(page, 200)
         check('the talk is still the .zip\'s, so a stranger\'s: shell escape restricted', page.evaluate(LINKNOW) == {'origin': 'zip', 'allowed': False}, page.evaluate(LINKNOW))
         if TREE:
             r = page.evaluate("async () => { const r = await window.rikuy.api.compile(); return { ok: r.ok, engine: r.engine, pages: r.pages, errs: r.problems.filter((x) => x.severity === 'error').map((x) => x.message) }; }")
@@ -612,13 +626,13 @@ try:
               const h = w && s.at(w.page, w.x + 2, w.y - 2); return { w: !!w, file: h && g.fromTexPath(h.file) }; }''')
             check('SyncTeX finds it from the page and leads back to it from the PDF', hit and hit['w'] and hit['file'] == 'sections/part.tex', hit)
             page.evaluate("() => window.rikuy.api.setSource(window.rikuy.api.getSource().replace('\\\\begin{frame}\\n\\\\input{../sections/part}\\n\\\\end{frame}\\n', ''))")
-        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        page.evaluate('window.rikuy.allowShellHere()'); settle(page, 200)
         page.evaluate("window.rikuy.runCommand('main-document', 'main.tex')")
-        page.wait_for_function("window.rikuy.main === 'main.tex'", timeout=5000); page.wait_for_timeout(300)
+        page.wait_for_function("window.rikuy.main === 'main.tex'", timeout=5000); settle(page, 300)
         check('back to the paper, the Allow given for the project stays', page.evaluate(LINKNOW) == {'origin': 'zip', 'allowed': True} and 'The paper' in page.inner_text('#pages'), page.evaluate(LINKNOW))
-        page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it")', timeout=20000); page.wait_for_timeout(500)
-        page.evaluate("window.rikuy.runCommand('main-document', 'talk/slides.tex')"); page.wait_for_timeout(500)
-        page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it")', timeout=20000); page.wait_for_timeout(800)
+        page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it")', timeout=20000); settle(page, 500)
+        page.evaluate("window.rikuy.runCommand('main-document', 'talk/slides.tex')"); settle(page, 500)
+        page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it")', timeout=20000); settle(page, 800)
         check('the main document is kept across a reload', page.evaluate('window.rikuy.main') == 'talk/slides.tex', page.evaluate('window.rikuy.main'))
         # without main.tex: the project's own document, not a subfiles chapter listed first
         open_zip('Paper.zip', zipped2({'appendix.tex': '\\documentclass[paper]{subfiles}\n\\begin{document}\nAppendix.\n\\end{document}\n',
@@ -635,7 +649,7 @@ try:
         # (a hidden file named with \ for /, as Windows' tools write it, is one too: review N6)
         check('a .zip\'s .gitkeep and .latexmkrc are kept, a Mac\'s hidden files are not, nor figs\\.htaccess', extra == ['.latexmkrc', 'figures/.gitkeep'], extra)
         if TREE:
-            page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+            page.evaluate('window.rikuy.allowShellHere()'); settle(page, 200)
             r = page.evaluate("async () => { const r = await window.rikuy.api.compile(); return { ok: r.ok, pages: r.pages, errs: r.problems.filter((x) => x.severity === 'error').map((x) => x.message) }; }")
             check('\\tikzexternalize[prefix=figures/] compiles into the kept folder', r['ok'] and r['pages'] == 1 and not r['errs'], r)
         check('no page errors (main document)', not errors, errors[:5])
@@ -652,7 +666,8 @@ try:
                 page.evaluate("(b) => { const a = window.rikuy; a.addAsset('fig.png', new Blob([Uint8Array.from(atob(b), (c) => c.charCodeAt(0))])); }", __import__('base64').b64encode(PNG).decode())
             click_text(page, 'Click anywhere', 5)
             page.keyboard.type(' typed')
-            page.wait_for_timeout(1500)
+            # (the save that finds no storage runs 700 ms after the edit, and says so)
+            settle(page, 1500, full=True)
             check('storage %s: the page opens and takes edits' % label, ' typed' in src(page))
             check('storage %s: the user is told it is not kept' % label, want in page.inner_text('#toast') and 'Saved in this browser' not in page.inner_text('#st-save'), (page.inner_text('#toast')[:120], page.inner_text('#st-save')))
             check('storage %s: no page errors' % label, not errors, errors[:3])

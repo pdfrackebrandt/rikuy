@@ -55,7 +55,7 @@ python3 consistency.py [rule ...] [--widths 1920,1366] [--tabs home,insert] [--s
 rules, widths, tabs and schemes named only. RIKUY_DIST names another dist/."""
 import os, sys, json, re, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import open_page, check, results, load_doc, click_text, ROOT
+from browser import settle, open_page, check, results, load_doc, click_text, ROOT
 from playwright.sync_api import sync_playwright
 
 WRAP = lambda body, pre='': '\\documentclass{article}\n\\usepackage{graphicx}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
@@ -367,23 +367,23 @@ def tab_states(page, tabs):
     """Each tab shown as a person would reach it: the contextual ones with their object."""
     for t in tabs:
         page.evaluate('() => { if (rikuy.hf) rikuy.pageHFClose(); if (document.querySelector(".pop-math")) rikuy.closePop(true); rikuy.disarm && rikuy.disarm(); }')
-        page.wait_for_timeout(80)
+        settle(page, 80)
         if t == 'picture-format':
-            page.locator('#pages .a-img').first.click(); page.wait_for_timeout(200)
+            page.locator('#pages .a-img').first.click(); settle(page, 200)
         elif t in OBJ:
-            page.locator('#pages ' + OBJ[t]).first.click(); page.wait_for_timeout(250)
+            page.locator('#pages ' + OBJ[t]).first.click(); settle(page, 250)
         elif t.startswith('table'):
-            click_text(page, 'cell', 2); page.wait_for_timeout(200)
+            click_text(page, 'cell', 2); settle(page, 200)
         elif t == 'headfoot':
-            page.evaluate('rikuy.pageHFOpen("head")'); page.wait_for_timeout(200)
+            page.evaluate('rikuy.pageHFOpen("head")'); settle(page, 200)
         elif t == 'equation':
-            click_text(page, 'A paragraph', 2); page.evaluate('rikuy.runCommand("formula")'); page.wait_for_selector('.pop-math'); page.wait_for_timeout(250)
+            click_text(page, 'A paragraph', 2); page.evaluate('rikuy.runCommand("formula")'); page.wait_for_selector('.pop-math'); settle(page, 250)
         else:
-            click_text(page, 'A paragraph', 2); page.wait_for_timeout(150)
+            click_text(page, 'A paragraph', 2); settle(page, 150)
         if not page.evaluate('(t) => rikuy.rbTabs.includes(t) && !document.getElementById("rt-" + t).hidden', t):
             yield t, False
             continue
-        page.evaluate('(t) => rikuy.selectTab(t)', t); page.wait_for_timeout(200)
+        page.evaluate('(t) => rikuy.selectTab(t)', t); settle(page, 200)
         page.mouse.move(2, 880)  # (no hover on any control)
         yield t, True
     page.evaluate('() => { if (rikuy.hf) rikuy.pageHFClose(); if (document.querySelector(".pop-math")) rikuy.closePop(true); rikuy.disarm && rikuy.disarm(); }')
@@ -628,26 +628,26 @@ def focus_rule(S, page, where, scheme):
                 continue
             try: page.locator(sel).first.click(timeout=3000)
             except Exception: continue
-            page.wait_for_timeout(150)
+            settle(page, 150)
             o = page.evaluate("() => { const a = document.activeElement; if (!a || a === document.body || a.id === 'pages') return null; const s = getComputedStyle(a); return [a.id || a.className, s.outlineStyle, s.outlineWidth, a.matches(':focus-visible')]; }")
             if o and o[1] != 'none' and o[2] != '0px':
                 S.bad('focus', where, sel, 'a ring after a mouse press: %s' % o)
         # a popover opened and closed with the mouse: no ring on its button nor on its own (L1)
         for opener, tab in (('#rc-frontier', 'references'), ('#b-share', None)):
-            if tab: page.evaluate('(t) => rikuy.selectTab(t)', tab); page.wait_for_timeout(150)
+            if tab: page.evaluate('(t) => rikuy.selectTab(t)', tab); settle(page, 150)
             if not page.locator(opener).is_visible():
                 continue
-            page.click(opener); page.wait_for_timeout(250)
+            page.click(opener); settle(page, 250)
             # (a field keeps its ring: it shows where typing goes)
             ring = page.evaluate("() => { const a = document.activeElement; if (a.matches('input, textarea, select')) return null; const s = getComputedStyle(a); return s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0 ? (a.id || a.className || a.textContent) : null; }")
             if ring:
                 S.bad('focus', where, opener, 'a ring on %r in the popover opened with the mouse' % ring)
             x = page.locator('body > .pop .pop-x').first
-            if x.count(): x.click(); page.wait_for_timeout(250)
+            if x.count(): x.click(); settle(page, 250)
             ring = page.evaluate("() => { const a = document.activeElement; const s = getComputedStyle(a); return s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0 ? (a.id || a.className) : null; }")
             if ring:
                 S.bad('focus', where, opener, 'a ring on %r after the popover closed with the mouse' % ring)
-    page.evaluate("rikuy.selectTab('home')"); page.wait_for_timeout(150)
+    page.evaluate("rikuy.selectTab('home')"); settle(page, 150)
     for sel in FOCUS_SAMPLES:
         page.keyboard.press('Shift')  # (the last input the keyboard's, as after Tab or an arrow)
         r = page.evaluate(FOCUS, sel)
@@ -674,8 +674,8 @@ def stable_rule(S, page, where):
                 click_text(page, *place)
             else:
                 click_text(page, 'A paragraph', 2); page.keyboard.press('Shift+End')
-            page.wait_for_timeout(200)
-            page.evaluate('(t) => rikuy.selectTab(t)', t); page.wait_for_timeout(200)
+            settle(page, 200)
+            page.evaluate('(t) => rikuy.selectTab(t)', t); settle(page, 200)
             now = page.evaluate(snap, t)
             if base is None:
                 base = now; continue
@@ -692,9 +692,9 @@ def forced_rule(S, page, where):
     drawn: each screenshot in its two states (selected and not, pressed and not) apart at a line's
     worth of pixels or more, not the weight of its name alone."""
     def two(sel, on, off, label):
-        page.evaluate(off); page.wait_for_timeout(250)
+        page.evaluate(off); settle(page, 250)
         a = page.locator(sel).screenshot()
-        page.evaluate(on); page.wait_for_timeout(250)
+        page.evaluate(on); settle(page, 250)
         b = page.locator(sel).screenshot()
         box = page.locator(sel).bounding_box()
         n = drawn_apart(a, b)
@@ -717,7 +717,7 @@ def forced_rule(S, page, where):
       return on && off ? [look(on), look(off), mark && mark.content !== 'none' ? mark.backgroundColor : ''] : null; }""")
     if r and r[0] == r[1] and not r[2]:
         S.bad('forced', where, 'selected tab', 'looks as the others: %s' % r[0])
-    page.evaluate("rikuy.selectTab('view')"); page.wait_for_timeout(150)
+    page.evaluate("rikuy.selectTab('view')"); settle(page, 150)
     p = page.evaluate("""() => { const look = (e) => { const s = getComputedStyle(e); return [s.backgroundColor, s.color, s.borderTopColor].join(' '); };
       const on = [...document.querySelectorAll('#rp-view .btn[aria-pressed=true]')].find((e) => e.offsetParent), off = [...document.querySelectorAll('#rp-view .btn[aria-pressed=false]')].find((e) => e.offsetParent);
       return on && off ? [on.getAttribute('aria-label'), look(on), look(off), getComputedStyle(on, '::before').content !== 'none'] : null; }""")
@@ -729,21 +729,21 @@ def forced_rule(S, page, where):
 def surface_rule(S, page, where, touch):
     """The menus and popovers the ribbon opens: corners of 8 (C9), a dialog's buttons 32 px tall
     (C1; 44 with touch), a menu's items 24 px or more (44 with touch)."""
-    click_text(page, 'A paragraph', 2); page.wait_for_timeout(150)
+    click_text(page, 'A paragraph', 2); settle(page, 150)
     for tab, sel in (('home', '#rp-home .rb-split:has([data-cmd=bullets]) > .rb-x'), ('insert', '#rp-insert .rb-split:has([data-cmd=insert-table]) > .rb-x'), ('references', '#rc-frontier')):
-        page.evaluate('(t) => rikuy.selectTab(t)', tab); page.wait_for_timeout(150)
+        page.evaluate('(t) => rikuy.selectTab(t)', tab); settle(page, 150)
         loc = page.locator(sel).first
         # (folded away at this width: its group's menu has it)
         if not loc.count() or not loc.is_visible():
             continue
         if not loc.is_enabled():
             S.bad('surface', where, sel, 'not there to open'); continue
-        loc.click(); page.wait_for_timeout(300)
+        loc.click(); settle(page, 300)
         r = page.evaluate("""() => { const p = [...document.querySelectorAll('body > .pop, [role=menu]')].find((e) => e.getClientRects().length); if (!p) return null;
           const s = getComputedStyle(p); const items = [...p.querySelectorAll('[role^=menuitem]')].filter((e) => e.getClientRects().length).map((e) => Math.round(e.getBoundingClientRect().height));
           const btns = [...p.querySelectorAll('.btn, .pop-x')].filter((e) => e.getClientRects().length).map((e) => [e.textContent.trim() || e.getAttribute('aria-label'), Math.round(e.getBoundingClientRect().height)]);
           return { radius: [s.borderTopLeftRadius, s.borderBottomRightRadius].map(parseFloat), items, btns, dialog: p.getAttribute('role') === 'dialog' }; }""")
-        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        page.keyboard.press('Escape'); settle(page, 150)
         if not r:
             S.bad('surface', where, sel, 'no menu or popover opened'); continue
         if any(x != 8 for x in r['radius']):
@@ -762,7 +762,7 @@ def motion_rule(S, p):
     """With reduced motion only fades."""
     browser, page, errors = open_page(p, width=1366, height=900)
     page.emulate_media(reduced_motion='reduce')
-    load_doc(page, DOC); page.wait_for_timeout(300)
+    load_doc(page, DOC); settle(page, 300)
     for scope, tab in (('ribbon', 'home'), ('bar', ''), ('tabs', ''), ('status', '')):
         m = page.evaluate(MEASURE, [tab, scope])
         for x in m['motion']:
@@ -776,18 +776,18 @@ def motion_rule(S, p):
 
 def insert_rule(S, page, where):
     """With no caret on the page Insert stays as Word's: enabled, and it inserts at the last place."""
-    click_text(page, 'The last paragraph', 4); page.wait_for_timeout(100)
+    click_text(page, 'The last paragraph', 4); settle(page, 100)
     page.evaluate('() => { getSelection().removeAllRanges(); document.activeElement && document.activeElement.blur && document.activeElement.blur(); rikuy.ribbonSync(); }')
-    page.evaluate("rikuy.selectTab('insert')"); page.wait_for_timeout(200)
+    page.evaluate("rikuy.selectTab('insert')"); settle(page, 200)
     off = page.evaluate("[...document.querySelectorAll('#rp-insert .rb-grp:not(.folded) button[data-cmd]')].filter((b) => b.offsetParent && b.disabled).map((b) => b.dataset.cmd)")
     if off:
         S.bad('insert', where, 'Insert with no caret', 'disabled: %s' % off)
         return
     # and a press inserts at the last place the caret was (in the last paragraph, after "The ")
     before = page.evaluate("rikuy.files.get('main.tex')")
-    page.click('#rp-insert [data-cmd=page-break]'); page.wait_for_timeout(250)
+    page.click('#rp-insert [data-cmd=page-break]'); settle(page, 250)
     after = page.evaluate("rikuy.files.get('main.tex')")
-    page.evaluate('rikuy.undo()'); page.wait_for_timeout(150)
+    page.evaluate('rikuy.undo()'); settle(page, 150)
     i = next((k for k in range(min(len(before), len(after))) if before[k] != after[k]), None)
     if after == before or i is None or not before[:i].rstrip().endswith('The'):
         S.bad('insert', where, 'Page break with no caret', 'not at the last place: %r' % after[max(0, (i or 0) - 30):(i or 0) + 50])
@@ -812,7 +812,7 @@ def run():
                 browser, page, errors = open_page(p, width=w, height=900, dark=scheme == 'dark', touch=touch)
                 if scheme == 'forced':
                     page.emulate_media(forced_colors='active')
-                load_doc(page, DOC); page.wait_for_timeout(300)
+                load_doc(page, DOC); settle(page, 300)
                 tabs = [t for t in page.evaluate('rikuy.rbTabs') if t != 'file' and (not only_tabs or t in only_tabs)]
                 tag = '%d%s %s' % (w, ' touch' if touch else '', scheme)
                 ms = {}
@@ -828,7 +828,7 @@ def run():
                         for g in m['groups']:
                             states[(scheme, t, g['g'])][w] = g['state']
                         states[(scheme, t, "the ribbon's steps")][w] = set(m['flags'])
-                page.evaluate("rikuy.selectTab('home')"); page.wait_for_timeout(150); page.mouse.move(2, 880)
+                page.evaluate("rikuy.selectTab('home')"); settle(page, 150); page.mouse.move(2, 880)
                 chrome = {}
                 for scope in ('bar', 'tabs', 'status'):
                     chrome[scope] = page.evaluate(MEASURE, ['', scope])

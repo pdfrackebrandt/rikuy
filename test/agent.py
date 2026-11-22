@@ -48,9 +48,25 @@ Usage: python3 agent.py [api controls links equations webmcp structure]
 Needs a page built without RIKUY_SHARE (npm run build); RIKUY_DIST names another dist/."""
 import base64, json, os, re, sys, zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import ROOT, open_page, check, results, src, load_doc, click_text
+from browser import settle, until, ROOT, open_page, check, results, src, load_doc as _load_doc, click_text
 from playwright.sync_api import sync_playwright, expect
 from tabs import OBJ_TABS, obj_select
+
+
+# (a drawing of a live graph under way is let finish, grBusy; then the project's pictures go)
+DROP_PICTURES = '''async () => { const g = window.rikuy; await g.grBusy;
+  for (const u of g.assets.values()) URL.revokeObjectURL(u); g.assets.clear(); g.assetBlobs.clear(); g.extra.clear(); g.orig.clear(); }'''
+
+
+def load_doc(page, files, main='main.tex'):
+    """browser.py's load_doc, and the open project's pictures gone, as opening files lets them go
+    (src/collab.js loadProject). load_doc keeps them, and the opening document's live graph adds its
+    picture 700 ms after it is placed, plus its drawing, before or after load_doc as the timing
+    falls: DOC was then a project of two files or of one (get_document's counts, Download LaTeX a
+    .zip or a .tex). Once DOC is in, a drawing still under way is of the opening document's graph."""
+    _load_doc(page, files, main)
+    page.evaluate(DROP_PICTURES)
+
 
 DIST = os.path.abspath(os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist'))
 TREE = os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm'))
@@ -110,7 +126,7 @@ def unnamed(cdp):
 def ready(page):
     page.wait_for_function('window.rikuy && window.rikuy.api && document.getElementById("boot").hidden', timeout=20000)
     page.evaluate('rikuy.api.whenReady()')
-    page.wait_for_timeout(250)
+    settle(page, 250)
 
 
 def go(page, link):
@@ -132,13 +148,24 @@ def share(o):
     return HOME + '#share=1.' + payload
 
 
+def steady(o):
+    """A check's detail without what changes from run to run (a link's time and random id, the random
+    part of a new graph's file names), so the checks of two runs can be set side by side
+    (dev/suite_runs.py's verify)."""
+    if isinstance(o, dict):
+        return {k: '-' if k in ('t', 'id') else steady(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return type(o)(steady(v) for v in o)
+    return re.sub(r'(graphs/[a-z]+-)[0-9a-z]+(?=\.)', r'\1-', o) if isinstance(o, str) else o
+
+
 def toast(page):
     return page.evaluate("document.getElementById('toast').hidden ? '' : document.getElementById('toast').textContent")
 
 
 def close_all(page):
     page.evaluate("rikuy.closePop(true, true); rikuy.closeFind(); rikuy.toggleNav(false); if (document.body.classList.contains('src-on')) rikuy.toggleSource(false); if (document.body.classList.contains('pdf-on')) rikuy.togglePdf(false)")
-    page.wait_for_timeout(120)
+    settle(page, 120)
 
 
 # ---- window.rikuy.api ---------------------------------------------------------------------
@@ -161,6 +188,10 @@ def api(p):
 
     # reading
     check('api.getSource is the main file\'s text', page.evaluate('rikuy.api.getSource()') == src(page) and src(page).startswith('\\documentclass'))
+    # (the opening document's live graph drawn first: its picture comes 700 ms after the graph is
+    # placed and the time its drawing takes, graphRefreshSoon in src/cmd/insert.js; the list below
+    # has it, before the picture put in next)
+    until(page, "() => window.rikuy.assetBlobs.has('graphs/saving.pgf')")
     page.evaluate('''() => window.rikuy.openFiles([new File([Uint8Array.from('%s'.match(/../g).map((h) => parseInt(h, 16)))], 'dot.png', { type: 'image/png' })])''' % PNG)
     page.wait_for_function('window.rikuy.assetBlobs.has("dot.png")', timeout=5000)
     files = page.evaluate('rikuy.api.getFiles()')
@@ -184,10 +215,10 @@ def api(p):
     check('api.setSource replaces the main file and resolves when the page shows it', got['r'] and got['source'] and 'set by a script.' in got['page'] and 'A new first line.' in got['page'] and 'Second paragraph here.' not in got['page'], got)
     check('as one edit of the usual kind: one step of history, Undo lit, the source pane and the saved copy follow', got['hist'] == 1 and got['undo'] and got['pane'] and got['dirty'], got)
     page.get_by_role('button', name='Undo', exact=True).click()
-    page.wait_for_timeout(150)
+    settle(page, 150)
     check('one Undo takes it back byte for byte', src(page) == DOC and page.evaluate('rikuy.hist.length') == 0 and 'Second paragraph here.' in page.inner_text('#pages'))
     page.get_by_role('button', name='Redo', exact=True).click()
-    page.wait_for_timeout(150)
+    settle(page, 150)
     check('and Redo puts it back', src(page) == new)
     same = page.evaluate('async (t) => { const n = window.rikuy.hist.length; await window.rikuy.api.setSource(t); return window.rikuy.hist.length - n; }', new)
     check('the text it already has is no edit', same == 0, same)
@@ -195,10 +226,10 @@ def api(p):
     page.evaluate('rikuy.toggleSource(false)')
     page.get_by_role('textbox', name='Document', exact=True).get_by_role('paragraph').nth(0).click()
     page.keyboard.type('zz')
-    page.wait_for_timeout(60)
+    settle(page, 60)
     page.evaluate('(t) => window.rikuy.api.setSource(t)', DOC)
     page.get_by_role('button', name='Undo', exact=True).click()
-    page.wait_for_timeout(120)
+    settle(page, 120)
     check('typing just before it stays a step of its own', 'zz' in src(page) and src(page).replace('zz', '') == new, src(page)[:160])
     page.evaluate('(t) => window.rikuy.api.setSource(t)', DOC)
     # with a dialog open that writes into the source as it closes
@@ -206,9 +237,9 @@ def api(p):
     Control(page, 'Equation').click()
     field = page.get_by_role('dialog', name='Display math', exact=True).get_by_role('textbox', name='Equation editor', exact=True)
     field.wait_for(state='attached', timeout=8000)
-    page.wait_for_timeout(500)
+    settle(page, 500)
     field.press_sequentially('x+y')
-    page.wait_for_timeout(300)
+    settle(page, 300)
     open_ = page.evaluate('(t) => window.rikuy.api.setSource(t).then(() => [window.rikuy.api.getSource() === t, document.querySelectorAll(".pop").length])', new)
     check('with a dialog open, setSource closes it and the source is the text given, to the byte', open_ == [True, 0] and 'x+y' not in src(page), open_)
     page.evaluate('(t) => window.rikuy.api.setSource(t)', DOC)
@@ -264,7 +295,7 @@ def api(p):
     check('api.setUpScripts adds the lines as one edit and resolves to the engine they need', eng == 'xelatex' and '{ctex}' in after and after != ZH and page.evaluate('rikuy.hist.length') == n0 + 1 and page.evaluate('rikuy.api.needs()') == [], (eng, after[:120]))
     check('a second call finds nothing to add: null', page.evaluate('rikuy.api.setUpScripts()') is None and src(page) == after)
     page.get_by_role('button', name='Undo', exact=True).click()
-    page.wait_for_timeout(150)
+    settle(page, 150)
     check('one Undo takes the set up out again', src(page) == ZH and page.evaluate('rikuy.api.needs()') == ['chinese'])
     # the commands, as the registry has them, and one run by its id
     load_doc(page, DOC)
@@ -275,12 +306,12 @@ def api(p):
           and byid['bold']['name'] == 'Bold' and byid['bold']['tab'] == 'home' and 'Ctrl+B' in byid['bold']['keys'] and byid['download-latex']['enabled'] is True, [c['id'] for c in cm][:12])
     page.get_by_role('textbox', name='Document', exact=True).get_by_role('paragraph').nth(1).click()
     page.keyboard.press('Home'); page.keyboard.press('Control+Shift+ArrowRight')
-    page.wait_for_timeout(150)
+    settle(page, 150)
     ran = page.evaluate("rikuy.api.run('bold')")
-    page.wait_for_timeout(150)
+    settle(page, 150)
     bold = src(page)
     page.get_by_role('button', name='Undo', exact=True).click()
-    page.wait_for_timeout(150)
+    settle(page, 150)
     check('api.run("bold") makes the selected word bold as the button does, and one Undo takes it back', ran is True and '\\textbf{Second} paragraph here.' in bold and src(page) == DOC, bold[60:140])
     page.evaluate('rikuy.ribbonBack()')
     bad = page.evaluate("""async () => { const out = []; for (const id of ['no-such-command', 7]) try { await window.rikuy.api.run(id); out.push('took ' + id); } catch (e) { out.push(e.name); } return out; }""")
@@ -305,7 +336,7 @@ def api(p):
     check('and setSource, setUpScripts and run reject with an Error that says why, changing nothing', g['same'] and all(g[k].startswith('Error: rikuy.api.' + f + '() changes the document, and this one is open in guest view')
           for k, f in (('set', 'setSource'), ('setup', 'setUpScripts'), ('run', 'run'))) and g['notice'], (g['set'], g['setup'], g['run']))
     page.get_by_role('button', name='Hide', exact=True).click()
-    page.wait_for_timeout(150)
+    settle(page, 150)
     check('once the guest closes the bar the document is theirs to change', page.evaluate('(t) => window.rikuy.api.setSource(t).then(() => window.rikuy.api.getSource() === t)', DOC))
     browser.close()
 
@@ -339,7 +370,8 @@ def names(page, width):
     check('every control in view has its one name, and no other control has it' + w, not wrong and not twice and set(seen) == want, (wrong, twice, sorted(set(seen) ^ want)))
     if width > 1000:
         # (the gallery's tiles: Home's Find is found loosely with its arrow, Find options, as Word's)
-        loose = {NAMES[i]: page.get_by_role('button', name=NAMES[i]).count() for i in GALLERY if i.startswith('rb-st-') and page.locator('#' + i).is_visible()}
+        # (in a set order: GALLERY is a set, whose order changes from one run of Python to the next)
+        loose = {NAMES[i]: page.get_by_role('button', name=NAMES[i]).count() for i in sorted(GALLERY) if i.startswith('rb-st-') and page.locator('#' + i).is_visible()}
         check('each style button in view is found by its name also without exact matching ("LaTeX source", not "Download LaTeX")' + w, loose and all(v == 1 for v in loose.values()), loose)
     check('each keeps its longer hint as a title' + w, page.evaluate('(ids) => ids.every((i) => { const b = document.getElementById(i); return b.title.length > 3 && b.getAttribute("aria-label").length <= b.title.length + 12; })', [i for i in NAMES if i not in ('b-new', 'b-sample') and ROLE[i] != 'group']))
     check('no glyph is read as part of a name' + w, page.evaluate('''() => [...document.querySelectorAll('#bar svg, #ribbon svg, #ribbon b, #ribbon i, #ribbon u, #bubble b, #bubble i')].every((x) => x.getAttribute('aria-hidden') === 'true')'''))
@@ -355,7 +387,7 @@ def names(page, width):
     check('and its paragraphs paragraphs' + w, [t.strip() for t in doc.get_by_role('paragraph').all_inner_texts()] == ['First paragraph here.', 'Second paragraph here.', 'Third paragraph here.'], doc.get_by_role('paragraph').all_inner_texts())
     # the side panel's menu: every action of the bar by the name its button has
     page.get_by_role('button', name='Outline and problems', exact=True).click()
-    page.wait_for_timeout(250)
+    settle(page, 250)
     tabs = page.get_by_role('tablist', name='Panel', exact=True).get_by_role('tab')
     check('the side panel\'s tabs are Outline, Problems, Review and Git, and the open one names the panel' + w, [tabs.nth(k).get_attribute('aria-label') for k in range(tabs.count())] == ['Outline', 'Problems', 'Review', 'Git']
           and page.get_by_role('tab', name='Outline', exact=True).get_attribute('aria-selected') == 'true' and page.get_by_role('tabpanel', name='Outline', exact=True).count() == 1, tabs.all_inner_texts())
@@ -373,13 +405,13 @@ def names(page, width):
         at = on.index('Open')
         check('the arrow keys step through the menu\'s items that can be pressed, Home and End go to its ends' + w, keys == [on[at + 1], 'Open', on[at - 1], on[-1], on[0], on[0]], keys)
         menu.get_by_role('menuitem', name='Help', exact=True).click()
-        page.wait_for_timeout(250)
+        settle(page, 250)
         check('Help, which the narrow bar hides, opens from there' + w, page.get_by_role('dialog', name='How Rikuy works', exact=True).is_visible())
         page.get_by_role('dialog', name='How Rikuy works', exact=True).get_by_role('button', name='Close', exact=True).click()
     else:
         check('a wide window shows the bar itself, not that menu' + w, not menu.is_visible())
         page.get_by_role('button', name='Close the panel', exact=True).click()
-    page.wait_for_timeout(150)
+    settle(page, 150)
     close_all(page)
 
 
@@ -403,7 +435,7 @@ class Control:
         gb = self._group()
         if not gb:
             return self.loc.click()
-        self.page.click('#' + gb); self.page.wait_for_timeout(150)
+        self.page.click('#' + gb); settle(self.page, 150)
         self.page.locator('.pop [role^=menuitem][aria-label="%s"]' % self.name).click()
 
     def __getattr__(self, k):
@@ -421,22 +453,22 @@ def five(page, width):
     paras.nth(pick('Second paragraph')).click()
     page.keyboard.press('End')
     page.keyboard.type(' Typed by an agent.')
-    page.wait_for_timeout(200)
+    settle(page, 200)
     check('1. a sentence typed into the paragraph the agent chose' + w, 'Second paragraph here. Typed by an agent.\n' in src(page) and src(page).count('Typed by an agent.') == 1, src(page)[90:200])
     # 2. a word in bold
     paras.nth(pick('Third paragraph')).click()
     page.keyboard.press('Home')
     page.keyboard.press('Control+Shift+ArrowRight')
-    page.wait_for_timeout(250)
+    settle(page, 250)
     word = page.evaluate('getSelection().toString()')
     button('Bold').click()
-    page.wait_for_timeout(250)
+    settle(page, 250)
     check('2. a word made bold with the button named Bold' + w, word.strip() == 'Third' and '\\textbf{Third} paragraph here.' in src(page) and button('Bold').get_attribute('aria-pressed') == 'true', (word, src(page)[-90:]))
     check('   (the bubble over a selection has names of its own, so "Bold" stays one button)' + w, page.get_by_role('toolbar', name='Selection', exact=True).get_by_role('button', name='Bold selection', exact=True).count() == 1 and button('Bold').count() == 1)
     # a heading by the style buttons of the group "Styles" (wide), or the style list (narrow)
     paras.nth(pick('First paragraph')).click()
     if width > 1000:
-        page.wait_for_timeout(150)
+        settle(page, 150)
         tile = page.get_by_role('group', name='Styles', exact=True).get_by_role('button', name='Heading 2', exact=True)
         if tile.is_visible():
             tile.click()
@@ -453,14 +485,14 @@ def five(page, width):
         # (the group Styles folded where the row is short: its button opens the styles by name)
         Control(page, 'Heading 2').click()
         how = 'the item "Heading 2" of the folded group "Styles"'
-    page.wait_for_timeout(250)
+    settle(page, 250)
     check('   a paragraph made a heading with ' + how + w, '\\subsection{First paragraph here.}' in src(page) and doc.get_by_role('heading', name='First paragraph here.').count() == 1, src(page)[60:140])
     if width > 1000:
         check('   and that button is then pressed' + w, page.get_by_role('button', name='Heading 2', exact=True).get_attribute('aria-pressed') == 'true')
     doc.get_by_role('heading', name='First paragraph here.').click()
     page.keyboard.press('End')
     page.keyboard.type(' Still typed')
-    page.wait_for_timeout(200)
+    settle(page, 200)
     check('   and a heading takes typing as before' + w, '\\subsection{First paragraph here. Still typed}' in src(page), src(page)[60:150])
     # 3. an equation
     paras = doc.get_by_role('paragraph')
@@ -471,21 +503,21 @@ def five(page, width):
     dlg.wait_for(timeout=8000)
     field = dlg.get_by_role('textbox', name='Equation editor', exact=True)
     field.wait_for(state='attached', timeout=8000)
-    page.wait_for_timeout(500)
+    settle(page, 500)
     field.press_sequentially('a^2+b^2=c^2')
-    page.wait_for_timeout(300)
+    settle(page, 300)
     page.keyboard.press('Enter')
-    page.wait_for_timeout(400)
+    settle(page, 400)
     check('3. an equation inserted by the button Equation and the dialog "Display math"' + w, re.search(r'Typed by an agent\.\n\\begin\{equation\}\n\s*a\^2\+b\^2=c\^2\n\\end\{equation\}', src(page)) and page.get_by_role('dialog').count() == 0, src(page)[150:320])
     paras.nth(pick('Third')).click()
     page.keyboard.press('End')
     button('Formula').click()
     page.get_by_role('dialog', name='New inline math', exact=True).get_by_role('textbox', name='Equation editor', exact=True).wait_for(state='attached', timeout=8000)
-    page.wait_for_timeout(500)
+    settle(page, 500)
     page.keyboard.type('x^2+1')
-    page.wait_for_timeout(300)
+    settle(page, 300)
     page.keyboard.press('Enter')
-    page.wait_for_timeout(400)
+    settle(page, 400)
     check('   a formula in the line by the button Formula and the dialog "New inline math", typed where the focus is' + w, 'paragraph here.$x^2+1$\n' in src(page) and page.get_by_role('dialog').count() == 0, src(page)[-80:])
     # 4. the LaTeX source, downloaded
     with page.expect_download() as dl:
@@ -516,7 +548,7 @@ def audit(page, cdp, width):
 
     looked = []
     def look(state, wait=350):
-        page.wait_for_timeout(wait)
+        settle(page, wait)
         looked.append(state)
         bad = unnamed(cdp)
         if bad: found[state] = bad
@@ -562,9 +594,9 @@ def audit(page, cdp, width):
           and all(fr.get_by_label(n, exact=True).count() == 1 for n in ('Find what', 'Replace with', 'Match case', 'Find whole words only', 'Use wildcards', 'Use regular expressions', 'In LaTeX source', 'In selection'))
           and all(fr.get_by_role('button', name=n, exact=True).count() == 1 for n in ('Find Next', 'Find Previous', 'Replace one', 'Replace All', 'Close'))
           and page.get_by_role('button', name='Replace', exact=True).count() <= 1)
-    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    page.keyboard.press('Escape'); settle(page, 150)
     check('Escape closes it' + w, fr.count() == 0 or not fr.is_visible())
-    first(); page.keyboard.press('Control+f'); page.wait_for_timeout(250)
+    first(); page.keyboard.press('Control+f'); settle(page, 250)
     check('Ctrl+F on the page puts the focus in the Navigation pane\'s box "Search document"' + w, page.evaluate('document.activeElement.getAttribute("aria-label")') == 'Search document'
           and page.get_by_role('tablist', name='Navigation', exact=True).count() == 1)
     close_all(page)
@@ -605,6 +637,9 @@ def audit(page, cdp, width):
           and pane.get_by_role('button', name='Recompile', exact=True).count() == 1 and pane.get_by_role('button', name='Download this PDF', exact=True).count() == 1 and pane.get_by_role('button', name='Close the PDF', exact=True).count() == 1)
     status = page.get_by_role('status', name='PDF status', exact=True)
     page.wait_for_function('!window.rikuy.compiling && document.getElementById("pdf-live").textContent.length > 5', timeout=400000 if TREE else 30000)
+    # (and once TeX has finished: Print the preview and Try again come with its outcome, from the
+    # worker, which the look above, while it compiles, does not wait for)
+    look('the PDF preview, compiled')
     said = status.inner_text()
     check('what TeX did, or why it could not, is in the status region "PDF status", which is polite' + w, status.count() == 1 and status.get_attribute('aria-live') == 'polite'
           and (('pdfLaTeX' in said and 'page' in said) if TREE else said.startswith('TeX could not run here.')) and page.evaluate("document.getElementById('pdf-status').textContent.trim().length > 0"), said)
@@ -630,7 +665,7 @@ def audit(page, cdp, width):
     look('the script notice')
     check('the notice\'s buttons: Set it up, Not now' + w, button('Set it up').is_visible() and button('Not now').is_visible())
     page.evaluate('rikuy.undo()')
-    check('no interactive element is without a name, in any of %d states' % len(looked) + w, not found and len(looked) == (25 if width > 1000 else 26), found or looked)
+    check('no interactive element is without a name, in any of %d states' % len(looked) + w, not found and len(looked) == (26 if width > 1000 else 27), found or looked)
 
 
 TABLE = ('\\documentclass{article}\n\\begin{document}\nA paragraph.\n\n\\begin{tabular}{ll}\ncell & other \\\\\nmore & last \\\\\n\\end{tabular}\n\n'
@@ -650,7 +685,7 @@ def open_tab(page, width, name):
         # one whose object is selected can be chosen)
         v = page.evaluate("(n) => { const o = [...document.getElementById('rb-tabsel').options].find((x) => x.label === n && !x.disabled); return o ? o.value : null; }", name)
         page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(value=v) if v else page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label=name)
-    page.wait_for_timeout(200)
+    settle(page, 200)
 
 
 def reach(page, width):
@@ -669,22 +704,22 @@ def reach(page, width):
             continue  # (no command lives there yet: test/tabs.py brings one in for each)
         # (File covers the page as Word's view does: its Back button gives the page back)
         if page.evaluate("document.body.classList.contains('file-open')"):
-            page.get_by_role('button', name='Back to the document', exact=True).click(); page.wait_for_timeout(150)
+            page.get_by_role('button', name='Back to the document', exact=True).click(); settle(page, 150)
         if ctx and tab == 'headfoot':
             # (the header open on the page, as a double click in its margin opens it)
-            load_doc(page, DOC); page.evaluate('rikuy.pageHFOpen("head")'); page.wait_for_timeout(250)
+            load_doc(page, DOC); page.evaluate('rikuy.pageHFOpen("head")'); settle(page, 250)
         elif ctx and tab == 'equation':
             # (the Equation tab shows while an equation's field is open: the button Formula opens one)
             load_doc(page, DOC); click_text(page, 'First paragraph', 5)
-            page.evaluate('window.rikuy.runCommand("formula")'); page.wait_for_selector('.pop-math'); page.wait_for_timeout(250)
+            page.evaluate('window.rikuy.runCommand("formula")'); page.wait_for_selector('.pop-math'); settle(page, 250)
         elif ctx and tab in OBJ_TABS:
             # (the drawing, chart or SmartArt selected by a press on it: its tab opens)
             obj_select(page, tab)
         elif ctx and tab == 'picture-format':
             # (a press on the picture selects it and opens its tab, as for a person)
-            load_doc(page, PICTURE); page.wait_for_timeout(300); page.locator('#pages .a-img').click(); page.wait_for_timeout(250)
+            load_doc(page, PICTURE); settle(page, 300); page.locator('#pages .a-img').click(); settle(page, 250)
         elif ctx:
-            load_doc(page, TABLE); click_text(page, 'cell', 2); page.wait_for_timeout(250)
+            load_doc(page, TABLE); click_text(page, 'cell', 2); settle(page, 250)
         open_tab(page, width, name)
         opened.append(name)
         for x in xs:
@@ -693,16 +728,16 @@ def reach(page, width):
                 # (in a folded group: its button, named after the group, opens a menu with it by name)
                 gb = page.evaluate("(id) => { const e = document.getElementById(id), g = e && e.closest('.rb-grp'), b = g && g.querySelector('.rb-gbtn'); return b && b.offsetParent && !e.offsetParent ? b.id : null; }", x['id'])
                 if gb and n == 0:
-                    page.click('#' + gb); page.wait_for_timeout(150)
+                    page.click('#' + gb); settle(page, 150)
                     # (the style list's group folded: its menu has each style by name)
                     m = page.locator('.pop [role^=menuitem][aria-label="%s"]' % ('Normal' if x['id'] == 'rb-style' else x['name'])).count()
-                    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+                    page.keyboard.press('Escape'); settle(page, 100)
                     if m == 1:
                         continue
                 bad.append((name, x['name'], n))
         if ctx:
             if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()')
-            page.evaluate('window.rikuy.closePop(true)'); page.wait_for_timeout(100)
+            page.evaluate('window.rikuy.closePop(true)'); settle(page, 100)
             load_doc(page, DOC)
     open_tab(page, width, 'Home')
     check('every control of every tab is found by its role and name once its tab is open: ' + ', '.join(opened) + w, not bad and 'Insert' in opened and 'Table Layout' in opened and 'Equation' in opened, bad)
@@ -717,7 +752,7 @@ def reach(page, width):
         check('a narrow window has the tabs as the combobox "Ribbon tab", Home chosen' + w, 'Home' in opts and opts[opts.index('Home') + 1] == 'Insert' and page.get_by_role('combobox', name='Ribbon tab', exact=True).input_value() == 'home'
               and page.get_by_role('tabpanel', name='Home', exact=True).count() == 1, opts)
     box = page.get_by_role('combobox', name='Search', exact=True)
-    box.click(); box.fill('bullets'); page.wait_for_timeout(150)
+    box.click(); box.fill('bullets'); settle(page, 150)
     found = page.get_by_role('listbox', name='Commands', exact=True).get_by_role('option').all_inner_texts()
     page.keyboard.press('Escape'); page.keyboard.press('Escape')
     check('the combobox "Search" finds Bulleted list by Word\'s name Bullets' + w, found and found[0].startswith('Bulleted list'), found[:3])
@@ -789,7 +824,7 @@ def links(p):
     page.evaluate("document.getElementById('toast').hidden = true")
     page.get_by_role('textbox', name='Document', exact=True).get_by_role('paragraph').nth(0).click()
     page.evaluate('''(t) => { const d = new DataTransfer(); d.setData('text/plain', t); document.activeElement.dispatchEvent(new ClipboardEvent('paste', { clipboardData: d, bubbles: true, cancelable: true })); }''', HOME + '#tex=' + b64(ZH))
-    page.wait_for_timeout(250)
+    settle(page, 250)
     check('a #tex= link pasted into the page is offered with "Open it", not typed', toast(page).startswith('That is a link to a shared document.') and src(page) == DOC and page.get_by_role('button', name='Open it', exact=True).is_visible(), toast(page))
     page.get_by_role('button', name='Open it', exact=True).click()
     page.wait_for_function('(t) => window.rikuy.api.getSource() === t', arg=ZH, timeout=5000)
@@ -800,11 +835,11 @@ def links(p):
     s = page.evaluate("({ name: rikuy.name, files: [...rikuy.files.keys()], guest: document.body.classList.contains('guest'), bar: document.getElementById('guest').hidden, mark: rikuy.linkCache.get(rikuy.name + '|main.tex'), href: location.href })")
     # (a document called main.tex is kept from the #tex= links above: this one opens beside it)
     check('a #share= link with no "name" and no "by" opens as one\'s own document, named by its main file, beside a kept one of that name', src(page) == DOC and s['name'].startswith('main.tex (from a link') and s['files'] == ['main.tex', 'refs.bib'] and s['guest'] is False and s['bar'] is True
-          and s['mark']['by'] == '' and s['mark']['allowed'] is False and s['href'] == HOME, s)
+          and s['mark']['by'] == '' and s['mark']['allowed'] is False and s['href'] == HOME, steady(s))
     go(page, share({'v': 1, 'name': 'Our paper', 'main': 'main.tex', 'files': [['main.tex', DOC]], 'by': 'An agent'}))
     s = page.evaluate("({ name: rikuy.name, guest: document.body.classList.contains('guest'), msg: document.getElementById('guest-msg').textContent, mark: rikuy.linkCache.get('Our paper|main.tex') })")
     check('with "by" it opens as that sender\'s guest: the bar names them and has Send back', s['name'] == 'Our paper' and s['guest'] and s['msg'].startswith('An agent shared this document with you.') and s['mark']['by'] == 'An agent'
-          and page.get_by_role('button', name='Send back', exact=True).is_visible(), s)
+          and page.get_by_role('button', name='Send back', exact=True).is_visible(), steady(s))
     go(page, HOME + '#share=1.' + 'A' * 40)
     check('a broken #share= link says so and keeps the open document', toast(page).startswith('Could not open the link: ') and page.evaluate('rikuy.name') == 'Our paper', toast(page))
     # a second link under the same name is a revised document, not "the one already open"
@@ -813,7 +848,7 @@ def links(p):
     check('a guest who follows a revised link of the same name gets the revised document', src(page) == REV and page.evaluate('rikuy.name') == 'Our paper' and page.evaluate("document.body.classList.contains('guest')"), toast(page))
     go(page, share({'v': 1, 'name': 'Our paper', 'main': 'main.tex', 'files': [['main.tex', DOC]]}))
     check('and one with no "by" under that name opens too, as their own, beside the sender\'s copy', src(page) == DOC and not page.evaluate("document.body.classList.contains('guest')") and page.evaluate('rikuy.name') == 'Our paper (from a link)' and 'project of its own' in toast(page), toast(page))
-    page.wait_for_timeout(300)
+    settle(page, 300)
     go(page, HOME)
     check('still their own after a new start', src(page) == DOC and page.evaluate('rikuy.name') == 'Our paper (from a link)' and not page.evaluate("document.body.classList.contains('guest')")
           and page.evaluate('(t) => window.rikuy.api.setSource(t).then(() => true, () => false)', REV))
@@ -821,7 +856,7 @@ def links(p):
     go(page, share({'v': 1, 'main': 'main.tex', 'files': [['main.tex', DOC]], 'by': 'Alice'}))
     was = page.evaluate("document.body.classList.contains('guest')")
     go(page, HOME + '#tex=' + b64(ZH))
-    page.wait_for_timeout(300)
+    settle(page, 300)
     go(page, HOME)
     check('a #tex= link opened after a sender\'s link of the same name is not that sender\'s after a new start', was and src(page) == ZH and not page.evaluate("document.body.classList.contains('guest')")
           and page.evaluate("document.getElementById('guest').hidden") and page.evaluate('(t) => window.rikuy.api.setSource(t).then(() => true, () => false)', DOC))
@@ -849,18 +884,18 @@ def equations(p):
           'Alt+= (Mac: Control+=)' in full and 'Ctrl+Shift+E: Track Changes' in full and all('"%s"' % n in full for n in ('Equation gallery', 'Numbered', 'Display', 'Fraction', 'Matrix', 'Change to inline', 'Copy as LaTeX')), full[:0])
     browser, page, errors = open_page(p, width=1400, height=900)
     from browser import click_text
-    load_doc(page, DOC); click_text(page, 'Second paragraph here.', 22); page.keyboard.press('Enter'); page.wait_for_timeout(150)
+    load_doc(page, DOC); click_text(page, 'Second paragraph here.', 22); page.keyboard.press('Enter'); settle(page, 150)
     page.keyboard.press('Alt+=')
     field = page.get_by_role('dialog', name='Display math', exact=True).get_by_role('textbox', name='Equation editor', exact=True)
-    field.wait_for(state='attached', timeout=10000); page.wait_for_timeout(300)
+    field.wait_for(state='attached', timeout=10000); settle(page, 300)
     front = page.get_by_role('tab', name='Equation', exact=True).get_attribute('aria-selected')
     panel = page.get_by_role('tabpanel', name='Equation', exact=True)
     panel.get_by_role('button', name='Fraction', exact=True).click()
     page.get_by_role('menu', name='Fraction', exact=True).get_by_role('menuitem', name='stacked fraction', exact=True).click()
-    page.keyboard.type('a'); page.keyboard.press('Tab'); page.keyboard.type('b'); page.wait_for_timeout(400)
-    panel.get_by_role('button', name='Matrix', exact=True).focus(); page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    page.keyboard.type('a'); page.keyboard.press('Tab'); page.keyboard.type('b'); settle(page, 400)
+    panel.get_by_role('button', name='Matrix', exact=True).focus(); page.keyboard.press('Escape'); settle(page, 100)
     back = page.evaluate('document.activeElement && document.activeElement.id')
-    page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    page.keyboard.press('Enter'); settle(page, 300)
     check('Alt+= on an empty line, the tab "Equation" (in front), "Fraction", "stacked fraction": a numbered \\frac{a}{b}; Escape on the tab gives the field back',
           front == 'true' and re.search(r'\\begin\{equation\}\n\s*\\frac\{a\}\{b\}\n\\end\{equation\}', src(page)) and back == 'pop-field' and page.get_by_role('dialog').count() == 0, (back, src(page)[-120:]))
     check('no page errors (equations)', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e and 'fetch' not in e], errors[:4])
@@ -939,7 +974,7 @@ def webmcp(p):
     asking(page, 'edit_source', big)
     modal = page.evaluate("(() => { const d = document.querySelector('dialog.rk-agent-ask'); return !!d && d.open && d.matches(':modal'); })()")
     page.evaluate("[...document.querySelectorAll('dialog.rk-agent-ask button')].find((b) => b.textContent === 'Allow').click()")
-    page.wait_for_timeout(200)
+    settle(page, 200)
     still = page.get_by_role('dialog', name='Allow the AI agent?', exact=True).count()
     page.keyboard.press('Escape')
     r = answered(page)
@@ -948,8 +983,10 @@ def webmcp(p):
     q = page.get_by_role('dialog', name='Allow the AI agent?').inner_text()
     allow = page.get_by_role('dialog', name='Allow the AI agent?').get_by_role('button', name='Allow', exact=True)
     allow.click()
-    page.wait_for_timeout(100)
+    settle(page, 100)
     early = page.get_by_role('dialog', name='Allow the AI agent?', exact=True).count()
+    # (the time is under test: a press counts only once the question has stood half a second, ARM
+    # in src/agent.js, measured by the clock and not by a timer of the page's)
     page.wait_for_timeout(500)
     allow.click()
     r = answered(page)
@@ -972,7 +1009,7 @@ def webmcp(p):
     asking(page, 'run_command', {'id': 'delete-table'})
     # (another call meanwhile waits for the question: it cannot move the caret to another table)
     page.evaluate("(at) => { window.__moved = document.modelContext.tools.find((t) => t.name === 'select').execute({ start: at }, { signal: new AbortController().signal }).then((r) => { window.__movedAt = performance.now(); return r; }); }", AB_TABLE.index('Before'))
-    page.wait_for_timeout(300)
+    settle(page, 300)
     waited = page.evaluate('!window.__movedAt')
     q = page.get_by_role('dialog', name='Allow the AI agent?').inner_text()
     page.keyboard.press('Escape'); answered(page)
@@ -987,11 +1024,11 @@ def webmcp(p):
     k = src(page).index('Second paragraph here.') + len('Second paragraph here.')
     mcp(page, 'select', {'start': k})
     g = mcp(page, 'insert_graph', {'spec': {'kind': 'function', 'title': 'A wave', 'f': ['a sin(b x)'], 'sliders': [{'name': 'a', 'min': 0, 'max': 3, 'step': 0.1, 'value': 1}, {'name': 'b', 'min': 1, 'max': 4, 'step': 1, 'value': 2}]}})
-    page.wait_for_timeout(800)
+    settle(page, 800)
     gd = mcp(page, 'get_document', {'include': ['graphs']})
     named = page.get_by_role('figure', name=re.compile(r'^Interactive graph: A wave\. y = a sin\(b x\)\. Sliders: a from 0 to 3')).count()
     check('insert_graph: one Undo step, its files made; get_document lists it with its formulas and sliders; the page names it so', g.get('undoSteps') == 1 and any(c.get('made') and c['file'].endswith('.html') for c in g['changed'])
-          and gd['graphs'] and gd['graphs'][0]['graph']['formulas'] == ['a sin(b x)'] and [q['name'] for q in gd['graphs'][0]['graph']['sliders']] == ['a', 'b'] and named == 1, (g.get('undoSteps'), gd, named))
+          and gd['graphs'] and gd['graphs'][0]['graph']['formulas'] == ['a sin(b x)'] and [q['name'] for q in gd['graphs'][0]['graph']['sliders']] == ['a', 'b'] and named == 1, steady((g.get('undoSteps'), gd, named)))
     # a guest's view
     page.evaluate("document.body.classList.add('guest')")
     gr = mcp(page, 'edit_source', {'start': 0, 'text': 'x'})
@@ -1054,6 +1091,8 @@ def review(p):
         page.on('download', lambda d: downloads.append(d.suggested_filename))
         page.context.on('page', lambda q: popups.append(q.url))
         out = {i: quick(page, 'run_command', {'id': i}) for i in ('download-latex', 'save-as', 'download-pdf', 'export-as', 'help-report', 'ask-grok', 'new-document', 'load-sample')}
+        # (the time is under test: no download, window or other document may come in it, and a
+        # wrongly run command would bring them by work of its own, not by a timer of the page's)
         page.wait_for_timeout(1500)
         check('H1, L1: a download, Save As, Export, a report or question on another site, another document: never run by a tool, no question, the person told where to press it (personOnly)',
               all(r.get('personOnly') is True and r.get('ran') is False and 'Only the person does this' in r.get('why', '') and r.get('undoSteps') == 0 for r in out.values())
@@ -1061,10 +1100,11 @@ def review(p):
               (out, downloads, popups))
         sh = quick(page, 'run_command', {'id': 'share'})
         panel = page.locator('.pop-share').count()
-        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        page.keyboard.press('Escape'); settle(page, 150)
         check('H1: Share is prepared, not done: the Share panel opens and the person presses Copy link there; no link made',
               sh.get('personOnly') and sh.get('prepared') is True and 'Copy link' in sh['why'] and panel == 1 and page.locator('.share-link').count() in (0, 1) and not page.evaluate("!!(document.querySelector('.share-link') && document.querySelector('.share-link').value)"), sh)
         lk = page.evaluate("() => { const g = window.rikuy; g.agentDepth = 1; try { return g.openLink('https://example.org/'); } finally { g.agentDepth = 0; } }")
+        # (the time is under test: no window may open in it)
         page.wait_for_timeout(300)
         check('H1: while a tool runs the page opens no link (App.openLink), whatever command asked', lk is False and not popups, (lk, popups))
     def h1_m1_question():
@@ -1073,20 +1113,24 @@ def review(p):
         q = page.get_by_role('dialog', name='Allow the AI agent?').inner_text()
         focus = page.evaluate('document.activeElement.textContent')
         # M1: a person typing when the question comes answers nothing: Tab, a letter, Space, Enter
+        # (the time is under test: the question has stood past its first half second, ARM in
+        # src/agent.js, so what holds the keys after Tab is the focus's own half second)
         page.wait_for_timeout(600)
         page.keyboard.press('Tab'); on = page.evaluate('document.activeElement.textContent')
         page.keyboard.type('b'); page.keyboard.press(' '); page.keyboard.press('Enter')
-        page.wait_for_timeout(200)
+        settle(page, 200)
         open1 = page.get_by_role('dialog', name='Allow the AI agent?', exact=True).count()
+        # (the time is under test: Space pressed again well after Allow's half second answers nothing)
         page.wait_for_timeout(300); page.keyboard.press(' '); page.wait_for_timeout(700); page.keyboard.press(' ')
-        page.wait_for_timeout(200)
+        settle(page, 200)
         open2 = page.get_by_role('dialog', name='Allow the AI agent?', exact=True).count()
         page.keyboard.press('Escape'); r = answered(page)
         check('H1: the question says it is for the person and an agent must not answer it', 'This question is for you: an AI agent must not answer it.' in q, q)
         check("M1: Allow never has the focus first; Tab to it, a letter, Space and Enter as a person types answer nothing; Space never answers",
               focus == "Don't allow" and on == 'Allow' and open1 == 1 and open2 == 1 and r.get('refused') and src(page) == DOC, (focus, on, open1, open2, r))
         asking(page, 'set_source', {'text': DOC + '\n'})
-        page.wait_for_timeout(600); page.keyboard.press('Tab'); page.wait_for_timeout(700); page.keyboard.press('Enter')
+        # (the time is under test: Enter counts once Allow has held the focus half a second)
+        settle(page, 600); page.keyboard.press('Tab'); page.wait_for_timeout(700); page.keyboard.press('Enter')
         r = answered(page)
         check('M1: Enter on Allow once it has held the focus half a second answers yes', r.get('undoSteps') == 1 and src(page) == DOC + '\n', r)
         mcp(page, 'undo', {})
@@ -1132,7 +1176,7 @@ def review(p):
         load_doc(page, DOC)
         i = DOC.index('First')
         e = mcp(page, 'edit_source', {'start': i, 'end': i + 5, 'text': 'AGENT'})
-        click_text(page, 'Second paragraph', 6); page.keyboard.type(' typed'); page.wait_for_timeout(700)
+        click_text(page, 'Second paragraph', 6); page.keyboard.type(' typed'); settle(page, 700)
         typed = src(page)
         u1 = mcp(page, 'undo', {})
         u2 = mcp(page, 'undo', {'step': e.get('step')})
@@ -1140,7 +1184,7 @@ def review(p):
         e2 = mcp(page, 'edit_source', {'start': 0, 'end': 0, 'text': '% agent\n'})
         u3 = mcp(page, 'undo', {'step': e2['step']})
         # (the person's Ctrl+Z twice: their typing, then the agent's edit)
-        page.keyboard.press('Control+z'); page.wait_for_timeout(200); page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+        page.keyboard.press('Control+z'); settle(page, 200); page.keyboard.press('Control+z'); settle(page, 300)
         gone = mcp(page, 'undo', {'step': e.get('step')})
         check("M4: undo {step} takes back that edit; one the person undid is not in the history any more", u3.get('undone') == 1 and src(page) == DOC and 'not in the history any more' in gone.get('error', ''), (u3, gone))
     def m8_select():
@@ -1186,21 +1230,21 @@ def review(p):
               len(json.dumps(lc)) < 8000 and lc['total'] > 400 and len(lc['commands']) == 100 and set(lc['commands'][0]) == {'id', 'name'} and lc['page']['next'] == 100
               and lp['commands'][0]['id'] != lc['commands'][0]['id'] and 'description' in lq['commands'][0] and any(c['id'] == 'table' for c in lq['commands']), (len(json.dumps(lc)), lc['page'], lq['total']))
         files = {f: open(os.path.join(ROOT, 'dev/bench/long', f), encoding='utf8').read() for f in ('main.tex', 'refs.bib')}
-        load_doc(page, files); page.wait_for_timeout(1500)
+        load_doc(page, files); settle(page, 1500)
         g0 = mcp(page, 'get_document', {})
         g1 = mcp(page, 'get_document', {'include': ['equations', 'citations'], 'limit': 5})
         g2 = mcp(page, 'get_document', {'include': ['equations', 'citations'], 'limit': 5, 'from': 5})
         g3 = mcp(page, 'get_document', {'include': PARTS_ALL, 'limit': 2000})
         # (a document whose formulas alone come to 150,000 characters: the page made smaller to fit)
         long_tex = '\\documentclass{article}\n\\begin{document}\n' + ''.join('$\\text{%s}$\n\n' % ('word%d ' % k * 160) for k in range(150)) + '\\end{document}\n'
-        load_doc(page, long_tex); page.wait_for_timeout(500)
+        load_doc(page, long_tex); settle(page, 500)
         g5 = mcp(page, 'get_document', {'include': ['equations'], 'limit': 2000})
         lazy0 = page.evaluate("document.getElementById('pages').classList.contains('lazy')")
         # (and one too big to draw whole: 110 formulas of 120 terms, about 290,000 elements)
         big = '\\documentclass{article}\n\\begin{document}\n' + ''.join('$%s$\n\n' % ('x_{%d} + ' % k * 120) for k in range(110)) + '\\end{document}\n'
-        load_doc(page, big); page.wait_for_timeout(1500)
+        load_doc(page, big); settle(page, 1500)
         lazy1 = page.evaluate("document.getElementById('pages').classList.contains('lazy')")
-        load_doc(page, DOC); page.wait_for_timeout(500)
+        load_doc(page, DOC); settle(page, 500)
         lazy2 = page.evaluate("document.getElementById('pages').classList.contains('lazy')")
         check('H2: a document too big to draw whole (over 250,000 elements) draws only the pages near the view, and a small one after it every page again',
               lazy0 is False and lazy1 is True and lazy2 is False, (lazy0, lazy1, lazy2))
@@ -1266,8 +1310,8 @@ def structure(p):
     # (review H2) a long document as loaded, its top in view: every page in Chromium's own tree, not
     # only those near the view (pages were content-visibility: auto, which left the rest out)
     files = {f: open(os.path.join(ROOT, 'dev/bench/long', f), encoding='utf8').read() for f in ('main.tex', 'refs.bib')}
-    load_doc(page, files); page.wait_for_timeout(1500)
-    page.evaluate("document.getElementById('desk').scrollTop = 0"); page.wait_for_timeout(500)
+    load_doc(page, files); settle(page, 1500)
+    page.evaluate("document.getElementById('desk').scrollTop = 0"); settle(page, 500)
     dom = page.evaluate("({ math: document.querySelectorAll('#pages [role=math]').length, heads: document.querySelectorAll('#pages [role=heading], #pages h1, #pages h2, #pages h3, #pages h4, #pages h5, #pages h6').length, pages: document.querySelectorAll('#pages .page').length })")
     nodes = cdp.send('Accessibility.getFullAXTree')['nodes']
     live = [n for n in nodes if not n.get('ignored')]
