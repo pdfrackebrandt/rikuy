@@ -607,7 +607,10 @@ def verified(page):
     big = WRAP('\\begin{tabular}{ll}\n' + ''.join('a%d & b%d \\\\\n' % (k, k) for k in range(3000)) + '\\end{tabular}', '')
     load_doc(page, big); settle(page, 2500); sel_words(page, 'a0', 'b1')
     ms = page.evaluate('() => { const at = window.rikuy.ribbonAt(); const t = performance.now(); window.rikuy.tablePaintSelection(at); return performance.now() - t; }')
-    check('R5: the block of a selection painted on a table of 3000 rows in under 300 ms (it took a second)', ms < 300, ms)
+    # (the time measured is printed, not part of what the check keeps: no two runs take the same
+    # ms, and RIKUY_CHECK_LOG compares one run's checks with another's; a failure still shows it)
+    print('  R5: the selection painted in %.1f ms' % ms)
+    check('R5: the block of a selection painted on a table of 3000 rows in under 300 ms (it took a second)', ms < 300, '' if ms < 300 else ms)
     # R6: Insert Caption in a subtable that has one: the caret goes to it, nothing written
     sub = WRAP('\\begin{table}[h]\n\\begin{subtable}{0.5\\linewidth}\n\\centering\n\\begin{tabular}{ll}\nka & kb \\\\\n\\end{tabular}\n\\caption{Sub one}\n\\end{subtable}\n\\end{table}', PRE + '\\usepackage{subcaption}\n')
     load_doc(page, sub); at_src(page, 'ka'); run_cmd(page, 'table-caption'); settle(page, 200)
