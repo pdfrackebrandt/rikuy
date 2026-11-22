@@ -87,7 +87,8 @@ def check(name, cond, detail=''):
 # RIKUY_MOTION=1 runs any suite with motion on.
 # What the page's timers will do and when (every context open_page() makes): each setTimeout that
 # has not yet run, by the time it is due; and how many of its IndexedDB writes (readwrite
-# transactions) have not yet come back, for stored(). settle(page, ms) waits for those due within ms, the work
+# transactions) have not yet come back, for stored(). setInterval is not tracked: a wait on what an
+# interval does needs a condition of its own. settle(page, ms) waits for those due within ms, the work
 # a fixed wait of ms let run, and no others. The test's own waits use the timers kept raw here, so
 # they wait on nothing of their own. Transparent to the page: same ids, same calls, same order.
 TIMERS = """(() => { if (window.__rkT) return; const raw = { st: setTimeout.bind(window), ct: clearTimeout.bind(window) }, due = new Map();
@@ -199,7 +200,16 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, tou
     # init goes on after the boot screen hides (the review, a shared link, the first caret): the
     # page is the test's once it has settled rikuy.ready, as rikuy.api.whenReady() says, and drawn
     page.evaluate('() => window.rikuy.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))')
+    fonts_settled(page)
     return browser, page, errors
+
+
+def fonts_settled(page):
+    """The page's fonts are in and the page laid out again for them: a font that arrives after init
+    lays the page out anew 200 ms after its loadingdone (src/app.js), which once dropped a
+    selection, the caret's place and a ghost line made in between."""
+    until(page, "() => document.fonts.status === 'loaded'", timeout=20000)
+    settle(page, 200, full=True)
 
 
 def download(page, el='b-save'):
@@ -291,6 +301,8 @@ def place(page, select):
         page.evaluate('''([a, z]) => { const sp = [...document.querySelectorAll('#pages span.t')]; const s = sp.find((x) => x.textContent.includes(a)), e = sp.find((x) => x.textContent.includes(z));
           const r = document.createRange(); r.setStart(s.firstChild, s.textContent.indexOf(a)); r.setEnd(e.firstChild, e.textContent.indexOf(z) + z.length);
           document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); return SEEN; }'''.replace('SEEN', _SEEN), list(select))
+    # (and what the move set going on timers: the ruler's markers at 90 ms, the status bar at 120)
+    settle(page, 120, full=True)
 
 
 def pressed(page, command):
@@ -412,6 +424,7 @@ def ready(page):
     rikuy.ready is (rikuy.api.whenReady())."""
     page.wait_for_function('window.rikuy && window.rikuy.ready && document.getElementById("boot").hidden', timeout=30000)
     page.evaluate('() => window.rikuy.ready.then(() => true)')
+    fonts_settled(page)
 
 
 def until(page, fn, arg=None, timeout=5000):
