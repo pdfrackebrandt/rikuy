@@ -75,11 +75,16 @@ def new_docs(page):
     # L6: Remove takes the document's pictures out of the browser too (Learn Rikuy has one)
     ev(page, "window.rikuy.runCommand('help-tour')"); settle(page, 1200)
     tour = ev(page, 'window.rikuy.name')
+    # (the place a reload goes back to, kept under its name: Remove takes it too)
+    page.evaluate('() => { const t = document.querySelector("#pages .it.p span.t"); document.getElementById("pages").focus(); getSelection().collapse(t.firstChild, 1); window.rikuy.leaving(); }')
+    PLACES = 'JSON.parse(localStorage.getItem("rikuy.place.v1") || "{}")'
+    placed = tour in ev(page, PLACES)
     ev(page, '() => window.rikuy.runCommand("new-template", "article")'); settle(page, 1200)
     KV = "(k) => new Promise((ok) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const t = q.result.transaction('kv').objectStore('kv').get(k); t.onsuccess = () => ok(!!t.result); t.onerror = () => ok(null); }; q.onerror = () => ok(null); })"
     had = ev(page, KV, 'bin:' + tour + '|main.tex')
     ev(page, '(n) => window.rikuy.runCommand("recent", { remove: n })', tour); settle(page, 300)
     page.click('#toast button'); settle(page, 800)
+    check('Remove takes the place a reload went back to, kept under its name', placed and tour not in ev(page, PLACES), (placed, list(ev(page, PLACES))))
     check('L6: Remove takes the document\'s versions and its pictures', had is True and ev(page, KV, 'bin:' + tour + '|main.tex') is False and tour not in ev(page, '(async () => (await window.rikuy.allSnaps()).map((v) => v.name))()'), (had, tour))
     # Set as default
     load_doc(page, DOC)
@@ -350,6 +355,48 @@ def export(page):
         check('L8: the name ' + repr(name) + ' exports as ' + want + ', never a hidden .md', ev(page, 'window.rikuy.lastExport.name') == want, ev(page, 'window.rikuy.lastExport.name'))
 
 
+def places(page):
+    """The place a reload goes back to (src/app.js leaving() and placeInitialCaret): the words
+    around it kept as a hash, never as text; a text changed there gets the first word, not the
+    old offset; the view kept as the source place of its top line, which a narrower window still
+    opens at; the blank paragraph after a table of contents kept as itself."""
+    long = '\\documentclass{article}\n\\begin{document}\n' + '\n\n'.join('Paragraph %d has some words in it to fill the page with text.' % i for i in range(120)) + '\n\\end{document}\n'
+    load_doc(page, long)
+    caret = lambda: ev(page, '(() => { const c = window.rikuy.caretNow(); return c && [c.f, c.a, c.b, !!c.ghost]; })()')
+    again = '() => { const g = window.rikuy; g.removeGhost(); getSelection().removeAllRanges(); document.activeElement.blur(); g.desk.scrollTop = 0; g.placeInitialCaret(); }'
+    click_text(page, 'Paragraph 95 has', 3)
+    ev(page, 'window.rikuy.leaving()')
+    kept = ev(page, 'localStorage.getItem("rikuy.place.v1")')
+    check('the place kept holds no words of the document, only a hash of them', 'Paragraph' not in kept and 'words in it' not in kept, kept[:200])
+    at = long.index('Paragraph 95 has') + 3
+    ev(page, again)
+    check('the caret back at the place kept', caret() == ['main.tex', at, at, False], (caret(), at))
+    # (the words around it changed since: the first word, never the old offset in other words)
+    page.evaluate("""() => { const g = window.rikuy, s = g.files.get('main.tex'), i = s.indexOf('Paragraph 95'); g.closeGroup(); g.commit([{ f: 'main.tex', s: i, e: i + 9, t: 'Section' }], null, 'type'); g.closeGroup(); }""")
+    ev(page, again)
+    first = long.index('Paragraph 0')
+    check('the words around the place changed: the caret at the first word, not the old place', caret() == ['main.tex', first, first, False], (caret(), first))
+    load_doc(page, long)
+    # the view: Paragraph 90 at the top, no caret on the page, then a narrower window
+    ev(page, """() => { const g = window.rikuy, sp = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.startsWith('Paragraph 90 ')); g.desk.scrollTop += sp.closest('.it').getBoundingClientRect().top - g.desk.getBoundingClientRect().top; getSelection().removeAllRanges(); document.activeElement.blur(); g.leaving(); }""")
+    page.set_viewport_size({'width': 760, 'height': 800}); settle(page, 400, full=True)
+    ev(page, '() => { const g = window.rikuy; g.desk.scrollTop = 0; g.placeInitialCaret(); }')
+    top = ev(page, """() => { const D = window.rikuy.desk.getBoundingClientRect(); const it = [...document.querySelectorAll('#pages .it')].find((x) => x.getBoundingClientRect().bottom > D.top + 2); return it && it.textContent.slice(0, 14); }""")
+    check('the view kept as its top line\'s words: a narrower window opens at Paragraph 90', top == 'Paragraph 90 h', top)
+    page.set_viewport_size({'width': 1366, 'height': 800}); settle(page, 400, full=True)
+    # the blank paragraph after a table of contents: kept as itself, not an older place
+    load_doc(page, long); click_text(page, 'Paragraph 2 has', 3)
+    ev(page, "window.rikuy.runCommand('table-of-contents')"); settle(page, 300)
+    ev(page, 'window.rikuy.leaving()')
+    ev(page, again)
+    c = caret()
+    check('a caret on the blank paragraph after the contents comes back there', c and c[3] is True, c)
+    # (anything else kept under that key never stops the text's own copy as the page goes)
+    # (read in the same task: the copy goes once IndexedDB has the text)
+    kept = ev(page, '() => { localStorage.setItem("rikuy.place.v1", "5"); localStorage.removeItem("galley.project.v1"); const g = window.rikuy; g.unsaved = true; try { g.leaving(); } catch (e) { return "threw " + e; } return !!localStorage.getItem("galley.project.v1"); }')
+    check('a bad value kept for the places never stops the text\'s copy as the page goes', kept is True, kept)
+
+
 def phones(p):
     browser, page, errors = open_page(p, 390, 844, touch=True)
     ev(page, "window.rikuy.selectTab('file')"); settle(page, 300)
@@ -373,7 +420,7 @@ def phones(p):
 with sync_playwright() as p:
     want = sys.argv[1:]
     browser, page, errors = open_page(p, 1366, 800)
-    for name, fn in (('new_docs', new_docs), ('rename', rename), ('rename_atomic', rename_atomic), ('properties', properties), ('accessibility', accessibility), ('export', export)):
+    for name, fn in (('new_docs', new_docs), ('places', places), ('rename', rename), ('rename_atomic', rename_atomic), ('properties', properties), ('accessibility', accessibility), ('export', export)):
         if want and name not in want:
             continue
         try: fn(page)

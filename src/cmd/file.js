@@ -452,6 +452,9 @@ export const methods = {
       // (and its collapsed headings, which a later document of that name must not take on)
       const folds = load('rikuy.fold.v1');
       if (folds && typeof folds === 'object') { for (const m of new Set(vs.map((v) => v.main))) delete folds[name + '|' + m]; store('rikuy.fold.v1', folds); }
+      // (and the place it was left at, src/app.js leaving())
+      const places = load('rikuy.place.v1');
+      if (places && typeof places === 'object' && places[name]) { delete places[name]; store('rikuy.place.v1', places); }
       this.memSnaps = (this.memSnaps || []).filter((m) => m.name !== name);
       this.snapList = null;
       this.toast('Removed ' + name + '.');

@@ -1248,16 +1248,32 @@ class App {
     // (a document of headings alone: the first heading's words; there was no caret, and the first
     // keys after a reload typed nothing)
     const first = this.root.querySelector('.it.p span.t:not(.gh)') || this.root.querySelector('.it:not(.atom) span.t:not(.gh)');
-    // the place this document was left at (leaving()): the view scrolled back to it, and on a
-    // computer the caret back in it, as long as the words around it are still the same
-    const P = (load('rikuy.place.v1') || {})[this.name], t = P && P.main === this.main && this.files.get(P.f);
-    const kept = t != null && P.a <= P.b && t.slice(Math.max(0, P.a - 40), P.a) === P.pre && t.slice(P.b, P.b + 40) === P.post ? P : null;
-    if (kept && !this.desk.scrollTop) this.desk.scrollTop = kept.top || 0;
+    // the place this document was left at (leaving()): the view scrolled back to its top line,
+    // and on a computer the caret back in it, as long as the words around each are the same
+    let kept = null;
+    try {
+      const all = load('rikuy.place.v1'), P = all && typeof all === 'object' ? all[this.name] : null;
+      const same = (f, a, b, h) => { const t = this.files.get(f); return t != null && Number.isInteger(a) && Number.isInteger(b) && 0 <= a && a <= b && b <= t.length && textSig('', [['', t.slice(Math.max(0, a - 40), a)], ['', t.slice(b, b + 40)]]) === h; };
+      if (P && P.main === this.main) {
+        if (P.f != null && same(P.f, P.a, P.b, P.sig)) kept = P;
+        const T = P.top;
+        if (T && !this.desk.scrollTop && same(T.f, T.p, T.p, T.sig)) {
+          if (this.index.dirty) this.index.build();
+          const r = this.index.find(T.f, T.p, 1), n = r && r.node, it = n && (n.nodeType === 1 ? n : n.parentElement).closest('.it');
+          if (it) this.desk.scrollTop += it.getBoundingClientRect().top - this.desk.getBoundingClientRect().top - (T.dy || 0);
+        }
+      }
+    } catch (e) { kept = null; }
     if (!first || !first.firstChild || window.innerWidth < 700 || matchMedia('(pointer: coarse)').matches) return;
     const a = document.activeElement;
     if (a && a !== document.body && a !== this.root) return;
     if (this.caretNow()) return;
-    if (kept) {
+    if (kept && kept.ghost) {
+      // (a blank paragraph is not in the text: shown again where it stood)
+      this.root.focus({ preventScroll: true });
+      this.ghostAt(kept.f, kept.a);
+      if (this.ghost) { this.ghost.place = true; return; }
+    } else if (kept) {
       this.restoreCaret(kept.a === kept.b ? { f: kept.f, p: kept.a } : { f: kept.f, selA: kept.a, selB: kept.b });
       if (this.caretNow()) { this.scrollToCaret(); return; }
     }
@@ -1616,23 +1632,40 @@ class App {
     // (Track Changes' base, whose writes wait a moment: written now, or the last words typed
     // with tracking off would come back as changes)
     if (this.baseSaveT) this.saveBase(true);
+    if (this.unsaved) {
+      store(STORE, { name: this.name, main: this.main, files: [...this.files.entries()], t: Date.now(), zipDirty: this.zipDirty });
+      this.saveSoon.flush();
+    }
     // Where the caret and the view were, per document, as Word's "pick up where you left off": a
     // reload (or the browser started again, or the app updated) opened every document at its
-    // first line, the caret and the page scrolled there, however far down the work had been. The
-    // words around the caret go with it, so a text changed since (another tab, an older copy)
-    // is never given a caret in the wrong place (placeInitialCaret).
-    const c = this.caretNow(), t = c && !c.ghost && this.files.get(c.f);
-    if (t != null && c.a != null) {
-      const all = load('rikuy.place.v1') || {};
-      all[this.name] = { main: this.main, f: c.f, a: c.a, b: c.b, pre: t.slice(Math.max(0, c.a - 40), c.a), post: t.slice(c.b, c.b + 40), top: this.desk.scrollTop, at: Date.now() };
+    // first line, the caret and the page scrolled there, however far down the work had been.
+    // The view is kept as the source place of its top line, which holds at any width or zoom. A
+    // hash of the words around each place goes with it (never the words: what is kept here
+    // outlives Remove), so a text changed since is never given a caret in the wrong place
+    // (placeInitialCaret). After the text's own copy, and never in its way.
+    try {
+      let all = load('rikuy.place.v1');
+      if (!all || typeof all !== 'object' || Array.isArray(all)) all = {};
+      const sig = (f, a, b) => { const t = this.files.get(f); return textSig('', [['', t.slice(Math.max(0, a - 40), a)], ['', t.slice(b, b + 40)]]); };
+      // (the blank paragraph the caret is in, Enter's or the one after a table of contents: its place)
+      const c = this.caretNow(), g = c && c.ghost ? this.ghost : null;
+      const f = g ? g.f : c && c.f, a = g ? g.pos : c && c.a, b = g ? g.pos : c && c.b;
+      const P = { main: this.main, at: Date.now() };
+      if (f != null && a != null && this.files.has(f)) Object.assign(P, { f, a, b, ghost: !!g, sig: sig(f, a, b) });
+      const D = this.desk.getBoundingClientRect();
+      for (const it of this.root.querySelectorAll('.it')) {
+        const R = it.getBoundingClientRect();
+        if (R.bottom <= D.top) continue;
+        const sp = it.querySelector('span.t:not(.gh)'), at = sp && sp.firstChild ? posFromDom(sp.firstChild, 0, this.root) : null;
+        if (at && !at.ghost && this.files.has(at.f)) { P.top = { f: at.f, p: at.p, dy: Math.round(R.top - D.top), sig: sig(at.f, at.p, at.p) }; break; }
+      }
+      if (P.f == null && !P.top) delete all[this.name];
+      else all[this.name] = P;
       // (the twenty documents last left, no more)
-      const names = Object.keys(all).sort((x, y) => (all[y].at || 0) - (all[x].at || 0));
+      const names = Object.keys(all).sort((x, y) => ((all[y] && all[y].at) || 0) - ((all[x] && all[x].at) || 0));
       for (const n of names.slice(20)) delete all[n];
       store('rikuy.place.v1', all);
-    }
-    if (!this.unsaved) return;
-    store(STORE, { name: this.name, main: this.main, files: [...this.files.entries()], t: Date.now(), zipDirty: this.zipDirty });
-    this.saveSoon.flush();
+    } catch (e) { /* a place to come back to is a convenience */ }
   }
 
   onGlobalKey(e) {
