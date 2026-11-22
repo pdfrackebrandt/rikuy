@@ -265,6 +265,44 @@ def keys_and_select(page):
     page.keyboard.press('Escape')
 
 
+def cell_edges(page):
+    """Backspace and Delete at a cell's edge, and a selection over several cells deleted or typed
+    over, as Word: the cells and rows stay (the & and \\\\ between them went, joining them)."""
+    def keys(setup, ks, doc=DOC):
+        load_doc(page, doc); setup()
+        for k in ks:
+            if k.startswith('type:'): page.keyboard.type(k[5:])
+            else: page.keyboard.press(k)
+            settle(page, 60)
+        settle(page, 120)
+        return src(page)
+    for name, setup, ks in (('Backspace at a cell\'s start', lambda: click_text(page, 'two', 0), ['Backspace']),
+                            ('Delete at a cell\'s end', lambda: click_text(page, 'one', 3), ['Delete']),
+                            ('Backspace at a row\'s first cell', lambda: click_text(page, 'three', 0), ['Backspace']),
+                            ('Delete at a row\'s last cell', lambda: click_text(page, 'two', 3), ['Delete']),
+                            ('Ctrl+Backspace at a cell\'s start', lambda: click_text(page, 'two', 0), ['Control+Backspace']),
+                            ('Ctrl+Delete at a cell\'s end', lambda: click_text(page, 'one', 3), ['Control+Delete']),
+                            ('Backspace in the first cell', lambda: click_text(page, 'Head', 0), ['Backspace']),
+                            ('Delete in the last cell', lambda: click_text(page, 'four', 4), ['Delete'])):
+        s = keys(setup, ks)
+        check(name + ' changes nothing, as Word\'s', s == DOC, s[s.find('\\toprule'):s.find('\\end{tabular}')])
+    s = keys(lambda: click_text(page, 'two', 0), ['Backspace', 'type:X'])
+    check('and the caret stays in its cell', 'one & Xtwo \\\\' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
+    s = keys(lambda: click_text(page, 'two', 3), ['Control+Backspace'])
+    check('Ctrl+Backspace at a cell\'s end takes its word only', 'one &  \\\\\nthree & four' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
+    s = keys(lambda: click_text(page, 'one', 0), ['Shift+ArrowRight'] * 5 + ['Delete'])
+    check('a selection over two cells, Delete: both emptied, the & kept', '\\midrule\n &  \\\\\nthree & four' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
+    s = keys(lambda: click_text(page, 'one', 0), ['Shift+ArrowRight'] * 5 + ['type:Z'])
+    check('typed over: the words in the first cell, the second emptied', '\\midrule\nZ &  \\\\\nthree & four' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
+    page.keyboard.press('Control+z'); settle(page, 150)
+    check('one undo gives the table back', src(page) == DOC)
+    s = keys(lambda: click_text(page, 'two', 0), ['Shift+ArrowRight'] * 6 + ['Control+x'])
+    check('Ctrl+X from a row\'s last cell into the next row: the block it shows (both rows) emptied, the rows kept', '\\midrule\n &  \\\\\n &  \\\\\n\\bottomrule' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
+    grid = WRAP(GRID)
+    s = keys(lambda: click_text(page, 'three', 0), ['Backspace'], grid)
+    check('an \\hline table too: Backspace at a row\'s start keeps \\\\ \\hline', s == grid, s[s.find('\\hline'):s.find('\\end{tabular}')])
+
+
 # ---- data, structure, settings, dialogs ----------------------------------------------------------
 
 def the_rest(page):
@@ -706,7 +744,7 @@ def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         names = sys.argv[1:]
-        for f in (inserting, tabs_and_trips, keys_and_select, the_rest, drawing, reviewed, verified, compiled, r3_tables):
+        for f in (inserting, tabs_and_trips, keys_and_select, cell_edges, the_rest, drawing, reviewed, verified, compiled, r3_tables):
             if names and f.__name__ not in names:
                 continue
             try: f(page)

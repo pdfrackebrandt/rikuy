@@ -500,6 +500,52 @@ export function barsOf(src, T) {
 
 // A row's text as a person reads it: each cell's words (for sorting, converting, merging)
 export const cellText = (src, c) => (c.empty ? '' : src.slice(c.mc ? (c.mr ? c.mr.textS : c.mc.textS) : c.mr ? c.mr.textS : c.ks, c.mc ? (c.mr ? c.mr.textE : c.mc.textE) : c.mr ? c.mr.textE : c.ce));
+// where those words stand in the source: [s, e] (s === e in an empty cell)
+const cellWords = (c) => (c.empty ? [c.ks, c.ks] : [c.mc ? (c.mr ? c.mr.textS : c.mc.textS) : c.mr ? c.mr.textS : c.ks, c.mc ? (c.mr ? c.mr.textE : c.mc.textE) : c.mr ? c.mr.textE : c.ce]);
+
+// [a, b] of a table's body reaching over a cell's edge: { T, A, Z } (the cells at its two ends),
+// else null. (The & and \\ a deletion over an edge took joined two cells, or two rows, into one.)
+function overCells(src, a, b) {
+  if (a >= b || !/[&\\]/.test(src.slice(a, b))) return null;
+  const T = tableAt(src, a);
+  if (!T || a < T.bodyS || b > T.bodyE) return null;
+  const A = cellAt(T, a), Z = cellAt(T, b);
+  return A && Z && A.cell !== Z.cell ? { T, A, Z } : null;
+}
+
+// Backspace, Delete, or a word or a line of them, from a caret at p: the part of [a, b] in p's
+// cell, as Word stops them at the cell's edge ({ a, b }, empty at the edge: nothing goes), or null
+// where [a, b] stays in one cell or p is in no table.
+export function clipToCell(src, p, a, b) {
+  if (a >= b || !/[&\\]/.test(src.slice(a, b))) return null;
+  const T = tableAt(src, p), C = T && cellAt(T, p);
+  if (!C) return null;
+  // (out of the table too: Backspace in its first cell and Delete in its last stay in them)
+  if (a >= T.bodyS && b <= T.bodyE) { const A = cellAt(T, a), Z = cellAt(T, b); if (!A || !Z || A.cell === Z.cell) return null; }
+  const [s, e] = cellWords(C.cell);
+  const x = Math.min(Math.max(a, s), e);
+  return { a: x, b: Math.max(x, Math.min(b, e)) };
+}
+
+// A selection [a, b] over several cells deleted or typed over: the words of every cell of the block
+// it shows (Word's), the cells and the rows kept. [{ s, e }] in order, or null where it is not one.
+export function clearCells(src, a, b) {
+  const o = overCells(src, a, b);
+  if (!o) return null;
+  const { T, A, Z } = o;
+  const R = grow(T, { r0: Math.min(A.r, Z.r), r1: Math.max(A.r, Z.r), c0: Math.min(A.cell.col, Z.cell.col), c1: Math.max(A.cell.col + A.cell.span - 1, Z.cell.col + Z.cell.span - 1) });
+  const out = [];
+  for (let r = R.r0; r <= R.r1; r++) {
+    const row = T.rows[r];
+    if (!row || row.kind !== 'row') continue;
+    for (const c of row.cells) {
+      if (c.col < R.c0 || c.col + c.span - 1 > R.c1) continue;
+      const [s, e] = cellWords(c);
+      if (e > s) out.push({ s, e });
+    }
+  }
+  return out;
+}
 
 // ---- new tables -----------------------------------------------------------------------------
 // The text of a new table of r rows and c columns, as Insert Table writes it: in a table float,

@@ -57,7 +57,7 @@ import { TOOLS, agentTools, callTool as callAgentTool, describeCommand } from '.
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass, pickMain } from './preamble.js';
 import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, THM_STYLES, titleInfo } from './styles.js';
-import { tableAt, cellAt as tableCellAt, colAlign } from './table.js';
+import { tableAt, cellAt as tableCellAt, colAlign, clipToCell, clearCells } from './table.js';
 import { eolAt } from './blockenv.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
@@ -1889,6 +1889,10 @@ class App {
     if (a >= b) return [];
     const src = this.src(f);
     const slice = src.slice(a, b);
+    // a selection over several cells of a table: their words go and the cells stay, as Word
+    // clears a block of cells; the & and \\ between them went too, which joined cells and rows
+    const cells = clearCells(src, a, b);
+    if (cells) return cells.map((x) => ({ f, s: x.s, e: x.e, t: '' }));
     if (/^\s+$/.test(slice)) {
       // (a blank line still on either side, where an empty paragraph's text went: no paragraphs
       // join, and a space put there stood at the end of the paragraph before; review V8)
@@ -2080,6 +2084,10 @@ class App {
         if (!r) return;
       }
       f = r.f; a = r.a; b = r.b;
+      // In a table Backspace at a cell's start and Delete at its end do nothing, and a word or a
+      // line taken stops at the cell's edge, as Word's: the & or \\ went, joining two cells or rows
+      const clip = f === c.f && clipToCell(this.src(f), c.a, a, b);
+      if (clip) { if (clip.a === clip.b) return; a = clip.a; b = clip.b; }
       // Select-first for atoms
       let vr = visibleRanges(this.renderer.blocks, f, a, b);
       // One keystroke takes one visible thing: a range reaching over several (two display
