@@ -303,14 +303,6 @@ def tables_compiled(page):
               r['ok'] and not r['problems'] and r['engine'] == eng and not miss, {'ok': r['ok'], 'engine': r['engine'], 'problems': r['problems'], 'missing': miss})
 
 
-# (what a tap on Table Properties' OK finds: the dialog, the box ticked, the tab, the caret's place
-# kept for OK, the focus, the taps' clicks so far)
-TP_STATE = '''(() => { const R = window.rikuy, r = R.rbRange, c = document.querySelector('.pop input[aria-label="Repeat as header row at the top of each page"]'), at = R.caretNow();
-  return { toast: ((document.querySelector('.toast') || {}).textContent || '').slice(0, 60), at: at ? R.files.get(R.main).slice(at.a, at.a + 6) : null, stale: !!R.stale, hist: R.hist.length,
-    range: !!r && R.root.contains(r.startContainer), pop: !!R.pop, checked: !!c && c.checked, tab: (document.querySelector('.pop [role=tab][aria-selected=true]') || {}).textContent,
-    focus: document.activeElement && (document.activeElement.getAttribute('aria-label') || document.activeElement.id || '').slice(0, 10), taps: window.__taps }; })()'''
-
-
 def tables_phones(p):
     for w, h in ((390, 844), (360, 740)):
         br, page, errs = open_page(p, w, h, touch=True)
@@ -320,12 +312,10 @@ def tables_phones(p):
             run_cmd(page, 'table-properties'); settle(page, 300)
             fit = page.evaluate("(() => { const d = document.querySelector('.pop'); const r = d.getBoundingClientRect(); const small = [...d.querySelectorAll('[role=tab], button, select, input[type=text]')].filter((x) => x.offsetParent && (x.getBoundingClientRect().height < 43.5 || x.getBoundingClientRect().width < 43.5)); return { in: r.left >= 0 && r.right <= innerWidth + 1, small: small.map((x) => x.textContent || x.getAttribute('aria-label')).slice(0, 4), scroll: document.documentElement.scrollWidth <= innerWidth + 1 }; })()")
             check('Table Properties inside the screen, its tabs and buttons 44 px high and wide (the Cell tab was 43 wide)' + tag, fit['in'] and not fit['small'] and fit['scroll'], fit)
-            page.evaluate("window.__taps = []; for (const k of ['pointerup', 'click']) document.addEventListener(k, (e) => window.__taps.push(k[0] + ':' + (e.target.getAttribute('aria-label') || e.target.textContent).slice(0, 6)), true)")
             page.get_by_role('tab', name='Row', exact=True).tap()
             page.get_by_role('checkbox', name='Repeat as header row at the top of each page', exact=True).tap()
-            pre = page.evaluate(TP_STATE)
             page.get_by_role('button', name='OK', exact=True).tap(); settle(page, 300)
-            check('a tap on Row, on Repeat as header row and on OK: a longtable' + tag, '\\begin{longtable}' in src(page), (page.evaluate(TP_STATE), pre, body(src(page))[:120]))
+            check('a tap on Row, on Repeat as header row and on OK: a longtable' + tag, '\\begin{longtable}' in src(page), body(src(page))[:200])
             load_doc(page, PLAIN); at_src(page, 'one')
             run_cmd(page, 'borders-shading'); settle(page, 300)
             e = page.evaluate("(() => [...document.querySelectorAll('.bs-edge')].map((b) => { const r = b.getBoundingClientRect(); return Math.min(r.width, r.height); }))()")
