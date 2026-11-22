@@ -57,7 +57,7 @@ import { TOOLS, agentTools, callTool as callAgentTool, describeCommand } from '.
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass, pickMain } from './preamble.js';
 import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, THM_STYLES, titleInfo } from './styles.js';
-import { tableAt, cellAt as tableCellAt, colAlign } from './table.js';
+import { tableAt, cellAt as tableCellAt, colAlign, clipToCell, clearCells, blockTabular } from './table.js';
 import { eolAt } from './blockenv.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
@@ -1913,6 +1913,10 @@ class App {
     if (a >= b) return [];
     const src = this.src(f);
     const slice = src.slice(a, b);
+    // a selection over several cells of a table: their words go and the cells stay, as Word
+    // clears a block of cells; the & and \\ between them went too, which joined cells and rows
+    const cells = clearCells(src, a, b);
+    if (cells) return cells.map((x) => ({ f, s: x.s, e: x.e, t: '' }));
     if (/^\s+$/.test(slice)) {
       // (a blank line still on either side, where an empty paragraph's text went: no paragraphs
       // join, and a space put there stood at the end of the paragraph before; review V8)
@@ -2132,6 +2136,10 @@ class App {
         if (!r) return;
       }
       f = r.f; a = r.a; b = r.b;
+      // In a table Backspace at a cell's start and Delete at its end do nothing, and a word or a
+      // line taken stops at the cell's edge, as Word's: the & or \\ went, joining two cells or rows
+      const clip = f === c.f && clipToCell(this.src(f), c.a, a, b);
+      if (clip) { if (clip.a === clip.b) return; a = clip.a; b = clip.b; }
       // Select-first for atoms
       let vr = visibleRanges(this.renderer.blocks, f, a, b);
       // One keystroke takes one visible thing: a range reaching over several (two display
@@ -2249,7 +2257,16 @@ class App {
       this.commit([...edits, { f, s: p, e: p, t: '\\\\\n' }], { f, p: p + 3, bias: 1 }, 'type');
       return;
     }
-    if (kind === 'cell' || kind === 'cap') return;
+    // Enter at the end of a float's last caption: a paragraph after the float, as Word's Enter at a
+    // caption's end. It did nothing, and a table or a figure at the document's end had no way past it.
+    if (kind === 'cap') {
+      const itemEl = el.closest('.it'), B = itemEl && BLOCKS.get(+itemEl.dataset.b);
+      // (what may stand between: a \label in the caption or after it, closing braces, comments, and
+      // the \end of a center or a minipage round the table before the float's own)
+      if (c.collapsed && B && B.e > p && B.e - p < 2000 && /^(?:\s|\\label\s*\{[^{}]*\}|%[^\n]*\n)*\}(?:\s|\}|\\label\s*\{[^{}]*\}|%[^\n]*\n)*(?:\\end\s*\{[^{}]+\}\s*)+$/.test(src.slice(p, B.e))) { this.showGhost(itemEl, f, B.e); this.enterAct(); }
+      return;
+    }
+    if (kind === 'cell') return;
     const itemEl = el.closest('.it');
     if (kind === 'ttl') {
       // Enter in the title, an author or the date starts the text below them, after \maketitle
@@ -2755,6 +2772,9 @@ class App {
   copyLatex(c) {
     const src = this.src(c.f), t = this.selectionLatex(c);
     this.copyKept = null;
+    // cells of a table: a table of their own (their & and \\ alone, pasted in a paragraph, stop TeX)
+    const cells = blockTabular(src, c.a, c.b);
+    if (cells) return cells;
     if (!isBalanced(src, c.a, c.b) || this.texAt(c.f, c.a)) return t;
     const X = chainAt(src, c.a, c.b).filter((x) => x.W.is <= c.a && c.b <= x.W.ie);
     if (!X.length) return t;
@@ -2777,6 +2797,10 @@ class App {
   }
   selectionLatex(c) {
     const src = this.src(c.f);
+    // cells of a table: a table of their own, for a copy, a drag, the Spike or a Quick Part (their
+    // & and \\ alone, put in a paragraph, stop TeX)
+    const cells = blockTabular(src, c.a, c.b);
+    if (cells) return cells;
     if (isBalanced(src, c.a, c.b)) return src.slice(c.a, c.b);
     const vr = visibleRanges(this.renderer.blocks, c.f, c.a, c.b);
     // (the paragraph on the page each piece is in: words of two paragraphs stay two paragraphs, as
@@ -2862,6 +2886,9 @@ class App {
     const T = c.ghost ? null : this.texHere();
     if (T && T.f === c.f && !this.wholeDoc()) { this.texEdit(T, c.a, c.b, (latex || plain).replace(/\r\n?/g, '\n'), 'paste'); return; }
     if (c.ghost && this.ghostRaw()) { this.ghostInsert((latex || plain).replace(/\r\n?/g, '\n')); return; }
+    // cells copied from a spreadsheet, pasted in a table: into the cells from the caret's, as Word's
+    // Overwrite Cells (src/cmd/table.js); a whole table float went into the one cell, which TeX refuses
+    if (!c.ghost && !plainOnly && this.tablePasteCells(plain, html, latex)) return;
     const src = this.src(c.ghost ? this.ghost.f : c.f);
     const at0 = c.ghost ? this.ghost.pos : c.a;
     // inside a command argument (a heading, a cell, a caption) a paste stays one paragraph

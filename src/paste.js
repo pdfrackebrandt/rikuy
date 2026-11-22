@@ -244,6 +244,8 @@ export function withMath(s, prev, inl) {
   return out + escapeTeX(s.slice(last), last ? 'x' : prev);
 }
 function tsvTable(t, opts) {
+  // (no float in a cell, a heading or a caption, where TeX refuses one: there the rows are text)
+  if (opts.inlineOnly) return null;
   const lines = t.replace(/\n+$/, '').split('\n');
   if (lines.length < 2) return null;
   const n = lines[0].split('\t').length;
