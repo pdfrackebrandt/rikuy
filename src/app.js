@@ -1461,6 +1461,16 @@ class App {
     const first = (e) => { if (this.typeQ != null && !(e.type === 'keydown' && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && this.typeQueueable(e.key))) this.typeFlush(); };
     document.addEventListener('keydown', first, true);
     document.addEventListener('pointerdown', first, true);
+    // A press outside the page while an input method composes a word (a phone's keyboard composes
+    // every word until its space): the word goes in first, as Word takes it before a button acts.
+    // A command drawing the page again took the composition's text with it ("Hello", then Bold,
+    // then "world" gave "\textbf{world}"). Leaving the page ends the composition; the focus comes
+    // straight back. (Android's keyboard also marks the word the caret is in as composing, with no
+    // change: that one has nothing to keep, compFrom)
+    document.addEventListener('pointerdown', (e) => {
+      if (!this.composing || this.compFrom === undefined || R.contains(e.target) || document.activeElement !== R) return;
+      R.blur(); R.focus({ preventScroll: true });
+    }, true);
     R.addEventListener('pointerdown', () => { this.tabOut = 0; }, true);
     R.addEventListener('blur', first);
     R.addEventListener('compositionstart', first, true);
@@ -1787,6 +1797,10 @@ class App {
     if (t === 'insertCompositionText' && this.composing && this.compFrom === undefined) this.compFrom = this.compRange(e);
     if (e.isComposing || t === 'insertCompositionText' || t === 'deleteCompositionText' || t === 'insertFromComposition') return;
     e.preventDefault();
+    // (a composition whose text the page drew again, a command run in the middle of it: the
+    // browser dropped it without a compositionend, and every key after it was swallowed here,
+    // a space or a full stop on a phone doing nothing)
+    if (this.composing && this.compNode && !this.compNode.n.isConnected) { this.composing = false; this.compCaret = null; this.compFrom = undefined; this.compNode = null; this.compTex = null; }
     if (this.composing) return;
     if (this.dollarPair && t === 'insertText' && this.dollarPairTakes(e.data)) return;
     this.dollarPair = null;
@@ -2643,7 +2657,7 @@ class App {
     // compFrom; the text node is kept to tell whether the page changed without one)
     this.compFrom = undefined;
     const s = getSelection(), n = s.rangeCount ? s.focusNode : null;
-    this.compNode = n && n.nodeType === 3 ? { n, data: n.data } : null;
+    this.compNode = n ? { n, data: n.nodeType === 3 ? n.data : null } : null;
   }
   // The text a composition's first change replaces (its beforeinput's target range): the caret,
   // the selection, or the word an Android keyboard marked; in the source, with the page's text of
@@ -2674,7 +2688,7 @@ class App {
     // A composition that never changed the text: Android's keyboard marks the word the caret was
     // put in as composing and ends that when the caret moves on, with the word as data. It went in
     // a second time at the caret ("here" became "heherere"); the page is as it was
-    if (F === undefined && c && !c.ghost && !(N && N.n.isConnected && N.n.data !== N.data)) { this.compTex = null; return; }
+    if (F === undefined && c && !c.ghost && !(N && N.n.isConnected && N.data != null && N.n.data !== N.data)) { this.compTex = null; return; }
     if (!c) { this.forceRender = true; this.rebuild(); return; }
     if (c.ghost) { if (data && this.ghost) this.ghostInsert(this.ghostRaw() ? data : escapeTeX(data, ' ')); else this.relayout(true); return; }
     // what the composition replaced, where its first change said (a word marked on Android, the

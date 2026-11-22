@@ -1261,6 +1261,23 @@ def android_input(page, w):
         if wd == 'Hello':
             cdp.send('Input.insertText', {'text': ' '}); settle(page, 100)
     check(f'words composed after a space ending a paragraph stay in it ({w})', 'word.Hello world\n' in src(page) and '\\item One\n' in src(page), body_of(page)[:120])
+    # a word still composing when Bold is tapped goes in first, the next word bold (Word takes an
+    # input method's word before a button acts); and a command that draws the page again while the
+    # keyboard marks a word leaves the keys after it working
+    load_doc(page, doc); click_text(page, 'here.', 5)
+    cdp.send('Input.insertText', {'text': ' '}); settle(page, 100)
+    for wd in ('Hello', 'world'):
+        for i in range(1, len(wd) + 1):
+            cdp.send('Input.imeSetComposition', {'text': wd[:i], 'selectionStart': i, 'selectionEnd': i}); settle(page, 40)
+        if wd == 'Hello':
+            tap(page, page.locator('#rb-b'), 250)
+    cdp.send('Input.insertText', {'text': 'world'}); settle(page, 150)
+    check(f'a word composing when Bold is tapped is kept, the next one bold ({w})', 'here. Hello\\textbf{world}' in src(page), body_of(page)[-50:])
+    load_doc(page, doc); tap_text(page, 'here.', 2)
+    page.evaluate(REGION, ['here', None, 0])
+    tap(page, page.locator('#rb-b'), 250)
+    cdp.send('Input.insertText', {'text': 'Z'}); settle(page, 150)
+    check(f'a key after a command run while the keyboard marks a word goes in ({w})', 'Second paragraph he\\textbf{Z}re.' in src(page), body_of(page)[-50:])
 
 
 SPACING = "*:not(#pages *):not(#pages) { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p:not(#pages *) { margin-bottom: 2em !important; }"
