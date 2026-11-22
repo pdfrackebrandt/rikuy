@@ -638,15 +638,48 @@ def hunt(page):
     d.get_by_role('button', name='Replace All', exact=True).click(); settle(page, 300)
     st = d.get_by_role('status').first.inner_text()
     check('hunt: Replace All of cat with cats says Replaced 1 place, not that the new one is left', src(page) == doc.replace('Alpha cat', 'Alpha dog').replace('cat two', 'cats two') and st == 'Replaced 1 place.', (src(page)[40:80], st))
-    # Replace All of many: the edits applied in one pass (commit), byte for byte, one undo
+    # Replace All of many, the path commit() applies joined (more than 16 edits apart): byte for
+    # byte and one undo, as the one at a time path gave (its speed is the commit's measurement)
     many = WRAP(' '.join('cat%d \\textbf{cat} cat,cat' % k for k in range(30)))
     load_doc(page, many)
     d.get_by_label('Find what', exact=True).fill('cat'); settle(page, 300, full=True)
     d.get_by_label('Replace with', exact=True).fill('dog & co')
     d.get_by_role('button', name='Replace All', exact=True).click(); settle(page, 300)
-    check('hunt: Replace All of 120 places in one pass: every one, escaped, byte for byte', src(page) == many.replace('cat', 'dog \\& co'), src(page)[40:140])
+    check('hunt: Replace All of 120 places, edits applied joined: every one, escaped, byte for byte', src(page) == many.replace('cat', 'dog \\& co'), src(page)[40:140])
     page.evaluate('window.rikuy.undo()'); settle(page, 200)
     check('hunt: and one undo gives the bytes back', src(page) == many)
+    # (review of PR 119) Replace acts only on the hit the dialog shows: a selection from before
+    # Ctrl+H, left behind by Find Next, is never replaced unseen
+    tri = WRAP('Alpha cat one. Beta cat two. Gamma cat three.')
+    load_doc(page, tri)
+    select_text(page, 'cat')
+    page.keyboard.press('Control+h'); settle(page, 250)
+    d.get_by_label('Replace with', exact=True).fill('dog')
+    for _ in range(2):
+        d.get_by_role('button', name='Find Next', exact=True).click(); settle(page, 200)
+    d.get_by_label('Match case', exact=True).check(); settle(page, 250, full=True)
+    d.get_by_role('button', name='Replace one', exact=True).click(); settle(page, 250)
+    check('hunt: selected cat, Ctrl+H, Find Next twice, Match case, Replace: nothing replaced unseen, a result shown', src(page) == tri and summary(page).startswith('Result'), (src(page)[40:100], summary(page)))
+    d.get_by_label('Match case', exact=True).uncheck(); settle(page, 250, full=True)
+    load_doc(page, tri)
+    d.get_by_label('Find what', exact=True).fill('cat'); settle(page, 300, full=True)
+    d.get_by_label('Replace with', exact=True).fill('cats')
+    seen = []
+    for _ in range(4):
+        d.get_by_role('button', name='Replace one', exact=True).click(); settle(page, 200)
+        seen.append(summary(page))
+    s4 = src(page)
+    d.get_by_role('button', name='Replace one', exact=True).click(); settle(page, 200)
+    check('hunt: cat to cats, three replaced and then "Replaced." with none said left; the press after only shows a result, never catss unseen',
+          s4 == tri.replace('cat', 'cats') and seen[-1] == 'Replaced.' and src(page) == s4 and summary(page).startswith('Result'), (src(page)[40:110], seen, summary(page)))
+    # the count left after Replace All follows later edits of the page
+    load_doc(page, tri)
+    d.get_by_label('Find what', exact=True).fill('cat'); settle(page, 300, full=True)
+    d.get_by_role('button', name='Replace All', exact=True).click(); settle(page, 300)
+    a = summary(page)
+    page.evaluate("(() => { const g = window.rikuy, s = g.files.get(g.main), at = s.indexOf('Gamma'); g.closeGroup(); g.commit([{ f: g.main, s: at, e: at, t: 'cat ' }], null, 'type'); g.closeGroup(); })()"); settle(page, 300, full=True)
+    page.evaluate('window.rikuy.findRun(); window.rikuy.findViews()'); settle(page, 100)
+    check('hunt: after Replace All, an edit of the page ends what it said: the search\'s own count, 4 results, not a stale left', a == 'Replaced 3 places.' and summary(page) == '4 results', (a, summary(page)))
     page.keyboard.press('Escape'); settle(page, 150)
 
 
