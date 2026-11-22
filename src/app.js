@@ -3562,9 +3562,27 @@ class App {
     // (the page's own moves of the focus to the field)
     const fieldFocus = () => { backOk = true; focusField(mf); backOk = false; };
     ta.addEventListener('input', sync);
+    // What the page copied carries its LaTeX beside the plain text, whose letters are the drawn
+    // formula's (\frac{a}{b} came in as ba): a formula from it goes in as its LaTeX, and words with
+    // formulas among them as \text{…} around the formulas' LaTeX, as Word pastes them into an equation
+    const ownLatex = (x) => {
+      const one = unwrapMath(x);
+      if (one != null || /\n[ \t]*\n/.test(x)) return one;
+      const parts = x.split(/(\$[^$]+\$)/);
+      let out = '';
+      for (const q of parts) {
+        if (/^\$[^$]+\$$/.test(q)) out += q.slice(1, -1);
+        else if (/[\\{}%&#^_~$]/.test(q)) return null;
+        else if (q.trim()) out += '\\text{' + q.replace(/\s+/g, ' ') + '}';
+      }
+      return parts.length > 1 ? out : null;
+    };
     mf.addEventListener('paste', (e) => {
+      let x = '';
+      try { x = (e.clipboardData && e.clipboardData.getData('text/x-galley-latex')) || ''; } catch (err) { x = ''; }
       const t = e.clipboardData && e.clipboardData.getData('text/plain');
-      const inner = t ? unwrapMath(t) : null;
+      const own = x ? ownLatex(x) : null;
+      const inner = own != null ? own : t ? unwrapMath(t) : null;
       if (inner == null) return;
       e.preventDefault(); e.stopImmediatePropagation();
       mf.insert(D.toField(inner), { format: 'latex', insertionMode: 'replaceSelection', selectionMode: 'after', mode: 'math' });

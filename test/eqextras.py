@@ -57,6 +57,17 @@ with sync_playwright() as p:
       t.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true, composed: true })); })()""")
     settle(page, 250)
     check('pasting $x^2$ drops the dollars', val() == 'y=x^2', val())
+    # a formula copied on the page: its LaTeX, kept beside the plain text (the drawn letters: \frac{a}{b}
+    # came in as ba); words with it as \text{…}
+    PASTE = """([plain, own]) => { const mf = document.getElementById('pop-field'); const dt = new DataTransfer(); dt.setData('text/plain', plain); dt.setData('text/x-galley-latex', own);
+      const t = mf.shadowRoot && (mf.shadowRoot.querySelector('[contenteditable], textarea') || mf.shadowRoot.activeElement) || mf;
+      t.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true, composed: true })); }"""
+    reset('y=')
+    page.evaluate(PASTE, [' \nb\na\n\n ', '$\\frac{a}{b}$']); settle(page, 250)
+    one = val()
+    reset('y=')
+    page.evaluate(PASTE, ['if  b a ', 'if $\\frac{a}{b}$']); settle(page, 250)
+    check('a formula copied on the page pastes into the field as its LaTeX, words as \\text', one == 'y=\\frac{a}{b}' and val() == 'y=\\text{if }\\frac{a}{b}', (one, val()))
     # paste into the LaTeX box
     page.evaluate("""(() => { const t = document.getElementById('pop-tex'); t.focus(); t.setSelectionRange(t.value.length, t.value.length); const dt = new DataTransfer(); dt.setData('text/plain', '\\\\[ z+1 \\\\]');
       t.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); })()""")
