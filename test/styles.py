@@ -1458,9 +1458,20 @@ def item_heading(page):
     check('item_heading: Heading 2 from the gallery on the first item: the heading above the list', src(page) == A('Intro.\n\n\\subsection{One}\n\n\\begin{itemize}\n  \\item Two words\n  \\item Three\n\\end{itemize}'), src(page)[40:])
 
 
+def style_why(page):
+    """(bugs 2026-11-22) A style the caret's place cannot take says why (the search box's toast, an
+    agent's answer): it said "Click in the text of the page first" with the caret in a nested list
+    item or a table cell, since the command asked without the caret's place."""
+    load_doc(page, A('Intro.\n\n\\begin{itemize}\n  \\item One\n    \\begin{itemize}\n      \\item A\n    \\end{itemize}\n\\end{itemize}\n\n\\begin{tabular}{ll}\nx & y \\\\\n\\end{tabular}'))
+    for t in ('A', 'x'):
+        click_text(page, t, 0); settle(page, 150)
+        r = page.evaluate("window.rikuy.api.callTool('run_command', { id: 'style-heading1' })")
+        check('style_why: Heading 1 refused in %s says why, not "Click in the text"' % ('a nested item' if t == 'A' else 'a table cell'), r['ran'] is False and 'Click in the text' not in r['why'] and 'list' in r['why'], r)
+
+
 def run():
     with sync_playwright() as p:
-        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter, block_join, item_heading)
+        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter, block_join, item_heading, style_why)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style)
         # (names given on the command line run those alone)

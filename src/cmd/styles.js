@@ -62,7 +62,9 @@ const style = (id, v, name, el, more = {}) => ({
   when: (app, at) => { const st = styleOf(app, at), t = target(app, v); return !!st && !!t && st.to.has(t); },
   on: (app, at) => { const st = styleOf(app, at), t = target(app, v); return !!st && !!t && st.v === t; },
   run: (app) => { app.setBlockStyle(target(app, v)); app.ribbonSync(); },
-  whyNot: (app, at) => { const t = target(app, v); return t === 'proof' && app.noProof() ? app.noProof() : t ? app.whyNot(styleOf(app, at) || { on: false }, t) : WHY.cls; },
+  // (with the caret's place, as the gallery gives it: without it every reason the search box and an
+  // agent were given was "Click in the text of the page first", the caret in the text or not)
+  whyNot: (app, at) => { const t = target(app, v); return t === 'proof' && app.noProof() ? app.noProof() : t ? app.whyNot({ ...(styleOf(app, at) || {}), on: !!at }, t) : WHY.cls; },
   ...more
 });
 const heading = (k, keys) => style('style-heading' + k, level(k), 'Heading ' + k, SLOT_EL['h' + k], {
