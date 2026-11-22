@@ -3582,9 +3582,17 @@ class App {
       try { x = (e.clipboardData && e.clipboardData.getData('text/x-galley-latex')) || ''; } catch (err) { x = ''; }
       const t = e.clipboardData && e.clipboardData.getData('text/plain');
       const own = x ? ownLatex(x) : null;
-      const inner = own != null ? own : t ? unwrapMath(t) : null;
+      let inner = own != null ? own : t ? unwrapMath(t) : null;
       if (inner == null) return;
       e.preventDefault(); e.stopImmediatePropagation();
+      // (a copy of an equation of this document leaves its label and tag with the equation: pasted
+      // too, the label was defined twice; rows and alignment marks outside an inner environment
+      // cannot stand in a formula in the line, which got a\&=b\\c\&=d)
+      if (own != null) inner = inner.replace(/\\(label|tag\*?)\s*\{[^{}]*\}/g, '').replace(/\\(nonumber|notag)(?![A-Za-z])/g, '').trim();
+      if (!opts.display && /\\\\|(^|[^\\])&/.test(inner.replace(/\\begin\s*\{([A-Za-z*]+)\}[\s\S]*?\\end\s*\{\1\}/g, ''))) {
+        this.toast('Rows cannot go into a formula in the line: paste them on a line of their own.');
+        return;
+      }
       mf.insert(D.toField(inner), { format: 'latex', insertionMode: 'replaceSelection', selectionMode: 'after', mode: 'math' });
       mf.dispatchEvent(new Event('input'));
     }, true);
@@ -3835,10 +3843,20 @@ class App {
         const env = P.env || info.a.env, close = env === info.a.env ? info.e - info.ie : env === '\\[' ? 2 : ('\\end{' + env + '}').length;
         const a = P.anchorPos.s, b = R.e + close;
         if (/^(\$\$?|\\\(|\\\[|\\begin\s*\{[^{}]*\})$/.test(S.slice(a, R.s)) && /^(\$\$?|\\\)|\\\]|\\end\s*\{[^{}]*\})$/.test(S.slice(R.e, b))) {
-          this.commit(this.deletionEdits(R.f, a, b).map((x) => ({ f: R.f, ...x })), null, P.session);
-          // (a display's: at the start of the line after it, not in the blank line it left, where
-          // what is typed joined the two paragraphs)
-          P.returnCaret = { f: R.f, p: a + (display && S[b] === '\n' ? 1 : 0) };
+          if (!display) {
+            this.commit(this.deletionEdits(R.f, a, b).map((x) => ({ f: R.f, ...x })), null, P.session);
+            P.returnCaret = { f: R.f, p: a };
+          } else {
+            // A display goes with the line breaks around it, leaving the text on either side as
+            // TeX had it: one paragraph where a single line break stood on both sides (a blank
+            // line left there split it), a blank line where one stood on either; the caret at the
+            // start of the text after it (in a blank line, what is typed joined the next paragraph)
+            const wsB = /\s*$/.exec(S.slice(0, a))[0], wsA = /^\s*/.exec(S.slice(b))[0], s0 = a - wsB.length, e0 = b + wsA.length;
+            const nlB = (wsB.match(/\n/g) || []).length, nlA = (wsA.match(/\n/g) || []).length, nl = /\r\n/.test(wsB + wsA) ? '\r\n' : '\n';
+            const sep = !s0 || e0 >= S.length ? '' : nlB >= 2 || nlA >= 2 ? nl + nl : nlB || nlA ? nl : ' ';
+            this.commit([{ f: R.f, s: s0, e: e0, t: sep }], null, P.session);
+            P.returnCaret = { f: R.f, p: s0 + sep.length };
+          }
           P.removed = true;
           this.eqClosed(P, '');
           return;

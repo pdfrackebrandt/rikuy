@@ -117,9 +117,11 @@ try:
         for key in ('Control+a', 'Backspace', 'Escape'):
             page.keyboard.press(key); settle(page, 150)
         s5 = src(page)
-        check('an emptied equation goes, with its environment', 'equation' not in s5 and 'More text.' in s5, s5[s5.find('beta'):][:60])
+        # (with the line breaks round it: the text on either side one paragraph again, as TeX had
+        # it; a blank line left there split it)
+        check('an emptied equation goes, with its environment, the paragraph whole', 'equation' not in s5 and 'beta.\nMore text.' in s5, s5[s5.find('beta'):][:60])
         page.keyboard.type('W')
-        check('the caret at the start of the text after it', 'WMore text.' in src(page), src(page)[src(page).find('beta'):][:60])
+        check('the caret at the start of the text after it', 'beta.\nWMore text.' in src(page), src(page)[src(page).find('beta'):][:60])
         page.keyboard.press('Control+z'); page.keyboard.press('Control+z')
         settle(page, 200)
         check('one undo brings the equation back', '\\begin{equation}\n  E = mc^2\n\\end{equation}\nMore text.' in src(page), src(page)[src(page).find('beta'):][:80])

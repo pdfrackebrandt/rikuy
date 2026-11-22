@@ -68,6 +68,14 @@ with sync_playwright() as p:
     reset('y=')
     page.evaluate(PASTE, ['if  b a ', 'if $\\frac{a}{b}$']); settle(page, 250)
     check('a formula copied on the page pastes into the field as its LaTeX, words as \\text', one == 'y=\\frac{a}{b}' and val() == 'y=\\text{if }\\frac{a}{b}', (one, val()))
+    # (an equation copied with its label leaves the label with it; an equation of rows does not go
+    # into a formula in the line)
+    reset('y=')
+    page.evaluate(PASTE, [' z ', '\\begin{equation}\n  z\\label{eq:z}\n\\end{equation}']); settle(page, 250)
+    lab = val()
+    reset('y=')
+    page.evaluate(PASTE, [' a = b c = d ', '\\begin{align}\n  a &= b \\\\\n  c &= d\n\\end{align}']); settle(page, 250)
+    check('pasted into a formula in the line: a copied equation without its label, rows refused', lab == 'y=z' and val() == 'y=', (lab, val()))
     # paste into the LaTeX box
     page.evaluate("""(() => { const t = document.getElementById('pop-tex'); t.focus(); t.setSelectionRange(t.value.length, t.value.length); const dt = new DataTransfer(); dt.setData('text/plain', '\\\\[ z+1 \\\\]');
       t.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); })()""")
