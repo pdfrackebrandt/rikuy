@@ -24,6 +24,7 @@ import { openFontDialog, openRubyDialog } from '../ui/fontdialog.js';
 
 const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + '</svg>';
 const can = (app, at) => !!at && !at.c.ghost && at.ctx !== 'tex';
+const NO_SPACES = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
 // (the toggles and colours also on the blank paragraph Enter showed: Word's empty paragraph takes
 // Bold and the rest for its first words, which went in plain)
 const canG = (app, at) => !!at && at.ctx !== 'tex' && (!at.c.ghost || !!app.ghostFmt());
@@ -176,7 +177,9 @@ export const methods = {
     const more = whole ? [...new Set([...this.root.querySelectorAll('.it[data-b]')].map((el) => (BLOCKS.get(+el.dataset.b) || {}).f))].filter((x) => x && x !== f && this.files.has(x)) : [];
     // (a caret in a word: the word, as Word formats it; o.word 'inside' wants the caret inside it,
     // not at its ends, where what is typed next takes the format)
-    if (o.word && c.collapsed && !whole) { const w = F.wordAt(src0, c.a); if (w && (o.word !== 'inside' || (w[0] < c.a && c.a < w[1]))) st = { text: src0, a: w[0], b: w[1], word: c.a - w[0], f }; }
+    // (not in a script written without spaces, Chinese, Japanese, Thai: its letters up to the next
+    // mark would be a whole sentence, not a word)
+    if (o.word && c.collapsed && !whole) { const w = F.wordAt(src0, c.a); if (w && (o.word !== 'inside' || (w[0] < c.a && c.a < w[1])) && !(o.word === 'inside' && NO_SPACES.test(src0.slice(w[0], w[1])))) st = { text: src0, a: w[0], b: w[1], word: c.a - w[0], f }; }
     // (a block of cells: each cell's words; the steps see the block as it was, block.cells in
     // block.text, to choose once for all of them; o.one: one run over the selection that reads it)
     const cells = whole ? null : this.blockCells(at);
@@ -331,13 +334,16 @@ export const methods = {
         return true;
       }
     }
+    // (a caret inside a word: the whole word, as Word formats it, the caret staying where it was;
+    // it opened an empty \textbf{} in the middle of the word, and in a bold sentence took the bold
+    // off the whole sentence. At a word's ends what is typed next takes the format)
     return this.fmtCommit([(t, a, b, x) => {
       // (a block of cells: on in every cell takes it off all of them, else all of them get it,
       // as Word chooses for the block as a whole)
       const B = x && x.block;
       const r = F.toggle(t, a, b, group, B && !o.force ? { ...o, force: (B.memo[group] ??= B.cells.every((x) => cellOn(B.text, x, group, F.ALL_ON_MAX)) ? 'off' : 'on') } : o);
       return r.error ? r : { ...r, need: r.on ? F.needsOf(group, r.w || { cmd: '' }) : null };
-    }]);
+    }], o.force ? {} : { word: 'inside' });
   },
   // The formats whose words end at p of file f (\textbf{\emph{word|}}): the place after their
   // closing braces, and the openers and closers of those a new paragraph's words go on in. Enter
@@ -875,10 +881,10 @@ export const methods = {
   fontColor(pick) {
     if (pick === undefined) pick = this.colorLast || { name: 'red' };
     else if (pick) this.colorLast = pick;
-    if (!pick) return this.fmtSet('color', null);
+    if (!pick) return this.fmtSet('color', null, { word: 'inside' });
     const w = pick.html ? { cmd: 'textcolor', opt: 'HTML', args: [String(pick.html).replace(/[^0-9A-Fa-f]/g, '').slice(0, 6).toUpperCase()] } : { cmd: 'textcolor', args: [pick.name] };
     w.declAlt = { cmd: 'color', opt: w.opt, args: w.args, decl: true };
-    return this.fmtSet('color', w);
+    return this.fmtSet('color', w, { word: 'inside' });
   },
   fontColorPicker(at) {
     const W = at && at.c && !at.c.ghost ? F.around(this.src(at.c.f), at.c.a, at.c.b, 'color') : null;

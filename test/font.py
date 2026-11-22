@@ -868,6 +868,25 @@ def caret_formats(page):
     check('typed in, it stays: \\textbf{xy}', 'Some plain\\textbf{xy} words' in body(page), body(page))
 
 
+def word_formats(page):
+    """Ctrl+I, Ctrl+B, Ctrl+U and Font Color at a caret inside a word: that word, as Word does."""
+    k = page.keyboard
+    at = lambda: page.evaluate('(() => { const c = window.rikuy.caretNow(); return c && c.a; })()')
+    load_doc(page, DOC); click_text(page, 'plain', 2); k.press('Control+i'); settle(page, 150)
+    check('Ctrl+I in the middle of "plain": \\emph{plain}, no empty \\emph{} inside the word', body(page).startswith('Some \\emph{plain} words'), body(page))
+    k.type('X'); settle(page, 150)
+    check('the caret stays where it was in the word', body(page).startswith('Some \\emph{plXain} words'), body(page))
+    load_doc(page, DOC); click_text(page, 'plain', 2); k.press('Control+u'); settle(page, 150)
+    check('Ctrl+U there: \\uline{plain}', body(page).startswith('Some \\uline{plain} words'), body(page))
+    load_doc(page, DOC); click_text(page, 'plain', 2); run_cmd(page, 'font-color', {'pick': {'name': 'red'}})
+    check('Font Color there: \\textcolor{red}{plain}', body(page).startswith('Some \\textcolor{red}{plain} words'), body(page))
+    T = WRAP('Some \\textbf{many bold words} here.')
+    load_doc(page, T); click_text(page, 'bold', 2); k.press('Control+b'); settle(page, 150)
+    check('Ctrl+B in a word of a bold sentence: that word alone loses the bold', body(page) == 'Some \\textbf{many }bold\\textbf{ words} here.', body(page))
+    k.press('Control+b'); settle(page, 150)
+    check('and again: one \\textbf as before', src(page) == T, body(page))
+
+
 def phone_box(page, sel):
     """The rect of the last element sel matches, the smallest of its controls, and the page's sideways overflow."""
     return page.evaluate("""(sel) => { const all = [...document.querySelectorAll(sel)].filter((x) => x.offsetParent || getComputedStyle(x).position === 'fixed'); const p = all[all.length - 1];
@@ -1033,7 +1052,7 @@ def phones(p):
 
 def run():
     with sync_playwright() as p:
-        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, caret_formats, phones, compiles, r2_compiles)
+        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, caret_formats, word_formats, phones, compiles, r2_compiles)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             if fn is phones:
                 phones(p)
