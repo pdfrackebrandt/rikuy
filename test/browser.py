@@ -1701,6 +1701,12 @@ def run():
         check('no console errors (zoom gestures)', not errors, errors[:5])
         browser.close()
 
+        for w, h in ((1400, 900), (390, 844)):
+            browser, page, errors = open_page(p, width=w, height=h)
+            enter_kept(page, w)
+            check('no console errors (Enter kept, %d px)' % w, not errors, errors[:5])
+            browser.close()
+
     bad = [r for r in results if not r[1]]
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     return 1 if bad else 0
@@ -1738,6 +1744,28 @@ def zoom_gestures(page):
     page.mouse.move(*box)
     page.keyboard.down('Control'); page.mouse.wheel(0, -100); page.keyboard.up('Control'); settle(page, 300)
     check('over the source the wheel is the browser\'s again: the document\'s zoom stays', lab() == kept, (kept, lab()))
+
+
+def enter_kept(page, w):
+    """Enter's new line is on the page alone until something is typed: a relayout (a font that
+    came, the window resized by a phone's keyboard, a pane opened) took it away, and the next words
+    went on the end of the line above. The same after a display closed with Enter."""
+    D = '\\documentclass{article}\n\\begin{document}\nFirst paragraph here.\n\nSecond one.\n\\end{document}\n'
+    for how in ('relayout', 'resize'):
+        load_doc(page, D); click_text(page, 'here.', 5); page.keyboard.press('Enter'); settle(page, 100)
+        if how == 'relayout': page.evaluate('window.rikuy.relayout(true)')
+        else: page.set_viewport_size({'width': w - 20, 'height': 800}); settle(page, 400); page.set_viewport_size({'width': w, 'height': 800}); settle(page, 400)
+        page.keyboard.type('New'); settle(page, 300)
+        s = src(page)
+        check('Enter, then a %s, then words: they start a paragraph of their own (%d px)' % (how, w), 'here.\n\nNew' in s, s[s.find('First'):s.find('Second')])
+    # (the Font dialog's size box with the focus while the page is laid out again: OK formats the
+    # words selected, not the document's start)
+    load_doc(page, D); select_text(page, 'Second one')
+    page.evaluate('window.rikuy.runCommand("font-dialog")'); page.wait_for_selector('.pop input', timeout=5000); settle(page, 200)
+    page.locator('.pop input').first.focus(); page.evaluate('window.rikuy.relayout(true)'); settle(page, 100)
+    got = page.evaluate("window.rikuy.rbRange ? window.rikuy.rbRange.toString() : null")
+    check('a relayout with a dialog\'s field focused keeps what the dialog acts on (%d px)' % w, got == 'Second one', got)
+    page.keyboard.press('Escape'); settle(page, 200)
 
 if __name__ == '__main__':
     sys.exit(run())
