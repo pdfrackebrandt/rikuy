@@ -227,6 +227,11 @@ try:
         (['\\mathbb', '@Space', 'R^n'], '\\mathbb{R}^{n}'),
         (['\\mathca', '@Tab', 'L+1'], '\\mathcal{L}+1'),
         (['\\text', '@Space', 'if x}+y'], '\\text{ifx}+y'),
+        # (a root named with Space holds up to an operator, an accent one letter: both took the
+        # rest of the formula in, \sqrt{x+1}, \hat{\beta_t=0})
+        (['\\sqrt', '@Space', 'x+1'], '\\sqrt{x}+1'),
+        (['\\sqrt', '@Space', '(x+1)+2'], '\\sqrt{x+1}+2'),
+        (['\\hat', '@Space', '\\beta', '@Space', '_t=0'], '\\hat{\\beta}_t=0'),
     ]
     for seq, want in cases:
         fresh_row()

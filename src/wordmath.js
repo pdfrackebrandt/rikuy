@@ -468,6 +468,11 @@ export function installWordTyping(mf, opts) {
     if ((OPEN_KEY[tex] || CLOSE_KEY[tex]) && bracketKey(tex)) return;
     if (NEGATE[tex] && unslash(NEGATE[tex])) return;
     put(tex);
+    // (\sqrt x+1, \hat x+1: a root named with Space holds what follows up to an operator, as
+    // Word's linear format reads it, an accent one letter (accentFull), as TeX reads it; both
+    // took the +1 in too)
+    const b = emptyBox();
+    if (b && (b.owner.type === 'surd' || b.owner.type === 'accent')) linear.add(b.owner);
   };
 
   // Word sets a function name upright once a non-letter follows it: "sin x", "max_x".
@@ -569,15 +574,18 @@ export function installWordTyping(mf, opts) {
       const atoms = typeof p.branch === 'function' ? p.branch(br) || [] : [];
       const empty = atoms.every((x) => x.type === 'first' || x.type === 'placeholder');
       const script = br === 'superscript' || br === 'subscript';
-      const denom = br === 'below' && p.type === 'genfrac' && linear.has(p);
+      const denom = (br === 'below' && p.type === 'genfrac' && linear.has(p)) || (br === 'body' && linear.has(p));
       if (!script && !denom) return null;
       let depth = 0;
-      for (let x = a; x; x = x.parent) if (x.parentBranch === 'superscript' || x.parentBranch === 'subscript' || (x.parentBranch === 'below' && x.parent && x.parent.type === 'genfrac')) depth++;
+      for (let x = a; x; x = x.parent) if (x.parentBranch === 'superscript' || x.parentBranch === 'subscript' || (x.parentBranch === 'below' && x.parent && x.parent.type === 'genfrac') || (x.parentBranch === 'body' && linear.has(x.parent))) depth++;
       const top = groups[groups.length - 1];
       const group = !!top && top.d === depth;
       return { p, br, empty, depth, limit: script && LIMIT_PARENT.has(p.type), group, brace: group && top.brace, model };
     } catch (e) { return null; }
   };
+  // (an accent named with Space takes one letter or symbol, as TeX reads \hat\beta_t: what comes
+  // after it, a script too, goes after the accent, not under it)
+  const accentFull = (s) => !!s && s.br === 'body' && s.p.type === 'accent' && !s.group && !s.empty;
   const buildUp = (k) => {
     const s = slot();
     if (!s) return false;
@@ -592,6 +600,7 @@ export function installWordTyping(mf, opts) {
       mf.executeCommand('moveAfterParent');
       return true;
     }
+    if (accentFull(s)) { mf.executeCommand('moveAfterParent'); return false; }
     // (x_1^2, \sum_i^n: the second script goes on the base, as Word and TeX both read it; the
     // field put it on the first script's last letter, x_{1^2})
     if (!s.group && !s.empty && ((k === '^' && s.br === 'subscript') || (k === '_' && s.br === 'superscript'))) { mf.executeCommand('moveAfterParent'); return false; }
@@ -877,7 +886,7 @@ export function installWordTyping(mf, opts) {
     }
     const trigger = k === ' ' || k === 'Enter' || k === 'Tab' || (k.length === 1 && !/[A-Za-z]/.test(k));
     const converted = trigger && recognize();
-    if (k === '\\') { stop(); buf = ''; pick = 0; draw(); return; }
+    if (k === '\\') { stop(); if (accentFull(slot())) mf.executeCommand('moveAfterParent'); buf = ''; pick = 0; draw(); return; }
     if (k.length === 1 && buildUp(k)) { stop(); changed(); return; }
     // a command's boxes as LaTeX fills them: } goes to the next box ({b} of \frac{a}{b}) or out
     const B = boxes[boxes.length - 1];
