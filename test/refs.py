@@ -20,9 +20,9 @@ dist/tex holds a TeX tree, all of it compiled in the page (pdfLaTeX, XeLaTeX, Lu
 with biber) and read back from TeX's PDF.
 
     cd test && python3 refs.py [section ...]"""
-import os, re, sys, base64, tempfile, subprocess, unicodedata
+import os, re, sys, time, base64, tempfile, subprocess, unicodedata
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, open_page, load_doc, src, click_text, select_text, check, results, roundtrip, ROOT, PRINT_LAYOUT
+from browser import settle, until, ready, open_page, load_doc, src, click_text, select_text, check, results, roundtrip, ROOT, PRINT_LAYOUT
 from playwright.sync_api import sync_playwright
 
 DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
@@ -128,7 +128,7 @@ def notes(page):
     page.evaluate('rikuy.selectTab("references")'); page.locator('#rc-endnote').click(); settle(page, 300)
     box = page.locator('#pop-endnote')
     check('Insert Endnote opens a box by its mark to type its words', box.count() == 1)
-    box.type('Typed note'); settle(page, 600)
+    box.type('Typed note'); settle(page, 600, full=True)
     check('typed into the endnote', '\\endnote{Typed note}' in src(page), src(page))
     page.keyboard.press('Escape'); settle(page, 200)
     page.locator('.a-en').first.click(); settle(page, 250)
@@ -425,6 +425,11 @@ def open_phone(p, width, height, dark=False):
     ctx = br.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=2, has_touch=True, is_mobile=True)
     # (a phone's Print Layout, which this suite was written for: browser.py, PRINT_LAYOUT)
     ctx.add_init_script(PRINT_LAYOUT)
+    # (the page's timers tracked and motion off, as open_page() has them: settle() waits for the
+    # timers a step set going, and a dialog measured is where it stays, not part way in)
+    ctx.add_init_script(B.TIMERS)
+    if os.environ.get('RIKUY_MOTION') != '1':
+        ctx.add_init_script(B.MOTION_OFF)
     page = ctx.new_page()
     errors = []
     page.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
@@ -449,13 +454,42 @@ def open_phone(p, width, height, dark=False):
     page.goto('https://rikuy.test/')
     page.evaluate('localStorage.clear()'); page.reload()
     page.wait_for_function('window.rikuy && document.getElementById("boot").hidden', timeout=60000)
+    # (init goes on after the boot screen hides: the first caret among it)
+    ready(page)
     return br, page, errors
+
+
+# Chromium counts a tap that comes within 400 ms of the last one and near it as the second of a
+# double tap (the word selected) or the third of a triple (the paragraph). The suite's taps are
+# separate ones, as a person's are: one near the last waits out what is left of that time (the
+# gesture's own time, which no event marks; the fixed waits once kept the taps apart).
+DOUBLE_TAP, NEAR = 0.45, 100
+_taps = {}
+
+
+def finger(page, at, do):
+    """A tap at the point at, made by do(), and the click Chromium makes of it: the tap gesture
+    comes from the touchstart and touchend after the tap call has returned, and the click (the
+    caret placed, a button pressed) with it."""
+    last = _taps.get(id(page))
+    if last and abs(at[0] - last[1]) < NEAR and abs(at[1] - last[2]) < NEAR and time.monotonic() - last[0] < DOUBLE_TAP:
+        page.wait_for_timeout((DOUBLE_TAP - (time.monotonic() - last[0])) * 1000)
+    page.evaluate('() => { window.__rkTap = 0; addEventListener("click", () => { window.__rkTap = 1; }, { capture: true, once: true }); }')
+    do()
+    _taps[id(page)] = (time.monotonic(), at[0], at[1])
+    until(page, '() => window.__rkTap === 1', timeout=300)
+
+
+def tap_on(page, loc):
+    """A tap on a control where it is, and its click"""
+    b = loc.bounding_box() or {'x': -1e3, 'y': -1e3, 'width': 0, 'height': 0}
+    finger(page, (b['x'] + b['width'] / 2, b['y'] + b['height'] / 2), loc.tap)
 
 def tap_word(page, word, off=2):
     b = page.evaluate('''([w, off]) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(w)); if (!s) return null; s.scrollIntoView({ block: 'center' });
       const r = document.createRange(), i = s.textContent.indexOf(w) + off; r.setStart(s.firstChild, i); r.setEnd(s.firstChild, i + 1); const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }''', [word, off])
     settle(page, 150)
-    page.touchscreen.tap(b[0], b[1]); settle(page, 250)
+    finger(page, b, lambda: page.touchscreen.tap(b[0], b[1])); settle(page, 250)
 
 def sideways(page): return page.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')
 
@@ -471,50 +505,50 @@ def phone(p):
         tap_word(page, 'PICTURE', 2)
         page.select_option('#rb-tabsel', 'references'); settle(page, 300)
         page.evaluate('document.getElementById("rc-insert-caption").scrollIntoView({ inline: "center" })'); settle(page, 150)
-        page.locator('#rc-insert-caption').tap(); settle(page, 400)
+        tap_on(page, page.locator('#rc-insert-caption')); settle(page, 400)
         f = fits(page, '.pop-refs')
         check('%d px: Insert Caption by a tap opens its dialog inside the screen, scrolling where it is longer' % w, f and f['ok'], f)
         dlg = page.get_by_role('dialog', name='Caption')
         dlg.get_by_label('Caption', exact=True).fill('On a phone')
         small = page.evaluate('''() => [...document.querySelectorAll('.pop-refs input:not([type=checkbox]):not([type=radio]), .pop-refs select, .pop-refs .btn')].filter((e) => e.offsetParent).map((e) => Math.round(e.getBoundingClientRect().height)).filter((h) => h < 44)''')
         check('%d px: the dialog\'s fields and buttons are 44 px for a finger' % w, not small, small)
-        dlg.get_by_role('button', name='OK').tap(); settle(page, 300)
+        tap_on(page, dlg.get_by_role('button', name='OK')); settle(page, 300)
         check('%d px: OK by a tap writes the caption' % w, '\\caption{On a phone}' in src(page), src(page)[-160:])
         big = page.evaluate('''() => [...document.querySelectorAll('.rb-grp:not(.folded) button')].filter((b) => b.offsetParent && b.closest('[role=tabpanel]') && !b.closest('[role=tabpanel]').hidden).map((b) => { const r = b.getBoundingClientRect(); return [b.id || b.dataset.cmd || '', Math.round(r.width), Math.round(r.height)]; })''')
         check('%d px: the References tab\'s buttons are 44 px (a split button\'s arrow 28 wide)' % w, big and all(x[2] >= 44 and (x[1] >= 44 or (x[0].endswith('-x') and x[1] >= 28)) for x in big), [x for x in big if x[2] < 44 or (x[1] < 44 and not x[0].endswith('-x'))][:6])
         tap_word(page, 'More', 1)
         page.evaluate('document.getElementById("rc-table-of-contents") && document.getElementById("rc-table-of-contents").scrollIntoView({ inline: "center" })')
-        page.locator('#rc-table-of-contents').tap(); settle(page, 300)
+        tap_on(page, page.locator('#rc-table-of-contents')); settle(page, 300)
         check('%d px: a tap on Table of Contents writes it, no key needed' % w, '\\tableofcontents' in src(page))
         tap_word(page, 'More', 1)
-        page.locator('#rc-mark-entry').tap(); settle(page, 300)
+        tap_on(page, page.locator('#rc-mark-entry')); settle(page, 300)
         f = fits(page, '.pop-refs')
         check('%d px: Mark Entry (Alt+Shift+X on a keyboard) has a button a finger reaches; its dialog fits' % w, f and f['ok'], f)
         page.get_by_role('dialog', name='Mark Index Entry').get_by_label('Main entry').fill('More')
-        page.get_by_role('dialog', name='Mark Index Entry').get_by_role('button', name='Mark', exact=True).tap(); settle(page, 300)
+        tap_on(page, page.get_by_role('dialog', name='Mark Index Entry').get_by_role('button', name='Mark', exact=True)); settle(page, 300)
         check('%d px: Mark by a tap' % w, '\\index{More}' in src(page))
         page.select_option('#rb-tabsel', 'insert'); settle(page, 200)
         select_text(page, 'More'); settle(page, 100)
         page.evaluate('document.getElementById("ri-link").scrollIntoView({ inline: "center" })')
-        page.locator('#ri-link').tap(); settle(page, 400)
+        tap_on(page, page.locator('#ri-link')); settle(page, 400)
         dlg = page.get_by_role('dialog', name='Insert Hyperlink')
         f = fits(page, '.pop-refs')
         check('%d px: Link (Ctrl+K on a keyboard) by a tap: its dialog inside the screen' % w, dlg.count() == 1 and f and f['ok'], f)
-        dlg.get_by_label('Address', exact=True).fill('example.org'); dlg.get_by_role('button', name='OK').tap(); settle(page, 300)
+        dlg.get_by_label('Address', exact=True).fill('example.org'); tap_on(page, dlg.get_by_role('button', name='OK')); settle(page, 300)
         check('%d px: the link written by a tap' % w, '\\href{https://example.org}{M' in src(page), src(page)[-120:])
         tap_word(page, 'More', 1)
-        page.locator('#ri-link').tap(); settle(page, 300)
+        tap_on(page, page.locator('#ri-link')); settle(page, 300)
         dlg = page.get_by_role('dialog', name='Edit Hyperlink')
         check('%d px: the right click menu\'s Edit, Open, Copy and Remove Link are buttons of the link\'s dialog' % w, dlg.count() == 1 and all(dlg.get_by_role('button', name=n).count() == 1 for n in ('Remove Link', 'Open', 'Copy', 'OK')))
-        dlg.get_by_role('button', name='Remove Link').tap(); settle(page, 300)
+        tap_on(page, dlg.get_by_role('button', name='Remove Link')); settle(page, 300)
         check('%d px: Remove Link by a tap' % w, '\\href' not in src(page))
         page.select_option('#rb-tabsel', 'references'); settle(page, 200)
         tap_word(page, 'More', 1)
         page.evaluate('document.getElementById("rc-manage-sources").scrollIntoView({ inline: "center" })')
-        page.locator('#rc-manage-sources').tap(); settle(page, 300)
+        tap_on(page, page.locator('#rc-manage-sources')); settle(page, 300)
         f = fits(page, '.pop-refs')
         check('%d px: Source Manager fits the screen' % w, f and f['ok'], f)
-        page.get_by_role('dialog', name='Source Manager').get_by_role('button', name='New…').tap(); settle(page, 300)
+        tap_on(page, page.get_by_role('dialog', name='Source Manager').get_by_role('button', name='New…')); settle(page, 300)
         f = fits(page, '.pop-refs')
         check('%d px: Create Source fits the screen and scrolls' % w, f and f['ok'], f)
         page.keyboard.press('Escape')
@@ -528,10 +562,10 @@ def phone(p):
         pg.select_option('#rb-tabsel', 'references'); settle(pg, 300)
         tag = 'phone-' + ('dark' if dark else 'light') + '-390'
         pg.screenshot(path=os.path.join(SHOTS, tag + '.png'))
-        pg.locator('#rc-footnote-options').tap(); settle(pg, 400)
+        tap_on(pg, pg.locator('#rc-footnote-options')); settle(pg, 400)
         pg.screenshot(path=os.path.join(SHOTS, tag + '-notes.png'))
         pg.keyboard.press('Escape'); tap_word(pg, 'Text', 1)
-        pg.locator('#rc-add-source').tap(); settle(pg, 400)
+        tap_on(pg, pg.locator('#rc-add-source')); settle(pg, 400)
         pg.screenshot(path=os.path.join(SHOTS, tag + '-source.png'))
         br.close()
 
