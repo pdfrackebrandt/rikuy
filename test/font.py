@@ -940,12 +940,17 @@ def pdf_of(page, t):
       let s = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) s += String.fromCharCode(...r.pdf.subarray(i, i + 8192));
       return { ok: r.ok, pdf: s ? btoa(s) : '' }; }""", t)
     page.set_default_timeout(30000)
-    try:
-        import base64, io, pypdf
-        text = ' '.join(pg.extract_text() for pg in pypdf.PdfReader(io.BytesIO(base64.b64decode(r['pdf']))).pages) if r['pdf'] else ''
-    except ImportError:
-        text = None
-    return r['ok'], text
+    import base64, shutil, subprocess, tempfile
+    if not r['pdf']:
+        return r['ok'], ''
+    # (poppler's pdftotext reads the spaces TeX set as glue, bold beside plain, ulem's lines; pypdf
+    # ran "Some many" together where the font changed)
+    if shutil.which('pdftotext'):
+        with tempfile.NamedTemporaryFile(suffix='.pdf') as fh:
+            fh.write(base64.b64decode(r['pdf'])); fh.flush()
+            return r['ok'], subprocess.run(['pdftotext', fh.name, '-'], capture_output=True, text=True).stdout
+    print('SKIP the words of the PDF: no pdftotext')
+    return r['ok'], None
 
 
 def review3(page):
