@@ -572,6 +572,52 @@ export const methods = {
     return all.includes(tbl) ? all : [tbl];
   },
 
+  // Up and Down from a cell's first or last line: the cell above or below, where the caret's x
+  // falls, as Word's (Shift: the selection grows there). Chromium's own went to the next cell in
+  // the source's order, the one to the right, so Down from "one" typed into "two". false where
+  // the browser's move is right: another line of the same cell, or out of the table.
+  tableUpDown(dir, extend) {
+    const sel = getSelection();
+    if (!sel.rangeCount || !sel.focusNode) return false;
+    const fn = sel.focusNode, el = fn.nodeType === 1 ? fn : fn.parentElement;
+    const td = el && el.closest('td');
+    if (!td || !this.root.contains(td) || td.classList.contains('rule-cell')) return false;
+    const lines = (cell) => [...cell.querySelectorAll('span.t')].flatMap((s) => [...s.getClientRects()]).filter((q) => q.height);
+    const here = lines(td);
+    if (!here.length) return false;
+    const r = document.createRange();
+    r.setStart(fn, sel.focusOffset); r.collapse(true);
+    const rc = [...r.getClientRects()].find((q) => q.height) || here[dir > 0 ? here.length - 1 : 0];
+    const top = Math.min(...here.map((q) => q.top)), bottom = Math.max(...here.map((q) => q.bottom)), h = rc.height || 12;
+    if (dir > 0 ? rc.bottom < bottom - h / 2 : rc.top > top + h / 2) return false;
+    // (the x of the first of several presses, as Word keeps the caret's column over short cells)
+    const G = this.tableGoal, x = G && G.node === fn && G.off === sel.focusOffset ? G.x : rc.left;
+    const rows = this.tablePieces(td.closest('table')).flatMap((t) => [...t.rows]);
+    // (a cell another one's rowspan reaches down past: the row under the bottom of that one)
+    const tdr = td.getBoundingClientRect();
+    let i = rows.indexOf(td.parentElement), to = null;
+    while (!to && (i += dir) >= 0 && i < rows.length) {
+      const tr = rows[i], tb = tr.getBoundingClientRect();
+      if (dir > 0 ? tb.bottom <= tdr.bottom + 1 : tb.top >= tdr.top - 1) continue;
+      const tds = [...tr.cells].filter((c) => !c.classList.contains('rule-cell') && c.querySelector('span.t'));
+      if (!tds.length) continue;
+      const gap = (c) => { const b = c.getBoundingClientRect(); return x < b.left ? b.left - x : x > b.right ? x - b.right : 0; };
+      to = tds.reduce((m, c) => (gap(c) < gap(m) ? c : m));
+    }
+    if (!to) return false;
+    const there = lines(to);
+    if (!there.length) return false;
+    const line = dir > 0 ? there.reduce((m, q) => (q.top < m.top ? q : m)) : there.reduce((m, q) => (q.bottom > m.bottom ? q : m));
+    const tb = to.getBoundingClientRect();
+    const hit = document.caretRangeFromPoint(Math.min(Math.max(x, tb.left + 1), tb.right - 1), line.top + line.height / 2);
+    let node, off;
+    if (hit && to.contains(hit.startContainer) && hit.startContainer.nodeType === 3 && hit.startContainer.parentElement.closest('span.t')) { node = hit.startContainer; off = hit.startOffset; }
+    else { const sp = to.querySelector('span.t'); node = sp.firstChild || sp; off = 0; }
+    if (extend) sel.extend(node, off); else sel.collapse(node, off);
+    this.tableGoal = { node, off, x };
+    return true;
+  },
+
   // ---- selecting ------------------------------------------------------------------------------------
   // Select Cell, Column, Row or Table: a selection over those cells (shown as a block of cells)
   tableSelect(what) {
@@ -1254,6 +1300,11 @@ onInstall((app) => {
     app.tableDrawAt(td, e.clientX, e.clientY, e.pointerType === 'touch');
   }, true);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && app.tableDraw) { e.preventDefault(); app.tableDrawMode(app.tableDraw); } }, true);
+  // Up and Down between a table's rows (tableUpDown)
+  app.root.addEventListener('keydown', (e) => {
+    if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp') || e.ctrlKey || e.metaKey || e.altKey || e.isComposing || e.defaultPrevented) return;
+    if (app.tableUpDown(e.key === 'ArrowDown' ? 1 : -1, e.shiftKey)) e.preventDefault();
+  });
   // the Table button's arrow: the grid of sizes, then Insert Table…, Convert Text to Table… and
   // Table from Data File… (by the keyboard too: the down arrow presses it)
   document.addEventListener('click', (e) => {

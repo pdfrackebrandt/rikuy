@@ -303,6 +303,33 @@ def cell_edges(page):
     check('an \\hline table too: Backspace at a row\'s start keeps \\\\ \\hline', s == grid, s[s.find('\\hline'):s.find('\\end{tabular}')])
 
 
+def updown(page):
+    """Up and Down go to the cell above and below, as Word's (Chromium's own went to the next cell
+    to the right); Shift with them selects the column's block."""
+    def typed(needle, k, ks, doc=DOC):
+        load_doc(page, doc); click_text(page, needle, k)
+        for key in ks: page.keyboard.press(key); settle(page, 60)
+        page.keyboard.type('X'); settle(page, 120)
+        s = src(page)
+        return s[s.find('\\toprule'):s.find('\\end{tabular}')]
+    s = typed('one', 1, ['ArrowDown'])
+    check('Down from a cell: the cell below, at the caret\'s place', 'tXhree & four' in s and 'one & two' in s, s)
+    s = typed('three', 1, ['ArrowUp'])
+    check('Up from a cell: the cell above', 'oXne & two' in s, s)
+    s = typed('Other', 2, ['ArrowDown'])
+    check('Down in the second column stays in it', 'one & twXo' in s, s)
+    s = typed('Head', 1, ['ArrowDown', 'ArrowDown'])
+    check('Down twice: two rows down, over the rule', re.search(r'\n[threX]{6} & four', s) and 'one & two' in s, s)
+    s = typed('two', 1, ['ArrowDown'], DOC.replace('three & four', 'three & '))
+    check('Down into an empty cell: typing goes there', 'three & X \\\\' in s, s)
+    s = typed('four', 1, ['ArrowDown'])
+    check('Down from the last row leaves the table (here into its caption)', 'three & four' in s and '\\caption{RXesults}' in src(page), src(page)[-120:])
+    load_doc(page, DOC); click_text(page, 'one', 0)
+    page.keyboard.press('Shift+ArrowDown'); settle(page, 60); page.keyboard.press('Delete'); settle(page, 120)
+    s = src(page)
+    check('Shift+Down then Delete: the column\'s two cells emptied, the other column kept', '\\midrule\n & two \\\\\n & four \\\\' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
+
+
 # ---- data, structure, settings, dialogs ----------------------------------------------------------
 
 def the_rest(page):
@@ -744,7 +771,7 @@ def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         names = sys.argv[1:]
-        for f in (inserting, tabs_and_trips, keys_and_select, cell_edges, the_rest, drawing, reviewed, verified, compiled, r3_tables):
+        for f in (inserting, tabs_and_trips, keys_and_select, cell_edges, updown, the_rest, drawing, reviewed, verified, compiled, r3_tables):
             if names and f.__name__ not in names:
                 continue
             try: f(page)
