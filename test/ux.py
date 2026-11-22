@@ -4,7 +4,7 @@ light and dark. Each part says what Word does and checks that Rikuy does it. Scr
 $RIKUY_SHOTS (default /tmp/ux-shots).
 
 Run: cd test && python3 ux.py [part ...]   (no part: all of them)"""
-import os, sys
+import os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from browser import settle, until, open_page, load_doc, click_text, select_text, src, check, results
 from playwright.sync_api import sync_playwright
@@ -118,6 +118,8 @@ def open_tab(page, name, touch=False):
     settle(page, 250)
 
 
+# File's Recent list: the documents kept in this browser, read from IndexedDB a moment after File opens
+RECENT = "() => { const l = document.querySelector('#rf-home .rf-recent-list'); return !!l && l.childElementCount > 0; }"
 FILE_GEOM = """(() => { const r = document.getElementById('ribbon').getBoundingClientRect(), s = document.getElementById('status').getBoundingClientRect(),
   d = document.getElementById('desk').getBoundingClientRect(), b = document.getElementById('rf-back');
   return { open: document.body.classList.contains('file-open'), bottom: Math.round(r.bottom), status: Math.round(s.top), desk: Math.round(d.height),
@@ -202,7 +204,7 @@ def file_view(page, w):
     k = src(page); page.keyboard.type('Q'); settle(page, 300)
     check(f'a template chosen from File opens with the caret in it: the first key lands ({w})', not page.evaluate(FILE_GEOM)['open'] and src(page) != k, page.evaluate('document.activeElement.id'))
     # the view's Home, as Word's backstage: a page for each template beside the commands, and the documents kept here
-    open_tab(page, 'File'); settle(page, 400)
+    open_tab(page, 'File'); settle(page, 400); until(page, RECENT)
     h = page.evaluate("""(() => { const h = document.getElementById('rf-home'), r = h && h.checkVisibility() ? h.getBoundingClientRect() : null, c = document.querySelector('#rp-file > .rb-tb').getBoundingClientRect();
       return { home: r && [Math.round(r.left), Math.round(r.width)], rail: Math.round(c.right), tiles: [...document.querySelectorAll('#rf-home .rf-tile')].map((t) => t.getAttribute('aria-label')),
                recent: [...document.querySelectorAll('#rf-home .rf-doc')].map((t) => t.getAttribute('aria-label')) }; })()""")
@@ -278,6 +280,11 @@ def status_bar(p):
 
 
 PANES = (('styles-pane', '#stylespane'), ('spelling', '#sp-pane'), ('thesaurus', '.th-pane'))
+# (the spelling worker has answered for every word of the open document: the Spelling pane then
+# shows what it found, not what it has so far)
+SPELLED = """() => { const g = window.rikuy, S = g.sp; return !!S && !!S.plan && S.planModel === g.model && [...S.plan.words].every(([d, ws]) => S.failed.has(d) || [...ws].every((w) => S.known.has(d) && S.known.get(d).has(w))); }"""
+# (the thesaurus worker has answered the word looked up: the pane has its meanings, at its full height)
+LOOKED_UP = "() => { const s = document.querySelector('#th-pane .fr-st'); return !!s && !/^Looking up/.test(s.textContent); }"
 GEOM = """(sel) => { const p = document.querySelector(sel), r = p && p.checkVisibility() ? p.getBoundingClientRect() : null, rb = document.getElementById('ribbon').getBoundingClientRect(),
   st = document.getElementById('status').getBoundingClientRect(), d = document.getElementById('desk').getBoundingClientRect();
   return r && { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), ribbon: Math.round(rb.bottom), status: Math.round(st.top), desk: Math.round(d.right), win: innerWidth }; }"""
@@ -293,7 +300,11 @@ def panes(page, w):
     click_text(page, 'Second paragraph', 3)
     for cmd, sel in PANES:
         click_text(page, 'Second paragraph', 3)
+        if cmd == 'spelling':
+            until(page, SPELLED)
         run_cmd(page, cmd); settle(page, 700)
+        if cmd == 'thesaurus':
+            until(page, LOOKED_UP)
         g = page.evaluate(GEOM, sel)
         shot(page, f'pane-{cmd}-{tag}')
         if not touch:
@@ -355,10 +366,12 @@ def pdf_bar(page, w):
       return { cut: s.scrollWidth > s.clientWidth + 1, status: s.textContent, W, x: box('pdf-x'), re: box('pdf-re'), dl: box('pdf-dl'), eng: box('pdf-engine'),
                shell: document.querySelector('.pdf-shell').innerText.trim(), bar: Math.round(document.querySelector('.pdf-bar').getBoundingClientRect().height) }; })()""")
     shot(page, f'pdf-bar-{tag}')
-    check(f'the PDF bar says what TeX made in full ({w})', not g['cut'] and g['status'], g)
-    check(f'Close, the engine, Recompile and Download are whole inside the screen ({w})', all(0 <= g[k][0] and g[k][1] <= g['W'] for k in ('x', 're', 'dl', 'eng')) and g['shell'] in ('Shell escape', 'Shell'), g)
-    check(f'in two rows ({w})', g['bar'] <= 2 * 44 + 16, g)
-    check(f'and 44 px under a finger ({w})', all(g[k][2] >= 44 for k in ('x', 're', 'dl', 'eng')), g)
+    # (what the checks keep says the compile's seconds as "N s": they differ from run to run)
+    d = dict(g, status=re.sub(r'\d+(\.\d+)? s$', 'N s', g['status']))
+    check(f'the PDF bar says what TeX made in full ({w})', not g['cut'] and g['status'], d)
+    check(f'Close, the engine, Recompile and Download are whole inside the screen ({w})', all(0 <= g[k][0] and g[k][1] <= g['W'] for k in ('x', 're', 'dl', 'eng')) and g['shell'] in ('Shell escape', 'Shell'), d)
+    check(f'in two rows ({w})', g['bar'] <= 2 * 44 + 16, d)
+    check(f'and 44 px under a finger ({w})', all(g[k][2] >= 44 for k in ('x', 're', 'dl', 'eng')), d)
 
 
 def download_pdf(page, w):
@@ -382,7 +395,9 @@ def download_pdf(page, w):
             if t: seen.append(t)
             if not page.evaluate("window.rikuy.pdfBusy"): break
     shot(page, 'download-pdf-' + w.replace(' ', '').replace(',', '-'))
-    check(f'while Download PDF compiles, the status bar says what TeX is doing ({w})', any(x.startswith('Making the PDF: ') and len(x) > 18 for x in seen), seen[:4])
+    # (what it said, sampled every 250 ms, differs from run to run: kept for a failure)
+    said = any(x.startswith('Making the PDF: ') and len(x) > 18 for x in seen)
+    check(f'while Download PDF compiles, the status bar says what TeX is doing ({w})', said, '' if said else seen[:4])
     check(f'the PDF comes, and the status bar is quiet again ({w})', d.value.suggested_filename.endswith('.pdf') and not page.evaluate("document.getElementById('st-save').checkVisibility()"), d.value.suggested_filename)
 
 
@@ -553,6 +568,8 @@ def caret_back(page, w):
         check(f'{name}, then Esc: the next key lands at the caret (Spelling: over the misspelling it showed), not at the start ({w})', ok and '\\section{%sPart' % mark not in t, [l for l in t.splitlines() if mark in l][:2])
         page.keyboard.press('Control+z'); settle(page, 150)
     load_doc(page, LONG); settle(page, 400)
+    # (F7 opens at the misspelling after the caret, once the spelling worker has found it)
+    until(page, "() => ((window.rikuy.sp || {}).bad || []).some((x) => x.w === 'mispeled')")
     for name, how in (('Spelling (F7), docked', lambda: page.keyboard.press('F7')),
                       ('Find and Replace (Ctrl+H)', lambda: page.keyboard.press('Control+h')),
                       ('Go To (Ctrl+G)', lambda: page.keyboard.press('Control+g')),
@@ -561,8 +578,10 @@ def caret_back(page, w):
                       ('Word Count from the status bar', lambda: page.locator('#st-words').click())):
         click_text(page, 'Words of part 4', 15)
         page.evaluate("document.getElementById('pages').focus()")
-        how(); settle(page, 900)
-        page.keyboard.press('Escape'); settle(page, 400)
+        # (full: the page laid out again at the docked pane's zoom, 150 ms after the desk narrowed,
+        # before Esc, and again once it widened, before the key: what this part is about)
+        how(); settle(page, 900, full=True)
+        page.keyboard.press('Escape'); settle(page, 400, full=True)
         if page.evaluate("!!document.querySelector('#sp-pane:not([hidden]), .th-pane:not([hidden])') && document.activeElement.id !== 'pages'"):
             page.keyboard.press('Escape'); settle(page, 300)
         lands(name, 'Q')
@@ -572,7 +591,7 @@ def caret_back(page, w):
     page.evaluate("(() => { const s = getSelection().getRangeAt(0).getBoundingClientRect(); document.getElementById('desk').scrollTop += s.top - 300; })()")
     settle(page, 200)
     y0 = page.evaluate("getSelection().getRangeAt(0).getBoundingClientRect().top")
-    run_cmd(page, 'styles-pane'); settle(page, 900)
+    run_cmd(page, 'styles-pane'); settle(page, 900, full=True)
     y1 = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(), d = document.getElementById('desk').getBoundingClientRect(); return [Math.round(r.top), Math.round(d.top), Math.round(d.bottom)]; })()")
     check(f'the Styles pane docking keeps the caret\'s line on the screen, near where it was ({w})', y1[1] <= y1[0] <= y1[2] and abs(y1[0] - y0) < 120, (y0, y1))
     run_cmd(page, 'styles-pane')
@@ -1125,7 +1144,7 @@ def empty_panes(page, w):
     if e and e['buttons']:
         page.locator('#nav .nav-empty button').click(); settle(page, 500)
         check(f'which makes the caret\'s paragraph a heading, listed there ({w})', '\\section{Just one paragraph' in src(page) and page.evaluate("[...document.querySelectorAll('#nav .nv-row, #nav [role=treeitem]')].some((r) => r.offsetParent && r.textContent.includes('Just one'))"), src(page)[-120:])
-    open_tab(page, 'File', page.evaluate("matchMedia('(pointer: coarse)').matches")); settle(page, 500)
+    open_tab(page, 'File', page.evaluate("matchMedia('(pointer: coarse)').matches")); settle(page, 500); until(page, RECENT)
     r = page.evaluate("(() => { const p = document.querySelector('.rf-none'); return p && p.offsetParent ? [p.textContent, [...p.parentElement.querySelectorAll('button')].filter((b) => b.offsetParent).map((b) => b.textContent.trim())] : null; })()")
     check(f'File\'s empty Recent list: one sentence and Open a file ({w})', r and one([r[0]]) and r[1] == ['Open a file'], r)
     if r:
@@ -1179,7 +1198,7 @@ def text_spacing(page, w):
         click_text(page, 'Second paragraph', 3); run_cmd(page, cmd); settle(page, 300)
         cut[cmd] = page.evaluate(CUT, 'body > .pop')
         page.keyboard.press('Escape'); settle(page, 100)
-    open_tab(page, 'File', touch); settle(page, 400)
+    open_tab(page, 'File', touch); settle(page, 400); until(page, RECENT)
     cut['File'] = page.evaluate(CUT, '#rp-file')
     page.keyboard.press('Escape'); settle(page, 300)
     if not touch:
@@ -1225,7 +1244,7 @@ def tooltips(page, w):
     titles had the description alone ("Show the PDF as TeX makes it, beside the page", without
     Ctrl+F2). Native tooltips: Esc and the pointer are the browser's (WCAG 1.4.13 leaves them to it)."""
     load_doc(page, DOC)
-    open_tab(page, 'File'); settle(page, 400)
+    open_tab(page, 'File'); settle(page, 400); until(page, RECENT)
     tips = page.evaluate("""(() => { const reg = window.rikuy.cmds.commands(), byEl = new Map(reg.filter((c) => c.static && c.el).map((c) => [c.el, c]));
       return [...document.querySelectorAll('#bar button, #bar input, #status button, #status input, #rf-home button')].filter((e) => e.checkVisibility() && !['st-lang', 'st-track', 'st-words'].includes(e.id)).map((e) => { const c = byEl.get(e.id);
         return [e.id || e.className, c ? c.name : e.getAttribute('aria-label'), e.title, c ? !!((c.keys || []).length + (c.keysElsewhere || []).length) : false]; }); })()""")
@@ -1288,6 +1307,9 @@ def run(which):
                 check(f'no console errors ({name}, {width} px)', not errors, errors[:4])
                 browser.close()
     bad = [r for r in results if not r[1]]
+    # (the failures again at the end, where a runner's log keeps a long suite's last lines)
+    for r in bad:
+        print('FAILED ' + r[0] + '  :: ' + str(r[2])[:300])
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     return 1 if bad else 0
 
