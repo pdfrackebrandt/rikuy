@@ -527,6 +527,30 @@ export function clipToCell(src, p, a, b) {
   return { a: x, b: Math.max(x, Math.min(b, e)) };
 }
 
+// A selection [a, b] over several cells copied: a tabular of their own, the block the page shows
+// (its columns' letters, merged cells and colours kept; the rules too where the block is as wide
+// as the table). Its source as it stood, & and \\ alone, pasted in a paragraph stopped TeX.
+export function blockTabular(src, a, b) {
+  const o = overCells(src, a, b);
+  if (!o) return null;
+  const { T, A, Z } = o;
+  const R = grow(T, { r0: Math.min(A.r, Z.r), r1: Math.max(A.r, Z.r), c0: Math.min(A.cell.col, Z.cell.col), c1: Math.max(A.cell.col + A.cell.span - 1, Z.cell.col + Z.cell.span - 1) });
+  const cols = T.spec.cols.slice(R.c0, R.c1 + 1);
+  if (!cols.length || cols.some((c) => c.s == null || c.e == null)) return null;
+  const wide = R.c0 === 0 && R.c1 >= T.ncols - 1, nl = T.eol, out = [];
+  const lead = (l) => l.map((x) => src.slice(x.s, x.e)).join(' ');
+  for (let r = R.r0; r <= R.r1; r++) {
+    const row = T.rows[r];
+    if (!row || row.kind !== 'row') continue;
+    if (wide && row.lead.length) out.push(lead(row.lead));
+    const cells = row.cells.filter((c) => c.col >= R.c0 && c.col + c.span - 1 <= R.c1).map((c) => (c.empty ? '' : src.slice(c.cs, c.ce)));
+    out.push(cells.join(' & ') + ' \\\\');
+  }
+  const last = T.rows.reduce((m, x, k) => (x.kind === 'row' ? k : m), -1);
+  if (wide && R.r1 === last && T.tail.lead.length) out.push(lead(T.tail.lead));
+  return '\\begin{tabular}{' + cols.map((c) => src.slice(c.s, c.e)).join('') + '}' + nl + out.join(nl) + nl + '\\end{tabular}';
+}
+
 // A selection [a, b] over several cells deleted or typed over: the words of every cell of the block
 // it shows (Word's), the cells and the rows kept. [{ s, e }] in order, or null where it is not one.
 export function clearCells(src, a, b) {

@@ -57,7 +57,7 @@ import { TOOLS, agentTools, callTool as callAgentTool, describeCommand } from '.
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass, pickMain } from './preamble.js';
 import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, THM_STYLES, titleInfo } from './styles.js';
-import { tableAt, cellAt as tableCellAt, colAlign, clipToCell, clearCells } from './table.js';
+import { tableAt, cellAt as tableCellAt, colAlign, clipToCell, clearCells, blockTabular } from './table.js';
 import { eolAt } from './blockenv.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
@@ -2677,6 +2677,9 @@ class App {
   copyLatex(c) {
     const src = this.src(c.f), t = this.selectionLatex(c);
     this.copyKept = null;
+    // cells of a table: a table of their own (their & and \\ alone, pasted in a paragraph, stop TeX)
+    const cells = blockTabular(src, c.a, c.b);
+    if (cells) return cells;
     if (!isBalanced(src, c.a, c.b) || this.texAt(c.f, c.a)) return t;
     const X = chainAt(src, c.a, c.b).filter((x) => x.W.is <= c.a && c.b <= x.W.ie);
     if (!X.length) return t;

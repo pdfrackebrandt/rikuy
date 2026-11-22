@@ -355,6 +355,19 @@ def paste_cells(page):
     check('an \\hline table: escaped words, its new row with its \\hline', s.endswith('\\hline\nA & B \\\\ \\hline\nC \\& x & D \\\\ \\hline\nE & 50\\% \\\\ \\hline\n'), s)
     s = pasted(lambda: click_text(page, 'After', 2), 'A\tB\nC\tD')
     check('outside a table the block is still a new table', src(page).count('\\begin{tabular}') == 2, src(page)[-260:])
+    # cells copied on the page and pasted in a paragraph: a table of their own, not a bare & and \\
+    copy = '''() => { const dt = new DataTransfer(); document.getElementById('pages').dispatchEvent(new ClipboardEvent('copy', { clipboardData: dt, bubbles: true, cancelable: true }));
+      return [dt.getData('text/plain'), dt.getData('text/html'), dt.getData('text/x-galley-latex')]; }'''
+    paste3 = PASTE.replace('([t, h])', '([t, h, l])').replace("if (h) dt.setData('text/html', h);", "if (h) dt.setData('text/html', h); if (l) dt.setData('text/x-galley-latex', l);")
+    for what, want in (('row', '\\begin{tabular}{ll}\n\\midrule\none & two \\\\\n\\end{tabular}'), ('table', '\\begin{tabular}{ll}\n' + BOOK.split('\n', 1)[1])):
+        load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'select-' + what); settle(page, 150)
+        got = page.evaluate(copy)
+        click_text(page, 'After', 5); page.evaluate(paste3, got); settle(page, 200)
+        s = src(page)
+        check('Select %s, copy, paste in a paragraph: a tabular of its cells, none of them bare' % what.title(), got[2] == want and ('After' + want + ' it.') in s, (got[2], s[-200:]))
+    load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'select-row'); settle(page, 150)
+    got = page.evaluate(copy); click_text(page, 'three', 0); page.evaluate(paste3, got); settle(page, 200)
+    check('and pasted in another row\'s cell it fills that row\'s cells', '\\midrule\none & two \\\\\none & two \\\\\n\\bottomrule' in src(page), src(page)[100:260])
 
 
 # ---- data, structure, settings, dialogs ----------------------------------------------------------
