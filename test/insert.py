@@ -14,7 +14,7 @@ cut, copy and the paste options, symbols and special characters with their keys,
 AutoCorrect as typed. Screenshots in $RIKUY_SHOTS (default /tmp/B11-shots)."""
 import os, sys, io, re, json, base64
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, open_page, src, load_doc, click_text, select_text, check, results, roundtrip
+from browser import settle, until, saved, landed, open_page, src, load_doc, click_text, select_text, check, results, roundtrip
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -40,6 +40,35 @@ def newest(page, base):
     names = sorted(n[:-5] for n in page.evaluate('[...window.rikuy.files.keys()]') if re.match(r'graphs/' + base + r'-[a-z0-9]{4}\.html$', n))
     hist = page.evaluate('window.rikuy.src(window.rikuy.main)')
     return [n for n in names if n in hist][-1] if any(n in hist for n in names) else (names[-1] if names else None)
+
+
+# A graph's frame has drawn itself in the paper's faces: it asks its page for KaTeX's two faces as it
+# starts and draws again once they load (src/graph.js mount), posting its height after each drawing.
+# A frame is a document of its own, its work no timer of the page's: settle() never sees it.
+FACES = """() => !!self.rkTimes && self.rkTimes.length > 0 && [...document.fonts].filter((f) => /KaTeX_(Main|Math)/.test(f.family) && f.status === 'loaded').length >= 2"""
+
+
+def frame_of(page):
+    el = page.query_selector('#wlayer iframe.rk-widget')
+    return el.content_frame() if el else None
+
+
+def drawn(page, ms):
+    """The page's live graph made and drawn, and the page laid out again for the height it asked:
+    what a fixed wait of ms once let happen. Its Frame (None where there is none)."""
+    # (the layer makes a new graph's frame in the frame after the pages are drawn)
+    settle(page)
+    until(page, '() => document.querySelectorAll("#wlayer iframe.rk-widget").length > 0', timeout=ms)
+    fr = frame_of(page)
+    if fr is not None:
+        until(fr, FACES, timeout=ms)
+    # (and the page's timers due soon; RIKUY_WAIT_SHADOW=1 waits the old ms here as well)
+    settle(page, ms)
+    return fr
+
+
+# (Update writes once its picture is drawn, and the dialog closes then)
+CLOSED = '() => !document.getElementById("gd-ok")'
 
 
 def insert_graph(page, kind=None, at=('Hello', 2), caption=None):
@@ -95,6 +124,7 @@ def graph_edit(page):
     page.wait_for_selector('#gd-ok')
     check('graph: Edit graph opens the dialog on it, its formula in the field', page.get_by_role('textbox', name='Formulas').input_value() == 'y = a sin(b x)' and page.inner_text('#gd-ok') == 'Update')
     page.click('#gd-ok'); settle(page, 500)
+    until(page, CLOSED, timeout=500)
     check('graph: Update with nothing changed writes nothing', page.evaluate('window.rikuy.hist.length') == h0 and src(page, G + '.html') == before)
     page.evaluate('(f) => window.rikuy.runCommand("edit-graph", { file: f })', G + '.html')
     page.wait_for_selector('#gd-ok')
@@ -103,6 +133,7 @@ def graph_edit(page):
     check('graph: a new letter gets a slider of its own', page.get_by_role('textbox', name='Slider 3 name').input_value() == 'c')
     page.get_by_role('textbox', name='Slider 3 start').fill('0.5')
     page.click('#gd-ok'); settle(page, 1200)
+    until(page, CLOSED, timeout=1200)
     after = src(page, G + '.html')
     check('graph: Update writes the file and the picture, the text untouched, one step', after != before and '"a sin(b x) + c"' in after and src(page) == want and blob_b64(page, G + '.pgf') != png0 and page.evaluate('window.rikuy.hist.length') == h0 + 1)
     page.evaluate('window.rikuy.undo()'); settle(page, 300)
@@ -121,6 +152,7 @@ def graph_edit(page):
     page.get_by_role('textbox', name='Formulas').fill('y = a cos(b x)')
     settle(page, 300)
     page.click('#gd-ok'); settle(page, 1200)
+    until(page, CLOSED, timeout=1200)
     check('graph: a hand written command with a .jpg fallback is pointed at the new PNG, only that argument (the commented one left)', src(page) == hand.replace('{figs/g.jpg}', '{figs/g.png}') and 'figs/g.png' in files(page)[1], src(page))
 
 
@@ -131,7 +163,7 @@ def graph_kinds(page):
         page.evaluate('window.rikuy.zoomTo ? window.rikuy.zoomTo(1, null) : 0')
         insert_graph(page, kind)
         page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000)
-        settle(page, 900)
+        drawn(page, 900)
         name = [n for n in files(page)[0] if ('distribution' if kind == 'dist' else kind) + '-' in n and n.endswith('.html')][-1]
         fr = page.frame_locator('#wlayer iframe.rk-widget')
         box = fr.locator('#rk-c').bounding_box()
@@ -193,7 +225,10 @@ def graph_hint_menu(page):
     page.click('.w-edit'); settle(page, 300)
     check('graph: and opens the dialog', page.locator('#gd-ok').count() == 1)
     page.keyboard.press('Escape')
+    saved(page)
     page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden', timeout=20000); settle(page, 1500)
+    until(page, '() => document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=1500)
+    settle(page)
     check('graph: after a reload the hint does not come back', page.locator('.w-hint').count() == 0 and page.evaluate('document.querySelectorAll("#wlayer iframe.rk-widget").length') == 1)
 
 
@@ -205,6 +240,9 @@ def graph_safety(page):
     page.get_by_role('textbox', name='Description').fill('<img src=x onerror=alert(1)>')
     settle(page, 700)
     page.click('#gd-ok'); settle(page, 1500)
+    until(page, CLOSED, timeout=1500)
+    # (and its frame has run what it was given)
+    drawn(page, 1500)
     html = src(page, newest(page, 'function') + '.html')
     check('graph: a description cannot end its script element or reach the page', html.count('</script>') == 2 and page.evaluate('document.title') != 'pwned' and '<img src=x' not in html.split('<body>')[0].split('<title>')[1].split('</title>')[0], html[:400])
     reach = page.frame_locator('#wlayer iframe.rk-widget').locator('body').evaluate('''() => { const r = []; try { r.push(String(parent.document)); } catch (e) { r.push('blocked'); } try { r.push(String(localStorage.length)); } catch (e) { r.push('blocked'); } return r; }''')
@@ -228,17 +266,22 @@ def graph_phones(p):
             check('phone %d: the dialog fits, no sideways scroll, the preview inside it' % w, not fit['side'] and fit['inside'] and not fit['over'], fit)
             check('phone %d: every control of the dialog is 44 px each way' % w, fit['small'] == 0, fit)
             page.tap('#gd-ok'); settle(page, 1500)
-            page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); settle(page, 600)
+            page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000)
+            fg = drawn(page, 600)
             # (a graph's buttons wait for a tap in it, then stand above it, off its curves)
             fb = page.locator('#wlayer iframe.rk-widget').bounding_box()
             hid = page.evaluate('getComputedStyle(document.querySelector(".wgraph .w-edit")).opacity')
             page.touchscreen.tap(fb['x'] + fb['width'] * 0.5, fb['y'] + fb['height'] * 0.25); settle(page, 400)
+            # (the frame tells the page of the tap by a message)
+            until(page, '() => !!document.querySelector(".wgraph.wtouch")', timeout=400)
             b = page.evaluate('(() => { const e = document.querySelector(".wgraph .w-edit"), r = e.getBoundingClientRect(), t = document.querySelector(".wgraph .w-src").getBoundingClientRect(); return [r.width, r.height, getComputedStyle(e).opacity, r.bottom, t.bottom, t.width, t.height, r.right <= t.left]; })()')
             check('phone %d: Edit graph and LaTeX wait for a tap in the graph, then show above it, 44 px on the screen though the page is zoomed out' % w, hid == '0' and b[0] >= 43.5 and b[1] >= 43.5 and b[2] == '1' and b[3] <= fb['y'] + 0.5 and b[4] <= fb['y'] + 0.5 and b[5] >= 43.5 and b[6] >= 43.5 and b[7], (hid, b, fb))
             fr = page.frame_locator('#wlayer iframe.rk-widget')
             sb = fr.locator('#rk-0').bounding_box()
             v0 = fr.locator('#rk-0').input_value()
             page.touchscreen.tap(sb['x'] + sb['width'] * 0.92, sb['y'] + sb['height'] / 2); settle(page, 300)
+            if fg is not None:
+                until(fg, '(v) => document.getElementById("rk-0").value !== v', v0, timeout=300)
             check('phone %d: a slider moves by a tap' % w, fr.locator('#rk-0').input_value() != v0, (v0, fr.locator('#rk-0').input_value()))
             check('phone %d: no sideways scroll on the page with the graph' % w, not page.evaluate('document.scrollingElement.scrollWidth > innerWidth'))
             page.screenshot(path=os.path.join(SHOTS, 'page-%d.png' % w))
@@ -438,17 +481,20 @@ def autocorrect(page):
 def files_in(page):
     load_doc(page, W('Para.')); click_text(page, 'Para', 2)
     tex = os.path.join(SHOTS, 'chapter one.tex'); open(tex, 'w').write('Chapter text.\n')
+    h0 = page.evaluate('window.rikuy.hist.length')
     with page.expect_file_chooser() as fc:
         page.evaluate('window.rikuy.runCommand("text-from-file")')
-    fc.value.set_files(tex); settle(page, 500)
+    # (the file chosen is read, then written: a step that lands a moment later)
+    fc.value.set_files(tex); settle(page, 500); landed(page, W('Para.'), h0, timeout=500)
     check('Text from file: the file joins the project and \\input reads it, one step', src(page) == W('Para.\n\n\\input{chapter-one}\n') and src(page, 'chapter-one.tex') == 'Chapter text.\n', src(page))
     page.evaluate('window.rikuy.undo()'); settle(page, 200)
     check('Text from file: one undo takes both out', src(page) == W('Para.') and 'chapter-one.tex' not in files(page)[0])
     pdf = os.path.join(SHOTS, 'scan.pdf'); open(pdf, 'wb').write(b'%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n')
     click_text(page, 'Para', 2)
+    h0 = page.evaluate('window.rikuy.hist.length')
     with page.expect_file_chooser() as fc:
         page.evaluate('window.rikuy.runCommand("insert-pdf")')
-    fc.value.set_files(pdf); settle(page, 500)
+    fc.value.set_files(pdf); settle(page, 500); landed(page, W('Para.'), h0, timeout=500)
     check('PDF pages: \\includepdf with pdfpages and the file, one step', '\\usepackage{pdfpages}' in src(page) and '\\includepdf[pages=-]{scan.pdf}' in src(page) and 'scan.pdf' in files(page)[1], src(page))
     page.evaluate('window.rikuy.undo()'); settle(page, 200)
     check('PDF pages: one undo takes the text and the file out', src(page) == W('Para.') and 'scan.pdf' not in files(page)[1])
@@ -488,13 +534,15 @@ def review(page):
     h0 = page.evaluate('window.rikuy.hist.length')
     page.evaluate('window.rikuy.runCommand("edit-graph")'); page.wait_for_selector('#gd-ok'); settle(page, 300)
     page.click('#gd-ok'); settle(page, 600)
+    until(page, CLOSED, timeout=600)
     check('review M3: Update with nothing touched on a hand written graph (its own shape, 2π exact) writes nothing', page.evaluate('window.rikuy.hist.length') == h0, page.evaluate('window.rikuy.hist.length') - h0)
     # H6: Text from file with a whole document: its body, its packages here
     load_doc(page, W('Para.')); click_text(page, 'Para', 2)
     tex = os.path.join(SHOTS, 'whole.tex'); open(tex, 'w').write('\\documentclass{article}\n\\usepackage{amssymb}\n\\begin{document}\nChapter text $\\mathbb{R}$.\n\\end{document}\n')
+    h0 = page.evaluate('window.rikuy.hist.length')
     with page.expect_file_chooser() as fc:
         page.evaluate('window.rikuy.runCommand("text-from-file")')
-    fc.value.set_files(tex); settle(page, 500)
+    fc.value.set_files(tex); settle(page, 500); landed(page, W('Para.'), h0, timeout=500)
     check('review H6: a whole document comes in as its body, its packages in this preamble', src(page, 'whole.tex') == 'Chapter text $\\mathbb{R}$.\n' and '\\usepackage{amssymb}' in src(page), (src(page), src(page, 'whole.tex')))
     # L2: Paste Special over a selection replaces it
     load_doc(page, W('One two three.'))
@@ -539,7 +587,9 @@ def verify(page):
     cdp = page.context.new_cdp_session(page)
     for rate in (1, 6):
         load_doc(page, {'main.tex': DOC.replace('Second para.', '\\rikuywidget[width=\\linewidth]{%s.html}{%s.png}\n\nSecond para.' % (G, G)).replace('\\begin{document}', '\\usepackage{rikuy}\n\\begin{document}'), G + '.html': evil, 'rikuy.sty': '%'})
-        page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); settle(page, 800)
+        page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000)
+        # (the hostile graph running, its focus() calls going, before the typing starts)
+        drawn(page, 800)
         cdp.send('Emulation.setCPUThrottlingRate', {'rate': rate})
         click_text(page, 'Second para.', 12)
         page.keyboard.type(' One two three four five six seven eight nine ten.', delay=15)
@@ -587,6 +637,7 @@ def review_compiles(page):
     load_doc(page, {'main.tex': hand, 'plot.html': html, 'rikuy.sty': open(os.path.join(ROOT, 'sample', 'widget', 'rikuy.sty')).read()})
     page.evaluate('window.rikuy.runCommand("edit-graph")'); page.wait_for_selector('#gd-ok')
     page.get_by_role('textbox', name='Formulas').fill('y = a cos(b x)'); settle(page, 300); page.click('#gd-ok'); settle(page, 1200)
+    until(page, CLOSED, timeout=1200)
     r = comp()
     check('review H4: a command with no width prints the picture at the text\'s width: one page, no overfull line', r['ok'] and r['pages'] == 1, r)
     # (rikuy.sty v1.1 draws PGF: Update pointed the command at plot.pgf, task 70)
@@ -599,17 +650,19 @@ def review_compiles(page):
     # H6: a whole document read in by Text from file compiles
     load_doc(page, W('Para.')); click_text(page, 'Para', 2)
     tex = os.path.join(SHOTS, 'whole2.tex'); open(tex, 'w').write('\\documentclass{article}\n\\usepackage{amssymb}\n\\begin{document}\nChapter $\\mathbb{R}$.\n\\end{document}\n')
+    h0 = page.evaluate('window.rikuy.hist.length')
     with page.expect_file_chooser() as fc:
         page.evaluate('window.rikuy.runCommand("text-from-file")')
-    fc.value.set_files(tex); settle(page, 500)
+    fc.value.set_files(tex); settle(page, 500); landed(page, W('Para.'), h0, timeout=500)
     r = comp()
     check('review H6: and the document compiles', r['ok'] and r['pages'] == 1, r)
     # V3: a whole document with its own definitions (\\newcommand, \\newtheorem) compiles too
     load_doc(page, W('Para.')); click_text(page, 'Para', 2)
     tex = os.path.join(SHOTS, 'defs.tex'); open(tex, 'w').write('\\documentclass{article}\n\\usepackage{amssymb,amsthm}\n\\newcommand{\\R}{\\mathbb{R}}\n\\newtheorem{theorem}{Theorem}\n\\DeclareMathOperator{\\Var}{Var}\n\\begin{document}\n\\begin{theorem}\nFor $x \\in \\R$, $\\Var x \\ge 0$.\n\\end{theorem}\n\\end{document}\n')
+    h0 = page.evaluate('window.rikuy.hist.length')
     with page.expect_file_chooser() as fc:
         page.evaluate('window.rikuy.runCommand("text-from-file")')
-    fc.value.set_files(tex); settle(page, 500)
+    fc.value.set_files(tex); settle(page, 500); landed(page, W('Para.'), h0, timeout=500)
     r = comp()
     check('verify V3: a whole document with its own \\newcommand, \\newtheorem and \\DeclareMathOperator compiles', r['ok'] and r['pages'] == 1 and '\\newtheorem{theorem}{Theorem}' in src(page, 'defs.tex'), (r, src(page, 'defs.tex')[:200]))
     page.set_default_timeout(30000)
