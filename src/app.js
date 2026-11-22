@@ -2228,6 +2228,17 @@ class App {
     }
     if (kind === 'h') {
       const B = itemEl && BLOCKS.get(+itemEl.dataset.b);
+      // Enter at a heading's very start: an empty paragraph above it, the caret staying at the
+      // heading's start, as Word's (and as Enter at a paragraph's start, below). It showed the
+      // empty paragraph below the heading, as Enter at its end, and what was typed next went there.
+      if (B && c.collapsed && this.atItemStart(itemEl, sel)) {
+        const keep = sel.getRangeAt(0).cloneRange();
+        this.showGhost(itemEl, f, B.s, { before: true });
+        sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true;
+        if (this.ghost) this.ghost.keepAt = keep;
+        this.enterAct();
+        return;
+      }
       // the \label on the heading's next line stays with the heading: the new paragraph goes after it
       const lab = B && /^\s*\\label\s*\{[^}]*\}/.exec(src.slice(B.e));
       if (B) { this.showGhost(itemEl, f, B.e + (lab ? lab[0].length : 0)); this.enterAct(); }
@@ -2317,6 +2328,18 @@ class App {
     let lead = '';
     if (sel.anchorNode.nodeType === 3) lead = sel.anchorNode.data.slice(sel.anchorOffset).replace(/[\u200B\s]/g, '');
     return !txt && !atoms && !lead;
+  }
+
+  // no words or objects of the block before the caret (a heading's number is none of its words)
+  atItemStart(itemEl, sel) {
+    if (itemEl.classList.contains('split-b') || !sel.rangeCount) return false;
+    const r = document.createRange();
+    try { r.setStart(itemEl, 0); r.setEnd(sel.anchorNode, sel.anchorOffset); } catch (e) { return false; }
+    const frag = r.cloneContents();
+    const txt = [...frag.querySelectorAll('span.t')].map((x) => x.textContent).join('').replace(/[\u200B\s]/g, '');
+    let lead = '';
+    if (sel.anchorNode.nodeType === 3 && sel.anchorNode.parentElement && sel.anchorNode.parentElement.closest('span.t')) lead = sel.anchorNode.data.slice(0, sel.anchorOffset).replace(/[\u200B\s]/g, '');
+    return !txt && !lead && !frag.querySelectorAll('.atom:not(.a-br)').length;
   }
 
   // o.before: the blank paragraph goes before el (the text it stands for goes in at pos, before

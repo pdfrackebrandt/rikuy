@@ -1847,6 +1847,17 @@ def word_typing(page):
         else: k.press(key)
         settle(page, 100)
         check('selected from "%s" to "%s", then %s: what it held is gone, the paragraphs at its ends joined' % (a, z, key), src(page) == WORD_DOC.replace(old_, new_), src(page)[200:420])
+    # 5: Enter at a heading's start puts an empty paragraph above it and the caret stays, as
+    # Word's: the empty paragraph showed below the heading, and words typed went after it
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Background', 0); k.press('Enter'); k.type('Q'); settle(page, 100)
+    check('Enter at a heading\'s start, then a letter: it goes in the heading, at its start', src(page) == WORD_DOC.replace('{Background}', '{QBackground}'), src(page)[330:420])
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Background', 0); k.press('Enter'); k.press('ArrowUp'); k.type('New'); settle(page, 100)
+    check('Enter at a heading\'s start, Up, words: a paragraph of their own above the heading', src(page) == WORD_DOC.replace('\\section{Background}', 'New\n\n\\section{Background}'), src(page)[330:420])
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Background', 0); k.press('Enter'); k.press('Backspace'); settle(page, 100)
+    check('Enter at a heading\'s start, then Backspace: as it was', src(page) == WORD_DOC, src(page)[330:420])
     # (one key at an item's start still takes no \item)
     load_doc(page, WORD_DOC)
     click_text(page, 'Banana', 0); k.press('Backspace'); settle(page, 100)
