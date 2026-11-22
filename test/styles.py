@@ -18,7 +18,7 @@ list that cannot be fetched said so, and fetched again), Update to Match Selecti
 with KOMA-Script and memoir; and, where dist/tex holds a TeX tree, all of it compiled in the page.
 
 Run it alone with names to run some: python3 styles.py gallery design."""
-import os, re, sys
+import os, re, sys, json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from browser import settle, tap, ready, TIMERS, MOTION_OFF, _settled, ROOT, SKELETON_HEAD, ROUTES, open_page, check, results, src, wait_src, click_text, select_text, load_doc, roundtrip, pressed, place, PRINT_LAYOUT, policy
 from ribbon import DOC, DIST, state, style, undo_is, TILES, WRAP, body, boxes
@@ -35,6 +35,23 @@ ALL_NAMES = ['Normal*', 'Heading 1', 'Heading 2', 'Heading 3', 'Heading 4', 'Hea
              'Theorem', 'Lemma', 'Proposition', 'Corollary', 'Definition', 'Example', 'Remark', 'Proof']
 A = lambda body, pre='': '\\documentclass{article}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
 R = lambda body, pre='': '\\documentclass{report}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
+DIAG = """(() => { const L = window.__diag = [], t0 = performance.now(), now = () => Math.round(performance.now() - t0);
+  const pos = () => { try { const c = window.rikuy && window.rikuy.caretNow && window.rikuy.caretNow(); return c ? (c.collapsed ? 'p' + c.p : c.a + '-' + c.b) : 'none'; } catch (e) { return 'err'; } };
+  const sel = () => { const s = getSelection(); return s.rangeCount ? (s.anchorNode && (s.anchorNode.textContent || '').slice(0, 12)) + '@' + s.anchorOffset : '-'; };
+  const add = (k, x) => { L.push([k, now(), x || '', pos(), sel(), document.activeElement && (document.activeElement.id || document.activeElement.tagName)]); if (L.length > 400) L.shift(); };
+  for (const k of ['selectionchange', 'focusin', 'touchstart', 'touchend', 'mousedown', 'mouseup', 'click', 'change', 'keydown', 'input', 'beforeinput']) document.addEventListener(k, (e) => add(k, (e.target && (e.target.id || e.target.nodeName)) + (e.key ? ' ' + e.key : '') + (e.clientX != null ? ' ' + Math.round(e.clientX) + ',' + Math.round(e.clientY) : '')), true);
+  if (document.fonts) document.fonts.addEventListener('loadingdone', (e) => add('fonts', e.fontfaces.map((f) => f.family + ' ' + f.weight + ' ' + f.style).join('|')));
+  let app; Object.defineProperty(window, 'rikuy', { configurable: true, get: () => app, set: (v) => { app = v; for (const k of ['rebuild', 'relayout', 'restoreCaret', 'ribbonBack', 'runCommand', 'applyStyle', 'removeGhost', 'revealCaret']) { const f = v[k]; if (typeof f === 'function') v[k] = function (a) { add(k, a == null ? '' : JSON.stringify(a).slice(0, 80)); return f.apply(this, arguments); }; } } });
+  window.__mark = (m) => add('MARK', m); })()"""
+
+
+DIAGS = []
+
+
+def diag(page, label, ok):
+    if not ok:
+        DIAGS.append('DIAG ' + label + ' ' + json.dumps(page.evaluate("window.__diag.filter((e) => !/^(rl-|rc-|rb-)/.test(e[2])).slice(-45)")))
+
 P3 = 'Before it.\n\nWords here.\n\nAfter it.'
 
 
@@ -672,6 +689,7 @@ def open_phone(p, width, height, dark=False):
     ctx.add_init_script(TIMERS)
     if os.environ.get('RIKUY_MOTION') != '1':
         ctx.add_init_script(MOTION_OFF)
+    ctx.add_init_script(DIAG)
     page = ctx.new_page()
     errors = []
     page.on('console', lambda m: errors.append(m.text) if m.type == 'error' and 'Failed to load resource' not in m.text else None)
@@ -724,14 +742,18 @@ def phone(p):
         tag = ' (%dx%d)' % (w, h)
         browser, page, errors = open_phone(p, w, h)
         try:
+            page.evaluate('__mark("ready")')
             load_doc(page, A('\\section{Intro}\nFirst words here.\n\nSecond words here.'))
+            page.evaluate('__mark("loaded")')
             tap_text(page, 'First words', 2)
+            page.evaluate('__mark("tapped")')
             info = page.evaluate("""() => { const sel = document.getElementById('rb-style'), g = sel.querySelector('optgroup');
               return { list: !!sel.offsetParent, more: g ? [...g.children].map((o) => o.textContent) : null, side: document.documentElement.scrollWidth - document.documentElement.clientWidth }; }""")
             check('a phone shows the style list, which ends with the Styles pane and Create a Style, and the page does not scroll sideways' + tag, info['list'] and info['more'] == ['Styles pane…', 'Create a Style…'] and info['side'] <= 0, info)
-            page.select_option('#rb-style', 'subsection'); settle(page, 300)
+            page.select_option('#rb-style', 'subsection'); page.evaluate('__mark("selected")'); settle(page, 300); page.evaluate('__mark("settled")')
             check('the list makes the tapped paragraph Heading 2, and the caret stays in its words' + tag, '\\subsection{First words here.}' in src(page) and page.evaluate('document.activeElement.id') == 'pages', src(page)[-120:])
             page.keyboard.type('X'); settle(page, 200)
+            diag(page, 'typing' + tag, '\\subsection{FiXrst words here.}' in src(page) or '\\subsection{FirXst words here.}' in src(page))
             check('typing goes on where it was' + tag, '\\subsection{FiXrst words here.}' in src(page) or '\\subsection{FirXst words here.}' in src(page), src(page)[-120:])
             page.select_option('#rb-style', '__pane'); settle(page, 350)
             check('the list\'s Styles pane opens it with the tapped paragraph\'s style marked, the caret kept on the page' + tag, page.evaluate('(document.querySelector("#stylespane [aria-selected=true]") || {}).ariaLabel') == 'Heading 2'
@@ -1414,6 +1436,8 @@ def run():
     # (the failures again at the end, where a runner's log, which keeps a long run's tail, shows them)
     for r in bad:
         print('FAILED ' + r[0] + '  :: ' + str(r[2])[:300])
+    for d in DIAGS:
+        print(d[:5000])
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     return 1 if bad else 0
 
