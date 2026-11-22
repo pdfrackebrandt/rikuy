@@ -14,7 +14,7 @@ import { installWordTyping, wordShortcuts, makeDialect, classifyMacros, resolveC
 import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
 import { minimalRow, makeSame } from './minimal.js';
-import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
+import { htmlToTeX, plainToTeX, unwrapMath, oneLineLatex, headingsAsWords } from './paste.js';
 import { chainAt } from './charfmt.js';
 import { mapPos } from './wrap.js';
 import { findProblems, missingFigures } from './problems.js';
@@ -1166,7 +1166,25 @@ class App {
     const A = posFromDom(r.startContainer, r.startOffset, this.root);
     if (!A || A.ghost) return null;
     let Bp = A;
-    if (!r.collapsed) { Bp = posFromDom(r.endContainer, r.endOffset, this.root); if (!Bp || Bp.ghost) Bp = A; }
+    if (!r.collapsed) {
+      // The footnotes at a page's foot are a text of their own, as Word's are: a selection from
+      // the page's last lines into them (Shift+Down there, a drag) ends where the page's text
+      // ends, and one from a footnote out of it ends at that footnote's end. Their words come
+      // earlier in the source, so the selection reached back over half the document before, and
+      // typing over it deleted all that. (Not at the footnote area's end: its last footnote's
+      // mark is in the body, far from the first's, and the body between went.)
+      const up = (n, q) => { const e = n && (n.nodeType === 1 ? n : n.parentElement); return e && e.closest ? e.closest(q) : null; };
+      const fs = up(r.startContainer, '.fns'), fe = up(r.endContainer, '.fns'), ns = up(r.startContainer, '.fn');
+      let end = [r.endContainer, r.endOffset];
+      if (ns && up(r.endContainer, '.fn') !== ns) end = [ns, ns.childNodes.length];
+      else if (fe && fe !== fs) end = [fe, 0];
+      else if (fs && fe !== fs) end = [fs, fs.childNodes.length];
+      // (the end read as an end: what is before it on the page; where that is before the start,
+      // nothing of the page's text lies between them, and the place read as before is kept)
+      Bp = posFromDom(end[0], end[1], this.root, true);
+      if (Bp && !Bp.ghost && Bp.f === A.f && Bp.p < A.p) Bp = end[0] === r.endContainer ? posFromDom(end[0], end[1], this.root) : A;
+      if (!Bp || Bp.ghost) Bp = A;
+    }
     if (Bp.f !== A.f) return { f: A.f, p: A.p, a: A.p, b: A.p, collapsed: true, crossFile: true };
     const a = Math.min(A.p, Bp.p), b = Math.max(A.p, Bp.p);
     return { f: A.f, p: A.p, a, b, collapsed: r.collapsed || a === b, range: r };
@@ -1293,7 +1311,9 @@ class App {
     // (the blocks shown as LaTeX move with these edits, src/cmd/view.js; typing ends Repeat's turn)
     this.viewMap(byFile, before);
     if (!this.cmdDepth) this.lastAct = null;
-    this.record(before, kind, cb && cb.f != null ? { f: cb.f, p: cb.p } : caret, caret, swaps, win);
+    // (a selection the step was made on comes back selected with Undo, as Word's: what was typed
+    // over or deleted is selected again, not a caret at its start)
+    this.record(before, kind, cb && cb.f != null ? (cb.collapsed === false && !cb.ghost ? { f: cb.f, p: cb.p, selA: cb.a, selB: cb.b } : { f: cb.f, p: cb.p }) : caret, caret, swaps, win);
     if (made.length) { const top = this.hist[this.hist.length - 1]; if (top) for (const d of top.files) if (made.includes(d.f)) d.made = true; }
     this.zipDirty = true;
     this.rebuild(caret);
@@ -1326,7 +1346,10 @@ class App {
     const prev = typed != null ? (this.files.get(files[0].f) || '')[files[0].s - 1] || '' : '';
     const had = typed != null ? ((top.files.find((d) => d.f === files[0].f) || {}).ins || '') : '';
     const newWord = typed != null && (/\n/.test(typed) || (/\s/.test(prev) && /^\S/.test(typed) && /\S/.test(had)));
-    if (top && top.open && kind && top.kind === kind && now - top.time < 2000 && (kind !== 'type' && kind !== 'del' || contiguous) && !newWord) {
+    // (the letters typed after the first over a selection belong to the step that replaced it:
+    // that word's own letters were a step apart, and Ctrl+Z left its first letter standing, "n")
+    const same = top && (top.kind === kind || (kind === 'type' && top.kind === 'replace'));
+    if (top && top.open && kind && same && now - top.time < 2000 && (kind !== 'type' && kind !== 'del' || contiguous) && !newWord) {
       // (what every edit of the step left alone is the least of what each left alone, for the files
       // nothing changed between its commits: src/editor.js stepJoin)
       stepJoin(top, before, (f) => this.files.get(f), win);
@@ -1884,8 +1907,9 @@ class App {
     return { f: A.f, a: Math.min(A.p, B.p), b: Math.max(A.p, B.p) };
   }
 
-  // Build deletion edits for [a,b) in f without breaking markup.
-  deletionEdits(f, a, b) {
+  // Build deletion edits for [a,b) in f without breaking markup. sel: [a, b) is a selection made
+  // on the page (typed over, deleted, cut, pasted over), not what one key takes at the caret.
+  deletionEdits(f, a, b, sel) {
     if (a >= b) return [];
     const src = this.src(f);
     const slice = src.slice(a, b);
@@ -1908,11 +1932,39 @@ class App {
       const kept = lines.filter((l, i) => i === 0 || (i === lines.length - 1 ? !mark(l) : l.trim() !== '' && !mark(l)));
       return [{ f, s: a, e: b, t: kept.join('\n') }];
     }
-    if (isBalanced(src, a, b) && !/\\(begin|end)\s*\{(document)\}/.test(slice) && !/\\(section|subsection|subsubsection|chapter|part|maketitle|item|bibliography)\b/.test(slice)) {
+    // A selection that holds whole headings or list items takes them, as Word's takes the
+    // paragraphs it holds: their words alone went, and an empty numbered heading or empty bullets
+    // were left standing between the two paragraphs it joined. One key at the caret still never
+    // takes a heading's or an item's command (Backspace at an item's start).
+    const keep = sel ? /\\(maketitle|bibliography)\b/ : /\\(section|subsection|subsubsection|chapter|part|maketitle|item|bibliography)\b/;
+    if (isBalanced(src, a, b) && !/\\(begin|end)\s*\{(document)\}/.test(slice) && !keep.test(slice)) {
       return [{ f, s: a, e: b, t: '' }];
     }
     const vr = visibleRanges(this.renderer.blocks, f, a, b);
-    return vr.map(([s, e]) => ({ f, s, e, t: '' }));
+    if (!sel) return vr.map(([s, e]) => ({ f, s, e, t: '' }));
+    // A selection whose ends cannot go as LaTeX (it starts in a heading's words, or ends in a
+    // list's item: Ctrl+Shift+Home, Shift+Page Down, a drag) still takes whole the paragraphs,
+    // headings, lists and displays it holds from end to end; of the two at its ends, the words
+    // selected go, as before. Their words alone went, and empty headings and bullets stayed.
+    const inside = this.renderer.blocks.filter((B) => B.f === f && a <= B.s && B.e <= b && B.s < B.e).sort((x, y) => x.s - y.s);
+    const runs = [];
+    for (const B of inside) {
+      const L = runs[runs.length - 1];
+      if (L && L[1] <= B.s && !src.slice(L[1], B.s).trim()) L[1] = B.e; else runs.push([B.s, B.e]);
+    }
+    const ok = ([s, e]) => isBalanced(src, s, e) && !/\\(begin|end)\s*\{document\}|\\(maketitle|bibliography)\b/.test(src.slice(s, e));
+    const gone = [];
+    for (const R of runs) {
+      if (ok(R)) gone.push(R);
+      else for (const B of inside) if (R[0] <= B.s && B.e <= R[1] && ok([B.s, B.e])) gone.push([B.s, B.e]);
+    }
+    gone.sort((x, y) => x[0] - y[0]);
+    const out = gone.map(([s, e]) => ({ f, s, e, t: '' }));
+    for (let [s, e] of vr) {
+      for (const [x, y] of gone) { if (y <= s || x >= e) continue; if (x > s) out.push({ f, s, e: x, t: '' }); s = Math.max(s, y); }
+      if (s < e) out.push({ f, s, e, t: '' });
+    }
+    return out.sort((u, v) => u.s - v.s);
   }
 
   // Everything on the page is selected: what is typed, pasted or deleted then replaces the
@@ -1978,7 +2030,7 @@ class App {
     if (c.ghost) { this.ghostInsert(raw ? data : escapeTeX(data, ' ')); return; }
     const f = range ? range.f : c.f;
     let a = range ? range.a : c.a, b = range ? range.b : c.b;
-    const edits = this.deletionEdits(f, a, b);
+    const edits = this.deletionEdits(f, a, b, true);
     let at = a;
     // If deletion collapsed to visible ranges, insertion goes where the first visible char was
     if (edits.length && edits[0].s > a && edits.length > 0 && edits[0].t === '') at = edits[0].s;
@@ -2097,9 +2149,11 @@ class App {
         return;
       }
       const atom = this.soleAtom(f, a, b, vr);
-      if (atom) { this.arm(atom); return; }
+      // (the key that selected it is the one the toast names: Delete before a formula said
+      // "Press Backspace again")
+      if (atom) { this.arm({ ...atom, key: /Backward/.test(type) ? 'Backspace' : 'Delete' }); return; }
     }
-    const edits = this.deletionEdits(f, a, b);
+    const edits = this.deletionEdits(f, a, b, !c.collapsed);
     if (!edits.length) {
       const p = /Backward/.test(type) || !c.collapsed ? a : b;
       this.restoreCaret({ f, p, bias: /Backward/.test(type) ? -1 : 1 });
@@ -2159,7 +2213,7 @@ class App {
       s.removeAllRanges(); s.addRange(r);
     }
     if (atom.kind === 'code') { this.toast('Code selected: Normal in Styles makes it text again; press it again or Enter to edit its source.', 2400); return; }
-    this.toast('Press Backspace again to delete this ' + ({ math: 'equation', cite: 'citation', ref: 'reference', fn: 'footnote', img: 'figure', widget: 'live figure', chip: 'command', raw: 'block' }[atom.kind] || 'item') + (atom.kind === 'br' || atom.kind === 'sp' ? '.' : ', or Enter to edit it.'), 1800);
+    this.toast('Press ' + (atom.key || 'Backspace') + ' again to delete this ' + ({ math: 'equation', cite: 'citation', ref: 'reference', fn: 'footnote', img: 'figure', widget: 'live figure', chip: 'command', raw: 'block' }[atom.kind] || 'item') + (atom.kind === 'br' || atom.kind === 'sp' ? '.' : ', or Enter to edit it.'), 1800);
   }
   disarm() {
     if (this.armed && this.armed.el) this.armed.el.classList.remove('sel');
@@ -2187,7 +2241,7 @@ class App {
     const kind = ctxEl ? ctxEl.dataset.ctx : 'p';
     const f = c.f;
     const src = this.src(f);
-    let edits = c.collapsed ? [] : this.deletionEdits(f, c.a, c.b);
+    let edits = c.collapsed ? [] : this.deletionEdits(f, c.a, c.b, true);
     const p = c.a;
     if (soft) {
       if (kind === 'cell') { this.commit([...edits, { f, s: p, e: p, t: '\\newline ' }], { f, p: p + 9 }, 'type'); return; }
@@ -2206,6 +2260,17 @@ class App {
     }
     if (kind === 'h') {
       const B = itemEl && BLOCKS.get(+itemEl.dataset.b);
+      // Enter at a heading's very start: an empty paragraph above it, the caret staying at the
+      // heading's start, as Word's (and as Enter at a paragraph's start, below). It showed the
+      // empty paragraph below the heading, as Enter at its end, and what was typed next went there.
+      if (B && c.collapsed && this.atItemStart(itemEl, sel)) {
+        const keep = sel.getRangeAt(0).cloneRange();
+        this.showGhost(itemEl, f, B.s, { before: true });
+        sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true;
+        if (this.ghost) this.ghost.keepAt = keep;
+        this.enterAct();
+        return;
+      }
       // the \label on the heading's next line stays with the heading: the new paragraph goes after it
       const lab = B && /^\s*\\label\s*\{[^}]*\}/.exec(src.slice(B.e));
       if (B) { this.showGhost(itemEl, f, B.e + (lab ? lab[0].length : 0)); this.enterAct(); }
@@ -2228,8 +2293,17 @@ class App {
         const listEnd = +le + base;
         const removed = e - s2;
         const NL = /\r\n/.test(src) ? '\r\n' : '\n';
-        const ins = NL + NL;
-        this.commit([{ f, s: s2, e, t: '' }, { f, s: listEnd, e: listEnd, t: ins }], { f, p: listEnd - removed + ins.length, bias: 1 }, 'enter');
+        // (words right after the list, in the paragraph the list is part of, get a paragraph of
+        // their own too: what is typed on the new line stays apart from them, as Word's empty
+        // paragraph after a list does; it ran into them, "Out After the list...")
+        // (a comment on \end's line stays on it, and the lines go in after it: before it, what
+        // was typed met the comment, and the words after it, "Out%" then "After")
+        const at = listEnd + (/^[ \t]*%[^\n]*/.exec(src.slice(listEnd)) || [''])[0].replace(/\r$/, '').length;
+        const glued = /^[ \t]*(?:\r?\n[ \t]*)?(?!\r?\n|%|\\(?:end|begin|item|par|paragraph|(?:sub){0,2}section|chapter|part)(?![A-Za-z])|\\\[)\S/.exec(src.slice(at));
+        // (as many line breaks after the caret as make a blank line before those words: two where
+        // they stood on \end's own line)
+        const ins = NL + NL + (glued ? NL.repeat(2 - (glued[0].match(/\n/g) || []).length) : '');
+        this.commit([{ f, s: s2, e, t: '' }, { f, s: at, e: at, t: ins }], { f, p: at - removed + NL.length * 2, bias: 1 }, 'enter');
         return;
       }
       const NL = /\r\n/.test(src) ? '\r\n' : '\n';
@@ -2295,6 +2369,18 @@ class App {
     let lead = '';
     if (sel.anchorNode.nodeType === 3) lead = sel.anchorNode.data.slice(sel.anchorOffset).replace(/[\u200B\s]/g, '');
     return !txt && !atoms && !lead;
+  }
+
+  // no words or objects of the block before the caret (a heading's number is none of its words)
+  atItemStart(itemEl, sel) {
+    if (itemEl.classList.contains('split-b') || !sel.rangeCount) return false;
+    const r = document.createRange();
+    try { r.setStart(itemEl, 0); r.setEnd(sel.anchorNode, sel.anchorOffset); } catch (e) { return false; }
+    const frag = r.cloneContents();
+    const txt = [...frag.querySelectorAll('span.t')].map((x) => x.textContent).join('').replace(/[\u200B\s]/g, '');
+    let lead = '';
+    if (sel.anchorNode.nodeType === 3 && sel.anchorNode.parentElement && sel.anchorNode.parentElement.closest('span.t')) lead = sel.anchorNode.data.slice(0, sel.anchorOffset).replace(/[\u200B\s]/g, '');
+    return !txt && !lead && !frag.querySelectorAll('.atom:not(.a-br)').length;
   }
 
   // o.before: the blank paragraph goes before el (the text it stands for goes in at pos, before
@@ -2651,7 +2737,7 @@ class App {
     this.compTex = null;
     if (T && T.f === c.f) { this.texEdit(T, c.a, c.b, data, 'type'); return; }
     const src = this.src(c.f);
-    const edits = c.collapsed ? [] : this.deletionEdits(c.f, c.a, c.b);
+    const edits = c.collapsed ? [] : this.deletionEdits(c.f, c.a, c.b, true);
     const raw = this.texAt(c.f, c.a);
     let t = raw ? data : escapeTeX(data, src[c.a - 1] || ' ');
     if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, c.a)) t = '{}' + t;
@@ -2693,12 +2779,36 @@ class App {
     const src = this.src(c.f);
     if (isBalanced(src, c.a, c.b)) return src.slice(c.a, c.b);
     const vr = visibleRanges(this.renderer.blocks, c.f, c.a, c.b);
+    // (the paragraph on the page each piece is in: words of two paragraphs stay two paragraphs, as
+    // Word's paste keeps them. Only a blank line between them in the source counted, and a
+    // paragraph copied with the list item, the heading or the display after it was pasted as one
+    // run of words, "only.Apple one". A paragraph a page cuts is one.)
+    if (this.index.dirty) this.index.build();
+    const paraOf = (p) => { const h = this.index.find(c.f, p, 1), sp = h && h.entry && h.entry.span; return sp ? sp.closest('td, th, .cap, .fn, .it') : null; };
+    const apart = (P, Q) => P && Q && P !== Q && !(Q.classList.contains('split-b') && P.dataset.b != null && P.dataset.b === Q.dataset.b);
+    // The paragraphs, headings, lists and displays the selection holds whole go as their own
+    // source, as Word's copy keeps the paragraphs it holds with their style and formatting: as
+    // visible characters, Select All then Copy pasted every heading as plain words, every list as
+    // paragraphs and every bold word plain. Only the pieces at the two ends go as characters.
+    // (a block is held whole when all it shows is selected: the selection from a heading's first
+    // word holds the heading, \section and all, as Word's holds the paragraph's mark)
+    const held = (B) => (c.a <= B.s && B.e <= c.b) || (B.s < c.b && c.a < B.e && ((v) => v.length > 0 && v.every(([s, e]) => c.a <= s && e <= c.b))(visibleRanges([B], c.f, B.s, B.e)));
+    const whole = this.renderer.blocks.filter((B) => B.f === c.f && B.s < B.e && held(B) && isBalanced(src, B.s, B.e) &&
+      !/\\(begin|end)\s*\{document\}|\\(maketitle|bibliography)\b/.test(src.slice(B.s, B.e))).map((B) => [B.s, B.e]).sort((x, y) => x[0] - y[0]);
+    const pieces = whole.map(([s, e]) => ({ s, e, whole: true }));
+    for (let [s, e] of vr) {
+      for (const [x, y] of whole) { if (y <= s || x >= e) continue; if (x > s) pieces.push({ s, e: x }); s = Math.max(s, y); }
+      if (s < e) pieces.push({ s, e });
+    }
+    pieces.sort((x, y) => x.s - y.s);
     let out = '';
-    let last = null;
-    for (const [s, e] of vr) {
-      if (last != null && /\n\s*\n/.test(src.slice(last, s))) out += '\n\n';
-      out += src.slice(s, e);
-      last = e;
+    let last = null, lastP = null;
+    for (const X of pieces) {
+      const P = X.whole ? null : paraOf(X.s);
+      if (last != null && (X.whole || last.whole || /\n\s*\n/.test(src.slice(last.e, X.s)) || apart(lastP, P))) out += '\n\n';
+      out += X.whole ? src.slice(X.s, X.e).trim() : src.slice(X.s, X.e);
+      last = X;
+      lastP = X.whole ? null : paraOf(Math.max(X.s, X.e - 1)) || P;
     }
     return out;
   }
@@ -2717,7 +2827,7 @@ class App {
       if (whole) { this.replaceBody(whole, '', 'cut'); return; }
       const T = this.texHere();
       if (T && T.f === c.f) { this.texEdit(T, c.a, c.b, '', 'cut'); return; }
-      const edits = this.deletionEdits(c.f, c.a, c.b);
+      const edits = this.deletionEdits(c.f, c.a, c.b, true);
       this.commit(edits, { f: c.f, p: c.a }, 'cut');
     }
   }
@@ -2761,6 +2871,13 @@ class App {
     const inArg = c.ghost || whole ? false : braceDepth(src, at0) > 0;
     const el = getSelection().anchorNode && (getSelection().anchorNode.nodeType === 1 ? getSelection().anchorNode : getSelection().anchorNode.parentElement);
     const inline = inArg || (!whole && !!(el && el.closest && el.closest('td, .it.h, .cap')));
+    // (copied LaTeX put in a heading, a table's cell or a caption, whose argument a paragraph
+    // break ends, goes in as one line: src/paste.js oneLineLatex. Pasted as it was,
+    // \section{Intro\section{Background}...} or a list in a heading stopped TeX. A footnote or a
+    // bold word holds paragraphs, displays and lists: there it goes as it is.)
+    // (and the title, author and date: \title's argument takes no paragraph break either)
+    if (latex && !whole && el && el.closest && el.closest('td, th, .it.h, .cap, .it.ttl')) latex = oneLineLatex(latex);
+    else if (latex && inArg) latex = headingsAsWords(latex);
     const pre = this.src(this.main).split(/\\begin\s*\{document\}/)[0];
     const o = { prev: src[at0 - 1] || ' ', hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*hyperref/.test(pre), booktabs: /\\usepackage(\[[^\]]*\])?\{[^}]*booktabs/.test(pre), inlineOnly: inline };
     // (a PDF's ligatures as letters; its Greek and symbols as formulas where pdfLaTeX compiles it: escapeTeX)
@@ -2777,7 +2894,7 @@ class App {
     }, { greek: !greekSet });
     if (c.ghost) { const t = latex || rich(); this.ghostInsert(t, this.pastePackages(t)); return; }
     if (whole) { const t = latex || rich(), pk = this.pastePackages(t); this.replaceBody(whole, t, 'paste'); if (pk.length) this.commit(pk, null, 'paste'); return; }
-    const edits = this.deletionEdits(c.f, c.a, c.b);
+    const edits = this.deletionEdits(c.f, c.a, c.b, true);
     const at = edits.length && edits[0].s >= c.a ? edits[0].s : c.a;
     // (landing in a LaTeX paragraph from a selection that started outside it: as source)
     const raw = this.texAt(c.f, at);
@@ -2817,7 +2934,11 @@ class App {
       this.disarm();
       // an empty document: a click anywhere on the page goes to the blank paragraph
       // (not a click on the title above it, which is edited where it stands)
-      if (this.ghost && this.ghost.sticky && !e.target.closest('.it.ttl')) { e.preventDefault(); this.caretToGhost(); }
+      if (this.ghost && this.ghost.sticky && !e.target.closest('.it.ttl')) { e.preventDefault(); this.caretToGhost(); return; }
+      // Word's triple click selects the whole paragraph. Chromium's own stops at the first
+      // formula, citation or footnote mark (they are not editable text), and typing over it left
+      // the rest of the paragraph standing after the new words.
+      if (e.detail === 3 && !e.shiftKey && this.paraClick(e.target)) e.preventDefault();
       return;
     }
     const info = atomOfEl(atomEl);
@@ -2828,6 +2949,33 @@ class App {
     // Ctrl+click on a cross reference goes to its label, as in Word (Shift+F5 comes back)
     if ((e.metaKey || e.ctrlKey) && info.a.kind === 'ref') { this.followRef(info); return; }
     this.openAtom(atomEl, info);
+  }
+
+  // The paragraph el is in selected whole, from its first word to its last (a formula or a
+  // citation at either end with it): a table's cell, a caption or a footnote alone, a paragraph a
+  // page cuts with its other part. Not a LaTeX paragraph, whose box is source: the browser's own.
+  paraClick(el) {
+    const box = el.closest && el.closest('td, th, .cap, .fn');
+    const it = el.closest && el.closest('.it');
+    let parts;
+    if (box && this.root.contains(box)) parts = [box];
+    else {
+      if (!it || !this.root.contains(it) || it.classList.contains('tex') || it.classList.contains('ghostp')) return false;
+      const all = [...this.root.querySelectorAll('.it[data-b="' + it.dataset.b + '"]')];
+      let i = all.indexOf(it), j = i;
+      while (i > 0 && all[i].classList.contains('split-b')) i--;
+      while (j < all.length - 1 && all[j].classList.contains('split-a')) j++;
+      parts = all.slice(i, j + 1);
+    }
+    const nodes = parts.flatMap((P) => [...P.querySelectorAll('span.t, .atom')].filter((n) => !n.classList.contains('gh') && !n.parentElement.closest('.atom')));
+    if (!nodes.length) return false;
+    const A = nodes[0], Z = nodes[nodes.length - 1], r = document.createRange();
+    if (A.classList.contains('t') && A.firstChild && A.firstChild.nodeType === 3) r.setStart(A.firstChild, 0); else r.setStartBefore(A);
+    if (Z.classList.contains('t') && Z.lastChild && Z.lastChild.nodeType === 3) r.setEnd(Z.lastChild, Z.lastChild.length); else r.setEndAfter(Z);
+    this.root.focus({ preventScroll: true });
+    const sel = getSelection();
+    sel.removeAllRanges(); sel.addRange(r);
+    return true;
   }
 
   onClick(e) {
