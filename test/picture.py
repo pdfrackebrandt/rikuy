@@ -19,7 +19,7 @@ picture's box in the PDF against the page's.
 RIKUY_DIST names another dist/."""
 import os, sys, re, base64, struct, zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, until, open_page, check, results, src, load_doc, click_text, roundtrip, pressed, PRINT_LAYOUT
+from browser import settle, until, tap, open_page, check, results, src, load_doc, click_text, roundtrip, pressed, PRINT_LAYOUT
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -638,7 +638,7 @@ def phones(p):
         load_doc(page, DOC); settle(page, 600)
         coarse = page.evaluate("matchMedia('(pointer: coarse)').matches")
         box = page.locator('#pages .a-img').bounding_box()
-        page.touchscreen.tap(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2); settle(page, 500)
+        tap(page, (box['x'] + box['width'] / 2, box['y'] + box['height'] / 2), 500)
         st = page.evaluate("({ armed: !!(window.rikuy.armed && window.rikuy.armed.kind === 'img'), tab: window.rikuy.rbTab, sel: document.getElementById('rb-tabsel').value, frame: !document.querySelector('.pic-frame').hidden })")
         check('a tap on a picture selects it: frame, the Picture Format tab chosen in "Ribbon tab"' + tag, st['armed'] and st['tab'] == 'picture-format' and st['sel'] == 'picture-format' and st['frame'], st)
         if not st['armed']: sel_pic()(page)
@@ -667,8 +667,8 @@ def phones(p):
         check('every control of Picture Format there to tap in the ribbon\'s row, 44 px high' + tag, not miss, miss)
         fld = page.locator('#rc-picture-width').bounding_box()
         check('the Width field a 44 px target' + tag, fld and fld['height'] >= 43.5, fld)
-        page.get_by_role('button', name='Rotate', exact=True).tap(); settle(page, 300)
-        page.get_by_role('menuitem', name='Rotate Left 90°', exact=True).tap(); settle(page, 300)
+        tap(page, page.get_by_role('button', name='Rotate', exact=True), 300)
+        tap(page, page.get_by_role('menuitem', name='Rotate Left 90°', exact=True), 300)
         check('Rotate › Rotate Left 90° by taps' + tag, 'angle=90' in src(page), body(page))
         box = page.locator('#pages .a-img').bounding_box()
         page.evaluate('([x, y]) => { const el = document.elementFromPoint(x, y); el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y })); }', [box['x'] + box['width'] / 2, box['y'] + box['height'] / 2])
@@ -689,7 +689,7 @@ def phones(p):
         d = page.get_by_role('dialog', name='Chart', exact=True)
         bb = d.bounding_box()
         check('Chart\'s dialog fits the width and scrolls' + tag, bb and bb['x'] >= 0 and bb['x'] + bb['width'] <= w + 1 and bb['y'] + bb['height'] <= h + 1, bb)
-        d.get_by_role('button', name='OK', exact=True).tap(); settle(page, 300)
+        tap(page, d.get_by_role('button', name='OK', exact=True), 300)
         check('and OK by tap writes the chart' + tag, '\\begin{axis}' in src(page))
         check('the page never scrolls sideways' + tag, page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'))
         check('no page errors' + tag, not errs, errs[:3])
@@ -950,7 +950,7 @@ def r3_phones(p):
             check('a finger turns the picture 30° the other way: angle=%s' % (m and m.group(1)) + tag, m and abs(int(m.group(1)) - 30) <= 2, body(page))
             load_doc(page, WRAP('Intro.\n\n' + SHAPE + '\nAfter.', TIKZPRE)); settle(page, 400)
             box = page.evaluate("(() => { const e = document.querySelector('#pages .raw.drawn svg.tz'); e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; })()")
-            page.touchscreen.tap(box[0] + box[2] / 2, box[1] + box[3] / 2); settle(page, 400)
+            tap(page, (box[0] + box[2] / 2, box[1] + box[3] / 2), 400)
             hs = page.evaluate("[...document.querySelectorAll('.shape-layer .shape-h')].filter((h) => !h.hidden).map((h) => [parseFloat(h.style.left), parseFloat(h.style.top), parseFloat(getComputedStyle(h, '::before').width)])")
             check('a tap on a drawing gives each point a 44 px handle' + tag, len(hs) == 2 and all(x[2] >= 44 for x in hs), hs)
             if hs:
