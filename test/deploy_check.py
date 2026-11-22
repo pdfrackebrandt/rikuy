@@ -159,4 +159,78 @@ if os.path.isfile(os.path.join(DIST, '_headers')) and os.path.isfile(os.path.joi
     rule = subprocess.run(['node', '--input-type=module', '-e', "import { WIDGET_RULE } from './build/app.mjs'; process.stdout.write(WIDGET_RULE)"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
     ok('dist/ has its widget document, named by the hash of it and its headers\' rule (a change to either is a new address, past every browser\'s cache)',
        len(shells) == 1 and __import__('hashlib').sha256(open(os.path.join(DIST, shells[0]), 'rb').read() + b'\n' + rule.encode()).hexdigest().startswith(shells[0][7:23]) and rule in open(os.path.join(DIST, '_headers'), encoding='utf8').read(), shells)
+# dev/live_check.py, deploy.yml's last step, against two servers on this machine that stand in for
+# the deployment's own address and the custom domain: the deployment is checked first and anything
+# wrong there fails at once; the domain is asked again until it serves this build, within a bound;
+# an address that does not resolve is one more try of that poll, and fails at its end, never passes
+import http.server, threading, time
+from serve import inline_hashes
+LIVE = tempfile.mkdtemp(prefix='rikuy-live-')
+atexit.register(shutil.rmtree, LIVE, True)
+SHELL = 'widget-0123456789abcdef'
+open(os.path.join(LIVE, SHELL + '.html'), 'w').write('<p>widget</p>')
+def page(v):
+    return '<!doctype html><html><head><meta name="rikuy-app" content="%s"><script>go()</script></head></html>' % v
+open(os.path.join(LIVE, 'index.html'), 'w').write(page('aaaaaaaaaaaaaaaa'))
+def server(state):
+    class H(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def do_GET(self):
+            p, hs, body = self.path, {}, b''
+            if p == '/' and state.get('moved'):
+                st, hs = 301, {'Location': state['moved']}
+            elif p == '/':
+                doc = page(state['version'])
+                st, body = 200, doc.encode()
+                hs = {'Content-Security-Policy': "script-src 'self' 'sha256-%s'" % inline_hashes(doc)[0], 'Cache-Control': 'no-cache, no-transform', 'Strict-Transport-Security': 'max-age=31536000'}
+            elif p == '/' + SHELL:
+                st, body = 200, open(os.path.join(LIVE, SHELL + '.html'), 'rb').read()
+                hs = {'Content-Security-Policy': "script-src 'unsafe-inline'; frame-ancestors 'self'"} if state['widget'] else {'Content-Security-Policy': "frame-ancestors 'none'", 'X-Frame-Options': 'DENY'}
+            elif p == '/' + SHELL + '.html':
+                st, hs = 308, {'Location': '/' + SHELL}
+            elif p.startswith('/git/github.com/') and self.headers.get('X-Rikuy-Git') == '1':
+                st, hs = 200, {'Content-Type': 'application/x-git-upload-pack-advertisement', 'Content-Disposition': 'attachment', 'Content-Security-Policy': 'sandbox'}
+            elif p.startswith('/git/'):
+                st, hs = 403, {'Content-Security-Policy': 'sandbox'}
+            else:
+                st = 404
+            self.send_response(st)
+            for k, v in hs.items(): self.send_header(k, v)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+    srv = http.server.ThreadingHTTPServer(('127.0.0.1', 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    atexit.register(srv.shutdown)
+    return 'http://127.0.0.1:%d/' % srv.server_address[1]
+NOPROXY = {k: v for k, v in os.environ.items() if k.lower() not in ('http_proxy', 'https_proxy', 'all_proxy')}
+def live(site, deployment, within=4):
+    t = time.monotonic()
+    r = subprocess.run([sys.executable, os.path.join(ROOT, 'dev', 'live_check.py'), site, LIVE] + ([deployment] if deployment else []) + ['--within', str(within), '--every', '0.3'],
+                       capture_output=True, text=True, env=NOPROXY, timeout=60)
+    return r.returncode, r.stdout, time.monotonic() - t
+own = {'version': 'aaaaaaaaaaaaaaaa', 'widget': True}
+edge = {'version': 'bbbbbbbbbbbbbbbb', 'widget': True}
+OWN, EDGE = server(own), server(edge)
+threading.Timer(1.0, lambda: edge.update(version='aaaaaaaaaaaaaaaa')).start()
+code, out, took = live(EDGE, OWN)
+ok('live check: the deployment\'s own address first, then the domain asked again until it serves this build', code == 0 and out.index("own address serves this build") < out.index('try 2') < out.index('live check passed')
+   and 'the page is not this build yet' in out and took < 4, out)
+own['widget'] = False
+code, out, took = live(EDGE, OWN)
+ok('live check: the deployment\'s own address answering wrongly fails at once, the domain never asked', code == 1 and 'not as this build should' in out and "widget document's headers" in out and EDGE not in out and took < 2, out)
+own['widget'] = True
+edge['version'] = 'cccccccccccccccc'
+code, out, took = live(EDGE, OWN, within=2)
+ok('live check: a domain that never serves this build fails at the bound, with its last answer', code == 1 and 'within 2 s' in out and 'want aaaaaaaaaaaaaaaa' in out.splitlines()[-1] and 1.5 < took < 6, out)
+edge['version'] = 'aaaaaaaaaaaaaaaa'
+own['moved'] = EDGE
+code, out, took = live(EDGE, OWN)
+ok('live check: a deployment\'s address redirected to the site (the owner\'s Bulk Redirect) says so, and the site alone decides', code == 0 and 'redirects to the site' in out and 'live check passed' in out, out)
+own['moved'] = 'https://elsewhere.example/'
+code, out, took = live(EDGE, OWN)
+ok('live check: a deployment\'s address redirected anywhere else fails at once', code == 1 and "redirects to 'https://elsewhere.example/'" in out and EDGE not in out, out)
+code, out, took = live(EDGE, 'http://rikuy-live-check.invalid/', within=1.5)
+ok('live check: an address that does not resolve is asked again within the bound, then fails with why; never a pass', code == 1 and out.count('no answer') >= 2 and 'live check passed' not in out
+   and 'within 2 s' in out and 'no answer' in out.splitlines()[-1], out)
 print('%d/%d passed' % (n, n))
