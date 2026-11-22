@@ -260,7 +260,7 @@ def header_footer(page):
     tabs = page.evaluate('[...document.querySelectorAll("#rb-tabs [role=tab]")].filter((t) => !t.hidden).map((t) => t.textContent)')
     check('a double click in the top margin opens the header: three fields, the Header & Footer tab shown and open', page.get_by_role('textbox', name='Header left').count() == 1 and 'Header & Footer' in tabs
           and page.evaluate('document.querySelector("#rb-tabs [aria-selected=true]").textContent') == 'Header & Footer', tabs)
-    page.get_by_role('textbox', name='Header right').fill('Draft & notes'); settle(page, 600)
+    page.get_by_role('textbox', name='Header right').fill('Draft & notes'); settle(page, 600, full=True)
     want = DOC(pre='\\usepackage{amsmath}\n\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n\\fancyhf{}\n\\renewcommand{\\headrulewidth}{0pt}\n\\fancyhead[R]{Draft \\& notes}\n\\fancyfoot[C]{\\thepage}\n')
     check('what is typed goes into \\fancyhead[R], & escaped, the page number kept at the foot', src(page) == want, src(page)[:300])
     page.get_by_role('button', name='Date', exact=True).click(); settle(page, 500)
@@ -306,12 +306,12 @@ def header_footer(page):
     load_doc(page, hd); click_text(page, 'First', 2)
     page.evaluate('rikuy.pageHFOpen("head")'); settle(page, 300)
     page.focus('.hfedit .hf-center'); page.keyboard.press('End')
-    page.keyboard.type(' \\textbf{', delay=20); settle(page, 700)
+    page.keyboard.type(' \\textbf{', delay=20); settle(page, 700, full=True)
     mid, inv = src(page), page.evaluate('document.querySelector(".hfedit .hf-center").getAttribute("aria-invalid")')
-    page.keyboard.type('x}', delay=20); settle(page, 700)
-    page.keyboard.type(' \\', delay=20); settle(page, 700)
+    page.keyboard.type('x}', delay=20); settle(page, 700, full=True)
+    page.keyboard.type(' \\', delay=20); settle(page, 700, full=True)
     mid2 = src(page)
-    page.keyboard.type('thepage costs $5 and a_b', delay=20); settle(page, 700)
+    page.keyboard.type('thepage costs $5 and a_b', delay=20); settle(page, 700, full=True)
     page.keyboard.press('Escape'); settle(page, 300)
     want = hd.replace('{Old}', '{Old \\textbf{x} \\thepage costs \\$5 and a\\_b}')
     check('the header typed with a pause after \\textbf{ and after a lone backslash: nothing written until it is whole, then one line, $ and _ as text', mid == hd and inv == 'true' and mid2.count('\\fancyhead[C]') == 1 and '\\textbf{x}' in mid2 and src(page) == want, (inv, src(page)[60:300]))
@@ -323,7 +323,7 @@ def header_footer(page):
     drawn = page.evaluate('document.querySelector("#pages .page .hd .l").textContent')
     page.evaluate('rikuy.pageHFOpen("head")'); settle(page, 300)
     shown = page.evaluate('document.querySelector(".hfedit .hf-left").value')
-    page.focus('.hfedit .hf-left'); page.keyboard.press('End'); page.keyboard.type('!'); settle(page, 700)
+    page.focus('.hfedit .hf-left'); page.keyboard.press('End'); page.keyboard.type('!'); settle(page, 700, full=True)
     page.keyboard.press('Escape'); settle(page, 300)
     check('a header argument with comments and line ends: drawn and shown without them, "!" typed goes in before the comment', drawn == 'My Title' and shown == '\\textbf{My Title}' and src(page) == hc.replace('{My Title}%', '{My Title}!%'), (drawn, shown, src(page)[60:260]))
     # review H3: the document's own \fancypagestyle, drawn and edited inside it
@@ -331,7 +331,7 @@ def header_footer(page):
     load_doc(page, th); click_text(page, 'First', 2)
     hdft = page.evaluate('[document.querySelector("#pages .page .hd").textContent, document.querySelector("#pages .page .ft .r").textContent, document.querySelector("#pages .page .ft .c").textContent]')
     page.evaluate('rikuy.pageHFOpen("head")'); settle(page, 300)
-    page.focus('.hfedit .hf-center'); page.keyboard.type('Draft'); settle(page, 700)
+    page.focus('.hfedit .hf-center'); page.keyboard.type('Draft'); settle(page, 700, full=True)
     page.keyboard.press('Escape'); settle(page, 300)
     check('a \\fancypagestyle{thesis} in use: drawn as its pages get it, "Draft" typed goes inside it, \\pagestyle{thesis} kept', hdft[0].startswith('My Thesis') and hdft[1] == '1' and hdft[2] == ''
           and src(page) == th.replace('\\fancyfoot[R]{\\thepage}}', '\\fancyfoot[R]{\\thepage}\\fancyhead[C]{Draft}}'), (hdft, src(page)[40:300]))
@@ -339,7 +339,7 @@ def header_footer(page):
     ko = DOC(pre='\\usepackage{scrlayer-scrpage}\n\\ihead{Left}\n', cls='\\documentclass{scrartcl}')
     load_doc(page, ko); click_text(page, 'First', 2)
     page.evaluate('rikuy.pageHFOpen("head")'); settle(page, 300)
-    page.focus('.hfedit .hf-right'); page.keyboard.type('X'); settle(page, 700)
+    page.focus('.hfedit .hf-right'); page.keyboard.type('X'); settle(page, 700, full=True)
     page.keyboard.press('Escape'); settle(page, 300)
     check('KOMA with scrlayer-scrpage: a header typed is \\ohead{X}, no fancyhdr', src(page) == ko.replace('\\ihead{Left}\n', '\\ihead{Left}\n\\ohead{X}\n') and page.evaluate('document.querySelector("#pages .page .hd .r").textContent') == 'X', src(page)[:200])
     # review M4: a book's pages take the headings style: the running head at the top, no number at the foot
@@ -515,7 +515,7 @@ def compile_pdf(page):
     # H1, H3: a header typed into the document's own style compiles and prints as drawn
     load_doc(page, DOC(pre=HF_THESIS)); click_text(page, 'First', 2)
     page.evaluate('rikuy.pageHFOpen("head")'); settle(page, 300)
-    page.focus('.hfedit .hf-center'); page.keyboard.type(' \\textbf{Draft', delay=20); settle(page, 700); page.keyboard.type('} $5', delay=20); settle(page, 700)
+    page.focus('.hfedit .hf-center'); page.keyboard.type(' \\textbf{Draft', delay=20); settle(page, 700, full=True); page.keyboard.type('} $5', delay=20); settle(page, 700, full=True)
     page.keyboard.press('Escape'); settle(page, 300)
     c = compile_doc(page, None)
     t0 = re.sub(r'\s+', ' ', c['txt'][0] if c['txt'] else '')
@@ -547,7 +547,7 @@ def compile_pdf(page):
     # Low: KOMA with scrlayer-scrpage: the header typed compiles with KOMA's commands, as drawn
     load_doc(page, DOC(pre='\\usepackage{scrlayer-scrpage}\n\\ihead{Left}\n', cls='\\documentclass{scrartcl}')); click_text(page, 'First', 2)
     page.evaluate('rikuy.pageHFOpen("head")'); settle(page, 300)
-    page.focus('.hfedit .hf-right'); page.keyboard.type('Right'); settle(page, 700); page.keyboard.press('Escape'); settle(page, 300)
+    page.focus('.hfedit .hf-right'); page.keyboard.type('Right'); settle(page, 700, full=True); page.keyboard.press('Escape'); settle(page, 300)
     c = compile_doc(page, None)
     t0 = re.sub(r'\s+', ' ', c['txt'][0] if c['txt'] else '')
     check('KOMA: \\ohead{Right} with scrlayer-scrpage compiles, the PDF\'s head Left ... Right as the page\'s', c['ok'] and 'Left' in t0 and 'Right' in t0 and 'fancyhdr' not in src(page) and c['page']['hd'][0].startswith('Left') and c['page']['hd'][0].endswith('Right'), (t0[:80], c['page']['hd'][:1]))
@@ -629,7 +629,7 @@ def verifier_pdf(page):
     load_doc(page, DOC(pre='\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n\\fancyhf{}\n\\fancyhead[C]{ Title}\n')); click_text(page, 'First', 2)
     page.evaluate('rikuy.pageHFOpen("head")'); settle(page, 300)
     shown = page.evaluate('document.querySelector(".hfedit .hf-center").value')
-    page.focus('.hfedit .hf-center'); page.keyboard.press('End'); page.keyboard.type('!'); settle(page, 700); page.keyboard.press('Escape'); settle(page, 300)
+    page.focus('.hfedit .hf-center'); page.keyboard.press('End'); page.keyboard.type('!'); settle(page, 700, full=True); page.keyboard.press('Escape'); settle(page, 300)
     check('7: \\fancyhead[C]{ Title}: the field shows " Title" and "!" typed writes { Title!}', shown == ' Title' and '\\fancyhead[C]{ Title!}' in src(page), (shown, src(page)[60:200]))
 
 

@@ -128,7 +128,7 @@ def notes(page):
     page.evaluate('rikuy.selectTab("references")'); page.locator('#rc-endnote').click(); settle(page, 300)
     box = page.locator('#pop-endnote')
     check('Insert Endnote opens a box by its mark to type its words', box.count() == 1)
-    box.type('Typed note'); settle(page, 600)
+    box.type('Typed note'); settle(page, 600, full=True)
     check('typed into the endnote', '\\endnote{Typed note}' in src(page), src(page))
     page.keyboard.press('Escape'); settle(page, 200)
     page.locator('.a-en').first.click(); settle(page, 250)
@@ -425,6 +425,11 @@ def open_phone(p, width, height, dark=False):
     ctx = br.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=2, has_touch=True, is_mobile=True)
     # (a phone's Print Layout, which this suite was written for: browser.py, PRINT_LAYOUT)
     ctx.add_init_script(PRINT_LAYOUT)
+    # (the page's timers tracked and motion off, as open_page() has them: settle() waits for the
+    # timers a step set going, and a dialog measured is where it stays, not part way in)
+    ctx.add_init_script(B.TIMERS)
+    if os.environ.get('RIKUY_MOTION') != '1':
+        ctx.add_init_script(B.MOTION_OFF)
     page = ctx.new_page()
     errors = []
     page.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
