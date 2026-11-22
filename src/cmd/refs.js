@@ -180,14 +180,20 @@ register(
 const BIB_CMD = /\\(?:bibliography|addbibresource)\s*(?:\[[^\]]*\])?\s*\{([^{}]*)\}/;
 
 class Work {
-  constructor(app) { this.app = app; this.t = new Map(); this.marks = []; }
+  constructor(app) { this.app = app; this.t = new Map(); this.marks = []; this.done = []; }
   src(f) { return this.t.has(f) ? this.t.get(f) : this.app.src(f); }
   apply(f, edits) {
     if (!edits || !edits.length) return this;
     const list = edits.map((x) => ({ s: x.s, e: x.e, t: x.t }));
     this.t.set(f, applyEdits(this.src(f), list));
     for (const m of this.marks) if (m.f === f) m.p = mapPos(list, m.p, m.bias);
+    this.done.push({ f, list });
     return this;
+  }
+  // a place in the text as the app holds it, moved by the edits this copy has made so far
+  map(f, p, bias = 1) {
+    for (const d of this.done) if (d.f === f) p = mapPos(d.list, p, bias);
+    return p;
   }
   mark(f, p, bias = 1) { const m = { f, p, bias }; this.marks.push(m); return m; }
   // packages through src/preamble.js on the main file as it stands in the copy
@@ -292,12 +298,24 @@ export const methods = {
   // A command on a line of its own after the block the caret is in (Word puts these at the caret;
   // a paragraph cut in two by one would be another paragraph): \tableofcontents, \listoffigures
   blockCommand(text, w = new Work(this)) {
-    const { f, p, pre, post } = this.afterBlockPos();
+    const at = this.afterBlockPos(), { f, pre, post } = at;
+    // (afterBlockPos reads the text as the app holds it: the preamble lines Insert Index and the
+    // Table of Authorities had put in the copy first moved the place, and \printindex went that
+    // many characters too early, into \begin{document} or the preamble's own lines)
+    const p = w.map(f, at.p);
     const nl = eolOf(this.src(f));
     const t = (pre + text + post).replace(/\n/g, nl);
-    const m = w.mark(f, p + t.length - post.length * nl.length, -1);
     w.apply(f, [{ s: p, e: p, t }]);
-    return w.commit({ f, p: m.p, bias: -1 });
+    // the caret on a blank paragraph of its own after the command, as Word's after a table of
+    // contents put on a blank line: what is typed next is the paragraph after it (a mark set at
+    // the new text's end before the insertion moved with it, as far again: the caret landed
+    // inside the next heading's word, and what was typed next went there)
+    const end = p + t.length - post.length * nl.length;
+    if (!w.commit({ f, p: end, bias: -1 })) return false;
+    // (a place for the caret, not a step of its own: Undo takes the command out, caretAfterDisplay)
+    this.ghostAt(f, end);
+    if (this.ghost) this.ghost.place = true;
+    return true;
   },
   // the lines of the body that call a command, in every .tex file: [{ f, s, e }]
   bodySpots(names, opt = false) {

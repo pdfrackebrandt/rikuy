@@ -77,6 +77,12 @@ def toc(page):
     hand = DOC.replace('\\begin{document}\n', '\\begin{document}\n\\tableofcontents\n')
     off = run('toc-remove')
     roundtrip(page, DOC, ('First paragraph', 3), run('table-of-contents'), want, forms=[hand.replace('\\begin{document}\n\\tableofcontents\n', '\\begin{document}\n\\tableofcontents\n')], off_command=off, label='Table of Contents')
+    # the caret after the contents on a blank paragraph of its own, as Word's: it landed inside the
+    # next heading's word (a mark moved twice over the insertion), and what was typed went there
+    for cid, line in (('table-of-contents', '\\tableofcontents'), ('table-of-figures', '\\listoffigures'), ('list-of-tables', '\\listoftables')):
+        load_doc(page, DOC); click_text(page, 'First paragraph', 3)
+        cmd(page, cid); page.keyboard.type('Next'); settle(page, 300)
+        check(cid + ': what is typed next is a paragraph after it, the headings untouched', src(page) == DOC.replace('First paragraph here.\n\n', 'First paragraph here.\n\n' + line + '\n\nNext\n\n'), src(page)[40:140])
     load_doc(page, want); settle(page, 300)
     rows = toc_rows(page)
     check('the page draws the contents as TeX: numbered headings, the starred one left out', rows[:3] == ['1 Intro 1', '1.1 Detail 1', '2 Last 1'] and len(rows) == 3, rows)
@@ -356,6 +362,9 @@ def index(page):
     insert_case(page, doc, sel('Alpha'), run('mark-entry', {'main': 'alpha', 'all': True}), lambda t: t.count('\\index{alpha}') == 1 and 'alpha\\index{alpha} again' in t, 'Mark All: every place the words stand, as typed (case kept)')
     insert_case(page, doc, sel('Alpha'), run('mark-entry', {'main': 'A!b@c|d'}), lambda t: '\\index{A"!b"@c\\textbar{}d}' in t, 'makeindex\'s own characters quoted, a | as \\textbar{} (hyperref reads a quoted one too)')
     marked = D('Alpha\\index{Alpha} words here\\index{beta!sub|textbf}.\n\nBeta\\index{Gamma|see{Alpha}} words.\n\nLast.', '\\usepackage{imakeidx}\n\\makeindex\n')
+    # (the preamble's lines went into the copy first, and \printindex as many characters too early:
+    # into \begin{document} of a document with no index set up yet, which TeX could not read)
+    insert_case(page, doc, at('Beta', 1), run('insert-index', {'columns': 2}), D('Alpha words here.\n\nBeta words and alpha again.\n\n\\printindex\n\nGamma at the end.', '\\usepackage{imakeidx}\n\\makeindex\n'), 'Insert Index with no index set up: imakeidx, \\makeindex, and \\printindex after the paragraph')
     got = insert_case(page, marked, at('Last', 1), run('insert-index', {'columns': 2}), marked.replace('Last.', 'Last.\n\n\\printindex\n'), 'Insert Index: \\printindex after the paragraph')
     settle(page, 300)
     rows = texts(page, '.idx-e')
@@ -936,6 +945,12 @@ def r4refs(page):
     select_text(page, 'Smith v. Jones')
     cmd(page, 'mark-citation', {'long': 'Smith | Jones, 2 U.S. 3', 'short': 'Smith v. Jones', 'category': 'Cases'})
     check('R4 Mark Citation: a | in the citation is \\textbar{}', '!Smith \\textbar{} Jones, 2 U.S. 3}' in src(page) and src(page).count('|') == 0, src(page))
+    # (with nothing marked yet: its \makeindex line first, then \printindex[toa] after the paragraph,
+    # where it went that line's length too early, into the preamble's own line)
+    load_doc(page, TOA)
+    click_text(page, 'Last', 1)
+    cmd(page, 'insert-toa')
+    check('Insert Table of Authorities with no index set up: \\makeindex[name=toa] and \\printindex[toa] after the paragraph', src(page) == want.replace(' Jones\\index[toa]{1@\\textbf{Cases}!Smith v. Jones, 1 U.S. 2 (1990)}', ' Jones').replace('Last.', 'Last.\n\n\\printindex[toa]\n'), src(page))
     load_doc(page, want)
     click_text(page, 'Last', 1)
     cmd(page, 'insert-toa')
