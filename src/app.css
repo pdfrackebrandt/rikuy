@@ -1148,7 +1148,8 @@ body.dropping .dropzone { display: grid; }
   #status::-webkit-scrollbar { display: none; }
   /* the PDF bar in two rows: what TeX made and the close button, then the engine, shell escape,
      Recompile and Download (in one row each of them was cut to its first letters) */
-  .pdf-bar { flex-wrap: wrap; padding: 4px 4px 4px 10px; gap: 2px 4px; }
+  /* (3 px between them: at 390 px with 4 the second row needed 377 px of 376 on CI's fonts) */
+  .pdf-bar { flex-wrap: wrap; padding: 4px 4px 4px 10px; gap: 2px 3px; }
   .pdf-bar > .grow { display: none; }
   .pdf-status { order: 0; flex: 1 1 calc(100% - 56px); }
   #pdf-x { order: 1; }
