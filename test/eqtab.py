@@ -13,7 +13,7 @@ equation opens its menu, nothing scrolls sideways. Screenshots at 1920, 1366 and
 and dark, in $SHOTS/eqtab-*."""
 import os, sys, re, json
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, until, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, SHOTS, ROOT
+from browser import settle, until, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, place, SHOTS, ROOT
 from playwright.sync_api import sync_playwright
 
 DIST = os.path.abspath(os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist'))
@@ -329,6 +329,19 @@ def alt_equals(page):
     one = src(page)
     page.keyboard.press('Control+z'); settle(page, 200)
     check('Alt+= over selected words: they become the formula, in one undo step', 'Pythagoras: $a^2+b_1=c^2$ holds.' in one and 'Pythagoras: a\\textasciicircum{}2+b\\_1=c' in src(page), (one[-70:], src(page)[-80:]))
+    # (from the source, not the page's text: f'(x) with a prime, not a curly quote, \\{1,2\\} with its
+    # braces; a space at the end of the selection outside the formula; a selection across a
+    # table's cells refused, where the & went)
+    got = []
+    for body, pick_, want in (("So f'(x)=2x here.", "f’(x)=2x", "So $f'(x)=2x$ here."), ('So \\{1,2\\} here.', '{1,2}', 'So $\\{1,2\\}$ here.'),
+                             ('The variable x is here.', 'x ', 'The variable $x$ is here.'), ('\\begin{tabular}{ll}\nca & cb \\\\\n\\end{tabular}', ('ca', 'cb'), '\nca & cb \\\\\n')):
+        load_doc(page, WRAP(body))
+        if isinstance(pick_, tuple): place(page, pick_)
+        else: select_text(page, pick_)
+        page.keyboard.press('Alt+='); page.wait_for_selector('.pop-math'); settle(page, 300)
+        page.keyboard.press('Escape'); settle(page, 200)
+        got.append(want in src(page) or src(page)[-60:])
+    check('Alt+= over words: the source made math (a prime, \\{ \\}), a trailing space kept out, across cells refused', all(g is True for g in got), got)
     load_doc(page, DOC); click_text(page, 'Second paragraph.', 17); page.keyboard.press('Enter'); settle(page, 120)
     page.keyboard.press('Alt+='); page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000); settle(page, 150)
     head, sel = page.evaluate('document.querySelector(".pop-math .pop-h span").textContent'), page.evaluate(TAB)
