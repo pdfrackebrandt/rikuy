@@ -10,7 +10,7 @@ the phone at 390 and 360 px with touch; the Thesaurus and grammar (R4); screensh
 $SHOTS/spell-*, thesaurus-* and grammar-*."""
 import os, sys, time, json
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, until, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, SHOTS, ROOT
+from browser import settle, until, frame, tap, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, SHOTS, ROOT
 from playwright.sync_api import sync_playwright
 
 DOC = ('\\documentclass{article}\n\\begin{document}\n'
@@ -29,6 +29,12 @@ def spell_settle(page, ms=6000):
     if done:
         settle(page, 120)
     return done
+
+
+def timed(ms, limit):
+    """A time for a check's detail: itself when it is over the limit, else that it was under (the
+    times are printed beside; under the limit they move from run to run)."""
+    return round(ms, 1) if ms >= limit else 'under %d ms' % limit
 
 
 def menu_names(page):
@@ -132,23 +138,23 @@ def r4(p):
         page.select_option('#rb-tabsel', 'review'); settle(page, 300)
         btn = page.locator('#rv-thes')
         if btn.is_visible():
-            btn.tap()
+            tap(page, btn)
         else:
-            page.locator('#rv-thes').locator('xpath=ancestor::*[contains(@class, "rb-grp")]').locator('.rb-gbtn').tap(); settle(page, 250)
-            page.locator('.pop').get_by_role('menuitem', name='Thesaurus').tap()
+            tap(page, page.locator('#rv-thes').locator('xpath=ancestor::*[contains(@class, "rb-grp")]').locator('.rb-gbtn'), 250)
+            tap(page, page.locator('.pop').get_by_role('menuitem', name='Thesaurus'))
         settle(page, 400)
-        page.fill('#th-pane input', 'happy'); page.locator('#th-pane').get_by_role('button', name='Search').tap()
+        page.fill('#th-pane input', 'happy'); tap(page, page.locator('#th-pane').get_by_role('button', name='Search'))
         page.wait_for_selector('#th-pane .th-w', timeout=15000)
         box = page.evaluate("(() => { const r = document.getElementById('th-pane').getBoundingClientRect(); return [r.left, r.right, r.top, r.bottom, innerWidth, innerHeight]; })()")
         check('R4 %d px: the Thesaurus is a sheet inside the screen, by taps' % w, box[0] >= 0 and box[1] <= box[4] and box[3] <= box[5], box)
         small = page.evaluate("[...document.querySelectorAll('#th-pane button')].filter(e => e.offsetParent && e.getBoundingClientRect().height < 44 && !e.classList.contains('pop-x')).map(e => e.textContent)")
         check('R4 %d px: its buttons are 44 px targets' % w, not small, small[:5])
         # (review L1) the search field, and Back once a word is followed, 44 px each way
-        page.locator('#th-pane .th-w').first.tap(); page.wait_for_selector('#th-pane .th-back', timeout=15000)
+        tap(page, page.locator('#th-pane .th-w').first); page.wait_for_selector('#th-pane .th-back', timeout=15000)
         dims = page.evaluate("(() => { const b = document.querySelector('#th-pane .th-back').getBoundingClientRect(), i = document.querySelector('#th-pane input').getBoundingClientRect(); return [b.width, b.height, i.height]; })()")
         check('R4 %d px: Back is 44 by 44 px and the search field 44 px high' % w, dims[0] >= 44 and dims[1] >= 44 and dims[2] >= 44, dims)
         page.screenshot(path=os.path.join(SHOTS, 'thesaurus-%d.png' % w))
-        page.locator('#th-pane .pop-x').tap()
+        tap(page, page.locator('#th-pane .pop-x'))
         # a long press on a grammar issue gives its menu
         page.evaluate("window.rikuy.prefs.grammar = true; window.rikuy.grammarRun()")
         grammar_settle(page)
@@ -264,7 +270,8 @@ def run():
         opts = page.evaluate("[...document.querySelectorAll('#sp-pane .sp-opt')].map(e => e.textContent)")
         check('it lists Hunspell\'s suggestions', 'sentence' in opts, opts)
         page.evaluate("[...document.querySelectorAll('#sp-pane .sp-opt')].find(e => e.textContent === 'sentence').click()")
-        page.get_by_role('button', name='Change', exact=True).click(); settle(page, 500)
+        # (the pane shows a word again once the page's next check has come back from the worker)
+        page.get_by_role('button', name='Change', exact=True).click(); spell_settle(page); settle(page, 500)
         check('Change: the word changed, the pane on the next word', 'This sentence has' in src(page) and page.evaluate("document.querySelector('#sp-pane .sp-w').textContent") == 'mistaek', page.evaluate("(document.querySelector('#sp-pane .sp-w') || {}).textContent"))
         page.get_by_role('button', name='Ignore Once').click(); settle(page, 400)
         check('Ignore Once moves on', page.evaluate("document.querySelector('#sp-pane .sp-w').textContent") == 'wronng')
@@ -286,7 +293,9 @@ def run():
         click_text(page, 'It occ', 0); page.keyboard.press('F7'); settle(page, 500)
         page.wait_for_function("document.querySelector('#sp-pane .sp-opt')", timeout=5000)
         page.evaluate("[...document.querySelectorAll('#sp-pane .sp-opt')].find(e => e.textContent === 'occurred').click()")
-        page.click('#sp-pane button[aria-label=Change]'); settle(page, 150)
+        # (the second press comes as a double press does, before the page's next check: a frame, no
+        # more; were it to wait, the pane would be on the next word and Change rightly change that)
+        page.click('#sp-pane button[aria-label=Change]'); frame(page)
         page.click('#sp-pane button[aria-label=Change]', force=True); settle(page, 1200)
         check('H6: Change pressed twice writes the correction once', 'It occurred to me' in src(page) and 'occurrred' not in src(page), src(page)[40:100])
         spell_settle(page); settle(page, 400)
@@ -319,8 +328,8 @@ def run():
         click_text(page, 'the', 0); page.keyboard.type('x'); spell_settle(page)
         plan_ms = page.evaluate("window.rikuy.sp.mainMs")
         print('141 KB paper:', json.dumps(stat), 'main thread plan after the first: %.1f ms' % plan_ms, 'first check to marks: %.0f ms' % wall)
-        check('a 141 KB paper is checked off the main thread in under 3 s, its words in the worker', wall < 3000 and stat['worker']['ms'] < 1500, (wall, stat))
-        check('and checked again after an edit in a few ms of the main thread', plan_ms < 40, plan_ms)
+        check('a 141 KB paper is checked off the main thread in under 3 s, its words in the worker', wall < 3000 and stat['worker']['ms'] < 1500, (timed(wall, 3000), {**stat, 'worker': {**stat['worker'], 'ms': timed(stat['worker']['ms'], 1500)}}))
+        check('and checked again after an edit in a few ms of the main thread', plan_ms < 40, timed(plan_ms, 40))
         # the worst case for the worker: 141 KB of prose where nearly every word is another one
         words = [l.split('/')[0] for l in open(os.path.join(ROOT, 'tex/vendor/hunspell/dict/en_US.dic'), encoding='utf8').read().split('\n')[1:]]
         words = [w for w in words if w.isalpha() and w.islower() and 3 < len(w) < 12][::3]
@@ -339,7 +348,7 @@ def run():
         click_text(page, 'a', 0); page.keyboard.type('x'); spell_settle(page)
         plan_ms = page.evaluate("window.rikuy.sp.mainMs")
         print('141 KB of distinct words:', json.dumps(stat), 'main thread after an edit: %.1f ms' % plan_ms, 'first check to marks: %.0f ms' % wall)
-        check('141 KB of nearly all distinct words: checked in the worker in under 3 s, marks on the page', wall < 3000 and stat['bad'] > 100 and stat['distinct'] > 10000, (wall, stat))
+        check('141 KB of nearly all distinct words: checked in the worker in under 3 s, marks on the page', wall < 3000 and stat['bad'] > 100 and stat['distinct'] > 10000, (timed(wall, 3000), {**stat, 'worker': {k: v for k, v in stat['worker'].items() if k != 'ms'}}))
         check('no page errors', not errors, errors[:5])
         browser.close()
 
@@ -363,8 +372,7 @@ def run():
                     page.screenshot(path=os.path.join(SHOTS, 'spell-longpress-%d.png' % w))
                 small = page.evaluate("[...document.querySelectorAll('.pop-ctx [role^=menuitem]')].filter(e => e.getBoundingClientRect().height < 44).length")
                 check(tag + ': its items are 44 px tall', small == 0, small)
-                page.tap('.pop-ctx [aria-label="mistake"]') if page.locator('.pop-ctx [aria-label="mistake"]').count() else page.get_by_role('menuitem', name='mistake').tap()
-                settle(page, 300)
+                tap(page, page.locator('.pop-ctx [aria-label="mistake"]').first if page.locator('.pop-ctx [aria-label="mistake"]').count() else page.get_by_role('menuitem', name='mistake'), 300)
                 check(tag + ': a tap on a suggestion changes the word', 'a mistake,' in src(page), src(page)[40:90])
                 page.evaluate("window.rikuy.openSpelling()"); settle(page, 700)
                 box = page.evaluate("(() => { const r = document.getElementById('sp-pane').getBoundingClientRect(); return [r.left, r.right, r.top, r.bottom, innerWidth, innerHeight]; })()")

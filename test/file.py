@@ -18,7 +18,7 @@ and its dialogs on the screen at 390 px.
 RIKUY_DIST names another dist/."""
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, open_page, check, results, src, load_doc, click_text, roundtrip
+from browser import settle, tap, open_page, check, results, src, load_doc, click_text, roundtrip
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -216,7 +216,8 @@ def properties(page):
                 import base64, io, pypdf
                 b = ev(page, '(async () => { const r = await window.rikuy.api.compile(); let s = ""; for (const x of r.pdf) s += String.fromCharCode(x); return btoa(s); })()')
                 meta = pypdf.PdfReader(io.BytesIO(base64.b64decode(b))).metadata or {}
-                check('V2: acmart: the Subject reaches the PDF (pypdf reads its Info)', (meta.get('/Subject') or '') == 'Uber', dict(meta))
+                # (the detail without the PDF's dates, which are the run's own)
+                check('V2: acmart: the Subject reaches the PDF (pypdf reads its Info)', (meta.get('/Subject') or '') == 'Uber', {k: v for k, v in dict(meta).items() if 'Date' not in k})
     # read back: a hand written \hypersetup
     load_doc(page, hs.replace('colorlinks=true', 'colorlinks=true, pdfsubject = {Hand, written}, pdfkeywords=one'))
     page.get_by_role('tab', name='File', exact=True).click(); settle(page, 200)
@@ -270,7 +271,8 @@ def accessibility(page):
     # a stranger's file of spaces after \\includegraphics and \\usepackage: read in a moment
     load_doc(page, '\\documentclass{article}\n\\usepackage' + ' ' * 200000 + 'x\n\\begin{document}\n' + '\\includegraphics' + ' ' * 200000 + 'y\n\\end{document}\n')
     ms = ev(page, '(() => { const t = performance.now(); window.rikuy.accessibilityIssues(); return performance.now() - t; })()')
-    check('Check accessibility on 400 KB of hostile spaces takes well under a second (a scan, no backtracking)', ms < 500, ms)
+    # (the time itself only when it is too long: under that it moves from run to run)
+    check('Check accessibility on 400 KB of hostile spaces takes well under a second (a scan, no backtracking)', ms < 500, ms if ms >= 500 else 'under 500 ms')
     good = '\\DocumentMetadata{lang=en,pdfstandard=ua-2,tagging=on}\n\\documentclass{article}\n\\usepackage{booktabs}\n\\title{T}\n\\begin{document}\n\\section{A}\n\\subsection{B}\n\\begin{tabular}{ll}\n\\toprule\na & b \\\\\n\\midrule\nc & d\n\\end{tabular}\n\\end{document}\n'
     load_doc(page, good)
     check('a document with a title, a language, tagging, its levels and header rows: nothing found', ev(page, 'window.rikuy.accessibilityIssues().length') == 0, ev(page, 'window.rikuy.accessibilityIssues()'))
@@ -325,7 +327,9 @@ def export(page):
         page.wait_for_function('!window.rikuy.wordBusy', timeout=120000)
         e = ev(page, '(async () => { const x = window.rikuy.lastExport; return x ? { name: x.name, size: x.size, text: (await x.blob.text()).slice(0, 4000) } : null; })()')
         good = e and e['name'].endswith('.' + {'markdown': 'md'}.get(fmt, fmt)) and e['size'] > 50 and (needle is None or needle in e['text']) and (fmt not in ('odt', 'epub') or e['text'].startswith('PK'))
-        check('Export as ' + fmt + ': a file with the document in it', good, e and (e['name'], e['size'], e['text'][:80]))
+        # (an .odt or an .epub is a .zip, whose bytes carry the time it was made: its detail is its
+        # name, its first bytes and whether it has any size)
+        check('Export as ' + fmt + ': a file with the document in it', good, e and ((e['name'], e['text'][:2], e['size'] > 50) if fmt in ('odt', 'epub') else (e['name'], e['size'], e['text'][:80])))
     ev(page, '() => window.rikuy.runCommand("export-as", "markdown")'); page.wait_for_function('!window.rikuy.wordBusy', timeout=120000)
     md = ev(page, '(async () => (await window.rikuy.lastExport.blob.text()))()')
     check('M1: the Markdown has none of Word\'s anchors', 'Some words here' in md and '{#Rk' not in md and '[Some' not in md, md[:200])
@@ -342,7 +346,7 @@ def phones(p):
     ev(page, "window.rikuy.selectTab('file')"); settle(page, 300)
     r = ev(page, "[...document.querySelectorAll('#rp-file .btn')].filter((b) => b.offsetParent).map((b) => { const r = b.getBoundingClientRect(); return [b.getAttribute('aria-label'), Math.round(r.width), Math.round(r.height)]; })")
     check('the File tab\'s buttons are 44 px under a finger (390 px)', r and all(x[1] >= 44 and x[2] >= 44 for x in r), r)
-    page.locator('#rf-props').tap(); settle(page, 400)
+    tap(page, page.locator('#rf-props'), 400)
     dl = ev(page, "(() => { const d = document.querySelector('.pop'); const r = d.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.bottom), innerHeight]; })()")
     check('Properties fits a phone\'s screen (390 px)', dl[0] >= 0 and dl[1] <= 390 and dl[2] <= dl[3], dl)
     page.screenshot(path=os.path.join(SHOTS, 'phone-390-properties.png'))

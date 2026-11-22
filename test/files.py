@@ -29,6 +29,11 @@ with zipfile.ZipFile(zpath, 'w') as z:
     for n, b in files.items():
         z.writestr(n, b)
 
+def unstamped(link):
+    """A project's mark without the time and the id it was made with, which are the run's own."""
+    return {k: v for k, v in link.items() if k not in ('t', 'id')} if isinstance(link, dict) else link
+
+
 def saved(page):
     with page.expect_download() as d:
         download(page)
@@ -44,6 +49,8 @@ def saved(page):
 # .zip opened again (review I1, I2). The TeX worker is a stand-in that notes what it was asked.
 EVIL = '\\documentclass{article}\n\\begin{document}\n\\immediate\\write18{echo pwned > /tmp/x}\nEvil.\n\\end{document}\n'
 MINE = '\\documentclass{article}\n\\begin{document}\nMine.\n\\end{document}\n'
+# the page's messages as they come, each step's own (a later one may cover it on the screen)
+SAID = """() => { const g = window.rikuy; if (!g.__said) { g.__said = []; const t = g.toast; g.toast = function (...a) { g.__said.push(String(a[0])); return t.apply(this, a); }; } g.__said.length = 0; }"""
 STUB = """() => { const g = window.rikuy; window.__se = []; g.texEngine = () => ({ info: { v: 1, packs: 0 }, compile: async (o) => { window.__se.push({ shellEscape: o.shellEscape, untrusted: o.untrusted }); return { ok: false, runs: [], log: '', problems: [] }; } }); }"""
 # what the open project's compile is sent, its mark and its key
 FLAGS = """async () => { const g = window.rikuy; const li = await g.linkInfo(); window.__se = []; try { await g.compilePdf({}); } catch (e) {}
@@ -60,10 +67,16 @@ def marks():
         def put(name, data, main):
             path = os.path.join(TMP, name)
             open(path, 'wb').write(data)
+            page.evaluate(SAID)
             page.set_input_files('#fileinput', path)
             page.wait_for_function('(m) => window.rikuy.main === m && window.rikuy.files.has(m)', arg=main, timeout=10000)
+            # (the open's last step is its message, after what it keeps in this browser; what it says
+            # is that message and those before it: a message after it answers a write of its own, as
+            # another tab's copy found in storage, which one that is depends on when the test's other
+            # tab, closed a moment before, finished its last save)
+            until(page, "() => window.rikuy.__said.some((t) => t.startsWith('Opened '))")
+            said = page.evaluate("() => { const s = window.rikuy.__said, k = s.findIndex((t) => t.startsWith('Opened ')); return s.slice(0, k + 1).join(' | '); }")
             settle(page, 500)
-            said = page.inner_text('#toast')
             return {**page.evaluate(FLAGS), 'said': said}
         def openv(name, main):
             return page.evaluate("""async ([n, m]) => { const g = window.rikuy; const v = (await g.allSnaps()).find((x) => x.name === n && x.main === m); if (!v) return 'no version';
@@ -405,16 +418,18 @@ try:
         drop(('\u56fe\u4e00.png', PNG)); settle(page, 300)
         drop(('\u56fe\u4e8c.png', PNG + b'\0\0\0')); settle(page, 300)
         s = page.evaluate('window.rikuy.files.get("main.tex")')
-        check('two pictures with names of no Latin letters are two files and two figures', page.evaluate(BYTES, 'figure.png') == len(PNG) and page.evaluate(BYTES, 'figure-2.png') == len(PNG) + 3 and '{figure.png}' in s and '{figure-2.png}' in s, (page.evaluate('[...window.rikuy.assetBlobs.keys()]'), page.evaluate(BYTES, 'figure.png')))
+        # (the details list the project's pictures sorted: the opening graph's picture is drawn again
+        # when the page is, and joins the list's end whenever that is)
+        check('two pictures with names of no Latin letters are two files and two figures', page.evaluate(BYTES, 'figure.png') == len(PNG) and page.evaluate(BYTES, 'figure-2.png') == len(PNG) + 3 and '{figure.png}' in s and '{figure-2.png}' in s, (sorted(page.evaluate('[...window.rikuy.assetBlobs.keys()]')), page.evaluate(BYTES, 'figure.png')))
         drop(('my-plot.png', PNG)); settle(page, 300)
         toast = drop(('my plot.png', PNG + b'\0' * 7)); settle(page, 300)
-        check('a picture whose safe name the project already has does not replace that picture', page.evaluate(BYTES, 'my-plot.png') == len(PNG) and page.evaluate(BYTES, 'my-plot-2.png') == len(PNG) + 7 and 'my-plot-2.png' in toast, (toast, page.evaluate('[...window.rikuy.assetBlobs.keys()]')))
+        check('a picture whose safe name the project already has does not replace that picture', page.evaluate(BYTES, 'my-plot.png') == len(PNG) and page.evaluate(BYTES, 'my-plot-2.png') == len(PNG) + 7 and 'my-plot-2.png' in toast, (toast, sorted(page.evaluate('[...window.rikuy.assetBlobs.keys()]'))))
         # A picture dropped under exactly the name of one the project has is that picture made
         # again: its bytes are replaced and no second figure is placed.
         count = lambda: page.evaluate('window.rikuy.files.get("main.tex").split("\\\\includegraphics").length - 1')
         figs = count()
         toast = drop(('my-plot.png', PNG + b'\0' * 2)); settle(page, 300)
-        check('a picture dropped under the exact name of one in the project replaces its bytes and places no figure', page.evaluate(BYTES, 'my-plot.png') == len(PNG) + 2 and count() == figs and 'my-plot.png replaced' in toast and not page.evaluate('window.rikuy.assetBlobs.has("my-plot-3.png")'), (toast, count(), figs, page.evaluate('[...window.rikuy.assetBlobs.keys()]')))
+        check('a picture dropped under the exact name of one in the project replaces its bytes and places no figure', page.evaluate(BYTES, 'my-plot.png') == len(PNG) + 2 and count() == figs and 'my-plot.png replaced' in toast and not page.evaluate('window.rikuy.assetBlobs.has("my-plot-3.png")'), (toast, count(), figs, sorted(page.evaluate('[...window.rikuy.assetBlobs.keys()]'))))
         # ... placed as usual when the text does not have it yet
         click_text(page, 'References follow')
         drop(('solo.png', PNG)); settle(page, 300)
@@ -428,9 +443,12 @@ try:
         click_text(page, 'References follow')
         page.evaluate("""(b) => { const dt = new DataTransfer(); dt.items.add(new File([Uint8Array.from(atob(b), (c) => c.charCodeAt(0))], 'image.png', { type: 'image/png' }));
           document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }""", b64(PNG + b'\0' * 9))
+        # (the picture is read into the project before it is placed: openFiles is async)
+        until(page, "() => [...window.rikuy.assetBlobs.keys()].some((n) => n.startsWith('pasted-')) && window.rikuy.files.get('main.tex').includes('{pasted-')")
         settle(page, 500)
         pasted = [n for n in page.evaluate('[...window.rikuy.assetBlobs.keys()]') if n.startswith('pasted-')]
-        check('a pasted picture never replaces a file, whatever the clipboard calls it', page.evaluate(BYTES, 'image.png') == len(PNG) and len(pasted) == 1 and page.evaluate(BYTES, pasted[0] if pasted else '') == len(PNG) + 9, pasted)
+        # (its name carries the time it came: the detail leaves that out)
+        check('a pasted picture never replaces a file, whatever the clipboard calls it', page.evaluate(BYTES, 'image.png') == len(PNG) and len(pasted) == 1 and page.evaluate(BYTES, pasted[0] if pasted else '') == len(PNG) + 9, [_re.sub(r'pasted-[a-z0-9]+', 'pasted-(time)', n) for n in pasted])
         # Typing while a version is being kept (the await before a replaced file is written): the
         # figure dropped with it must land after the caret's paragraph in the text as it is then,
         # not at an offset of the text as it was when the drop began.
@@ -461,7 +479,7 @@ try:
         with zipfile.ZipFile(cls, 'w') as z: z.writestr('evil.cls', '\\ProvidesClass{evil}\n')
         drop(('styles.zip', cls.getvalue())); settle(page, 400)
         link = page.evaluate("window.rikuy.linkCache.get(window.rikuy.name + '|' + window.rikuy.main) || null")
-        check('a .zip holding only a class joins the project and marks it as holding someone else\'s files', page.evaluate('window.rikuy.files.has("evil.cls")') and bool(link) and link['origin'] == 'zip' and not link['allowed'], link)
+        check('a .zip holding only a class joins the project and marks it as holding someone else\'s files', page.evaluate('window.rikuy.files.has("evil.cls")') and bool(link) and link['origin'] == 'zip' and not link['allowed'], unstamped(link))
         many = io.BytesIO()
         with zipfile.ZipFile(many, 'w') as z:
             for i in range(30): z.writestr('pics/p%02d.png' % i, PNG)
@@ -487,7 +505,7 @@ try:
         page.wait_for_function("window.rikuy.name === 'half'", timeout=10000)
         link = page.evaluate("window.rikuy.linkCache.get(window.rikuy.name + '|' + window.rikuy.main) || null")
         check('a .zip damaged part way opens what was read and says the archive is damaged', page.evaluate('[...window.rikuy.files.keys()]') == ['main.tex'] and 'half.zip is not a .zip file this page can read' in page.inner_text('#toast'), page.inner_text('#toast'))
-        check('and stays someone else\'s project, with shell escape restricted', bool(link) and link['origin'] == 'zip' and not link['allowed'], link)
+        check('and stays someone else\'s project, with shell escape restricted', bool(link) and link['origin'] == 'zip' and not link['allowed'], unstamped(link))
         check('no page errors (dropped files)', not errors, errors[:5])
         browser.close()
 
@@ -648,7 +666,8 @@ try:
                 page.evaluate("(b) => { const a = window.rikuy; a.addAsset('fig.png', new Blob([Uint8Array.from(atob(b), (c) => c.charCodeAt(0))])); }", __import__('base64').b64encode(PNG).decode())
             click_text(page, 'Click anywhere', 5)
             page.keyboard.type(' typed')
-            settle(page, 1500)
+            # (the save that finds no storage runs 700 ms after the edit, and says so)
+            settle(page, 1500, full=True)
             check('storage %s: the page opens and takes edits' % label, ' typed' in src(page))
             check('storage %s: the user is told it is not kept' % label, want in page.inner_text('#toast') and 'Saved in this browser' not in page.inner_text('#st-save'), (page.inner_text('#toast')[:120], page.inner_text('#st-save')))
             check('storage %s: no page errors' % label, not errors, errors[:3])
