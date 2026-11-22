@@ -6,7 +6,7 @@ $RIKUY_SHOTS (default /tmp/ux-shots).
 Run: cd test && python3 ux.py [part ...]   (no part: all of them)"""
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, until, open_page, load_doc, click_text, select_text, src, check, results
+from browser import TIMERS, frame, settle, tap, until, open_page, load_doc, click_text, select_text, src, check, results
 from playwright.sync_api import sync_playwright
 
 SHOTS = os.environ.get('RIKUY_SHOTS', '/tmp/ux-shots')
@@ -118,6 +118,8 @@ def open_tab(page, name, touch=False):
     settle(page, 250)
 
 
+# File's Recent list: the documents kept in this browser, read from IndexedDB a moment after File opens
+RECENT = "() => { const l = document.querySelector('#rf-home .rf-recent-list'); return !!l && l.childElementCount > 0; }"
 FILE_GEOM = """(() => { const r = document.getElementById('ribbon').getBoundingClientRect(), s = document.getElementById('status').getBoundingClientRect(),
   d = document.getElementById('desk').getBoundingClientRect(), b = document.getElementById('rf-back');
   return { open: document.body.classList.contains('file-open'), bottom: Math.round(r.bottom), status: Math.round(s.top), desk: Math.round(d.height),
@@ -156,7 +158,7 @@ def file_view(page, w):
         page.keyboard.press('Control+z'); settle(page, 150)
         open_tab(page, 'File')
     click_text(page, 'Second paragraph', 3) if not touch else None
-    (page.locator('#rf-back').tap() if touch else page.locator('#rf-back').click()); settle(page, 250)
+    (tap(page, page.locator('#rf-back'), 250) if touch else (page.locator('#rf-back').click(), settle(page, 250)))
     g = page.evaluate(FILE_GEOM)
     check(f'Back leaves File ({w})', not g['open'] and g['tab'] == 'insert' and g['desk'] > 100, g)
     if not touch:
@@ -169,12 +171,12 @@ def file_view(page, w):
     check(f'Templates opens its menu and File stays open under it ({w})', page.evaluate(FILE_GEOM)['open'] and page.locator('body > .pop [role=menu], body > [role=menu], .pop[role=menu]').count() >= 1)
     page.keyboard.press('Escape'); settle(page, 200)
     check(f'Esc closes the menu first, File stays, and the keys stay in it, not on the page under it ({w})', page.evaluate(FILE_GEOM)['open'] and not dialog_open(page) and page.evaluate("document.activeElement.id") != 'pages', page.evaluate("document.activeElement.id"))
-    (page.locator('#rf-props').tap() if touch else page.locator('#rf-props').click()); settle(page, 300)
+    (tap(page, page.locator('#rf-props'), 300) if touch else (page.locator('#rf-props').click(), settle(page, 300)))
     g = page.evaluate(FILE_GEOM)
     check(f'Properties opens its dialog over File, which stays behind it as Word\'s Info does ({w})', g['open'] and dialog_open(page), g)
     page.keyboard.press('Escape'); settle(page, 200)
     check(f'Esc closes the dialog first, File stays ({w})', page.evaluate(FILE_GEOM)['open'] and not dialog_open(page))
-    (page.locator('#rf-blank').tap() if touch else page.locator('#rf-blank').click()); until(page, "() => !window.rikuy.files.get('main.tex').includes('Second paragraph')"); settle(page, 500)
+    (tap(page, page.locator('#rf-blank')) if touch else page.locator('#rf-blank').click()); until(page, "() => !window.rikuy.files.get('main.tex').includes('Second paragraph')"); settle(page, 500)
     g = page.evaluate(FILE_GEOM)
     check(f'Blank document makes the new document and shows it ({w})', not g['open'] and g['desk'] > 100 and '\\begin{document}' in src(page) and 'Second paragraph' not in src(page), g)
     check(f'no sideways scroll ({w})', page.evaluate('document.documentElement.scrollWidth') <= page.viewport_size['width'])
@@ -202,7 +204,7 @@ def file_view(page, w):
     k = src(page); page.keyboard.type('Q'); settle(page, 300)
     check(f'a template chosen from File opens with the caret in it: the first key lands ({w})', not page.evaluate(FILE_GEOM)['open'] and src(page) != k, page.evaluate('document.activeElement.id'))
     # the view's Home, as Word's backstage: a page for each template beside the commands, and the documents kept here
-    open_tab(page, 'File'); settle(page, 400)
+    open_tab(page, 'File'); settle(page, 400); until(page, RECENT)
     h = page.evaluate("""(() => { const h = document.getElementById('rf-home'), r = h && h.checkVisibility() ? h.getBoundingClientRect() : null, c = document.querySelector('#rp-file > .rb-tb').getBoundingClientRect();
       return { home: r && [Math.round(r.left), Math.round(r.width)], rail: Math.round(c.right), tiles: [...document.querySelectorAll('#rf-home .rf-tile')].map((t) => t.getAttribute('aria-label')),
                recent: [...document.querySelectorAll('#rf-home .rf-doc')].map((t) => t.getAttribute('aria-label')) }; })()""")
@@ -238,6 +240,8 @@ def status_bar(p):
         for width, dark in ((1920, False), (1366, False), (1366, True), (1280, False), (1100, True), (900, False), (800, True), (700, False)):
             w = '%d px%s' % (width, ', dark' if dark else '')
             ctx = browser.new_context(viewport={'width': width, 'height': 800}, color_scheme='dark' if dark else 'light')
+            # (the page's timers seen, as in open_page()'s contexts: settle() waits for them)
+            ctx.add_init_script(TIMERS)
             page = ctx.new_page()
             errors = []
             page.on('pageerror', lambda e: errors.append(str(e)))
@@ -263,11 +267,12 @@ def status_bar(p):
         # a phone: no room in its status line for Make available offline; the menu panel has it
         for width in (390, 360):
             ctx = browser.new_context(viewport={'width': width, 'height': 800}, has_touch=True, is_mobile=True)
+            ctx.add_init_script(TIMERS)
             page = ctx.new_page()
             page.goto('http://127.0.0.1:%d/' % port)
             page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=60000)
             page.evaluate('() => window.rikuy.ready'); settle(page, 800)
-            page.locator('#b-nav').tap(); settle(page, 300)
+            tap(page, page.locator('#b-nav'), 300)
             item = page.get_by_role('menuitem', name='Make available offline', exact=True)
             check(f'on a phone the menu panel has Make available offline, 44 px under a finger ({width} px)', item.count() == 1 and item.is_visible() and item.bounding_box()['height'] >= 44)
             shot(page, 'menu-offline-%dpx' % width)
@@ -278,6 +283,11 @@ def status_bar(p):
 
 
 PANES = (('styles-pane', '#stylespane'), ('spelling', '#sp-pane'), ('thesaurus', '.th-pane'))
+# (the spelling worker has answered for every word of the open document: the Spelling pane then
+# shows what it found, not what it has so far)
+SPELLED = """() => { const g = window.rikuy, S = g.sp; return !!S && !!S.plan && S.planModel === g.model && [...S.plan.words].every(([d, ws]) => S.failed.has(d) || [...ws].every((w) => S.known.has(d) && S.known.get(d).has(w))); }"""
+# (the thesaurus worker has answered the word looked up: the pane has its meanings, at its full height)
+LOOKED_UP = "() => { const s = document.querySelector('#th-pane .fr-st'); return !!s && !/^Looking up/.test(s.textContent); }"
 GEOM = """(sel) => { const p = document.querySelector(sel), r = p && p.checkVisibility() ? p.getBoundingClientRect() : null, rb = document.getElementById('ribbon').getBoundingClientRect(),
   st = document.getElementById('status').getBoundingClientRect(), d = document.getElementById('desk').getBoundingClientRect();
   return r && { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), ribbon: Math.round(rb.bottom), status: Math.round(st.top), desk: Math.round(d.right), win: innerWidth }; }"""
@@ -293,7 +303,11 @@ def panes(page, w):
     click_text(page, 'Second paragraph', 3)
     for cmd, sel in PANES:
         click_text(page, 'Second paragraph', 3)
+        if cmd == 'spelling':
+            until(page, SPELLED)
         run_cmd(page, cmd); settle(page, 700)
+        if cmd == 'thesaurus':
+            until(page, LOOKED_UP)
         g = page.evaluate(GEOM, sel)
         shot(page, f'pane-{cmd}-{tag}')
         if not touch:
@@ -353,6 +367,7 @@ def pdf_bar(page, w):
     g = page.evaluate("""(() => { const W = innerWidth, s = document.getElementById('pdf-status');
       const box = (id) => { const e = document.getElementById(id), r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.height)]; };
       return { cut: s.scrollWidth > s.clientWidth + 1, status: s.textContent, W, x: box('pdf-x'), re: box('pdf-re'), dl: box('pdf-dl'), eng: box('pdf-engine'),
+               sh: (() => { const r = document.querySelector('.pdf-shell').getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.top)]; })(),
                shell: document.querySelector('.pdf-shell').innerText.trim(), bar: Math.round(document.querySelector('.pdf-bar').getBoundingClientRect().height) }; })()""")
     shot(page, f'pdf-bar-{tag}')
     check(f'the PDF bar says what TeX made in full ({w})', not g['cut'] and g['status'], g)
@@ -371,8 +386,8 @@ def download_pdf(page, w):
     with page.expect_download(timeout=180000) as d:
         if touch:
             # (a phone's one Download button, then its menu's Download PDF)
-            page.locator('#rb-dl-menu').tap(); settle(page, 250)
-            page.locator('body > .pop [role=menuitem][aria-label="Download PDF"]').tap()
+            tap(page, page.locator('#rb-dl-menu'), 250)
+            tap(page, page.locator('body > .pop [role=menuitem][aria-label="Download PDF"]'))
         else:
             page.click('#rb-pdf')
         # (a sample of the status bar every 250 ms while TeX works: what it says over that time is under test)
@@ -398,7 +413,7 @@ def first_comment(page, w):
         # (under a finger the box opens with no field focused, so the phone's keyboard does not
         # cover it; a tap on the name brings it)
         check(f'on a phone the comment opens with no text field focused ({w})', not page.evaluate(TEXT))
-        page.locator('.pop-comment .share-name').tap(); settle(page, 150)
+        tap(page, page.locator('.pop-comment .share-name'), 150)
     first = page.evaluate("document.activeElement.getAttribute('aria-label')")
     check(f'the first comment\'s box starts at the name ({w})', first == 'Your name, shown with your comments and changes', first)
     page.locator('.pop-comment textarea').fill('Is this the right word?')
@@ -413,7 +428,7 @@ def first_comment(page, w):
     run_cmd(page, 'comment-new'); settle(page, 300)
     if touch:
         check(f'on a phone the next one too opens with no text field focused ({w})', not page.evaluate(TEXT))
-        page.locator('.pop-comment textarea').tap(); settle(page, 150)
+        tap(page, page.locator('.pop-comment textarea'), 150)
     check(f'the next comment starts at the comment, the name known ({w})', page.evaluate("document.activeElement.tagName") == 'TEXTAREA' and page.locator('.pop-comment .share-name').count() == 0)
     page.keyboard.press('Escape')
 
@@ -429,7 +444,7 @@ def tap_text(page, text, k=0):
     at = page.evaluate("""([t, k]) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(t)); if (!s) return null;
       s.scrollIntoView({ block: 'center' }); const i = s.textContent.indexOf(t) + k, r = document.createRange(); r.setStart(s.firstChild, i); r.setEnd(s.firstChild, i + 1);
       const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }""", [text, k])
-    page.touchscreen.tap(at[0], at[1]); settle(page, 250)
+    tap(page, (at[0], at[1]), 250)
 
 
 def mobile_view(page, w):
@@ -453,7 +468,7 @@ def mobile_view(page, w):
     page.evaluate('window.rikuy.undo()'); page.evaluate('window.rikuy.undo()'); settle(page, 200)
     # the phone's ribbon row on a selection
     select_text(page, 'bold word'); settle(page, 200)
-    page.locator('#rb-b').tap(); settle(page, 250)
+    tap(page, page.locator('#rb-b'), 250)
     check(f'Bold in the phone\'s ribbon row on a selection ({w})', '\\textbf{bold word}' in src(page), src(page)[-120:])
     page.evaluate('window.rikuy.undo()'); settle(page, 150)
     tap_text(page, 'Second paragraph', 2)
@@ -472,16 +487,16 @@ def mobile_view(page, w):
     # the zoom button: the text a quarter larger, and back
     seen = []
     for _ in range(2):
-        page.locator('#zoomv').tap(); settle(page, 300); seen.append(page.evaluate(MV))
+        tap(page, page.locator('#zoomv'), 300); seen.append(page.evaluate(MV))
     check(f'the zoom button makes the text a quarter larger and back, lines still inside the screen ({w})', seen[0]['zoom'] == '125%' and seen[0]['font'] > g['font'] * 1.2 and seen[0]['out'] == 0 and seen[0]['desk'] <= 1 and seen[1]['zoom'] == '100%', [(x['zoom'], x['font'], x['out']) for x in seen])
     # Print Layout one tap away, kept on this device
-    page.locator('#sv-mobile').tap(); settle(page, 400)
+    tap(page, page.locator('#sv-mobile'), 400)
     g2 = page.evaluate(MV)
     shot(page, f'mobile-view-off-{tag}')
     check(f'a tap on Mobile View gives Print Layout, TeX\'s pages ({w})', not g2['web'] and g2['pressed'] == 'false' and page.evaluate("document.querySelectorAll('#pages .page').length") >= 1, g2)
     page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); settle(page, 400)
     check(f'Print Layout, chosen, is what this phone opens with next ({w})', not page.evaluate(MV)['web'])
-    page.locator('#sv-mobile').tap(); settle(page, 400)
+    tap(page, page.locator('#sv-mobile'), 400)
     page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); settle(page, 400)
     check(f'and Mobile View again, once chosen again ({w})', page.evaluate(MV)['web'])
 
@@ -507,12 +522,12 @@ def help_pane(page, w):
     touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
     load_doc(page, DOC)
     if touch:
-        page.locator('#b-nav').tap(); settle(page, 250)
-        page.get_by_role('menu', name='Actions', exact=True).get_by_role('menuitem', name='Help', exact=True).tap(); settle(page, 400)
+        tap(page, page.locator('#b-nav'), 250)
+        tap(page, page.get_by_role('menu', name='Actions', exact=True).get_by_role('menuitem', name='Help', exact=True), 400)
         g = page.evaluate(HELP)
         shot(page, f'help-{tag}')
         check(f'on a phone Help is the sheet it was, inside the screen ({w})', g['pop'] and not g['pane'], g)
-        page.get_by_role('dialog', name='How Rikuy works', exact=True).get_by_role('button', name='Close', exact=True).tap()
+        tap(page, page.get_by_role('dialog', name='How Rikuy works', exact=True).get_by_role('button', name='Close', exact=True))
         return
     page.locator('#b-help').click(); settle(page, 400)
     g = page.evaluate(HELP)
@@ -553,6 +568,8 @@ def caret_back(page, w):
         check(f'{name}, then Esc: the next key lands at the caret (Spelling: over the misspelling it showed), not at the start ({w})', ok and '\\section{%sPart' % mark not in t, [l for l in t.splitlines() if mark in l][:2])
         page.keyboard.press('Control+z'); settle(page, 150)
     load_doc(page, LONG); settle(page, 400)
+    # (F7 opens at the misspelling after the caret, once the spelling worker has found it)
+    until(page, "() => ((window.rikuy.sp || {}).bad || []).some((x) => x.w === 'mispeled')")
     for name, how in (('Spelling (F7), docked', lambda: page.keyboard.press('F7')),
                       ('Find and Replace (Ctrl+H)', lambda: page.keyboard.press('Control+h')),
                       ('Go To (Ctrl+G)', lambda: page.keyboard.press('Control+g')),
@@ -561,8 +578,10 @@ def caret_back(page, w):
                       ('Word Count from the status bar', lambda: page.locator('#st-words').click())):
         click_text(page, 'Words of part 4', 15)
         page.evaluate("document.getElementById('pages').focus()")
-        how(); settle(page, 900)
-        page.keyboard.press('Escape'); settle(page, 400)
+        # (full: the page laid out again at the docked pane's zoom, 150 ms after the desk narrowed,
+        # before Esc, and again once it widened, before the key: what this part is about)
+        how(); settle(page, 900, full=True)
+        page.keyboard.press('Escape'); settle(page, 400, full=True)
         if page.evaluate("!!document.querySelector('#sp-pane:not([hidden]), .th-pane:not([hidden])') && document.activeElement.id !== 'pages'"):
             page.keyboard.press('Escape'); settle(page, 300)
         lands(name, 'Q')
@@ -572,7 +591,7 @@ def caret_back(page, w):
     page.evaluate("(() => { const s = getSelection().getRangeAt(0).getBoundingClientRect(); document.getElementById('desk').scrollTop += s.top - 300; })()")
     settle(page, 200)
     y0 = page.evaluate("getSelection().getRangeAt(0).getBoundingClientRect().top")
-    run_cmd(page, 'styles-pane'); settle(page, 900)
+    run_cmd(page, 'styles-pane'); settle(page, 900, full=True)
     y1 = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(), d = document.getElementById('desk').getBoundingClientRect(); return [Math.round(r.top), Math.round(d.top), Math.round(d.bottom)]; })()")
     check(f'the Styles pane docking keeps the caret\'s line on the screen, near where it was ({w})', y1[1] <= y1[0] <= y1[2] and abs(y1[0] - y0) < 120, (y0, y1))
     run_cmd(page, 'styles-pane')
@@ -608,10 +627,10 @@ def lows(page, w):
     bar has its views in sight; the zoom number and the comment boxes are 44 px under a finger."""
     width = page.viewport_size['width']
     if width <= 520:
-        page.locator('#b-nav').tap(); settle(page, 250)
+        tap(page, page.locator('#b-nav'), 250)
         z = page.evaluate("(() => { const a = document.querySelector('#nav-acts [data-for=zoomv]'); return a ? a.querySelectorAll('svg').length : -1; })()")
         check(f'the menu panel\'s zoom item has no icon of another action ({w})', z == 0, z)
-        page.locator('#nav-close').tap(); settle(page, 200)
+        tap(page, page.locator('#nav-close'), 200)
         load_doc(page, DOC); select_text(page, 'bold word'); run_cmd(page, 'comment-new')
         h = page.evaluate("[...document.querySelectorAll('.pop-comment .share-name, .pop-comment textarea')].map((e) => Math.round(e.getBoundingClientRect().height))")
         check(f'a comment\'s name and text boxes are 44 px under a finger ({w})', h and min(h) >= 44, h)
@@ -637,7 +656,7 @@ def place_kept(page, w):
     page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('Words of part 37')); document.getElementById('desk').scrollTop += s.getBoundingClientRect().top - document.getElementById('desk').getBoundingClientRect().top - 30; })()")
     settle(page, 300)
     t0 = page.evaluate(TOP)
-    flip = (lambda: page.locator('#sv-mobile').tap()) if touch else (lambda: run_cmd(page, 'web-layout'))
+    flip = (lambda: tap(page, page.locator('#sv-mobile'))) if touch else (lambda: run_cmd(page, 'web-layout'))
     seen = []
     for _ in range(2):
         flip(); settle(page, 700); seen.append(page.evaluate(TOP))
@@ -837,7 +856,7 @@ def contrast(page, w):
         got[cmd + ' ' + name] = page.evaluate(CONTRAST, h) if page.evaluate('(h) => !!h', h) else None
         page.keyboard.press('Escape'); settle(page, 150)
     check(f'the dialogs\' primary buttons read at 4.5:1 or more ({w})', all(v and v >= 4.5 for v in got.values()), got)
-    page.locator('#bar .srch input').click() if not touch else page.tap('#bar .srch input')
+    page.locator('#bar .srch input').click() if not touch else tap(page, page.locator('#bar .srch input'))
     page.keyboard.type('word count'); settle(page, 400)
     h = page.evaluate_handle("document.querySelector('.srch-opt.on .srch-n') || document.querySelector('.srch-opt.on')")
     c = page.evaluate(CONTRAST, h) if page.evaluate('(h) => !!h', h) else None
@@ -857,7 +876,7 @@ def focus_rules(page, w):
     where = "(() => { const a = document.activeElement; return [!!(a && a.closest('body > .pop')), a.tagName, (a.getAttribute('aria-label') || a.textContent || '').trim().slice(0, 20)]; })()"
     click_text(page, 'Second paragraph', 3)
     open_tab(page, 'Review', touch)
-    (page.tap if touch else page.click)('#rr-a11y'); settle(page, 400)
+    tap(page, page.locator('#rr-a11y'), 400) if touch else (page.click('#rr-a11y'), settle(page, 400))
     a = page.evaluate(where)
     check(f'Check accessibility from the ribbon takes the focus into its dialog ({w})', a[0] and (not touch or a[1] != 'INPUT'), a)
     page.keyboard.press('Escape'); settle(page, 200)
@@ -956,7 +975,7 @@ def bar_room(p):
             gaps = [b[1] - a[2] for a, b in zip(bar, bar[1:])]
             check(f'the bar\'s targets 44 by 44 px, 8 px apart, inside the screen ({w})', all(b[3] >= 44 and b[4] >= 44 for b in bar) and all(g >= 8 for g in gaps) and bar[0][1] >= 0 and bar[-1][2] <= width, (bar, gaps))
             if width < 380:
-                page.tap('#b-nav'); settle(page, 400)
+                tap(page, page.locator('#b-nav'), 400)
                 check(f'Redo, not on the bar, is in the menu panel by name ({w})', page.get_by_role('menuitem', name='Redo', exact=True).count() == 1)
         check(f'no console errors (bar_room, {w})', not errors, errors[:3])
         browser.close()
@@ -1074,7 +1093,10 @@ def menus(page, w):
             page.keyboard.press('Escape'); settle(page, 100)
             # (Show in Source opens the source pane, which keeps the focus: closed for the next)
             if page.evaluate("document.body.classList.contains('src-on')"):
-                page.evaluate("window.rikuy.toggleSource()"); settle(page, 150)
+                # (and the page laid out again at the width it gave back: the desk's ResizeObserver
+                # sees it in the next frame and refits 150 ms later; a layout with the next menu
+                # open takes the focus out of it, to the page, so its ring was read off the page)
+                page.evaluate("window.rikuy.toggleSource()"); frame(page); settle(page, 150, full=True)
         wrong = {k: v for k, v in dlg.items() if k.endswith('…') != v}
         check(f'"…" on exactly the items that open a dialog, in the {ctx} menu ({w})', dlg and not wrong, wrong or dlg)
         wrong = {k: v for k, v in sub.items() if v[0] != v[1]}
@@ -1125,7 +1147,7 @@ def empty_panes(page, w):
     if e and e['buttons']:
         page.locator('#nav .nav-empty button').click(); settle(page, 500)
         check(f'which makes the caret\'s paragraph a heading, listed there ({w})', '\\section{Just one paragraph' in src(page) and page.evaluate("[...document.querySelectorAll('#nav .nv-row, #nav [role=treeitem]')].some((r) => r.offsetParent && r.textContent.includes('Just one'))"), src(page)[-120:])
-    open_tab(page, 'File', page.evaluate("matchMedia('(pointer: coarse)').matches")); settle(page, 500)
+    open_tab(page, 'File', page.evaluate("matchMedia('(pointer: coarse)').matches")); settle(page, 500); until(page, RECENT)
     r = page.evaluate("(() => { const p = document.querySelector('.rf-none'); return p && p.offsetParent ? [p.textContent, [...p.parentElement.querySelectorAll('button')].filter((b) => b.offsetParent).map((b) => b.textContent.trim())] : null; })()")
     check(f'File\'s empty Recent list: one sentence and Open a file ({w})', r and one([r[0]]) and r[1] == ['Open a file'], r)
     if r:
@@ -1179,7 +1201,7 @@ def text_spacing(page, w):
         click_text(page, 'Second paragraph', 3); run_cmd(page, cmd); settle(page, 300)
         cut[cmd] = page.evaluate(CUT, 'body > .pop')
         page.keyboard.press('Escape'); settle(page, 100)
-    open_tab(page, 'File', touch); settle(page, 400)
+    open_tab(page, 'File', touch); settle(page, 400); until(page, RECENT)
     cut['File'] = page.evaluate(CUT, '#rp-file')
     page.keyboard.press('Escape'); settle(page, 300)
     if not touch:
@@ -1225,7 +1247,7 @@ def tooltips(page, w):
     titles had the description alone ("Show the PDF as TeX makes it, beside the page", without
     Ctrl+F2). Native tooltips: Esc and the pointer are the browser's (WCAG 1.4.13 leaves them to it)."""
     load_doc(page, DOC)
-    open_tab(page, 'File'); settle(page, 400)
+    open_tab(page, 'File'); settle(page, 400); until(page, RECENT)
     tips = page.evaluate("""(() => { const reg = window.rikuy.cmds.commands(), byEl = new Map(reg.filter((c) => c.static && c.el).map((c) => [c.el, c]));
       return [...document.querySelectorAll('#bar button, #bar input, #status button, #status input, #rf-home button')].filter((e) => e.checkVisibility() && !['st-lang', 'st-track', 'st-words'].includes(e.id)).map((e) => { const c = byEl.get(e.id);
         return [e.id || e.className, c ? c.name : e.getAttribute('aria-label'), e.title, c ? !!((c.keys || []).length + (c.keysElsewhere || []).length) : false]; }); })()""")
@@ -1288,6 +1310,9 @@ def run(which):
                 check(f'no console errors ({name}, {width} px)', not errors, errors[:4])
                 browser.close()
     bad = [r for r in results if not r[1]]
+    # (the failures again at the end, where a runner's log keeps a long suite's last lines)
+    for r in bad:
+        print('FAILED ' + r[0] + '  :: ' + str(r[2])[:300])
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     return 1 if bad else 0
 
