@@ -203,7 +203,8 @@ Pick the checks by what you touched, and run them before you call it done:
   next check; `ready(page)` after a reload (init through, not only the boot screen gone);
   `stored(page)`, every IndexedDB write the page opened come back (`TIMERS` counts them too);
   `saved(page)` before a reload that must find an edit; `kept(page)` for a tab hidden or shown
-  (its copy and IndexedDB's agree). A fixed `wait_for_timeout`
+  (its copy and IndexedDB's agree); `tap(page, target)` for a finger (the click the tap becomes, and
+  taps kept apart by Chromium's double tap time). A fixed `wait_for_timeout`
   is for where the time itself is under test, with a comment saying so. `RIKUY_WAIT_SHADOW=1` waits
   the old time as well after each such condition and prints `SHADOW` with what still moved and the
   timers then due; `RIKUY_CHECK_LOG=file` writes what each check saw, so a fast run and a shadow run
