@@ -18,7 +18,7 @@ and its dialogs on the screen at 390 px.
 RIKUY_DIST names another dist/."""
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, open_page, check, results, src, load_doc, click_text, roundtrip
+from browser import settle, tap, open_page, check, results, src, load_doc, click_text, roundtrip
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -346,7 +346,7 @@ def phones(p):
     ev(page, "window.rikuy.selectTab('file')"); settle(page, 300)
     r = ev(page, "[...document.querySelectorAll('#rp-file .btn')].filter((b) => b.offsetParent).map((b) => { const r = b.getBoundingClientRect(); return [b.getAttribute('aria-label'), Math.round(r.width), Math.round(r.height)]; })")
     check('the File tab\'s buttons are 44 px under a finger (390 px)', r and all(x[1] >= 44 and x[2] >= 44 for x in r), r)
-    page.locator('#rf-props').tap(); settle(page, 400)
+    tap(page, page.locator('#rf-props'), 400)
     dl = ev(page, "(() => { const d = document.querySelector('.pop'); const r = d.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.bottom), innerHeight]; })()")
     check('Properties fits a phone\'s screen (390 px)', dl[0] >= 0 and dl[1] <= 390 and dl[2] <= dl[3], dl)
     page.screenshot(path=os.path.join(SHOTS, 'phone-390-properties.png'))

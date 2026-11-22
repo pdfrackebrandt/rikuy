@@ -10,7 +10,7 @@ the phone at 390 and 360 px with touch; the Thesaurus and grammar (R4); screensh
 $SHOTS/spell-*, thesaurus-* and grammar-*."""
 import os, sys, time, json
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, until, frame, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, SHOTS, ROOT
+from browser import settle, until, frame, tap, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, SHOTS, ROOT
 from playwright.sync_api import sync_playwright
 
 DOC = ('\\documentclass{article}\n\\begin{document}\n'
@@ -138,23 +138,23 @@ def r4(p):
         page.select_option('#rb-tabsel', 'review'); settle(page, 300)
         btn = page.locator('#rv-thes')
         if btn.is_visible():
-            btn.tap()
+            tap(page, btn)
         else:
-            page.locator('#rv-thes').locator('xpath=ancestor::*[contains(@class, "rb-grp")]').locator('.rb-gbtn').tap(); settle(page, 250)
-            page.locator('.pop').get_by_role('menuitem', name='Thesaurus').tap()
+            tap(page, page.locator('#rv-thes').locator('xpath=ancestor::*[contains(@class, "rb-grp")]').locator('.rb-gbtn'), 250)
+            tap(page, page.locator('.pop').get_by_role('menuitem', name='Thesaurus'))
         settle(page, 400)
-        page.fill('#th-pane input', 'happy'); page.locator('#th-pane').get_by_role('button', name='Search').tap()
+        page.fill('#th-pane input', 'happy'); tap(page, page.locator('#th-pane').get_by_role('button', name='Search'))
         page.wait_for_selector('#th-pane .th-w', timeout=15000)
         box = page.evaluate("(() => { const r = document.getElementById('th-pane').getBoundingClientRect(); return [r.left, r.right, r.top, r.bottom, innerWidth, innerHeight]; })()")
         check('R4 %d px: the Thesaurus is a sheet inside the screen, by taps' % w, box[0] >= 0 and box[1] <= box[4] and box[3] <= box[5], box)
         small = page.evaluate("[...document.querySelectorAll('#th-pane button')].filter(e => e.offsetParent && e.getBoundingClientRect().height < 44 && !e.classList.contains('pop-x')).map(e => e.textContent)")
         check('R4 %d px: its buttons are 44 px targets' % w, not small, small[:5])
         # (review L1) the search field, and Back once a word is followed, 44 px each way
-        page.locator('#th-pane .th-w').first.tap(); page.wait_for_selector('#th-pane .th-back', timeout=15000)
+        tap(page, page.locator('#th-pane .th-w').first); page.wait_for_selector('#th-pane .th-back', timeout=15000)
         dims = page.evaluate("(() => { const b = document.querySelector('#th-pane .th-back').getBoundingClientRect(), i = document.querySelector('#th-pane input').getBoundingClientRect(); return [b.width, b.height, i.height]; })()")
         check('R4 %d px: Back is 44 by 44 px and the search field 44 px high' % w, dims[0] >= 44 and dims[1] >= 44 and dims[2] >= 44, dims)
         page.screenshot(path=os.path.join(SHOTS, 'thesaurus-%d.png' % w))
-        page.locator('#th-pane .pop-x').tap()
+        tap(page, page.locator('#th-pane .pop-x'))
         # a long press on a grammar issue gives its menu
         page.evaluate("window.rikuy.prefs.grammar = true; window.rikuy.grammarRun()")
         grammar_settle(page)
@@ -372,8 +372,7 @@ def run():
                     page.screenshot(path=os.path.join(SHOTS, 'spell-longpress-%d.png' % w))
                 small = page.evaluate("[...document.querySelectorAll('.pop-ctx [role^=menuitem]')].filter(e => e.getBoundingClientRect().height < 44).length")
                 check(tag + ': its items are 44 px tall', small == 0, small)
-                page.tap('.pop-ctx [aria-label="mistake"]') if page.locator('.pop-ctx [aria-label="mistake"]').count() else page.get_by_role('menuitem', name='mistake').tap()
-                settle(page, 300)
+                tap(page, page.locator('.pop-ctx [aria-label="mistake"]').first if page.locator('.pop-ctx [aria-label="mistake"]').count() else page.get_by_role('menuitem', name='mistake'), 300)
                 check(tag + ': a tap on a suggestion changes the word', 'a mistake,' in src(page), src(page)[40:90])
                 page.evaluate("window.rikuy.openSpelling()"); settle(page, 700)
                 box = page.evaluate("(() => { const r = document.getElementById('sp-pane').getBoundingClientRect(); return [r.left, r.right, r.top, r.bottom, innerWidth, innerHeight]; })()")
