@@ -330,6 +330,26 @@ def updown(page):
     check('Shift+Down then Delete: the column\'s two cells emptied, the other column kept', '\\midrule\n & two \\\\\n & four \\\\' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
 
 
+def caption_enter(page):
+    """Enter at the end of a table's caption: a paragraph after the float, as Word's; it did
+    nothing, and a table at the document's end had no way past it."""
+    end = WRAP('Before it.\n\n\\begin{table}[h]\n\\centering\n' + BOOK + '\n\\caption{Results}\n\\label{tab:r}\n\\end{table}')
+    load_doc(page, end); click_text(page, 'Results', 7)
+    page.keyboard.press('Enter'); settle(page, 150)
+    page.keyboard.type('Next words'); settle(page, 200)
+    check('a table at the document\'s end: Enter at its caption\'s end, then typing, writes a paragraph after \\end{table}', src(page) == end.replace('\\end{table}\n', '\\end{table}\n\nNext words\n\n'), src(page)[-120:])
+    load_doc(page, DOC); click_text(page, 'Results', 7)
+    page.keyboard.press('Enter'); settle(page, 150); page.keyboard.type('Middle'); settle(page, 200)
+    s = src(page)
+    check('with a paragraph after the table: the new one between them', '\\end{table}\n\nMiddle\n\nAfter it.' in s and '\\caption{Results}' in s, s[-120:])
+    load_doc(page, DOC); click_text(page, 'Results', 7)
+    page.keyboard.press('Enter'); settle(page, 150); page.keyboard.press('Backspace'); settle(page, 150)
+    check('Enter then Backspace gives the document back', src(page) == DOC, src(page)[-120:])
+    load_doc(page, DOC); click_text(page, 'Results', 3)
+    page.keyboard.press('Enter'); settle(page, 150); page.keyboard.type('Z'); settle(page, 150)
+    check('Enter in the middle of a caption still writes nothing of its own (TeX has one caption paragraph)', src(page) == DOC.replace('Results', 'ResZults'), src(page)[-120:])
+
+
 PASTE = """([t, h]) => { const dt = new DataTransfer(); dt.setData('text/plain', t); if (h) dt.setData('text/html', h);
   document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }"""
 
@@ -811,7 +831,7 @@ def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         names = sys.argv[1:]
-        for f in (inserting, tabs_and_trips, keys_and_select, cell_edges, updown, paste_cells, the_rest, drawing, reviewed, verified, compiled, r3_tables):
+        for f in (inserting, tabs_and_trips, keys_and_select, cell_edges, updown, paste_cells, caption_enter, the_rest, drawing, reviewed, verified, compiled, r3_tables):
             if names and f.__name__ not in names:
                 continue
             try: f(page)

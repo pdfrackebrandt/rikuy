@@ -2203,7 +2203,14 @@ class App {
       this.commit([...edits, { f, s: p, e: p, t: '\\\\\n' }], { f, p: p + 3, bias: 1 }, 'type');
       return;
     }
-    if (kind === 'cell' || kind === 'cap') return;
+    // Enter at the end of a float's last caption: a paragraph after the float, as Word's Enter at a
+    // caption's end. It did nothing, and a table or a figure at the document's end had no way past it.
+    if (kind === 'cap') {
+      const itemEl = el.closest('.it'), B = itemEl && BLOCKS.get(+itemEl.dataset.b);
+      if (c.collapsed && B && B.e > p && /^(?:\s*\})+(?:\s|\\label\s*\{[^{}]*\}|%[^\n]*\n)*\\end\s*\{[^{}]+\}\s*$/.test(src.slice(p, B.e))) { this.showGhost(itemEl, f, B.e); this.enterAct(); }
+      return;
+    }
+    if (kind === 'cell') return;
     const itemEl = el.closest('.it');
     if (kind === 'ttl') {
       // Enter in the title, an author or the date starts the text below them, after \maketitle
