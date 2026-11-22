@@ -222,6 +222,11 @@ try:
         # (the second script on the base, as Word and TeX read it: the field made x_{1^2})
         (['x_1^2+1'], 'x_1^2+1'),
         (['\\sum_i^n', '@Space', 'x'], '\\sum_{i}^{n}x'),
+        # (a math alphabet named with Space takes the next letter, \text collects to its }: both
+        # came out as plain letters, \mathbb R as R)
+        (['\\mathbb', '@Space', 'R^n'], '\\mathbb{R}^{n}'),
+        (['\\mathca', '@Tab', 'L+1'], '\\mathcal{L}+1'),
+        (['\\text', '@Space', 'if x}+y'], '\\text{ifx}+y'),
     ]
     for seq, want in cases:
         fresh_row()

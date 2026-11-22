@@ -48,6 +48,9 @@ const SAME = ('alpha beta gamma delta epsilon varepsilon zeta eta theta vartheta
 // their } (installWordTyping); the field's own box for them lost the font
 const TEXT_ARG = new Set(['text', 'textrm', 'textbf', 'textit', 'textsf', 'texttt', 'textup', 'mbox', 'mathrm', 'mathbf', 'mathbb', 'mathcal',
   'mathfrak', 'mathit', 'mathsf', 'mathtt', 'mathscr', 'operatorname', 'boldsymbol', 'bm']);
+// the math alphabets among them: named with a Space, as \mathbb R, they take the one letter after
+// it, as TeX reads \mathbb R^n (\mathbb{R}^n); \text and the rest collect words up to their }
+const ONE_ARG = new Set(['mathrm', 'mathbf', 'mathbb', 'mathcal', 'mathfrak', 'mathit', 'mathsf', 'mathtt', 'mathscr', 'boldsymbol', 'bm']);
 
 const WORD = {
   // structures
@@ -410,10 +413,11 @@ export function installWordTyping(mf, opts) {
       chip.replaceChildren();
       const head = document.createElement('div');
       head.className = 'wm-typed';
-      head.textContent = '\\' + arg.name + '{' + arg.text;
+      const one = arg.lead && arg.one;
+      head.textContent = '\\' + arg.name + (one ? ' ' : '{' + arg.text);
       const hint = document.createElement('div');
       hint.className = 'wm-hint';
-      hint.textContent = '} ends it';
+      hint.textContent = one ? 'The next letter goes in it, or { for more' : '} ends it';
       chip.append(head, hint);
       chip._list = [];
       place();
@@ -440,7 +444,7 @@ export function installWordTyping(mf, opts) {
       nm.className = 'wm-name';
       nm.textContent = '\\' + name;
       row.append(sym, nm);
-      row.addEventListener('mousedown', (e) => { e.preventDefault(); buf = name; commit(); mf.focus(); });
+      row.addEventListener('mousedown', (e) => { e.preventDefault(); buf = name; commit(true); mf.focus(); });
       chip.appendChild(row);
     });
     const hint = document.createElement('div');
@@ -451,9 +455,13 @@ export function installWordTyping(mf, opts) {
     place();
   };
   const cancel = () => { buf = null; pick = 0; draw(); };
-  const commit = () => {
+  // (named: by Space, Enter, Tab or a pick in the list, where a command of TEXT_ARG waits for its
+  // argument as at its {: put as an empty box of the field's own, \mathbb lost its font and
+  // \mathbb R came out as R)
+  const commit = (named) => {
     const name = buf;
     buf = null; pick = 0;
+    if (named && TEXT_ARG.has(name)) { arg = { name, text: '', depth: 0, lead: true, one: ONE_ARG.has(name) }; draw(); return; }
     draw();
     if (!name) return;
     const tex = resolveCommand(name, macros(), dialect());
@@ -768,6 +776,15 @@ export function installWordTyping(mf, opts) {
         draw();
         return;
       }
+      if (k.length === 1 && arg.lead) {
+        // (after the Space that named it: TeX skips spaces before an argument, a { opens it, and a
+        // math alphabet takes one letter, \mathbb R)
+        stop();
+        if (k === ' ') return;
+        arg.lead = false;
+        if (k === '{') { draw(); return; }
+        if (arg.one && k !== '}') { arg.text = k; argDone(); return; }
+      }
       if (k.length === 1) { stop(); arg.depth += k === '{' ? 1 : k === '}' ? -1 : 0; arg.text += k; draw(); }
       return;
     }
@@ -783,8 +800,8 @@ export function installWordTyping(mf, opts) {
       if (k === 'Escape') { stop(); cancel(); return; }
       if (k === 'ArrowDown') { stop(); pick = Math.min((chip._list || []).length - 1, pick + 1); draw(); return; }
       if (k === 'ArrowUp') { stop(); pick = Math.max(0, pick - 1); draw(); return; }
-      if (k === 'Tab') { stop(); const l = chip._list || []; if (l[pick]) buf = l[pick]; commit(); return; }
-      if (k === ' ' || k === 'Enter') { stop(); if (!buf) { cancel(); return; } commit(); return; }
+      if (k === 'Tab') { stop(); const l = chip._list || []; if (l[pick]) buf = l[pick]; commit(true); return; }
+      if (k === ' ' || k === 'Enter') { stop(); if (!buf) { cancel(); return; } commit(true); return; }
       // \left( and \right) as LaTeX writes them: one bracket each (\left\{, \left\langle too)
       if ((buf === 'left' || buf === 'right') && (k === '\\' || k === '.' || k === '|' || OPEN_KEY[k] || CLOSE_KEY[k])) {
         stop(); buf = k === '\\' ? '' : null; pick = 0; draw();
