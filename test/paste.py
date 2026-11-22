@@ -1,7 +1,7 @@
 """Paste from Word, Google Docs, web pages, spreadsheets and chat assistants."""
 import os, re, sys, traceback
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, open_page, check, results, src, click_text
+from browser import settle, until, open_page, check, results, src, click_text
 from playwright.sync_api import sync_playwright
 
 PASTE = """([html, plain]) => { const dt = new DataTransfer(); if (html) dt.setData('text/html', html); dt.setData('text/plain', plain);
@@ -50,23 +50,28 @@ try:
         check('source restored', src(page) == base)
         # a pasted screenshot joins the project under a name of its own (the paste did nothing)
         PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
-        for _ in range(2):
+        for k in range(2):
             click_text(page, 'Click anywhere in this paragraph', 0)
             page.evaluate('''(b) => { const f = new File([Uint8Array.from(atob(b), (c) => c.charCodeAt(0))], 'image.png', { type: 'image/png' });
               const dt = new DataTransfer(); dt.items.add(f); document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }''', PNG)
+            # (the picture is read into the project before it is placed in the text: openFiles is async)
+            until(page, "(k) => (window.rikuy.files.get('main.tex').match(/pasted-/g) || []).length > k", k)
             settle(page, 300)
         pasted = page.evaluate("[...window.rikuy.assetBlobs.keys()].filter((n) => n.startsWith('pasted-'))")
-        check('two pasted screenshots are two figures in the project', len(pasted) == 2, pasted)
+        # (a pasted picture's name carries the time it came: the details name them by their order, so
+        # two runs that saw the same say the same)
+        nth = lambda x: re.sub(r'pasted-[a-z0-9]+\.png', lambda m: 'pasted-%d.png' % (pasted.index(m.group(0)) + 1) if m.group(0) in pasted else m.group(0), x)
+        check('two pasted screenshots are two figures in the project', len(pasted) == 2, [nth(n) for n in pasted])
         s = src(page)
         at = s.find('Rikuy escapes special characters for you.') + len('Rikuy escapes special characters for you.')
         want = ''.join('\n\n\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{%s}\n\\end{center}' % n for n in reversed(pasted))
-        check('each is placed in the text after the paragraph the caret was in', s[at:].startswith(want + '\n\n') or s[at:].startswith(''.join('\n\n\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{%s}\n\\end{center}' % n for n in pasted) + '\n\n'), s[at:at + 260])
+        check('each is placed in the text after the paragraph the caret was in', s[at:].startswith(want + '\n\n') or s[at:].startswith(''.join('\n\n\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{%s}\n\\end{center}' % n for n in pasted) + '\n\n'), nth(s[at:at + 260]))
         # (after the last \\usepackage line, rikuy.sty's for the opening document's live graph, which
         # loads graphicx itself: the pictures get their own, and keep it if the graph goes)
         last = re.findall(r'\\usepackage(?:\[[^\]]*\])?\{[^}]*\}\n', base[:base.index('\\begin{document}')])[-1]
         check('graphicx joins the preamble once, after the other packages', s.count('\\usepackage{graphicx}') == 1 and last + '\\usepackage{graphicx}\n' in s, s[:420])
         # (the opening graph's box holds its picture too, hidden while the graph runs: class wfb)
-        check('the pictures show on the page and the message says they were placed', page.evaluate('document.querySelectorAll("#pages img:not(.wfb)").length') == 2 and 'placed it in the text' in page.inner_text('#toast'), page.inner_text('#toast'))
+        check('the pictures show on the page and the message says they were placed', page.evaluate('document.querySelectorAll("#pages img:not(.wfb)").length') == 2 and 'placed it in the text' in page.inner_text('#toast'), nth(page.inner_text('#toast')))
         page.keyboard.press('Control+z'); settle(page, 300)
         one = src(page).count('\\includegraphics')
         page.keyboard.press('Control+z'); settle(page, 300)

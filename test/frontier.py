@@ -44,13 +44,14 @@ try:
         page.keyboard.type('See ')
         page.evaluate("""(() => { const g = window.rikuy; const f = 'main.tex'; const s = g.files.get(f); const at = s.indexOf('See ') + 4;
           g.commit([{ f, s: at, e: at, t: 'Table~\\\\ref{tab:nope} and \\\\citet{nobody}. ' }], null, 'type'); })()""")
-        settle(page, 700)
+        # (the status bar counts the problems 350 ms after the edit: problemsSoon)
+        settle(page, 700, full=True)
         check('status counts the problems', page.evaluate("document.getElementById('st-warn').textContent") == '2 problems', page.evaluate("document.getElementById('st-warn').textContent"))
         page.click('#st-warn'); settle(page, 300)
         probs = page.evaluate("[...document.querySelectorAll('.prob')].map(b => b.textContent)")
         check('problems name the label and the citation', any('tab:nope' in x for x in probs) and any('nobody' in x for x in probs), probs)
         page.evaluate("window.rikuy.undo()"); settle(page, 200)
-        page.evaluate("window.rikuy.undo()"); settle(page, 600)
+        page.evaluate("window.rikuy.undo()"); settle(page, 600, full=True)
         check('problems clear when fixed', page.evaluate("document.getElementById('st-warn').hidden"), page.evaluate("document.getElementById('st-warn').textContent"))
         check('source back to the start', src(page) == base)
         page.click('#nav-close'); settle(page, 500)  # closing the panel lays the pages out again
