@@ -20,13 +20,19 @@ level it was given, and a collapsed one's text is still in TeX's PDF.
 RIKUY_DIST names another dist/."""
 import os, sys, base64, io
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, open_page, check, results, src, load_doc, click_text, roundtrip
+from browser import settle, until, open_page, check, results, src, load_doc, click_text, roundtrip
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
 WRAP = lambda body, cls='article': '\\documentclass{' + cls + '}\n\\begin{document}\n' + body + '\n\\end{document}\n'
 DOC = WRAP('\\section{Alpha}\\label{s:a}\nAlpha text.\n\n\\subsection{Alpha one}\nSub text.\n\n\\section{Beta}\nBeta text.\n\n\\section{Gamma}\nGamma text.')
+
+
+# (the page lays its pages out again 200 ms after the last of its fonts came, app.js's loadingdone
+# listener, and that relayout drops a selection, a caret's place and a line to come: open_page()
+# returns before it, so a page's first step waits for the fonts and that relayout)
+FONTS = "() => document.fonts.status === 'loaded'"
 
 
 def key(page, k):
@@ -401,6 +407,7 @@ def collapse_phones(p):
     for w, h in ((390, 844), (360, 740)):
         for dark in ((False, True) if w == 390 else (False,)):
             browser, page, errors = open_page(p, w, h, dark=dark, touch=True)
+            until(page, FONTS); settle(page, 200, full=True)
             load_doc(page, DOC)
             click_text(page, 'Beta', 1); settle(page, 400)
             t = triangle(page, 'Beta')
@@ -436,6 +443,7 @@ def collapse_phones(p):
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
+        until(page, FONTS); settle(page, 200, full=True)
         os.makedirs(SHOTS, exist_ok=True)
         for f in (promote_demote, moves, heading_menu, pane, outline_view, review, collapse, fold_review, pdf_check):
             try: f(page)
