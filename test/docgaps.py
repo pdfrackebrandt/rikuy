@@ -8,7 +8,7 @@ phones at 390 and 360 px with touch; screenshots in $RIKUY_SHOTS (default /tmp/g
 python3 docgaps.py [section ...]: tables, tables_compiled, tables_phones, shots, headfoot, headfoot_forms, footer_sheet, headfoot_refused, headfoot_compiled,
 headfoot_phones, headfoot_shots, view, split_long, refs_update, equation, equation_linear, insert_text, rest_compiled, rest_phones,
 rest_shots."""
-import os, sys, base64, io, re as _re
+import os, sys, base64, re as _re
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from browser import settle, until, open_page, check, results, src, load_doc, roundtrip, pressed, click_text
 from playwright.sync_api import sync_playwright
@@ -275,8 +275,15 @@ def pdf_of(page, doc):
       let b = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) b += String.fromCharCode(...r.pdf.subarray(i, i + 8192));
       return { ok: r.ok, engine: r.engine, pdf: btoa(b), problems: (r.problems || []).filter((x) => x.severity === 'error').map((x) => x.message).slice(0, 4) }; }''', doc)
     page.set_default_timeout(30000)
-    from pypdf import PdfReader
-    r['text'] = ' '.join(p.extract_text() or '' for p in PdfReader(io.BytesIO(base64.b64decode(r['pdf']))).pages) if r['pdf'] else ''
+    # (the PDF's words as poppler reads them, as pdf_tops and pdf_foot do: pypdf 5.9, the version CI
+    # pins, splits a kerned pair of XeTeX's glyphs, "T otal" and "W rapped", which pypdf 6 and
+    # poppler read whole)
+    r['text'] = ''
+    if r['pdf']:
+        import subprocess, tempfile
+        d = tempfile.mkdtemp()
+        open(os.path.join(d, 'a.pdf'), 'wb').write(base64.b64decode(r['pdf']))
+        r['text'] = subprocess.run(['pdftotext', os.path.join(d, 'a.pdf'), '-'], check=True, capture_output=True, text=True).stdout
     return r
 
 
