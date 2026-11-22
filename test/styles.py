@@ -20,7 +20,7 @@ with KOMA-Script and memoir; and, where dist/tex holds a TeX tree, all of it com
 Run it alone with names to run some: python3 styles.py gallery design."""
 import os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, tap, ready, TIMERS, MOTION_OFF, _settled, ROOT, SKELETON_HEAD, ROUTES, open_page, check, results, src, wait_src, click_text, select_text, load_doc, roundtrip, pressed, place, PRINT_LAYOUT, policy
+from browser import settle, frame, tap, ready, TIMERS, MOTION_OFF, _settled, ROOT, SKELETON_HEAD, ROUTES, open_page, check, results, src, wait_src, click_text, select_text, load_doc, roundtrip, pressed, place, PRINT_LAYOUT, policy
 from ribbon import DOC, DIST, state, style, undo_is, TILES, WRAP, body, boxes
 from playwright.sync_api import sync_playwright
 
@@ -707,6 +707,10 @@ def open_phone(p, width, height, dark=False):
 
 def tap_text(page, text, k=0):
     """A tap in the words, k characters in (where click_text would click)."""
+    # (the page's next frame first: on a phone a rebuild that changed the scale scrolls the text
+    # column into view in a frame of its own (src/app.js computePx, textFit), and a place measured
+    # before it was 74 px off by the time the finger came down, past the words' end; runner logs)
+    frame(page)
     box = page.evaluate("""([t, k]) => { const sp = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(t)); if (!sp) return null;
       sp.scrollIntoView({ block: 'center' }); const i = sp.textContent.indexOf(t) + k, r = document.createRange(); r.setStart(sp.firstChild, i); r.setEnd(sp.firstChild, i + 1); const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }""", [text, k])
     tap(page, (box[0], box[1]), 250)
