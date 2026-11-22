@@ -120,17 +120,25 @@ _SHARED = {}
 
 
 def shared_browser(p):
+    """The Chromium for this call, and whether it is the call's own: the shared one, launched with
+    CHROME_ARGS as they were at the first call; where CHROME_ARGS now say otherwise (para.py's
+    hinting() with --font-render-hinting=full), one launched with them for this call alone, closed
+    with its contexts."""
+    args = tuple(a for a in os.environ.get('CHROME_ARGS', '').split() if a)
     b = _SHARED.get(id(p))
     if b is None or b[0] is not p or not b[1].is_connected():
-        b = _SHARED[id(p)] = (p, p.chromium.launch(args=[a for a in os.environ.get('CHROME_ARGS', '').split() if a]))
-    return b[1]
+        b = _SHARED[id(p)] = (p, p.chromium.launch(args=list(args)), args)
+    if b[2] == args:
+        return b[1], False
+    return p.chromium.launch(args=list(args)), True
 
 
 class _Contexts:
     """The browser open_page() returns: the shared Chromium, whose close() closes the contexts this
-    call made (and any a suite made through it), never the browser the next call reuses."""
-    def __init__(self, browser):
-        self._browser, self._contexts = browser, []
+    call made (and any a suite made through it), never the browser the next call reuses; or a
+    browser of the call's own (other launch arguments), which close() closes as well."""
+    def __init__(self, browser, own=False):
+        self._browser, self._contexts, self._own = browser, [], own
 
     def new_context(self, *a, **k):
         c = self._browser.new_context(*a, **k)
@@ -146,6 +154,8 @@ class _Contexts:
         for c in self._contexts:
             c.close()
         self._contexts = []
+        if self._own:
+            self._browser.close()
 
     def __getattr__(self, name):
         return getattr(self._browser, name)
@@ -155,7 +165,7 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, tou
     # touch: a phone's page (a touch screen, a mobile viewport: pointer coarse, no hover; tap())
     # layout: 'print', a window under 700 px opens in Print Layout; 'mobile', in its default
     # motion: animations on (True) or off (False); None: off unless RIKUY_MOTION=1
-    browser = _Contexts(shared_browser(p))
+    browser = _Contexts(*shared_browser(p))
     ctx = browser.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=1, has_touch=touch, is_mobile=touch)
     if layout == 'print' and width < 700:
         ctx.add_init_script(PRINT_LAYOUT)
@@ -202,6 +212,47 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, tou
     page.evaluate('() => window.rikuy.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))')
     fonts_settled(page)
     return browser, page, errors
+
+
+# (tap(): a tap's click, seen by the page, or none to come: the page took the touch's end itself)
+_TAP_WATCH = """([x, y]) => { const S = window.__rkTap = { click: false, end: false, prevented: false, off: x != null && !document.elementFromPoint(x, y) }, st = RAW;
+  addEventListener('click', () => { S.click = true; }, { capture: true, once: true });
+  addEventListener('touchend', (e) => { S.end = true; st(() => { S.prevented = e.defaultPrevented; }, 0); }, { capture: true, once: true }); }""".replace('RAW', _RAW)
+# Chromium makes two taps closer than its double tap time (350 to 450 ms here) and near each other
+# a double tap, three a triple: a word or a paragraph selected
+DOUBLE_TAP = 500
+_TAPS = {}
+
+
+def tap(page, target, ms=0):
+    """A finger's tap on target (a locator, or a point x, y), as one tap: kept DOUBLE_TAP ms from the
+    tap before it where that one was near (100 px), so Chromium makes no double tap of them; then
+    the click the tap becomes, which Chromium sends after tap() returns, seen by the page (or the
+    page's touchend handler taking the touch, or a frame's document having it, so none comes here;
+    2 s at most); then settle(page, ms)."""
+    if isinstance(target, (tuple, list)):
+        x, y = target
+    else:
+        target.scroll_into_view_if_needed()
+        b = target.bounding_box()
+        x, y = (b['x'] + b['width'] / 2, b['y'] + b['height'] / 2) if b else (None, None)
+    last = _TAPS.get(id(page))
+    if last and last[0] is page and x is not None and last[2] is not None:
+        gap = (time.monotonic() - last[1]) * 1000
+        if gap < DOUBLE_TAP and abs(x - last[2]) < 100 and abs(y - last[3]) < 100:
+            # (the time is what keeps two taps two: Chromium's double tap window)
+            page.wait_for_timeout(DOUBLE_TAP - gap)
+    page.evaluate(_TAP_WATCH, [x, y])
+    if isinstance(target, (tuple, list)):
+        page.touchscreen.tap(x, y)
+    else:
+        target.tap()
+    _TAPS[id(page)] = (page, time.monotonic(), x, y)
+    # (the touch's end is the page's by the time tap() returns: none there, the touch went to a frame
+    # of its own, a live figure, whose click this page never sees)
+    # (nor a point outside the window, where no element is to be clicked)
+    until(page, '() => { const S = window.__rkTap; return !S || S.click || !S.end || S.prevented || S.off; }', timeout=2000)
+    settle(page, ms)
 
 
 def fonts_settled(page):
