@@ -1286,7 +1286,7 @@ def android_input(page, w):
 
 
 
-LONG = '\\documentclass{article}\n\\begin{document}\n' + '\n\n'.join(f'Paragraph number {i} with a few words in it.' for i in range(1, 40)) + '\n\\end{document}\n'
+KB_DOC = '\\documentclass{article}\n\\begin{document}\n' + '\n\n'.join(f'Paragraph number {i} with a few words in it.' for i in range(1, 40)) + '\n\\end{document}\n'
 # a phone's on-screen keyboard: Chrome on Android and Safari on iOS leave the window's height as it
 # is and shorten the visual viewport (the keyboard's top at 500 of 820 px)
 KEYBOARD = """(up) => { const vv = visualViewport; if (up) { const H = innerHeight - 320; Object.defineProperty(vv, 'height', { configurable: true, get: () => H }); } else delete vv.height; vv.dispatchEvent(new Event('resize')); }"""
@@ -1297,7 +1297,7 @@ def keyboard_caret(page, w):
     """The caret stays in sight above a phone's on-screen keyboard, as in Word's phone app: a tap
     low on the screen, then the keyboard coming up over it, scrolls it above the keyboard; and the
     lines Enter makes there go on scrolling up, never under the keyboard."""
-    load_doc(page, LONG); settle(page, 300)
+    load_doc(page, KB_DOC); settle(page, 300)
     low = page.evaluate("""() => { const sp = [...document.querySelectorAll('#pages span.t')].filter((x) => x.getBoundingClientRect().top > innerHeight - 220 && x.getBoundingClientRect().bottom < innerHeight - 90); return sp.length ? sp[0].textContent : null; }""")
     tap_text(page, low, 3)
     page.evaluate(KEYBOARD, True); settle(page, 300)
@@ -1313,7 +1313,7 @@ def keyboard_caret(page, w):
     page.evaluate(KEYBOARD, False); settle(page, 200)
     # a browser whose keyboard makes the window itself shorter (Firefox for Android): the same
     width = page.viewport_size['width']
-    load_doc(page, LONG); settle(page, 300)
+    load_doc(page, KB_DOC); settle(page, 300)
     low = page.evaluate("""() => { const sp = [...document.querySelectorAll('#pages span.t')].filter((x) => x.getBoundingClientRect().top > innerHeight - 220 && x.getBoundingClientRect().bottom < innerHeight - 90); return sp.length ? sp[0].textContent : null; }""")
     tap_text(page, low, 3)
     page.set_viewport_size({'width': width, 'height': 450}); settle(page, 500, full=True)
