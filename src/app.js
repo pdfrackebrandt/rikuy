@@ -1285,7 +1285,15 @@ class App {
       let apart = true;
       for (let k = 1; k < list.length; k++) if (list[k].e > list[k - 1].s) apart = false;
       if (apart) win.set(f, { pre: list[list.length - 1].s, suf: text.length - list[0].e });
-      for (const ed of list) text = text.slice(0, ed.s) + ed.t + text.slice(ed.e);
+      // (edits apart in one pass, pieces joined once: an edit at a time copied the whole text once
+      // per edit, 0.3 s of Replace All's 4,220 on dev/bench/long)
+      if (apart && list.length > 16) {
+        const parts = [];
+        let end = text.length;
+        for (const ed of list) { parts.push(text.slice(ed.e, end), ed.t); end = ed.s; }
+        parts.push(text.slice(0, end));
+        text = parts.reverse().join('');
+      } else for (const ed of list) text = text.slice(0, ed.s) + ed.t + text.slice(ed.e);
       this.files.set(f, text);
       // (the document's last selection, where a command acts with no caret on the page, moves too)
       if (this.rbLast && this.rbLast.f === f && this.rbLast.text === before.get(f)) this.restMove(f, list, text);

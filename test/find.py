@@ -638,6 +638,15 @@ def hunt(page):
     d.get_by_role('button', name='Replace All', exact=True).click(); settle(page, 300)
     st = d.get_by_role('status').first.inner_text()
     check('hunt: Replace All of cat with cats says Replaced 1 place, not that the new one is left', src(page) == doc.replace('Alpha cat', 'Alpha dog').replace('cat two', 'cats two') and st == 'Replaced 1 place.', (src(page)[40:80], st))
+    # Replace All of many: the edits applied in one pass (commit), byte for byte, one undo
+    many = WRAP(' '.join('cat%d \\textbf{cat} cat,cat' % k for k in range(30)))
+    load_doc(page, many)
+    d.get_by_label('Find what', exact=True).fill('cat'); settle(page, 300, full=True)
+    d.get_by_label('Replace with', exact=True).fill('dog & co')
+    d.get_by_role('button', name='Replace All', exact=True).click(); settle(page, 300)
+    check('hunt: Replace All of 120 places in one pass: every one, escaped, byte for byte', src(page) == many.replace('cat', 'dog \\& co'), src(page)[40:140])
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
+    check('hunt: and one undo gives the bytes back', src(page) == many)
     page.keyboard.press('Escape'); settle(page, 150)
 
 
