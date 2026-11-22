@@ -3536,6 +3536,25 @@ class App {
       if (backOk) { backOk = false; return; }
       queueMicrotask(() => ta.focus({ preventScroll: true }));
     });
+    // That late focus also came while an input method composed in the box (\text{ waiting, then a
+    // composition, handed over by wordmath.js toBox, within 60 ms of the box's push focusing the
+    // field again): the browser ended the composition as the box lost the focus, its ひ left in the
+    // box as text and 日本 at the box's start. While the box composes, the field's sink takes the
+    // focus only by a press on the field; the composition ends where it began. (MathLive, its blur
+    // ignored while its own focus was under way, is told it has no focus, as focusField does: else
+    // it took itself for focused and the next field's focus went otherwise.)
+    let composing = false;
+    for (const t of ['compositionstart', 'compositionupdate']) ta.addEventListener(t, () => { composing = true; });
+    ta.addEventListener('compositionend', () => { composing = false; });
+    try {
+      const k = mf.shadowRoot && mf.shadowRoot.querySelector('.ML__keyboard-sink');
+      if (k) {
+        k.focus = function (o) {
+          if (!composing || backOk || document.activeElement !== ta) { HTMLElement.prototype.focus.call(this, o); return; }
+          if (mf._mathfield) mf._mathfield.blurred = true;
+        };
+      }
+    } catch (e) { /* MathLive's own focus, as before */ }
     // (the page's own moves of the focus to the field)
     const fieldFocus = () => { backOk = true; focusField(mf); backOk = false; };
     ta.addEventListener('input', sync);
