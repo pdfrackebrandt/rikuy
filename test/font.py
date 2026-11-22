@@ -886,7 +886,8 @@ def phone(page, w, h):
     tap_text(page, 'plain')
     check(tag + 'the Format Painter armed by a tap paints the word tapped next', armed and body(page) == 'Some \\textbf{bold} and \\textbf{plain} words here.', (armed, body(page)))
     select_text(page, 'bold'); page.tap('#rc-format-painter'); settle(page, 250)
-    select_text(page, 'words here'); settle(page, 1400)
+    # (a touch's selection paints once it has rested: font.js's timer of 900 ms, waited for in full)
+    select_text(page, 'words here'); settle(page, 1400, full=True)
     check(tag + 'and words selected by a long press (no click) once the selection rests', body(page) == 'Some \\textbf{bold} and \\textbf{plain} \\textbf{words here}.', body(page))
     # every key's command has a control a finger reaches
     load_doc(page, WRAP('Some \\textbf{\\emph{plain}} words.')); settle(page, 200); select_text(page, 'plain')
