@@ -303,6 +303,13 @@ def tables_compiled(page):
               r['ok'] and not r['problems'] and r['engine'] == eng and not miss, {'ok': r['ok'], 'engine': r['engine'], 'problems': r['problems'], 'missing': miss})
 
 
+# (what a tap on Table Properties' OK finds: the dialog, the box ticked, the tab, the caret's place
+# kept for OK, the focus, the taps' clicks so far)
+TP_STATE = '''(() => { const R = window.rikuy, r = R.rbRange, c = document.querySelector('.pop input[aria-label="Repeat as header row at the top of each page"]');
+  return { pop: !!R.pop, checked: !!c && c.checked, tab: (document.querySelector('.pop [role=tab][aria-selected=true]') || {}).textContent, range: !!r && R.root.contains(r.startContainer),
+    focus: document.activeElement && (document.activeElement.getAttribute('aria-label') || document.activeElement.id), taps: window.__taps }; })()'''
+
+
 def tables_phones(p):
     for w, h in ((390, 844), (360, 740)):
         br, page, errs = open_page(p, w, h, touch=True)
@@ -312,10 +319,12 @@ def tables_phones(p):
             run_cmd(page, 'table-properties'); settle(page, 300)
             fit = page.evaluate("(() => { const d = document.querySelector('.pop'); const r = d.getBoundingClientRect(); const small = [...d.querySelectorAll('[role=tab], button, select, input[type=text]')].filter((x) => x.offsetParent && (x.getBoundingClientRect().height < 43.5 || x.getBoundingClientRect().width < 43.5)); return { in: r.left >= 0 && r.right <= innerWidth + 1, small: small.map((x) => x.textContent || x.getAttribute('aria-label')).slice(0, 4), scroll: document.documentElement.scrollWidth <= innerWidth + 1 }; })()")
             check('Table Properties inside the screen, its tabs and buttons 44 px high and wide (the Cell tab was 43 wide)' + tag, fit['in'] and not fit['small'] and fit['scroll'], fit)
+            page.evaluate("window.__taps = []; document.addEventListener('click', (e) => window.__taps.push(e.target.getAttribute('aria-label') || e.target.textContent.slice(0, 20)), true)")
             page.get_by_role('tab', name='Row', exact=True).tap()
             page.get_by_role('checkbox', name='Repeat as header row at the top of each page', exact=True).tap()
+            pre = page.evaluate(TP_STATE)
             page.get_by_role('button', name='OK', exact=True).tap(); settle(page, 300)
-            check('a tap on Row, on Repeat as header row and on OK: a longtable' + tag, '\\begin{longtable}' in src(page), body(src(page))[:200])
+            check('a tap on Row, on Repeat as header row and on OK: a longtable' + tag, '\\begin{longtable}' in src(page), (body(src(page))[:200], pre, page.evaluate(TP_STATE)))
             load_doc(page, PLAIN); at_src(page, 'one')
             run_cmd(page, 'borders-shading'); settle(page, 300)
             e = page.evaluate("(() => [...document.querySelectorAll('.bs-edge')].map((b) => { const r = b.getBoundingClientRect(); return Math.min(r.width, r.height); }))()")
@@ -721,8 +730,7 @@ def split_long(page):
     page.evaluate("window.rikuy.runCommand('split-view')"); page.wait_for_timeout(800)
     page.evaluate("(() => { const v = document.getElementById('split-view'); v.scrollTop = v.scrollHeight / 2; })()"); page.wait_for_timeout(800)
     n = page.evaluate("(() => { const v = document.getElementById('split-view'); return [v.querySelectorAll('.split-pages > .page').length, v.querySelectorAll('.split-pages > .page:not(.split-stub)').length, document.querySelectorAll('#pages > .page').length]; })()")
-    ok = n[0] == n[2] and n[0] > 15 and 1 <= n[1] <= 6
-    check('Split on a long document: every page there, only those near the second view\'s window copied', ok, '' if ok else n)
+    check('Split on a long document: every page there, only those near the second view\'s window copied (%d of %d)' % (n[1], n[0]), n[0] == n[2] and n[0] > 15 and 1 <= n[1] <= 6, n)
     words = page.evaluate("(() => { const v = document.getElementById('split-view'), r = v.getBoundingClientRect(); return [...v.querySelectorAll('.split-pages > .page:not(.split-stub) span.t')].some((x) => { const b = x.getBoundingClientRect(); return b.top > r.top && b.bottom < r.bottom && /Paragraph number/.test(x.textContent); }); })()")
     check('and its window shows the pages\' words', words)
     page.evaluate("window.__lt = []; new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__lt.push(e.duration); }).observe({ type: 'longtask', buffered: false })")
@@ -730,11 +738,7 @@ def split_long(page):
     page.keyboard.type('abcde', delay=60); page.wait_for_timeout(1200)
     lt = page.evaluate("window.__lt")
     n2 = page.evaluate("document.querySelectorAll('#split-view .split-pages > .page:not(.split-stub)').length")
-    # (what was measured on a line of its own, and logged only where the check fails: times differ
-    # from run to run, and a fast and a shadow run are compared check by check, dev/suite_runs.py)
-    print('     measured: %d pages copied of %d; the longest task %d ms (pages copied %d, long tasks %s)' % (n[1], n[0], max(lt) if lt else 0, n2, lt))
-    ok = n2 <= 6 and 'abcde' in src(page)
-    check('typing five letters with Split on: still only the pages near its window copied', ok, '' if ok else (n2, lt))
+    check('typing five letters with Split on: still only the pages near its window copied, the longest task %d ms' % (max(lt) if lt else 0), n2 <= 6 and 'abcde' in src(page), (n2, lt))
     page.set_viewport_size({'width': 900, 'height': 800}); page.wait_for_timeout(1200)
     wd = page.evaluate("(() => { const a = document.querySelector('#pages > .page'), b = document.querySelector('#split-view .split-pages > .page'); return [Math.round(a.getBoundingClientRect().width), Math.round(b.getBoundingClientRect().width)]; })()")
     check('the window resized: the second view\'s pages as wide as the first\'s again', abs(wd[0] - wd[1]) <= 2, wd)
@@ -757,10 +761,8 @@ def split_long(page):
         res[on] = (page.evaluate('window.__lt'), len(src(page)) - n0)
         page.wait_for_timeout(2000)
     off, on = res[False][0], res[True][0]
-    lts = ([round(x) for x in on], [round(x) for x in off])
-    print('     measured: long tasks typing with Split %d ms in all, %d without %s' % (sum(on), sum(off), lts))
-    ok = res[False][1] == 10 and res[True][1] == 10 and (max(on) if on else 0) <= (max(off) if off else 0) + 40 and sum(on) <= 1.5 * sum(off) + 150
-    check('typing ten letters with Split on a 125 page document: the long tasks no longer than without Split, but for 40 ms', ok, '' if ok else lts)
+    check('typing ten letters with Split on a 125 page document: the long tasks no longer than without Split, but for 40 ms (%d ms in all, %d without)' % (sum(on), sum(off)),
+          res[False][1] == 10 and res[True][1] == 10 and (max(on) if on else 0) <= (max(off) if off else 0) + 40 and sum(on) <= 1.5 * sum(off) + 150, ([round(x) for x in on], [round(x) for x in off]))
     page.evaluate("window.rikuy.runCommand('split-view')"); page.wait_for_timeout(300)
 
 
