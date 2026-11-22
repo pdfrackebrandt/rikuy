@@ -18,7 +18,7 @@ every construct compiled in the page.
 RIKUY_DIST names another dist/."""
 import os, sys, re
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, place, pressed
+from browser import settle, until, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, place, pressed
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -676,6 +676,14 @@ def r3_tables(page):
     load_doc(page, DOC); at_src(page, 'one')
 
 
+def tap_click(page, loc):
+    """A finger's tap on a control and the click Chromium makes of it: the tap gesture comes from
+    the touchstart and touchend after loc.tap() has returned, and the click (OK pressed) with it."""
+    page.evaluate('() => { window.__rkTap = 0; addEventListener("click", () => { window.__rkTap = 1; }, { capture: true, once: true }); }')
+    loc.tap()
+    until(page, '() => window.__rkTap === 1', timeout=300)
+
+
 def r3_table_phones(p):
     """On a phone (390 and 360 px, touch): the alt text box in Table Properties inside the screen, its OK by a tap."""
     for w, h in ((390, 844), (360, 740)):
@@ -687,7 +695,7 @@ def r3_table_phones(p):
             fit = page.evaluate("(() => { const d = document.querySelector('.pop'); const r = d.getBoundingClientRect(); const t = d.querySelector('textarea.tb-alt'); return { in: r.left >= 0 && r.right <= innerWidth + 1, focused: document.activeElement === t, scroll: document.documentElement.scrollWidth <= innerWidth + 1 }; })()")
             check('Alt Text opens Table Properties at its Description, inside the screen' + tag, fit['in'] and fit['focused'] and fit['scroll'], fit)
             page.get_by_role('textbox', name='Description', exact=True).fill('Counts')
-            page.get_by_role('button', name='OK', exact=True).tap(); settle(page, 300)
+            tap_click(page, page.get_by_role('button', name='OK', exact=True)); settle(page, 300)
             check('a tap on OK writes the alt line' + tag, '% alt: Counts\n\\begin{tabular}' in src(page), src(page)[60:200])
         except Exception as e:
             check('r3_table_phones runs to its end' + tag, False, repr(e)[:300])
