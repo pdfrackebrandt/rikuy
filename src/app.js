@@ -1234,7 +1234,10 @@ class App {
       if (!n) return;
       rect = n.getBoundingClientRect();
     }
-    const D = this.desk.getBoundingClientRect();
+    const R = this.desk.getBoundingClientRect(), V = window.visualViewport;
+    // (what is in sight: a phone's on-screen keyboard covers the window's lower part without making
+    // it shorter, and the visual viewport says what it leaves; lines typed with Enter went under it)
+    const D = V && V.height > 120 ? { top: Math.max(R.top, V.offsetTop), bottom: Math.min(R.bottom, V.offsetTop + V.height) } : R;
     if (rect.bottom > D.bottom - 40) this.desk.scrollTop += rect.bottom - D.bottom + 80;
     else if (rect.top < D.top + 20) this.desk.scrollTop -= D.top - rect.top + 80;
   }
@@ -1472,6 +1475,18 @@ class App {
       R.blur(); R.focus({ preventScroll: true });
     }, true);
     R.addEventListener('pointerdown', () => { this.tabOut = 0; }, true);
+    // The on-screen keyboard coming up over the caret (a tap low on the screen, the document's last
+    // lines): the page scrolls it into sight, as Word's phone app does. The keyboard covers the
+    // window's lower part without shortening it, so the page gets that much room to scroll at its
+    // end, or its last lines could never come above the keyboard. (Not for a pinch, which changes
+    // the scale and leaves the keyboard as it was)
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', () => {
+      const V = window.visualViewport, sel = getSelection();
+      if (Math.abs(V.scale - 1) > 0.01) return;
+      const cover = Math.round(innerHeight - V.offsetTop - V.height);
+      this.desk.style.paddingBottom = cover > 80 ? cover + 'px' : '';
+      if (document.activeElement === R && !this.pop && sel.rangeCount && R.contains(sel.focusNode)) this.scrollToCaret();
+    });
     R.addEventListener('blur', first);
     R.addEventListener('compositionstart', first, true);
     R.addEventListener('beforeinput', (e) => this.onBeforeInput(e));

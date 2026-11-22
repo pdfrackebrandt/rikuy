@@ -1280,6 +1280,34 @@ def android_input(page, w):
     check(f'a key after a command run while the keyboard marks a word goes in ({w})', 'Second paragraph he\\textbf{Z}re.' in src(page), body_of(page)[-50:])
 
 
+
+LONG = '\\documentclass{article}\n\\begin{document}\n' + '\n\n'.join(f'Paragraph number {i} with a few words in it.' for i in range(1, 40)) + '\n\\end{document}\n'
+# a phone's on-screen keyboard: Chrome on Android and Safari on iOS leave the window's height as it
+# is and shorten the visual viewport (the keyboard's top at 500 of 820 px)
+KEYBOARD = """(up) => { const vv = visualViewport; if (up) { const H = innerHeight - 320; Object.defineProperty(vv, 'height', { configurable: true, get: () => H }); } else delete vv.height; vv.dispatchEvent(new Event('resize')); }"""
+CARET_Y = "(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom), innerHeight - 320]; })()"
+
+
+def keyboard_caret(page, w):
+    """The caret stays in sight above a phone's on-screen keyboard, as in Word's phone app: a tap
+    low on the screen, then the keyboard coming up over it, scrolls it above the keyboard; and the
+    lines Enter makes there go on scrolling up, never under the keyboard."""
+    load_doc(page, LONG); settle(page, 300)
+    low = page.evaluate("""() => { const sp = [...document.querySelectorAll('#pages span.t')].filter((x) => x.getBoundingClientRect().top > innerHeight - 220 && x.getBoundingClientRect().bottom < innerHeight - 90); return sp.length ? sp[0].textContent : null; }""")
+    tap_text(page, low, 3)
+    page.evaluate(KEYBOARD, True); settle(page, 300)
+    y = page.evaluate(CARET_Y)
+    check(f'a caret tapped low on the screen is scrolled above the keyboard as it comes up ({w})', y[0] >= 0 and y[1] <= y[2], (low, y))
+    cdp = page.context.new_cdp_session(page)
+    seen = []
+    for _ in range(6):
+        page.keyboard.press('Enter'); settle(page, 150)
+        cdp.send('Input.insertText', {'text': 'x'}); settle(page, 150)
+        seen.append(page.evaluate(CARET_Y))
+    check(f'lines typed with Enter above the keyboard stay in sight ({w})', all(a[0] >= 0 and a[1] <= a[2] for a in seen) and 'Par' + '\n\nx' * 6 + 'agraph' in src(page), seen)
+    page.evaluate(KEYBOARD, False); settle(page, 200)
+
+
 SPACING = "*:not(#pages *):not(#pages) { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p:not(#pages *) { margin-bottom: 2em !important; }"
 CUT = """(sel) => { const out = []; for (const root of document.querySelectorAll(sel)) for (const e of [root, ...root.querySelectorAll('*')]) {
   if (!e.checkVisibility || !e.checkVisibility() || !e.textContent.trim() || e.matches('.sr, .sr *')) continue; const c = getComputedStyle(e);
@@ -1358,6 +1386,7 @@ def tooltips(page, w):
 
 
 PARTS = {'android_input': (android_input, [(390, False), (360, True)]),
+         'keyboard_caret': (keyboard_caret, [(390, False), (360, True)]),
          'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
          'bar_room': (bar_room, None),
          'motion': (motion, [(1366, False)]),
@@ -1392,7 +1421,7 @@ PARTS = {'android_input': (android_input, [(390, False), (360, True)]),
 
 
 # the parts that meet a phone's own default, Mobile View (the others open in Print Layout, as the suites written for it do)
-MOBILE = {'android_input', 'mobile_view', 'first_visit', 'doc_name', 'sample_spelling', 'place_kept'}
+MOBILE = {'android_input', 'keyboard_caret', 'mobile_view', 'first_visit', 'doc_name', 'sample_spelling', 'place_kept'}
 # the parts on tablets: a touch screen at any width
 TOUCH = {'lows'}
 
