@@ -21,22 +21,8 @@ across the notes' files keeps the case of what it replaces. And the hostile revi
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, saved, until, ready, open_page as _open_page, check, results, src, load_doc, click_text, ROOT
+from browser import settle, saved, until, ready, open_page, check, results, src, load_doc, click_text, ROOT
 from playwright.sync_api import sync_playwright
-
-
-def open_page(p, **k):
-    """browser.py's open_page, and then what its old 300 ms after the boot let the page do before a
-    test began: its fonts in (a download, no timer), then the timers they and the window set going
-    (the page laid out again 200 ms after its fonts came, a refit 150 ms after the desk's size
-    settled). open_page now returns at rikuy.ready, before them; a relayout then, between Enter and
-    the next key, took away the empty paragraph Enter showed (app bug, reported: layoutPass removes
-    the ghost and restoreCaret puts the caret back in the paragraph above)."""
-    browser, page, errors = _open_page(p, **k)
-    page.evaluate('() => document.fonts.ready.then(() => 0)')
-    settle(page, 300, full=True)
-    return browser, page, errors
-
 
 PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo', 'mathpkg', 'intertext', 'envlist', 'replace', 'review', 'review2', 'review3']
 DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
@@ -68,12 +54,10 @@ def caret_text(page):
 
 
 def reload(page):
-    """The page loaded again, as open_page() above leaves it: through init (the project, its history
-    and its review read back from IndexedDB; ready()), its fonts in and the relayout they set going."""
+    """The page loaded again and through init, as open_page() leaves it: the project, its history and
+    its review read back from IndexedDB, its fonts in and the relayout they set going (ready())."""
     page.reload()
     ready(page)
-    page.evaluate('() => document.fonts.ready.then(() => 0)')
-    settle(page, 300, full=True)
 
 
 def formula(page):
