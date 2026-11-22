@@ -2650,7 +2650,10 @@ class App {
   // it and the source place of each of its characters, so only what changed is written
   compRange(e) {
     const tr = e.getTargetRanges ? e.getTargetRanges()[0] : null;
-    const r = tr ? this.rangeToSrc(tr) : null;
+    // (a caret: where caretNow() put it as the composition began, which knows a place the page
+    // cannot hold, a space ending a paragraph, whose caret is drawn at the next one's start)
+    if (!tr || tr.collapsed) return null;
+    const r = this.rangeToSrc(tr);
     if (!r) return null;
     const n = tr.startContainer;
     if (n !== tr.endContainer || n.nodeType !== 3) return r;

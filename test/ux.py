@@ -1235,6 +1235,19 @@ def android_input(page, w):
     load_doc(page, doc); tap_text(page, 'paragraph', 3)
     page.evaluate(REGION, ['paragraph', 'paragraphs', 10]); comp_end(page, 'paragraphs')
     check(f'a suggestion taken for the marked word replaces it ({w})', 'First paragraphs here' in src(page), body_of(page)[:60])
+    # words composed one by one, as a keyboard types them, at the end of a paragraph before a list:
+    # the second after a space that ends the paragraph so far (the page draws that caret at the
+    # list's start, caretNow() knows the place)
+    load_doc(page, doc.replace('Second paragraph here.', '\\begin{itemize}\n\\item One\n\\end{itemize}')); settle(page, 300)
+    click_text(page, 'word.', 5)
+    cdp = page.context.new_cdp_session(page)
+    for wd in ('Hello', 'world'):
+        for i in range(1, len(wd) + 1):
+            cdp.send('Input.imeSetComposition', {'text': wd[:i], 'selectionStart': i, 'selectionEnd': i}); settle(page, 40)
+        cdp.send('Input.insertText', {'text': wd}); settle(page, 100)
+        if wd == 'Hello':
+            cdp.send('Input.insertText', {'text': ' '}); settle(page, 100)
+    check(f'words composed after a space ending a paragraph stay in it ({w})', 'word.Hello world\n' in src(page) and '\\item One\n' in src(page), body_of(page)[:120])
 
 
 SPACING = "*:not(#pages *):not(#pages) { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p:not(#pages *) { margin-bottom: 2em !important; }"
