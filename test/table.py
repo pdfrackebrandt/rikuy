@@ -268,26 +268,26 @@ def keys_and_select(page):
 def cell_edges(page):
     """Backspace and Delete at a cell's edge, and a selection over several cells deleted or typed
     over, as Word: the cells and rows stay (the & and \\\\ between them went, joining them)."""
+    placed = []
     def keys(setup, ks, doc=DOC):
-        load_doc(page, doc); setup()
+        load_doc(page, doc); placed.append(setup())
         for k in ks:
             if k.startswith('type:'): page.keyboard.type(k[5:])
             else: page.keyboard.press(k)
             settle(page, 60)
         settle(page, 120)
         return src(page)
-    for name, setup, ks in (('Backspace at a cell\'s start', lambda: click_text(page, 'two', 0), ['Backspace']),
-                            ('Delete at a cell\'s end', lambda: click_text(page, 'one', 3), ['Delete']),
-                            ('Backspace at a row\'s first cell', lambda: click_text(page, 'three', 0), ['Backspace']),
-                            ('Delete at a row\'s last cell', lambda: click_text(page, 'two', 3), ['Delete']),
-                            ('Ctrl+Backspace at a cell\'s start', lambda: click_text(page, 'two', 0), ['Control+Backspace']),
-                            ('Ctrl+Delete at a cell\'s end', lambda: click_text(page, 'one', 3), ['Control+Delete']),
-                            ('Backspace in the first cell', lambda: click_text(page, 'Head', 0), ['Backspace']),
-                            ('Delete in the last cell', lambda: click_text(page, 'four', 4), ['Delete'])):
-        s = keys(setup, ks)
-        check(name + ' changes nothing, as Word\'s', s == DOC, s[s.find('\\toprule'):s.find('\\end{tabular}')])
-    s = keys(lambda: click_text(page, 'two', 0), ['Backspace', 'type:X'])
-    check('and the caret stays in its cell', 'one & Xtwo \\\\' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
+    # (each key, then a letter: the key changed nothing and left the caret where it was, in its cell)
+    for name, setup, ks, after in (('Backspace at a cell\'s start', lambda: click_text(page, 'two', 0), ['Backspace'], 'one & Qtwo \\'),
+                                   ('Delete at a cell\'s end', lambda: click_text(page, 'one', 3), ['Delete'], 'oneQ & two \\'),
+                                   ('Backspace at a row\'s first cell', lambda: click_text(page, 'three', 0), ['Backspace'], 'one & two \\\\\nQthree & four'),
+                                   ('Delete at a row\'s last cell', lambda: click_text(page, 'two', 3), ['Delete'], 'one & twoQ \\\\\nthree'),
+                                   ('Ctrl+Backspace at a cell\'s start', lambda: click_text(page, 'two', 0), ['Control+Backspace'], 'one & Qtwo \\'),
+                                   ('Ctrl+Delete at a cell\'s end', lambda: click_text(page, 'one', 3), ['Control+Delete'], 'oneQ & two \\'),
+                                   ('Backspace in the first cell', lambda: click_text(page, 'Head', 0), ['Backspace'], '\\toprule\nQHead & Other'),
+                                   ('Delete in the last cell', lambda: click_text(page, 'four', 4), ['Delete'], 'three & fourQ \\\\\n\\bottomrule')):
+        s = keys(setup, ks + ['type:Q'])
+        check(name + ' changes nothing, as Word\'s: the letter typed after it lands where the caret was', placed[-1] is True and s.replace('Q', '', 1) == DOC and after in s, s[s.find('\\toprule'):s.find('\\end{tabular}')])
     s = keys(lambda: click_text(page, 'two', 3), ['Control+Backspace'])
     check('Ctrl+Backspace at a cell\'s end takes its word only', 'one &  \\\\\nthree & four' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
     s = keys(lambda: click_text(page, 'one', 0), ['Shift+ArrowRight'] * 5 + ['Delete'])
@@ -296,16 +296,23 @@ def cell_edges(page):
     check('typed over: the words in the first cell, the second emptied', '\\midrule\nZ &  \\\\\nthree & four' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
     page.keyboard.press('Control+z'); settle(page, 150)
     check('one undo gives the table back', src(page) == DOC)
+    # (from inside a cell's words: those before the selection stay, as everything typing, pasting,
+    # cutting, Shift+Enter and Alt+= do over a selection counts on; the header row's \\ went once)
     words = DOC.replace('one & two', 'one alpha & two beta')
     s = keys(lambda: click_text(page, 'one alpha', 4), ['Control+Shift+ArrowRight', 'Control+Shift+ArrowRight', 'type:Z'], words)
-    check('a selection from inside a cell into the next, typed over: the letter in the first cell, both emptied', '\\midrule\nZ &  \\\\\nthree' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
+    check('a selection from inside a cell into the next, typed over: the letter where it starts, the rest of both cells gone', '\\midrule\none Z &  \\\\\nthree' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
     load_doc(page, words); click_text(page, 'one alpha', 4)
     for k in ('Control+Shift+ArrowRight', 'Control+Shift+ArrowRight'): page.keyboard.press(k); settle(page, 60)
     page.evaluate(PASTE, ['pasted words', None]); settle(page, 200)
     s = src(page)
-    check('and pasted over: the words in the first cell', '\\midrule\npasted words &  \\\\\nthree' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
+    check('and pasted over: the words where it starts', '\\midrule\none pasted words &  \\\\\nthree' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
+    for name, ks, want in (('cut, then a letter', ['Control+x', 'type:Q'], '\\midrule\none Q &  \\\\\nthree'),
+                           ('Shift+Enter, then a letter', ['Shift+Enter', 'type:Q'], '\\midrule\none \\newline Q &  \\\\\nthree'),
+                           ('Alt+=, y, Esc', ['Alt+Equal', 'type:y', 'Escape'], 'Head & Other \\\\\n\\midrule\none $y$ &  \\\\\nthree')):
+        s = keys(lambda: click_text(page, 'one alpha', 4), ['Control+Shift+ArrowRight', 'Control+Shift+ArrowRight'] + ks, words)
+        check('the same selection, %s: what it writes at the selection\'s start, every row\'s \\\\ kept' % name, want in s, s[s.find('\\toprule'):s.find('\\bottomrule')])
     s = keys(lambda: click_text(page, 'two', 0), ['Shift+ArrowRight'] * 6 + ['Control+x'])
-    check('Ctrl+X from a row\'s last cell into the next row: the block it shows (both rows) emptied, the rows kept', '\\midrule\n &  \\\\\n &  \\\\\n\\bottomrule' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
+    check('Ctrl+X from a row\'s last cell into the next row: its cells from the selection on emptied, the rows kept', '\\midrule\none &  \\\\\n &  \\\\\n\\bottomrule' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
     grid = WRAP(GRID)
     s = keys(lambda: click_text(page, 'three', 0), ['Backspace'], grid)
     check('an \\hline table too: Backspace at a row\'s start keeps \\\\ \\hline', s == grid, s[s.find('\\hline'):s.find('\\end{tabular}')])
@@ -393,6 +400,15 @@ def caption_enter(page):
     load_doc(page, DOC); click_text(page, 'Results', 3)
     page.keyboard.press('Enter'); settle(page, 150); page.keyboard.type('Z'); settle(page, 150)
     check('Enter in the middle of a caption still writes nothing of its own (TeX has one caption paragraph)', src(page) == DOC.replace('Results', 'ResZults'), src(page)[-120:])
+    # (review of PR 115) a \label inside the caption, and a center round the table
+    lab = DOC.replace('\\caption{Results}', '\\caption{Results\\label{t}}')
+    load_doc(page, lab); click_text(page, 'Results', 7)
+    page.keyboard.press('Enter'); settle(page, 150); page.keyboard.type('Next'); settle(page, 200)
+    check('a \\label inside the caption: Enter at its end still opens the paragraph after the table', '\\caption{Results\\label{t}}\n\\end{table}\n\nNext\n\nAfter it.' in src(page), src(page)[-120:])
+    cen = WRAP('Before.\n\n\\begin{table}[h]\n\\begin{center}\n' + BOOK + '\n\\caption{Results}\n\\end{center}\n\\end{table}')
+    load_doc(page, cen); click_text(page, 'Results', 7)
+    page.keyboard.press('Enter'); settle(page, 150); page.keyboard.type('Next'); settle(page, 200)
+    check('a center round the table at the document\'s end: the paragraph after \\end{table}', '\\end{center}\n\\end{table}\n\nNext\n' in src(page), src(page)[-120:])
 
 
 PASTE = """([t, h]) => { const dt = new DataTransfer(); dt.setData('text/plain', t); if (h) dt.setData('text/html', h);
@@ -414,8 +430,8 @@ def paste_cells(page):
     check('undo gives the table back byte for byte', src(page) == DOC)
     s = pasted(lambda: click_text(page, 'one', 1), 'A\tB\nC\tD\nE\tF')
     check('three rows pasted into two: a row added under the last, in booktabs', s.endswith('\\midrule\nA & B \\\\\nC & D \\\\\nE & F \\\\\n\\bottomrule\n'), s)
-    s = pasted(lambda: click_text(page, 'two', 1), 'A\tB\tC')
-    check('wider than the table: the words past its last column go into the last cell', 'one & A B C \\\\' in s, s)
+    s = pasted(lambda: click_text(page, 'two', 1), 'A\tB\tC\nD\tE\tF')
+    check('wider than the table: the words past its last column go into the last cell', 'one & A B C \\\\\nthree & D E F \\\\' in s, s)
     s = pasted(lambda: click_text(page, 'one', 1), 'A\tB\nC & x\tD\nE\t50%', WRAP(GRID))
     check('an \\hline table: escaped words, its new row with its \\hline', s.endswith('\\hline\nA & B \\\\ \\hline\nC \\& x & D \\\\ \\hline\nE & 50\\% \\\\ \\hline\n'), s)
     s = pasted(lambda: click_text(page, 'After', 2), 'A\tB\nC\tD')
@@ -433,6 +449,44 @@ def paste_cells(page):
     load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'select-row'); settle(page, 150)
     got = page.evaluate(copy); click_text(page, 'three', 0); page.evaluate(paste3, got); settle(page, 200)
     check('and pasted in another row\'s cell it fills that row\'s cells', '\\midrule\none & two \\\\\none & two \\\\\n\\bottomrule' in src(page), src(page)[100:260])
+    # (review of PR 115) one line with a tab in it is text, from an editor or a terminal: as text,
+    # nothing overwritten
+    s = pasted(lambda: click_text(page, 'one', 2), 'foo\tbar')
+    check('one line with a tab pasted mid word: text in the cell, the cells beside kept', '\\midrule\nonfoo bare & two \\\\\nthree & four' in s, s)
+    # a spreadsheet's quoting: a cell holding a line break, a tab or quotes is in quotes
+    s = pasted(lambda: click_text(page, 'one', 1), '"x\ny"\tB\nC\t"say ""hi"""\n')
+    check('a spreadsheet\'s quoted cells: one cell each, its line break a space, "" one quote', '\\midrule\nx y & B \\\\\nC & say ``hi\'\' \\\\\n\\bottomrule' in s, s)
+    # a short row (one cell where the table has two, as LaTeX allows), cells from a sheet's HTML
+    short = DOC.replace('one & two', 'one')
+    load_doc(page, short); click_text(page, 'one', 1)
+    page.evaluate(PASTE, ['A\tB\nC\tD', '<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>']); settle(page, 200)
+    s = src(page)
+    check('a short row: the word for its missing cell gets a cell, none dropped', '\\midrule\nA & B \\\\\nC & D \\\\' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
+    # cells copied on the page keep their LaTeX: bold, a formula, a citation
+    rich = DOC.replace('one & two', '\\textbf{one} & $x^2$ \\cite{k}')
+    load_doc(page, rich); at_src(page, 'one'); run_cmd(page, 'select-row'); settle(page, 150)
+    got = page.evaluate(copy); click_text(page, 'three', 0); page.evaluate(paste3, got); settle(page, 200)
+    s = src(page)
+    check('a row of bold, a formula and a citation copied into another row: its LaTeX, no rows added', '\\midrule\n\\textbf{one} & $x^2$ \\cite{k} \\\\\n\\textbf{one} & $x^2$ \\cite{k} \\\\\n\\bottomrule' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
+    # a longtable's head marks and tabularx's X stay out of the copy's tabular
+    lt = WRAP('\\begin{longtable}{ll}\n\\toprule\nHead & Other \\\\\n\\midrule\n\\endhead\none & two \\\\\n\\bottomrule\n\\end{longtable}', PRE + '\\usepackage{longtable}\n')
+    load_doc(page, lt); at_src(page, 'one'); run_cmd(page, 'select-table'); settle(page, 150)
+    got = page.evaluate(copy)
+    check('a longtable copied: no \\endhead in its tabular', got[2].startswith('\\begin{tabular}{ll}') and 'endhead' not in got[2] and 'one & two' in got[2], got[2])
+    tx = WRAP('\\begin{tabularx}{\\linewidth}{lX}\nHead & Other \\\\\none & two \\\\\n\\end{tabularx}', '\\usepackage{tabularx}\n')
+    load_doc(page, tx); at_src(page, 'one'); run_cmd(page, 'select-table'); settle(page, 150)
+    got = page.evaluate(copy)
+    check('a tabularx copied: its X column a tabular\'s l', got[2].startswith('\\begin{tabular}{ll}'), got[2])
+    # a drag of cells into a paragraph moves a tabular, not a bare &
+    load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'select-row'); settle(page, 150)
+    page.evaluate('''() => { const g = window.rikuy, c = g.caretNow(), s = g.files.get('main.tex'); return g.moveSource({ f: c.f, a: c.a, b: c.b, latex: g.selectionLatex(c), src: s, wraps: [] }, { f: c.f, p: s.indexOf('After it.') + 5 }, false); }''')
+    settle(page, 200)
+    s = src(page)
+    check('a row dragged into a paragraph: a tabular there, the row\'s cells emptied', '\\begin{tabular}{ll}\n\\midrule\none & two \\\\\n\\end{tabular}' in s[s.find('After'):] and '\\midrule\n &  \\\\' in s, s[-200:])
+    # thirty thousand rows: said, not pasted (it froze the page)
+    load_doc(page, DOC); click_text(page, 'one', 1)
+    page.evaluate(PASTE, ['a\tb\n' * 30000, None]); settle(page, 300)
+    check('thirty thousand rows: nothing pasted into the cells, the toast says why', src(page) == DOC and page.evaluate("[...document.querySelectorAll('.toast')].some((t) => /Too much to paste/.test(t.textContent))"), page.evaluate("[...document.querySelectorAll('.toast')].map((t) => t.textContent)"))
 
 
 # ---- data, structure, settings, dialogs ----------------------------------------------------------

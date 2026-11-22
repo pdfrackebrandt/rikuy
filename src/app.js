@@ -2207,7 +2207,9 @@ class App {
     // caption's end. It did nothing, and a table or a figure at the document's end had no way past it.
     if (kind === 'cap') {
       const itemEl = el.closest('.it'), B = itemEl && BLOCKS.get(+itemEl.dataset.b);
-      if (c.collapsed && B && B.e > p && /^(?:\s*\})+(?:\s|\\label\s*\{[^{}]*\}|%[^\n]*\n)*\\end\s*\{[^{}]+\}\s*$/.test(src.slice(p, B.e))) { this.showGhost(itemEl, f, B.e); this.enterAct(); }
+      // (what may stand between: a \label in the caption or after it, closing braces, comments, and
+      // the \end of a center or a minipage round the table before the float's own)
+      if (c.collapsed && B && B.e > p && B.e - p < 2000 && /^(?:\s|\\label\s*\{[^{}]*\}|%[^\n]*\n)*\}(?:\s|\}|\\label\s*\{[^{}]*\}|%[^\n]*\n)*(?:\\end\s*\{[^{}]+\}\s*)+$/.test(src.slice(p, B.e))) { this.showGhost(itemEl, f, B.e); this.enterAct(); }
       return;
     }
     if (kind === 'cell') return;
@@ -2709,6 +2711,10 @@ class App {
   }
   selectionLatex(c) {
     const src = this.src(c.f);
+    // cells of a table: a table of their own, for a copy, a drag, the Spike or a Quick Part (their
+    // & and \\ alone, put in a paragraph, stop TeX)
+    const cells = blockTabular(src, c.a, c.b);
+    if (cells) return cells;
     if (isBalanced(src, c.a, c.b)) return src.slice(c.a, c.b);
     const vr = visibleRanges(this.renderer.blocks, c.f, c.a, c.b);
     let out = '';
@@ -2772,7 +2778,7 @@ class App {
     if (c.ghost && this.ghostRaw()) { this.ghostInsert((latex || plain).replace(/\r\n?/g, '\n')); return; }
     // cells copied from a spreadsheet, pasted in a table: into the cells from the caret's, as Word's
     // Overwrite Cells (src/cmd/table.js); a whole table float went into the one cell, which TeX refuses
-    if (!c.ghost && !plainOnly && this.tablePasteCells(plain)) return;
+    if (!c.ghost && !plainOnly && this.tablePasteCells(plain, html, latex)) return;
     const src = this.src(c.ghost ? this.ghost.f : c.f);
     const at0 = c.ghost ? this.ghost.pos : c.a;
     // inside a command argument (a heading, a cell, a caption) a paste stays one paragraph
