@@ -305,9 +305,10 @@ def tables_compiled(page):
 
 # (what a tap on Table Properties' OK finds: the dialog, the box ticked, the tab, the caret's place
 # kept for OK, the focus, the taps' clicks so far)
-TP_STATE = '''(() => { const R = window.rikuy, r = R.rbRange, c = document.querySelector('.pop input[aria-label="Repeat as header row at the top of each page"]');
-  return { pop: !!R.pop, checked: !!c && c.checked, tab: (document.querySelector('.pop [role=tab][aria-selected=true]') || {}).textContent, range: !!r && R.root.contains(r.startContainer),
-    focus: document.activeElement && (document.activeElement.getAttribute('aria-label') || document.activeElement.id || '').slice(0, 10), taps: window.__taps, hist: R.hist.length }; })()'''
+TP_STATE = '''(() => { const R = window.rikuy, r = R.rbRange, c = document.querySelector('.pop input[aria-label="Repeat as header row at the top of each page"]'), at = R.caretNow();
+  return { toast: ((document.querySelector('.toast') || {}).textContent || '').slice(0, 60), at: at ? R.files.get(R.main).slice(at.a, at.a + 6) : null, stale: !!R.stale, hist: R.hist.length,
+    range: !!r && R.root.contains(r.startContainer), pop: !!R.pop, checked: !!c && c.checked, tab: (document.querySelector('.pop [role=tab][aria-selected=true]') || {}).textContent,
+    focus: document.activeElement && (document.activeElement.getAttribute('aria-label') || document.activeElement.id || '').slice(0, 10), taps: window.__taps }; })()'''
 
 
 def tables_phones(p):
@@ -324,7 +325,7 @@ def tables_phones(p):
             page.get_by_role('checkbox', name='Repeat as header row at the top of each page', exact=True).tap()
             pre = page.evaluate(TP_STATE)
             page.get_by_role('button', name='OK', exact=True).tap(); settle(page, 300)
-            check('a tap on Row, on Repeat as header row and on OK: a longtable' + tag, '\\begin{longtable}' in src(page), (pre, page.evaluate(TP_STATE), body(src(page))[:120]))
+            check('a tap on Row, on Repeat as header row and on OK: a longtable' + tag, '\\begin{longtable}' in src(page), (page.evaluate(TP_STATE), pre, body(src(page))[:120]))
             load_doc(page, PLAIN); at_src(page, 'one')
             run_cmd(page, 'borders-shading'); settle(page, 300)
             e = page.evaluate("(() => [...document.querySelectorAll('.bs-edge')].map((b) => { const r = b.getBoundingClientRect(); return Math.min(r.width, r.height); }))()")
