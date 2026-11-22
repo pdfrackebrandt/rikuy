@@ -153,9 +153,11 @@ export const nav = {
   // one hides is opened first, so it is drawn.)
   headingStart(f, s) {
     this.foldOpenAt(f, s);
+    // (its first place, a formula's start where one comes first: past it, the words typed went
+    // after the formula)
     const el = this.headingEl(f, s), t = el && el.querySelector('span.t');
-    const at = t && posFromDom(t, 0, this.root);
-    return at && at.f === f && at.p >= s ? at.p : s;
+    for (const at of [el && posFromDom(el, 0, this.root), t && posFromDom(t, 0, this.root)]) if (at && !at.ghost && at.f === f && at.p >= s) return at.p;
+    return s;
   },
 
   markCurrentHeading() {

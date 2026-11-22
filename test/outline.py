@@ -451,6 +451,12 @@ def hunt(page):
     check('hunt: a heading pressed in the Navigation pane puts the caret at its start on the page: typing goes there',
           src(page) == DOC.replace('\\section{Gamma}', '\\section{New Gamma}') and page.evaluate("document.activeElement.id") == 'pages', src(page)[-120:])
     page.evaluate("window.rikuy.undo()"); settle(page, 200)
+    # a heading that starts with a formula: the caret before the formula, not after it
+    doc = WRAP('\\section{Alpha}\nAlpha text.\n\n\\section{$x$ results}\nBeta text.')
+    load_doc(page, doc); settle(page, 200)
+    page.get_by_role('tree', name='Headings', exact=True).get_by_role('treeitem', name='2 x results', exact=True).click(); settle(page, 300)
+    page.keyboard.type('New '); settle(page, 200)
+    check('hunt: a heading that starts with a formula, pressed in the pane: typing goes before the formula', src(page) == doc.replace('{$x$ results}', '{New $x$ results}'), src(page)[-80:])
     page.evaluate("window.rikuy.toggleNav(false)")
 
 
