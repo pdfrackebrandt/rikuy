@@ -565,7 +565,10 @@ export function clearCells(src, a, b) {
     for (const c of row.cells) {
       if (c.col < R.c0 || c.col + c.span - 1 > R.c1) continue;
       const [s, e] = cellWords(c);
-      if (e > s) out.push({ s, e });
+      // (cut at a where the selection starts inside these words: what is typed or pasted over the
+      // block goes at a, which is then where one of the ranges starts, never inside one)
+      if (s < a && a < e) out.push({ s, e: a }, { s: a, e });
+      else if (e > s) out.push({ s, e });
     }
   }
   return out;
