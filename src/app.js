@@ -983,8 +983,9 @@ class App {
     const G = c && c.ghost && this.ghost && !this.ghost.tex && !this.ghost.sticky ? { ...this.ghost } : null;
     // (a dialog's field with the focus, the Font dialog's size box: the page's selection is not
     // there to read, so what the dialog acts on is read from its own range, to be put on the new
-    // nodes; it kept the old ones and OK formatted the document's start)
-    const fe = document.activeElement, field = fe && /^(INPUT|TEXTAREA|SELECT)$/.test(fe.tagName) && fe.closest('#ribbon, .pop, .stp, .sp-pane, .help-pane, #nav, #fr');
+    // nodes; it kept the old ones and OK formatted the document's start. A dialog's alone: a pane's
+    // search box leaves the range an older press of the ribbon left, and Esc went there, ux.py)
+    const fe = document.activeElement, field = fe && /^(INPUT|TEXTAREA|SELECT)$/.test(fe.tagName) && fe.closest('.pop');
     const RA = field && this.rbRange && this.root.contains(this.rbRange.startContainer) ? posFromDom(this.rbRange.startContainer, this.rbRange.startOffset, this.root) : null;
     const RB = RA && posFromDom(this.rbRange.endContainer, this.rbRange.endOffset, this.root);
     this.layoutPass(force);
