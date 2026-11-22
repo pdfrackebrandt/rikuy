@@ -295,12 +295,9 @@ def page_x(page, word):
 def hinting(p):
     """A Chromium that hints its fonts in full (CI's runner did): the page's words keep TeX's
     widths, not widths rounded to whole pixels, so the page puts them where TeX does"""
-    import browser as B
     was = os.environ.get('CHROME_ARGS', '')
     os.environ['CHROME_ARGS'] = (was + ' --font-render-hinting=full').strip()
-    # (open_page() shares one Chromium per process, launched with the arguments of its first call:
-    # this part needs one launched with the flag, so the shared one steps aside until it is done)
-    shared = B._SHARED.pop(id(p), None)
+    # (other launch arguments than the shared Chromium's: open_page() launches one for this part alone)
     try:
         br, page, errors = open_page(p)
         load_doc(page, D('\\noindent Leftmost words here.\n\n\\begin{center}\nCentredword alone.\n\\end{center}\n\n\\begin{flushright}\nRightword alone.\n\\end{flushright}'))
@@ -309,9 +306,6 @@ def hinting(p):
         br.close()
     finally:
         os.environ['CHROME_ARGS'] = was
-        own = B._SHARED.pop(id(p), None)
-        if own: own[1].close()
-        if shared: B._SHARED[id(p)] = shared
     # (TeX's: Centredword from 129.6 to 185.4 bp of the text's left, Rightword from 269.7 to 314.9;
     # with the fonts' hinting the page had 127.4 to 185.7 and 265.1 to 313.1)
     BP = 72 / 72.27
