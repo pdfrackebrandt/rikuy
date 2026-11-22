@@ -2833,7 +2833,11 @@ class App {
       this.disarm();
       // an empty document: a click anywhere on the page goes to the blank paragraph
       // (not a click on the title above it, which is edited where it stands)
-      if (this.ghost && this.ghost.sticky && !e.target.closest('.it.ttl')) { e.preventDefault(); this.caretToGhost(); }
+      if (this.ghost && this.ghost.sticky && !e.target.closest('.it.ttl')) { e.preventDefault(); this.caretToGhost(); return; }
+      // Word's triple click selects the whole paragraph. Chromium's own stops at the first
+      // formula, citation or footnote mark (they are not editable text), and typing over it left
+      // the rest of the paragraph standing after the new words.
+      if (e.detail === 3 && !e.shiftKey && this.paraClick(e.target)) e.preventDefault();
       return;
     }
     const info = atomOfEl(atomEl);
@@ -2844,6 +2848,33 @@ class App {
     // Ctrl+click on a cross reference goes to its label, as in Word (Shift+F5 comes back)
     if ((e.metaKey || e.ctrlKey) && info.a.kind === 'ref') { this.followRef(info); return; }
     this.openAtom(atomEl, info);
+  }
+
+  // The paragraph el is in selected whole, from its first word to its last (a formula or a
+  // citation at either end with it): a table's cell, a caption or a footnote alone, a paragraph a
+  // page cuts with its other part. Not a LaTeX paragraph, whose box is source: the browser's own.
+  paraClick(el) {
+    const box = el.closest && el.closest('td, th, .cap, .fn');
+    const it = el.closest && el.closest('.it');
+    let parts;
+    if (box && this.root.contains(box)) parts = [box];
+    else {
+      if (!it || !this.root.contains(it) || it.classList.contains('tex') || it.classList.contains('ghostp')) return false;
+      const all = [...this.root.querySelectorAll('.it[data-b="' + it.dataset.b + '"]')];
+      let i = all.indexOf(it), j = i;
+      while (i > 0 && all[i].classList.contains('split-b')) i--;
+      while (j < all.length - 1 && all[j].classList.contains('split-a')) j++;
+      parts = all.slice(i, j + 1);
+    }
+    const nodes = parts.flatMap((P) => [...P.querySelectorAll('span.t, .atom')].filter((n) => !n.classList.contains('gh') && !n.parentElement.closest('.atom')));
+    if (!nodes.length) return false;
+    const A = nodes[0], Z = nodes[nodes.length - 1], r = document.createRange();
+    if (A.classList.contains('t') && A.firstChild && A.firstChild.nodeType === 3) r.setStart(A.firstChild, 0); else r.setStartBefore(A);
+    if (Z.classList.contains('t') && Z.lastChild && Z.lastChild.nodeType === 3) r.setEnd(Z.lastChild, Z.lastChild.length); else r.setEndAfter(Z);
+    this.root.focus({ preventScroll: true });
+    const sel = getSelection();
+    sel.removeAllRanges(); sel.addRange(r);
+    return true;
   }
 
   onClick(e) {

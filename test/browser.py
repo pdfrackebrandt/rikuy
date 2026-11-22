@@ -1801,6 +1801,7 @@ def word_typing(page):
     k = page.keyboard
     def at(text, off=1):
         return page.evaluate("""([text, off]) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(text));
+          s.scrollIntoView({ block: 'center' });
           const i = s.textContent.indexOf(text) + off, r = document.createRange(); r.setStart(s.firstChild, i); r.setEnd(s.firstChild, i + 1);
           const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }""", [text, off])
     # 1: the page's last paragraph above its footnotes. A triple click there, or Shift+Down on its
@@ -1813,6 +1814,17 @@ def word_typing(page):
     load_doc(page, WORD_DOC)
     click_text(page, 'Last paragraph', 0); k.press('Shift+ArrowDown'); k.type('Z'); settle(page, 100)
     check('Shift+Down on the last line above the footnotes, then a letter: only that line is replaced', src(page) == WORD_DOC.replace('Last paragraph of the document.', 'Z'), src(page)[150:])
+    # 2: a triple click selects the whole paragraph, as Word's: the browser's stopped at the first
+    # formula in it, and the letter typed over it left the rest of the paragraph standing
+    load_doc(page, WORD_DOC)
+    x, y = at('First paragraph'); page.mouse.click(x, y, click_count=3); settle(page, 120, full=True)
+    k.type('Z'); settle(page, 100)
+    first = WORD_DOC[WORD_DOC.index('First paragraph'):WORD_DOC.index('\n\nSecond')]
+    check('a triple click on a paragraph with a formula, a footnote, a reference and a citation selects all of it: a letter replaces it', src(page) == WORD_DOC.replace(first, 'Z'), src(page)[40:200])
+    load_doc(page, WORD_DOC)
+    x, y = at('Background'); page.mouse.click(x, y, click_count=3); settle(page, 120, full=True)
+    k.type('Z'); settle(page, 100)
+    check('a triple click on a heading, then a letter: the heading\'s words are replaced, the heading stays', src(page) == WORD_DOC.replace('{Background}', '{Z}'), src(page)[300:])
 
 if __name__ == '__main__':
     sys.exit(run())
