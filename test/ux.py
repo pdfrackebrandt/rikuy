@@ -1311,6 +1311,14 @@ def keyboard_caret(page, w):
         seen.append(page.evaluate(CARET_Y))
     check(f'lines typed with Enter above the keyboard stay in sight ({w})', all(a[0] >= 0 and a[1] <= a[2] for a in seen) and 'Par' + '\n\nx' * 6 + 'agraph' in src(page), seen)
     page.evaluate(KEYBOARD, False); settle(page, 200)
+    # the zoom button tapped while typing: the page keeps the focus (the keyboard stays up) and the
+    # caret stays where it was, as Word's zoom leaves it
+    load_doc(page, DOC); tap_text(page, 'Second paragraph', 4)
+    tap(page, page.locator('#zoomv'), 400)
+    focus = page.evaluate('document.activeElement.id')
+    cdp.send('Input.insertText', {'text': 'Q'}); settle(page, 200)
+    tap(page, page.locator('#zoomv'), 400)
+    check(f'the zoom button leaves the page its focus and the caret its place ({w})', focus == 'pages' and 'SecoQnd paragraph' in src(page), (focus, body_of(page)[-50:]))
     # a browser whose keyboard makes the window itself shorter (Firefox for Android): the same
     width = page.viewport_size['width']
     load_doc(page, KB_DOC); settle(page, 300)

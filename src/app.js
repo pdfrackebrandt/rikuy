@@ -1009,8 +1009,9 @@ class App {
     // button to act on; the pass's new nodes left it at a page's start. It goes back where it was,
     // the focus left where it is (Select sentence from Home's Select menu selected nothing).
     // (a docked pane's or the side panel's buttons and lists too: a pane that narrows the page lays it
-    // out again at a new zoom, and F7 then Esc put the caret at the document's start)
-    else if (c && !c.crossFile && document.activeElement && document.activeElement.closest('#ribbon, .pop, .stp, .sp-pane, .help-pane, #nav, #fr') && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+    // out again at a new zoom, and F7 then Esc put the caret at the document's start; and the title
+    // bar's and the status bar's, whose zoom put the next words at the document's start)
+    else if (c && !c.crossFile && document.activeElement && document.activeElement.closest('#ribbon, .pop, .stp, .sp-pane, .help-pane, #nav, #fr, #bar, #status') && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
       const x = this.index.find(c.f, c.collapsed ? c.p : c.a, c.collapsed ? -1 : 1), y = c.collapsed ? x : this.index.find(c.f, c.b, -1);
       if (x && x.node && y && y.node) {
         getSelection().setBaseAndExtent(x.node, x.offset, y.node, y.offset);
@@ -1565,6 +1566,9 @@ class App {
     // a press on a button of the status bar leaves the page its focus, as the ribbon's do: the
     // dialog it opens (Word Count, Go To) gives the caret back when it closes
     $('#status').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
+    // (and the title bar's zoom: a phone's keyboard stayed down after the zoom button, the page
+    // having lost the focus to it, and Word's zoom leaves the caret typing where it was)
+    $('#bar .zoom').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
     // the status line scrolls when it is wider than the window; the fades follow the cut edges
     const stBar = $('#status');
     if (stBar) {
