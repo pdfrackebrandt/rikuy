@@ -16,7 +16,7 @@ import { cleanPath } from '../share.js';
 import * as X from '../table.js';
 import { mapPos } from '../wrap.js';
 import { BLOCKS } from '../render.js';
-import { segOfSpan, boundary } from '../editor.js';
+import { segOfSpan, boundary, escapeTeX } from '../editor.js';
 import { packageOptions, packages as pkgLines, docClass, preambleEnd, stripComments } from '../preamble.js';
 import { openMenu, colorPicker, colorArg, colorNeeds } from '../ui/kit.js';
 import { openTablePicker, insertTableDialog, textToTableDialog, tableToTextDialog, sortDialog, propertiesDialog, marginsDialog, deleteCellsDialog, dataFileDialog, bordersDialog, formulaDialog } from '../ui/tablepicker.js';
@@ -562,6 +562,21 @@ export const methods = {
     const r = document.createRange();
     r.selectNodeContents(sp);
     sel.removeAllRanges(); sel.addRange(r);
+  },
+
+  // Cells copied from a spreadsheet (its text: a tab between cells, a line a row) pasted in a
+  // table: they fill the cells from the caret's, or from the first of the cells selected, as
+  // Word's Overwrite Cells, rows added where more come. The paste wrote a whole table float into
+  // the one cell, which TeX refuses. false where it is no such paste or no table is here.
+  tablePasteCells(plain) {
+    const lines = String(plain || '').replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n');
+    if (!lines.some((l) => l.includes('\t'))) return false;
+    const at = this.ribbonAt(), h = at && this.tableHere(at);
+    if (!h) return false;
+    const grid = lines.map((l) => l.split('\t').map((w) => escapeTeX(w.trim(), ' ')));
+    const r = h.multi ? h.rect.r0 : h.r, col = h.multi ? h.rect.c0 : h.cell.col;
+    const out = X.pasteCells(h.src, h.T, r, col, grid);
+    return !!out && this.tableApply(h, out);
   },
 
   // the <table> pieces of the table tbl is one of: a table that runs over pages is one a page

@@ -2760,6 +2760,9 @@ class App {
     const T = c.ghost ? null : this.texHere();
     if (T && T.f === c.f && !this.wholeDoc()) { this.texEdit(T, c.a, c.b, (latex || plain).replace(/\r\n?/g, '\n'), 'paste'); return; }
     if (c.ghost && this.ghostRaw()) { this.ghostInsert((latex || plain).replace(/\r\n?/g, '\n')); return; }
+    // cells copied from a spreadsheet, pasted in a table: into the cells from the caret's, as Word's
+    // Overwrite Cells (src/cmd/table.js); a whole table float went into the one cell, which TeX refuses
+    if (!c.ghost && !plainOnly && this.tablePasteCells(plain)) return;
     const src = this.src(c.ghost ? this.ghost.f : c.f);
     const at0 = c.ghost ? this.ghost.pos : c.a;
     // inside a command argument (a heading, a cell, a caption) a paste stays one paragraph

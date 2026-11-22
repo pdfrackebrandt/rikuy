@@ -330,6 +330,33 @@ def updown(page):
     check('Shift+Down then Delete: the column\'s two cells emptied, the other column kept', '\\midrule\n & two \\\\\n & four \\\\' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
 
 
+PASTE = """([t, h]) => { const dt = new DataTransfer(); dt.setData('text/plain', t); if (h) dt.setData('text/html', h);
+  document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }"""
+
+
+def paste_cells(page):
+    """Cells copied from a spreadsheet (tabs between cells) pasted in a cell fill the cells from
+    there, as Word's Overwrite Cells; a table float went into the one cell, which TeX refuses."""
+    def pasted(setup, text, doc=DOC):
+        load_doc(page, doc); setup(); page.evaluate(PASTE, [text, None]); settle(page, 200)
+        s = src(page)
+        return s[s.find('\\begin{tabular}'):s.find('\\end{tabular}')]
+    s = pasted(lambda: click_text(page, 'one', 1), 'A\tB\nC\tD\n')
+    check('a 2 by 2 block pasted at "one": the four cells overwritten, one step', s.endswith('\\midrule\nA & B \\\\\nC & D \\\\\n\\bottomrule\n') and src(page).count('\\begin{table}') == 1 and page.evaluate('window.rikuy.hist.length') == 1, s)
+    page.keyboard.type('x'); settle(page, 120)
+    check('the caret in the first pasted cell after it', '\\midrule\nAx & B' in src(page), src(page)[150:260])
+    page.evaluate('window.rikuy.undo()'); page.evaluate('window.rikuy.undo()'); settle(page, 150)
+    check('undo gives the table back byte for byte', src(page) == DOC)
+    s = pasted(lambda: click_text(page, 'one', 1), 'A\tB\nC\tD\nE\tF')
+    check('three rows pasted into two: a row added under the last, in booktabs', s.endswith('\\midrule\nA & B \\\\\nC & D \\\\\nE & F \\\\\n\\bottomrule\n'), s)
+    s = pasted(lambda: click_text(page, 'two', 1), 'A\tB\tC')
+    check('wider than the table: the words past its last column go into the last cell', 'one & A B C \\\\' in s, s)
+    s = pasted(lambda: click_text(page, 'one', 1), 'A\tB\nC & x\tD\nE\t50%', WRAP(GRID))
+    check('an \\hline table: escaped words, its new row with its \\hline', s.endswith('\\hline\nA & B \\\\ \\hline\nC \\& x & D \\\\ \\hline\nE & 50\\% \\\\ \\hline\n'), s)
+    s = pasted(lambda: click_text(page, 'After', 2), 'A\tB\nC\tD')
+    check('outside a table the block is still a new table', src(page).count('\\begin{tabular}') == 2, src(page)[-260:])
+
+
 # ---- data, structure, settings, dialogs ----------------------------------------------------------
 
 def the_rest(page):
@@ -771,7 +798,7 @@ def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         names = sys.argv[1:]
-        for f in (inserting, tabs_and_trips, keys_and_select, cell_edges, updown, the_rest, drawing, reviewed, verified, compiled, r3_tables):
+        for f in (inserting, tabs_and_trips, keys_and_select, cell_edges, updown, paste_cells, the_rest, drawing, reviewed, verified, compiled, r3_tables):
             if names and f.__name__ not in names:
                 continue
             try: f(page)

@@ -685,6 +685,44 @@ export function insertRow(src, T, r, below, o = {}) {
   const t = W + lead + (grid || '');
   return { edits: [{ s: at, e: at, t }, ...span], p: at + W.length };
 }
+// Cells copied from a spreadsheet or another table (rows of their words, as TeX) pasted at the cell
+// of row r that covers column col: Word's Overwrite Cells. Each cell's words are replaced from
+// there to the right and down; rows are added under the last where more come (in the table's own
+// style, its grid's rules too); words past the last column go into the last cell, so none is lost.
+// { edits, p } (p: the end of the first cell's words, after the edits)
+export function pasteCells(src, T, r, col, grid) {
+  const data = T.rows.map((x, k) => k).filter((k) => T.rows[k].kind === 'row' && k >= r);
+  if (!data.length || !grid.length) return null;
+  const n = T.ncols, edits = [], extra = [];
+  let p = null;
+  for (const [i, words] of grid.entries()) {
+    if (i >= data.length) {
+      // (a new row: the columns before col empty, as Word leaves them)
+      const cells = Array(n).fill('');
+      for (const [j, w] of words.entries()) { const c = Math.min(col + j, n - 1); cells[c] = cells[c] ? cells[c] + ' ' + w : w; }
+      extra.push(cells.join(' & ') + ' \\\\');
+      continue;
+    }
+    const row = T.rows[data[i]], put = new Map();
+    for (const [j, w] of words.entries()) {
+      const at = cellOfCol(row, Math.min(col + j, n - 1));
+      if (!at) continue;
+      put.set(at.cell, put.has(at.cell) ? put.get(at.cell) + ' ' + w : w);
+    }
+    for (const [c, t] of put) {
+      const [s, e] = cellWords(c);
+      edits.push({ s, e, t });
+      if (p == null) p = s + t.length;
+    }
+  }
+  if (extra.length) {
+    const g = gridRules(src, T), W = T.eol + indentOf(src, T.rows[data[data.length - 1]]);
+    const add = insertRow(src, T, data[data.length - 1], true, { text: extra.join((g || '') + W) });
+    if (add) edits.push(...add.edits);
+  }
+  edits.sort((a, b) => a.s - b.s);
+  return { edits, p };
+}
 // the end of a row's cells for Sort: its last cell's, empty or not, its trailing spaces left (rowEnd
 // stops at the last cell with words, so a row ending in an empty cell lost its & when moved)
 function sortEnd(src, row) {
