@@ -287,6 +287,21 @@ export const methods = {
       return r.error ? r : { ...r, need: r.on ? F.needsOf(group, r.w || { cmd: '' }) : null };
     }]);
   },
+  // The formats whose words end at p of file f (\textbf{\emph{word|}}): the place after their
+  // closing braces, and the openers and closers of those a new paragraph's words go on in. Enter
+  // at a paragraph's end puts the new paragraph there, as Word's keeps the formats the one above
+  // ended in; a frame, a circle, a box of colour or a raised word holds one line, and stays behind.
+  formatsEnding(f, p) {
+    const t = this.src(f), chain = F.chainAt(t, p, p);
+    let open = '', close = '';
+    for (let k = chain.length - 1; k >= 0; k--) {
+      const { group, W } = chain[k];
+      if (W.ie !== p) break;
+      if (!/^(border|enclose|shading|scale|position)$/.test(group)) { open = t.slice(W.s, W.is) + open; close += t.slice(W.ie, W.e); }
+      p = W.e;
+    }
+    return { p, wrap: open ? { open, close } : null };
+  },
   // the buttons the page's own keys and the selection's bubble reach (Ctrl+B in beforeinput, the bubble's B)
   toggleStyle(cmd) { return this.fmtToggle(STYLE_GROUP[cmd] || 'bold'); },
 

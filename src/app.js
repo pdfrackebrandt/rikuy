@@ -2244,7 +2244,12 @@ class App {
     }
     // Paragraph: at end -> ghost paragraph; otherwise split
     if (c.collapsed && itemEl && this.atItemEnd(itemEl, sel)) {
-      this.showGhost(itemEl, f, p);
+      // (at the end of a format's words, \textbf{ A|} after Ctrl+B and typing: the new paragraph
+      // goes after the closing brace. It went inside, and what was typed next ran the bold over a
+      // blank line, drawn as one paragraph; its words take the formats on, as Word's do)
+      const E = this.formatsEnding ? this.formatsEnding(f, p) : { p, wrap: null };
+      this.showGhost(itemEl, f, E.p);
+      if (E.wrap && this.ghost) this.ghost.wrap = E.wrap;
       this.enterAct();
       return;
     }
@@ -2407,6 +2412,10 @@ class App {
     }
     const open = g.style === 'latex' ? LATEX_MARK + '\n' : isEnvStyle(g.style) ? '\\begin{' + envOf(g.style) + '}\n' : '';
     const close = isEnvStyle(g.style) ? '\n\\end{' + envOf(g.style) + '}' : '';
+    // (the formats the paragraph above ended in, Enter's: the words go in them, the caret before
+    // their closing braces; not a paste of paragraphs, which they would hold over a blank line)
+    const W = g.style !== 'latex' && g.wrap && !/\n[ \t]*\n/.test(tex) ? g.wrap : null;
+    if (W) tex = W.open + tex + W.close;
     const src = this.src(g.f);
     // comment lines right under the paragraph belong to it (a review comment is about the line
     // above it): the new paragraph goes after them (not for one before a block: those are its own)
@@ -2420,7 +2429,7 @@ class App {
     const post = g.pos >= src.length ? '' : '\n'.repeat(Math.max(0, (g.line ? 1 : 2) - nlA));
     this.removeGhost();
     const grew = extra.filter((x) => x.f === g.f && x.s <= g.pos).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
-    this.commit([...extra, { f: g.f, s: g.pos, e: g.pos, t: pre + open + tex + close + post }], { f: g.f, p: g.pos + grew + pre.length + open.length + tex.length, bias: -1 }, 'type');
+    this.commit([...extra, { f: g.f, s: g.pos, e: g.pos, t: pre + open + tex + close + post }], { f: g.f, p: g.pos + grew + pre.length + open.length + tex.length - (W ? W.close.length : 0), bias: -1 }, 'type');
   }
 
   // ---- LaTeX paragraphs (src/styles.js) ----------------------------------------------

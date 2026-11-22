@@ -802,6 +802,25 @@ def r2_compiles(page):
     page.set_default_timeout(30000)
 
 
+def enter_formats(page):
+    """Enter at the end of formatted words: the new paragraph after their braces, in their formats."""
+    k = page.keyboard
+    paras = lambda: page.evaluate("[...document.querySelectorAll('#pages .it')].map((e) => e.textContent)")
+    load_doc(page, DOC); click_text(page, 'here.', 5)
+    k.press('Control+b'); settle(page, 80); k.type(' A'); settle(page, 150)
+    k.press('Enter'); settle(page, 150); k.type('Bc'); settle(page, 250)
+    check('Ctrl+B, " A", Enter, "Bc": a paragraph of its own, still bold, after the bold\'s brace', body(page) == 'Some plain words here.\\textbf{ A}\n\n\\textbf{Bc}\n\nAnother paragraph.', body(page))
+    check('and the page draws three paragraphs', paras()[:3] == ['Some plain words here. A', 'Bc', 'Another paragraph.'], paras()[:3])
+    page.keyboard.press('Control+z'); settle(page, 200)
+    check('one undo takes the new paragraph out', body(page) == 'Some plain words here.\\textbf{ A}\n\nAnother paragraph.', body(page))
+    # (nested: both go on; a frame stays behind on its line)
+    load_doc(page, WRAP('One \\textbf{\\emph{two}}\n\nThree \\fbox{four}\n\nEnd.')); click_text(page, 'two', 3)
+    k.press('Enter'); settle(page, 150); k.type('x'); settle(page, 250)
+    check('Enter after \\textbf{\\emph{two}}: \\textbf{\\emph{x}} in a paragraph after it', '\\textbf{\\emph{two}}\n\n\\textbf{\\emph{x}}\n\nThree' in body(page), body(page))
+    click_text(page, 'four', 4); k.press('Enter'); settle(page, 150); k.type('y'); settle(page, 250)
+    check('Enter after \\fbox{four}: y plain after it', '\\fbox{four}\n\ny\n\nEnd.' in body(page), body(page))
+
+
 def phone_box(page, sel):
     """The rect of the last element sel matches, the smallest of its controls, and the page's sideways overflow."""
     return page.evaluate("""(sel) => { const all = [...document.querySelectorAll(sel)].filter((x) => x.offsetParent || getComputedStyle(x).position === 'fixed'); const p = all[all.length - 1];
@@ -967,7 +986,7 @@ def phones(p):
 
 def run():
     with sync_playwright() as p:
-        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, phones, compiles, r2_compiles)
+        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, phones, compiles, r2_compiles)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             if fn is phones:
                 phones(p)
