@@ -24,6 +24,8 @@ import { openFontDialog, openRubyDialog } from '../ui/fontdialog.js';
 
 const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + '</svg>';
 const can = (app, at) => !!at && !at.c.ghost && at.ctx !== 'tex';
+// a font's switch, in force to the end of its group: what a group split at the caret opens again with
+const SWITCH = /\\(?:(?:tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge|[a-z]{2}(?:family|series|shape)|normalfont|em|bf|it|sc|sf|tt|rm|sl|selectfont)(?![A-Za-z])|color\s*(?:\[[^\]{}]*\])?\s*\{[^{}]*\}|fontsize\s*\{[^{}]*\}\s*\{[^{}]*\}|fontfamily\s*\{[^{}]*\}|usefont\s*(?:\{[^{}]*\}\s*){4})[ \t]*/y;
 const NO_SPACES = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
 // (the toggles and colours also on the blank paragraph Enter showed: Word's empty paragraph takes
 // Bold and the rest for its first words, which went in plain)
@@ -383,10 +385,23 @@ export const methods = {
       // (braces closed again before the caret, \emph{b} or \cite{k}, are no bar: the depth is what counts)
       const depth0 = (x) => { let d = 0; for (let i = 0; i < x.length; i++) { if (x[i] === '\\') { i++; continue; } if (x[i] === '{') d++; else if (x[i] === '}' && --d < 0) return false; } return d === 0; };
       if (W && W.is < c.a && c.a < W.ie && W.e === W.ie + 1 && t[W.ie] === '}' && !(w && w[0] < c.a && c.a < w[1]) && depth0(t.slice(W.is, c.a))) {
-        // (a declaration's group, {\bfseries many bold| words}: opened again as {\bfseries{}, or TeX
-        // skips the space before "words" with the switch's own, and the PDF read "plainwords")
-        let open = t.slice(W.s, W.is);
-        if (/\\[A-Za-z]+[ \t]+$/.test(open) && /^[ \t]/.test(t.slice(c.a))) open = open.replace(/[ \t]+$/, '') + '{}';
+        // The part after the caret is opened again with every switch in force there: the group's
+        // own and those declared in it before the caret at its own level ({\bfseries\itshape ..},
+        // \textbf{many \itshape bold| ..}, a \color or a size), or " words" lost its italic. Ending
+        // in a control word, the opener gets {}, or TeX skips the space before "words" with the
+        // switch's own and the PDF read "plainwords".
+        const inner = t.slice(W.is, c.a), sw = [];
+        for (let m, d = 0, i = 0, re = SWITCH; i < inner.length; i++) {
+          if (inner[i] === '{') d++;
+          else if (inner[i] === '}') d--;
+          else if (inner[i] === '\\') {
+            re.lastIndex = i;
+            if (!d && (m = re.exec(inner)) && m.index === i) { sw.push(m[0].trim()); i += m[0].length - 1; continue; }
+            i++;
+          }
+        }
+        let open = t.slice(W.s, W.is).replace(/[ \t]+$/, '') + sw.join('');
+        if (/\\[A-Za-z]+$/.test(open)) open += '{}';
         const ins = '}' + open, mark = { h0: this.hist.length, redo0: this.redoStack };
         this.closeGroup();
         this.commit([{ f: c.f, s: c.a, e: c.a, t: ins }], { f: c.f, p: c.a + 1, bias: -1 }, 'format');

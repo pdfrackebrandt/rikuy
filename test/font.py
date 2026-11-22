@@ -963,6 +963,15 @@ def review3(page):
     k.press('Control+b'); settle(page, 120); k.type(' plain'); settle(page, 200)
     check('review B1: Ctrl+B between words of {\\bfseries ..}, " plain": the group opened again as {\\bfseries{}', body(page) == 'Some {\\bfseries many bold} plain{\\bfseries{} words} here.', body(page))
     made.append(('B1', src(page), 'bold plain words'))
+    # V1, V2: the part after the caret opened again with every switch in force there, and {} after it
+    for doc, want in (('Some {\\bfseries\\itshape many bold words} here.', 'Some {\\bfseries\\itshape many bold} plain{\\bfseries\\itshape{} words} here.'),
+                      ('Some \\textbf{many \\itshape bold words} here.', 'Some \\textbf{many \\itshape bold} plain\\textbf{\\itshape{} words} here.'),
+                      ('Some \\textbf{many \\color{red}\\large bold words} here.', 'Some \\textbf{many \\color{red}\\large bold} plain\\textbf{\\color{red}\\large{} words} here.'),
+                      ('Some {\\bfseries many {\\itshape x} bold words} here.', 'Some {\\bfseries many {\\itshape x} bold} plain{\\bfseries{} words} here.')):
+        load_doc(page, WRAP(doc, XCOLOR)); click_text(page, 'bold', 4)
+        k.press('Control+b'); settle(page, 120); k.type(' plain'); settle(page, 200)
+        check('review V1/V2: Ctrl+B between words of %s, " plain": every switch in force opened again' % doc[5:40], body(page) == want, body(page))
+        made.append(('V ' + doc[5:30], src(page), 'bold plain words'))
     # N1: a brace closed before the caret is no bar to the split
     for doc, want in (('\\textbf{a \\emph{b} many bold words} here.', '\\textbf{a \\emph{b} many bold}\\textbf{ words} here.'),
                       ('\\textbf{see \\ref{k} many bold words} here.', '\\textbf{see \\ref{k} many bold}\\textbf{ words} here.')):
