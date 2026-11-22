@@ -295,16 +295,25 @@ def page_x(page, word):
 def hinting(p):
     """A Chromium that hints its fonts in full (CI's runner did): the page's words keep TeX's
     widths, not widths rounded to whole pixels, so the page puts them where TeX does"""
+    import browser as B
     was = os.environ.get('CHROME_ARGS', '')
     os.environ['CHROME_ARGS'] = (was + ' --font-render-hinting=full').strip()
+    # (open_page() shares one Chromium per process, launched with the arguments of its first call:
+    # this part needs one launched with the flag, so the shared one steps aside until it is done)
+    shared = B._SHARED.pop(id(p), None)
     try:
         br, page, errors = open_page(p)
         load_doc(page, D('\\noindent Leftmost words here.\n\n\\begin{center}\nCentredword alone.\n\\end{center}\n\n\\begin{flushright}\nRightword alone.\n\\end{flushright}'))
         settle(page, 500)
+        # (the widths are the page's fonts': every face the words use loaded, not a fallback's)
+        page.evaluate('() => document.fonts.ready.then(() => true)')
         got = [page_x(page, w) for w in ('Centredword', 'Rightword')]
         br.close()
     finally:
         os.environ['CHROME_ARGS'] = was
+        own = B._SHARED.pop(id(p), None)
+        if own: own[1].close()
+        if shared: B._SHARED[id(p)] = shared
     # (TeX's: Centredword from 129.6 to 185.4 bp of the text's left, Rightword from 269.7 to 314.9;
     # with the fonts' hinting the page had 127.4 to 185.7 and 265.1 to 313.1)
     BP = 72 / 72.27
@@ -509,6 +518,11 @@ def open_phone(p, width, height, dark=False):
     ctx = br.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=2, has_touch=True, is_mobile=True)
     # (a phone's Print Layout, which this suite was written for: browser.py, PRINT_LAYOUT)
     ctx.add_init_script(PRINT_LAYOUT)
+    # (as open_page's contexts: the page's timers seen, so settle() waits for the ones a step set
+    # going; motion off, so a menu or a dialog is measured where it lands, not half way in)
+    ctx.add_init_script(B.TIMERS)
+    if os.environ.get('RIKUY_MOTION') != '1':
+        ctx.add_init_script(B.MOTION_OFF)
     page = ctx.new_page()
     errors = []
     page.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
