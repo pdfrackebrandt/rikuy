@@ -13,8 +13,10 @@ Styles gallery itself (its tiles, widths, paging, keys, More, Quote) is test/sty
 
 RIKUY_DIST names another dist/ (the claude.ai copy, built with RIKUY_SHARE, has the same ribbon)."""
 import os, re, sys, zipfile
+os.environ['RIKUY_WAIT_SHADOW'] = '1'  # DEBUG
+DEBUG_LOG = "(() => { window.__log = []; const T = () => Math.round(performance.now()); document.fonts.addEventListener('loadingdone', (e) => window.__log.push('fontsdone ' + T() + ' ' + e.fontfaces.map((f) => f.style + ' ' + f.weight + ' ' + f.family).join(', ')));\n  const iv = setInterval(() => { const g = window.rikuy; if (!g || !g.relayout || g.__dbg) return; g.__dbg = true; clearInterval(iv);\n    const rl = g.relayout.bind(g); g.relayout = function (...a) { window.__log.push('relayout ' + T() + ' ' + JSON.stringify(a) + ' ' + new Error().stack.split('\\n').slice(2, 4).map((s) => s.trim().slice(0, 50)).join(' | ')); return rl(...a); };\n    const rg = g.removeGhost.bind(g); g.removeGhost = function () { if (g.ghost) window.__log.push('removeGhost ' + T()); return rg(); }; }, 5); })()"
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, ROOT, open_page, check, results, src, wait_src, click_text, select_text, load_doc
+from browser import settle, until, ROOT, open_page, check, results, src, wait_src, click_text, select_text, load_doc
 from playwright.sync_api import sync_playwright
 
 DIST = os.path.abspath(os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist'))
@@ -283,16 +285,16 @@ def keyboard(page):
 
 def narrow(page):
     for w in (360, 390, 430, 820):
-        page.set_viewport_size({'width': w, 'height': 800}); settle(page, 300)
+        page.set_viewport_size({'width': w, 'height': 800}); settle(page, 300, full=True)
         m = page.evaluate('''() => { const r = document.getElementById('ribbon'), b = r.getBoundingClientRect(), d = document.querySelector('.rb-dl button span');
           return { page: document.documentElement.scrollWidth - document.documentElement.clientWidth, h: Math.round(b.height), scrolls: r.scrollWidth > r.clientWidth, right: Math.round(b.right), w: innerWidth, label: getComputedStyle(d).display }; }''')
         check('at %dpx the ribbon is one row inside the screen and scrolls sideways when it is longer' % w, m['page'] <= 0 and m['h'] <= 44 and m['right'] <= m['w'] and (m['scrolls'] or w > 700) and m['label'] != 'none', m)
-    page.set_viewport_size({'width': 390, 'height': 800}); settle(page, 300)
+    page.set_viewport_size({'width': 390, 'height': 800}); settle(page, 300, full=True)
     page.click('#b-nav'); settle(page, 200)
     acts = page.evaluate('[...document.querySelectorAll("#nav-acts .nav-act")].map((a) => a.textContent.trim())')
     check('the downloads are first in the menu panel too', acts[:3] == ['Download PDF', 'Download Word', 'Download LaTeX'], acts[:4])
     page.evaluate('window.rikuy.toggleNav(false)')
-    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 200)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 200, full=True)
 
 
 def top_bar(page):
@@ -320,10 +322,10 @@ def one_save(page):
         got.clear(); do(); settle(page, 1200)
         return list(got)
     check('one click on Download LaTeX saves one file', count(lambda: page.click('#b-save')) == ['main.tex'], got)
-    page.set_viewport_size({'width': 390, 'height': 800}); settle(page, 300)
+    page.set_viewport_size({'width': 390, 'height': 800}); settle(page, 300, full=True)
     page.click('#b-nav'); settle(page, 200)
     check('Download LaTeX in the menu panel saves one file', count(lambda: page.click('#nav-acts [data-for=b-save]')) == ['main.tex'], got)
-    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300, full=True)
     page.evaluate('window.rikuy.toggleSource(true)'); settle(page, 600)
     page.click('#cmhost .CodeMirror-lines'); settle(page, 150)
     toast = lambda: page.evaluate("document.getElementById('toast').hidden ? '' : document.getElementById('toast').textContent")
@@ -353,7 +355,7 @@ def where_it_applies(page):
     check('with a selection over two paragraphs the style applies to both (test/styles.py, many): the list is there, at Normal', not st['rb-style'][0] and st['style'] == 'p', st['rb-style'])
     # the row keeps the caret: a click on a disabled button, on the Download label, on empty space
     # (at 1700 px, where the label shows whatever Home holds)
-    page.set_viewport_size({'width': 1700, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1700, 'height': 1000}); settle(page, 300, full=True)
     click_text(page, 'cell', 2); state(page)
     # (a disabled button in sight: Equation and Footnote can be in the folded Insert's menu)
     page.evaluate("() => { for (const b of document.querySelectorAll('#rp-home button:disabled')) if (b.offsetParent) { b.dataset.testOff = '1'; return; } }")
@@ -365,10 +367,10 @@ def where_it_applies(page):
         page.keyboard.press('Control+z'); settle(page, 120)
         check('a click on %s leaves the caret on the page' % what, ok and page.evaluate('document.activeElement.id') == 'pages')
         click_text(page, 'cell', 2); state(page)
-    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300, full=True)
     # the style list gives the focus back: typing after it goes to the page, not into the list
     # (the list is what a narrower window has in the gallery's place)
-    page.set_viewport_size({'width': 820, 'height': 900}); settle(page, 300)
+    page.set_viewport_size({'width': 820, 'height': 900}); settle(page, 300, full=True)
     click_text(page, 'Second paragraph', 7); state(page)
     page.focus('#rb-style'); page.keyboard.press('Escape'); settle(page, 100)
     check('Escape in the style list returns to the page', page.evaluate('document.activeElement.id') == 'pages')
@@ -376,7 +378,7 @@ def where_it_applies(page):
     check('typing with the style list focused types on the page and picks no heading', 'Second Helloparagraph here.' in src(page) and '\\section{Second' not in src(page) and src(page).count('\\section') == 1, src(page)[src(page).find('Second') - 12:][:50])
     style(page, 'section'); page.keyboard.type('X'); settle(page, 200)
     check('after a style is picked the caret is back in the words', page.evaluate('document.activeElement.id') == 'pages' and 'X' in src(page)[src(page).find('\\section{Second'):][:40], src(page)[src(page).find('Second') - 12:][:50])
-    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300, full=True)
 
 
 def list_edges(page):
@@ -473,7 +475,7 @@ def downloads_in_sight(page):
     IN = """(ids) => { const r = document.getElementById('ribbon'); r.scrollLeft = 0; return ids.map((id) => { const e = document.getElementById(id), b = e.getBoundingClientRect(), rr = r.getBoundingClientRect();
       const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return b.width > 0 && b.left >= rr.left - 1 && b.right <= innerWidth + 1 && !!top && (top === e || e.contains(top)); }); }"""
     for w in (820, 860, 1000, 1366):
-        page.set_viewport_size({'width': w, 'height': 800}); settle(page, 300)
+        page.set_viewport_size({'width': w, 'height': 800}); settle(page, 300, full=True)
         # (above 860 px the three where the row has room for them, else the one button: Home's Font
         # group in Word's two rows and the Paragraph group's list commands leave 1000 px without room for three)
         # (at 860 px the Paragraph group, one row there, folds and leaves room for the three, B2)
@@ -488,11 +490,11 @@ def downloads_in_sight(page):
         clear = page.evaluate("""() => { const r = document.getElementById('ribbon'); r.scrollLeft = r.scrollWidth; const a = document.getElementById('rb-link').getBoundingClientRect(), d = document.querySelector('.rb-dl').getBoundingClientRect(); r.scrollLeft = 0; return a.right <= d.left + 1; }""")
         check('and scrolled to its end, the last button to insert is clear of them', clear)
     for w in (360, 390, 430):
-        page.set_viewport_size({'width': w, 'height': 800}); settle(page, 300)
+        page.set_viewport_size({'width': w, 'height': 800}); settle(page, 300, full=True)
         seen = page.evaluate(IN, ['rb-dl-menu'])
         m = page.evaluate('(() => { const r = document.getElementById("ribbon"), b = r.getBoundingClientRect(); return { page: document.documentElement.scrollWidth - document.documentElement.clientWidth, h: Math.round(b.height), label: document.getElementById("rb-dl-menu").textContent.trim(), room: Math.round(document.querySelector(".rb-dl").getBoundingClientRect().left) }; })()')
         check('at %dpx one Download button is in sight at the row\'s end, with room for the other buttons' % w, all(seen) and m['label'] == 'Download' and m['page'] <= 0 and m['h'] <= 44 and m['room'] >= 200, (seen, m))
-    page.set_viewport_size({'width': 390, 'height': 800}); settle(page, 300)
+    page.set_viewport_size({'width': 390, 'height': 800}); settle(page, 300, full=True)
     page.evaluate('(() => { const g = window.rikuy; g.assets.clear(); g.assetBlobs.clear(); g.extra.clear(); g.name = "paper"; g.persist(); })()')
     click_text(page, 'First paragraph', 3)
     page.click('#rb-dl-menu'); settle(page, 300)
@@ -502,7 +504,7 @@ def downloads_in_sight(page):
     page.on('download', lambda d: got.append(d.suggested_filename))
     page.click('body > .pop.pop-dl button.nav-act >> nth=2'); settle(page, 1200)
     check('and LaTeX there saves the file, once', got == ['main.tex'] and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, got)
-    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 200)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 200, full=True)
     check('a wide screen shows the three buttons and no Download button', not page.is_visible('#rb-dl-menu') and page.is_visible('#rb-pdf') and page.is_visible('#b-save'))
 
 
@@ -662,7 +664,7 @@ def latex_after_ghost(page):
     AT = """([w, o]) => { const s = [...document.querySelectorAll('#pages span.t')].find((s) => s.textContent.includes(w)); const n = s.firstChild, i = n.data.indexOf(w) + o;
       const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + 1); const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }"""
     def ghost_under_beta():
-        load_doc(page, doc); click_text(page, 'beta line', 9); page.keyboard.press('Enter'); settle(page, 150)
+        load_doc(page, doc); click_text(page, 'beta line', 9); page.evaluate('() => window.__log.push("enter " + Math.round(performance.now()))'); page.keyboard.press('Enter'); settle(page, 150)
         return page.evaluate('!!window.rikuy.ghost && window.rikuy.ghost.tex') == 'after'
     for what, word, off, act, want in (('a click after the line to come, then typing', 'gamma', 2, 'Z', '  gaZmma line'), ('a click before it, then typing', 'alpha', 2, 'Z', 'alZpha line'),
                                        ('a double click on a word after it, then typing', 'gamma', 2, 'W', '  W line'), ('a double click on a word before it, then Backspace', 'alpha', 2, 'Backspace', '% rikuy: latex\n line\n')):
@@ -671,7 +673,8 @@ def latex_after_ghost(page):
         (page.mouse.dblclick if 'double' in what else page.mouse.click)(x, y); settle(page, 250)
         page.keyboard.press(act) if act == 'Backspace' else page.keyboard.type(act)
         settle(page, 200)
-        check('after a line to come: %s acts where it was put' % what, ok and want in src(page) and len(boxes(page)) == 1, body(page))
+        check('after a line to come: %s acts where it was put' % what, ok and want in src(page) and len(boxes(page)) == 1, (ok, boxes(page), body(page)))
+        if not (ok and want in src(page) and len(boxes(page)) == 1): print('DEBUG', what, page.evaluate('window.__log'))
     load_doc(page, doc); click_text(page, 'alpha line', 10); page.keyboard.press('Enter'); page.keyboard.press('ArrowDown'); settle(page, 150)
     page.keyboard.type('Z'); settle(page, 200)
     check('after a line to come: ArrowDown and typing write in the next line', 'gamma lineZ' not in src(page) and 'Z' in body(page).split('alpha line')[1].split('gamma')[0], body(page))
@@ -795,7 +798,11 @@ def run():
         wide = (latex_style, latex_edges)
         # (names given on the command line run those alone)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
-            browser, page, errors = open_page(p, width=1920 if fn in wide else 1400)
+            browser, page, errors = open_page(p, width=1920 if fn in wide else 1400, init=DEBUG_LOG if fn.__name__ == 'latex_after_ghost' else None)
+            if fn.__name__ == 'latex_after_ghost': page.evaluate('() => window.__log.push("open " + Math.round(performance.now()) + " " + document.fonts.status)')
+            # (the page lays its pages out again 200 ms after the last of its fonts came, app.js's
+            # loadingdone: that drops a line to come and a selection, so the steps start after it)
+            until(page, "() => document.fonts.status === 'loaded'"); settle(page, 200, full=True)
             try:
                 fn(page)
             except Exception as e:
