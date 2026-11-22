@@ -267,6 +267,11 @@ def sources(page):
     nb = D('As shown \\citet{knuth84}, words.\n\nLast.', '\\usepackage{natbib}\n')
     insert_case(page, {'main.tex': nb, 'refs.bib': BIB}['main.tex'], lambda page: (page.evaluate('rikuy.files.set("refs.bib", %r); rikuy.rebuild()' % BIB), click_text(page, 'Last', 1)), run('bibliography'), nb.replace('Last.', 'Last.\n\n\\bibliographystyle{plainnat}\n\\bibliography{refs}\n'), 'Bibliography (natbib)')
     check('the page draws it under References', 'References' in texts(page, '.refs-h') and len(texts(page, '.it.ref')) == 1, texts(page, '.refs-h'))
+    # (a document with no system yet: natbib's line, or biblatex's \addbibresource, went into the copy
+    # first, and the bibliography's lines that many characters too early, into a word or \begin{document})
+    withbib = lambda w: (lambda page: (page.evaluate('rikuy.files.set("refs.bib", %r); rikuy.rebuild()' % BIB), click_text(page, w, 1)))
+    insert_case(page, D('As shown here, words.\n\nLast.'), withbib('As shown'), run('bibliography'), D('As shown here, words.\n\n\\bibliographystyle{plainnat}\n\\bibliography{refs}\n\nLast.', '\\usepackage{natbib}\n'), 'Bibliography with no system yet: natbib, and its lines after the paragraph')
+    insert_case(page, D('As shown here, words.\n\nLast.', '\\usepackage{biblatex}\n'), withbib('As shown'), run('bibliography'), D('As shown here, words.\n\n\\printbibliography\n\nLast.', '\\usepackage{biblatex}\n\\addbibresource{refs.bib}\n'), 'Bibliography with biblatex and no \\addbibresource: it, and \\printbibliography after the paragraph')
     wc = NAT.replace('\\bibliographystyle{plainnat}', '\\renewcommand{\\refname}{Works Cited}\n\\bibliographystyle{plainnat}')
     roundtrip(page, NAT, ('words.', 1), lambda page: (page.evaluate('rikuy.files.set("refs.bib", %r)' % BIB), page.evaluate('rikuy.bibRetitle("Works Cited")')), wc, off_command=lambda page: page.evaluate('rikuy.bibRetitle(null)'), label='Bibliography titled Works Cited (BibTeX)')
     load_doc(page, {'main.tex': wc, 'refs.bib': BIB}); settle(page, 200)

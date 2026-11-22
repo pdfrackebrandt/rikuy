@@ -574,7 +574,10 @@ export const methods = {
       lines = [...(B.styleCall ? [] : ['\\bibliographystyle{' + (B.natbib || !B.style ? 'plainnat' : B.style) + '}']), '\\bibliography{' + name + '}'];
     }
     if (place === 'end') { const f = this.main; w.apply(f, RS.endLines(w.src(f), lines, [])); } else {
-      const { f, p, pre, post } = this.afterBlockPos();
+      // (the place read on the text as the app holds it, moved past natbib's or \addbibresource's
+      // line put in the copy just now: the lines went that many characters too early, into the
+      // first word or \begin{document}, as blockCommand's did)
+      const at = this.afterBlockPos(), { f, pre, post } = at, p = w.map(f, at.p);
       w.apply(f, [{ s: p, e: p, t: (pre + lines.join('\n') + post).replace(/\n/g, eolOf(this.src(f))) }]);
     }
     if (!files.length && !this.files.has(file)) w.t.set(file, '');
