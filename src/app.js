@@ -2777,14 +2777,29 @@ class App {
     if (this.index.dirty) this.index.build();
     const paraOf = (p) => { const h = this.index.find(c.f, p, 1), sp = h && h.entry && h.entry.span; return sp ? sp.closest('td, th, .cap, .fn, .it') : null; };
     const apart = (P, Q) => P && Q && P !== Q && !(Q.classList.contains('split-b') && P.dataset.b != null && P.dataset.b === Q.dataset.b);
+    // The paragraphs, headings, lists and displays the selection holds whole go as their own
+    // source, as Word's copy keeps the paragraphs it holds with their style and formatting: as
+    // visible characters, Select All then Copy pasted every heading as plain words, every list as
+    // paragraphs and every bold word plain. Only the pieces at the two ends go as characters.
+    // (a block is held whole when all it shows is selected: the selection from a heading's first
+    // word holds the heading, \section and all, as Word's holds the paragraph's mark)
+    const held = (B) => (c.a <= B.s && B.e <= c.b) || (B.s < c.b && c.a < B.e && ((v) => v.length > 0 && v.every(([s, e]) => c.a <= s && e <= c.b))(visibleRanges([B], c.f, B.s, B.e)));
+    const whole = this.renderer.blocks.filter((B) => B.f === c.f && B.s < B.e && held(B) && isBalanced(src, B.s, B.e) &&
+      !/\\(begin|end)\s*\{document\}|\\(maketitle|bibliography)\b/.test(src.slice(B.s, B.e))).map((B) => [B.s, B.e]).sort((x, y) => x[0] - y[0]);
+    const pieces = whole.map(([s, e]) => ({ s, e, whole: true }));
+    for (let [s, e] of vr) {
+      for (const [x, y] of whole) { if (y <= s || x >= e) continue; if (x > s) pieces.push({ s, e: x }); s = Math.max(s, y); }
+      if (s < e) pieces.push({ s, e });
+    }
+    pieces.sort((x, y) => x.s - y.s);
     let out = '';
     let last = null, lastP = null;
-    for (const [s, e] of vr) {
-      const P = paraOf(s);
-      if (last != null && (/\n\s*\n/.test(src.slice(last, s)) || apart(lastP, P))) out += '\n\n';
-      out += src.slice(s, e);
-      last = e;
-      lastP = paraOf(Math.max(s, e - 1)) || P;
+    for (const X of pieces) {
+      const P = X.whole ? null : paraOf(X.s);
+      if (last != null && (X.whole || last.whole || /\n\s*\n/.test(src.slice(last.e, X.s)) || apart(lastP, P))) out += '\n\n';
+      out += X.whole ? src.slice(X.s, X.e).trim() : src.slice(X.s, X.e);
+      last = X;
+      lastP = X.whole ? null : paraOf(Math.max(X.s, X.e - 1)) || P;
     }
     return out;
   }
@@ -2847,6 +2862,13 @@ class App {
     const inArg = c.ghost || whole ? false : braceDepth(src, at0) > 0;
     const el = getSelection().anchorNode && (getSelection().anchorNode.nodeType === 1 ? getSelection().anchorNode : getSelection().anchorNode.parentElement);
     const inline = inArg || (!whole && !!(el && el.closest && el.closest('td, .it.h, .cap')));
+    // (copied LaTeX put in a heading, a cell or a caption: its paragraphs join with a space, and
+    // what is more than a line's words, a heading, a list, a display, comes as its words. Pasted
+    // as it was, \section{Intro\section{Background}...} and a list inside a heading stopped TeX)
+    if (latex && inline) {
+      const one = latex.replace(/\s*\n\s*\n\s*/g, ' ').replace(/\n/g, ' ').trim();
+      latex = /\\(?:begin|end|item|par|part|chapter|(?:sub){0,2}section|(?:sub)?paragraph|maketitle|caption|label)(?![A-Za-z])|\\\[|\$\$/.test(one) ? '' : one;
+    }
     const pre = this.src(this.main).split(/\\begin\s*\{document\}/)[0];
     const o = { prev: src[at0 - 1] || ' ', hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*hyperref/.test(pre), booktabs: /\\usepackage(\[[^\]]*\])?\{[^}]*booktabs/.test(pre), inlineOnly: inline };
     // (a PDF's ligatures as letters; its Greek and symbols as formulas where pdfLaTeX compiles it: escapeTeX)

@@ -1830,11 +1830,27 @@ def word_typing(page):
     # words, "only.Apple one" (only a blank line in the source counted as a paragraph's end)
     page.context.grant_permissions(['clipboard-read', 'clipboard-write'])
     end = 'of the document.'
-    for a, z, want in (('Second', 'Apple one', 'Second paragraph is plain text only.\n\nApple one'), ('Background', 'Last', 'Background\n\nLast'), ('bold', 'italic', 'bold words and italic')):
+    for a, z, want in (('Second', 'Apple one', 'Second paragraph is plain text only.\n\nApple one'), ('Background', 'Last', '\\section{Background}\n\nLast'), ('bold', 'italic', 'bold words and italic')):
         load_doc(page, WORD_DOC)
         place(page, (a, z)); k.press('Control+c'); settle(page, 50)
         click_text(page, end, len(end)); k.press('Control+v'); settle(page, 100)
         check('copied from "%s" to "%s" and pasted: %r' % (a, z, want), src(page) == WORD_DOC.replace(end, end + want), src(page)[-80:])
+    # (and what a selection holds whole goes with its formatting and structure, as Word's copy
+    # keeps the paragraphs it holds: Select All, Copy, Paste gave every heading as plain words,
+    # every list as paragraphs and every bold word plain)
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Last', 0); k.press('Control+a'); k.press('Control+c'); settle(page, 50)
+    click_text(page, end, len(end)); k.press('Control+v'); settle(page, 100)
+    s2 = src(page)
+    check('Select All, Copy, then Paste at the end: headings, the list, bold, italic and the display come again as they are', all(s2.count(x) == 2 for x in ('\\section{Introduction}', '\\section{Background}', '\\begin{itemize}\n\\item Apple one\n\\item Banana two\n\\end{itemize}', '\\textbf{bold words}', '\\emph{italic words}', '\\[ a = b \\]', '\\footnote{The note.}')), s2[-300:])
+    # (into a heading's words what is copied goes as one line of words: a heading or a list
+    # pasted there as it was nested \section{Intro\section{...}} or a list in it, and TeX stopped)
+    for a, z, want in (('Background', 'Last', 'IntroBackground Lastduction'), ('Second', 'After', 'IntroSecond paragraph is plain text only.')):
+        load_doc(page, WORD_DOC)
+        place(page, (a, z)); k.press('Control+c'); settle(page, 50)
+        click_text(page, 'Introduction', 5); k.press('Control+v'); settle(page, 100)
+        h = src(page)[src(page).index('\\section{'):]; h = h[:h.index('\n')]
+        check('copied from "%s" to "%s", pasted into a heading: one line of words in its braces' % (a, z), want in h and h.count('\\section') == 1 and '\\begin' not in h and h.endswith('}'), h)
     # 4: a selection holding whole headings or list items takes them with its words, as Word's
     # takes the paragraphs it holds; their words alone went, and an empty numbered heading or two
     # empty bullets stayed between the two paragraphs the deletion joined
