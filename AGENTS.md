@@ -189,6 +189,29 @@ Pick the checks by what you touched, and run them before you call it done:
   expression evals it in the page each time it polls; `browser.py` hands every one over as a
   function, so import it before Playwright starts. A live figure runs in its own document
   (`widget-<hash>.html`, `src/widget.js` `runWidget`).
+- The browser tests' helpers wait on conditions, not on time: `open_page()` returns once
+  `rikuy.ready` has settled, `load_doc()` once the pages are drawn (`rebuild()` is synchronous),
+  `click_text()`, `select_text()` and `place()` once their `selectionchange` has reached the page's
+  handlers, and `roundtrip()` once each step's edit has landed (`landed()`). After any other step,
+  `settle(page, ms)` (ms: the time the step once slept): the next frame, and the page's timers due
+  within 80 ms (`SOON`: the ribbon's refresh after the caret moved), seen through the timers every
+  context of `open_page()` tracks (`TIMERS`); `settle(page, ms, full=True)` waits for every timer due
+  within ms instead (a refit after a resize, a debounced push), and `after=` names the page's own
+  debounced work to wait for whenever it is due (`REPAINTS`: Track Changes' marks and comments,
+  repainted 180 and 200 ms after every rebuild). Work that is no timer (a module, a worker, a fetch)
+  gets a condition of its own: `until(page, fn)`, which leaves a promise that never comes to the
+  next check; `ready(page)` after a reload (init through, not only the boot screen gone);
+  `stored(page)`, every IndexedDB write the page opened come back (`TIMERS` counts them too);
+  `saved(page)` before a reload that must find an edit; `kept(page)` for a tab hidden or shown
+  (its copy and IndexedDB's agree); `tap(page, target)` for a finger (the click the tap becomes, and
+  taps kept apart by Chromium's double tap time). A fixed `wait_for_timeout`
+  is for where the time itself is under test, with a comment saying so. `RIKUY_WAIT_SHADOW=1` waits
+  the old time as well after each such condition and prints `SHADOW` with what still moved and the
+  timers then due; `RIKUY_CHECK_LOG=file` writes what each check saw, so a fast run and a shadow run
+  can be compared check by check (measured times written as `<t>`, and the detail of a check whose
+  name gives a time in ms, a latency or a long task as `<timed>`). `open_page()` shares one Chromium per process: each call
+  gets a context of its own, and the browser it returns closes that call's contexts, not the
+  shared one.
 - This machine's Python may be linked with zlib-ng, whose gzip bytes differ from stock zlib's: packs
   built with it get other names than `dev/dist-manifest.txt` has. To make the manifest here, run
   `build_tree.py` with Ubuntu 24.04's `libz.so.1.3` in `LD_PRELOAD` (CI's Python uses that one).

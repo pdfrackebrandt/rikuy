@@ -20,7 +20,7 @@ with KOMA-Script and memoir; and, where dist/tex holds a TeX tree, all of it com
 Run it alone with names to run some: python3 styles.py gallery design."""
 import os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import ROOT, SKELETON_HEAD, ROUTES, open_page, check, results, src, wait_src, click_text, select_text, load_doc, roundtrip, pressed, place, PRINT_LAYOUT, policy
+from browser import settle, ROOT, SKELETON_HEAD, ROUTES, open_page, check, results, src, wait_src, click_text, select_text, load_doc, roundtrip, pressed, place, PRINT_LAYOUT, policy
 from ribbon import DOC, DIST, state, style, undo_is, TILES, WRAP, body, boxes
 from playwright.sync_api import sync_playwright
 
@@ -39,7 +39,7 @@ P3 = 'Before it.\n\nWords here.\n\nAfter it.'
 
 
 def run_cmd(page, cid, args=None):
-    page.evaluate('([id, a]) => window.rikuy.runCommand(id, a || undefined)', [cid, args]); page.wait_for_timeout(200)
+    page.evaluate('([id, a]) => window.rikuy.runCommand(id, a || undefined)', [cid, args]); settle(page, 200)
 
 
 def create_style(page):
@@ -59,7 +59,7 @@ def styles(page):
         check('Heading: the paragraph becomes %s{...}, its words untouched' % cmd, got == DOC.replace('First paragraph here.', cmd + '{First paragraph here.}') and state(page)['style'] == value, got[got.find('Opening'):][:70])
         page.keyboard.type('X'); wait_src(page, 'First X')
         check('and the caret stays where it was in the words', cmd + '{First Xparagraph here.}' in src(page), src(page)[src(page).find('First'):][:40])
-        page.keyboard.press('Control+z'); page.wait_for_timeout(150)
+        page.keyboard.press('Control+z'); settle(page, 150)
         check('one undo takes the heading back, byte for byte', undo_is(page, DOC))
     # a heading to another level and to a paragraph
     load_doc(page, DOC); click_text(page, 'Opening', 3)
@@ -87,7 +87,7 @@ def styles(page):
     check('and Title is not offered for a paragraph (every other style is: headings to Heading 5, Part, LaTeX, the environments)', page.evaluate('[...document.getElementById("rb-style").options].filter((o) => !o.hidden && !o.disabled).map((o) => o.value)') == LIST
           and page.evaluate('[...document.querySelectorAll("#rb-gallery [data-style]")].filter((b) => !b.hidden).map((b) => b.dataset.style)') == ['p', 'section', 'subsection', 'subsubsection', 'latex', 'quote'])
     # a new document: a heading as the first thing
-    page.click('#b-new'); page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000); page.wait_for_timeout(200)
+    page.click('#b-new'); page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000); settle(page, 200)
     style(page, 'section'); page.keyboard.type('Intro')
     wait_src(page, '\\section{Intro}')
     check('in a new document Heading 1 starts a heading to type into', '\\section{Intro}' in src(page), src(page))
@@ -112,16 +112,16 @@ def gallery(page):
           and look['cap'] == 'Styles' and look['under'] and look['normal'] and look['h1'] and look['h1big'] and look['quote'] and look['a'] == 'uppercase' and look['e'] not in ('0px', 'auto') and not look['clip'] and look['pressed'], look)
     check('all six apply to a paragraph, the strip\'s arrows have nothing to page to, More is there', not any(t.endswith('-') for t in tiles) and st['rb-st-up'][0] and st['rb-st-down'][0] and not st['rb-st-more'][0], st)
     # a click on a tile: the caret stays where it was in the words
-    page.click('#rb-st-section'); page.wait_for_timeout(150)
+    page.click('#rb-st-section'); settle(page, 150)
     check('Heading 1 by its tile: the paragraph becomes \\section{...}, the tile checked', src(page) == DOC.replace('First paragraph here.', '\\section{First paragraph here.}') and page.evaluate(TILES)[1] == 'section*', page.evaluate(TILES))
-    page.keyboard.type('X'); page.wait_for_timeout(150)
+    page.keyboard.type('X'); settle(page, 150)
     check('the click left the caret on the page, where it was', page.evaluate('document.activeElement.id') == 'pages' and '\\section{First Xparagraph here.}' in src(page), src(page)[60:120])
-    page.keyboard.press('Control+z'); page.wait_for_timeout(150)
-    page.click('#rb-st-p'); page.wait_for_timeout(150)
+    page.keyboard.press('Control+z'); settle(page, 150)
+    page.click('#rb-st-p'); settle(page, 150)
     check('Normal on it: the paragraph again, byte for byte', src(page) == DOC and page.evaluate(TILES)[0] == 'p*', src(page)[60:120])
-    page.keyboard.press('Control+z'); page.wait_for_timeout(150)
+    page.keyboard.press('Control+z'); settle(page, 150)
     check('one undo for each click', src(page) == DOC.replace('First paragraph here.', '\\section{First paragraph here.}'))
-    page.keyboard.press('Control+z'); page.wait_for_timeout(150)
+    page.keyboard.press('Control+z'); settle(page, 150)
     check('and the next one back to the start', src(page) == DOC)
     # where the caret is decides what is checked and what applies
     click_text(page, 'Opening', 2); state(page)
@@ -134,7 +134,7 @@ def gallery(page):
     check('in a table the same', t == ['p-', 'section-', 'subsection-', 'subsubsection-', 'latex', 'quote-'], t)
     # More: the whole list, in its looks
     click_text(page, 'Second paragraph', 3); state(page)
-    page.click('#rb-st-more'); page.wait_for_timeout(200)
+    page.click('#rb-st-more'); settle(page, 200)
     menu = page.evaluate("""() => { const m = document.querySelector('body > .pop.pop-styles'); if (!m) return null;
       return { role: m.getAttribute('role'), name: m.getAttribute('aria-label'), text: [...m.childNodes].filter((x) => x.nodeType === 3 || !x.matches('[role=menuitemradio], [role=separator], [role=menuitem]')).length,
         acts: [...m.querySelectorAll('[role=menuitem]')].map((x) => x.getAttribute('aria-label')), items: [...m.querySelectorAll('[role=menuitemradio]')].map((x) => x.getAttribute('aria-label') + (x.getAttribute('aria-checked') === 'true' ? '*' : '')),
@@ -143,12 +143,12 @@ def gallery(page):
           and [a for a in menu['acts'] if a != 'Clear All Formatting'] == ['Create a Style…', 'Apply Styles…', 'Styles pane…']
           and menu['focus'] == 'Normal' and menu['expanded'] == 'true' and menu['looks'][2] == '700', menu)
     # (Title second, R2: the document has none, so its first paragraph could be it)
-    page.keyboard.press('ArrowDown'); page.keyboard.press('ArrowDown'); page.keyboard.press('ArrowDown'); page.keyboard.press('Enter'); page.wait_for_timeout(200)
+    page.keyboard.press('ArrowDown'); page.keyboard.press('ArrowDown'); page.keyboard.press('ArrowDown'); page.keyboard.press('Enter'); settle(page, 200)
     check('the arrows and Enter pick Heading 2 there, and the menu closes', src(page) == DOC.replace('Second paragraph here.', '\\subsection{Second paragraph here.}') and page.evaluate('document.querySelectorAll("body > .pop").length') == 0
           and page.evaluate('document.getElementById("rb-st-more").getAttribute("aria-expanded")') == 'false', src(page)[60:160])
-    page.keyboard.type('Y'); page.wait_for_timeout(150)
+    page.keyboard.type('Y'); settle(page, 150)
     check('with the caret back in the words', '\\subsection{SecYond paragraph here.}' in src(page), src(page)[60:160])
-    page.click('#rb-st-more'); page.wait_for_timeout(150); page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    page.click('#rb-st-more'); settle(page, 150); page.keyboard.press('Escape'); settle(page, 150)
     check('Escape closes it and gives the focus back to More', page.evaluate('document.querySelectorAll("body > .pop").length') == 0 and page.evaluate('document.activeElement.id') == 'rb-st-more')
     # the title: a seventh style, and the arrows page
     load_doc(page, '\\documentclass{article}\n\\title{A title}\n\\begin{document}\n\\maketitle\nWords.\n\\end{document}\n')
@@ -156,18 +156,18 @@ def gallery(page):
     st = state(page)
     t = page.evaluate(TILES)
     check('in the title the Title tile shows, checked, and only Normal applies there (R2)', t == ['p', 'title*', 'section-', 'subsection-', 'subsubsection-', 'latex-'] and not st['rb-st-down'][0], (t, st['rb-st-down']))
-    page.click('#rb-st-down'); page.wait_for_timeout(100)
+    page.click('#rb-st-down'); settle(page, 100)
     t2 = page.evaluate(TILES)
-    page.click('#rb-st-up'); page.wait_for_timeout(100)
+    page.click('#rb-st-up'); settle(page, 100)
     check('the next arrow pages to the last six (a full page, with Quote), the previous one back', t2 == ['title*', 'section-', 'subsection-', 'subsubsection-', 'latex-', 'quote-'] and page.evaluate(TILES) == t and page.evaluate('getSelection().anchorNode.parentNode.closest(".ttl") !== null'), t2)
     look = page.evaluate('(() => { const b = document.getElementById("rb-st-title"), s = getComputedStyle(b.firstElementChild); return [b.getAttribute("aria-pressed"), b.getAttribute("aria-disabled"), s.opacity, getComputedStyle(b).backgroundColor !== "rgba(0, 0, 0, 0)"]; })()')
     check('the pressed Title tile looks pressed and not faded', look == ['true', None, '1', True], look)
     # a new document: LaTeX and Quote wait for the first character
     for v, want in (('latex', '% rikuy: latex\n\\alpha$x'), ('quote', '\\begin{quote}\nSaid.\n\\end{quote}')):
-        page.click('#b-new'); page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000); page.wait_for_timeout(200)
-        page.click('#rb-st-' + v); page.wait_for_timeout(100)
+        page.click('#b-new'); page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000); settle(page, 200)
+        page.click('#rb-st-' + v); settle(page, 100)
         looks = page.evaluate('[...window.rikuy.ghost.el.classList]')
-        page.keyboard.type('\\alpha$x' if v == 'latex' else 'Said.'); page.wait_for_timeout(250)
+        page.keyboard.type('\\alpha$x' if v == 'latex' else 'Said.'); settle(page, 250)
         check('in a new document %s sets the blank paragraph, and what is typed goes in %s' % (v, 'as LaTeX, \\ and $ as they are' if v == 'latex' else 'a quote'), want in src(page) and (v == 'latex') == ('tex' in looks)
               and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, (src(page)[-80:], looks))
 
@@ -181,8 +181,8 @@ def gallery_widths(page):
     load_doc(page, DOC)
     seen = {}
     for w in (1920, 1840, 1800, 1760, 1700, 1600, 1536, 1440, 1366, 1300, 1280, 1180, 1100, 1024, 1000, 900, 820, 390):
-        page.set_viewport_size({'width': w, 'height': 900}); page.wait_for_timeout(250)
-        click_text(page, 'First paragraph', 2); page.wait_for_timeout(120)
+        page.set_viewport_size({'width': w, 'height': 900}); settle(page, 250)
+        click_text(page, 'First paragraph', 2); settle(page, 120)
         seen[w] = page.evaluate("""() => { const r = document.getElementById('ribbon'), sel = document.getElementById('rb-style');
           const tiles = [...document.querySelectorAll('#rb-gallery [data-style]')].filter((b) => !b.hidden && b.offsetParent).map((b) => b.dataset.style);
           const labs = [...document.querySelectorAll('#rp-home .rb-grp > .btn:not(.icon):not(.rb-gbtn)')].filter((b) => b.offsetParent).map((b) => b.querySelector('span:not(.sr)'));
@@ -210,11 +210,11 @@ def gallery_widths(page):
     l = max(w for w in seen if seen[w]['list'] and w < g)
     check('the row is as tall with the list as with the gallery (no jump where the one gives way to the other, %d and %d px)' % (g, l), g >= 1024 and l >= 1000 and seen[g]['h'] == seen[l]['h'], (g, l, seen[g]['h'], seen[l]['h']))
     check('narrower, the style list takes the gallery\'s place, with every style (LaTeX, Quote and the rest)', all(seen[w]['list'] and not seen[w]['tiles'] and seen[w]['opts'] == ['p', 'title'] + LIST[1:] for w in (900, 820, 390)) and seen[390]['page'] <= 0 and seen[390]['h'] <= 44, {w: seen[w] for w in (820, 390)})
-    page.set_viewport_size({'width': 390, 'height': 800}); page.wait_for_timeout(300)
+    page.set_viewport_size({'width': 390, 'height': 800}); settle(page, 300)
     click_text(page, 'Second paragraph', 3); state(page)
     style(page, 'latex')
     check('on a phone the list makes a LaTeX paragraph too', body(page).count('% rikuy: latex\nSecond paragraph here.') == 1 and boxes(page) == ['Second paragraph here.'], body(page)[:120])
-    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
 
 
 
@@ -227,29 +227,29 @@ def gallery_paging(page):
     # (how many tiles fit at a given width depends on the font; find a width that pages by four)
     width = None
     for w in (1440, 1400, 1366, 1480, 1500, 1520, 1460, 1420, 1380, 1340, 1320, 1300, 1280, 1260, 1240, 1220, 1200):
-        page.set_viewport_size({'width': w, 'height': 900}); page.wait_for_timeout(200)
+        page.set_viewport_size({'width': w, 'height': 900}); settle(page, 200)
         if page.evaluate('document.querySelectorAll("#rb-gallery [data-style]:not([hidden])").length') == 4:
             width = w
             break
     check('a width shows exactly four style tiles', width is not None, width)
-    page.set_viewport_size({'width': width or 1440, 'height': 900}); page.wait_for_timeout(200)
+    page.set_viewport_size({'width': width or 1440, 'height': 900}); settle(page, 200)
     click_text(page, 'Text here', 2); state(page)
     POS = """() => { const r = (id) => { const b = document.getElementById(id).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.width), Math.round(b.height)]; };
       return { up: r('rb-st-up'), down: r('rb-st-down'), more: r('rb-st-more'), bold: r('rb-b'), gal: r('rb-gallery'), tiles: [...document.querySelectorAll('#rb-gallery [data-style]')].filter((b) => !b.hidden).map((b) => b.dataset.style) }; }"""
     a = page.evaluate(POS)
-    page.click('#rb-st-down'); page.wait_for_timeout(120)
+    page.click('#rb-st-down'); settle(page, 120)
     b = page.evaluate(POS)
     check('Next shows the last four styles (a full page, Heading 4 among them once Heading 3 is in use) and the gallery, the arrows and Bold stay where they were', len(a['tiles']) == 4 and b['tiles'] == ['latex', 'subsubsection', 'paragraph', 'quote'] and all(a[k] == b[k] for k in ('up', 'down', 'more', 'bold', 'gal')), (width, a, b))
     check('the arrows and More are 24 px wide or more and as tall as the box', all(a[k][1] >= 24 and a[k][2] >= 24 for k in ('up', 'down', 'more')), a)
-    page.click('#rb-st-up'); page.wait_for_timeout(120)
+    page.click('#rb-st-up'); settle(page, 120)
     # by keyboard: an arrow that reaches its end gives the focus to the other one
-    page.focus('#rb-st-down'); page.keyboard.press('Enter'); page.wait_for_timeout(120)
+    page.focus('#rb-st-down'); page.keyboard.press('Enter'); settle(page, 120)
     f1 = page.evaluate('document.activeElement.id')
-    page.keyboard.press(' '); page.wait_for_timeout(120)
+    page.keyboard.press(' '); settle(page, 120)
     f2 = page.evaluate('document.activeElement.id')
     stops = page.evaluate('[...document.querySelectorAll("#ribbon button, #ribbon select")].filter((x) => x.tabIndex === 0).map((x) => x.id)')
     check('Enter on Next at the last page hands the focus to Previous, Space there back to Next, and the one tab stop follows', f1 == 'rb-st-up' and f2 == 'rb-st-down' and stops == ['rb-st-down'], (f1, f2, stops))
-    page.keyboard.press('Escape'); page.wait_for_timeout(120)
+    page.keyboard.press('Escape'); settle(page, 120)
     check('Escape on a button of the gallery goes back to the caret on the page', page.evaluate('document.activeElement.id') == 'pages')
     # the caret in a Heading 3: its tile comes into view, pressed
     click_text(page, 'Deep', 2); state(page)
@@ -262,10 +262,10 @@ def gallery_paging(page):
     load_doc(page, WRAP('Words with a note\\footnote{n}.')); click_text(page, 'Words', 2); state(page)
     info = page.evaluate('(() => { const b = document.getElementById("rb-st-section"); return [b.getAttribute("aria-disabled"), getComputedStyle(b).pointerEvents, b.title]; })()')
     before = src(page)
-    page.set_viewport_size({'width': 1920, 'height': 900}); page.wait_for_timeout(300); click_text(page, 'Words', 2); state(page)
-    page.click('#rb-st-section', force=True); page.wait_for_timeout(150)
+    page.set_viewport_size({'width': 1920, 'height': 900}); settle(page, 300); click_text(page, 'Words', 2); state(page)
+    page.click('#rb-st-section', force=True); settle(page, 150)
     check('a heading cannot hold a footnote: Heading 1 is marked so, its tooltip says why, and a click on it changes nothing', info[0] == 'true' and info[1] != 'none' and 'footnote' in info[2] and src(page) == before, info)
-    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
 
 
 
@@ -280,19 +280,19 @@ def gallery_keys(page):
     # (Home's Insert open where the row has room for it, its folded button where not)
     ins = page.evaluate("(() => { const g = document.querySelector('#rp-home .rb-grp[data-group=insert]'); return g.classList.contains('folded') ? 'rg-home-insert' : [...g.querySelectorAll('button')].find((b) => b.offsetParent).id; })()")
     check('the arrow keys go along the tiles, past the strip\'s disabled arrows to More, the Styles dialog arrow, and on to Insert (its first button, or its folded one)', seen == ['rb-st-section', 'rb-st-subsection', 'rb-st-subsubsection', 'rb-st-latex', 'rb-st-quote', 'rb-st-more', 'rl-home-styles', ins], (seen, ins))
-    page.focus('#rb-st-latex'); page.keyboard.press('Enter'); page.wait_for_timeout(200)
+    page.focus('#rb-st-latex'); page.keyboard.press('Enter'); settle(page, 200)
     check('Enter on LaTeX makes the caret\'s paragraph a LaTeX paragraph', body(page).count('% rikuy: latex\nThird paragraph here.') == 1 and boxes(page) == ['Third paragraph here.'], body(page))
-    page.focus('#rb-st-quote'); page.keyboard.press(' '); page.wait_for_timeout(200)
+    page.focus('#rb-st-quote'); page.keyboard.press(' '); settle(page, 200)
     check('and Space on Quote a quote of what it holds (one paragraph of text)', '\\begin{quote}\nThird paragraph here.\n\\end{quote}' in src(page) and 'rikuy: latex' not in src(page), body(page))
     page.focus('#rb-st-quote')
     check('the ring shows on the focused tile', page.evaluate('(() => { const c = getComputedStyle(document.activeElement); return c.outlineStyle !== "none" && parseFloat(c.outlineWidth) > 0; })()'))
-    page.keyboard.press('Enter'); page.wait_for_timeout(150)
+    page.keyboard.press('Enter'); settle(page, 150)
     check('Enter on the tile that is already pressed changes nothing and gives the focus back to the page', page.evaluate('document.activeElement.id') == 'pages' and '\\begin{quote}\nThird' in src(page))
-    page.focus('#rb-st-more'); page.keyboard.press('ArrowDown'); page.wait_for_timeout(200)
+    page.focus('#rb-st-more'); page.keyboard.press('ArrowDown'); settle(page, 200)
     opened = page.evaluate('[!!document.querySelector("body > .pop.pop-styles"), document.activeElement.getAttribute("aria-label")]')
-    page.keyboard.press('Home'); page.keyboard.press('ArrowUp'); page.wait_for_timeout(80)
+    page.keyboard.press('Home'); page.keyboard.press('ArrowUp'); settle(page, 80)
     up = page.evaluate('document.activeElement.getAttribute("aria-label")')
-    page.keyboard.press('Escape'); page.wait_for_timeout(120)
+    page.keyboard.press('Escape'); settle(page, 120)
     check('ArrowDown on More opens the menu at the current style; ArrowUp from its first item goes round to its last, Styles pane, not to a Close item', opened == [True, 'Quote'] and up == 'Styles pane…', (opened, up))
 
 
@@ -305,12 +305,12 @@ def quote_style(page):
         style(page, 'quote')
         q = DOC.replace(para, '\\begin{quote}\n' + para + '\n\\end{quote}')
         check('Quote on %s puts a quote environment around it, its words untouched, the tile checked' % text, src(page) == q and page.evaluate(TILES)[-1] == 'quote*', src(page)[60:170])
-        page.keyboard.type('Q'); page.wait_for_timeout(150)
+        page.keyboard.type('Q'); settle(page, 150)
         check('with the caret still in its words', 'SecondQ paragraph' in src(page))
-        page.keyboard.press('Control+z'); page.wait_for_timeout(150)
+        page.keyboard.press('Control+z'); settle(page, 150)
         style(page, 'p')
         check('Normal takes it away, back to the source as it was', src(page) == DOC, src(page)[60:170])
-        page.keyboard.press('Control+z'); page.wait_for_timeout(150)
+        page.keyboard.press('Control+z'); settle(page, 150)
         check('one undo for each', src(page) == q)
         style(page, 'subsection')
         check('Heading 2 on a quote: the environment goes, the heading comes, in one step', src(page) == DOC.replace(para, '\\subsection{' + para + '}'), src(page)[60:170])
@@ -351,18 +351,18 @@ def headings(page):
       if (!h || !p || !g) return null; const hr = h.getBoundingClientRect(), pr = p.getBoundingClientRect(), gr = g.getBoundingClientRect(), t = h.querySelector('span.t').getBoundingClientRect();
       return { runin: h.classList.contains('runin'), hh: Math.round(hr.height), top: Math.round(t.top - pr.top), gapW: Math.round(gr.width), textW: Math.round(t.width), gapHidden: getComputedStyle(g).visibility, role: h.getAttribute('role'), level: h.getAttribute('aria-level'), bold: getComputedStyle(h).fontWeight }; }""")
     check('\\paragraph is drawn as TeX sets it: bold, running into the paragraph after it (blank line between them or not), the paragraph keeping its words\' room at its first line', geo and geo['runin'] and geo['hh'] == 0 and abs(geo['top']) <= 3 and geo['gapW'] >= geo['textW'] and geo['gapHidden'] == 'hidden' and geo['bold'] == '700' and geo['role'] == 'heading', geo)
-    click_text(page, 'Lead words', 3); page.keyboard.type('X'); page.wait_for_timeout(200)
+    click_text(page, 'Lead words', 3); page.keyboard.type('X'); settle(page, 200)
     check('and typing in it goes into its heading', '\\paragraph{LeaXd words}' in src(page), body(page)[-160:])
     # Heading 4 shows in the gallery once Heading 3 is in use (Word's rule); Ctrl+Alt+4
-    page.set_viewport_size({'width': 1920, 'height': 1000}); page.wait_for_timeout(300)
+    page.set_viewport_size({'width': 1920, 'height': 1000}); settle(page, 300)
     click_text(page, 'One.', 1); state(page)
     t = page.evaluate(TILES)
     check('with a Heading 3 in the document the gallery has Heading 4 after it', 'paragraph' in t and t.index('paragraph') == t.index('subsubsection') + 1, t)
     load_doc(page, A(P3)); click_text(page, 'Words', 2); state(page)
     check('and without one it has not', 'paragraph' not in page.evaluate(TILES), page.evaluate(TILES))
-    page.keyboard.press('Control+Alt+4'); page.wait_for_timeout(200)
+    page.keyboard.press('Control+Alt+4'); settle(page, 200)
     check('Ctrl+Alt+4 makes the paragraph Heading 4', '\\paragraph{Words here.}' in src(page), body(page))
-    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
     # a report: Heading 1 is \chapter, and Part shows Part I above its title
     load_doc(page, R('\\part{First}\n\\chapter{Intro}\nText.'))
     look = page.evaluate("""() => [...document.querySelectorAll('#pages .it.h')].map((h) => h.textContent)""")
@@ -417,14 +417,14 @@ def environments(page):
     load_doc(page, A(P3.replace('Words here.', '\\begin{claim}\nWords here.\n\\end{claim}'), '\\newtheorem{claim}{Claim}\n')); click_text(page, 'Words', 2); state(page)
     check('the document\'s own \\newtheorem{claim} is a style it shows', page.evaluate('window.rikuy.rbStyle.v') == 'env:claim' and page.evaluate('document.getElementById("rb-style").value') == 'env:claim')
     page.select_option('#rb-style', 'p') if page.is_visible('#rb-style') else run_cmd(page, 'style-normal')
-    page.wait_for_timeout(150)
+    settle(page, 150)
     check('and Normal takes it off byte for byte', src(page) == A(P3, '\\newtheorem{claim}{Claim}\n'), body(page))
     # a blank paragraph set to Quotation: the environment comes with the first character
-    page.click('#b-new'); page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000); page.wait_for_timeout(200)
-    run_cmd(page, 'style-quotation'); page.keyboard.type('Said.'); page.wait_for_timeout(250)
+    page.click('#b-new'); page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000); settle(page, 200)
+    run_cmd(page, 'style-quotation'); page.keyboard.type('Said.'); settle(page, 250)
     check('in a new document Quotation sets the blank paragraph, and what is typed goes in a quotation', '\\begin{quotation}\nSaid.\n\\end{quotation}' in src(page), src(page)[-120:])
-    page.click('#b-new'); page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000); page.wait_for_timeout(200)
-    run_cmd(page, 'style-thm-theorem'); page.keyboard.type('Stated.'); page.wait_for_timeout(250)
+    page.click('#b-new'); page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000); settle(page, 200)
+    run_cmd(page, 'style-thm-theorem'); page.keyboard.type('Stated.'); settle(page, 250)
     check('and Theorem writes the environment with its \\newtheorem at once, the caret inside', '\\begin{theorem}\nStated.\n\\end{theorem}' in src(page) and '\\newtheorem{theorem}{Theorem}' in src(page), src(page)[-160:])
 
 
@@ -441,29 +441,29 @@ def many(page):
 def autoformat(page):
     """"# " at a paragraph's start: a heading, as a step of its own."""
     load_doc(page, A(P3)); click_text(page, 'Words', 0)
-    page.keyboard.type('## '); page.wait_for_timeout(300)
+    page.keyboard.type('## '); settle(page, 300)
     check('"## " typed at a paragraph\'s start makes it Heading 2', body(page) == P3.replace('Words here.', '\\subsection{Words here.}'), body(page))
-    page.keyboard.type('X'); page.wait_for_timeout(150)
+    page.keyboard.type('X'); settle(page, 150)
     check('with the caret where it was in the words', '\\subsection{XWords here.}' in src(page), body(page))
-    page.keyboard.press('Control+z'); page.wait_for_timeout(150); page.keyboard.press('Control+z'); page.wait_for_timeout(150)
+    page.keyboard.press('Control+z'); settle(page, 150); page.keyboard.press('Control+z'); settle(page, 150)
     check('undo gives back "## " as typed (\\#\\# and the space)', body(page) == P3.replace('Words here.', '\\#\\# Words here.'), body(page))
     run_cmd(page, 'autoformat-headings')
-    load_doc(page, A(P3)); click_text(page, 'Words', 0); page.keyboard.type('# '); page.wait_for_timeout(300)
+    load_doc(page, A(P3)); click_text(page, 'Words', 0); page.keyboard.type('# '); settle(page, 300)
     check('with AutoFormat headings off "# " stays text', body(page) == P3.replace('Words here.', '\\# Words here.'), body(page))
     run_cmd(page, 'autoformat-headings')
-    load_doc(page, A(P3)); click_text(page, 'Words', 3); page.keyboard.type('# '); page.wait_for_timeout(300)
+    load_doc(page, A(P3)); click_text(page, 'Words', 3); page.keyboard.type('# '); settle(page, 300)
     check('and "# " inside a paragraph is text', '\\section' not in src(page), body(page))
 
 
 def keys_and_boxes(page):
     """Apply Styles (Ctrl+Shift+S), the Styles pane (Ctrl+Alt+Shift+S)."""
     load_doc(page, A(P3)); click_text(page, 'Words', 2)
-    page.keyboard.press('Control+Shift+S'); page.wait_for_timeout(250)
+    page.keyboard.press('Control+Shift+S'); settle(page, 250)
     d = page.get_by_role('dialog', name='Apply Styles')
     check('Ctrl+Shift+S opens Apply Styles with the caret\'s style in its box', d.count() == 1 and page.evaluate('document.activeElement.id') == 'apply-style-name' and page.evaluate('document.activeElement.value') == 'Normal')
-    page.keyboard.press('Control+a'); page.keyboard.type('Heading 2'); page.keyboard.press('Enter'); page.wait_for_timeout(250)
+    page.keyboard.press('Control+a'); page.keyboard.type('Heading 2'); page.keyboard.press('Enter'); settle(page, 250)
     check('a name typed and Enter applies it, the dialog closes, the caret back in the words', body(page) == P3.replace('Words here.', '\\subsection{Words here.}') and d.count() == 0 and page.evaluate('document.activeElement.id') == 'pages', body(page))
-    page.keyboard.press('Control+Alt+Shift+S'); page.wait_for_timeout(300)
+    page.keyboard.press('Control+Alt+Shift+S'); settle(page, 300)
     pane = page.get_by_role('complementary', name='Styles pane')
     info = page.evaluate("""() => { const p = document.getElementById('stylespane'); const o = [...p.querySelectorAll('[role=option]')];
       return { n: o.length, cur: (o.find((x) => x.getAttribute('aria-selected') === 'true') || {}).ariaLabel || null, names: o.slice(0, 4).map((x) => x.getAttribute('aria-label')), dis: o.filter((x) => x.getAttribute('aria-disabled') === 'true').map((x) => x.getAttribute('aria-label')).slice(0, 3) }; }""")
@@ -471,23 +471,23 @@ def keys_and_boxes(page):
           and page.evaluate('document.activeElement.id') == 'pages', info)
     # (Tab stays on the page, as Word's, where in a heading it leaves a gap: the list is reached by
     # its focus, as F6 or a click reaches it)
-    page.focus('#stylespane [role=option][tabindex="0"]'); page.keyboard.press('ArrowDown'); page.wait_for_timeout(100)
+    page.focus('#stylespane [role=option][tabindex="0"]'); page.keyboard.press('ArrowDown'); settle(page, 100)
     kb = page.evaluate('[document.activeElement.getAttribute("aria-label"), (document.querySelector("#stylespane [aria-selected=true]") || {}).ariaLabel, [...document.querySelectorAll("#stylespane [role=option][aria-disabled=true]")].length]')
     check('from the keyboard its list keeps the caret\'s style marked, the arrows move along it', kb[0] == 'Heading 3' and kb[1] == 'Heading 2' and kb[2] < 5, kb)
-    page.keyboard.press('Enter'); page.wait_for_timeout(250)
+    page.keyboard.press('Enter'); settle(page, 250)
     check('and Enter there gives the caret\'s paragraph that style', '\\subsubsection{Words here.}' in src(page), body(page))
-    page.keyboard.press('Control+z'); page.wait_for_timeout(200)
-    page.click('#pages'); click_text(page, 'After it', 2); page.wait_for_timeout(200)
+    page.keyboard.press('Control+z'); settle(page, 200)
+    page.click('#pages'); click_text(page, 'After it', 2); settle(page, 200)
     check('it stays open as the caret moves, and follows it', pane.count() == 1 and page.evaluate("""(document.querySelector('#stylespane [aria-selected=true]') || {}).ariaLabel""") == 'Normal')
-    page.locator('#stylespane [role=option][aria-label="Quote"]').click(); page.wait_for_timeout(250)
+    page.locator('#stylespane [role=option][aria-label="Quote"]').click(); settle(page, 250)
     check('a click on a style there applies it, the caret staying on the page', '\\begin{quote}\nAfter it.\n\\end{quote}' in src(page) and page.evaluate('document.activeElement.id') == 'pages', body(page))
-    page.get_by_role('button', name='Heading 2 options').click(); page.wait_for_timeout(200)
+    page.get_by_role('button', name='Heading 2 options').click(); settle(page, 200)
     m = page.get_by_role('menu', name='Heading 2 style')
     check('a style\'s options: Update to Match Selection, Modify, Select All Instances, Remove from Style Gallery', m.count() == 1 and [x.get_attribute('aria-label') for x in m.get_by_role('menuitem').all()][:4] == ['Update Heading 2 to Match Selection', 'Modify…', 'Select All Instances', 'Remove from Style Gallery'],
           [x.get_attribute('aria-label') for x in m.get_by_role('menuitem').all()])
-    m.get_by_role('menuitem', name='Select All Instances').click(); page.wait_for_timeout(200)
+    m.get_by_role('menuitem', name='Select All Instances').click(); settle(page, 200)
     check('Select All Instances selects the one Heading 2 and says how many', page.evaluate('getSelection().toString().includes("Words here.")'))
-    page.focus('#stylespane [role=option]'); page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    page.focus('#stylespane [role=option]'); page.keyboard.press('Escape'); settle(page, 150)
     check('Escape closes the pane', pane.count() == 0)
 
 
@@ -499,23 +499,23 @@ def modify(page):
     d = page.get_by_role('dialog', name='Modify Style')
     check('Modify Style opens on the caret\'s heading, its look in the fields', d.count() == 1 and page.evaluate('document.getElementById("ms-size").value') == 'Large' and page.evaluate('document.getElementById("ms-bold").checked'))
     page.select_option('#ms-family', 'sf'); page.select_option('#ms-align', 'center'); page.select_option('#ms-color', 'blue'); page.check('#ms-rule')
-    d.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    d.get_by_role('button', name='OK').click(); settle(page, 300)
     want = doc.replace('\\begin{document}', '\\usepackage{titlesec}\n\\usepackage{xcolor}\n\\titleformat{\\section}[hang]{\\normalfont\\Large\\bfseries\\sffamily\\color{blue}\\filcenter}{\\thesection}{1em}{}[\\titlerule]\n\\begin{document}')
     check('OK writes titlesec, xcolor and one \\titleformat line, in one step', src(page) == want, src(page)[:400])
     look = page.evaluate("""() => [...document.querySelectorAll('#pages .it.h1')].map((h) => { const c = getComputedStyle(h); return [c.textAlign, c.fontFamily.startsWith('"Paper Modern Sans'), c.color, c.borderBottomStyle]; })""")
     ink = page.evaluate('getComputedStyle(document.querySelector("#pages .it.p")).color')
     check('the page draws both sections so at once: centred, sans serif, in blue, a rule under them', len(look) == 2 and all(x[0] == 'center' and x[1] and x[2] != ink and x[2] == look[0][2] and x[3] == 'solid' for x in look), (look, ink))
     check('one undo gives the bytes back', undo_is(page, doc))
-    load_doc(page, want); click_text(page, 'Intro', 2); run_cmd(page, 'modify-style'); page.wait_for_timeout(200)
+    load_doc(page, want); click_text(page, 'Intro', 2); run_cmd(page, 'modify-style'); settle(page, 200)
     check('read back: the fields show the look the line gives', page.evaluate('[document.getElementById("ms-family").value, document.getElementById("ms-align").value, document.getElementById("ms-color").value, document.getElementById("ms-rule").checked]') == ['sf', 'center', 'blue', True])
-    page.get_by_role('dialog', name='Modify Style').get_by_role('button', name="LaTeX's own").click(); page.wait_for_timeout(250)
+    page.get_by_role('dialog', name='Modify Style').get_by_role('button', name="LaTeX's own").click(); settle(page, 250)
     check('LaTeX\'s own takes the line away, and the titlesec line it needed (review H1); xcolor, which other text may use, stays', src(page) == doc.replace('\\begin{document}', '\\usepackage{xcolor}\n\\begin{document}'), src(page)[:300])
     # spacing and run in for a deeper level; a hand written \titleformat* is read and replaced in place
     hand = doc.replace('\\begin{document}', '\\usepackage{titlesec}\n\\titleformat*{\\section}{\\Large\\itshape}\n\\begin{document}')
     load_doc(page, hand); click_text(page, 'Intro', 2)
     st = page.evaluate("""() => { const c = getComputedStyle(document.querySelector('#pages .it.h1')); return [c.fontStyle, c.fontWeight]; }""")
     check('a hand written \\titleformat* shows on the page as TeX sets it (italic, not bold: the format replaces the class\'s)', st == ['italic', '400'], st)
-    run_cmd(page, 'modify-style'); page.check('#ms-bold'); page.get_by_role('dialog', name='Modify Style').get_by_role('button', name='OK').click(); page.wait_for_timeout(250)
+    run_cmd(page, 'modify-style'); page.check('#ms-bold'); page.get_by_role('dialog', name='Modify Style').get_by_role('button', name='OK').click(); settle(page, 250)
     check('Modify replaces that line where it stands', src(page) == doc.replace('\\begin{document}', '\\usepackage{titlesec}\n\\titleformat*{\\section}{\\normalfont\\Large\\bfseries\\itshape}\n\\begin{document}'), src(page)[:300])
     # KOMA-Script and memoir: not by titlesec
     load_doc(page, doc.replace('{article}', '{scrartcl}')); click_text(page, 'Intro', 2)
@@ -529,25 +529,25 @@ def create_and_update(page):
     create_style(page)
     d = page.get_by_role('dialog', name='Create a Style')
     page.fill('#cs-name', 'keyterm'); page.check('#ms-bold'); page.select_option('#ms-color', 'red')
-    d.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    d.get_by_role('button', name='OK').click(); settle(page, 300)
     want = A('Some \\keyterm{key words} here.\n\nA note to keep.', '\\usepackage{xcolor}\n\\newcommand{\\keyterm}[1]{\\textcolor{red}{\\textbf{#1}}}\n')
     check('a character style: its \\newcommand once in the preamble and \\keyterm{…} around the selection, one step', src(page) == want, src(page)[:300])
     look = page.evaluate("""() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('key words')); const c = getComputedStyle(s); return [c.fontWeight, c.color]; }""")
     check('the page shows it bold and red', look[0] == '700' and look[1] != page.evaluate('getComputedStyle(document.querySelector("#pages .it.p")).color'), look)
     check('one undo gives the bytes back', undo_is(page, doc))
-    load_doc(page, want); click_text(page, 'key words', 2); page.wait_for_timeout(200)
+    load_doc(page, want); click_text(page, 'key words', 2); settle(page, 200)
     run_cmd(page, 'styles-pane')
     check('the pane lists it under Character styles, marked where the caret is', page.evaluate("""(document.querySelector('#stylespane [aria-label=keyterm]') || {}).ariaSelected""") == 'true')
-    page.locator('#stylespane [aria-label=keyterm]').click(); page.wait_for_timeout(250)
+    page.locator('#stylespane [aria-label=keyterm]').click(); settle(page, 250)
     check('a click on it there takes it off the words exactly', src(page) == want.replace('\\keyterm{key words}', 'key words'), body(page))
     run_cmd(page, 'styles-pane')
     # a paragraph style
     load_doc(page, doc); click_text(page, 'note', 1)
     create_style(page); d = page.get_by_role('dialog', name='Create a Style')
-    page.fill('#cs-name', 'remark'); page.select_option('#cs-type', 'para'); page.wait_for_timeout(100)
+    page.fill('#cs-name', 'remark'); page.select_option('#cs-type', 'para'); settle(page, 100)
     check('a name LaTeX has (remark is no environment, but \\remark...)', True)
     page.fill('#cs-name', 'aside'); page.check('#ms-italic'); page.select_option('#ms-align', 'center')
-    d.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    d.get_by_role('button', name='OK').click(); settle(page, 300)
     want2 = A('Some key words here.\n\n\\begin{aside}\nA note to keep.\n\\end{aside}', '\\newenvironment{aside}{\\par\\itshape\\centering}{\\par}\n')
     check('a paragraph style: \\newenvironment once and the paragraph in it', src(page) == want2, src(page)[:300])
     look = page.evaluate("""() => { const s = [...document.querySelectorAll('#pages .it.p')].find((x) => x.textContent.includes('note')); const c = getComputedStyle(s); return [c.fontStyle, c.textAlign]; }""")
@@ -556,9 +556,9 @@ def create_and_update(page):
     check('and the style list shows it as the paragraph\'s style', page.evaluate('document.getElementById("rb-style").value') == 'env:aside')
     taken = A('Some key words here.\n\nA note to keep.', '\\newcommand{\\keyterm}[1]{#1}\n')
     load_doc(page, taken); click_text(page, 'key', 1)
-    create_style(page); page.fill('#cs-name', 'keyterm'); page.wait_for_timeout(100)
+    create_style(page); page.fill('#cs-name', 'keyterm'); settle(page, 100)
     check('a name the document has is refused, saying so', page.get_by_role('dialog', name='Create a Style').get_by_role('button', name='OK').is_disabled() and 'taken' in page.evaluate('document.querySelector(".ms-note").textContent'))
-    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    page.keyboard.press('Escape'); settle(page, 100)
     # Update to Match Selection: a heading's own formatting becomes its level's look
     doc3 = A('\\section{\\textsf{\\textcolor{teal}{Intro}}}\nText.\n\n\\section{Other}\nMore.')
     load_doc(page, doc3); click_text(page, 'Intro', 2)
@@ -575,14 +575,14 @@ def design(page):
     """The Design tab: Style Set, Colors, Fonts, Themes; KOMA-Script; memoir."""
     doc = A('\\section{Intro}\nText.\n\n\\subsection{Part}\nMore.')
     load_doc(page, doc); click_text(page, 'Text', 1)
-    page.get_by_role('tab', name='Design').click(); page.wait_for_timeout(200)
+    page.get_by_role('tab', name='Design').click(); settle(page, 200)
     names = page.evaluate("""() => [...document.querySelectorAll('.rb-panel:not([hidden]) [data-cmd]')].filter((b) => b.offsetParent).map((b) => b.getAttribute('aria-label'))""")
     check('the Design tab has Themes, Style Set, Colors and Fonts in its Document formatting group', all(n in names for n in ('Themes', 'Style Set', 'Colors', 'Fonts')), names)
-    page.get_by_role('button', name='Style Set').click(); page.wait_for_timeout(250)
+    page.get_by_role('button', name='Style Set').click(); settle(page, 250)
     m = page.get_by_role('menu', name='Style Set')
     tiles = [x.get_attribute('aria-label') for x in m.get_by_role('menuitemradio').all()]
     check('Style Set opens a gallery of sets, LaTeX checked', tiles[:3] == ['LaTeX', 'Sans', 'Centered'] and m.get_by_role('menuitemradio', name='LaTeX').get_attribute('aria-checked') == 'true', tiles)
-    m.get_by_role('menuitemradio', name='Lines').click(); page.wait_for_timeout(300)
+    m.get_by_role('menuitemradio', name='Lines').click(); settle(page, 300)
     want = doc.replace('\\begin{document}', '\\usepackage{titlesec}\n\\titleformat{\\section}[hang]{\\normalfont\\Large\\bfseries}{\\thesection}{1em}{}[\\titlerule]\n\\begin{document}')
     check('Lines: a rule under the sections, titlesec once, one step', src(page) == want, src(page)[:300])
     check('the page draws the rule', page.evaluate('getComputedStyle(document.querySelector("#pages .it.h1")).borderBottomStyle') == 'solid')
@@ -623,25 +623,25 @@ def design(page):
 
 def tile_menu(page):
     """A tile's right click menu: Remove from Style Gallery, Reset."""
-    page.set_viewport_size({'width': 1920, 'height': 1000}); page.wait_for_timeout(300)
+    page.set_viewport_size({'width': 1920, 'height': 1000}); settle(page, 300)
     load_doc(page, DOC); click_text(page, 'First paragraph', 3); state(page)
-    page.click('#rb-st-subsection', button='right'); page.wait_for_timeout(200)
+    page.click('#rb-st-subsection', button='right'); settle(page, 200)
     m = page.get_by_role('menu', name='Heading 2 style')
     items = [x.get_attribute('aria-label') for x in m.get_by_role('menuitem').all()]
     check('a right click on a tile opens its menu, not the browser\'s', m.count() == 1 and 'Remove from Style Gallery' in items and 'Modify…' in items, items)
-    m.get_by_role('menuitem', name='Remove from Style Gallery').click(); page.wait_for_timeout(250)
+    m.get_by_role('menuitem', name='Remove from Style Gallery').click(); settle(page, 250)
     check('Remove from Style Gallery takes the tile out', 'subsection' not in page.evaluate(TILES), page.evaluate(TILES))
-    page.click('#rb-st-section', button='right'); page.wait_for_timeout(200)
-    page.get_by_role('menu', name='Heading 1 style').get_by_role('menuitem', name='Reset Style Gallery').click(); page.wait_for_timeout(250)
+    page.click('#rb-st-section', button='right'); settle(page, 200)
+    page.get_by_role('menu', name='Heading 1 style').get_by_role('menuitem', name='Reset Style Gallery').click(); settle(page, 250)
     check('Reset Style Gallery puts it back', 'subsection' in page.evaluate(TILES), page.evaluate(TILES))
-    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
 
 
 def big(page):
     """A stranger's long document: the ribbon's look at the caret and a tile's menu stay quick."""
     pre = ''.join('\\newcommand{\\m%s}{x} %% %s\n' % (chr(97 + k % 26) * (1 + k // 26), 'y' * 60) for k in range(1500))
     body = '\n\n'.join('\\subsection{Head %d}\nWords of paragraph %d here.' % (k, k) for k in range(1500))
-    load_doc(page, A(body, pre)); click_text(page, 'Words of paragraph 3 ', 2); page.wait_for_timeout(300)
+    load_doc(page, A(body, pre)); click_text(page, 'Words of paragraph 3 ', 2); settle(page, 300)
     # (the styles' own share of a look at the caret: their commands' when, on and sync; the other
     # batches' commands are theirs to time)
     t = page.evaluate("""() => { const g = window.rikuy, C = g.cmds, at = g.ribbonAt(), mine = /^(style|styles|heading-unnumbered|heading-numbers|design-|apply-styles|modify-style|create-style|update-style|autoformat)/;
@@ -649,13 +649,13 @@ def big(page):
       for (let k = 0; k < 20; k++) { at.memo = {}; for (const c of cs) { C.enabled(g, c, at); if (c.on) c.on(g, at); if (c.sync) c.sync(g, at); } }
       return Math.round((performance.now() - t0) / 20); }""")
     check('with a preamble of %d characters and 3000 paragraphs the styles\' commands look at the caret in %d ms (under 30)' % (len(pre), t), t < 30, t)
-    page.set_viewport_size({'width': 1920, 'height': 1000}); page.wait_for_timeout(300)
+    page.set_viewport_size({'width': 1920, 'height': 1000}); settle(page, 300)
     t0 = page.evaluate('performance.now()')
-    page.click('#rb-st-subsection', button='right'); page.wait_for_timeout(50)
+    page.click('#rb-st-subsection', button='right'); settle(page, 50)
     t1 = page.evaluate('performance.now()')
     check('and a tile\'s menu opens in %d ms (under 600)' % (t1 - t0), page.get_by_role('menu', name='Heading 2 style').count() == 1 and t1 - t0 < 600, t1 - t0)
     page.keyboard.press('Escape')
-    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
 
 
 def open_phone(p, width, height, dark=False):
@@ -692,7 +692,7 @@ def open_phone(p, width, height, dark=False):
     page.evaluate('localStorage.clear()')
     page.reload()
     page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
-    page.wait_for_timeout(300)
+    settle(page, 300)
     return browser, page, errors
 
 
@@ -700,7 +700,7 @@ def tap_text(page, text, k=0):
     """A tap in the words, k characters in (where click_text would click)."""
     box = page.evaluate("""([t, k]) => { const sp = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(t)); if (!sp) return null;
       sp.scrollIntoView({ block: 'center' }); const i = sp.textContent.indexOf(t) + k, r = document.createRange(); r.setStart(sp.firstChild, i); r.setEnd(sp.firstChild, i + 1); const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }""", [text, k])
-    page.touchscreen.tap(box[0], box[1]); page.wait_for_timeout(250)
+    page.touchscreen.tap(box[0], box[1]); settle(page, 250)
 
 
 FITS = """(sel) => { const e = document.querySelector(sel); if (!e) return null; const r = e.getBoundingClientRect();
@@ -720,11 +720,11 @@ def phone(p):
             info = page.evaluate("""() => { const sel = document.getElementById('rb-style'), g = sel.querySelector('optgroup');
               return { list: !!sel.offsetParent, more: g ? [...g.children].map((o) => o.textContent) : null, side: document.documentElement.scrollWidth - document.documentElement.clientWidth }; }""")
             check('a phone shows the style list, which ends with the Styles pane and Create a Style, and the page does not scroll sideways' + tag, info['list'] and info['more'] == ['Styles pane…', 'Create a Style…'] and info['side'] <= 0, info)
-            page.select_option('#rb-style', 'subsection'); page.wait_for_timeout(300)
+            page.select_option('#rb-style', 'subsection'); settle(page, 300)
             check('the list makes the tapped paragraph Heading 2, and the caret stays in its words' + tag, '\\subsection{First words here.}' in src(page) and page.evaluate('document.activeElement.id') == 'pages', src(page)[-120:])
-            page.keyboard.type('X'); page.wait_for_timeout(200)
+            page.keyboard.type('X'); settle(page, 200)
             check('typing goes on where it was' + tag, '\\subsection{FiXrst words here.}' in src(page) or '\\subsection{FirXst words here.}' in src(page), src(page)[-120:])
-            page.select_option('#rb-style', '__pane'); page.wait_for_timeout(350)
+            page.select_option('#rb-style', '__pane'); settle(page, 350)
             check('the list\'s Styles pane opens it with the tapped paragraph\'s style marked, the caret kept on the page' + tag, page.evaluate('(document.querySelector("#stylespane [aria-selected=true]") || {}).ariaLabel') == 'Heading 2'
                   and page.evaluate('document.activeElement.id') == 'pages')
             sheet = page.evaluate(FITS, '#stylespane')
@@ -733,47 +733,47 @@ def phone(p):
             check('the Styles pane opens as a sheet inside the screen, every target 44 px or more, each style\'s options in sight' + tag, sheet and sheet['inside'] and not small and vis == '1', (sheet, small[:4], vis))
             page.locator('#stylespane [role=option][aria-label="Quote"]').scroll_into_view_if_needed()
             tap_text(page, 'Second words', 2)
-            page.locator('#stylespane [role=option][aria-label="Quote"]').tap(); page.wait_for_timeout(300)
+            page.locator('#stylespane [role=option][aria-label="Quote"]').tap(); settle(page, 300)
             check('a tap on Quote there makes the tapped paragraph a quote' + tag, '\\begin{quote}\nSecond words here.\n\\end{quote}' in src(page), src(page)[-140:])
             tap_text(page, 'Intro', 2)
-            page.get_by_role('button', name='Heading 1 options').tap(); page.wait_for_timeout(300)
+            page.get_by_role('button', name='Heading 1 options').tap(); settle(page, 300)
             m = page.get_by_role('menu', name='Heading 1 style')
             names = [x.get_attribute('aria-label') for x in m.locator('[role^=menuitem]').all()]
             check('a heading\'s options by a tap: Update to Match, Modify, Unnumbered heading, Select All Instances (what a right click gives elsewhere)' + tag, all(n in names for n in ('Modify…', 'Unnumbered heading', 'Select All Instances')), names)
-            m.get_by_role('menuitemcheckbox', name='Unnumbered heading').tap(); page.wait_for_timeout(300)
+            m.get_by_role('menuitemcheckbox', name='Unnumbered heading').tap(); settle(page, 300)
             check('Unnumbered heading by a tap: \\section*' + tag, '\\section*{Intro}' in src(page), src(page)[-160:])
-            page.get_by_role('button', name='Heading 1 options').tap(); page.wait_for_timeout(300)
-            page.get_by_role('menu', name='Heading 1 style').get_by_role('menuitem', name='Modify…').tap(); page.wait_for_timeout(350)
+            page.get_by_role('button', name='Heading 1 options').tap(); settle(page, 300)
+            page.get_by_role('menu', name='Heading 1 style').get_by_role('menuitem', name='Modify…').tap(); settle(page, 350)
             dlg = page.evaluate(FITS, '.pop-modstyle')
             small = page.evaluate(SMALL, '.pop-modstyle select, .pop-modstyle .ms-c, .pop-modstyle .fd-btns .btn')
             check('Modify Style fits the screen and scrolls, its fields and buttons 44 px or more' + tag, dlg and dlg['inside'] and dlg['scrolls'] and not small, (dlg, small[:4]))
             page.select_option('#ms-family', 'sf')
-            page.locator('.pop-modstyle').get_by_role('button', name='OK').tap(); page.wait_for_timeout(350)
+            page.locator('.pop-modstyle').get_by_role('button', name='OK').tap(); settle(page, 350)
             check('OK by a tap writes the heading\'s look' + tag, '\\titleformat*{\\section}{\\normalfont\\Large\\bfseries\\sffamily}' in src(page) and page.evaluate('document.querySelectorAll(".pop").length') == 0, src(page)[:260])
-            page.get_by_role('button', name='Close').first.tap(); page.wait_for_timeout(250)
+            page.get_by_role('button', name='Close').first.tap(); settle(page, 250)
             check('the pane closes by a tap' + tag, page.evaluate('!document.getElementById("stylespane")'))
-            tap_text(page, 'Second words', 2); page.select_option('#rb-style', '__new'); page.wait_for_timeout(350)
+            tap_text(page, 'Second words', 2); page.select_option('#rb-style', '__new'); settle(page, 350)
             cd = page.evaluate(FITS, '.pop-modstyle')
             check('the list\'s Create a Style opens its dialog inside the screen, the list back at the paragraph\'s style' + tag, cd and cd['inside'] and page.get_by_role('dialog', name='Create a Style').count() == 1 and page.evaluate('document.getElementById("rb-style").value') != '__new', cd)
-            page.get_by_role('dialog', name='Create a Style').get_by_role('button', name='Cancel').tap(); page.wait_for_timeout(250)
+            page.get_by_role('dialog', name='Create a Style').get_by_role('button', name='Cancel').tap(); settle(page, 250)
             # the Design tab, by the tab list a phone has
-            page.select_option('#rb-tabsel', 'design'); page.wait_for_timeout(300)
-            page.get_by_role('button', name='Style Set').tap(); page.wait_for_timeout(300)
+            page.select_option('#rb-tabsel', 'design'); settle(page, 300)
+            page.get_by_role('button', name='Style Set').tap(); settle(page, 300)
             g = page.evaluate(FITS, '.pop-design')
             check('on the Design tab Style Set opens its gallery inside the screen' + tag, g and g['inside'], g)
-            page.get_by_role('menu', name='Style Set').get_by_role('menuitemradio', name='Lines').tap(); page.wait_for_timeout(350)
+            page.get_by_role('menu', name='Style Set').get_by_role('menuitemradio', name='Lines').tap(); settle(page, 350)
             check('and a tap on Lines writes it, the page not scrolling sideways' + tag, '[\\titlerule]' in src(page) and page.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth') <= 0, src(page)[:300])
             if w == 390:
                 for dark in (False, True):
-                    page.emulate_media(color_scheme='dark' if dark else 'light'); page.wait_for_timeout(200)
-                    page.select_option('#rb-tabsel', 'home'); page.wait_for_timeout(200)
-                    tap_text(page, 'Intro', 2); page.select_option('#rb-style', '__pane'); page.wait_for_timeout(300)
+                    page.emulate_media(color_scheme='dark' if dark else 'light'); settle(page, 200)
+                    page.select_option('#rb-tabsel', 'home'); settle(page, 200)
+                    tap_text(page, 'Intro', 2); page.select_option('#rb-style', '__pane'); settle(page, 300)
                     page.screenshot(path='/tmp/B4-shots/phone-pane-390%s.png' % ('-dark' if dark else ''))
-                    page.get_by_role('button', name='Heading 1 options').tap(); page.wait_for_timeout(250)
-                    page.get_by_role('menu', name='Heading 1 style').get_by_role('menuitem', name='Modify…').tap(); page.wait_for_timeout(300)
+                    page.get_by_role('button', name='Heading 1 options').tap(); settle(page, 250)
+                    page.get_by_role('menu', name='Heading 1 style').get_by_role('menuitem', name='Modify…').tap(); settle(page, 300)
                     page.screenshot(path='/tmp/B4-shots/phone-modify-390%s.png' % ('-dark' if dark else ''))
-                    page.keyboard.press('Escape'); page.wait_for_timeout(150)
-                    page.get_by_role('button', name='Close').first.tap(); page.wait_for_timeout(200)
+                    page.keyboard.press('Escape'); settle(page, 150)
+                    page.get_by_role('button', name='Close').first.tap(); settle(page, 200)
         except Exception as e:
             check('phone%s runs to its end' % tag, False, e)
         check('no console errors (phone%s)' % tag, not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
@@ -799,9 +799,9 @@ def pdf_text(page, text):
 
 def modify_style(page, v, do, ok=True):
     """Modify Style on style v: do(page) changes the dialog's fields, then OK."""
-    run_cmd(page, 'modify-style', {'v': v}); page.wait_for_timeout(250)
+    run_cmd(page, 'modify-style', {'v': v}); settle(page, 250)
     do(page)
-    if ok: page.locator('.pop-modstyle').get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    if ok: page.locator('.pop-modstyle').get_by_role('button', name='OK').click(); settle(page, 300)
 
 
 def review(page):
@@ -809,7 +809,7 @@ def review(page):
     H = A('\\section{Intro}\nText.\n\n\\subsection{Sub}\nMore.\n\n\\paragraph{Lead} Runs in.')
     # H1: titlesec only for article, report, book and the ext classes; refused elsewhere, nothing written
     for cls in ('amsart', 'llncs', 'elsarticle', 'revtex4-2', 'IEEEtran', 'scrartcl', 'memoir'):
-        load_doc(page, H.replace('{article}', '{' + cls + '}')); click_text(page, 'Intro', 2); page.wait_for_timeout(200)
+        load_doc(page, H.replace('{article}', '{' + cls + '}')); click_text(page, 'Intro', 2); settle(page, 200)
         en = page.evaluate('["modify-style", "design-style-set", "design-colors", "design-themes", "update-style"].map((id) => window.rikuy.cmds.enabled(window.rikuy, id, window.rikuy.ribbonAt()))')
         why = page.evaluate('window.rikuy.titlesecWhy() || ""')
         before = src(page)
@@ -864,12 +864,12 @@ def review(page):
     for kind, names in (('char', ('emph', 'quote', 'small', 'title', 'line', 'mark', 'url', 'underline', 'footnote', 'aside')), ('para', ('small', 'box', 'title', 'flushleft', 'frame', 'tabular'))):
         page.select_option('#cs-type', kind)
         for n in names:
-            page.fill('#cs-name', n); page.wait_for_timeout(30)
+            page.fill('#cs-name', n); settle(page, 30)
             if not page.locator('.pop-modstyle').get_by_role('button', name='OK').is_disabled(): refused.append((kind, n))
     check('H5: every name LaTeX, TeX or the document has is refused', not refused, refused)
-    page.fill('#cs-name', 'keyterm'); page.wait_for_timeout(30)
+    page.fill('#cs-name', 'keyterm'); settle(page, 30)
     check('and a new name is taken', not page.locator('.pop-modstyle').get_by_role('button', name='OK').is_disabled())
-    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    page.keyboard.press('Escape'); settle(page, 100)
     # H6: the author's \setcounter{secnumdepth}{2}: off and on give it back
     six = A('\\section{A}\nx', '\\setcounter{secnumdepth}{2}\n')
     load_doc(page, six); click_text(page, 'x', 0); run_cmd(page, 'heading-numbers-off'); run_cmd(page, 'heading-numbers-off')
@@ -900,11 +900,11 @@ def review(page):
     check('M3: a \\paragraph the preamble sets on its own line is not run in', page.evaluate('!document.querySelector("#pages .it.h4.runin")'))
     # M1: a new paragraph style is justified, LaTeX's own; M2: ulem already loaded keeps its options
     load_doc(page, A('Words here.', '\\usepackage{ulem}\n')); click_text(page, 'Words', 2)
-    create_style(page); page.fill('#cs-name', 'aside'); page.select_option('#cs-type', 'para'); page.wait_for_timeout(80); page.check('#ms-italic')
-    page.locator('.pop-modstyle').get_by_role('button', name='OK').click(); page.wait_for_timeout(250)
+    create_style(page); page.fill('#cs-name', 'aside'); page.select_option('#cs-type', 'para'); settle(page, 80); page.check('#ms-italic')
+    page.locator('.pop-modstyle').get_by_role('button', name='OK').click(); settle(page, 250)
     check('M1: a new paragraph style, italic: \\newenvironment{aside}{\\par\\itshape}{\\par}, no \\raggedright', '\\newenvironment{aside}{\\par\\itshape}{\\par}' in src(page), src(page)[:200])
     select_text(page, 'Words'); create_style(page); page.fill('#cs-name', 'under'); page.check('#ms-ul')
-    page.locator('.pop-modstyle').get_by_role('button', name='OK').click(); page.wait_for_timeout(250)
+    page.locator('.pop-modstyle').get_by_role('button', name='OK').click(); settle(page, 250)
     check('M2: Underline with ulem loaded: its line stays \\usepackage{ulem} (no normalem: \\emph keeps its underline)', '\\usepackage{ulem}\n' in src(page) and 'normalem' not in src(page), src(page)[:200])
     # M4: memoir with \mainmatter: off writes its own pair; the page draws what TeX prints
     mem = '\\documentclass{memoir}\n\\begin{document}\n\\mainmatter\n\\chapter{One}\n\\section{Sec}\nText.\n\\end{document}\n'
@@ -916,7 +916,7 @@ def review(page):
         check('M4: compiled, memoir prints neither "Chapter 1" nor "1.1"', r['ok'] and not r['errors'] and 'Sec' in t and 'Chapter 1' not in t and '1.1' not in t, (r['errors'], t[:160]))
     # M5: the pane follows a rename in the source
     load_doc(page, A('A \\keyterm{x} y.', '\\newcommand{\\keyterm}[1]{\\textbf{#1}}\n')); click_text(page, 'y.', 0); run_cmd(page, 'styles-pane')
-    page.evaluate("(t) => window.rikuy.api.setSource(t)", A('A \\keyword{x} y.', '\\newcommand{\\keyword}[1]{\\textbf{#1}}\n')); page.wait_for_timeout(400); click_text(page, 'y.', 0); page.wait_for_timeout(300)
+    page.evaluate("(t) => window.rikuy.api.setSource(t)", A('A \\keyword{x} y.', '\\newcommand{\\keyword}[1]{\\textbf{#1}}\n')); settle(page, 400); click_text(page, 'y.', 0); settle(page, 300)
     names = page.evaluate('[...document.querySelectorAll("#stylespane [data-style^=\'char:\']")].map((x) => x.dataset.style)')
     check('M5: the pane lists the renamed \\keyword, not \\keyterm', names == ['char:keyword'], names)
     run_cmd(page, 'styles-pane')
@@ -933,11 +933,11 @@ def review(page):
     load_doc(page, H); click_text(page, 'Intro', 2); run_cmd(page, 'design-style-set', {'id': 'casual'})
     check('L7: Style Set Casual with no accent defined writes one, so its headings have the colour it promises', '\\definecolor{accent}' in src(page) and '\\color{accent}' in src(page), src(page)[:300])
     # L6: Home on a run in heading's line goes to its start; Backspace at the paragraph's start joins as after any heading
-    load_doc(page, A('\\paragraph{Lead}\nRuns in.')); click_text(page, 'Runs', 2); page.keyboard.press('Home'); page.keyboard.type('X'); page.wait_for_timeout(200)
+    load_doc(page, A('\\paragraph{Lead}\nRuns in.')); click_text(page, 'Runs', 2); page.keyboard.press('Home'); page.keyboard.type('X'); settle(page, 200)
     check('L6: Home on the line goes to the heading\'s start', '\\paragraph{XLead}' in src(page), src(page)[-60:])
-    load_doc(page, A('\\paragraph{Lead}\nRuns in.')); click_text(page, 'Runs', 0); page.keyboard.press('Backspace'); page.wait_for_timeout(250)
+    load_doc(page, A('\\paragraph{Lead}\nRuns in.')); click_text(page, 'Runs', 0); page.keyboard.press('Backspace'); settle(page, 250)
     a = body(page)
-    load_doc(page, A('\\subsubsection{Lead}\nRuns in.')); click_text(page, 'Runs', 0); page.keyboard.press('Backspace'); page.wait_for_timeout(250)
+    load_doc(page, A('\\subsubsection{Lead}\nRuns in.')); click_text(page, 'Runs', 0); page.keyboard.press('Backspace'); settle(page, 250)
     b = body(page)
     check('L6: Backspace at the paragraph\'s start does there what it does after a heading on its own line', a != A('\\paragraph{Lead}\nRuns in.') and a.replace('\\paragraph', '\\subsubsection') == b, (a, b))
 
@@ -949,19 +949,19 @@ def review_phone(p):
     try:
         load_doc(page, A('Some words here.'))
         tap_text(page, 'words', 1)
-        page.select_option('#rb-style', '__new'); page.wait_for_timeout(300)
+        page.select_option('#rb-style', '__new'); settle(page, 300)
         small = page.evaluate(SMALL, '#cs-name, .pop-modstyle select')
         check('L4: Create a Style\'s Name and lists are 44 px tall on a phone', not small, small)
-        page.set_viewport_size({'width': 360, 'height': 380}); page.wait_for_timeout(400)
+        page.set_viewport_size({'width': 360, 'height': 380}); settle(page, 400)
         box = page.evaluate("() => { const r = document.querySelector('.pop-modstyle').getBoundingClientRect(), n = document.getElementById('cs-name').getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom), Math.round(n.top)]; }")
         check('L5: with the window shrunk to 380 px the dialog moves into it, its Name field in reach', box[0] >= 0 and box[1] <= 381 and box[2] >= 0, box)
-        page.set_viewport_size({'width': 360, 'height': 740}); page.wait_for_timeout(300)
-        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        page.set_viewport_size({'width': 360, 'height': 740}); settle(page, 300)
+        page.keyboard.press('Escape'); settle(page, 150)
         tap_text(page, 'words', 1)
-        page.select_option('#rb-style', '__pane'); page.wait_for_timeout(300)
+        page.select_option('#rb-style', '__pane'); settle(page, 300)
         small = page.evaluate(SMALL, '#stylespane .pop-x, #rb-style')
         check('L4: the sheet\'s Close and the style list are 44 px or more', not small, small)
-        page.get_by_role('button', name='Normal options').tap(); page.wait_for_timeout(250)
+        page.get_by_role('button', name='Normal options').tap(); settle(page, 250)
         small = page.evaluate(SMALL, '.pop-menu [role^=menuitem]')
         check('L4: a style\'s menu items are 44 px tall', not small, small)
     except Exception as e:
@@ -991,21 +991,21 @@ def verify(page):
                         ('para', ('cases', 'matrix', 'align', 'gather', 'comment'))):
         page.select_option('#cs-type', kind)
         for n in names:
-            page.fill('#cs-name', n); page.wait_for_timeout(20)
+            page.fill('#cs-name', n); settle(page, 20)
             if not page.locator('.pop-modstyle').get_by_role('button', name='OK').is_disabled(): taken.append((kind, n))
-    page.fill('#cs-name', 'keyterm'); page.wait_for_timeout(30)
+    page.fill('#cs-name', 'keyterm'); settle(page, 30)
     check('V2: every name LaTeX, amsmath, amssymb or a loaded package defines is refused, a new one taken', not taken and not page.locator('.pop-modstyle').get_by_role('button', name='OK').is_disabled(), taken)
-    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    page.keyboard.press('Escape'); settle(page, 100)
     # V3: \paragraph with an after skip of zero runs in
     load_doc(page, A('\\paragraph{Lead}\nText after.', '\\makeatletter\n\\renewcommand\\paragraph{\\@startsection{paragraph}{4}{\\z@}{3.25ex \\@plus1ex}{\\z@}{\\normalfont\\bfseries}}\n\\makeatother\n'))
     check('V3: an after skip of \\z@ runs the heading in', page.evaluate('!!document.querySelector("#pages .it.h4.runin")'))
     # V4: the narrow list follows a renamed environment
-    page.set_viewport_size({'width': 820, 'height': 900}); page.wait_for_timeout(300)
+    page.set_viewport_size({'width': 820, 'height': 900}); settle(page, 300)
     load_doc(page, A('\\begin{aside}\nIn it.\n\\end{aside}', '\\newenvironment{aside}{\\par\\itshape}{\\par}\n')); click_text(page, 'In it', 2); state(page)
     load_doc(page, A('\\begin{memo}\nIn it.\n\\end{memo}', '\\newenvironment{memo}{\\par\\itshape}{\\par}\n')); click_text(page, 'In it', 2); state(page)
     vals = page.evaluate('[...document.getElementById("rb-style").options].map((o) => o.value)')
     check('V4: the narrow list offers the renamed memo, not aside, and shows it', 'env:memo' in vals and 'env:aside' not in vals and page.evaluate('document.getElementById("rb-style").value') == 'env:memo', [v for v in vals if v.startswith('env:')])
-    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
     # V5: through the dialog, Numbered off and on gives \thesection. back
     hand = A('\\section{Intro}\nText.', '\\usepackage{titlesec}\n\\titleformat{\\section}[block]{\\Large\\bfseries}{\\thesection.}{0.5em}{\\MakeUppercase}\n')
     load_doc(page, hand); click_text(page, 'Intro', 2)
@@ -1042,40 +1042,40 @@ def lazy_names(page):
     # a name only LaTeX's list has: nothing else the page knows refuses it
     only = page.evaluate('(ns) => ns.filter((n) => /^[A-Za-z]{2,30}$/.test(n) && window.rikuy.nameTaken(n) === null).slice(0, 3)', names[:4000])
     x = only[0] if only else 'ACRlong'
-    page.fill('#cs-name', x); page.wait_for_timeout(50)
+    page.fill('#cs-name', x); settle(page, 50)
     check('the dialog works while it comes: a name typed, OK ready, nothing said yet (%s)' % x, only and not ok.is_disabled() and page.inner_text('.ms-note') == '', only)
-    ok.click(); page.wait_for_timeout(150)
+    ok.click(); settle(page, 150)
     note = page.inner_text('.ms-note')
     check('OK before the list has come is refused, saying why, the dialog left open and the source as it was',
           src(page) == doc and d.count() == 1 and 'Still fetching' in note and x in note, note)
     for r in held: r.fallback()
-    page.wait_for_function('window.rikuy.texNamesState() === "ready"', timeout=10000); page.wait_for_timeout(50)
+    page.wait_for_function('window.rikuy.texNamesState() === "ready"', timeout=10000); settle(page, 50)
     note = page.inner_text('.ms-note')
     check('when it comes the check is applied: %s refused as taken' % x, ok.is_disabled() and 'taken' in note and x in note, note)
-    page.fill('#cs-name', 'keyterm'); page.wait_for_timeout(30)
-    ok.click(); page.wait_for_timeout(250)
+    page.fill('#cs-name', 'keyterm'); settle(page, 30)
+    ok.click(); settle(page, 250)
     check('and a new name made the style', '\\newcommand{\\keyterm}' in src(page) and '\\keyterm{key words}' in src(page), src(page)[:200])
     load_doc(page, doc); select_text(page, 'key words'); run_cmd(page, 'create-style')
-    page.fill('#cs-name', x); page.wait_for_timeout(30)
+    page.fill('#cs-name', x); settle(page, 30)
     check('the dialog opened again uses the list it has: %s refused at once, nothing fetched again' % x, ok.is_disabled() and len(asked) == 1, asked)
-    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    page.keyboard.press('Escape'); settle(page, 100)
     page.unroute('**/texnames-*.txt')
     # a list that cannot be fetched: a page started again (no list), the file answered with 404
     page.route('**/texnames-*.txt', lambda r: r.fulfill(status=404, body='gone'))
     page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
     load_doc(page, doc); select_text(page, 'key words'); run_cmd(page, 'create-style')
     page.wait_for_function('window.rikuy.texNamesState() === "failed"', timeout=10000)
-    page.fill('#cs-name', 'keyterm'); page.wait_for_timeout(30)
+    page.fill('#cs-name', 'keyterm'); settle(page, 30)
     check('a list that could not be fetched leaves the dialog working', not ok.is_disabled() and page.inner_text('.ms-note') == '')
-    ok.click(); page.wait_for_timeout(150)
+    ok.click(); settle(page, 150)
     note = page.inner_text('.ms-note')
     check('OK says it could not be fetched and why, makes nothing, and fetches it again', src(page) == doc and 'could not be fetched' in note and 'HTTP 404' in note
           and page.evaluate('window.rikuy.texNamesState()') in ('loading', 'failed'), note)
     page.wait_for_function('window.rikuy.texNamesState() === "failed"', timeout=10000)
     page.unroute('**/texnames-*.txt')
-    ok.click(); page.wait_for_function('window.rikuy.texNamesState() === "ready"', timeout=10000); page.wait_for_timeout(50)
+    ok.click(); page.wait_for_function('window.rikuy.texNamesState() === "ready"', timeout=10000); settle(page, 50)
     check('once it can be fetched, the next OK fetches it and the note clears', page.inner_text('.ms-note') == '' and not ok.is_disabled(), page.inner_text('.ms-note'))
-    ok.click(); page.wait_for_timeout(250)
+    ok.click(); settle(page, 250)
     check('and OK makes the style', '\\keyterm{key words}' in src(page), src(page)[:200])
 
 
@@ -1116,7 +1116,7 @@ TDOC = lambda pre, body, cls='article': '\\documentclass{' + cls + '}\n' + pre +
 
 def press_code(page, k=0):
     """A press on the k-th Code block (verbatim) of the page: it is selected, as a picture is"""
-    page.locator('#pages .it.verb').nth(k).click(); page.wait_for_timeout(250)
+    page.locator('#pages .it.verb').nth(k).click(); settle(page, 250)
 
 
 def st_now(page):
@@ -1133,7 +1133,7 @@ def r2(page):
     load_doc(page, D); click_text(page, 'code', 2); h0 = page.evaluate('window.rikuy.hist.length')
     run_cmd(page, 'style-verbatim')
     check('Code: the paragraph in \\begin{verbatim}, one step', src(page) == E and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     check('Code: one undo gives the bytes back', src(page) == D)
     load_doc(page, E); press_code(page)
     st = st_now(page)
@@ -1143,7 +1143,7 @@ def r2(page):
     check('Normal on it gives the paragraph back byte for byte', src(page) == D, src(page))
     load_doc(page, E); press_code(page); press_code(page)
     check('a second press opens its source, as before', page.evaluate("!!document.querySelector('.pop-raw')"))
-    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    page.keyboard.press('Escape'); settle(page, 150)
     H = WRAP('\\begin{verbatim}\nx = a_b & {c} 50%\n\\end{verbatim}\n\nAfter.')
     load_doc(page, H); press_code(page); run_cmd(page, 'style-normal')
     check('a hand written verbatim with LaTeX\'s specials: Normal escapes them, the page prints the same', body(page) == 'x = a\\_b \\& \\{c\\} 50\\%\n\nAfter.', body(page))
@@ -1175,20 +1175,20 @@ def r2(page):
     # Rename a style of the document's own
     R = TDOC('\\newenvironment{aside}{\\par\\itshape}{\\par}\n\\newcommand{\\keyterm}[1]{\\textbf{#1}}\n', '\\begin{aside}\nOne \\keyterm{a}.\n\\end{aside}\n\n% \\begin{aside} stays\n\\begin{aside}\nTwo \\keyterm{b}.\n\\end{aside}')
     load_doc(page, R); click_text(page, 'One', 1); h0 = page.evaluate('window.rikuy.hist.length')
-    page.evaluate("window.rikuy.openRenameStyle('env:aside')"); page.wait_for_timeout(200)
+    page.evaluate("window.rikuy.openRenameStyle('env:aside')"); settle(page, 200)
     page.wait_for_function('window.rikuy.texNamesState() === "ready"', timeout=10000)
     dlg = page.get_by_role('dialog', name='Rename Style'); nm = dlg.get_by_role('textbox', name='New name')
-    nm.fill('section'); page.wait_for_timeout(150)
+    nm.fill('section'); settle(page, 150)
     check('Rename: a name LaTeX has is refused (OK off, saying why)', dlg.get_by_role('button', name='OK').is_disabled() and 'taken' in dlg.inner_text(), dlg.inner_text())
-    nm.fill('sidenote'); dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    nm.fill('sidenote'); dlg.get_by_role('button', name='OK').click(); settle(page, 300)
     want = R.replace('{aside}', '{sidenote}').replace('% \\begin{sidenote} stays', '% \\begin{aside} stays')
     check('Rename: the definition and every \\begin and \\end renamed in one step, a comment left as written', src(page) == want and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     check('one undo gives every byte back', src(page) == R)
     run_cmd(page, 'rename-style', {'v': 'char:keyterm', 'name': 'keyword'})
     check('Rename a character style: \\keyterm everywhere', src(page) == R.replace('\\keyterm', '\\keyword'), src(page))
     load_doc(page, R); click_text(page, 'One', 1)
-    page.evaluate("window.rikuy.styleMenu('env:aside', 'aside', document.body, 200, 200)"); page.wait_for_timeout(200)
+    page.evaluate("window.rikuy.styleMenu('env:aside', 'aside', document.body, 200, 200)"); settle(page, 200)
     names = page.evaluate("[...document.querySelectorAll('.pop-menu [role^=menuitem]')].map((x) => x.getAttribute('aria-label'))")
     page.keyboard.press('Escape')
     check('the style\'s menu in the Styles pane has Rename…', 'Rename…' in names, names)
@@ -1226,11 +1226,11 @@ def r2_review(page):
     # H1: a float between \paragraph{Lead} and its text: Delete at the heading's end keeps the float,
     # and a selection from the heading into the text shows the float selected when it holds it
     F = WRAP('Intro words first.\n\n\\paragraph{Lead}\n\\begin{figure}[t]\n\\centering\nFIGBODY\n\\caption{Cap words}\n\\end{figure}\nText of the paragraph here.\n\nNext para words.')
-    load_doc(page, F); click_text(page, 'Lead', 4); page.keyboard.press('Delete'); page.wait_for_timeout(250)
+    load_doc(page, F); click_text(page, 'Lead', 4); page.keyboard.press('Delete'); settle(page, 250)
     check('H1 Delete at the end of a run in heading over a float leaves the float\'s words', 'FIGBODY' in src(page) and 'Cap words' in src(page), src(page)[60:260])
     load_doc(page, F); click_text(page, 'Lead', 0)
     for _ in range(10): page.keyboard.press('Shift+ArrowRight')
-    page.wait_for_timeout(150)
+    settle(page, 150)
     sel = page.evaluate("""() => { const c = window.rikuy.caretNow(), t = window.rikuy.src('main.tex'), f = document.querySelector('#pages .it.flt');
       return { spans: c.a < t.indexOf('FIGBODY') && c.b > t.indexOf('FIGBODY'), shown: getSelection().containsNode(f, true) }; }""")
     check('H1 a selection that holds the float in the source shows it selected on the page', not sel['spans'] or sel['shown'], sel)
@@ -1270,7 +1270,7 @@ def r2_review(page):
     page.evaluate("""async () => { await window.rikuy.api.setFiles ? 0 : 0; }""")
     page.evaluate("""() => { const g = window.rikuy; g.files.set('preamble.tex', '\\\\title{T from a file}\\n'); }""")
     load_doc(page, TDOC('\\input{preamble}\n', '\\maketitle\n\nMy words\n\nText.'))
-    page.evaluate("""() => { const g = window.rikuy; if (!g.files.has('preamble.tex')) g.files.set('preamble.tex', '\\\\title{T from a file}\\n'); g.forceRender = true; g.rebuild(); }"""); page.wait_for_timeout(200)
+    page.evaluate("""() => { const g = window.rikuy; if (!g.files.has('preamble.tex')) g.files.set('preamble.tex', '\\\\title{T from a file}\\n'); g.forceRender = true; g.rebuild(); }"""); settle(page, 200)
     click_text(page, 'My words', 2)
     st = page.evaluate("(() => { const g = window.rikuy, at = g.ribbonAt(), s = g.blockStyle(at); return [[...s.to].sort(), (s.whyTo || {}).title || ''] })()")
     check('M4 a title in \\input{preamble}: no title part is offered, the reason names the file', not any(x in st[0] for x in ('title', 'author', 'date', 'subtitle')) and 'preamble.tex' in st[1], st)
@@ -1316,7 +1316,7 @@ def r2_review(page):
     page.evaluate("""() => window.rikuy.files.set('preamble.tex', '\\\\usepackage{hyperref}\\n')""")
     N3 = TDOC('\\usepackage{xcolor}\n\\definecolor{accent}{HTML}{AA0000}\n\\input{preamble}\n', '\\section{A}\\label{a}\nSee \\ref{a}.')
     load_doc(page, N3)
-    page.evaluate("""() => { const g = window.rikuy; if (!g.files.has('preamble.tex')) g.files.set('preamble.tex', '\\\\usepackage{hyperref}\\n'); g.forceRender = true; g.rebuild(); }"""); page.wait_for_timeout(200)
+    page.evaluate("""() => { const g = window.rikuy; if (!g.files.has('preamble.tex')) g.files.set('preamble.tex', '\\\\usepackage{hyperref}\\n'); g.forceRender = true; g.rebuild(); }"""); settle(page, 200)
     click_text(page, 'See', 1); run_cmd(page, 'design-colors', {'id': 'teal'})
     t3 = src(page)
     check('N3 hyperref from \\input{preamble}: the links\' line comes after it, right before \\begin{document}', t3.find('\\hypersetup{colorlinks') > t3.find('\\input{preamble}') and '\\hypersetup{colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent}\n\\begin{document}' in t3, t3[:400])
@@ -1325,7 +1325,7 @@ def r2_review(page):
         check('N3 that project compiles in the page', r['ok'] and not r['errs'], r)
     # M3: a key typed on a selected Code block opens its source and changes nothing
     C = WRAP('Before words.\n\n\\begin{verbatim}\nint x = 1;\n\\end{verbatim}\n\nAfter words.')
-    load_doc(page, C); press_code(page); page.keyboard.type('Z'); page.wait_for_timeout(300)
+    load_doc(page, C); press_code(page); page.keyboard.type('Z'); settle(page, 300)
     check('M3 a key typed on a selected Code block opens its source; the block stays', src(page) == C and page.evaluate("!!document.querySelector('.pop-raw')"), src(page)[-120:])
     page.keyboard.press('Escape')
 
@@ -1356,20 +1356,20 @@ def r2_phone(p):
         browser, page, errors = open_phone(p, w, h, dark)
         try:
             D = WRAP('Before.\n\n\\begin{verbatim}\nSome code words here.\n\\end{verbatim}\n\nAfter.')
-            load_doc(page, D); page.locator('#pages .it.verb').first.tap(); page.wait_for_timeout(300)
+            load_doc(page, D); page.locator('#pages .it.verb').first.tap(); settle(page, 300)
             v = page.evaluate("document.querySelector('#rb-style') && document.querySelector('#rb-style').value")
             page.screenshot(path=os.path.join(shots, 'styles-code-%d-%s.png' % (w, 'dark' if dark else 'light')))
-            page.select_option('#rb-style', 'p'); page.wait_for_timeout(300)
+            page.select_option('#rb-style', 'p'); settle(page, 300)
             check('a tap on a Code block selects it, the style list shows Code, Normal there takes it off' + tag, v == 'verbatim' and body(page) == 'Before.\n\nSome code words here.\n\nAfter.', (v, body(page)))
             load_doc(page, TDOC('\\title{Main}\n', '\\maketitle\n\nJane Doe\n\nBody words.')); tap_text(page, 'Jane', 1)
-            page.select_option('#rb-style', 'author'); page.wait_for_timeout(300)
+            page.select_option('#rb-style', 'author'); settle(page, 300)
             check('Author from the style list by a tap' + tag, '\\author{Jane Doe}' in src(page), src(page)[:200])
             load_doc(page, TDOC('\\newenvironment{aside}{\\par\\itshape}{\\par}\n', '\\begin{aside}\nOne.\n\\end{aside}')); tap_text(page, 'One', 1)
-            page.evaluate("window.rikuy.openRenameStyle('env:aside')"); page.wait_for_timeout(300)
+            page.evaluate("window.rikuy.openRenameStyle('env:aside')"); settle(page, 300)
             f = page.evaluate(FITS, '.pop-modstyle'); small = page.evaluate(SMALL, '.pop-modstyle input, .pop-modstyle button')
             page.screenshot(path=os.path.join(shots, 'styles-rename-%d-%s.png' % (w, 'dark' if dark else 'light')))
             check('Rename Style fits the screen, its field and buttons 44 px' + tag, f and f['inside'] and not small, (f, small))
-            page.get_by_role('textbox', name='New name').fill('sidenote'); page.get_by_role('button', name='OK').tap(); page.wait_for_timeout(400)
+            page.get_by_role('textbox', name='New name').fill('sidenote'); page.get_by_role('button', name='OK').tap(); settle(page, 400)
             check('and renames by a tap on OK' + tag, '\\begin{sidenote}' in src(page) and '{aside}' not in src(page), src(page)[:200])
             check('no sideways scroll' + tag, page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
             check('no console errors' + tag, not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:3])

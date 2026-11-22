@@ -57,8 +57,26 @@ def policy(dist, path, connect=()):
 
 
 results = []
+_CHECK_LOG = os.environ.get('RIKUY_CHECK_LOG')
+
+
+# (the log is for setting two runs side by side, so what is measured in time, which differs from
+# run to run, is written as <t>: a number with ms or s after it, a float with the long tail of
+# performance.now() arithmetic (layout's own fractions stop at 1/64 px, six places), and the
+# whole detail of a check whose name gives a time in ms, a latency or a long task)
+_TIMED = re.compile(r'\d\s?ms\b|\bms\b|latency|long(est)? tasks?|median', re.I)
+
+
+def _steady(text):
+    text = re.sub(r'\d+(?:\.\d+)?(?=\s?(?:ms|s)\b)', '<t>', text)
+    return re.sub(r'\d+\.\d{8,}', '<t>', text)
+
+
 def check(name, cond, detail=''):
     results.append((name, bool(cond), detail))
+    if _CHECK_LOG:
+        with open(_CHECK_LOG, 'a') as f:
+            f.write(json.dumps([_steady(name), bool(cond), '<timed>' if _TIMED.search(name) else _steady(repr(detail)[:4000])]) + '\n')
     print(('PASS ' if cond else 'FAIL ') + name + ('' if cond else '  :: ' + str(detail)[:300]))
     return bool(cond)
 
@@ -67,6 +85,23 @@ def check(name, cond, detail=''):
 # off, so what they measure (a menu's place, a target's size, a screenshot) is never caught half
 # way through a 150 ms entrance; test/motion.py runs with it on (open_page(motion=True)), and
 # RIKUY_MOTION=1 runs any suite with motion on.
+# What the page's timers will do and when (every context open_page() makes): each setTimeout that
+# has not yet run, by the time it is due; and how many of its IndexedDB writes (readwrite
+# transactions) have not yet come back, for stored(). setInterval is not tracked: a wait on what an
+# interval does needs a condition of its own. settle(page, ms) waits for those due within ms, the work
+# a fixed wait of ms let run, and no others. The test's own waits use the timers kept raw here, so
+# they wait on nothing of their own. Transparent to the page: same ids, same calls, same order.
+TIMERS = """(() => { if (window.__rkT) return; const raw = { st: setTimeout.bind(window), ct: clearTimeout.bind(window) }, due = new Map();
+  window.setTimeout = function (fn, ms, ...a) { const id = raw.st(function () { due.delete(id); if (typeof fn === 'function') return fn.apply(this, a); }, ms); due.set(id, performance.now() + Math.max(0, Number(ms) || 0)); return id; };
+  window.clearTimeout = function (id) { due.delete(id); return raw.ct(id); };
+  const w = { n: 0 }, tx = IDBDatabase.prototype.transaction;
+  IDBDatabase.prototype.transaction = function (stores, mode, ...r) { const t = tx.call(this, stores, mode, ...r);
+    if (mode === 'readwrite') { w.n++; let open = true; const end = () => { if (open) { open = false; w.n--; } }; t.addEventListener('complete', end); t.addEventListener('abort', end); }
+    return t; };
+  window.__rkT = { raw, due, writes: w }; })()"""
+# (the raw timer where TIMERS is in, for the test's own waits: no timer of the page's)
+_RAW = '(window.__rkT ? window.__rkT.raw.st : setTimeout)'
+
 MOTION_OFF = "try { if (!localStorage.getItem('rikuy.motion.v1')) localStorage.setItem('rikuy.motion.v1', JSON.stringify({ anim: false, caret: false })); } catch (e) {}"
 
 
@@ -78,11 +113,59 @@ PRINT_LAYOUT = '''(() => { try { const k = 'galley.prefs.v1', p = JSON.parse(loc
   if (p.narrowWeb === undefined) { p.narrowWeb = false; localStorage.setItem(k, JSON.stringify(p)); } } catch (e) {} })()'''
 
 
+# One Chromium per process and Playwright instance. Each open_page() call gets a context of its own
+# (its viewport, scheme, touch, storage, routes and policy), which is all a fresh browser gave it,
+# without a launch per call (ux.py launched 79).
+_SHARED = {}
+
+
+def shared_browser(p):
+    """The Chromium for this call, and whether it is the call's own: the shared one, launched with
+    CHROME_ARGS as they were at the first call; where CHROME_ARGS now say otherwise (para.py's
+    hinting() with --font-render-hinting=full), one launched with them for this call alone, closed
+    with its contexts."""
+    args = tuple(a for a in os.environ.get('CHROME_ARGS', '').split() if a)
+    b = _SHARED.get(id(p))
+    if b is None or b[0] is not p or not b[1].is_connected():
+        b = _SHARED[id(p)] = (p, p.chromium.launch(args=list(args)), args)
+    if b[2] == args:
+        return b[1], False
+    return p.chromium.launch(args=list(args)), True
+
+
+class _Contexts:
+    """The browser open_page() returns: the shared Chromium, whose close() closes the contexts this
+    call made (and any a suite made through it), never the browser the next call reuses; or a
+    browser of the call's own (other launch arguments), which close() closes as well."""
+    def __init__(self, browser, own=False):
+        self._browser, self._contexts, self._own = browser, [], own
+
+    def new_context(self, *a, **k):
+        c = self._browser.new_context(*a, **k)
+        self._contexts.append(c)
+        return c
+
+    def new_page(self, *a, **k):
+        pg = self._browser.new_page(*a, **k)
+        self._contexts.append(pg.context)
+        return pg
+
+    def close(self, *a, **k):
+        for c in self._contexts:
+            c.close()
+        self._contexts = []
+        if self._own:
+            self._browser.close()
+
+    def __getattr__(self, name):
+        return getattr(self._browser, name)
+
+
 def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, touch=False, connect=(), layout='print', motion=None):
     # touch: a phone's page (a touch screen, a mobile viewport: pointer coarse, no hover; tap())
     # layout: 'print', a window under 700 px opens in Print Layout; 'mobile', in its default
     # motion: animations on (True) or off (False); None: off unless RIKUY_MOTION=1
-    browser = p.chromium.launch(args=[a for a in os.environ.get('CHROME_ARGS', '').split() if a])
+    browser = _Contexts(*shared_browser(p))
     ctx = browser.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=1, has_touch=touch, is_mobile=touch)
     if layout == 'print' and width < 700:
         ctx.add_init_script(PRINT_LAYOUT)
@@ -114,6 +197,7 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, tou
         return route.abort()
     # on the context, so a second tab (page.context.new_page()) loads the same page and storage
     ctx.route('**/*', handler)
+    ctx.add_init_script(TIMERS)
     if not (motion if motion is not None else os.environ.get('RIKUY_MOTION') == '1'):
         ctx.add_init_script(MOTION_OFF)
     if init:
@@ -123,8 +207,60 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, tou
         page.evaluate('localStorage.clear()')
         page.reload()
     page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
-    page.wait_for_timeout(300)
+    # init goes on after the boot screen hides (the review, a shared link, the first caret): the
+    # page is the test's once it has settled rikuy.ready, as rikuy.api.whenReady() says, and drawn
+    page.evaluate('() => window.rikuy.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))')
+    fonts_settled(page)
     return browser, page, errors
+
+
+# (tap(): a tap's click, seen by the page, or none to come: the page took the touch's end itself)
+_TAP_WATCH = """([x, y]) => { const S = window.__rkTap = { click: false, end: false, prevented: false, off: x != null && !document.elementFromPoint(x, y) }, st = RAW;
+  addEventListener('click', () => { S.click = true; }, { capture: true, once: true });
+  addEventListener('touchend', (e) => { S.end = true; st(() => { S.prevented = e.defaultPrevented; }, 0); }, { capture: true, once: true }); }""".replace('RAW', _RAW)
+# Chromium makes two taps closer than its double tap time (350 to 450 ms here) and near each other
+# a double tap, three a triple: a word or a paragraph selected
+DOUBLE_TAP = 500
+_TAPS = {}
+
+
+def tap(page, target, ms=0):
+    """A finger's tap on target (a locator, or a point x, y), as one tap: kept DOUBLE_TAP ms from the
+    tap before it where that one was near (100 px), so Chromium makes no double tap of them; then
+    the click the tap becomes, which Chromium sends after tap() returns, seen by the page (or the
+    page's touchend handler taking the touch, or a frame's document having it, so none comes here;
+    2 s at most); then settle(page, ms)."""
+    if isinstance(target, (tuple, list)):
+        x, y = target
+    else:
+        target.scroll_into_view_if_needed()
+        b = target.bounding_box()
+        x, y = (b['x'] + b['width'] / 2, b['y'] + b['height'] / 2) if b else (None, None)
+    last = _TAPS.get(id(page))
+    if last and last[0] is page and x is not None and last[2] is not None:
+        gap = (time.monotonic() - last[1]) * 1000
+        if gap < DOUBLE_TAP and abs(x - last[2]) < 100 and abs(y - last[3]) < 100:
+            # (the time is what keeps two taps two: Chromium's double tap window)
+            page.wait_for_timeout(DOUBLE_TAP - gap)
+    page.evaluate(_TAP_WATCH, [x, y])
+    if isinstance(target, (tuple, list)):
+        page.touchscreen.tap(x, y)
+    else:
+        target.tap()
+    _TAPS[id(page)] = (page, time.monotonic(), x, y)
+    # (the touch's end is the page's by the time tap() returns: none there, the touch went to a frame
+    # of its own, a live figure, whose click this page never sees)
+    # (nor a point outside the window, where no element is to be clicked)
+    until(page, '() => { const S = window.__rkTap; return !S || S.click || !S.end || S.prevented || S.off; }', timeout=2000)
+    settle(page, ms)
+
+
+def fonts_settled(page):
+    """The page's fonts are in and the page laid out again for them: a font that arrives after init
+    lays the page out anew 200 ms after its loadingdone (src/app.js), which once dropped a
+    selection, the caret's place and a ghost line made in between."""
+    until(page, "() => document.fonts.status === 'loaded'", timeout=20000)
+    settle(page, 200, full=True)
 
 
 def download(page, el='b-save'):
@@ -133,7 +269,8 @@ def download(page, el='b-save'):
     if page.locator('#' + el).is_visible():
         return page.click('#' + el)
     name = page.get_attribute('#' + el, 'aria-label')
-    page.click('#rb-dl-menu'); page.wait_for_timeout(150)
+    # (the click waits for the menu's item to be visible, stable and enabled)
+    page.click('#rb-dl-menu')
     page.get_by_role('menuitem', name=name, exact=True).click()
 
 
@@ -149,6 +286,21 @@ def wait_src(page, text, f='main.tex', timeout=5000):
         pass
 
 
+# A selection set by a script is announced by a selectionchange event the browser sends later, as
+# a task of its own; the page's handlers (where the caret was last on the page, the selection the
+# font boxes keep, the ghost paragraph given up) run then. A key pressed before that task could be
+# handled first, since input goes ahead of other tasks. The helpers that set a selection return
+# this: a promise, which page.evaluate awaits, settled once the event has reached every listener
+# of the page (this one was added last, so it runs after them). removeAllRanges() then addRange()
+# always sends one; the timer only keeps a lost event from hanging the suite.
+def _seen(fallback=_RAW + '(go, 1000)'):
+    return """new Promise((done) => { let n = 0; const go = () => { if (n++) return; document.removeEventListener('selectionchange', go); done(true); };
+      document.addEventListener('selectionchange', go); FALLBACK; })""".replace('FALLBACK', fallback)
+
+
+_SEEN = _seen()
+
+
 def click_text(page, text, offset_chars=0, nth=0):
     """Place the caret inside the first rendered span containing text, after offset chars."""
     ok = page.evaluate('''([text, off, nth]) => {
@@ -158,8 +310,7 @@ def click_text(page, text, offset_chars=0, nth=0):
       const r = document.createRange(); r.setStart(s.firstChild, i); r.collapse(true);
       const el = document.getElementById('pages'); el.focus();
       const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
-      return true; }''', [text, offset_chars, nth])
-    page.wait_for_timeout(30)
+      return SEEN; }'''.replace('SEEN', _SEEN), [text, offset_chars, nth])
     return ok
 
 
@@ -171,7 +322,7 @@ def select_text(page, text, nth=0):
       const r = document.createRange(); r.setStart(s.firstChild, i); r.setEnd(s.firstChild, i + text.length);
       document.getElementById('pages').focus();
       const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
-      return true; }''', [text, nth])
+      return SEEN; }'''.replace('SEEN', _SEEN), [text, nth])
 
 
 def load_doc(page, files, main='main.tex'):
@@ -179,7 +330,7 @@ def load_doc(page, files, main='main.tex'):
     if isinstance(files, str):
         files = {main: files}
     page.evaluate('''([files, main]) => { const g = window.rikuy; g.files = new Map(Object.entries(files)); g.main = main; g.hist = []; g.redoStack = []; g.forceRender = true; g.rebuild(); if (g.cm) g.showSrcFile(main); }''', [files, main])
-    page.wait_for_timeout(50)
+    # (rebuild() draws the pages before it returns: the next step finds them drawn)
 
 
 
@@ -188,7 +339,11 @@ def place(page, select):
     first place they are drawn), ('words', k) puts the caret k characters into them, ('from', 'to')
     selects from the start of one to the end of the other, a function does it itself."""
     if callable(select):
+        # (a suite's own placing: its selectionchange has reached the page, or, where it moved
+        # nothing and sent none, the tasks queued before the next frame have run)
+        page.evaluate('() => { window.__rkSel = 0; document.addEventListener("selectionchange", () => { window.__rkSel++; }, { once: true }); }')
         select(page)
+        page.evaluate('() => window.__rkSel || ' + _seen('requestAnimationFrame(() => ' + _RAW + '(go, 0))'))
     elif isinstance(select, str):
         select_text(page, select)
     elif isinstance(select[1], int):
@@ -196,13 +351,173 @@ def place(page, select):
     else:
         page.evaluate('''([a, z]) => { const sp = [...document.querySelectorAll('#pages span.t')]; const s = sp.find((x) => x.textContent.includes(a)), e = sp.find((x) => x.textContent.includes(z));
           const r = document.createRange(); r.setStart(s.firstChild, s.textContent.indexOf(a)); r.setEnd(e.firstChild, e.textContent.indexOf(z) + z.length);
-          document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''', list(select))
-    page.wait_for_timeout(120)
+          document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); return SEEN; }'''.replace('SEEN', _SEEN), list(select))
+    # (and what the move set going on timers: the ruler's markers at 90 ms, the status bar at 120)
+    settle(page, 120, full=True)
 
 
 def pressed(page, command):
     """What the command's control shows where the caret is: pressed (True), not (False), or None for a command that is no toggle."""
     return page.evaluate('''(id) => { const c = window.rikuy.cmds.command(id), at = window.rikuy.ribbonAt(); if (at) at.memo = {}; if (!c.on) return null; const v = c.on(window.rikuy, at); return v == null ? null : !!v; }''', command)
+
+
+def landed(page, before, h, f='main.tex', timeout=5000, ms=0):
+    """A command's step has landed: the source is no longer before, or the history no longer h
+    steps long. A command run by its id is done when runCommand returns (or the promise it returns
+    settles); one given as a function of the page, or a dialog's button, may land a moment later.
+    A step that never lands is the check's to report: the wait gives up and the check fails."""
+    try:
+        page.wait_for_function('([f, t, h]) => (window.rikuy.files.get(f) ?? "") !== t || window.rikuy.hist.length !== h', arg=[f, before, h], timeout=timeout)
+    except Exception:
+        pass
+    # (and what the step set going: its next frame, and its timers due within ms, settle())
+    settle(page, ms)
+
+
+# (a frame, then a task; where frames do not come, a page in the background, 100 ms instead)
+_FRAME = """() => new Promise((r) => { const st = RAW; let n = 0; const go = () => { if (!n++) st(r, 0); }; requestAnimationFrame(go); st(go, 100); })""".replace('RAW', _RAW)
+# (frames until no timer of the page's due by then waits; once one ran, a frame more for what it queued)
+_SETTLE = """([ms, after, writes]) => new Promise((done) => { const T = window.__rkT, g = window.rikuy, end = performance.now() + ms, st = T ? T.raw.st : setTimeout; let ran = false;
+  const busy = () => (!!T && [...T.due.values()].some((d) => d <= end)) || after.some((k) => g && g[k] && g[k].pending && g[k].pending()) || (writes && !!T && T.writes.n > 0);
+  const next = (f) => { let n = 0; const go = () => { if (!n++) st(f, 0); }; requestAnimationFrame(go); st(go, 100); };
+  const t0 = performance.now(), step = () => next(() => { if (busy()) { ran = true; if (performance.now() - t0 > 10000) done(false); else step(); } else if (ran) { ran = false; step(); } else done(true); }); step(); })"""
+
+
+def _settled(page, arg):
+    # (work named in after, or a write, that never stops waiting is a bug of its own: raised)
+    if page.evaluate(_SETTLE, arg) is False:
+        raise RuntimeError('the page never settled in 10 s: %r' % (arg,))
+
+
+def frame(page):
+    """What the last step queued has run: the next frame's callbacks (a menu placed, the ribbon
+    fitted) and the tasks queued before them (the letters typed in one batch, a timer of 0)."""
+    page.evaluate(_FRAME)
+
+
+# (the page's own refreshes a step sets going at once: the ribbon's, 60 ms after the caret moved)
+SOON = 80
+
+
+# (the repaints every rebuild of the page sets going: Track Changes' marks at 180 ms, comments at
+# 200; settle(page, ms, after=REPAINTS) before a check on them, cheaper than full=True)
+REPAINTS = ('marksSoon', 'commentsSoon')
+
+
+def settle(page, ms=0, full=False, after=()):
+    """The wait after a step, for what the step set going: its next frame (a menu placed, the
+    ribbon fitted, the letters typed in one batch) and the page's timers due within SOON ms (the
+    ribbon's refresh after the caret moved), then the frame after them. With full, every timer due
+    within ms (the page laid out again 150 ms after a resize, the caret scrolled into sight after
+    120 ms, a debounced push): what a fixed wait of ms let happen, without waiting it out. ms is
+    the time the step once slept. Work that is not a timer (a fetch, a worker, a module loaded,
+    IndexedDB) needs a condition of its own. RIKUY_WAIT_SHADOW=1 waits ms as well and prints SHADOW
+    where the page still moved; RIKUY_CHECK_LOG keeps what every check saw, to set beside a run
+    with the old times. after names the page's debounced work to wait for as well, whenever it
+    is due (rikuy[name].pending(): REPAINTS, srcRebuild, syncSoon, problemsSoon...)."""
+    _settled(page, [(ms or 0) if full else min(ms or 0, SOON), list(after), False])
+    if _SHADOW and ms:
+        # (where: the line that waited, and the line that called it when that was a suite's helper)
+        f, at = sys._getframe(1), []
+        while f and len(at) < 3:
+            at.append(os.path.basename(f.f_code.co_filename) + ':' + str(f.f_lineno))
+            f = f.f_back
+        shadow(page, ms, '<'.join(at))
+
+
+# (saved(): a save's writes have all come back when persist() calls noteSaveState with what they
+# kept, the status bar's Saved; the hook counts those calls, the page's own call going on as before)
+_SAVE_HOOK = """() => { const g = window.rikuy; if (!g.__rkSaveHook) { const f = g.noteSaveState;
+  g.noteSaveState = function (kept) { if (kept !== undefined) g.__rkSaves = (g.__rkSaves || 0) + 1; return f.apply(this, arguments); }; g.__rkSaveHook = true; }
+  g.__rkSaves0 = g.__rkSaves || 0; return !!g.unsaved; }"""
+# (no edit waiting to be saved, and the copy IndexedDB holds is the one this tab last wrote or
+# took, savedT: its own save back, or another tab's taken in; read in turns of 50 ms for at most
+# timeout ms, as a read made after a write of the page's sees that write)
+_KEPT = """(timeout) => new Promise((done) => { const g = window.rikuy, st = RAW, t0 = performance.now();
+  const kept = () => new Promise((ok) => { if (g.unsaved) return ok(false); if (g.noIdb || !g.savedT) return ok(true);
+    const r = indexedDB.open('galley'); r.onerror = () => ok(false);
+    r.onsuccess = () => { const db = r.result; try { const q = db.transaction('kv').objectStore('kv').get('project'); q.onsuccess = () => { db.close(); ok(!!q.result && q.result.t === g.savedT); }; q.onerror = () => { db.close(); ok(false); }; } catch (e) { db.close(); ok(false); } }; });
+  const turn = () => kept().then((y) => y ? done(true) : performance.now() - t0 > timeout ? done(false) : st(turn, 50)); turn(); })""".replace('RAW', _RAW)
+
+
+def kept(page, timeout=5000):
+    """This tab's copy and IndexedDB's agree (_KEPT): what it saved is written, or what another
+    tab saved is taken in (on being shown). Whether they came to: the next check reports one that
+    never did."""
+    return page.evaluate(_KEPT, timeout)
+
+
+def stored(page, ms=0):
+    """What the page writes to IndexedDB has been written: its timers due within ms run (full),
+    then no readwrite transaction of its own still open (the project, Undo's history, versions,
+    Track Changes' base, a coauthor's names). A write started after an await on something else
+    is not seen in between: wait for the step's own sign first where there is one."""
+    settle(page, ms, full=True)
+    _settled(page, [0, [], True])
+
+
+def saved(page, ms=1200):
+    """The project kept in this browser, as a reload or another tab reads it: an edit waiting to be
+    saved has been, its writes all back (the version another tab's text became too), or, with
+    none waiting, the copy in IndexedDB is this tab's last. Whether it was: a save that never comes
+    back is the next check's to report."""
+    waiting = page.evaluate(_SAVE_HOOK)
+    settle(page, ms, full=True)
+    ok = until(page, '() => (window.rikuy.__rkSaves || 0) > window.rikuy.__rkSaves0') if waiting else kept(page)
+    # (and any other write the save set going: the version another tab's text became)
+    _settled(page, [0, [], True])
+    return ok
+
+
+def ready(page):
+    """The page loaded (again) has gone through init: its boot screen gone is not yet that (the
+    review, a shared link, the source pane a setting keeps and the first caret come after it),
+    rikuy.ready is (rikuy.api.whenReady())."""
+    page.wait_for_function('window.rikuy && window.rikuy.ready && document.getElementById("boot").hidden', timeout=30000)
+    page.evaluate('() => window.rikuy.ready.then(() => true)')
+    fonts_settled(page)
+
+
+def until(page, fn, arg=None, timeout=5000):
+    """Wait for fn (a function of the page, given arg) to be true, as the step before it promised;
+    whether it came. One that never comes is the next check's to report: no exception here, so
+    the check fails with its own words and the suite goes on."""
+    try:
+        page.wait_for_function(fn, arg=arg, timeout=timeout)
+        return True
+    except Exception:
+        return False
+
+
+# RIKUY_WAIT_SHADOW=1: after each condition wait that replaced a fixed one, wait that fixed time
+# as well and print SHADOW with what moved in it (the files, the history, the caret, the focus,
+# the selection, a field's value, a scroll position, the saved copy, a part of the page by its id):
+# evidence that the condition is all the next step needed, since the step after it then sees what
+# it saw after the fixed time (a line of its own, never a PASS or FAIL).
+_SHADOW = os.environ.get('RIKUY_WAIT_SHADOW') == '1'
+_STATE = '''() => { const h = (s) => { let x = 2166136261; for (let i = 0; i < s.length; i++) { x ^= s.charCodeAt(i); x = Math.imul(x, 16777619); } return (x >>> 0).toString(36) + ':' + s.length; };
+  const g = window.rikuy, o = {}, c = g && g.caretNow && g.caretNow();
+  if (g) { o.files = h([...g.files].map(([k, v]) => k + '\\0' + v).join('\\1')); o.hist = g.hist.length; o.caret = c ? [c.f, c.p, c.a, c.b].join() : ''; o.saved = String(g.savedT); }
+  const a = document.activeElement; o.focus = a ? a.tagName + '#' + a.id + '.' + a.className : '';
+  const s = getSelection(); o.sel = s.rangeCount ? [s.anchorNode && s.anchorNode.nodeName, s.anchorOffset, s.focusNode && s.focusNode.nodeName, s.focusOffset, h(String(s))].join() : '';
+  o.vals = h([...document.querySelectorAll('input, textarea, select')].map((e) => e.type === 'checkbox' || e.type === 'radio' ? e.checked : e.value).join('\\1'));
+  o.scroll = [...document.querySelectorAll('*')].filter((e) => e.scrollTop || e.scrollLeft).map((e) => (e.id || e.className) + ':' + e.scrollTop + ',' + e.scrollLeft).join('|');
+  try { o.ls = h(JSON.stringify(Object.entries(localStorage))); } catch (e) { o.ls = ''; }
+  for (const e of document.querySelectorAll('body > *, #app > *, #main > *, #w > *')) if (e.tagName !== 'SCRIPT' && e.tagName !== 'STYLE') o['#' + (e.id || e.tagName + '.' + String(e.className).slice(0, 24))] = h(e.outerHTML);
+  return o; }'''
+
+
+def shadow(page, ms, where):
+    if not _SHADOW:
+        return
+    a = page.evaluate(_STATE)
+    # (the page's debounced work still waiting as the fixed time starts: what moved, by name)
+    soon = page.evaluate('() => { const T = window.__rkT, t = performance.now(); return T ? [...T.due.values()].map((d) => Math.round(d - t)).sort((x, y) => x - y).slice(0, 8) : ["no timers"]; }')
+    page.wait_for_timeout(ms)
+    b = page.evaluate(_STATE)
+    moved = sorted(k for k in set(a) | set(b) if a.get(k) != b.get(k))
+    if moved:
+        print('SHADOW ' + where + ' :: ' + ' '.join(moved)[:300] + ' :: timers due in ms: ' + ' '.join(map(str, soon)))
 
 
 def roundtrip(page, doc, select, command, expected, forms=(), off=None, label=None, off_command=None):
@@ -224,23 +539,24 @@ def roundtrip(page, doc, select, command, expected, forms=(), off=None, label=No
     ok = []
     load_doc(page, doc); place(page, select)
     h0 = page.evaluate('window.rikuy.hist.length')
-    run(); page.wait_for_timeout(200)
+    run(); landed(page, doc, h0, ms=200)
     got = src(page)
     ok.append(check(name + ': writes exactly the LaTeX expected, as one step', want(got) and page.evaluate('window.rikuy.hist.length') == h0 + 1, got[-160:]))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    # (undo() puts the text back and draws the page before it returns)
+    page.evaluate('window.rikuy.undo()'); settle(page, 150)
     ok.append(check(name + ': one undo gives the source back byte for byte', src(page) == doc, src(page)[-160:]))
     toggle = pressed(page, command) is not None if isinstance(command, str) else False
     if isinstance(expected, str):
         load_doc(page, expected); place(page, select)
         if toggle:
             ok.append(check(name + ': read back from that source, the control shows it', pressed(page, command) is True))
-        undo_run(); page.wait_for_timeout(200)
+        undo_run(); landed(page, expected, 0, ms=200)
         ok.append(check(name + ': again on it, the bytes of before (off restores)', src(page) == back, src(page)[-160:]))
     for form in forms:
         load_doc(page, form); place(page, select)
         if toggle:
             ok.append(check(name + ': a hand written form shows as it: ' + form[form.find('\\begin{document}') + 16:][:40].strip(), pressed(page, command) is True))
-        undo_run(); page.wait_for_timeout(200)
+        undo_run(); landed(page, form, 0, ms=200)
         ok.append(check(name + ': and takes off exactly that form', src(page) == back, src(page)[-160:]))
     return all(ok)
 
@@ -339,7 +655,7 @@ def default_macros(page):
     doc = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nHalf is $\\tfrac{1}{2}$, so\n'
            '\\[\\begin{aligned} a &= \\tfrac{1}{3} + \\nicefrac{1}{6} \\\\ b &= \\mathbbm{R}\\end{aligned}\\]\nAfter.\n\\end{document}\n')
     load_doc(page, doc)
-    page.wait_for_timeout(600)
+    settle(page, 600)
     page.evaluate('window.rikuy.refreshNav()')
     probs = page.evaluate("(window.rikuy.problems || []).filter((x) => /Math error/.test(x.msg)).map((x) => x.msg)")
     n = page.evaluate("document.querySelectorAll('#pages .katex').length")
@@ -348,7 +664,7 @@ def default_macros(page):
     # project's macros.sty) showed every formula using it as an error
     load_doc(page, {'main.tex': '\\documentclass{article}\n\\usepackage{mymacros}\n\\begin{document}\nRegimes $\\regime{1}, \\dots, \\regime{n}$ and \\regime{2} in text.\n\\end{document}\n',
                     'mymacros.sty': '\\ProvidesPackage{mymacros}\n\\newcommand{\\regime}[1]{\\ensuremath{\\mathcal{R}_{#1}}}\n'})
-    page.wait_for_timeout(600)
+    settle(page, 600)
     page.evaluate('window.rikuy.refreshNav()')
     probs = page.evaluate("(window.rikuy.problems || []).filter((x) => /Math error/.test(x.msg)).map((x) => x.msg)")
     n = page.evaluate("document.querySelectorAll('#pages .katex').length")
@@ -364,7 +680,7 @@ def skipped_args(page):
            '\\title{\\vspace{-1.5em}\\textbf{Demand}}\n\\begin{document}\n\\maketitle\n'
            'Shares are $\\nv{b1}{0.50}$ and $\\pick{x}{y}{z}$.\\smallskip{} After.\n\\end{document}\n')
     load_doc(page, doc)
-    page.wait_for_timeout(600)
+    settle(page, 600)
     page.evaluate('window.rikuy.refreshNav()')
     probs = page.evaluate("(window.rikuy.problems || []).filter((x) => x.sev !== 'info' || /smallskip|vspace/.test(x.msg)).map((x) => x.msg)")
     text = page.evaluate("document.getElementById('pages').innerText")
@@ -379,10 +695,10 @@ def hidden_deletes(page):
     thm = ('\\documentclass{article}\n\\usepackage{amsthm}\n\\newtheorem{theorem}{Theorem}\n\\begin{document}\n'
            '\\begin{theorem}\n    Let $x$ be a number.\n    Then it is one.\n\\end{theorem}\nAfter.\n\\end{document}\n')
     load_doc(page, thm)
-    page.wait_for_timeout(300)
+    settle(page, 300)
     click_text(page, 'Let', 0)
     page.keyboard.press('Backspace')
-    page.wait_for_timeout(200)
+    settle(page, 200)
     check('Backspace at the start of a theorem keeps its first paragraph', 'Let $x$ be a number.' in src(page) and 'Then it is one.' in src(page), src(page)[-120:])
     letter = ('\\documentclass[a4paper, 12pt, KOMAold, sections]{scrlttr2}\n\\newcommand{\\Empfaenger}{Lisa M}\n'
               '\\newcommand{\\EStrasse}{Main Street}\n\\newcommand{\\DocTitle}{Small worlds}\n\\begin{document}\n'
@@ -391,14 +707,14 @@ def hidden_deletes(page):
     lost = []
     n = 0
     load_doc(page, letter)
-    page.wait_for_timeout(300)
+    settle(page, 300)
     n = page.evaluate('document.querySelectorAll("#pages span.t:not(.ph)").length')
     for k in range(n):
         load_doc(page, letter)
-        page.wait_for_timeout(80)
+        settle(page, 80)
         page.evaluate('''(k) => { const s = [...document.querySelectorAll('#pages span.t:not(.ph)')][k]; if (!s || !s.firstChild) return; const r = document.createRange(); r.setStart(s.firstChild, 0); r.collapse(true); document.getElementById('pages').focus(); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }''', k)
         page.keyboard.press('Backspace')
-        page.wait_for_timeout(80)
+        settle(page, 80)
         t = src(page)
         # a visible letter of the subject may go; the commands themselves must stay
         if '\\date{\\today}' not in t or '\\subject{' not in t:
@@ -408,10 +724,10 @@ def hidden_deletes(page):
     # as with one formula, and deletes nothing yet (both went at once)
     two = ('\\documentclass{article}\n\\begin{document}\nThen:\n$$a = b$$\n$$= c.$$\n\nSo it follows.\n\\end{document}\n')
     load_doc(page, two)
-    page.wait_for_timeout(300)
+    settle(page, 300)
     click_text(page, 'So it follows', 0)
     page.keyboard.press('Backspace')
-    page.wait_for_timeout(200)
+    settle(page, 200)
     check('Backspace after two display formulas selects one and deletes nothing', src(page) == two and 'Press Backspace again' in page.inner_text('#toast'), (src(page)[-60:], page.inner_text('#toast')[:60]))
     page.keyboard.press('Escape')
     # a formula a macro's own text makes (\\newcommand{\\arrow}{$\\rightarrow$}, here or in a .sty)
@@ -419,17 +735,17 @@ def hidden_deletes(page):
     for files in ({'main.tex': '\\documentclass{article}\n\\newcommand{\\arrow}{$\\rightarrow$}\n\\begin{document}\nA \\arrow{} B.\n\\end{document}\n'},
                   {'main.tex': '\\documentclass{article}\n\\usepackage{myStyle}\n\\begin{document}\nA \\arrow{} B.\n\\end{document}\n', 'myStyle.sty': '\\newcommand{\\arrow}{$\\rightarrow$}\n'}):
         load_doc(page, files)
-        page.wait_for_timeout(300)
+        settle(page, 300)
         box = page.evaluate("() => { const k = document.querySelector('#pages .katex'); if (!k) return null; const r = k.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }")
         if box:
             page.mouse.click(box[0], box[1])
-            page.wait_for_timeout(400)
+            settle(page, 400)
             if page.evaluate("!!document.getElementById('pop-field')"):
                 page.evaluate("document.getElementById('pop-field').executeCommand('moveToMathfieldEnd')")
                 page.keyboard.type('+1')
-                page.wait_for_timeout(300)
+                settle(page, 300)
             page.keyboard.press('Escape')
-            page.wait_for_timeout(200)
+            settle(page, 200)
         same = all(page.evaluate('(f) => window.rikuy.files.get(f)', k) == v for k, v in files.items())
         check('a formula made by a macro%s edits nothing in the file' % (' from a .sty' if len(files) > 1 else ''), box and same, box)
 
@@ -533,7 +849,7 @@ def edges(page, errors):
     for t in ['k', 'か']:
         cdp.send('Input.imeSetComposition', {'text': t, 'selectionStart': len(t), 'selectionEnd': len(t)})
     cdp.send('Input.insertText', {'text': '漢字'})
-    page.wait_for_timeout(100)
+    settle(page, 100)
     page.keyboard.type('Y')
     check('after composing over a selection the caret follows the new text', 'paragraph 漢字Y here' in src(page), src(page)[src(page).find('Second'):][:40])
     undo_all(page)
@@ -563,7 +879,7 @@ def popovers(page):
     page.fill('.pop-math textarea', 'E = m c^2 + \\mathcal{O}(v^4)')
     wait_src(page, 'O}(v^4)$')
     page.keyboard.press('Enter')
-    page.wait_for_timeout(150)
+    settle(page, 150)
     page.keyboard.type('Q')
     check('typing after a formula made longer goes after it', '$E = m c^2 + \\mathcal{O}(v^4)$Q and' in src(page), src(page)[src(page).find('Mass'):][:60])
     undo_all(page)
@@ -571,20 +887,20 @@ def popovers(page):
     page.wait_for_selector('.pop-cite')
     page.keyboard.type('bob')
     page.keyboard.press('Enter')
-    page.wait_for_timeout(150)
+    settle(page, 150)
     page.keyboard.press('Escape')
-    page.wait_for_timeout(150)
+    settle(page, 150)
     page.keyboard.type('Q')
     check('typing after a citation that gained a key goes after it', '\\citep{a, bbbbbbbb}Q here' in src(page), src(page)[src(page).find('energy'):][:50])
     undo_all(page)
     click_text(page, 'here.', 5)
     page.evaluate('rikuy.runCommand("equation")')
     page.wait_for_selector('.pop-math')
-    page.wait_for_timeout(300)
+    settle(page, 300)
     page.keyboard.type('E=mc^2', delay=60)
     wait_src(page, 'E=mc^2')
     page.keyboard.press('Enter')
-    page.wait_for_timeout(150)
+    settle(page, 150)
     page.keyboard.type('Q')
     s = src(page)
     eq = s[s.find('\\begin{equation}'):s.find('\\end{equation}') + 14]
@@ -598,7 +914,7 @@ def popovers(page):
     sel = page.evaluate('getSelection().toString()')
     check('Ctrl+A selects the text of the pages', 'Mass' in sel and 'Last paragraph.' in sel, sel[:80])
     page.keyboard.press('Backspace')
-    page.wait_for_timeout(150)
+    settle(page, 150)
     check('and Backspace deletes it', 'energy' not in src(page) and 'Last paragraph' not in src(page), src(page)[src(page).find('document}'):][:80])
     undo_all(page)
     check('popovers: undo gives the bytes back', src(page) == base)
@@ -619,39 +935,39 @@ def first_words(page):
     wait_src(page, 'First words')
     check('after New document the first words typed land on the page, with no click', 'First words' in body() and page.evaluate('window.rikuy.name') == name, (body(), page.evaluate('window.rikuy.name')))
     for _ in range(len('First words')): page.keyboard.press('Backspace')
-    page.wait_for_timeout(150)
+    settle(page, 150)
     page.keyboard.type('again')
     wait_src(page, 'again')
     check('with every word deleted, typing starts the document again', body().strip() == 'again', body())
-    page.keyboard.press('Enter'); page.keyboard.type('$'); page.wait_for_timeout(400)
+    page.keyboard.press('Enter'); page.keyboard.type('$'); settle(page, 400)
     opened = page.evaluate('!!document.querySelector("body > .pop.pop-math")')
-    page.keyboard.type('x^2', **slow); page.wait_for_timeout(100); page.keyboard.press('Enter')
+    page.keyboard.type('x^2', **slow); settle(page, 100); page.keyboard.press('Enter')
     wait_src(page, '$x^2$')
     check('a dollar sign on a new line starts a formula, as it does inside a line', opened and 'again\n\n$x^2$' in body(), body())
-    page.keyboard.type(' is math'); page.keyboard.press('Enter'); page.keyboard.type('$'); page.wait_for_timeout(400)
-    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    page.keyboard.type(' is math'); page.keyboard.press('Enter'); page.keyboard.type('$'); settle(page, 400)
+    page.keyboard.press('Escape'); settle(page, 200)
     page.keyboard.type('next')
     wait_src(page, 'next')
     check('closing that formula empty leaves the caret on the line', re.search(r'is math\n\nnext\s*$', body()), body())
-    page.keyboard.press('Enter'); page.keyboard.type('\\'); page.wait_for_timeout(400)
+    page.keyboard.press('Enter'); page.keyboard.type('\\'); settle(page, 400)
     pal = page.evaluate('!!document.querySelector("body > .pop.pop-pal")')
-    page.keyboard.type('sec', **slow); page.wait_for_timeout(200); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    page.keyboard.type('sec', **slow); settle(page, 200); page.keyboard.press('Enter'); settle(page, 300)
     page.keyboard.type('Results')
     wait_src(page, '\\section{Results}')
     check('a backslash on a new line opens the list of things to insert', pal and '\\section{Results}' in body(), body())
-    click_text(page, 'Results'); page.keyboard.press('Shift+End'); page.keyboard.press('Delete'); page.wait_for_timeout(200)
+    click_text(page, 'Results'); page.keyboard.press('Shift+End'); page.keyboard.press('Delete'); settle(page, 200)
     emptied = '\\section{}' in body()
-    page.keyboard.press('Backspace'); page.wait_for_timeout(200)
+    page.keyboard.press('Backspace'); settle(page, 200)
     check('Backspace in a heading left empty removes the heading', emptied and '\\section' not in body() and 'next' in body(), body())
     # a formula as the first thing in a new document, then more typing
-    page.click('#b-new'); page.wait_for_timeout(400)
-    page.keyboard.type('$'); page.wait_for_timeout(400); page.keyboard.type('y', **slow); page.wait_for_timeout(100); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    page.click('#b-new'); settle(page, 400)
+    page.keyboard.type('$'); settle(page, 400); page.keyboard.type('y', **slow); settle(page, 100); page.keyboard.press('Enter'); settle(page, 300)
     page.keyboard.type('follows')
     wait_src(page, 'follows')
     check('after a formula that is all the document holds, typing goes on', re.search(r'\$y\$\s+follows', body()), body())
     # a title alone: the page had nowhere to start the text
     load_doc(page, '\\documentclass{article}\n\\title{Only a title}\n\\begin{document}\n\\maketitle\n\\end{document}\n')
-    page.wait_for_timeout(200)
+    settle(page, 200)
     # the blank paragraph under the title, not the title itself and not a point below the window
     page.locator('.ghostp').scroll_into_view_if_needed()
     page.locator('.ghostp').click()
@@ -659,7 +975,7 @@ def first_words(page):
     wait_src(page, 'Below')
     check('under a title alone, a click on the page and typing start the first paragraph', '\\title{Only a title}' in src(page) and '\\maketitle\n\nBelow' in src(page), src(page))
     for _ in range(5): page.keyboard.press('Backspace')
-    page.wait_for_timeout(150)
+    settle(page, 150)
     r = page.evaluate('(() => { const s = [...document.querySelectorAll("#pages span.t")].find((s) => s.textContent.includes("Only a title")); const r = s.getBoundingClientRect(); return [r.right - 2, r.top + r.height / 2]; })()')
     page.mouse.click(*r); page.keyboard.type('!')
     wait_src(page, 'title!')
@@ -681,7 +997,7 @@ def phone_layout(page):
         status: Math.round(box(st).height), pdfx: Math.round(box(document.getElementById('pdf-x')).right) - W }; }"""
     for w in (360, 390, 430, 540, 700):
         page.set_viewport_size({'width': w, 'height': 800})
-        page.wait_for_timeout(250)
+        settle(page, 250)
         m = page.evaluate(BAR)
         check('at %dpx no button of the bar lies over another or the name, or off the screen' % w, not m['off'] and not m['over'] and m['page'] <= 0 and m['nav'] >= 28, m)
         if w <= 430: check('at %dpx the status line is one line' % w, m['status'] <= 30, m['status'])
@@ -690,32 +1006,32 @@ def phone_layout(page):
         if fade['sw'] > fade['cw'] + 2:
             check('at %dpx the status bar scrolls, and fades where it is cut off' % w, fade['ox'] in ('auto', 'scroll') and 'st-fade-r' in fade['cls'], fade)
     page.set_viewport_size({'width': 360, 'height': 800})
-    page.wait_for_timeout(250)
+    settle(page, 250)
     page.evaluate('window.rikuy.togglePdf(true)')
-    page.wait_for_timeout(300)
+    settle(page, 300)
     m = page.evaluate(BAR)
     check('at 360px the PDF pane\'s close button is on the screen', m['pdfx'] <= 0, m['pdfx'])
     page.evaluate('window.rikuy.togglePdf(false)')
     check('a phone has no Help button in the bar', not page.is_visible('#b-help'))
     page.click('#b-nav')
-    page.wait_for_timeout(200)
+    settle(page, 200)
     # (Make available offline is there too where the installed app shows it; not in this page)
     acts = page.evaluate('[...document.querySelectorAll("#nav-acts .nav-act:not([hidden])")].map((a) => [a.dataset.for, a.textContent.trim(), a.disabled, a.getBoundingClientRect().height])')
     bar = page.evaluate('[...document.querySelectorAll("#bar .tools button:not(.ai-only), #b-undo, #b-undo-x, #b-redo, #b-share, .rb-dl button:not(#rb-dl-menu), #b-copy")].map((b) => b.id)')
     check('the menu panel lists every action of the bar, the downloads and Copy source by name, each large enough to tap', sorted(a[0] for a in acts) == sorted(bar) and all(a[1] and a[3] >= 36 for a in acts), (acts, bar))
     check('Undo and Redo are greyed there when there is nothing to undo, and the zoom shows its value', all(a[2] for a in acts if a[0] in ('b-undo', 'b-redo')) and re.match(r'Zoom: \d+%$', [a[1] for a in acts if a[0] == 'zoomv'][0]), acts)
     page.click('#nav-acts [data-for=b-help]')
-    page.wait_for_timeout(300)
+    settle(page, 300)
     r = page.evaluate('(() => { const e = document.querySelector("body > .pop.pop-help"); if (!e) return null; const dd = e.querySelector(".keys dd").getBoundingClientRect(), b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right), Math.round(dd.width), document.documentElement.clientWidth]; })()')
     check('so Help opens from the menu panel, which closes', r and not page.evaluate('document.body.classList.contains("nav-on")'), r)
     check('and fits the screen, its explanations in a column wide enough to read', r and r[0] >= 0 and r[1] <= r[3] and r[2] >= 150, r)
     page.keyboard.press('Escape')
-    page.click('#b-nav'); page.wait_for_timeout(200)
-    page.click('#nav-acts [data-for=b-src]'); page.wait_for_timeout(300)
+    page.click('#b-nav'); settle(page, 200)
+    page.click('#nav-acts [data-for=b-src]'); settle(page, 300)
     check('an action pressed there does what its button does', page.evaluate('document.body.classList.contains("src-on")') and not page.evaluate('document.body.classList.contains("nav-on")'))
     page.evaluate('window.rikuy.toggleSource(false)')
     page.set_viewport_size({'width': 1400, 'height': 1000})
-    page.wait_for_timeout(250)
+    settle(page, 250)
     page.evaluate('window.rikuy.toggleNav(true)')
     check('a wide screen, where the buttons carry their names, has no such list', page.is_visible('#b-help') and not page.is_visible('#nav-acts'))
     page.evaluate('window.rikuy.toggleNav(false)')
@@ -723,9 +1039,9 @@ def phone_layout(page):
     # the bar gives the focus back to it
     back = []
     for b in ('#b-share', '#b-help'):
-        page.focus(b); page.keyboard.press('Enter'); page.wait_for_timeout(250)
+        page.focus(b); page.keyboard.press('Enter'); settle(page, 250)
         opened = page.evaluate('document.querySelectorAll("body > .pop, #helppane").length')
-        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        page.keyboard.press('Escape'); settle(page, 150)
         back.append((b, opened, page.evaluate('document.querySelectorAll("body > .pop, #helppane").length'), page.evaluate('"#" + document.activeElement.id')))
     check('Escape closes Share and Help and the focus returns to their buttons', all(o == 1 and c == 0 and a == b for b, o, c, a in back), back)
 
@@ -739,7 +1055,7 @@ def first_visit(p):
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto('https://rikuy.test/')
             page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
-            page.wait_for_timeout(300)
+            ready(page); settle(page, 300)
             return page
         dist = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
         doc = SKELETON_HEAD + open(os.path.join(dist, 'rikuy.html'), encoding='utf8').read() + '</body></html>'
@@ -753,26 +1069,26 @@ def first_visit(p):
             f = os.path.join(dist, rel) if rel else ''
             return route.fulfill(status=200, content_type='text/html; charset=utf-8' if rel.endswith('.html') else 'text/javascript', headers=policy(dist, '/' + rel), body=open(f, 'rb').read()) if f and os.path.isfile(f) else route.abort()
         on = 'document.body.classList.contains("src-on")'
-        ctx = browser.new_context(viewport={'width': 1400, 'height': 900}); ctx.route('**/*', serve)
+        ctx = browser.new_context(viewport={'width': 1400, 'height': 900}); ctx.route('**/*', serve); ctx.add_init_script(TIMERS)
         page = visit(ctx)
         check('a first visit on a wide screen shows the page without the source pane', not page.evaluate(on) and page.is_visible('#b-src'))
-        page.click('#b-help'); page.wait_for_timeout(200)
+        page.click('#b-help'); settle(page, 200)
         first = page.evaluate('document.querySelector(".pop-help p").textContent')
         check('Help starts by saying what Rikuy is, before any word about LaTeX source', first.startswith('Rikuy is a writing app for papers') and 'source' not in first, first)
         page.keyboard.press('Escape')
-        page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(300)
+        page.reload(); ready(page); settle(page, 300)
         check('a second visit with nothing chosen is the same', not page.evaluate(on))
-        page.click('#b-src'); page.wait_for_timeout(300)
-        page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(500)
+        page.click('#b-src'); settle(page, 300)
+        page.reload(); ready(page); settle(page, 500)
         check('the Source button opens the pane and the choice is kept', page.evaluate(on))
         # here before the change: a project kept in this browser, no settings ever written
-        click_text(page, 'Click anywhere'); page.keyboard.type('Mine. '); page.wait_for_timeout(1200)
+        click_text(page, 'Click anywhere'); page.keyboard.type('Mine. '); saved(page, 1200)
         page.evaluate('localStorage.removeItem(Object.keys(localStorage).find((k) => /pref/i.test(k)))')
-        page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(500)
+        page.reload(); ready(page); settle(page, 500)
         check('someone with a document kept and no settings keeps the source pane of a wide screen', page.evaluate(on) and 'Mine. ' in src(page), page.evaluate('Object.keys(localStorage)'))
         ctx.close()
         for w in (360, 390, 430):
-            ctx = browser.new_context(viewport={'width': w, 'height': 800}, has_touch=True, is_mobile=True); ctx.route('**/*', serve)
+            ctx = browser.new_context(viewport={'width': w, 'height': 800}, has_touch=True, is_mobile=True); ctx.route('**/*', serve); ctx.add_init_script(TIMERS)
             page = visit(ctx)
             geo = '(() => { const d = document.getElementById("desk"), r = document.querySelector("#pages .it.p").getBoundingClientRect(); return { font: parseFloat(getComputedStyle(document.querySelector("#pages .it.p")).fontSize), left: r.left, right: r.right, w: d.clientWidth, label: document.getElementById("zoomv").textContent, src: ' + on + ', web: document.body.classList.contains("pg-web") }; })()'
             m = page.evaluate(geo)
@@ -780,7 +1096,7 @@ def first_visit(p):
             wide = page.evaluate('Math.max(...[...document.querySelectorAll("#pages .it.p")].map((p) => p.getBoundingClientRect().width))')
             check('a first visit on a %dpx phone opens in Mobile View: the text at its actual size across the screen' % w, m['web'] and m['font'] >= 13 and m['left'] >= 0 and m['right'] <= m['w'] and wide > 0.8 * m['w'] and not m['src'] and m['label'] == '100%', (m, wide))
             # Print Layout, a tap on Mobile View away: the text block across the screen, not the sheet
-            page.tap('#sv-mobile'); page.wait_for_timeout(400)
+            page.tap('#sv-mobile'); settle(page, 400)
             m = page.evaluate(geo)
             check('with Mobile View off a %dpx phone shows the text block across the screen, not the sheet' % w, not m['web'] and m['font'] > 7.5 and m['left'] >= 0 and m['right'] <= m['w'] and m['right'] - m['left'] > m['w'] - 30 and not m['src'], m)
             # what is stored must be a zoom the version before this one can read (it multiplies
@@ -790,16 +1106,16 @@ def first_visit(p):
             if w == 390:
                 seen = []
                 for _ in range(3):
-                    page.tap('#zoomv'); page.wait_for_timeout(300); seen.append(page.inner_text('#zoomv'))
+                    page.tap('#zoomv'); settle(page, 300); seen.append(page.inner_text('#zoomv'))
                 # (the button says the zoom as a percentage, as the status bar does: the sheet's is smaller)
                 check('the zoom button there goes to actual size, the whole sheet, and back', seen[0] == '100%' and seen[1].endswith('%') and int(seen[1][:-1]) < int(m['label'][:-1]) and seen[2] == m['label'], seen)
-                page.tap('#zoomv'); page.tap('#zoomv'); page.wait_for_timeout(300)
+                page.tap('#zoomv'); page.tap('#zoomv'); settle(page, 300)
                 z = page.evaluate('JSON.parse(localStorage.getItem("galley.prefs.v1")).zoom')
-                page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(300)
+                page.reload(); ready(page); settle(page, 300)
                 check('the whole sheet, once chosen, is kept too, under a zoom the previous version reads', page.inner_text('#zoomv') == seen[1] and z == 'fit', (page.inner_text('#zoomv'), z))
-                page.tap('#zoomv'); page.wait_for_timeout(300)
-                page.tap('#zoomv'); page.wait_for_timeout(300)
-                page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(300)
+                page.tap('#zoomv'); settle(page, 300)
+                page.tap('#zoomv'); settle(page, 300)
+                page.reload(); ready(page); settle(page, 300)
                 check('and a zoom that was chosen is the one the next visit opens with', page.inner_text('#zoomv') == '100%', page.inner_text('#zoomv'))
             ctx.close()
     finally:
@@ -812,64 +1128,64 @@ def select_all(page):
     base = src(page)
     pre = base[:base.find('\\begin{document}') + len('\\begin{document}')]
     body = lambda: src(page)[len(pre):] if src(page).startswith(pre) else None
-    click_text(page, 'Click anywhere'); page.keyboard.press('Control+a'); page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    click_text(page, 'Click anywhere'); page.keyboard.press('Control+a'); page.keyboard.press('Delete'); settle(page, 300)
     check('select all, Delete leaves a blank body and the preamble as it was', body() == '\n\n\\end{document}\n', body())
     check('with the blank paragraph ready for typing', page.evaluate('!!(window.rikuy.ghost && window.rikuy.ghost.sticky)') and page.evaluate('(window.rikuy.caretNow() || {}).ghost === true') and page.evaluate('document.querySelectorAll("#pages .it:not(.ghostp)").length') == 0)
     page.keyboard.type('Fresh start'); wait_src(page, 'Fresh start')
     check('and typing starts the new text', (body() or '').split() == ['Fresh', 'start', '\\end{document}'], body())
     # ("start", "Fresh " and the deletion: typing is undone word by word, as Word's)
     for _ in range(3): page.keyboard.press('Control+z')
-    page.wait_for_timeout(300)
+    settle(page, 300)
     check('undo brings the whole document back byte for byte', src(page) == base)
     click_text(page, 'Click anywhere'); page.keyboard.press('Control+a'); page.keyboard.type('Z'); wait_src(page, '\n\nZ\n\n')
     one = body()
-    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    page.keyboard.press('Control+z'); settle(page, 300)
     check('typing over a selection of everything replaces the body, in one undo step', one == '\n\nZ\n\n\\end{document}\n' and src(page) == base, one)
     click_text(page, 'Click anywhere'); page.keyboard.press('Control+a')
     page.evaluate("""() => { const dt = new DataTransfer(); dt.setData('text/plain', 'First pasted.\\n\\nSecond pasted.');
       document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }""")
     wait_src(page, 'Second pasted.')
     one = body()
-    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    page.keyboard.press('Control+z'); settle(page, 300)
     check('a paste over everything becomes the body, its paragraphs kept', one == '\n\nFirst pasted.\n\nSecond pasted.\n\n\\end{document}\n' and src(page) == base, one)
-    select_text(page, 'paragraph'); page.keyboard.press('Delete'); page.wait_for_timeout(200)
+    select_text(page, 'paragraph'); page.keyboard.press('Delete'); settle(page, 200)
     check('a selection of less than everything deletes as before', 'in this  and start typing' in src(page) and '\\section{How to use it}' in src(page))
-    page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+    page.keyboard.press('Control+z'); settle(page, 200)
     # Only Select all is "everything". A selection from the first word to the last can leave
     # blocks with no text outside it (a picture, an equation, a listing): they must stay.
     DOC = ('\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\n\\begin{equation}\n  x = 1\n\\end{equation}\n\n'
            'The only sentence here.\n\n\\begin{verbatim}\ncode stays\n\\end{verbatim}\n\n\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{shot.png}\n\\end{center}\n\\end{document}\n')
     load_doc(page, DOC)
-    select_text(page, 'The only sentence here.'); page.wait_for_timeout(100)
-    page.keyboard.type('B'); page.wait_for_timeout(300)
+    select_text(page, 'The only sentence here.'); settle(page, 100)
+    page.keyboard.type('B'); settle(page, 300)
     check('a sentence selected from its first word to its last and typed over leaves the picture, the equation and the listing', src(page) == DOC.replace('The only sentence here.', 'B'), src(page))
-    page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+    page.keyboard.press('Control+z'); settle(page, 200)
     r = page.evaluate('(() => { const s = [...document.querySelectorAll("#pages span.t")].find((s) => s.textContent.includes("The only sentence")); const r = s.getBoundingClientRect(); return [r.left + 30, r.top + r.height / 2]; })()')
-    page.mouse.click(r[0], r[1], click_count=3); page.wait_for_timeout(150)
-    page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    page.mouse.click(r[0], r[1], click_count=3); settle(page, 150)
+    page.keyboard.press('Delete'); settle(page, 300)
     s = src(page)
     check('the same with a triple click and Delete', all(x in s for x in ('x = 1', 'code stays', '\\includegraphics[width=0.8\\linewidth]{shot.png}')) and 'only sentence' not in s, s)
     load_doc(page, DOC)
-    click_text(page, 'The only sentence'); page.keyboard.press('Control+a'); page.wait_for_timeout(100)
-    click_text(page, 'The only sentence', 4); page.wait_for_timeout(100)
-    select_text(page, 'The only sentence here.'); page.wait_for_timeout(100)
-    page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    click_text(page, 'The only sentence'); page.keyboard.press('Control+a'); settle(page, 100)
+    click_text(page, 'The only sentence', 4); settle(page, 100)
+    select_text(page, 'The only sentence here.'); settle(page, 100)
+    page.keyboard.press('Delete'); settle(page, 300)
     check('a Select all given up for another selection no longer counts', 'code stays' in src(page) and 'x = 1' in src(page), src(page))
     load_doc(page, DOC)
-    click_text(page, 'The only sentence'); page.keyboard.press('Control+a'); page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    click_text(page, 'The only sentence'); page.keyboard.press('Control+a'); page.keyboard.press('Delete'); settle(page, 300)
     check('Select all itself still takes every block', src(page) == '\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\n\n\\end{document}\n', src(page))
     # the body is the parser's: no \end{document}, and the preamble is not what gets replaced
     for label, doc in (('with no \\end{document}', '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nWords with no end.\n'),
                        ('with \\end {document} spaced', '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nWords with an end.\n\\end {document}\n'),
                        ('with no preamble at all', 'Only words here.\n\nAnd a second paragraph.\n')):
         load_doc(page, doc)
-        click_text(page, 'ords'); page.keyboard.press('Control+a'); page.keyboard.type('N'); page.wait_for_timeout(300)
+        click_text(page, 'ords'); page.keyboard.press('Control+a'); page.keyboard.type('N'); settle(page, 300)
         s = src(page)
         pre = doc[:doc.find('\\begin{document}') + 16] if '\\begin{document}' in doc else ''
         check('Select all and typing %s keeps everything before the text' % label, s.startswith(pre) and 'N' in s[len(pre):] and 'ords' not in s, s)
     doc = '\\documentclass{article}\n% moved from below: \\begin{document}\n\\usepackage{amsmath}\n\\newcommand{\\R}{\\mathbb{R}}\n\\begin{document}\nBody words.\n\\end{document}\n'
     load_doc(page, doc)
-    click_text(page, 'Body words'); page.keyboard.press('Control+a'); page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    click_text(page, 'Body words'); page.keyboard.press('Control+a'); page.keyboard.press('Delete'); settle(page, 300)
     check('a comment in the preamble that names \\begin{document} is not where the body starts', src(page) == doc.replace('\nBody words.\n', '\n\n'), src(page))
 
 
@@ -886,7 +1202,7 @@ def formula_mistakes(page):
         # the source box's text set as typing sets it; page.fill at times lost it to the math
         # field, which takes the focus back while it settles
         page.evaluate('(v) => { const ta = document.querySelector(".pop-math textarea"); ta.focus(); ta.value = v; ta.dispatchEvent(new Event("input", { bubbles: true })); }', v)
-        page.wait_for_timeout(350)
+        settle(page, 350)
         return page.evaluate(ERR)
     e = typed('\\frac{a}{b')
     check('an unclosed brace is named in plain words, KaTeX\'s own in the tooltip', e and e[0].startswith('A { is not closed.') and 'Unexpected end of input' in e[1], e)
@@ -905,22 +1221,22 @@ def formula_mistakes(page):
     # What was typed is never lost: closed with a brace open, the box writes the text with the
     # missing braces added, and undo has a step for it.
     typed('\\frac{a}{b}+{c')
-    page.focus('.pop-math textarea'); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    page.focus('.pop-math textarea'); page.keyboard.press('Enter'); settle(page, 300)
     check('Enter with a brace open closes the box and writes the formula with the brace closed', '$\\frac{a}{b}+{c}$' in src(page) and page.evaluate('document.querySelectorAll("body > .pop").length') == 0 and page.evaluate('document.querySelectorAll("#pages .a-chip.err, #pages .merr").length') == 0, src(page)[src(page).find('Click $'):][:60])
-    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    page.keyboard.press('Control+z'); settle(page, 300)
     check('and one undo takes back what the box wrote, as for any formula box', src(page) == base, src(page)[src(page).find('Click $'):][:60])
     page.click('.a-math >> nth=0')
     page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
     typed('\\sqrt{x')
     r = page.evaluate('(() => { const s = [...document.querySelectorAll("#pages span.t")].find((s) => s.textContent.includes("Editing in Print")); const r = s.getBoundingClientRect(); return [r.left + 10, r.top + r.height / 2]; })()')
-    page.mouse.click(*r); page.wait_for_timeout(300)
+    page.mouse.click(*r); settle(page, 300)
     check('a click on the page with a brace open keeps what was typed, the brace closed', '$\\sqrt{x}$' in src(page) and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, src(page)[src(page).find('Click $'):][:60])
     page.click('.a-math >> nth=0')
     page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
     typed('y^2}')
-    page.focus('.pop-math textarea'); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    page.focus('.pop-math textarea'); page.keyboard.press('Enter'); settle(page, 300)
     check('Enter with a brace too many keeps the box open with its message', page.evaluate('document.querySelectorAll("body > .pop.pop-math").length') == 1 and (page.evaluate(ERR) or [''])[0].startswith('A } has no { before it.') and '$\\sqrt{x}$' in src(page), page.evaluate(ERR))
-    page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    page.keyboard.press('Escape'); settle(page, 300)
     check('and Escape then keeps every character typed, in a formula that is whole', '${y^2}$' in src(page) and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, src(page)[src(page).find('Click $'):][:60])
     # a new formula: nothing is put into the text while a brace is open, all of it when the box closes
     click_text(page, 'References follow'); page.keyboard.type('$')
@@ -928,23 +1244,23 @@ def formula_mistakes(page):
     before = src(page)
     e = typed('x^{2')
     check('a new formula with a brace open is not put into the text while it is typed', e and e[0] == 'A { is not closed.' and src(page) == before, e)
-    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); settle(page, 300)
     check('and closing its box then puts it there, the brace closed', '$x^{2}$References' in src(page), src(page)[src(page).find('References') - 12:][:40])
     # a new numbered equation given up with nothing typed leaves nothing behind
     before = src(page)
     click_text(page, 'The page and the source never disagree'); page.evaluate('rikuy.runCommand("equation")')
     page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
     made = src(page) != before and '\\begin{equation}\n  \n\\end{equation}' in src(page)
-    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); settle(page, 300)
     check('a new numbered equation closed empty leaves no empty equation in the text', made and src(page) == before, src(page)[src(page).find('The page and the source') - 60:][:90])
     click_text(page, 'The page and the source never disagree'); page.evaluate('rikuy.runCommand("equation")')
     page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
     typed('E = m c^{2')
-    page.mouse.click(*r); page.wait_for_timeout(300)
+    page.mouse.click(*r); settle(page, 300)
     check('typed into and left with a brace open, it keeps the formula, the brace closed', re.search(r'\\begin\{equation\}\s+E = m c\^\{2\}\s+\\end\{equation\}', src(page)), src(page)[src(page).find('The page and the source') - 70:][:100])
     # a backslash left at the end would take the closing brace (or the formula's closing $) with
     # it: it is held like an open brace, and dropped when the box closes
-    page.evaluate('window.rikuy.doReset()'); page.wait_for_timeout(600)
+    page.evaluate('window.rikuy.doReset()'); settle(page, 600)
     base = src(page)
     red = 'document.querySelectorAll("#pages .a-chip.err, #pages .merr").length'
     page.click('.a-math >> nth=0')
@@ -952,33 +1268,33 @@ def formula_mistakes(page):
     e = typed('x^{2}\\')
     check('a backslash at the end is not written while it is typed', e and src(page) == base, e)
     typed('x^{2\\')
-    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); settle(page, 300)
     check('x^{2\\ and Escape: the formula is written whole, with no \\} and nothing red on the page', '$x^{2}$' in src(page) and '\\}' not in src(page)[src(page).find('Click $'):][:20] and page.evaluate(red) == 0, src(page)[src(page).find('Click $'):][:40])
-    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    page.keyboard.press('Control+z'); settle(page, 300)
     page.click('.a-math >> nth=0')
     page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
     typed('x\\\\')
-    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); settle(page, 300)
     check('two backslashes at the end are a line break and stay', '$x\\\\$' in src(page), src(page)[src(page).find('Click $'):][:40])
-    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    page.keyboard.press('Control+z'); settle(page, 300)
     click_text(page, 'References follow'); page.keyboard.type('$')
     page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
     n = page.evaluate('window.rikuy.hist.length')
     typed('\\frac{a}{\\')
-    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); settle(page, 300)
     check('a new formula \\frac{a}{\\ and Escape: the text is kept, whole, with an undo step', '$\\frac{a}{}$References' in src(page) and page.evaluate('window.rikuy.hist.length') == n + 1 and page.evaluate(red) == 0, src(page)[src(page).find('References') - 16:][:40])
-    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    page.keyboard.press('Control+z'); settle(page, 300)
     check('and undo takes it out', src(page) == base)
     # a new numbered equation given up empty: undo is as it was before it
-    click_text(page, 'References follow', 3); page.keyboard.type('Q'); page.wait_for_timeout(2200)
+    click_text(page, 'References follow', 3); page.keyboard.type('Q'); settle(page, 2200)
     mark, n = src(page), page.evaluate('window.rikuy.hist.length')
     click_text(page, 'The page and the source never disagree'); page.evaluate('rikuy.runCommand("equation")')
     page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
-    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); settle(page, 300)
     check('an empty new equation given up leaves the undo history as it was', src(page) == mark and page.evaluate('window.rikuy.hist.length') == n, (page.evaluate('window.rikuy.hist.length'), n))
-    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    page.keyboard.press('Control+z'); settle(page, 300)
     check('so the next undo takes back the typing before it, not an empty equation', src(page) == base and '\\begin{equation}\n  \n\\end{equation}' not in src(page), src(page)[src(page).find('References') - 5:][:30])
-    page.keyboard.press('Control+Shift+z'); page.wait_for_timeout(300)
+    page.keyboard.press('Control+Shift+z'); settle(page, 300)
     check('and redo brings that typing back, not the equation', src(page) == mark)
 
 def native_core(page):
@@ -994,7 +1310,7 @@ def native_core(page):
     before = page.evaluate('window.rikuy.core.stats.parsed')
     click_text(page, 'Last words', 4)
     page.keyboard.type('XY')
-    page.wait_for_timeout(300)
+    settle(page, 300)
     check('typing on a long document parses it in the core', page.evaluate('window.rikuy.core.stats.parsed') > before and 'LastXY words' in src(page), page.evaluate('window.rikuy.core.stats'))
     check('the core\'s tree of it in Chromium is JavaScript\'s', page.evaluate('() => { const g = window.rikuy; return g.core.same(g.files.get("main.tex")) && g.core.same(g.files.get("main.tex") + "\\\\verb|\\ud83d\\ude00| \\\\begin{toString}"); }'))
 
@@ -1071,7 +1387,7 @@ def run():
         s8 = src(page)
         check('math popover edits source live', '$\\alpha + \\beta = \\delta$' in s8, s8[s8.find('Click $'):][:50])
         page.keyboard.press('Enter')
-        page.wait_for_timeout(100)
+        settle(page, 100)
         check('popover closes on enter', page.evaluate('!document.querySelector(".pop")'))
         page.keyboard.press('Control+z')
         check('undo math edit', src(page) == base, src(page)[src(page).find('Click $'):][:50])
@@ -1082,11 +1398,11 @@ def run():
         # (the sample's equation has a label: unnumbered, \eqref to it would print ??, so that kind
         # is refused with the reason and the list goes back; a numbered kind is a rename)
         page.select_option('#pop-env', 'equation*')
-        page.wait_for_timeout(300)
+        settle(page, 300)
         check('display env switch to unnumbered refused for a labelled equation', src(page) == base and page.input_value('#pop-env') == 'equation' and 'label' in page.evaluate('document.getElementById("toast").textContent'),
               (page.input_value('#pop-env'), page.evaluate('document.getElementById("toast").textContent')))
         page.select_option('#pop-env', 'align')
-        page.wait_for_timeout(300)
+        settle(page, 300)
         s9 = src(page)
         check('display env switch', '\\begin{align}' in s9 and '\\end{align}' in s9 and s9.replace('{align}', '{equation}', 2) == base, s9[s9.find('\\begin{align'):][:40])
         page.keyboard.press('Escape')
@@ -1191,39 +1507,40 @@ def run():
         click_text(page, ' to edit its source', 0)
         page.keyboard.press('Backspace')
         page.keyboard.press('Enter')
-        page.wait_for_timeout(200)
+        settle(page, 200)
         check('Enter on a selected equation opens it', page.evaluate('!!document.querySelector(".pop-math")') and src(page) == base)
         page.keyboard.press('Escape')
-        page.wait_for_timeout(100)
+        settle(page, 100)
         check('closing it leaves the source alone', src(page) == base)
 
         # 19. source pane opens and syncs
         if not page.evaluate("document.body.classList.contains('src-on')"):
             page.click('#b-src')
         page.wait_for_selector('#cmhost .CodeMirror', timeout=5000)
-        page.wait_for_timeout(200)
+        settle(page, 200)
         cmv = page.evaluate('window.rikuy.cm.getValue()')
         check('source pane shows main.tex', cmv == src(page))
         click_text(page, 'Math is an object', 4)
         page.keyboard.type('W')
-        page.wait_for_timeout(100)
+        settle(page, 100)
         check('page edit mirrors into source pane', page.evaluate('window.rikuy.cm.getValue()') == src(page) and 'MathW' in src(page))
         page.keyboard.press('Control+z')
         page.evaluate('''() => { const cm = window.rikuy.cm; const d = cm.getDoc(); const i = d.getValue().indexOf('Math is an object'); d.replaceRange('Algebra ', d.posFromIndex(i)); }''')
-        page.wait_for_timeout(600)
+        # (the source pane's edit reaches the page after its pause, srcRebuild's 260 ms)
+        settle(page, 600, full=True)
         has = page.evaluate('[...document.querySelectorAll("#pages span.t")].some(s => s.textContent.includes("Algebra Math is"))')
         check('source edit re-typesets page', has)
         page.screenshot(path=SHOTS + '/02-source.png')
         page.keyboard.press('Control+z')
-        page.wait_for_timeout(300)
+        settle(page, 300)
         # typing in the source and undoing at once: the typing goes, nothing older does
         click_text(page, 'Math is an object', 4)
         page.keyboard.type('Q')
-        page.wait_for_timeout(2100)
+        settle(page, 2100)
         page.evaluate('''() => { const cm = window.rikuy.cm; const d = cm.getDoc(); const i = d.getValue().indexOf('The round trip'); cm.focus(); d.setCursor(d.posFromIndex(i + 3)); }''')
         page.keyboard.type('XYZ')
         page.keyboard.press('Control+z')
-        page.wait_for_timeout(400)
+        settle(page, 400)
         check('Ctrl+Z right after typing in the source undoes that typing only', 'MathQ is' in src(page) and 'XYZ' not in src(page) and page.evaluate('window.rikuy.cm.getValue()') == src(page))
         page.evaluate('''() => { const cm = window.rikuy.cm; const d = cm.getDoc(); const i = d.getValue().indexOf('The round trip'); cm.focus(); d.setCursor(d.posFromIndex(i + 3)); }''')
         page.keyboard.type('UVW')
@@ -1236,7 +1553,7 @@ def run():
         # Tab indents in the source pane; Escape, then Tab, leaves it without typing anything
         page.evaluate('() => { const cm = window.rikuy.cm; cm.focus(); cm.setCursor({line: 0, ch: 0}); }')
         page.keyboard.press('Escape'); page.keyboard.press('Tab')
-        page.wait_for_timeout(400)
+        settle(page, 400)
         check('Escape, then Tab, leaves the source pane and types nothing', src(page) == base and not page.evaluate("!!document.activeElement.closest('#srcpane')"), page.evaluate('document.activeElement.className'))
         edges(page, errors)
         popovers(page)
@@ -1254,12 +1571,12 @@ def run():
         sw = page.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')
         check('no horizontal page scroll on phone', sw <= 0, sw)
         page.click('#zoomv')
-        page.wait_for_timeout(300)
+        settle(page, 300)
         r = page.evaluate('''() => { const d = document.getElementById('desk'); d.scrollLeft = 0; const pg = document.querySelector('.page').getBoundingClientRect(); return [document.getElementById('zoomv').textContent, Math.round(pg.left - d.getBoundingClientRect().left), d.scrollWidth - d.clientWidth]; }''')
         check('on a phone the Fit button switches to actual size', r[0] == '100%', r)
         check('a page wider than the window starts at its left edge and scrolls', r[1] >= 0 and r[2] > 0, r)
         page.set_viewport_size({'width': 900, 'height': 700})
-        page.wait_for_timeout(300)
+        settle(page, 300)
         over = page.evaluate('''() => { const m = document.querySelector('.brand .mark').getBoundingClientRect(); const b = document.getElementById('b-open').getBoundingClientRect(); return [Math.round(m.right), Math.round(b.left)]; }''')
         check('the name and the buttons do not overlap at 900px', over[0] <= over[1], over)
         check('no console errors (mobile)', not errors, errors[:5])
@@ -1272,11 +1589,13 @@ def run():
             t.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
             t.goto('https://rikuy.test/')
             t.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
-            t.wait_for_timeout(300)
+            ready(t); settle(t, 300)
             return t
         def vis(t, state):
             t.evaluate('''(s) => { Object.defineProperty(document, 'visibilityState', {value: s, configurable: true}); document.dispatchEvent(new Event('visibilitychange')); }''', state)
-            t.wait_for_timeout(300)
+            # (hidden, the tab writes what it has; shown, it takes in what another tab wrote: both
+            # through IndexedDB, done when its copy and IndexedDB's agree)
+            settle(t, 300); kept(t)
         B = tab()
         vis(B, 'hidden')
         click_text(A, 'Click anywhere in this paragraph', 5)
@@ -1287,18 +1606,18 @@ def run():
         B.keyboard.type('BBB')
         vis(B, 'hidden'); vis(A, 'visible')
         check('and back again, keeping its own', 'MathBBB' in src(A) and 'ClickAAA' in src(A))
-        A.wait_for_timeout(900)
+        saved(A, 900)
         C = tab()
         click_text(C, 'start typing', 3)
         C.keyboard.type('CCC')
-        C.wait_for_timeout(1000)
+        saved(C, 1000)
         B.close(run_before_unload=True)  # B changed nothing since it last saved
         D = tab()
         check('closing a tab that changed nothing keeps what another tab saved', 'staCCCrt typing' in src(D) and 'ClickAAA' in src(D) and 'MathBBB' in src(D))
         # both visible (side by side): A types without having seen C's text
         click_text(A, 'Rikuy escapes', 3)
         A.keyboard.type('Z')
-        A.wait_for_timeout(1200)
+        saved(A, 1200)
         vs = A.evaluate('window.rikuy.allSnaps().then(async vs => { for (const v of vs) { const f = new Map(await window.rikuy.versionFiles(v) || []); if (v.label === "From another tab" && (f.get("main.tex") || "").includes("staCCCrt")) return true; } return false; })')
         check('a tab that writes over another tab\'s text keeps that text as a version', vs)
         # a phone hides the page, then kills it without unload
@@ -1379,29 +1698,30 @@ def zoom_gestures(page):
     page.mouse.move(*at)
     was, text = lab(), page.evaluate(under, at)
     page.keyboard.down('Control'); page.mouse.wheel(0, -100); page.keyboard.up('Control')
-    page.wait_for_timeout(300)
+    settle(page, 300)
     check('Ctrl with the mouse wheel over the page zooms the document, and the zoom number follows', lab() != was and lab().endswith('%'), (was, lab()))
     check('and what was under the pointer is still under it', page.evaluate(under, at) == text, (text, page.evaluate(under, at)))
     one = lab()
     for _ in range(6):
-        page.keyboard.down('Control'); page.mouse.wheel(0, -6); page.keyboard.up('Control'); page.wait_for_timeout(20)
-    page.wait_for_timeout(300)
+        page.keyboard.down('Control'); page.mouse.wheel(0, -6); page.keyboard.up('Control'); settle(page, 20)
+    settle(page, 300)
     check('a pinch (small steps, as a trackpad sends them) zooms by small amounts, not button steps', 0 < int(lab()[:-1]) - int(one[:-1]) < 25, (one, lab()))
     page.mouse.click(*at)
-    page.keyboard.press('Control+0'); page.wait_for_timeout(200)
+    page.keyboard.press('Control+0'); settle(page, 200)
     z0 = lab()
-    page.keyboard.press('Control+Equal'); page.wait_for_timeout(200)
+    page.keyboard.press('Control+Equal'); settle(page, 200)
     z1 = lab()
-    page.keyboard.press('Control+Minus'); page.wait_for_timeout(200)
+    page.keyboard.press('Control+Minus'); settle(page, 200)
     check('on the page Ctrl+0 is actual size, Ctrl+= and Ctrl+- step in and out', (z0, z1, lab()) == ('100%', '110%', '100%'), (z0, z1, lab()))
-    page.keyboard.down('Control'); page.mouse.wheel(0, -300); page.keyboard.up('Control'); page.wait_for_timeout(500)
+    # (the zoom is written to the settings after the wheel stops, by a timer)
+    page.keyboard.down('Control'); page.mouse.wheel(0, -300); page.keyboard.up('Control'); settle(page, 500, full=True)
     kept = lab()
-    page.reload(); page.wait_for_function('window.rikuy && window.rikuy.model', timeout=30000); page.wait_for_timeout(500)
+    page.reload(); ready(page); settle(page, 500)
     check('a zoom made with the wheel is the one the next visit opens with', lab() == kept, (kept, lab()))
-    page.click('#b-src'); page.wait_for_timeout(500)
+    page.click('#b-src'); settle(page, 500)
     box = page.evaluate("(() => { const r = document.getElementById('srcpane').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
     page.mouse.move(*box)
-    page.keyboard.down('Control'); page.mouse.wheel(0, -100); page.keyboard.up('Control'); page.wait_for_timeout(300)
+    page.keyboard.down('Control'); page.mouse.wheel(0, -100); page.keyboard.up('Control'); settle(page, 300)
     check('over the source the wheel is the browser\'s again: the document\'s zoom stays', lab() == kept, (kept, lab()))
 
 if __name__ == '__main__':

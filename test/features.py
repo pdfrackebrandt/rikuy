@@ -2,7 +2,7 @@
 included file, undo there, and save a zip whose files come back byte for byte."""
 import os, sys, time, json, zipfile, io, struct, zlib, base64, tempfile, traceback
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import open_page, check, results, SHOTS, src, wait_src, click_text, select_text, load_doc, download
+from browser import settle, open_page, check, results, SHOTS, src, wait_src, click_text, select_text, load_doc, download
 from playwright.sync_api import sync_playwright
 
 TMP = tempfile.mkdtemp(prefix='rikuy-features-')
@@ -54,7 +54,7 @@ try:
         # --- open zip
         page.set_input_files('#fileinput', zp)
         page.wait_for_function('window.rikuy.main === "main.tex" && window.rikuy.files.has("sections/body.tex")', timeout=8000)
-        page.wait_for_timeout(300)
+        settle(page, 300)
         check('zip opened with nested files', page.evaluate('[...window.rikuy.files.keys()].sort().join(",")') == 'main.tex,refs.bib,sections/body.tex')
         check('project named after zip', page.evaluate('window.rikuy.name') == 'project', page.evaluate('window.rikuy.name'))
         check('included file rendered', page.evaluate('[...document.querySelectorAll("#pages span.t")].some(s => s.textContent.includes("lives in an included file"))'))
@@ -82,14 +82,14 @@ try:
         # --- persistence across reload
         click_text(page, 'Main text before input', 4)
         page.keyboard.type('X')
-        page.wait_for_timeout(900)
+        settle(page, 900)
         page.reload()
         page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=15000)
         check('document persists across reload', 'MainX text' in src(page))
         # (Undo's steps are kept with it: the X typed before the reload goes, and Redo puts it back)
-        page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+        page.keyboard.press('Control+z'); settle(page, 200)
         check('undo after the reload takes the X typed before it', 'MainX text' not in src(page) and 'Main text' in src(page))
-        page.keyboard.press('Control+y'); page.wait_for_timeout(200)
+        page.keyboard.press('Control+y'); settle(page, 200)
         # --- Ask Claude
         click_text(page, 'MainX text before input', 0)
         select_text(page, 'MainX text before input')
@@ -100,7 +100,7 @@ try:
         prompt = page.evaluate('window.__lastPrompt')
         check('ask prompt carries fragment and house style', 'MainX text before input' in prompt and 'House style' in prompt)
         page.click('#ask-accept')
-        page.wait_for_timeout(200)
+        settle(page, 200)
         check('accepting replaces selection in source', 'A REWRITTEN sentence.' in src(page) and 'MainX' not in src(page), src(page)[src(page).find('Intro'):][:80])
         page.keyboard.press('Control+z')
         # --- paste plain text with specials and paragraphs
@@ -136,7 +136,7 @@ try:
         page.keyboard.type('$')
         page.wait_for_selector('#pop-newtex')
         page.keyboard.type('$')
-        page.wait_for_timeout(100)
+        settle(page, 100)
         check('dollar dollar gives literal \\$', 'before\\$ input' in src(page), src(page)[src(page).find('Main'):][:40])
         page.keyboard.press('Control+z')
         # --- palette: footnote
@@ -164,7 +164,7 @@ try:
         cdp = page.context.new_cdp_session(page)
         cdp.send('Input.imeSetComposition', {'text': '\u00b4', 'selectionStart': 1, 'selectionEnd': 1})
         cdp.send('Input.insertText', {'text': '\u00e9'})
-        page.wait_for_timeout(150)
+        settle(page, 150)
         s = src(page)
         check('IME composed character inserted once', s.count('\u00e9') == 1 and 'before\u00e9 input' in s, s[s.find('Main'):][:40])
         page.keyboard.press('Control+z')
@@ -207,7 +207,7 @@ try:
         before = page.evaluate('() => window.rikuy.name')
         page.click('#b-new')
         page.wait_for_function("() => window.rikuy.name.startsWith('Untitled')", timeout=5000)
-        page.wait_for_timeout(400)
+        settle(page, 400)
         check('New document opens a blank article', page.evaluate("() => window.rikuy.files.get('main.tex')") == '\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\end{document}\n')
         kept = page.evaluate('async (n) => (await window.rikuy.allSnaps()).some((v) => v.name === n)', before)
         check('and the document before it stays under Versions', kept, before)

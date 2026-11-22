@@ -14,7 +14,7 @@ cut, copy and the paste options, symbols and special characters with their keys,
 AutoCorrect as typed. Screenshots in $RIKUY_SHOTS (default /tmp/B11-shots)."""
 import os, sys, io, re, json, base64
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import open_page, src, load_doc, click_text, select_text, check, results, roundtrip
+from browser import settle, open_page, src, load_doc, click_text, select_text, check, results, roundtrip
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -46,12 +46,12 @@ def insert_graph(page, kind=None, at=('Hello', 2), caption=None):
     click_text(page, *at)
     page.evaluate('(k) => window.rikuy.runCommand("insert-interactive-graph", k ? { template: k } : null)', kind)
     page.wait_for_selector('#gd-ok')
-    page.wait_for_timeout(400)
+    settle(page, 400)
     if caption is not None:
         page.get_by_role('textbox', name='Caption').fill(caption)
     page.click('#gd-ok')
     page.wait_for_function('!document.getElementById("gd-ok")', timeout=15000)
-    page.wait_for_timeout(600)
+    settle(page, 600)
 
 
 def graph_insert(page):
@@ -69,9 +69,9 @@ def graph_insert(page):
     check('graph: rikuy.sty v1.1, which inputs a .pgf picture', '\\rikuy@figure' in src(page, 'rikuy.sty'))
     page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000)
     check('graph: it runs on the page in a frame sandboxed to scripts alone', page.evaluate('document.querySelector("#wlayer iframe.rk-widget").getAttribute("sandbox")') == 'allow-scripts')
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.undo()'); settle(page, 300)
     check('graph: one undo gives the source back byte for byte, the files and the picture gone', src(page) == DOC and files(page) == [['main.tex'], []], files(page))
-    page.evaluate('window.rikuy.redo()'); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.redo()'); settle(page, 300)
     check('graph: redo brings them all again', src(page) == want and files(page)[1] == [G + '.pgf'] and src(page, G + '.html') == html)
     # a second graph takes the next names; rikuy.sty and the package are not written twice
     insert_graph(page, 'data', at=('Second', 1), caption='Data & more')
@@ -88,39 +88,39 @@ def graph_edit(page):
     load_doc(page, DOC)
     insert_graph(page)
     G = newest(page, 'function'); want = WANT.replace('graphs/function-1', G)
-    page.evaluate('window.rikuy.graphRefresh()'); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.graphRefresh()'); settle(page, 300)
     before, png0 = src(page, G + '.html'), blob_b64(page, G + '.pgf')
     h0 = page.evaluate('window.rikuy.hist.length')
     page.evaluate('window.rikuy.runCommand("edit-graph")')
     page.wait_for_selector('#gd-ok')
     check('graph: Edit graph opens the dialog on it, its formula in the field', page.get_by_role('textbox', name='Formulas').input_value() == 'y = a sin(b x)' and page.inner_text('#gd-ok') == 'Update')
-    page.click('#gd-ok'); page.wait_for_timeout(500)
+    page.click('#gd-ok'); settle(page, 500)
     check('graph: Update with nothing changed writes nothing', page.evaluate('window.rikuy.hist.length') == h0 and src(page, G + '.html') == before)
     page.evaluate('(f) => window.rikuy.runCommand("edit-graph", { file: f })', G + '.html')
     page.wait_for_selector('#gd-ok')
     page.get_by_role('textbox', name='Formulas').fill('y = a sin(b x) + c')
-    page.wait_for_timeout(400)
+    settle(page, 400)
     check('graph: a new letter gets a slider of its own', page.get_by_role('textbox', name='Slider 3 name').input_value() == 'c')
     page.get_by_role('textbox', name='Slider 3 start').fill('0.5')
-    page.click('#gd-ok'); page.wait_for_timeout(1200)
+    page.click('#gd-ok'); settle(page, 1200)
     after = src(page, G + '.html')
     check('graph: Update writes the file and the picture, the text untouched, one step', after != before and '"a sin(b x) + c"' in after and src(page) == want and blob_b64(page, G + '.pgf') != png0 and page.evaluate('window.rikuy.hist.length') == h0 + 1)
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.undo()'); settle(page, 300)
     check('graph: one undo gives the file and the picture back byte for byte', src(page, G + '.html') == before and blob_b64(page, G + '.pgf') == png0)
     # a mistake is said where it is, and Update waits
     page.evaluate('window.rikuy.runCommand("edit-graph")'); page.wait_for_selector('#gd-ok')
     page.get_by_role('textbox', name='Formulas').fill('y = sin(x')
-    page.wait_for_timeout(300)
+    settle(page, 300)
     check('graph: a mistake in a formula is said and Update waits', 'not closed' in page.inner_text('.gd-err') and page.evaluate('document.getElementById("gd-ok").disabled'), page.inner_text('.gd-err'))
-    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    page.keyboard.press('Escape'); settle(page, 200)
     # hand written: the command's fallback is a .jpg; the graph gets a PNG and the command points at it
     html = before
     hand = '\\documentclass{article}\n\\usepackage{rikuy}\n\\begin{document}\nText.\n\n\\rikuywidget [ width=.8\\textwidth ] {figs/g.html} {figs/g.jpg} % mine\n\n% \\rikuywidget{figs/g.html}{figs/old.png}\n\\end{document}\n'
     load_doc(page, {'main.tex': hand, 'figs/g.html': html, 'rikuy.sty': '%'})
     page.evaluate('window.rikuy.runCommand("edit-graph")'); page.wait_for_selector('#gd-ok')
     page.get_by_role('textbox', name='Formulas').fill('y = a cos(b x)')
-    page.wait_for_timeout(300)
-    page.click('#gd-ok'); page.wait_for_timeout(1200)
+    settle(page, 300)
+    page.click('#gd-ok'); settle(page, 1200)
     check('graph: a hand written command with a .jpg fallback is pointed at the new PNG, only that argument (the commented one left)', src(page) == hand.replace('{figs/g.jpg}', '{figs/g.png}') and 'figs/g.png' in files(page)[1], src(page))
 
 
@@ -131,7 +131,7 @@ def graph_kinds(page):
         page.evaluate('window.rikuy.zoomTo ? window.rikuy.zoomTo(1, null) : 0')
         insert_graph(page, kind)
         page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000)
-        page.wait_for_timeout(900)
+        settle(page, 900)
         name = [n for n in files(page)[0] if ('distribution' if kind == 'dist' else kind) + '-' in n and n.endswith('.html')][-1]
         fr = page.frame_locator('#wlayer iframe.rk-widget')
         box = fr.locator('#rk-c').bounding_box()
@@ -161,7 +161,7 @@ def graph_hint_menu(page):
     page.wait_for_selector('.w-hint', timeout=8000)
     check('graph: the first graph says once how it works', 'drag its sliders' in page.inner_text('.w-hint') and 'PDF prints this picture' in page.inner_text('.w-hint'))
     page.screenshot(path=os.path.join(SHOTS, 'page-hint.png'))
-    page.click('.w-hint button'); page.wait_for_timeout(200)
+    page.click('.w-hint button'); settle(page, 200)
     check('graph: Got it puts it away for good', page.locator('.w-hint').count() == 0 and page.evaluate('window.rikuy.prefs.graphHint') == 1)
     fr = page.frame_locator('#wlayer iframe.rk-widget')
     bb = page.locator('#wlayer iframe.rk-widget').bounding_box()
@@ -169,9 +169,9 @@ def graph_hint_menu(page):
     fr.locator('#rk-c').click(button='right', position={'x': 60, 'y': 40})
     page.wait_for_selector('[role=menu][aria-label="Graph menu"]', timeout=4000)
     check('graph: a right click in its frame opens Rikuy\'s menu with Edit graph', page.get_by_role('menuitem', name='Edit graph').count() == 1)
-    page.get_by_role('menuitem', name='Edit graph').click(); page.wait_for_timeout(300)
+    page.get_by_role('menuitem', name='Edit graph').click(); settle(page, 300)
     check('graph: and Edit graph there opens the dialog', page.locator('#gd-ok').count() == 1)
-    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    page.keyboard.press('Escape'); settle(page, 200)
     # a frame asking again and again opens one menu a second at most
     n = page.evaluate('''async () => { const w = document.querySelector('#wlayer iframe.rk-widget').contentWindow; let opened = 0;
       const mo = new MutationObserver(() => { if (document.querySelector('[aria-label="Graph menu"]')) opened++; }); mo.observe(document.body, { childList: true });
@@ -180,20 +180,20 @@ def graph_hint_menu(page):
     check('graph: five menu requests with no press in the frame open no menu (review H2)', n == 0, n)
     # a graph asking all the time while one types on the page and in a dialog: nothing is taken
     page.evaluate('''() => { const w = document.querySelector('#wlayer iframe.rk-widget').contentWindow; window.__spam = setInterval(() => window.dispatchEvent(new MessageEvent('message', { data: { rikuy: 'menu', x: 10, y: 10 }, source: w })), 60); }''')
-    click_text(page, 'Second para.', 12); page.keyboard.type(' The quick brown fox'); page.wait_for_timeout(300)
+    click_text(page, 'Second para.', 12); page.keyboard.type(' The quick brown fox'); settle(page, 300)
     page.evaluate('window.rikuy.runCommand("autocorrect-options")'); page.wait_for_selector('.pop-acopt')
-    page.get_by_role('textbox', name='User name').type('Ada Lovelace'); page.wait_for_timeout(300)
+    page.get_by_role('textbox', name='User name').type('Ada Lovelace'); settle(page, 300)
     still = page.locator('.pop-acopt').count() == 1 and page.get_by_role('textbox', name='User name').input_value() == 'Ada Lovelace'
     page.evaluate('clearInterval(window.__spam)'); page.keyboard.press('Escape')
     check('graph: a frame asking every 60 ms takes no typed letter and closes no dialog (review H2)', 'Second para. The quick brown fox' in src(page) and still, src(page)[-80:])
     page.keyboard.press('Escape')
     # the Edit graph button over it, and the right click menu with the graph armed
-    page.mouse.move(bb['x'] - 30, bb['y'] + 40); page.hover('#wlayer .wbox'); page.wait_for_timeout(200)
+    page.mouse.move(bb['x'] - 30, bb['y'] + 40); page.hover('#wlayer .wbox'); settle(page, 200)
     check('graph: Edit graph shows over the graph', page.evaluate('getComputedStyle(document.querySelector(".w-edit")).opacity') == '1')
-    page.click('.w-edit'); page.wait_for_timeout(300)
+    page.click('.w-edit'); settle(page, 300)
     check('graph: and opens the dialog', page.locator('#gd-ok').count() == 1)
     page.keyboard.press('Escape')
-    page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden', timeout=20000); page.wait_for_timeout(1500)
+    page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden', timeout=20000); settle(page, 1500)
     check('graph: after a reload the hint does not come back', page.locator('.w-hint').count() == 0 and page.evaluate('document.querySelectorAll("#wlayer iframe.rk-widget").length') == 1)
 
 
@@ -203,8 +203,8 @@ def graph_safety(page):
     check('graph: the dialog\'s preview is sandboxed as the page\'s widgets are', page.evaluate('document.querySelector(".gd-frame").getAttribute("sandbox")') == 'allow-scripts')
     page.get_by_role('textbox', name='x label').fill('</script><script>parent.document.title="pwned"</script>')
     page.get_by_role('textbox', name='Description').fill('<img src=x onerror=alert(1)>')
-    page.wait_for_timeout(700)
-    page.click('#gd-ok'); page.wait_for_timeout(1500)
+    settle(page, 700)
+    page.click('#gd-ok'); settle(page, 1500)
     html = src(page, newest(page, 'function') + '.html')
     check('graph: a description cannot end its script element or reach the page', html.count('</script>') == 2 and page.evaluate('document.title') != 'pwned' and '<img src=x' not in html.split('<body>')[0].split('<title>')[1].split('</title>')[0], html[:400])
     reach = page.frame_locator('#wlayer iframe.rk-widget').locator('body').evaluate('''() => { const r = []; try { r.push(String(parent.document)); } catch (e) { r.push('blocked'); } try { r.push(String(localStorage.length)); } catch (e) { r.push('blocked'); } return r; }''')
@@ -217,7 +217,7 @@ def graph_phones(p):
             browser, page, errors = open_page(p, w, h, dark=dark, touch=True)
             load_doc(page, DOC)
             click_text(page, 'Hello', 2)
-            page.evaluate('window.rikuy.runCommand("insert-interactive-graph")'); page.wait_for_selector('#gd-ok'); page.wait_for_timeout(700)
+            page.evaluate('window.rikuy.runCommand("insert-interactive-graph")'); page.wait_for_selector('#gd-ok'); settle(page, 700)
             page.screenshot(path=os.path.join(SHOTS, 'dialog-%d%s.png' % (w, '-dark' if dark else '')))
             if dark:
                 browser.close(); continue
@@ -227,18 +227,18 @@ def graph_phones(p):
               return { side: document.scrollingElement.scrollWidth > innerWidth, inside: r.left >= 0 && r.right <= innerWidth && f.right <= r.right, over: d.scrollWidth > d.clientWidth + 1, small }; }''')
             check('phone %d: the dialog fits, no sideways scroll, the preview inside it' % w, not fit['side'] and fit['inside'] and not fit['over'], fit)
             check('phone %d: every control of the dialog is 44 px each way' % w, fit['small'] == 0, fit)
-            page.tap('#gd-ok'); page.wait_for_timeout(1500)
-            page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); page.wait_for_timeout(600)
+            page.tap('#gd-ok'); settle(page, 1500)
+            page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); settle(page, 600)
             # (a graph's buttons wait for a tap in it, then stand above it, off its curves)
             fb = page.locator('#wlayer iframe.rk-widget').bounding_box()
             hid = page.evaluate('getComputedStyle(document.querySelector(".wgraph .w-edit")).opacity')
-            page.touchscreen.tap(fb['x'] + fb['width'] * 0.5, fb['y'] + fb['height'] * 0.25); page.wait_for_timeout(400)
+            page.touchscreen.tap(fb['x'] + fb['width'] * 0.5, fb['y'] + fb['height'] * 0.25); settle(page, 400)
             b = page.evaluate('(() => { const e = document.querySelector(".wgraph .w-edit"), r = e.getBoundingClientRect(), t = document.querySelector(".wgraph .w-src").getBoundingClientRect(); return [r.width, r.height, getComputedStyle(e).opacity, r.bottom, t.bottom, t.width, t.height, r.right <= t.left]; })()')
             check('phone %d: Edit graph and LaTeX wait for a tap in the graph, then show above it, 44 px on the screen though the page is zoomed out' % w, hid == '0' and b[0] >= 43.5 and b[1] >= 43.5 and b[2] == '1' and b[3] <= fb['y'] + 0.5 and b[4] <= fb['y'] + 0.5 and b[5] >= 43.5 and b[6] >= 43.5 and b[7], (hid, b, fb))
             fr = page.frame_locator('#wlayer iframe.rk-widget')
             sb = fr.locator('#rk-0').bounding_box()
             v0 = fr.locator('#rk-0').input_value()
-            page.touchscreen.tap(sb['x'] + sb['width'] * 0.92, sb['y'] + sb['height'] / 2); page.wait_for_timeout(300)
+            page.touchscreen.tap(sb['x'] + sb['width'] * 0.92, sb['y'] + sb['height'] / 2); settle(page, 300)
             check('phone %d: a slider moves by a tap' % w, fr.locator('#rk-0').input_value() != v0, (v0, fr.locator('#rk-0').input_value()))
             check('phone %d: no sideways scroll on the page with the graph' % w, not page.evaluate('document.scrollingElement.scrollWidth > innerWidth'))
             page.screenshot(path=os.path.join(SHOTS, 'page-%d.png' % w))
@@ -267,7 +267,7 @@ def shots(p):
         for dark in (False, True):
             browser, page, errors = open_page(p, w, h, dark=dark)
             load_doc(page, DOC); click_text(page, 'Hello', 2)
-            page.evaluate('window.rikuy.runCommand("insert-interactive-graph", { template: "dist" })'); page.wait_for_selector('#gd-ok'); page.wait_for_timeout(900)
+            page.evaluate('window.rikuy.runCommand("insert-interactive-graph", { template: "dist" })'); page.wait_for_selector('#gd-ok'); settle(page, 900)
             page.screenshot(path=os.path.join(SHOTS, 'dialog-%d%s.png' % (w, '-dark' if dark else '')))
             browser.close()
 
@@ -304,48 +304,48 @@ def clipboard(page):
     page.context.grant_permissions(['clipboard-read', 'clipboard-write'], origin='https://rikuy.test')
     load_doc(page, W('Alpha \\textbf{beta} gamma.\n\nDelta.'))
     check('clipboard: the search box finds Paste and its options', all(page.evaluate('(n) => window.rikuy.cmds.commands().some((c) => c.name === n)', n) for n in ('Paste', 'Keep Text Only', 'Paste as LaTeX source', 'Paste Special')))
-    select_text(page, 'gamma'); page.keyboard.press('Control+c'); click_text(page, 'Delta', 5); page.keyboard.press('Control+v'); page.wait_for_timeout(300)
+    select_text(page, 'gamma'); page.keyboard.press('Control+c'); click_text(page, 'Delta', 5); page.keyboard.press('Control+v'); settle(page, 300)
     by_keys = src(page)
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     select_text(page, 'gamma')
-    page.evaluate('window.rikuy.runCommand("copy")'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.runCommand("copy")'); settle(page, 200)
     click_text(page, 'Delta', 5)
-    page.evaluate('window.rikuy.runCommand("paste")'); page.wait_for_timeout(500)
+    page.evaluate('window.rikuy.runCommand("paste")'); settle(page, 500)
     check('clipboard: Copy then Paste, the commands, do what Ctrl+C and Ctrl+V do', src(page) == by_keys and 'Deltagamma' in by_keys, (src(page), by_keys))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     select_text(page, 'gamma')
-    page.evaluate('window.rikuy.runCommand("cut")'); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.runCommand("cut")'); settle(page, 300)
     check('clipboard: Cut takes the words out', 'gamma' not in src(page), src(page))
     page.evaluate('navigator.clipboard.writeText("$x_1$ & 50%")'); click_text(page, 'Delta', 0)
-    page.evaluate('window.rikuy.runCommand("paste-text")'); page.wait_for_timeout(400)
+    page.evaluate('window.rikuy.runCommand("paste-text")'); settle(page, 400)
     check('clipboard: Keep Text Only escapes it as typing would', '\\$x\\_1\\$ \\& 50\\%Delta' in src(page), src(page))
     page.evaluate('window.rikuy.undo()'); click_text(page, 'Delta', 0)
-    page.evaluate('window.rikuy.runCommand("paste-latex")'); page.wait_for_timeout(400)
+    page.evaluate('window.rikuy.runCommand("paste-latex")'); settle(page, 400)
     check('clipboard: As LaTeX source writes it as it is, one undo', '$x_1$ & 50%Delta' in src(page), src(page))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    page.evaluate('window.rikuy.undo()'); settle(page, 150)
     click_text(page, 'Delta', 0)
     page.evaluate('window.rikuy.runCommand("paste-special")'); page.wait_for_selector('[role=dialog] .ps-list')
-    page.get_by_role('radio', name='LaTeX source').check(); page.get_by_role('button', name='OK').click(); page.wait_for_timeout(400)
+    page.get_by_role('radio', name='LaTeX source').check(); page.get_by_role('button', name='OK').click(); settle(page, 400)
     check('clipboard: Paste Special, LaTeX source', '$x_1$ & 50%Delta' in src(page), src(page))
     # by the keys, as Word's: Paste Special (Paste's menu; Ctrl+Alt+V is Paste Formatting, as in
     # Microsoft 365) gives the dialog the focus, the arrows choose, Enter is OK (the keys went on to
     # the page: Enter broke the paragraph and nothing was pasted)
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    page.evaluate('window.rikuy.undo()'); settle(page, 150)
     doc = src(page); click_text(page, 'Delta', 0)
     page.evaluate('window.rikuy.runCommand("paste-special")'); page.wait_for_selector('[role=dialog] .ps-list')
-    page.wait_for_timeout(150)
+    settle(page, 150)
     focus = page.evaluate('document.activeElement.getAttribute("aria-label")')
-    for k in ('ArrowDown', 'Enter'): page.keyboard.press(k); page.wait_for_timeout(120)
-    page.wait_for_timeout(300)
+    for k in ('ArrowDown', 'Enter'): page.keyboard.press(k); settle(page, 120)
+    settle(page, 300)
     check('clipboard: Paste Special, Down, Enter pastes as LaTeX source, the focus in the dialog till then', focus == 'Unformatted text' and src(page) == doc.replace('Delta', '$x_1$ & 50%Delta'), (focus, src(page)))
     # a word copied from inside its bold stays bold, as Word's copy keeps it (it came plain)
     load_doc(page, W('Alpha \\textbf{beta} gamma.\n\nDelta.'))
-    select_text(page, 'eta'); page.keyboard.press('Control+c'); click_text(page, 'Delta', 5); page.keyboard.press('Control+v'); page.wait_for_timeout(300)
+    select_text(page, 'eta'); page.keyboard.press('Control+c'); click_text(page, 'Delta', 5); page.keyboard.press('Control+v'); settle(page, 300)
     check('clipboard: letters copied from a bold word paste bold', src(page) == W('Alpha \\textbf{beta} gamma.\n\nDelta\\textbf{eta}.'), src(page))
     # moved inside the same italic phrase they take no second \emph, which would print them upright
     load_doc(page, W('An \\emph{italic phrase with words inside} here.'))
-    select_text(page, 'words '); page.keyboard.press('Control+x'); page.wait_for_timeout(250)
-    click_text(page, 'phrase', 0); page.keyboard.press('Control+v'); page.wait_for_timeout(300)
+    select_text(page, 'words '); page.keyboard.press('Control+x'); settle(page, 250)
+    click_text(page, 'phrase', 0); page.keyboard.press('Control+v'); settle(page, 300)
     check('clipboard: words cut and pasted inside the same \\emph stay in it once', src(page) == W('An \\emph{italic words phrase with inside} here.'), src(page))
     # a format with a value goes only where the place has the same one: a size into another size,
     # a family into another family keep theirs, as Word's paste keeps the copied look; the same
@@ -355,17 +355,17 @@ def clipboard(page):
             ('A \\textsf{sans word} and \\textrm{roman text here}.', 'sans', 'roman text', 6, 'A \\textsf{sans word} and \\textrm{roman \\textsf{sans}text here}.', 'a family into another family'),
             ('A {\\Large big words} and {\\Large large text here}.', 'big', 'large text', 6, 'A {\\Large big words} and {\\Large large bigtext here}.', 'a size into the same size'),
             ('A \\textcolor{red}{red words} and \\textcolor{red}{more red here}.', 'words', 'more red', 5, 'A \\textcolor{red}{red words} and \\textcolor{red}{more wordsred here}.', 'a colour into the same colour')]:
-        load_doc(page, W(doc)); page.wait_for_timeout(150)
-        select_text(page, sel); page.keyboard.press('Control+c'); click_text(page, at, off); page.keyboard.press('Control+v'); page.wait_for_timeout(300)
+        load_doc(page, W(doc)); settle(page, 150)
+        select_text(page, sel); page.keyboard.press('Control+c'); click_text(page, at, off); page.keyboard.press('Control+v'); settle(page, 300)
         check('clipboard: ' + label + ' (review M5)', src(page) == W(want), src(page))
 
 
 def once(page, doc, at, cmd, want, label):
     load_doc(page, doc); click_text(page, *at)
     h0 = page.evaluate('window.rikuy.hist.length')
-    page.evaluate('(c) => window.rikuy.runCommand(c)', cmd); page.wait_for_timeout(200)
+    page.evaluate('(c) => window.rikuy.runCommand(c)', cmd); settle(page, 200)
     check(label + ': writes exactly that, one step', src(page) == want and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    page.evaluate('window.rikuy.undo()'); settle(page, 150)
     check(label + ': one undo gives the source back byte for byte', src(page) == doc, src(page))
 
 
@@ -374,15 +374,15 @@ def symbols(page):
     once(page, D, ('two', 0), 'insert-copyright', W('One \\copyright{}two.'), 'Copyright')
     once(page, D, ('two', 0), 'insert-nb-hyphen', '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nOne \\nobreakdash-two.\n\\end{document}\n', 'Nonbreaking hyphen with amsmath')
     load_doc(page, W('a-b.')); click_text(page, 'a-b', 2)
-    page.keyboard.press('Control+Alt+-'); page.wait_for_timeout(200)
+    page.keyboard.press('Control+Alt+-'); settle(page, 200)
     check('symbols: Ctrl+Alt+- after a hyphen writes {}--- (no four hyphens)', src(page) == W('a-{}---b.'), src(page))
     load_doc(page, D); click_text(page, 'two', 0)
-    page.keyboard.press('Control+Shift+Space'); page.keyboard.press('Control+Alt+T'); page.keyboard.press('Control+Alt+.'); page.wait_for_timeout(200)
+    page.keyboard.press('Control+Shift+Space'); page.keyboard.press('Control+Alt+T'); page.keyboard.press('Control+Alt+.'); settle(page, 200)
     check('symbols: Ctrl+Shift+Space, Ctrl+Alt+T, Ctrl+Alt+. write ~, \\texttrademark{}, \\ldots{}', src(page) == W('One ~\\texttrademark{}\\ldots{}two.'), src(page))
     load_doc(page, D); click_text(page, 'two', 0)
     page.get_by_role('tab', name='Insert').click()
-    page.locator('#rc-symbol').click(); page.wait_for_timeout(200)
-    page.get_by_role('menuitemradio', name='Euro sign').click(); page.wait_for_timeout(200)
+    page.locator('#rc-symbol').click(); settle(page, 200)
+    page.get_by_role('menuitemradio', name='Euro sign').click(); settle(page, 200)
     check('symbols: the Symbol grid writes \\texteuro{}, and puts it first next time', src(page) == W('One \\texteuro{}two.') and page.evaluate('window.rikuy.prefs.symRecent[0]') == '\\texteuro{}', src(page))
     page.evaluate('window.rikuy.runCommand("more-symbols")'); page.wait_for_selector('.sym-grid')
     page.get_by_role('searchbox', name='Search symbols').fill('degree')
@@ -395,16 +395,16 @@ def symbols(page):
 def date_latex(page):
     once(page, W('Due on.'), ('on', 2), 'insert-date', W('Due on\\today{}.'), 'Date: \\today')
     load_doc(page, W('Para.')); click_text(page, 'Para', 2)
-    page.keyboard.press('Alt+Shift+D'); page.wait_for_timeout(200)
+    page.keyboard.press('Alt+Shift+D'); settle(page, 200)
     check('date: Alt+Shift+D writes \\today{}', src(page) == W('Pa\\today{}ra.'), src(page))
     load_doc(page, W('Para.')); click_text(page, 'Para', 4)
-    page.evaluate('window.rikuy.runCommand("insert-env-center")'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.runCommand("insert-env-center")'); settle(page, 200)
     check('LaTeX: Environment, Centered, a center environment after it', '\\begin{center}' in src(page) and '\\end{center}' in src(page), src(page))
     page.get_by_role('tab', name='Insert').click()
     check('Insert: the tab has Interactive graph and Symbol; Date & Time and Environment are found by the search box', all(page.get_by_role('tabpanel', name='Insert').get_by_role('button', name=n, exact=True).count() == 1 for n in ('Interactive graph', 'Symbol')) and all(page.evaluate('(n) => window.rikuy.cmds.commands().some((c) => c.name === n)', n) for n in ('Date & Time', 'Environment')))
     # the right click menu has the paste options
     select_text(page, 'Para')
-    page.evaluate('window.rikuy.openContextMenu(100, 100)'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.openContextMenu(100, 100)'); settle(page, 200)
     names = page.evaluate('[...document.querySelectorAll("[aria-label=\\"Context menu\\"] [role=menuitem]")].map((x) => x.getAttribute("aria-label"))')
     check('clipboard: the right click menu has Cut, Copy and Paste', all(n in names for n in ('Cut', 'Copy', 'Paste')), names)
     page.keyboard.press('Escape')
@@ -413,17 +413,17 @@ def date_latex(page):
 def autocorrect(page):
     load_doc(page, W('Start here.'))
     click_text(page, 'here', 4)
-    page.keyboard.type(' (c)'); page.wait_for_timeout(200)
+    page.keyboard.type(' (c)'); settle(page, 200)
     check('AutoCorrect: (c) becomes \\copyright{} as ) is typed', src(page) == W('Start here \\copyright{}.'), src(page))
-    page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+    page.keyboard.press('Control+z'); settle(page, 200)
     check('AutoCorrect: one undo gives back (c) as typed', src(page) == W('Start here (c).'), src(page))
     load_doc(page, W('Start here.')); click_text(page, 'here', 5)
-    page.keyboard.type(' see https://rikuy.rackebrandt.pe now'); page.wait_for_timeout(200)
+    page.keyboard.type(' see https://rikuy.rackebrandt.pe now'); settle(page, 200)
     check('AutoCorrect: an address then a space becomes \\url{}', '\\url{https://rikuy.rackebrandt.pe} now' in src(page), src(page))
-    page.keyboard.type(' it works. then '); page.wait_for_timeout(200)
+    page.keyboard.type(' it works. then '); settle(page, 200)
     check('AutoCorrect: a sentence starts with a capital', 'works. Then ' in src(page), src(page))
     load_doc(page, W('Start.\n\nEnd.')); click_text(page, 'Start.', 6)
-    page.keyboard.press('Enter'); page.keyboard.type('---'); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    page.keyboard.press('Enter'); page.keyboard.type('---'); page.keyboard.press('Enter'); settle(page, 300)
     check('AutoCorrect: --- then Enter is a rule across the text', '\\noindent\\rule{\\linewidth}{0.4pt}' in src(page), src(page))
     page.evaluate('window.rikuy.runCommand("autocorrect-options")'); page.wait_for_selector('.pop-acopt')
     page.get_by_role('checkbox', name='Internet addresses as links (\\url)').uncheck()
@@ -431,7 +431,7 @@ def autocorrect(page):
     check('AutoCorrect Options: a switch and the user name are kept', page.evaluate('window.rikuy.prefs.autocorrect.links') is False and page.evaluate('window.rikuy.prefs.who') == 'Ada')
     page.keyboard.press('Escape')
     load_doc(page, W('Start here.')); click_text(page, 'here', 5)
-    page.keyboard.type(' https://x.org '); page.wait_for_timeout(200)
+    page.keyboard.type(' https://x.org '); settle(page, 200)
     check('AutoCorrect: switched off, an address stays as typed', '\\url' not in src(page), src(page))
 
 
@@ -440,17 +440,17 @@ def files_in(page):
     tex = os.path.join(SHOTS, 'chapter one.tex'); open(tex, 'w').write('Chapter text.\n')
     with page.expect_file_chooser() as fc:
         page.evaluate('window.rikuy.runCommand("text-from-file")')
-    fc.value.set_files(tex); page.wait_for_timeout(500)
+    fc.value.set_files(tex); settle(page, 500)
     check('Text from file: the file joins the project and \\input reads it, one step', src(page) == W('Para.\n\n\\input{chapter-one}\n') and src(page, 'chapter-one.tex') == 'Chapter text.\n', src(page))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     check('Text from file: one undo takes both out', src(page) == W('Para.') and 'chapter-one.tex' not in files(page)[0])
     pdf = os.path.join(SHOTS, 'scan.pdf'); open(pdf, 'wb').write(b'%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n')
     click_text(page, 'Para', 2)
     with page.expect_file_chooser() as fc:
         page.evaluate('window.rikuy.runCommand("insert-pdf")')
-    fc.value.set_files(pdf); page.wait_for_timeout(500)
+    fc.value.set_files(pdf); settle(page, 500)
     check('PDF pages: \\includepdf with pdfpages and the file, one step', '\\usepackage{pdfpages}' in src(page) and '\\includepdf[pages=-]{scan.pdf}' in src(page) and 'scan.pdf' in files(page)[1], src(page))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     check('PDF pages: one undo takes the text and the file out', src(page) == W('Para.') and 'scan.pdf' not in files(page)[1])
 
 
@@ -462,14 +462,14 @@ def review(page):
     load_doc(page, '\\documentclass[twocolumn]{article}\n\\begin{document}\nHello world.\n\nSecond para.\n\\end{document}\n')
     insert_graph(page)
     G = newest(page, 'function')
-    page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); page.wait_for_timeout(500)
-    page.evaluate('window.rikuy.graphRefresh()'); page.wait_for_timeout(800)
+    page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); settle(page, 500)
+    page.evaluate('window.rikuy.graphRefresh()'); settle(page, 800)
     w = page.evaluate('''async (n) => { const app = window.rikuy, box = [...document.querySelectorAll('.w-live')].find((b) => b.dataset.wf === n + '.html');
       const t = await app.assetBlobs.get(n + '.pgf').text(); return [box.getBoundingClientRect().width / app.widgets.host.scale(), +/^% rikuy-graph: \\S+ \\S+ (\\d+)/.exec(t)[1]]; }''', G)
     check('review H3: in two columns the picture is drawn at the column\'s width, as the live figure', abs(w[0] - w[1]) < 3, w)
     # M1: a picture gone (a share link has none) is drawn again
     page.evaluate('(n) => window.rikuy.setAsset(n + ".pgf", null)', G)
-    page.evaluate('window.rikuy.graphRefresh()'); page.wait_for_timeout(800)
+    page.evaluate('window.rikuy.graphRefresh()'); settle(page, 800)
     check('review M1: a graph\'s missing picture is drawn again', page.evaluate('(n) => window.rikuy.assetBlobs.has(n + ".pgf")', G))
     # H7: a rikuy.sty in another folder is not the one TeX reads
     load_doc(page, {'main.tex': DOC, 'old/rikuy.sty': '% old'})
@@ -486,22 +486,22 @@ def review(page):
     hand = '\\documentclass{article}\n\\usepackage{rikuy}\n\\begin{document}\nText.\n\n\\rikuywidget{plot.html}{plot.png}\n\\end{document}\n'
     load_doc(page, {'main.tex': hand, 'plot.html': html.replace('"kind": "function"', '"kind": "curve"'), 'rikuy.sty': '%'})
     h0 = page.evaluate('window.rikuy.hist.length')
-    page.evaluate('window.rikuy.runCommand("edit-graph")'); page.wait_for_selector('#gd-ok'); page.wait_for_timeout(300)
-    page.click('#gd-ok'); page.wait_for_timeout(600)
+    page.evaluate('window.rikuy.runCommand("edit-graph")'); page.wait_for_selector('#gd-ok'); settle(page, 300)
+    page.click('#gd-ok'); settle(page, 600)
     check('review M3: Update with nothing touched on a hand written graph (its own shape, 2π exact) writes nothing', page.evaluate('window.rikuy.hist.length') == h0, page.evaluate('window.rikuy.hist.length') - h0)
     # H6: Text from file with a whole document: its body, its packages here
     load_doc(page, W('Para.')); click_text(page, 'Para', 2)
     tex = os.path.join(SHOTS, 'whole.tex'); open(tex, 'w').write('\\documentclass{article}\n\\usepackage{amssymb}\n\\begin{document}\nChapter text $\\mathbb{R}$.\n\\end{document}\n')
     with page.expect_file_chooser() as fc:
         page.evaluate('window.rikuy.runCommand("text-from-file")')
-    fc.value.set_files(tex); page.wait_for_timeout(500)
+    fc.value.set_files(tex); settle(page, 500)
     check('review H6: a whole document comes in as its body, its packages in this preamble', src(page, 'whole.tex') == 'Chapter text $\\mathbb{R}$.\n' and '\\usepackage{amssymb}' in src(page), (src(page), src(page, 'whole.tex')))
     # L2: Paste Special over a selection replaces it
     load_doc(page, W('One two three.'))
     page.evaluate('navigator.clipboard.writeText("$x$")')
     select_text(page, 'two')
     page.evaluate('window.rikuy.runCommand("paste-special")'); page.wait_for_selector('.ps-list')
-    page.get_by_role('radio', name='LaTeX source').check(); page.get_by_role('button', name='OK').click(); page.wait_for_timeout(400)
+    page.get_by_role('radio', name='LaTeX source').check(); page.get_by_role('button', name='OK').click(); settle(page, 400)
     check('review L2: Paste Special replaces the selection', src(page) == W('One $x$ three.'), src(page))
     # L3: a Mac keeps Option+Shift+D and T for their characters
     check('review L3: on a Mac, Date and Time are Control+Shift+D and T', page.evaluate('[window.rikuy.cmds.command("insert-date").mac, window.rikuy.cmds.command("insert-time").mac]') == [{'Alt+Shift+D': 'Control+Shift+D'}, {'Alt+Shift+T': 'Control+Shift+T'}])
@@ -513,18 +513,18 @@ def review(page):
     check('review L4: one\'s own replacement is escaped as typing escapes it', got[1] == '\\textasciitilde{}5 \\textasciicircum{} \\textbackslash{}', got)
     # M4: a correction undone becomes an exception
     load_doc(page, W('Start here.')); click_text(page, 'here', 5)
-    page.keyboard.type(' THis '); page.wait_for_timeout(200)
-    page.keyboard.press('Control+z'); page.wait_for_timeout(200)
-    page.keyboard.type('x'); page.wait_for_timeout(200)
+    page.keyboard.type(' THis '); settle(page, 200)
+    page.keyboard.press('Control+z'); settle(page, 200)
+    page.keyboard.type('x'); settle(page, 200)
     check('review M4: TWo INitial CApitals undone: that word is an exception from then on', 'THis' in (page.evaluate('window.rikuy.prefs.acExcept') or []), page.evaluate('window.rikuy.prefs.acExcept'))
     # L8: no Abstract where the class has none; align* brings amsmath
     load_doc(page, '\\documentclass{book}\n\\begin{document}\nPara.\n\\end{document}\n'); click_text(page, 'Para', 2)
     items = [x and x.get('name') for x in page.evaluate('window.rikuy.cmds.command("insert-environment").menuItems(window.rikuy)')]
     check('review L8: a book\'s Environment menu has no Abstract', 'Abstract' not in items and 'Centered' in items, items)
     page.evaluate('window.rikuy.runCommand("insert-env-other")'); page.wait_for_selector('.pop-env')
-    page.get_by_role('textbox', name='Environment name').fill('align*'); page.keyboard.press('Enter'); page.wait_for_timeout(400)
+    page.get_by_role('textbox', name='Environment name').fill('align*'); page.keyboard.press('Enter'); settle(page, 400)
     check('review L8: Other environment align* brings amsmath, one undo', '\\usepackage{amsmath}' in src(page) and '\\begin{align*}' in src(page), src(page))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     check('review L8: and one undo takes both out', src(page) == '\\documentclass{book}\n\\begin{document}\nPara.\n\\end{document}\n', src(page))
 
 
@@ -539,10 +539,12 @@ def verify(page):
     cdp = page.context.new_cdp_session(page)
     for rate in (1, 6):
         load_doc(page, {'main.tex': DOC.replace('Second para.', '\\rikuywidget[width=\\linewidth]{%s.html}{%s.png}\n\nSecond para.' % (G, G)).replace('\\begin{document}', '\\usepackage{rikuy}\n\\begin{document}'), G + '.html': evil, 'rikuy.sty': '%'})
-        page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); page.wait_for_timeout(800)
+        page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); settle(page, 800)
         cdp.send('Emulation.setCPUThrottlingRate', {'rate': rate})
         click_text(page, 'Second para.', 12)
         page.keyboard.type(' One two three four five six seven eight nine ten.', delay=15)
+        # (the hostile frame's 10 ms focus() calls go on over this time, slower with the CPU: what it
+        # may take in that time is what is under test)
         page.wait_for_timeout(800 * rate)
         cdp.send('Emulation.setCPUThrottlingRate', {'rate': 1})
         check('verify V1 (CPU %dx): a frame calling focus() every 10 ms takes no letter of fast typing and opens no menu' % rate,
@@ -553,14 +555,14 @@ def verify(page):
     for fb in ('figures/photo.png', G + '.png'):
         load_doc(page, {'main.tex': '\\documentclass{article}\n\\usepackage{rikuy}\n\\begin{document}\n\\includegraphics{figures/photo.png}\n\n\\rikuywidget[width=\\linewidth]{%s.html}{%s}\n\\end{document}\n' % (G, fb), G + '.html': html, 'rikuy.sty': '%'})
         page.evaluate('([n, a]) => window.rikuy.setAsset(n, new Blob([new Uint8Array(a)], { type: "image/png" }))', [fb, photo])
-        page.evaluate('window.rikuy.graphRefresh()'); page.wait_for_timeout(800)
+        page.evaluate('window.rikuy.graphRefresh()'); settle(page, 800)
         kept = page.evaluate('async (n) => Array.from(new Uint8Array(await window.rikuy.assetBlobs.get(n).arrayBuffer()))', fb)
         check('verify V2: one\'s own picture named %s is left as it is' % fb, kept == photo, len(kept))
     # V4: a width option sizes the live figure, and so its picture
     load_doc(page, {'main.tex': '\\documentclass{article}\n\\usepackage{rikuy}\n\\begin{document}\nText.\n\n\\begin{center}\n\\rikuywidget[width=0.5\\linewidth]{%s.html}{%s.png}\n\\end{center}\n\\end{document}\n' % (G, G), G + '.html': html, 'rikuy.sty': '%'})
     page.evaluate('(n) => window.rikuy.setAsset(n + ".png", null)', G)
-    page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); page.wait_for_timeout(600)
-    page.evaluate('window.rikuy.graphRefresh()'); page.wait_for_timeout(800)
+    page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); settle(page, 600)
+    page.evaluate('window.rikuy.graphRefresh()'); settle(page, 800)
     w = page.evaluate('''async (n) => { const app = window.rikuy, k = app.widgets.host.scale(), box = document.querySelector('.w-live'), line = box.parentElement.getBoundingClientRect().width;
       const a = new Uint8Array(await app.assetBlobs.get(n + '.png').arrayBuffer()); return [box.getBoundingClientRect().width / line, box.getBoundingClientRect().width / k, new DataView(a.buffer).getUint32(16) / 3]; }''', G)
     check('verify V4: width=0.5\\linewidth: the live figure is half the line, its picture drawn at that width', abs(w[0] - 0.5) < 0.03 and abs(w[1] - w[2]) < 3, w)
@@ -575,7 +577,7 @@ def review_compiles(page):
     comp = lambda: page.evaluate('''async () => { const r = await window.rikuy.api.compile(); return { ok: r.ok, pages: r.pages, errors: (window.rikuy.api.problems ? window.rikuy.api.problems() : []).filter((p) => p.severity === 'error').map((p) => p.message || p.text).slice(0, 3) }; }''')
     # H1: an address typed in a plain article
     load_doc(page, W('Start here.')); click_text(page, 'here.', 5)
-    page.keyboard.type(' See www.example.org for more. '); page.wait_for_timeout(300)
+    page.keyboard.type(' See www.example.org for more. '); settle(page, 300)
     r = comp()
     check('review H1: an address typed becomes \\url with \\usepackage{url}, and it compiles', '\\usepackage{url}' in src(page) and '\\url{https://www.example.org}' in src(page) and r['ok'], (src(page), r))
     # H4 and M1: a hand written command with no width, Edit graph, its picture missing at first
@@ -584,14 +586,14 @@ def review_compiles(page):
     hand = '\\documentclass{article}\n\\usepackage{rikuy}\n\\begin{document}\nText.\n\n\\rikuywidget{plot.html}{plot.png}\n\\end{document}\n'
     load_doc(page, {'main.tex': hand, 'plot.html': html, 'rikuy.sty': open(os.path.join(ROOT, 'sample', 'widget', 'rikuy.sty')).read()})
     page.evaluate('window.rikuy.runCommand("edit-graph")'); page.wait_for_selector('#gd-ok')
-    page.get_by_role('textbox', name='Formulas').fill('y = a cos(b x)'); page.wait_for_timeout(300); page.click('#gd-ok'); page.wait_for_timeout(1200)
+    page.get_by_role('textbox', name='Formulas').fill('y = a cos(b x)'); settle(page, 300); page.click('#gd-ok'); settle(page, 1200)
     r = comp()
     check('review H4: a command with no width prints the picture at the text\'s width: one page, no overfull line', r['ok'] and r['pages'] == 1, r)
     # (rikuy.sty v1.1 draws PGF: Update pointed the command at plot.pgf, task 70)
     check('review H4: Update made the hand written PNG command a PGF picture', '{plot.html}{plot.pgf}' in src(page), src(page)[-120:])
     page.evaluate('window.rikuy.setAsset("plot.pgf", null)')
     # (a change to the text, so TeX runs again: an unchanged text keeps the PDF it has)
-    click_text(page, 'Text.', 4); page.keyboard.type('s'); page.wait_for_timeout(300)
+    click_text(page, 'Text.', 4); page.keyboard.type('s'); settle(page, 300)
     r = comp()
     check('review M1: with its picture gone, the compile draws it again first', r['ok'] and page.evaluate('window.rikuy.assetBlobs.has("plot.pgf")'), r)
     # H6: a whole document read in by Text from file compiles
@@ -599,7 +601,7 @@ def review_compiles(page):
     tex = os.path.join(SHOTS, 'whole2.tex'); open(tex, 'w').write('\\documentclass{article}\n\\usepackage{amssymb}\n\\begin{document}\nChapter $\\mathbb{R}$.\n\\end{document}\n')
     with page.expect_file_chooser() as fc:
         page.evaluate('window.rikuy.runCommand("text-from-file")')
-    fc.value.set_files(tex); page.wait_for_timeout(500)
+    fc.value.set_files(tex); settle(page, 500)
     r = comp()
     check('review H6: and the document compiles', r['ok'] and r['pages'] == 1, r)
     # V3: a whole document with its own definitions (\\newcommand, \\newtheorem) compiles too
@@ -607,7 +609,7 @@ def review_compiles(page):
     tex = os.path.join(SHOTS, 'defs.tex'); open(tex, 'w').write('\\documentclass{article}\n\\usepackage{amssymb,amsthm}\n\\newcommand{\\R}{\\mathbb{R}}\n\\newtheorem{theorem}{Theorem}\n\\DeclareMathOperator{\\Var}{Var}\n\\begin{document}\n\\begin{theorem}\nFor $x \\in \\R$, $\\Var x \\ge 0$.\n\\end{theorem}\n\\end{document}\n')
     with page.expect_file_chooser() as fc:
         page.evaluate('window.rikuy.runCommand("text-from-file")')
-    fc.value.set_files(tex); page.wait_for_timeout(500)
+    fc.value.set_files(tex); settle(page, 500)
     r = comp()
     check('verify V3: a whole document with its own \\newcommand, \\newtheorem and \\DeclareMathOperator compiles', r['ok'] and r['pages'] == 1 and '\\newtheorem{theorem}{Theorem}' in src(page, 'defs.tex'), (r, src(page, 'defs.tex')[:200]))
     page.set_default_timeout(30000)
@@ -623,11 +625,11 @@ def one_step(page, doc, at, fn, label, test, back=True):
     """fn on doc with the caret at at: test(source) holds, one step of history, one undo gives doc back."""
     load_doc(page, doc); click_text(page, *at)
     h0 = hist(page)
-    fn(page); page.wait_for_timeout(250)
+    fn(page); settle(page, 250)
     got = src(page)
     ok = check(label + ': written, one step', test(got) and hist(page) == h0 + 1, got[-300:])
     if back:
-        page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+        page.evaluate('window.rikuy.undo()'); settle(page, 150)
         ok = check(label + ': one undo gives the source back byte for byte', src(page) == doc, src(page)[-200:]) and ok
     return got
 
@@ -644,20 +646,20 @@ def r3_fields(page):
                  lambda g: txt in g and (pk is None and g.count('\\usepackage') == 0 or pk is not None and g.count('\\usepackage{' + pk + '}') == 1) and g.replace(txt, 'Hello world.').replace('\\usepackage{%s}\n' % pk, '') == D)
     # the page draws them: the page each is on, the pages' count, the title
     load_doc(page, D.replace('Hello world.', 'Hello \\thepage{} \\thetitle{}.').replace('Second para.', '\\newpage\nSecond \\thepage{} of \\pageref{LastPage}.').replace('\\title', '\\usepackage{titling,lastpage}\n\\title'))
-    page.wait_for_timeout(400)
+    settle(page, 400)
     drawn = page.evaluate("[...document.querySelectorAll('#pages .a-chip')].map((x) => x.textContent)")
     check('fields drawn as TeX prints them: page 1, the title, page 2 of 2', drawn == ['1', 'Report', '2', '2'], drawn)
     # a document property the document has not: said, nothing written
     load_doc(page, W('Hello world.')); click_text(page, 'Hello', 5)
-    run_cmd(page, 'insert-field', {'field': 'TITLE'}); page.wait_for_timeout(200)
+    run_cmd(page, 'insert-field', {'field': 'TITLE'}); settle(page, 200)
     check('Title in a document with no \\title: nothing written, the toast says where to set it', src(page) == W('Hello world.') and 'File' in page.evaluate("document.getElementById('toast').textContent"))
     # beamer has its own: \inserttitle, no package
     bd = '\\documentclass{beamer}\n\\title{Talk}\n\\begin{document}\n\\begin{frame}\nHello world.\n\\end{frame}\n\\end{document}\n'
     one_step(page, bd, ('Hello', 5), lambda pg: run_cmd(pg, 'insert-field', {'field': 'TITLE'}), 'Title in beamer', lambda g: g == bd.replace('Hello world.', 'Hello\\inserttitle{} world.'))
     # the Field dialog: NumPages picked, OK
     load_doc(page, D); click_text(page, 'Hello', 5)
-    run_cmd(page, 'insert-field'); page.wait_for_timeout(200)
-    page.get_by_role('radio', name='NumPages', exact=True).check(); page.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(250)
+    run_cmd(page, 'insert-field'); settle(page, 200)
+    page.get_by_role('radio', name='NumPages', exact=True).check(); page.get_by_role('button', name='OK', exact=True).click(); settle(page, 250)
     check('the Field dialog: NumPages, OK writes \\pageref{LastPage} at the caret and lastpage once', 'Hello\\pageref{LastPage} world.' in src(page) and src(page).count('\\usepackage{lastpage}') == 1, src(page)[:200])
 
 
@@ -668,7 +670,7 @@ def r3_quickparts(page):
     A = '\\documentclass{article}\n\\usepackage{xcolor}\n\\begin{document}\nKind \\textcolor{red}{regards}, Ann.\n\nOther.\n\\end{document}\n'
     load_doc(page, A)
     place_sel(page, ('Kind', 'regards'))
-    run_cmd(page, 'quick-part-save', {'name': 'Closing'}); page.wait_for_timeout(150)
+    run_cmd(page, 'quick-part-save', {'name': 'Closing'}); settle(page, 150)
     parts = page.evaluate('window.rikuy.prefs.quickParts')
     check('Save Selection to Quick Part Gallery: the words with the colour round them, under its name', parts == [{'name': 'Closing', 'tex': 'Kind \\textcolor{red}{regards}'}], parts)
     B = W('Hello world.\n\nSecond para.')
@@ -679,22 +681,22 @@ def r3_quickparts(page):
     one_step(page, B, ('Hello', 2), lambda pg: run_cmd(pg, 'quick-part-insert', {'name': 'Two'}), 'a Quick Part of two paragraphs', lambda g: g == B.replace('Hello world.\n', 'Hello world.\n\nFirst kept.\n\nSecond kept.\n'))
     # the gallery lists them, then Document Property and Field
     load_doc(page, B); click_text(page, 'Hello', 2)
-    page.get_by_role('tab', name='Insert', exact=True).click(); page.wait_for_timeout(150)
-    page.get_by_role('button', name='Quick Parts', exact=True).click(); page.wait_for_timeout(200)
+    page.get_by_role('tab', name='Insert', exact=True).click(); settle(page, 150)
+    page.get_by_role('button', name='Quick Parts', exact=True).click(); settle(page, 200)
     items = page.evaluate("[...document.querySelectorAll('.pop [role^=menuitem]')].map((x) => x.getAttribute('aria-label'))")
     check('the Quick Parts menu: the parts, Title, Author, Date, Field…, the organizer, Save Selection', items[:2] == ['Two', 'Closing'] and 'Field…' in items and 'Save Selection to Quick Part Gallery…' in items, items)
-    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    page.keyboard.press('Escape'); settle(page, 100)
     # the organizer renames and deletes
-    run_cmd(page, 'building-blocks'); page.wait_for_timeout(200)
+    run_cmd(page, 'building-blocks'); settle(page, 200)
     page.get_by_role('textbox', name='Name of Two', exact=True).fill('Pair')
-    page.keyboard.press('Tab'); page.wait_for_timeout(150)
-    page.get_by_role('button', name='Delete Closing', exact=True).click(); page.wait_for_timeout(150)
+    page.keyboard.press('Tab'); settle(page, 150)
+    page.get_by_role('button', name='Delete Closing', exact=True).click(); settle(page, 150)
     check('the Building Blocks Organizer renames one and deletes another', [x['name'] for x in page.evaluate('window.rikuy.prefs.quickParts')] == ['Pair'], page.evaluate('window.rikuy.prefs.quickParts'))
     page.keyboard.press('Escape'); click_text(page, 'Hello', 2)
     # a stranger's storage (another page of the origin wrote it): read with caps, the menu still opens
     page.evaluate("window.rikuy.prefs.quickParts = [{ name: 5, tex: 'x' }, { name: 'Ok', tex: 'Fine.' }, { name: 'Big', tex: 'x'.repeat(70000) }, null, { name: '<img src=x onerror=alert(1)>', tex: 'y' }]; window.rikuy.savePrefs()")
     names = page.evaluate('window.rikuy.quickParts().map((x) => x.name)')
-    page.get_by_role('button', name='Quick Parts', exact=True).click(); page.wait_for_timeout(200)
+    page.get_by_role('button', name='Quick Parts', exact=True).click(); settle(page, 200)
     imgs = page.evaluate("document.querySelectorAll('.pop img').length")
     check('a stranger\'s Quick Parts: bad entries left out, a name with markup set as text', names == ['Ok', '<img src=x onerror=alert(1)>'] and imgs == 0, (names, imgs))
     page.keyboard.press('Escape')
@@ -717,10 +719,10 @@ def r3_cover(page):
     # a hand written titlepage first in the text is the cover page: Remove takes exactly it, its comment stays
     hand = D.replace('\\begin{document}\n', '\\begin{document}\n% hand written\n\\begin{titlepage}\nMy own cover.\n\\end{titlepage}\n')
     one_step(page, hand, ('Hello', 2), lambda pg: run_cmd(pg, 'cover-page-remove'), 'Remove Current Cover Page on a hand written titlepage', lambda g: g == D.replace('\\begin{document}\n', '\\begin{document}\n% hand written\n'))
-    load_doc(page, want); page.wait_for_timeout(300)
+    load_doc(page, want); settle(page, 300)
     st = page.evaluate("(() => { const ps = [...document.querySelectorAll('#pages .page')]; return [ps.length, ps[0].innerText.includes('Report'), ps[0].dataset.n, ps[1] && ps[1].dataset.n]; })()")
     check('the cover drawn as a page of its own, and the text after it numbered 1 again', st[0] == 2 and st[1] and st[3] == '1', st)
-    run_cmd(page, 'cover-page', {'design': 'sideline'}); page.wait_for_timeout(250)
+    run_cmd(page, 'cover-page', {'design': 'sideline'}); settle(page, 250)
     check('another design takes the cover\'s place: one titlepage, Sideline\'s rules', src(page).count('\\begin{titlepage}') == 1 and '\\rule{\\linewidth}{1pt}' in src(page))
     bd = '\\documentclass{beamer}\n\\begin{document}\n\\begin{frame}\nHello world.\n\\end{frame}\n\\end{document}\n'
     load_doc(page, bd); click_text(page, 'Hello', 2)
@@ -736,9 +738,9 @@ def r3_forms(page):
            'list': '\\ChoiceMenu[name=list1, width=4cm]{}{Choose an item,Item 1,Item 2}', 'date': '\\TextField[name=date1, width=3cm, format={AFDate_FormatEx("dd/mm/yyyy");}, keystroke={AFDate_KeystrokeEx("dd/mm/yyyy");}]{}'}
     for k, t in tex.items():
         one_step(page, D, ('Hello', 6), lambda pg: run_cmd(pg, 'form-' + k), 'Form field ' + k, lambda g: g == wrap('Hello ' + t + 'world.\n\nSecond para.'))
-    load_doc(page, wrap('Hello ' + tex['text'] + 'world.\n\nSecond para.')); page.wait_for_timeout(300)
+    load_doc(page, wrap('Hello ' + tex['text'] + 'world.\n\nSecond para.')); settle(page, 300)
     check('a text field drawn as hyperref sets it: a box 4 cm wide', page.evaluate("(() => { const b = document.querySelector('#pages .a-form.ff-text .ff'); return !!b && Math.abs(b.getBoundingClientRect().width / window.rikuy.layout.px - 113.8) < 3; })()"))
-    click_text(page, 'Second', 6); run_cmd(page, 'form-check', {'label': 'I agree & sign'}); page.wait_for_timeout(250)
+    click_text(page, 'Second', 6); run_cmd(page, 'form-check', {'label': 'I agree & sign'}); settle(page, 250)
     check('a second field: the same Form, a name of its own, its label escaped', src(page).count('\\begin{Form}') == 1 and 'Second\\CheckBox[name=check1]{I agree \\& sign} para.' in src(page), src(page))
     # a Form round the second paragraph only, a field before it: the Form grows to the whole text
     hand = '\\documentclass{article}\n\\usepackage{hyperref}\n\\begin{document}\nHello world.\n\n\\begin{Form}\nSecond \\TextField[name=text1]{} para.\n\\end{Form}\n\\end{document}\n'
@@ -757,12 +759,12 @@ def r3_move(page):
         if ctrl: pg.keyboard.down('Control')
         pg.mouse.up()
         if ctrl: pg.keyboard.up('Control')
-        pg.wait_for_timeout(300)
+        settle(pg, 300)
     load_doc(page, D); select_text(page, 'gamma'); h0 = hist(page)
     drag(page, 'gamma', 'epsilon')
     check('a word dragged to another paragraph moves there, its space with it: one step', src(page) == D.replace(' gamma.', '.').replace('Delta epsilon', 'Delta gamma epsilon') and hist(page) == h0 + 1, src(page))
     check('the moved words stay selected', page.evaluate('getSelection().toString()') == 'gamma')
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
     check('one undo gives the bytes of before', src(page) == D, src(page))
     load_doc(page, D); select_text(page, 'gamma'); drag(page, 'gamma', 'epsilon', ctrl=True)
     check('Ctrl as it drops copies instead', src(page) == D.replace('Delta epsilon', 'Delta gamma epsilon'), src(page))
@@ -775,7 +777,7 @@ def r3_move(page):
     y = word_box(page, 'epsilon')
     page.evaluate("""([x, y]) => { const dt = new DataTransfer(); dt.setData('text/plain', 'bold'); dt.setData('text/html', '<b>bold</b>'); dt.setData('text/x-galley-latex', '\\\\immediate\\\\write18{rm -rf x}'); dt.setData('text/x-rikuy-move', 'guess');
       const t = document.elementFromPoint(x, y); for (const k of ['dragenter', 'dragover', 'drop']) t.dispatchEvent(new DragEvent(k, { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt })); }""", [y[0] + 1, y[1] + y[3] / 2])
-    page.wait_for_timeout(300)
+    settle(page, 300)
     check('a drop from another page: its HTML as LaTeX (\\textbf), not the LaTeX it carried', '\\textbf{bold}' in src(page) and 'write18' not in src(page), src(page))
 
 
@@ -791,36 +793,36 @@ def r3_phones(p):
         browser, page, errors = open_page(p, w, h, touch=True)
         tag = ' (%d px, touch)' % w
         try:
-            load_doc(page, R3DOC); page.wait_for_timeout(300)
+            load_doc(page, R3DOC); settle(page, 300)
             sp = word_box(page, 'Hello')
-            page.touchscreen.tap(sp[0] + 10, sp[1] + sp[3] / 2); page.wait_for_timeout(300)
-            page.select_option('#rb-tabsel', 'insert'); page.wait_for_timeout(250)
+            page.touchscreen.tap(sp[0] + 10, sp[1] + sp[3] / 2); settle(page, 300)
+            page.select_option('#rb-tabsel', 'insert'); settle(page, 250)
             for name in ('Quick Parts', 'Form Fields', 'Cover Page'):
                 b = page.get_by_role('button', name=name, exact=True)
                 if not b.count() or not b.first.is_visible():
                     # (folded: its group's button first)
-                    page.get_by_role('button', name='Text' if name != 'Cover Page' else 'Pages', exact=True).first.tap(); page.wait_for_timeout(200)
+                    page.get_by_role('button', name='Text' if name != 'Cover Page' else 'Pages', exact=True).first.tap(); settle(page, 200)
                     page.get_by_role('menuitem', name=name, exact=True).first.tap()
                 else:
                     b.first.tap()
-                page.wait_for_timeout(250)
+                settle(page, 250)
                 m = page.evaluate("""(() => { const p = document.querySelector('.pop'); if (!p) return null; const r = p.getBoundingClientRect(); const it = [...p.querySelectorAll('[role^=menuitem]')];
                   return { in: r.left >= 0 && r.right <= innerWidth + 1 && r.top >= 0, n: it.length, small: it.filter((x) => x.getBoundingClientRect().height < 43.5).length }; })()""")
                 check(name + ': its menu opens by a tap, inside the screen, its items 44 px' + tag, bool(m) and m['in'] and m['n'] >= 3 and m['small'] == 0, m)
                 if name == 'Form Fields':
-                    page.get_by_role('menuitem', name='Check Box Content Control', exact=True).tap(); page.wait_for_timeout(300)
+                    page.get_by_role('menuitem', name='Check Box Content Control', exact=True).tap(); settle(page, 300)
                     check('a tap puts a check box in, in a Form, hyperref once' + tag, '\\CheckBox[name=check1]{}' in src(page) and src(page).count('\\usepackage{hyperref}') == 1, src(page)[-200:])
                 elif name == 'Cover Page':
-                    page.get_by_role('menuitemradio', name='Plain', exact=True).tap(); page.wait_for_timeout(300)
+                    page.get_by_role('menuitemradio', name='Plain', exact=True).tap(); settle(page, 300)
                     check('a tap puts the cover page in' + tag, '\\begin{titlepage}' in src(page))
                 else:
-                    page.get_by_role('menuitem', name='Field…', exact=True).tap(); page.wait_for_timeout(300)
+                    page.get_by_role('menuitem', name='Field…', exact=True).tap(); settle(page, 300)
                     fit = page.evaluate("(() => { const d = document.querySelector('.pop-field'); const r = d.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth + 1 && document.documentElement.scrollWidth <= innerWidth + 1; })()")
                     check('the Field dialog fits the screen' + tag, fit)
-                    page.get_by_role('radio', name='Page', exact=True).tap(); page.get_by_role('button', name='OK', exact=True).tap(); page.wait_for_timeout(300)
+                    page.get_by_role('radio', name='Page', exact=True).tap(); page.get_by_role('button', name='OK', exact=True).tap(); settle(page, 300)
                     check('and a tap on OK writes \\thepage' + tag, '\\thepage{}' in src(page), src(page)[-200:])
                     sp = word_box(page, 'Second')
-                    page.touchscreen.tap(sp[0] + 10, sp[1] + sp[3] / 2); page.wait_for_timeout(250)
+                    page.touchscreen.tap(sp[0] + 10, sp[1] + sp[3] / 2); settle(page, 250)
             check('no sideways scroll' + tag, page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'))
             page.screenshot(path=os.path.join(SHOTS, 'r3-insert-%d.png' % w))
         except Exception as e:
@@ -841,7 +843,7 @@ def r3_review_compiles(page):
         page.set_default_timeout(30000)
         return r
     load_doc(page, '\\documentclass{memoir}\n\\title{Report}\n\\author{Ann}\n\\begin{document}\nHello world.\n\\end{document}\n'); click_text(page, 'Hello', 2)
-    run_cmd(page, 'cover-page', {'design': 'sideline'}); page.wait_for_timeout(400)
+    run_cmd(page, 'cover-page', {'design': 'sideline'}); settle(page, 400)
     r = comp()
     check('H2: a memoir cover page is a titlingpage, and it compiles', '\\begin{titlingpage}' in src(page) and r['ok'] and not r['problems'], r)
     page.set_default_timeout(600000)
@@ -857,12 +859,12 @@ def r3_review_compiles(page):
              'two_forms': (D('\\begin{Form}\n\\TextField[name=a]{A}\n\\end{Form}\n\nMiddle words here.\n\n\\begin{Form}\n\\TextField[name=b]{B}\n\\end{Form}'), 'Middle')}
     for name, (doc, w) in cases.items():
         load_doc(page, doc); click_text(page, w, 3)
-        run_cmd(page, 'form-text'); page.wait_for_timeout(200)
+        run_cmd(page, 'form-text'); settle(page, 200)
         r = comp()
         check('H1: Form Fields in %s, and it compiles (no Form inside another, no comment changed)' % name, r['ok'] and not r['problems'] and src(page).count('\\begin{Form}') == doc.count('\\begin{Form}') + (1 if name == 'commented_form' else 0) and ('\\verb|\\end{Form}|' in src(page) or name != 'verb_inside') and ('% \\begin{Form} old draft \\end{Form}' in src(page) or name != 'commented_form'), (r, src(page)[60:400]))
     load_doc(page, W('Some \\emph{stress} here.')); click_text(page, 'here', 4)
     page.evaluate("window.rikuy.prefs.quickParts = [{ name: 'Marked', tex: '\\\\uline{under} \\\\hl{mark} \\\\dsout{gone}' }]; window.rikuy.savePrefs()")
-    run_cmd(page, 'quick-part-insert', {'name': 'Marked'}); page.wait_for_timeout(200)
+    run_cmd(page, 'quick-part-insert', {'name': 'Marked'}); settle(page, 200)
     r = comp()
     check('M3: a Quick Part of \\uline, \\hl and \\dsout in another document: ulem with normalem, the definitions once, and it compiles', '\\usepackage[normalem]{ulem}' in src(page) and '\\DeclareRobustCommand{\\hl}' in src(page) and '\\DeclareRobustCommand{\\dsout}' in src(page) and r['ok'] and not r['problems'], (r, src(page)[:400]))
 
@@ -874,13 +876,13 @@ def r3_compiles(page):
         print('SKIP R3\'s compiles: no TeX tree in %s' % DIST)
         return
     load_doc(page, R3DOC)
-    run_cmd(page, 'cover-page', {'design': 'sideline'}); page.wait_for_timeout(200)
+    run_cmd(page, 'cover-page', {'design': 'sideline'}); settle(page, 200)
     click_text(page, 'Hello', 5)
     for fid in ('PAGE', 'NUMPAGES', 'SECTION', 'DATE', 'TIME', 'FILENAME', 'TITLE', 'AUTHOR'):
-        run_cmd(page, 'insert-field', {'field': fid}); page.wait_for_timeout(120); page.keyboard.type(' ')
+        run_cmd(page, 'insert-field', {'field': fid}); settle(page, 120); page.keyboard.type(' ')
     click_text(page, 'Second', 6)
     for k in ('text', 'check', 'combo', 'list', 'date'):
-        run_cmd(page, 'form-' + k, {'label': 'L' + k}); page.wait_for_timeout(150)
+        run_cmd(page, 'form-' + k, {'label': 'L' + k}); settle(page, 150)
     body = src(page)
     import base64, io
     from pypdf import PdfReader
@@ -905,44 +907,44 @@ def r3_review(page):
     place; M2 a size declared in a group is TeX's size wherever it stands; H1 a field before a Form inside
     another environment goes in with no Form moved, and says why."""
     D = W('Start alpha beta gamma end.\n\nOther \\textbf{bold one two} end.\n\nMath here $x+y=z$ done.')
-    load_doc(page, D); page.wait_for_timeout(300)
+    load_doc(page, D); settle(page, 300)
     place_sel(page, ('alpha', 'beta'))
     x = word_box(page, 'alpha'); t = page.locator('#rk-search').bounding_box()
-    page.mouse.move(x[0] + 4, x[1] + x[3] / 2); page.mouse.down(); page.mouse.move(x[0] + 30, x[1] + 30, steps=4); page.mouse.move(t['x'] + 20, t['y'] + t['height'] / 2, steps=6); page.mouse.up(); page.wait_for_timeout(400)
+    page.mouse.move(x[0] + 4, x[1] + x[3] / 2); page.mouse.down(); page.mouse.move(x[0] + 30, x[1] + 30, steps=4); page.mouse.move(t['x'] + 20, t['y'] + t['height'] / 2, steps=6); page.mouse.up(); settle(page, 400)
     check('M1: words dragged into the search box are copied there; the page keeps them', src(page) == D, src(page)[40:120])
-    load_doc(page, D); page.wait_for_timeout(200)
+    load_doc(page, D); settle(page, 200)
     place_sel(page, ('one', 'two'))
     a = word_box(page, 'one'); y = word_box(page, 'Start')
-    page.mouse.move(a[0] + 3, a[1] + a[3] / 2); page.mouse.down(); page.mouse.move(a[0] + 30, a[1] + 30, steps=4); page.mouse.move(y[0] + 1, y[1] + y[3] / 2, steps=6); page.mouse.up(); page.wait_for_timeout(400)
+    page.mouse.move(a[0] + 3, a[1] + a[3] / 2); page.mouse.down(); page.mouse.move(a[0] + 30, a[1] + 30, steps=4); page.mouse.move(y[0] + 1, y[1] + y[3] / 2, steps=6); page.mouse.up(); settle(page, 400)
     check('M6: words dragged out of \\textbf stay bold where they go, and \\textbf{bold} keeps no space before its brace', src(page) == D.replace('Start alpha', '\\textbf{one two} Start alpha').replace('\\textbf{bold one two}', '\\textbf{bold}'), src(page)[40:200])
-    load_doc(page, D); page.wait_for_timeout(200)
+    load_doc(page, D); settle(page, 200)
     place_sel(page, ('bold', 'one'))
     # (the drag begun from this selection as the page's dragstart takes it, dropped before "Start" as
     # the page's drop moves it: Chromium under Playwright fires no drop for a selection that begins
     # where a formatted run begins)
-    page.evaluate("""() => { const g = window.rikuy; g.dragMoveStart({ dataTransfer: new DataTransfer() }); const M = g.dragMove; g.dragMove = null; return g.moveSource(M, { f: 'main.tex', p: g.src('main.tex').indexOf('Start') }, false); }"""); page.wait_for_timeout(300)
+    page.evaluate("""() => { const g = window.rikuy; g.dragMoveStart({ dataTransfer: new DataTransfer() }); const M = g.dragMove; g.dragMove = null; return g.moveSource(M, { f: 'main.tex', p: g.src('main.tex').indexOf('Start') }, false); }"""); settle(page, 300)
     check('N5: the first words dragged out of \\textbf leave no space inside it', '\\textbf{two}' in src(page) and '\\textbf{bold one} Start' in src(page), src(page)[40:200])
-    load_doc(page, D); page.wait_for_timeout(200)
+    load_doc(page, D); settle(page, 200)
     select_text(page, 'gamma')
     g = word_box(page, 'gamma'); m = page.evaluate("(() => { const e = document.querySelector('#pages .a-math'); const r = e.getBoundingClientRect(); return [r.x + 1, r.y + r.height / 2]; })()")
-    page.mouse.move(g[0] + 4, g[1] + g[3] / 2); page.mouse.down(); page.mouse.move(g[0] + 30, g[1] + 30, steps=4); page.mouse.move(m[0], m[1], steps=6); page.mouse.up(); page.wait_for_timeout(400)
+    page.mouse.move(g[0] + 4, g[1] + g[3] / 2); page.mouse.down(); page.mouse.move(g[0] + 30, g[1] + 30, steps=4); page.mouse.move(m[0], m[1], steps=6); page.mouse.up(); settle(page, 400)
     check('L2: a word dropped before a formula gets a space between', 'here gamma $x+y=z$' in src(page), src(page)[40:220])
     # L3: a hand written title page first: asked, then replaced
     own = R3DOC.replace('\\begin{document}\n', '\\begin{document}\n\\begin{titlepage}\nMy logo and words.\n\\end{titlepage}\n')
     load_doc(page, own); click_text(page, 'Hello', 2)
-    run_cmd(page, 'cover-page', {'design': 'plain'}); page.wait_for_timeout(200)
+    run_cmd(page, 'cover-page', {'design': 'plain'}); settle(page, 200)
     asked = src(page) == own and 'title page of its own' in page.evaluate("document.getElementById('toast').textContent")
-    run_cmd(page, 'cover-page', {'design': 'plain', 'replace': True}); page.wait_for_timeout(200)
+    run_cmd(page, 'cover-page', {'design': 'plain', 'replace': True}); settle(page, 200)
     check('L3: Cover Page on a hand written title page asks first; Replace it writes the design in its place', asked and 'My logo' not in src(page) and src(page).count('\\begin{titlepage}') == 1)
     # M2: sizes are TeX's, absolute
     load_doc(page, W('\\section{Head {\\small x}}\n{\\Large A {\\normalsize y}} and {\\small\\Large z}.\\footnote{{\\Large w}}'))
-    page.wait_for_timeout(400)
+    settle(page, 400)
     fs = page.evaluate("""(() => { const pt = parseFloat(getComputedStyle(document.querySelector('#pages .page')).getPropertyValue('--pt')); const size = (t) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.trim() === t); return s ? Math.round(parseFloat(getComputedStyle(s).fontSize) / pt * 10) / 10 : null; }; return [size('x'), size('y'), size('z'), size('w')]; })()""")
     check('M2: {\\small x} in a heading 9 pt, {\\normalsize y} in \\Large 10 pt, \\small\\Large 14.4 pt, \\Large in a footnote 14.4 pt, as TeX sets them', fs == [9.0, 10.0, 14.4, 14.4], fs)
     # H1: a Form inside center, a field before it: no Form moved, the reason said
     nb = '\\documentclass{article}\n\\usepackage{hyperref}\n\\begin{document}\nBefore words here.\n\n\\begin{center}\n\\begin{Form}\n\\TextField[name=a]{A}\n\\end{Form}\n\\end{center}\n\\end{document}\n'
     one_step(page, nb, ('Before', 6), lambda pg: run_cmd(pg, 'form-text'), 'H1: a field before a Form inside center', lambda g: g == nb.replace('Before ', 'Before\\TextField[name=text1, width=4cm]{} '))
-    page.wait_for_timeout(100)
+    settle(page, 100)
 
 
 EXTRA = [clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]

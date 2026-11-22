@@ -18,7 +18,7 @@ every construct compiled in the page.
 RIKUY_DIST names another dist/."""
 import os, sys, re
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import open_page, check, results, src, load_doc, click_text, select_text, roundtrip, place, pressed
+from browser import settle, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, place, pressed
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -39,7 +39,7 @@ def run_cmd(page, cid, args=None):
 def at_src(page, needle, k=0, f='main.tex'):
     """The caret in the cell that holds the source position of needle (+ k)."""
     page.evaluate('''([n, k, f]) => { const g = window.rikuy, p = g.files.get(f).indexOf(n) + k; document.getElementById('pages').focus(); g.caretToCell(f, p); }''', [needle, k, f])
-    page.wait_for_timeout(120)
+    settle(page, 120)
 
 
 def sel(needle, k=0):
@@ -65,50 +65,50 @@ def shown_tabs(page):
 def inserting(page):
     plain = WRAP('First paragraph here.\n\nSecond paragraph here.', '')
     load_doc(page, plain); click_text(page, 'First paragraph', 3)
-    run_cmd(page, 'table'); page.wait_for_timeout(200)
+    run_cmd(page, 'table'); settle(page, 200)
     want = '\\begin{table}[h]\n\\centering\n\\begin{tabular}{ll}\n\\toprule\n &  \\\\\n\\midrule\n &  \\\\\n\\bottomrule\n\\end{tabular}\n\\caption{}\n\\end{table}'
     s = src(page)
     check('Table: a two by two table in booktabs after the paragraph, \\usepackage{booktabs} added once, one step', want in s and s.count('\\usepackage{booktabs}') == 1 and s.index('First paragraph here.') < s.index(want) < s.index('Second'), s[:400])
-    page.keyboard.type('Name'); page.wait_for_timeout(150)
+    page.keyboard.type('Name'); settle(page, 150)
     check('the caret in its first cell: typing goes there', '\\toprule\nName &  \\\\' in src(page), src(page)[60:220])
-    page.evaluate('window.rikuy.undo()'); page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    page.evaluate('window.rikuy.undo()'); page.evaluate('window.rikuy.undo()'); settle(page, 150)
     check('undo takes the table and its package out, byte for byte', src(page) == plain, src(page)[:200])
     # a document that has booktabs already: not twice
     load_doc(page, WRAP('Words.')); click_text(page, 'Words', 2)
-    run_cmd(page, 'table', {'rows': 3, 'cols': 4}); page.wait_for_timeout(200)
+    run_cmd(page, 'table', {'rows': 3, 'cols': 4}); settle(page, 200)
     s = src(page)
     check('with booktabs loaded it is not loaded again; three rows of four columns', s.count('booktabs') == 1 and '\\begin{tabular}{llll}' in s and s.count(' &  &  &  \\\\') == 3, s[:300])
     # the grid of sizes: the Table button's arrow, by mouse
     load_doc(page, plain); click_text(page, 'Second paragraph', 3)
-    page.get_by_role('tab', name='Insert', exact=True).click(); page.wait_for_timeout(150)
-    page.locator('#ri-table-x').click(); page.wait_for_timeout(200)
+    page.get_by_role('tab', name='Insert', exact=True).click(); settle(page, 150)
+    page.locator('#ri-table-x').click(); settle(page, 200)
     grid = page.get_by_role('grid', name='Table size', exact=True)
     check('Insert › Table\'s arrow opens the grid of sizes, ten by eight, with Insert Table…, Convert Text to Table… and Table from Data File… under it',
           grid.count() == 1 and page.locator('.tp-cell').count() == 80 and page.get_by_role('menuitem', name='Insert Table…', exact=True).count() == 1
           and page.get_by_role('menuitem', name='Table from Data File…', exact=True).count() == 1)
-    page.locator('#tp-2-3').hover(); page.mouse.move(*[v + 1 for v in page.evaluate("() => { const b = document.getElementById('tp-2-3').getBoundingClientRect(); return [b.left + 4, b.top + 4]; }")]); page.wait_for_timeout(100)
+    page.locator('#tp-2-3').hover(); page.mouse.move(*[v + 1 for v in page.evaluate("() => { const b = document.getElementById('tp-2-3').getBoundingClientRect(); return [b.left + 4, b.top + 4]; }")]); settle(page, 100)
     head = page.locator('#tp-head').text_content()
     check('pointing at a size says it, as Word does ("4×3 Table")', head == '4×3 Table', head)
-    page.locator('#tp-2-3').click(); page.wait_for_timeout(250)
+    page.locator('#tp-2-3').click(); settle(page, 250)
     s = src(page)
     check('a press inserts a table of that size after the caret\'s paragraph', '\\begin{tabular}{llll}' in s and s.count(' &  &  &  \\\\') == 3 and s.index('Second paragraph') < s.index('\\begin{table}'), s[:420])
     # by the keyboard: the arrow's down arrow, then the grid's arrows and Enter
     load_doc(page, plain); click_text(page, 'Second paragraph', 3)
-    page.locator('#ri-table-x').focus(); page.keyboard.press('ArrowDown'); page.wait_for_timeout(200)
+    page.locator('#ri-table-x').focus(); page.keyboard.press('ArrowDown'); settle(page, 200)
     for k in ('ArrowRight', 'ArrowRight', 'ArrowDown'):
         page.keyboard.press(k)
-    page.keyboard.press('Enter'); page.wait_for_timeout(250)
+    page.keyboard.press('Enter'); settle(page, 250)
     s = src(page)
     check('by the keyboard: the arrows pick 3 columns by 2 rows, Enter inserts it', '\\begin{tabular}{lll}' in s and s.count(' &  &  \\\\') == 2, s[:400])
     page.get_by_role('tab', name='Home', exact=True).click()
     # Insert Table…: the dialog
     load_doc(page, plain); click_text(page, 'Second paragraph', 3)
-    run_cmd(page, 'insert-table-dialog'); page.wait_for_timeout(200)
+    run_cmd(page, 'insert-table-dialog'); settle(page, 200)
     dlg = page.get_by_role('dialog', name='Insert Table', exact=True)
     dlg.get_by_role('spinbutton', name='Number of columns', exact=True).fill('3')
     dlg.get_by_role('spinbutton', name='Number of rows', exact=True).fill('4')
     dlg.get_by_role('radio', name='AutoFit to window', exact=True).check()
-    dlg.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(250)
+    dlg.get_by_role('button', name='OK', exact=True).click(); settle(page, 250)
     s = src(page)
     check('Insert Table…: 3 columns, 4 rows, fit to window: tabularx with X columns, tabularx loaded', '\\begin{tabularx}{\\linewidth}{XXX}' in s and s.count(' &  &  \\\\') == 4 and '\\usepackage{tabularx}' in s and s.count('\\end{tabularx}') == 1, s[:500])
     # Convert Text to Table
@@ -116,18 +116,18 @@ def inserting(page):
     load_doc(page, csv)
     page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')]; const a = sp.find((x) => x.textContent.includes('Name')), z = sp.find((x) => x.textContent.includes('Wilmslow'));
       const r = document.createRange(); r.setStart(a.firstChild, 0); r.setEnd(z.firstChild, z.textContent.indexOf('Wilmslow') + 8); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''')
-    page.wait_for_timeout(150)
-    run_cmd(page, 'text-to-table'); page.wait_for_timeout(200)
+    settle(page, 150)
+    run_cmd(page, 'text-to-table'); settle(page, 200)
     dlg = page.get_by_role('dialog', name='Convert Text to Table', exact=True)
     check('Convert Text to Table…: the dialog counts 3 columns and 3 rows, cut at commas', dlg.count() == 1 and '3 columns, 3 rows' in dlg.text_content() and dlg.get_by_role('radio', name='Commas', exact=True).is_checked(), dlg.text_content() if dlg.count() else '')
-    dlg.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(250)
+    dlg.get_by_role('button', name='OK', exact=True).click(); settle(page, 250)
     s = src(page)
     check('and OK makes them a table: a header row, booktabs, the words in their cells', '\\toprule\nName & Age & City \\\\\n\\midrule\nAda & 36 & London \\\\\nAlan & 41 & Wilmslow \\\\\n\\bottomrule' in s and 'After.' in s and '\\usepackage{booktabs}' in s, s[:500])
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    page.evaluate('window.rikuy.undo()'); settle(page, 150)
     check('one undo gives the text back', src(page) == csv)
     # Table from Data File
     load_doc(page, {'main.tex': plain, 'data.csv': 'a,b\n1,2\n'}); click_text(page, 'First', 2)
-    run_cmd(page, 'table-from-data', {'file': 'data.csv'}); page.wait_for_timeout(200)
+    run_cmd(page, 'table-from-data', {'file': 'data.csv'}); settle(page, 200)
     s = src(page)
     check('Table from Data File: \\csvautobooktabular[respect all]{data.csv} in a float, csvsimple, booktabs and T1 loaded', '\\csvautobooktabular[respect all]{data.csv}' in s and '\\usepackage{csvsimple}' in s and '\\usepackage{booktabs}' in s and '\\usepackage[T1]{fontenc}' in s, s[:400])
 
@@ -154,22 +154,22 @@ def tabs_and_trips(page):
     roundtrip(page, S(BOOK.replace('one & two', 'one & ')), lambda page: page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')]; const a = sp.find((x) => x.textContent === 'one'); const tr = a.closest('tr'); const ts = [...tr.querySelectorAll('td span.t')], z = ts[ts.length - 1];
         const r = document.createRange(); r.setStart(a.firstChild, 0); r.setEnd(z.firstChild, z.firstChild.length); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }'''),
               'merge-cells', S(BOOK.replace('one & two', '\\multicolumn{2}{c}{one} ')), off_command=cmd_fn('split-cells', where='one'), label='Merge Cells against Split Cells')
-    page.wait_for_timeout(50)
-    load_doc(page, DOC); sel2(page); run_cmd(page, 'merge-cells'); page.wait_for_timeout(150)
+    settle(page, 50)
+    load_doc(page, DOC); sel2(page); run_cmd(page, 'merge-cells'); settle(page, 150)
     check('Merge Cells over two cells with words: \\multicolumn{2}{c}{one two}, one step', '\\multicolumn{2}{c}{one two} \\\\' in src(page), src(page)[100:300])
     # merge down: \multirow, its package
     load_doc(page, DOC)
     page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')]; const a = sp.find((x) => x.textContent === 'one'), z = sp.find((x) => x.textContent === 'three');
         const r = document.createRange(); r.setStart(a.firstChild, 0); r.setEnd(z.firstChild, 5); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''')
-    run_cmd(page, 'merge-cells'); page.wait_for_timeout(200)
+    run_cmd(page, 'merge-cells'); settle(page, 200)
     s = src(page)
     check('Merge Cells down a column: \\multirow{2}{*}{one three}, the cell under it emptied, \\usepackage{multirow} added', '\\multirow{2}{*}{one three} & two \\\\\n & four' in s and '\\usepackage{multirow}' in s, s[:500])
     td = page.evaluate("() => { const t = [...document.querySelectorAll('#pages td')].find((x) => x.textContent.includes('one three')); return t ? [t.rowSpan, t.closest('tr').nextElementSibling.querySelectorAll('td').length] : null; }")
     check('the page draws it merged: the cell spans two rows, the row under it has one cell of its own', td == [2, 1], td)
     merged = s
-    at_src(page, 'one three'); run_cmd(page, 'split-cells'); page.wait_for_timeout(150)
+    at_src(page, 'one three'); run_cmd(page, 'split-cells'); settle(page, 150)
     check('Split Cells right after the merge: the table as it was, byte for byte (the package stays)', src(page) == WRAP(FLOAT(BOOK), PRE + '\\usepackage{multirow}\n'), src(page)[100:400])
-    load_doc(page, merged); at_src(page, 'one three'); run_cmd(page, 'split-cells'); page.wait_for_timeout(150)
+    load_doc(page, merged); at_src(page, 'one three'); run_cmd(page, 'split-cells'); settle(page, 150)
     check('Split Cells on a merged cell read from the source: the words in the first cell, the \\multirow gone', 'one three & two \\\\\n & four' in src(page), src(page)[100:400])
     # the style options, toggles with their hand written forms
     roundtrip(page, S(PLAIN), ('two', 1), 'header-row', S(PLAIN.replace('Head & Other \\\\', '\\textbf{Head} & \\textbf{Other} \\\\ \\hline')),
@@ -185,7 +185,7 @@ def tabs_and_trips(page):
               off_command='table-look-booktabs', label='Table Grid against Booktabs')
     load_doc(page, S(GRID)); at_src(page, 'two')
     check('a hand written \\hline grid shows as Table Grid, and as All Borders', pressed(page, 'table-look-grid') is True and pressed(page, 'border-all') is True)
-    run_cmd(page, 'table-row-below'); page.wait_for_timeout(150)
+    run_cmd(page, 'table-row-below'); settle(page, 150)
     check('and a row inserted in it brings its own \\hline, in its style', 'one & two \\\\ \\hline\n &  \\\\ \\hline\nthree' in src(page), src(page)[90:300])
     roundtrip(page, S(PLAIN), ('two', 1), 'border-all', S(PLAIN.replace('{ll}', '{|l|l|}').replace('{|l|l|}\n', '{|l|l|}\n\\hline\n').replace(' \\\\', ' \\\\ \\hline')),
               forms=[S(GRID)], off=S(PLAIN), label='All Borders')
@@ -203,7 +203,7 @@ def tabs_and_trips(page):
     load_doc(page, DOC); at_src(page, 'two')
     outs = []
     for _ in range(3):
-        run_cmd(page, 'text-direction'); page.wait_for_timeout(150); outs.append(src(page)); at_src(page, 'two')
+        run_cmd(page, 'text-direction'); settle(page, 150); outs.append(src(page)); at_src(page, 'two')
     check('Text Direction: \\rotatebox{90}, then {270}, then level again', '\\rotatebox{90}{two}' in outs[0] and '\\rotatebox{270}{two}' in outs[1] and outs[2] == WRAP(FLOAT(BOOK), PRE + '\\usepackage{graphicx}\n') and '\\usepackage{graphicx}' in outs[0], [o[150:260] for o in outs])
     load_doc(page, outs[0])
     check('the page draws the words turned', page.evaluate("!!document.querySelector('#pages td .tb-rot90')"))
@@ -220,47 +220,47 @@ def tabs_and_trips(page):
 
 def keys_and_select(page):
     load_doc(page, DOC); at_src(page, 'four', 2)
-    page.keyboard.press('Tab'); page.wait_for_timeout(200)
+    page.keyboard.press('Tab'); settle(page, 200)
     s = src(page)
     check('Tab in the last cell adds a row under it (above \\bottomrule), the caret in its first cell', 'three & four \\\\\n &  \\\\\n\\bottomrule' in s, s[100:320])
-    page.keyboard.type('x'); page.wait_for_timeout(150)
+    page.keyboard.type('x'); settle(page, 150)
     check('typing goes into the new row\'s first cell', 'three & four \\\\\nx &  \\\\' in src(page), src(page)[100:320])
     load_doc(page, DOC); at_src(page, 'one', 1)
-    page.keyboard.press('Tab'); page.wait_for_timeout(120)
+    page.keyboard.press('Tab'); settle(page, 120)
     check('Tab in another cell selects the next cell\'s words, nothing written', page.evaluate('getSelection().toString()') == 'two' and src(page) == DOC)
-    page.keyboard.press('Shift+Tab'); page.wait_for_timeout(120)
+    page.keyboard.press('Shift+Tab'); settle(page, 120)
     check('Shift+Tab goes back', page.evaluate('getSelection().toString()') == 'one')
     load_doc(page, DOC); at_src(page, 'one', 1)
-    page.keyboard.press('Control+Enter'); page.wait_for_timeout(200)
+    page.keyboard.press('Control+Enter'); settle(page, 200)
     check('Ctrl+Enter in a cell adds a row under the caret\'s, one step', 'one & two \\\\\n &  \\\\\nthree' in src(page) and page.evaluate('window.rikuy.hist.length') == 1, src(page)[100:300])
     load_doc(page, DOC); click_text(page, 'After it', 2)
-    page.keyboard.press('Control+Enter'); page.wait_for_timeout(200)
+    page.keyboard.press('Control+Enter'); settle(page, 200)
     check('Ctrl+Enter outside a table adds no row (the page break is B6\'s)', '&  \\\\' not in src(page))
     # Select Cell, Row, Column, Table
     load_doc(page, DOC)
     for what, rect in (('cell', [1, 1, 1, 1]), ('row', [1, 1, 0, 1]), ('column', [0, 2, 1, 1]), ('table', [0, 2, 0, 1])):
-        at_src(page, 'two'); run_cmd(page, 'select-' + what); page.wait_for_timeout(200)
+        at_src(page, 'two'); run_cmd(page, 'select-' + what); settle(page, 200)
         got = page.evaluate("() => { const h = window.rikuy.tableHere(window.rikuy.ribbonAt()); return h ? [h.rect.r0, h.rect.r1, h.rect.c0, h.rect.c1] : null; }")
         n = page.evaluate("document.querySelectorAll('#pages td.tsel').length")
         check('Select %s: the selection covers %s, shown as a block of %d cells' % (what.title(), rect, n), got == rect and (what == 'cell' or n == (rect[1] - rect[0] + 1) * (rect[3] - rect[2] + 1)), (got, n))
     # a selected column: Delete Columns takes it; a selected row: shading the whole row is \rowcolor
-    at_src(page, 'two'); run_cmd(page, 'select-row'); page.wait_for_timeout(150)
-    run_cmd(page, 'table-shading', {'pick': {'html': 'C00000'}}); page.wait_for_timeout(200)
+    at_src(page, 'two'); run_cmd(page, 'select-row'); settle(page, 150)
+    run_cmd(page, 'table-shading', {'pick': {'html': 'C00000'}}); settle(page, 200)
     check('Shading a whole row: \\rowcolor[HTML]{C00000} at its start', '\\midrule\n\\rowcolor[HTML]{C00000} one & two' in src(page), src(page)[100:320])
-    load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'select-column'); page.wait_for_timeout(150)
-    run_cmd(page, 'delete-columns'); page.wait_for_timeout(200)
+    load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'select-column'); settle(page, 150)
+    run_cmd(page, 'delete-columns'); settle(page, 200)
     check('Select Column then Delete Columns: the column and its letter go', src(page) == WRAP(FLOAT(BOOK.replace('{ll}', '{l}').replace(' & Other', '').replace(' & two', '').replace(' & four', ''))), src(page)[100:320])
     # the right click menu in a cell
     load_doc(page, DOC)
     r = page.evaluate('''() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent === 'two'); const b = s.getBoundingClientRect(); return [b.left + 3, b.top + b.height / 2]; }''')
-    page.mouse.click(r[0], r[1], button='right'); page.wait_for_timeout(200)
+    page.mouse.click(r[0], r[1], button='right'); settle(page, 200)
     names = page.get_by_role('menu', name='Context menu', exact=True).get_by_role('menuitem').evaluate_all('(xs) => xs.map((x) => x.getAttribute("aria-label"))')
     want = ['Insert below', 'Insert above', 'Insert left', 'Insert right', 'Delete', 'Merge Cells', 'Split Cells', 'Distribute Columns', 'AutoFit', 'Text Direction', 'Properties', 'Insert Caption']
     check('the right click menu in a cell: the table\'s items first, in Word\'s order', names[:len(want)] == want, names[:18])
-    page.get_by_role('menu', name='Context menu', exact=True).get_by_role('menuitem', name='Delete', exact=True).click(); page.wait_for_timeout(200)
+    page.get_by_role('menu', name='Context menu', exact=True).get_by_role('menuitem', name='Delete', exact=True).click(); settle(page, 200)
     sub = page.get_by_role('menu', name='Delete', exact=True)
     check('its Delete opens Delete\'s own menu at the caret: Delete Cells…, Columns, Rows, Table', sub.count() == 1 and sub.get_by_role('menuitem').all_inner_texts() == ['Delete Cells…', 'Delete Columns', 'Delete Rows', 'Delete Table'], sub.get_by_role('menuitem').all_inner_texts() if sub.count() else None)
-    sub.get_by_role('menuitem', name='Delete Rows', exact=True).click(); page.wait_for_timeout(200)
+    sub.get_by_role('menuitem', name='Delete Rows', exact=True).click(); settle(page, 200)
     check('and Delete Rows there takes the caret\'s row', 'one & two' not in src(page) and 'three & four' in src(page), src(page)[100:260])
     page.keyboard.press('Escape')
 
@@ -271,65 +271,65 @@ def the_rest(page):
     S = lambda body: WRAP(FLOAT(body))
     # Sort
     load_doc(page, S(BOOK.replace('one & two', 'zeta & 10').replace('three & four', 'alpha & 9')))
-    at_src(page, 'zeta'); run_cmd(page, 'table-sort'); page.wait_for_timeout(200)
+    at_src(page, 'zeta'); run_cmd(page, 'table-sort'); settle(page, 200)
     dlg = page.get_by_role('dialog', name='Sort', exact=True)
     check('Sort…: the dialog, by the caret\'s column named by its header, the header row kept', dlg.count() == 1 and dlg.get_by_role('combobox', name='Sort by').input_value() == '0'
           and 'Column 1: Head' in dlg.get_by_role('combobox', name='Sort by').text_content() and dlg.get_by_role('radio', name='Header row', exact=True).is_checked())
-    dlg.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(200)
+    dlg.get_by_role('button', name='OK', exact=True).click(); settle(page, 200)
     check('OK sorts the rows under the header by their words: alpha before zeta, the rules where they were', '\\midrule\nalpha & 9 \\\\\nzeta & 10 \\\\\n\\bottomrule' in src(page), src(page)[100:320])
-    at_src(page, 'zeta'); run_cmd(page, 'table-sort', {'col': 1, 'header': True}); page.wait_for_timeout(200)
+    at_src(page, 'zeta'); run_cmd(page, 'table-sort', {'col': 1, 'header': True}); settle(page, 200)
     check('by the second column as numbers: 9 before 10', '\\midrule\nalpha & 9 \\\\\nzeta & 10' in src(page), src(page)[100:320])
-    at_src(page, 'zeta'); run_cmd(page, 'table-sort', {'col': 1, 'header': True, 'desc': True}); page.wait_for_timeout(200)
+    at_src(page, 'zeta'); run_cmd(page, 'table-sort', {'col': 1, 'header': True, 'desc': True}); settle(page, 200)
     check('down: 10 before 9', '\\midrule\nzeta & 10 \\\\\nalpha & 9' in src(page))
     # Convert to Text
-    load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'table-to-text', {'sep': ', '}); page.wait_for_timeout(200)
+    load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'table-to-text', {'sep': ', '}); settle(page, 200)
     check('Convert to Text with commas: each row a paragraph, the float gone, its caption kept as a paragraph', src(page) == WRAP('Before it.\n\nHead, Other\n\none, two\n\nthree, four\n\nResults\n\nAfter it.'), src(page)[60:260])
-    load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'table-to-text'); page.wait_for_timeout(200)
+    load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'table-to-text'); settle(page, 200)
     check('Convert to Text… without words opens its dialog', page.get_by_role('dialog', name='Convert Table to Text', exact=True).count() == 1)
     page.keyboard.press('Escape')
     # Split Table
-    load_doc(page, DOC); at_src(page, 'four'); run_cmd(page, 'split-table'); page.wait_for_timeout(200)
+    load_doc(page, DOC); at_src(page, 'four'); run_cmd(page, 'split-table'); settle(page, 200)
     check('Split Table: two tables, the first with \\bottomrule, the second with \\toprule', 'one & two \\\\\n\\bottomrule\n\\end{tabular}\n\n\\begin{tabular}{ll}\n\\toprule\nthree & four' in src(page), src(page)[100:400])
     # Delete Cells, Delete Table
-    load_doc(page, DOC); at_src(page, 'one'); run_cmd(page, 'delete-cells', {'how': 'left'}); page.wait_for_timeout(200)
+    load_doc(page, DOC); at_src(page, 'one'); run_cmd(page, 'delete-cells', {'how': 'left'}); settle(page, 200)
     check('Delete Cells, shift cells left: the row\'s words move left, an empty cell at its end', '\\midrule\ntwo &  \\\\' in src(page), src(page)[100:300])
-    load_doc(page, DOC); at_src(page, 'one'); run_cmd(page, 'delete-table'); page.wait_for_timeout(200)
+    load_doc(page, DOC); at_src(page, 'one'); run_cmd(page, 'delete-table'); settle(page, 200)
     check('Delete Table: the float goes with it, the paragraphs around stay', src(page) == WRAP('Before it.\n\nAfter it.'), src(page)[50:200])
     # Distribute Rows, settings: Cell Margins, Pen Weight, Pen Color, Properties
-    load_doc(page, S(BOOK.replace('one & two \\\\', 'one & two \\\\[6pt]'))); at_src(page, 'two'); run_cmd(page, 'distribute-rows'); page.wait_for_timeout(150)
+    load_doc(page, S(BOOK.replace('one & two \\\\', 'one & two \\\\[6pt]'))); at_src(page, 'two'); run_cmd(page, 'distribute-rows'); settle(page, 150)
     check('Distribute Rows: the extra space after \\\\[6pt] goes', src(page) == DOC)
-    load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'cell-margins', {'side': '10pt', 'top': '2pt'}); page.wait_for_timeout(200)
+    load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'cell-margins', {'side': '10pt', 'top': '2pt'}); settle(page, 200)
     s = src(page)
     check('Cell Margins: \\setlength{\\tabcolsep}{10pt} and \\setlength{\\extrarowheight}{2pt} in the float, array loaded, one step', '\\centering\n\\setlength{\\tabcolsep}{10pt}\n\\setlength{\\extrarowheight}{2pt}\n\\begin{tabular}' in s and '\\usepackage{array}' in s and page.evaluate('window.rikuy.hist.length') == 1, s[60:300])
-    at_src(page, 'two'); run_cmd(page, 'cell-margins', {'side': None, 'top': None}); page.wait_for_timeout(200)
+    at_src(page, 'two'); run_cmd(page, 'cell-margins', {'side': None, 'top': None}); settle(page, 200)
     check('and back to LaTeX\'s own: the lines go', src(page) == WRAP(FLOAT(BOOK), PRE + '\\usepackage{array}\n'), src(page)[60:300])
-    load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'pen-weight', {'w': '1pt'}); page.wait_for_timeout(150)
+    load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'pen-weight', {'w': '1pt'}); settle(page, 150)
     check('Pen Weight 1 pt: \\setlength{\\arrayrulewidth}{1pt}', '\\setlength{\\arrayrulewidth}{1pt}\n\\begin{tabular}' in src(page))
-    at_src(page, 'two'); run_cmd(page, 'pen-color', {'pick': {'name': 'gray'}}); page.wait_for_timeout(150)
+    at_src(page, 'two'); run_cmd(page, 'pen-color', {'pick': {'name': 'gray'}}); settle(page, 150)
     check('Pen Color: \\arrayrulecolor{gray}, xcolor\'s table option', '\\arrayrulecolor{gray}' in src(page) and '\\usepackage[table]{xcolor}' in src(page), src(page)[:400])
-    load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'table-properties'); page.wait_for_timeout(200)
+    load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'table-properties'); settle(page, 200)
     dlg = page.get_by_role('dialog', name='Table Properties', exact=True)
     check('Table Properties…: its dialog, the float\'s alignment read (Center)', dlg.count() == 1 and dlg.get_by_role('radio', name='Center').first.is_checked())
     dlg.get_by_role('radio', name='Right', exact=True).check()
     dlg.get_by_role('tab', name='Column', exact=True).click()
     dlg.get_by_role('checkbox', name='Preferred width', exact=True).check()
     dlg.get_by_role('spinbutton', name='Column width', exact=True).fill('4')
-    dlg.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(250)
+    dlg.get_by_role('button', name='OK', exact=True).click(); settle(page, 250)
     s = src(page)
     check('OK writes what changed, as one step: \\raggedleft for the float, the caret\'s column p{4cm}', '\\raggedleft\n\\begin{tabular}{lp{4cm}}' in s and page.evaluate('window.rikuy.hist.length') == 1, s[60:300])
     # the caption
     nocap = WRAP('Before it.\n\n' + BOOK + '\n\nAfter it.')
-    load_doc(page, nocap); at_src(page, 'two'); run_cmd(page, 'table-caption'); page.wait_for_timeout(200)
+    load_doc(page, nocap); at_src(page, 'two'); run_cmd(page, 'table-caption'); settle(page, 200)
     check('Insert Caption on a table alone: a float around it with \\caption{} under it, the caret in the caption', '\\begin{table}[h]\n\\centering\n' + BOOK + '\n\\caption{}\n\\end{table}' in src(page), src(page)[60:400])
-    page.keyboard.type('Cap'); page.wait_for_timeout(150)
+    page.keyboard.type('Cap'); settle(page, 150)
     check('typing goes into the caption', '\\caption{Cap}' in src(page))
     # packages: xcolor's table option before TikZ, which loads xcolor
     tikz = WRAP(FLOAT(BOOK), PRE + '\\usepackage{tikz}\n')
-    load_doc(page, tikz); at_src(page, 'two'); run_cmd(page, 'table-shading', {'pick': {'name': 'yellow'}}); page.wait_for_timeout(200)
+    load_doc(page, tikz); at_src(page, 'two'); run_cmd(page, 'table-shading', {'pick': {'name': 'yellow'}}); settle(page, 200)
     s = src(page)
     check('where TikZ loads xcolor first, the table option goes in before it (\\PassOptionsToPackage), no option clash', s.startswith('\\documentclass{article}\n\\PassOptionsToPackage{table}{xcolor}\n') and '\\usepackage[table]{xcolor}' not in s, s[:200])
     # dvipsnames for a colour of its names
-    load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'table-shading', {'pick': {'name': 'Apricot'}}); page.wait_for_timeout(200)
+    load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'table-shading', {'pick': {'name': 'Apricot'}}); settle(page, 200)
     check('a dvipsnames colour: xcolor with table and dvipsnames, once', '\\usepackage[table,dvipsnames]{xcolor}' in src(page) and '\\cellcolor{Apricot}' in src(page), src(page)[:200])
 
 
@@ -355,7 +355,7 @@ def sel_words(page, a, z):
     """A selection from the cell whose words are a to the one whose words are z."""
     page.evaluate('''([a, z]) => { const sp = [...document.querySelectorAll('#pages td span.t')]; const A = sp.find((x) => x.textContent === a), Z = sp.find((x) => x.textContent === z);
       const r = document.createRange(); r.setStart(A.firstChild, 0); r.setEnd(Z.firstChild, Z.firstChild.length); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''', [a, z])
-    page.wait_for_timeout(150)
+    settle(page, 150)
 
 
 def files_of(page):
@@ -365,10 +365,10 @@ def files_of(page):
 def review(page):
     # H1: Rikuy's own table, filled by Tab: the new row above \bottomrule, \midrule once
     load_doc(page, WRAP('First paragraph here.\n\nSecond.', '')); click_text(page, 'First paragraph', 3)
-    run_cmd(page, 'table'); page.wait_for_timeout(200)
+    run_cmd(page, 'table'); settle(page, 200)
     for w in ('h1', 'h2', 'v1', 'v2', 'n1'):
-        page.keyboard.type(w); page.wait_for_timeout(80)
-        if w != 'n1': page.keyboard.press('Tab'); page.wait_for_timeout(150)
+        page.keyboard.type(w); settle(page, 80)
+        if w != 'n1': page.keyboard.press('Tab'); settle(page, 150)
     s = src(page)
     check('H1: Rikuy\'s new table filled with Tab: Tab in its last cell writes the row above \\bottomrule, \\midrule once',
           '\\toprule\nh1 & h2 \\\\\n\\midrule\nv1 & v2 \\\\\nn1 &  \\\\\n\\bottomrule\n\\end{tabular}' in s and s.count('\\midrule') == 1, s[60:400])
@@ -376,48 +376,48 @@ def review(page):
     check('H1: and its Header Row shows pressed', pressed(page, 'header-row') is True)
     # H2: Insert above never copies a comment
     c = WRAP('\\begin{tabular}{ll}\na & b \\\\\n% comment (Ana) on "gamma": check this\ngamma & delta \\\\\n\\end{tabular}', '')
-    load_doc(page, c); at_src(page, 'gamma'); run_cmd(page, 'table-row-above'); page.wait_for_timeout(150)
+    load_doc(page, c); at_src(page, 'gamma'); run_cmd(page, 'table-row-above'); settle(page, 150)
     check('H2: Insert above a row under a review comment: the comment once, the new row above it', src(page) == c.replace('a & b \\\\\n', 'a & b \\\\\n &  \\\\\n'), src(page)[40:260])
     # H7: two columns: Repeat Header Rows says why, writes nothing
     two = DOC.replace('\\documentclass{article}', '\\documentclass[twocolumn]{article}')
-    load_doc(page, two); at_src(page, 'Head'); run_cmd(page, 'repeat-header'); page.wait_for_timeout(150)
+    load_doc(page, two); at_src(page, 'Head'); run_cmd(page, 'repeat-header'); settle(page, 150)
     check('H7: Repeat Header Rows in a two column document: refused, nothing written', src(page) == two)
     # M4: only from the first rows
-    load_doc(page, DOC); at_src(page, 'three'); run_cmd(page, 'repeat-header'); page.wait_for_timeout(150)
+    load_doc(page, DOC); at_src(page, 'three'); run_cmd(page, 'repeat-header'); settle(page, 150)
     check('M4: Repeat Header Rows with the caret in a body row: refused, nothing written', src(page) == DOC)
-    at_src(page, 'Head'); run_cmd(page, 'repeat-header'); page.wait_for_timeout(150)
+    at_src(page, 'Head'); run_cmd(page, 'repeat-header'); settle(page, 150)
     s = src(page)
     check('M4: from the first row: that row repeats (\\endhead under it)', '\\midrule\n\\endhead\none & two' in s, s[60:400])
     # M3: Sort on a longtable with its head, "Header row" as the dialog has it
     lt = '\\begin{longtable}{ll}\n\\toprule\nName & N \\\\\n\\midrule\n\\endhead\nzeta & 3 \\\\\nalpha & 1 \\\\\nbeta & 2 \\\\\n\\bottomrule\n\\end{longtable}'
-    load_doc(page, WRAP(lt, PRE + '\\usepackage{longtable}\n')); at_src(page, 'zeta'); run_cmd(page, 'table-sort', {'col': 0, 'header': True}); page.wait_for_timeout(200)
+    load_doc(page, WRAP(lt, PRE + '\\usepackage{longtable}\n')); at_src(page, 'zeta'); run_cmd(page, 'table-sort', {'col': 0, 'header': True}); settle(page, 200)
     s = src(page)
     check('M3: Sort on a longtable with \\endhead: every body row sorted, the head stays', '\\endhead\nalpha & 1 \\\\\nbeta & 2 \\\\\nzeta & 3 \\\\' in s and 'Name & N' in s, s[60:400])
     # M7: Merge down a grid, then Split: byte for byte back
     g = '\\begin{tabular}{|l|l|l|}\n\\hline\na &  &  \\\\ \\hline\nd &  & f \\\\ \\hline\ng & h & i \\\\ \\hline\n\\end{tabular}'
     gd = WRAP(g, '\\usepackage{multirow}\n')
-    load_doc(page, gd); sel_words(page, 'a', 'f'); run_cmd(page, 'merge-cells'); page.wait_for_timeout(200)
+    load_doc(page, gd); sel_words(page, 'a', 'f'); run_cmd(page, 'merge-cells'); settle(page, 200)
     merged = src(page)
-    at_src(page, 'a d f'); run_cmd(page, 'split-cells'); page.wait_for_timeout(200)
+    at_src(page, 'a d f'); run_cmd(page, 'split-cells'); settle(page, 200)
     check('M7: Merge over two ruled rows then Split: the source as it was, \\hline and spaces included', '\\multirow{2}' in merged and src(page) == gd, [merged[40:300], src(page)[40:300]])
     # M1: merged both ways, then a row inserted under it: three cells drawn, each reachable
     t3 = WRAP('\\begin{tabular}{lll}\nq1 & q2 & q3 \\\\\nq4 & q5 & q6 \\\\\nq7 & q8 & q9 \\\\\n\\end{tabular}', '\\usepackage{multirow}\n')
-    load_doc(page, t3); sel_words(page, 'q1', 'q5'); run_cmd(page, 'merge-cells'); page.wait_for_timeout(200)
-    at_src(page, 'q6'); run_cmd(page, 'table-row-below'); page.wait_for_timeout(200)
+    load_doc(page, t3); sel_words(page, 'q1', 'q5'); run_cmd(page, 'merge-cells'); settle(page, 200)
+    at_src(page, 'q6'); run_cmd(page, 'table-row-below'); settle(page, 200)
     n = page.evaluate("() => { const td = [...document.querySelectorAll('#pages td')].find((x) => x.textContent.trim() === 'q6'); const tr = td && td.closest('tr').nextElementSibling; return tr ? [...tr.querySelectorAll('td')].filter((x) => x.querySelector('span.t')).length : -1; }")
     check('M1: under a cell merged two by two, a new row draws its three cells', n == 3, [n, src(page)[40:300]])
     # M2: a table over two pages: Tab, Select Table and the painted block go across
     long = '\\begin{tabular}{ll}\n' + ''.join('r%da & r%db \\\\\n' % (k, k) for k in range(90)) + '\\end{tabular}'
-    load_doc(page, WRAP('Before.\n\n' + long + '\n\nAfter.', '')); page.wait_for_timeout(400)
+    load_doc(page, WRAP('Before.\n\n' + long + '\n\nAfter.', '')); settle(page, 400)
     pieces = page.evaluate("() => { const t = document.querySelector('#pages table[data-tab]'); return t ? document.querySelectorAll('#pages table[data-tab=\"' + CSS.escape(t.dataset.tab) + '\"]').length : 0; }")
     last = page.evaluate("() => { const t = document.querySelector('#pages table[data-tab]'); const sp = [...t.querySelectorAll('td span.t')]; return sp[sp.length - 1].textContent; }")
     at_src(page, last, len(last))
     before = src(page)
-    page.keyboard.press('Tab'); page.wait_for_timeout(200)
+    page.keyboard.press('Tab'); settle(page, 200)
     k = int(re.match(r'r(\d+)b', last).group(1)) if re.match(r'r(\d+)b', last) else -1
     check('M2: a table over pages: Tab in the last cell of a page goes to the next page\'s first cell, no row written',
           pieces >= 2 and src(page) == before and page.evaluate('getSelection().toString()') == 'r%da' % (k + 1), [pieces, last, page.evaluate('getSelection().toString()')])
-    at_src(page, 'r0a'); ok = run_cmd(page, 'select-table'); page.wait_for_timeout(400)
+    at_src(page, 'r0a'); ok = run_cmd(page, 'select-table'); settle(page, 400)
     got = page.evaluate("() => [getSelection().toString().trim().slice(0, 3), getSelection().toString().trim().slice(-4), document.querySelectorAll('#pages table.tsel-on').length]")
     check('M2: Select Table selects every cell on every page, the block painted on each piece', ok and got[0] == 'r0a' and got[1] == 'r89b' and got[2] == pieces, [ok, got, pieces])
     # L2: one command named Outside Borders
@@ -426,31 +426,31 @@ def review(page):
     # L3: a file picked in Table from Data File joins the project only with Insert, undone with it
     plain = WRAP('First paragraph here.\n\nSecond.', '')
     for button in ('Cancel', 'Insert'):
-        load_doc(page, plain); click_text(page, 'First paragraph', 3); run_cmd(page, 'table-from-data'); page.wait_for_timeout(200)
+        load_doc(page, plain); click_text(page, 'First paragraph', 3); run_cmd(page, 'table-from-data'); settle(page, 200)
         dlg = page.get_by_role('dialog', name='Table from Data File', exact=True)
-        dlg.locator('input[type=file]').set_input_files({'name': 'my data.csv', 'mimeType': 'text/csv', 'buffer': b'user_id,share\nu_1,50%\n'}); page.wait_for_timeout(250)
+        dlg.locator('input[type=file]').set_input_files({'name': 'my data.csv', 'mimeType': 'text/csv', 'buffer': b'user_id,share\nu_1,50%\n'}); settle(page, 250)
         early = 'my_data.csv' in files_of(page)
-        dlg.get_by_role('button', name=button, exact=True).click(); page.wait_for_timeout(250)
+        dlg.get_by_role('button', name=button, exact=True).click(); settle(page, 250)
         if button == 'Cancel':
             check('L3: a file picked, then Cancel: the project as it was, no file added', not early and 'my_data.csv' not in files_of(page) and src(page) == plain, files_of(page))
         else:
             s = src(page)
             ok = 'my_data.csv' in files_of(page) and '\\csvautobooktabular[respect all]{my_data.csv}' in s and page.evaluate('window.rikuy.hist.length') == 1
-            page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+            page.evaluate('window.rikuy.undo()'); settle(page, 200)
             check('L3: Insert adds the file and the table as one step; Undo takes both away', ok and 'my_data.csv' not in files_of(page) and src(page) == plain, [ok, files_of(page)])
     # M6, H10: Banded Rows on a table in \resizebox{…}{!}{…} in its float: in the argument, read again, off again
     rb = WRAP(FLOAT('\\resizebox{\\linewidth}{!}{' + BOOK + '}'), PRE + '\\usepackage{graphicx}\n\\usepackage[table]{xcolor}\n')
-    load_doc(page, rb); at_src(page, 'two'); run_cmd(page, 'banded-rows'); page.wait_for_timeout(200)
+    load_doc(page, rb); at_src(page, 'two'); run_cmd(page, 'banded-rows'); settle(page, 200)
     s = src(page)
     at_src(page, 'two')
     on = pressed(page, 'banded-rows')
-    run_cmd(page, 'banded-rows'); page.wait_for_timeout(200)
+    run_cmd(page, 'banded-rows'); settle(page, 200)
     check('M6, H10: Banded Rows on a table in \\resizebox: \\rowcolors in its argument, pressed, and off gives the source back, braces and all',
           '\\resizebox{\\linewidth}{!}{\\rowcolors{2}{gray!10}{}\n\\begin{tabular}' in s and on is True and src(page) == rb, [s[60:300], on, src(page)[60:300]])
     # H9: listings and colortbl, no xcolor: shading and banded rows load xcolor too
     lst = WRAP(FLOAT(BOOK), PRE + '\\usepackage{listings}\n\\usepackage{colortbl}\n')
-    load_doc(page, lst); at_src(page, 'two'); run_cmd(page, 'table-shading', {'pick': {'name': 'yellow'}}); page.wait_for_timeout(200)
-    at_src(page, 'two'); run_cmd(page, 'banded-rows'); page.wait_for_timeout(200)
+    load_doc(page, lst); at_src(page, 'two'); run_cmd(page, 'table-shading', {'pick': {'name': 'yellow'}}); settle(page, 200)
+    at_src(page, 'two'); run_cmd(page, 'banded-rows'); settle(page, 200)
     s = src(page)
     check('H9: where only listings and colortbl stand, Shading and Banded Rows write xcolor\'s table option and load xcolor',
           '\\PassOptionsToPackage{table}{xcolor}' in s and '\\usepackage{xcolor}' in s and '\\cellcolor{yellow}' in s and '\\rowcolors' in s, s[:400])
@@ -480,24 +480,24 @@ def review_compiled(page, listings_doc):
     body = '\n\n'.join(t for _, t in tabs) + '\n\nEnd.'
     pre = PRE + '\\usepackage{multirow}\n\\usepackage{graphicx}\n\\usepackage{longtable}\n\\usepackage{tabulary}\n'
     load_doc(page, {'main.tex': WRAP(body, pre), 'data.csv': 'user_id,share,note\nu_1,50%,a&b $5\n#x,~y,^z\n'})
-    page.wait_for_timeout(300)
-    at_src(page, 'QMhead'); run_cmd(page, 'table-shading', {'pick': {'name': 'yellow'}}); page.wait_for_timeout(150)
-    sel_words(page, 'Qma', 'Qmb'); run_cmd(page, 'merge-cells'); page.wait_for_timeout(150)
-    at_src(page, 'Qpa'); run_cmd(page, 'align-top-center'); page.wait_for_timeout(150)
-    at_src(page, 'Qwc'); run_cmd(page, 'align-top-center'); page.wait_for_timeout(150)
-    at_src(page, 'Qsa'); run_cmd(page, 'autofit-window'); page.wait_for_timeout(150)
-    at_src(page, 'Qya'); run_cmd(page, 'autofit-window'); page.wait_for_timeout(150)
-    at_src(page, 'QHc'); run_cmd(page, 'repeat-header'); page.wait_for_timeout(150)
-    at_src(page, 'QLa'); run_cmd(page, 'repeat-header'); page.wait_for_timeout(150)
-    at_src(page, 'Qka'); run_cmd(page, 'table-caption'); page.wait_for_timeout(150)
-    at_src(page, 'Qfa'); run_cmd(page, 'table-caption'); page.wait_for_timeout(150)
-    at_src(page, 'Qra'); run_cmd(page, 'banded-rows'); page.wait_for_timeout(150)
-    at_src(page, 'Qstb'); run_cmd(page, 'table-col-right'); page.wait_for_timeout(150)
+    settle(page, 300)
+    at_src(page, 'QMhead'); run_cmd(page, 'table-shading', {'pick': {'name': 'yellow'}}); settle(page, 150)
+    sel_words(page, 'Qma', 'Qmb'); run_cmd(page, 'merge-cells'); settle(page, 150)
+    at_src(page, 'Qpa'); run_cmd(page, 'align-top-center'); settle(page, 150)
+    at_src(page, 'Qwc'); run_cmd(page, 'align-top-center'); settle(page, 150)
+    at_src(page, 'Qsa'); run_cmd(page, 'autofit-window'); settle(page, 150)
+    at_src(page, 'Qya'); run_cmd(page, 'autofit-window'); settle(page, 150)
+    at_src(page, 'QHc'); run_cmd(page, 'repeat-header'); settle(page, 150)
+    at_src(page, 'QLa'); run_cmd(page, 'repeat-header'); settle(page, 150)
+    at_src(page, 'Qka'); run_cmd(page, 'table-caption'); settle(page, 150)
+    at_src(page, 'Qfa'); run_cmd(page, 'table-caption'); settle(page, 150)
+    at_src(page, 'Qra'); run_cmd(page, 'banded-rows'); settle(page, 150)
+    at_src(page, 'Qstb'); run_cmd(page, 'table-col-right'); settle(page, 150)
     page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')]; const a = sp.find((x) => x.textContent.includes('Qtx')), z = sp.find((x) => x.textContent.includes('Qtw'));
       const r = document.createRange(); r.setStart(a.firstChild, 0); r.setEnd(z.firstChild, z.textContent.indexOf('Qtw') + 3); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''')
-    page.wait_for_timeout(150)
-    run_cmd(page, 'text-to-table', {'sep': ','}); page.wait_for_timeout(200)
-    click_text(page, 'End', 1); run_cmd(page, 'table-from-data', {'file': 'data.csv'}); page.wait_for_timeout(200)
+    settle(page, 150)
+    run_cmd(page, 'text-to-table', {'sep': ','}); settle(page, 200)
+    click_text(page, 'End', 1); run_cmd(page, 'table-from-data', {'file': 'data.csv'}); settle(page, 200)
     s = src(page)
     wrote = {
         'H3 shading a merged cell': '\\multicolumn{2}{c}{\\cellcolor{yellow} QMhead}' in s,
@@ -556,7 +556,7 @@ def verified(page):
     # R1: Repeat Header Rows on a float with settings: the page still draws a table, off gives it back
     flt = WRAP('Intro.\n\n\\begin{table}[!htbp]\n\\centering\n\\small\n\\rowcolors{2}{gray!10}{}\n\\setlength{\\tabcolsep}{3pt}\n\\begin{tabular}{ll}\n\\toprule\nHead & Other \\\\\n\\midrule\nbanana & 2 \\\\\napple & 10 \\\\\n\\bottomrule\n\\end{tabular}\n\\caption{Results}\n\\label{tab:r}\n\\end{table}\n\nAfter.',
                PRE + '\\usepackage[table]{xcolor}\n')
-    load_doc(page, flt); at_src(page, 'Head'); run_cmd(page, 'repeat-header'); page.wait_for_timeout(300)
+    load_doc(page, flt); at_src(page, 'Head'); run_cmd(page, 'repeat-header'); settle(page, 300)
     on = src(page)
     drawn = page.evaluate("() => [...document.querySelectorAll('#pages td')].map((t) => t.textContent.trim()).filter(Boolean)")
     small = page.evaluate("() => { const t = [...document.querySelectorAll('#pages td')].find((x) => x.textContent.trim() === 'banana'); return !!t && !!t.closest('table.z-small'); }")
@@ -564,7 +564,7 @@ def verified(page):
           '{\\small\n\\rowcolors{2}{gray!10}{}\n\\setlength{\\tabcolsep}{3pt}\n\\begin{longtable}{ll}' in on and 'banana' in drawn and 'Head' in drawn and small, [on[60:400], drawn[:6], small])
     at_src(page, 'banana')
     check('R1: and the caret goes into its cells, Repeat Header Rows pressed', pressed(page, 'repeat-header') is True)
-    run_cmd(page, 'repeat-header'); page.wait_for_timeout(300)
+    run_cmd(page, 'repeat-header'); settle(page, 300)
     check('R1: off again: the float as it was, byte for byte (longtable stays loaded)', src(page).split('\\begin{document}')[1] == flt.split('\\begin{document}')[1] and '\\usepackage{longtable}' in src(page), src(page)[60:400])
     if has_tex:
         r = pdf_of(page, on)
@@ -584,12 +584,12 @@ def verified(page):
     got = {}
     for k, d in docs.items():
         load_doc(page, {'main.tex': d, 'data.csv': csv, 'settings.tex': '\\usepackage[T1]{fontenc}\n'}); click_text(page, 'Intro', 2)
-        run_cmd(page, 'table-from-data', {'file': 'data.csv'}); page.wait_for_timeout(250)
+        run_cmd(page, 'table-from-data', {'file': 'data.csv'}); settle(page, 250)
         got[k] = src(page)
     check('R2: Table from Data File writes no T1 for XeLaTeX, LuaLaTeX (magic comment, polyglossia, unicode-math, babel\'s onchar), nor where an \\input file loads fontenc',
           all('\\csvautobooktabular[respect all]{data.csv}' in s and '{fontenc}' not in s.split('\\begin{document}')[0] for s in got.values()), {k: s[:160] for k, s in got.items() if '{fontenc}' in s.split('\\begin{document}')[0]})
     load_doc(page, {'main.tex': WRAP(body, ''), 'data.csv': csv}); click_text(page, 'Intro', 2)
-    run_cmd(page, 'table-from-data', {'file': 'data.csv'}); page.wait_for_timeout(250)
+    run_cmd(page, 'table-from-data', {'file': 'data.csv'}); settle(page, 250)
     pdfdoc = src(page)
     check('R2: in a pdfLaTeX document T1 still comes (its _ prints as _)', '\\usepackage[T1]{fontenc}' in pdfdoc, pdfdoc[:200])
     if has_tex:
@@ -601,16 +601,16 @@ def verified(page):
     sty = '\\NeedsTeXFormat{LaTeX2e}\n\\ProvidesPackage{acl}\n\\renewcommand\\maketitle{\\twocolumn[\\centering\\@title]}\n'
     for name, files in (('a project .sty (acl.sty\'s \\maketitle)', {'main.tex': DOC.replace(PRE, PRE + '\\usepackage{acl}\n'), 'acl.sty': sty}),
                         ('an \\input file before the table', {'main.tex': DOC.replace('Before it.', '\\input{cols}\nBefore it.'), 'cols.tex': '\\twocolumn\n'})):
-        load_doc(page, files); at_src(page, 'Head'); run_cmd(page, 'repeat-header'); page.wait_for_timeout(200)
+        load_doc(page, files); at_src(page, 'Head'); run_cmd(page, 'repeat-header'); settle(page, 200)
         check('H7: Repeat Header Rows refused where two columns come from ' + name, src(page) == files['main.tex'], src(page)[60:300])
     # R5: painting a selection on a table of 3000 rows takes one look at each cell
     big = WRAP('\\begin{tabular}{ll}\n' + ''.join('a%d & b%d \\\\\n' % (k, k) for k in range(3000)) + '\\end{tabular}', '')
-    load_doc(page, big); page.wait_for_timeout(2500); sel_words(page, 'a0', 'b1')
+    load_doc(page, big); settle(page, 2500); sel_words(page, 'a0', 'b1')
     ms = page.evaluate('() => { const at = window.rikuy.ribbonAt(); const t = performance.now(); window.rikuy.tablePaintSelection(at); return performance.now() - t; }')
     check('R5: the block of a selection painted on a table of 3000 rows in under 300 ms (it took a second)', ms < 300, ms)
     # R6: Insert Caption in a subtable that has one: the caret goes to it, nothing written
     sub = WRAP('\\begin{table}[h]\n\\begin{subtable}{0.5\\linewidth}\n\\centering\n\\begin{tabular}{ll}\nka & kb \\\\\n\\end{tabular}\n\\caption{Sub one}\n\\end{subtable}\n\\end{table}', PRE + '\\usepackage{subcaption}\n')
-    load_doc(page, sub); at_src(page, 'ka'); run_cmd(page, 'table-caption'); page.wait_for_timeout(200)
+    load_doc(page, sub); at_src(page, 'ka'); run_cmd(page, 'table-caption'); settle(page, 200)
     check('R6: Insert Caption where the subtable has a caption: nothing written, a second caption never', src(page) == sub, src(page)[60:300])
 
 
@@ -645,29 +645,29 @@ def r3_tables(page):
     alt = DOC.replace('\\centering\n\\begin{tabular}', '\\centering\n% alt: Two fruits and their counts\n\\begin{tabular}')
     roundtrip(page, DOC, sel('one'), cmd_fn('table-alt-text', {'text': 'Two fruits and their counts'}), alt, label='Table Alt Text', off_command=cmd_fn('table-alt-text', {'text': ''}))
     load_doc(page, alt); at_src(page, 'one')
-    run_cmd(page, 'table-properties'); page.wait_for_timeout(200)
+    run_cmd(page, 'table-properties'); settle(page, 200)
     page.get_by_role('tab', name='Alt Text', exact=True).click()
     v = page.get_by_role('textbox', name='Description', exact=True).input_value()
     check('Table Properties shows the alt text read back', v == 'Two fruits and their counts', v)
     page.get_by_role('textbox', name='Description', exact=True).fill('Fruit: 100% & more')
     h0 = page.evaluate('window.rikuy.hist.length')
-    page.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(250)
+    page.get_by_role('button', name='OK', exact=True).click(); settle(page, 250)
     check('and OK writes it where it was, its words as typed (a comment is not typeset), one step', src(page) == alt.replace('Two fruits and their counts', 'Fruit: 100% & more') and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page)[60:260])
     # Height and Width on the row
     load_doc(page, DOC); at_src(page, 'one')
-    page.get_by_role('tab', name='Table Layout', exact=True).click(); page.wait_for_timeout(200)
+    page.get_by_role('tab', name='Table Layout', exact=True).click(); settle(page, 200)
     hv = page.get_by_role('spinbutton', name='Height', exact=True).input_value(); wv = page.get_by_role('spinbutton', name='Width', exact=True).input_value()
     check('Table Layout\'s Cell Size group: Height 1× and Width Auto for a table of l columns', hv == '1×' and wv == 'Auto', (hv, wv))
     h0 = page.evaluate('window.rikuy.hist.length')
-    page.get_by_role('spinbutton', name='Height', exact=True).fill('1.5'); page.keyboard.press('Enter'); page.wait_for_timeout(250)
+    page.get_by_role('spinbutton', name='Height', exact=True).fill('1.5'); page.keyboard.press('Enter'); settle(page, 250)
     check('Height 1.5 then Enter: \\renewcommand{\\arraystretch}{1.5} in the table\'s float, one step', src(page) == DOC.replace('\\centering\n', '\\centering\n\\renewcommand{\\arraystretch}{1.5}\n') and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page)[60:260])
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150); at_src(page, 'one')
-    page.get_by_role('spinbutton', name='Width', exact=True).fill('3 cm'); page.keyboard.press('Enter'); page.wait_for_timeout(250)
+    page.evaluate('window.rikuy.undo()'); settle(page, 150); at_src(page, 'one')
+    page.get_by_role('spinbutton', name='Width', exact=True).fill('3 cm'); page.keyboard.press('Enter'); settle(page, 250)
     check('Width 3 cm then Enter: the caret\'s column p{3cm}', src(page) == DOC.replace('{tabular}{ll}', '{tabular}{p{3cm}l}'), src(page)[60:260])
-    at_src(page, 'one'); page.wait_for_timeout(150)
+    at_src(page, 'one'); settle(page, 150)
     wv = page.get_by_role('spinbutton', name='Width', exact=True).input_value()
     check('the box reads it back: 3 cm', wv == '3 cm', wv)
-    page.get_by_role('spinbutton', name='Width', exact=True).fill('Auto'); page.keyboard.press('Enter'); page.wait_for_timeout(250)
+    page.get_by_role('spinbutton', name='Width', exact=True).fill('Auto'); page.keyboard.press('Enter'); settle(page, 250)
     check('Auto gives the column its letter back: the bytes of before', src(page) == DOC, src(page)[60:260])
     # on a phone the two boxes are in the folded group or the row, and the dialog's alt text fits
     load_doc(page, DOC); at_src(page, 'one')
@@ -680,11 +680,11 @@ def r3_table_phones(p):
         tag = ' (%d px, touch)' % w
         try:
             load_doc(page, DOC); at_src(page, 'one')
-            run_cmd(page, 'table-alt-text'); page.wait_for_timeout(300)
+            run_cmd(page, 'table-alt-text'); settle(page, 300)
             fit = page.evaluate("(() => { const d = document.querySelector('.pop'); const r = d.getBoundingClientRect(); const t = d.querySelector('textarea.tb-alt'); return { in: r.left >= 0 && r.right <= innerWidth + 1, focused: document.activeElement === t, scroll: document.documentElement.scrollWidth <= innerWidth + 1 }; })()")
             check('Alt Text opens Table Properties at its Description, inside the screen' + tag, fit['in'] and fit['focused'] and fit['scroll'], fit)
             page.get_by_role('textbox', name='Description', exact=True).fill('Counts')
-            page.get_by_role('button', name='OK', exact=True).tap(); page.wait_for_timeout(300)
+            page.get_by_role('button', name='OK', exact=True).tap(); settle(page, 300)
             check('a tap on OK writes the alt line' + tag, '% alt: Counts\n\\begin{tabular}' in src(page), src(page)[60:200])
         except Exception as e:
             check('r3_table_phones runs to its end' + tag, False, repr(e)[:300])
