@@ -3798,7 +3798,28 @@ class App {
     // However the box closes, what was typed is kept: text held back is written made whole
     // (mathMadeWhole), in the box's undo step.
     const whole = () => mathMadeWhole(ta.value, kerr());
-    this.pop.onClose = () => { push.cancel(); if (!this.pop) return; const v = held() ? whole() : ta.value; this.pop.applyInner(v); this.eqClosed(this.pop, v); };
+    this.pop.onClose = () => {
+      push.cancel(); if (!this.pop) return; const v = held() ? whole() : ta.value;
+      // Emptied, a formula that was there goes, as a new one closed empty does (newDisplayMath's
+      // own onClose takes those): $$ left in the line opened a display that ran on through the
+      // text after it, and an empty equation printed its number beside a blank line, TeX's
+      // Missing $. (Only between its own delimiters, read from the source; the caret where it stood.)
+      const P = this.pop, R = P.range, S = R && P.anchorPos ? this.src(R.f) : '';
+      if (!v.trim() && !P.eqNew && S) {
+        const env = P.env || info.a.env, close = env === info.a.env ? info.e - info.ie : env === '\\[' ? 2 : ('\\end{' + env + '}').length;
+        const a = P.anchorPos.s, b = R.e + close;
+        if (/^(\$\$?|\\\(|\\\[|\\begin\s*\{[^{}]*\})$/.test(S.slice(a, R.s)) && /^(\$\$?|\\\)|\\\]|\\end\s*\{[^{}]*\})$/.test(S.slice(R.e, b))) {
+          this.commit(this.deletionEdits(R.f, a, b).map((x) => ({ f: R.f, ...x })), null, P.session);
+          // (a display's: at the start of the line after it, not in the blank line it left, where
+          // what is typed joined the two paragraphs)
+          P.returnCaret = { f: R.f, p: a + (display && S[b] === '\n' ? 1 : 0) };
+          P.removed = true;
+          this.eqClosed(P, '');
+          return;
+        }
+      }
+      P.applyInner(v); this.eqClosed(P, v);
+    };
     // what is written must itself pass the box's check; if making it whole could not get it
     // there, the box stays open with its message (closePop asks) and nothing is lost
     this.pop.refuse = () => !!held() && !!mathBreaksOut(whole(), this.renderer.katex(this.mathPreviewTex(whole(), display), display).err);
