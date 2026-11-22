@@ -1873,6 +1873,22 @@ def word_typing(page):
     place(page, ('Some', 'here.')); k.press('Control+c'); settle(page, 50)
     click_text(page, 'Next', 4); k.press('Control+v'); settle(page, 100)
     check('words with a comment line pasted into a heading: one line as TeX reads them, the heading closed', src(page) == D1.replace('\\section{Next}', '\\section{NextSome wordsmore words here.}'), src(page)[60:160])
+    # (an address keeps its %: a heading's or a cell's one line took \url{x%20y}'s % for a
+    # comment and lost the brace and the words after it; the title takes no paragraph break)
+    DU = ('\\documentclass{article}\n\\usepackage{url}\n\\title{My Title}\n\\begin{document}\n\\maketitle\n\\section{Next}\nSee \\url{https://a.org/x%20y} now.\n\n'
+          'Para one.\n\nPara two.\n\n\\begin{tabular}{|l|l|}\n\\hline\nCell & B \\\\\n\\hline\n\\end{tabular}\n\\end{document}\n')
+    url = 'See \\url{https://a.org/x%20y} now.'
+    got = []
+    for into, off, was, now in (('Cell', 4, 'Cell &', 'Cell' + url + ' &'), ('Next', 4, '{Next}', '{Next' + url + '}')):
+        load_doc(page, DU)
+        place(page, ('See', 'now.')); k.press('Control+c'); settle(page, 50)
+        click_text(page, into, off); k.press('Control+v'); settle(page, 100)
+        got.append(src(page) == DU.replace(was, now, 1))
+    load_doc(page, DU)
+    place(page, ('Para one', 'Para two.')); k.press('Control+c'); settle(page, 50)
+    click_text(page, 'My Title', 3); k.press('Control+v'); settle(page, 100)
+    got.append(src(page) == DU.replace('{My Title}', '{My Para one. Para two.Title}'))
+    check('an address with % pasted into a cell and a heading keeps its %, brace and words; two paragraphs pasted into the title join in one line', all(got), (got, src(page)[:120]))
     load_doc(page, WORD_DOC.replace('of the document.', 'of the document.\\footnote{A note.}'))
     place(page, ('comes', 'After display')); k.press('Control+c'); settle(page, 50)
     click_text(page, 'A note', 2); k.press('Control+v'); settle(page, 100)

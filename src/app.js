@@ -2875,7 +2875,8 @@ class App {
     // break ends, goes in as one line: src/paste.js oneLineLatex. Pasted as it was,
     // \section{Intro\section{Background}...} or a list in a heading stopped TeX. A footnote or a
     // bold word holds paragraphs, displays and lists: there it goes as it is.)
-    if (latex && !whole && el && el.closest && el.closest('td, th, .it.h, .cap')) latex = oneLineLatex(latex);
+    // (and the title, author and date: \title's argument takes no paragraph break either)
+    if (latex && !whole && el && el.closest && el.closest('td, th, .it.h, .cap, .it.ttl')) latex = oneLineLatex(latex);
     else if (latex && inArg) latex = headingsAsWords(latex);
     const pre = this.src(this.main).split(/\\begin\s*\{document\}/)[0];
     const o = { prev: src[at0 - 1] || ' ', hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*hyperref/.test(pre), booktabs: /\\usepackage(\[[^\]]*\])?\{[^}]*booktabs/.test(pre), inlineOnly: inline };

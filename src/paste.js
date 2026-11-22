@@ -278,7 +278,14 @@ export function unwrapMath(t) {
 // paragraphs and lines join with a space. '' where something is left that the line cannot hold
 // (an align, a figure): then the words alone are pasted.
 export function oneLineLatex(t) {
-  let s = String(t || '').replace(/\r\n?/g, '\n');
+  const t0 = String(t || '');
+  let s = t0.replace(/\r\n?/g, '\n');
+  // An address or verbatim text keeps its % and its line as written: \url{x%20y} is no comment.
+  // They wait aside, each as a mark, and come back at the end.
+  const kept = [];
+  const keep = (m) => '\uE000' + (kept.push(m) - 1) + '\uE001';
+  s = s.replace(/\\(?:url|path|href)\s*\{[^{}\n]*\}/g, keep);
+  s = s.replace(/\\(?:verb|lstinline)\*?([^\sA-Za-z*{])[^\n]*?\1/g, keep);
   // (a % after an even number of backslashes starts a comment; \% is a percent sign)
   s = s.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*(?:\n[ \t]*)?/g, '$1$2');
   s = headingsAsWords(s);
@@ -289,7 +296,12 @@ export function oneLineLatex(t) {
   s = s.replace(/\\(?:begin|end)\s*\{(?:itemize|enumerate|description)\}(?:\[[^\]\n]*\])?/g, ' ');
   s = s.replace(/\\item(?![A-Za-z])\s*(?:\[([^\]\n]*)\])?/g, (m, lab) => ' ' + (lab ? lab + ' ' : ''));
   s = s.replace(/\s*\n\s*/g, ' ').replace(/[ \t]{2,}/g, ' ').trim();
-  return /\\(?:begin|end|par|maketitle|caption)(?![A-Za-z])/.test(s) ? '' : s;
+  if (/\\(?:begin|end|par|maketitle|caption)(?![A-Za-z])/.test(s)) return '';
+  s = s.replace(/\uE000(\d+)\uE001/g, (m, k) => kept[+k]);
+  // (what this cannot read, braces left open or closed twice: the LaTeX goes in as it came)
+  let depth = 0;
+  for (const x of s.replace(/\\./g, '').replace(/\uE000\d+\uE001/g, '')) { if (x === '{') depth++; else if (x === '}' && --depth < 0) break; }
+  return depth === 0 ? s : t0;
 }
 
 // A heading copied with what is pasted inside another command's argument (a footnote, a bold
