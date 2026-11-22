@@ -307,7 +307,7 @@ def tables_compiled(page):
 # kept for OK, the focus, the taps' clicks so far)
 TP_STATE = '''(() => { const R = window.rikuy, r = R.rbRange, c = document.querySelector('.pop input[aria-label="Repeat as header row at the top of each page"]');
   return { pop: !!R.pop, checked: !!c && c.checked, tab: (document.querySelector('.pop [role=tab][aria-selected=true]') || {}).textContent, range: !!r && R.root.contains(r.startContainer),
-    focus: document.activeElement && (document.activeElement.getAttribute('aria-label') || document.activeElement.id), taps: window.__taps }; })()'''
+    focus: document.activeElement && (document.activeElement.getAttribute('aria-label') || document.activeElement.id || '').slice(0, 10), taps: window.__taps, hist: R.hist.length }; })()'''
 
 
 def tables_phones(p):
@@ -319,12 +319,12 @@ def tables_phones(p):
             run_cmd(page, 'table-properties'); settle(page, 300)
             fit = page.evaluate("(() => { const d = document.querySelector('.pop'); const r = d.getBoundingClientRect(); const small = [...d.querySelectorAll('[role=tab], button, select, input[type=text]')].filter((x) => x.offsetParent && (x.getBoundingClientRect().height < 43.5 || x.getBoundingClientRect().width < 43.5)); return { in: r.left >= 0 && r.right <= innerWidth + 1, small: small.map((x) => x.textContent || x.getAttribute('aria-label')).slice(0, 4), scroll: document.documentElement.scrollWidth <= innerWidth + 1 }; })()")
             check('Table Properties inside the screen, its tabs and buttons 44 px high and wide (the Cell tab was 43 wide)' + tag, fit['in'] and not fit['small'] and fit['scroll'], fit)
-            page.evaluate("window.__taps = []; document.addEventListener('click', (e) => window.__taps.push(e.target.getAttribute('aria-label') || e.target.textContent.slice(0, 20)), true)")
+            page.evaluate("window.__taps = []; for (const k of ['pointerup', 'click']) document.addEventListener(k, (e) => window.__taps.push(k[0] + ':' + (e.target.getAttribute('aria-label') || e.target.textContent).slice(0, 6)), true)")
             page.get_by_role('tab', name='Row', exact=True).tap()
             page.get_by_role('checkbox', name='Repeat as header row at the top of each page', exact=True).tap()
             pre = page.evaluate(TP_STATE)
             page.get_by_role('button', name='OK', exact=True).tap(); settle(page, 300)
-            check('a tap on Row, on Repeat as header row and on OK: a longtable' + tag, '\\begin{longtable}' in src(page), (body(src(page))[:200], pre, page.evaluate(TP_STATE)))
+            check('a tap on Row, on Repeat as header row and on OK: a longtable' + tag, '\\begin{longtable}' in src(page), (pre, page.evaluate(TP_STATE), body(src(page))[:120]))
             load_doc(page, PLAIN); at_src(page, 'one')
             run_cmd(page, 'borders-shading'); settle(page, 300)
             e = page.evaluate("(() => [...document.querySelectorAll('.bs-edge')].map((b) => { const r = b.getBoundingClientRect(); return Math.min(r.width, r.height); }))()")
@@ -761,7 +761,7 @@ def split_long(page):
         res[on] = (page.evaluate('window.__lt'), len(src(page)) - n0)
         page.wait_for_timeout(2000)
     off, on = res[False][0], res[True][0]
-    check('typing ten letters with Split on a 125 page document: the long tasks no longer than without Split, but for 40 ms (%d ms in all, %d without)' % (sum(on), sum(off)),
+    check('typing ten letters with Split on a 125 page document: the long tasks no longer than without Split, but for 40 ms (%d ms in all, %d ms without)' % (sum(on), sum(off)),
           res[False][1] == 10 and res[True][1] == 10 and (max(on) if on else 0) <= (max(off) if off else 0) + 40 and sum(on) <= 1.5 * sum(off) + 150, ([round(x) for x in on], [round(x) for x in off]))
     page.evaluate("window.rikuy.runCommand('split-view')"); page.wait_for_timeout(300)
 
