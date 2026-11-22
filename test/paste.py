@@ -63,7 +63,9 @@ try:
           document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: d, bubbles: true, cancelable: true })); }"""
         for doc, sel, want in (('Some \\textbf{bold} and plain.', ('old', 'and'), 'Some \\textbf{bold} and plain\\textbf{old} and.'),
                                ('Some \\textbf{bold} and plain.', ('Some', 'old'), 'Some \\textbf{bold} and plainSome \\textbf{bold}.'),
-                               ('\\emph{A \\textbf{bold} c} and plain.', ('old', 'c'), '\\emph{A \\textbf{bold} c} and plain\\emph{\\textbf{old} c}.')):
+                               ('\\emph{A \\textbf{bold} c} and plain.', ('old', 'c'), '\\emph{A \\textbf{bold} c} and plain\\emph{\\textbf{old} c}.'),
+                               # (plain words into the middle of an italic word, in one paragraph: each run its format)
+                               ('Text \\emph{italic} and plain.', ('ext', 'ita'), 'Text \\emph{italic} and plainext \\emph{ita}.')):
             load_doc(page, W(doc)); place(page, sel)
             page.keyboard.press('Control+c'); settle(page, 150)
             click_text(page, 'plain', 5); page.evaluate(LAST); settle(page, 250)
