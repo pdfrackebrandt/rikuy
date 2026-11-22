@@ -2,7 +2,7 @@
 included file, undo there, and save a zip whose files come back byte for byte."""
 import os, sys, time, json, zipfile, io, struct, zlib, base64, tempfile, traceback
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, saved as kept_saved, open_page, check, results, SHOTS, src, wait_src, click_text, select_text, load_doc, download
+from browser import settle, ready, saved as kept_saved, open_page, check, results, SHOTS, src, wait_src, click_text, select_text, load_doc, download
 from playwright.sync_api import sync_playwright
 
 TMP = tempfile.mkdtemp(prefix='rikuy-features-')
@@ -86,6 +86,12 @@ try:
         page.reload()
         page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=15000)
         check('document persists across reload', 'MainX text' in src(page))
+        # the caret back where it was, as Word's "pick up where you left off": a reload put it at
+        # the document's first word, and the view at the first page, however far down it had been
+        ready(page)
+        c = page.evaluate("(() => { const c = window.rikuy.caretNow(); return c && [c.f, c.a, c.b]; })()")
+        at = src(page).index('MainX') + 5
+        check('after a reload the caret is where it was, after the X', c == ['main.tex', at, at], (c, at))
         # (Undo's steps are kept with it: the X typed before the reload goes, and Redo puts it back)
         page.keyboard.press('Control+z'); settle(page, 200)
         check('undo after the reload takes the X typed before it', 'MainX text' not in src(page) and 'Main text' in src(page))

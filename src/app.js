@@ -1248,10 +1248,19 @@ class App {
     // (a document of headings alone: the first heading's words; there was no caret, and the first
     // keys after a reload typed nothing)
     const first = this.root.querySelector('.it.p span.t:not(.gh)') || this.root.querySelector('.it:not(.atom) span.t:not(.gh)');
+    // the place this document was left at (leaving()): the view scrolled back to it, and on a
+    // computer the caret back in it, as long as the words around it are still the same
+    const P = (load('rikuy.place.v1') || {})[this.name], t = P && P.main === this.main && this.files.get(P.f);
+    const kept = t != null && P.a <= P.b && t.slice(Math.max(0, P.a - 40), P.a) === P.pre && t.slice(P.b, P.b + 40) === P.post ? P : null;
+    if (kept && !this.desk.scrollTop) this.desk.scrollTop = kept.top || 0;
     if (!first || !first.firstChild || window.innerWidth < 700 || matchMedia('(pointer: coarse)').matches) return;
     const a = document.activeElement;
     if (a && a !== document.body && a !== this.root) return;
     if (this.caretNow()) return;
+    if (kept) {
+      this.restoreCaret(kept.a === kept.b ? { f: kept.f, p: kept.a } : { f: kept.f, selA: kept.a, selB: kept.b });
+      if (this.caretNow()) { this.scrollToCaret(); return; }
+    }
     this.root.focus({ preventScroll: true });
     getSelection().collapse(first.firstChild, 0);
   }
@@ -1607,6 +1616,20 @@ class App {
     // (Track Changes' base, whose writes wait a moment: written now, or the last words typed
     // with tracking off would come back as changes)
     if (this.baseSaveT) this.saveBase(true);
+    // Where the caret and the view were, per document, as Word's "pick up where you left off": a
+    // reload (or the browser started again, or the app updated) opened every document at its
+    // first line, the caret and the page scrolled there, however far down the work had been. The
+    // words around the caret go with it, so a text changed since (another tab, an older copy)
+    // is never given a caret in the wrong place (placeInitialCaret).
+    const c = this.caretNow(), t = c && !c.ghost && this.files.get(c.f);
+    if (t != null && c.a != null) {
+      const all = load('rikuy.place.v1') || {};
+      all[this.name] = { main: this.main, f: c.f, a: c.a, b: c.b, pre: t.slice(Math.max(0, c.a - 40), c.a), post: t.slice(c.b, c.b + 40), top: this.desk.scrollTop, at: Date.now() };
+      // (the twenty documents last left, no more)
+      const names = Object.keys(all).sort((x, y) => (all[y].at || 0) - (all[x].at || 0));
+      for (const n of names.slice(20)) delete all[n];
+      store('rikuy.place.v1', all);
+    }
     if (!this.unsaved) return;
     store(STORE, { name: this.name, main: this.main, files: [...this.files.entries()], t: Date.now(), zipDirty: this.zipDirty });
     this.saveSoon.flush();
