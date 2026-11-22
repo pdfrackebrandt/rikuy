@@ -12,6 +12,10 @@ on:
       repeat:
         description: Runs of each suite (every run must pass)
         default: '3'
+      verify:
+        description: First a fast and a shadow run of each suite (test/browser.py settle()), failing where a check saw something else
+        type: boolean
+        default: false
       tex:
         description: Restore dist/tex from main's TeX tree cache (for suites that compile)
         type: boolean
@@ -58,5 +62,6 @@ jobs:
         env:
           SUITES: ${{ inputs.suites }}
           REPEAT: ${{ inputs.repeat }}
+          SUITE_VERIFY: ${{ inputs.verify && '1' || '' }}
         # (split on spaces into an array: no globbing, as shellcheck asks)
         run: read -ra S <<< "$SUITES" && python3 dev/suite_runs.py "$REPEAT" "${S[@]}"
