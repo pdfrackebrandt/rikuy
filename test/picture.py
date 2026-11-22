@@ -19,7 +19,7 @@ picture's box in the PDF against the page's.
 RIKUY_DIST names another dist/."""
 import os, sys, re, base64, struct, zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, open_page, check, results, src, load_doc, click_text, roundtrip, pressed, PRINT_LAYOUT
+from browser import settle, until, tap, open_page, check, results, src, load_doc, click_text, roundtrip, pressed, PRINT_LAYOUT
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -44,6 +44,13 @@ PNG = png(300, 200, dpi=150)
 
 def asset(page, name='a.png', data=PNG):
     page.evaluate('([n, b]) => { const u = Uint8Array.from(atob(b), (c) => c.charCodeAt(0)); window.rikuy.addAsset(n, new Blob([u], { type: "image/png" })); }', [name, base64.b64encode(data).decode()])
+
+
+# The pictures drawn from their files: each file's size read from its first bytes (picNatural in
+# src/cmd/picture.js: a read of the file, no timer, then the page drawn again in the next frame) and
+# each <img> loaded. Not a timer: settle() does not wait for it.
+DRAWN = """() => { const g = window.rikuy, c = g.picNat; return !g.picNatT && (!c || [...c.values()].every((v) => !v.wait))
+  && [...document.querySelectorAll('#pages .a-img img')].every((i) => i.complete && i.naturalWidth > 0); }"""
 
 
 def run_cmd(page, cid, args=None):
@@ -475,12 +482,14 @@ def reviewed(page):
     page.evaluate('([n, b]) => { const u = Uint8Array.from(atob(b), (c) => c.charCodeAt(0)); for (let k = 0; k < n; k++) window.rikuy.addAsset("f" + k + ".png", new Blob([u], { type: "image/png" })); }', [40, data])
     page.evaluate("() => { const g = window.rikuy; if (!window.__rbw) { const r = g.rebuild; window.__rbw = 1; g.rebuild = function (...a) { window.__rb = (window.__rb || 0) + 1; return r.apply(this, a); }; } window.__rb = 0; }")
     load_doc(page, WRAP('\n\n'.join('P %d.\n\n\\begin{center}\n\\includegraphics[height=1cm]{f%d.png}\n\\end{center}' % (k, k) for k in range(40))))
-    settle(page, 1500)
+    until(page, DRAWN); settle(page, 1500)
     n = page.evaluate('window.__rb')
+    # (2 or 3: the page draws again once for the sizes read before a frame, and once more for those
+    # read after it, picNatSoon in src/cmd/picture.js; which, the reads' timing decides)
     check('H5: forty pictures sized from their files: at most 3 rebuilds (one for the document, one for the sizes that came)', n <= 3, n)
     # M2: the first Crop on a fresh picture opens
     asset(page, 'fresh.png', png(120, 80, dpi=144))
-    load_doc(page, WRAP(CENTER().replace('a.png', 'fresh.png'))); settle(page, 300); sel_pic()(page)
+    load_doc(page, WRAP(CENTER().replace('a.png', 'fresh.png'))); until(page, DRAWN); settle(page, 300); sel_pic()(page)
     run_cmd(page, 'picture-crop'); settle(page, 600)
     check('M2: the first Crop on a picture opens its bars', page.evaluate("!!document.querySelector('.pic-crop') && window.rikuy.picCropping"))
     page.keyboard.press('Escape'); settle(page, 150)
@@ -594,6 +603,12 @@ def phones(p):
         ctx = br.new_context(viewport={'width': w, 'height': h}, has_touch=True, is_mobile=True, device_scale_factor=2)
         # (a phone's Print Layout, which this suite was written for: browser.py, PRINT_LAYOUT)
         ctx.add_init_script(PRINT_LAYOUT)
+        # (what every context of open_page() gets: the page's timers seen, so settle() waits for them,
+        # and the animations off as in the other suites of features, unless RIKUY_MOTION=1; with them on,
+        # a dialog measured in its entrance stands lower than it comes to rest)
+        ctx.add_init_script(B.TIMERS)
+        if os.environ.get('RIKUY_MOTION') != '1':
+            ctx.add_init_script(B.MOTION_OFF)
         html = open(os.path.join(DIST, 'rikuy.html'), encoding='utf8').read()
         doc = B.SKELETON_HEAD + html + '</body></html>'
         def handler(route):
@@ -616,12 +631,14 @@ def phones(p):
         page.on('pageerror', lambda e: errs.append(str(e)))
         page.goto('https://rikuy.test/')
         page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=30000)
+        # (init goes on after the boot screen hides: the page is the test's once rikuy.ready has settled)
+        B.ready(page)
         tag = ' (%d px, touch)' % w
         asset(page)
         load_doc(page, DOC); settle(page, 600)
         coarse = page.evaluate("matchMedia('(pointer: coarse)').matches")
         box = page.locator('#pages .a-img').bounding_box()
-        page.touchscreen.tap(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2); settle(page, 500)
+        tap(page, (box['x'] + box['width'] / 2, box['y'] + box['height'] / 2), 500)
         st = page.evaluate("({ armed: !!(window.rikuy.armed && window.rikuy.armed.kind === 'img'), tab: window.rikuy.rbTab, sel: document.getElementById('rb-tabsel').value, frame: !document.querySelector('.pic-frame').hidden })")
         check('a tap on a picture selects it: frame, the Picture Format tab chosen in "Ribbon tab"' + tag, st['armed'] and st['tab'] == 'picture-format' and st['sel'] == 'picture-format' and st['frame'], st)
         if not st['armed']: sel_pic()(page)
@@ -650,8 +667,8 @@ def phones(p):
         check('every control of Picture Format there to tap in the ribbon\'s row, 44 px high' + tag, not miss, miss)
         fld = page.locator('#rc-picture-width').bounding_box()
         check('the Width field a 44 px target' + tag, fld and fld['height'] >= 43.5, fld)
-        page.get_by_role('button', name='Rotate', exact=True).tap(); settle(page, 300)
-        page.get_by_role('menuitem', name='Rotate Left 90°', exact=True).tap(); settle(page, 300)
+        tap(page, page.get_by_role('button', name='Rotate', exact=True), 300)
+        tap(page, page.get_by_role('menuitem', name='Rotate Left 90°', exact=True), 300)
         check('Rotate › Rotate Left 90° by taps' + tag, 'angle=90' in src(page), body(page))
         box = page.locator('#pages .a-img').bounding_box()
         page.evaluate('([x, y]) => { const el = document.elementFromPoint(x, y); el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y })); }', [box['x'] + box['width'] / 2, box['y'] + box['height'] / 2])
@@ -672,7 +689,7 @@ def phones(p):
         d = page.get_by_role('dialog', name='Chart', exact=True)
         bb = d.bounding_box()
         check('Chart\'s dialog fits the width and scrolls' + tag, bb and bb['x'] >= 0 and bb['x'] + bb['width'] <= w + 1 and bb['y'] + bb['height'] <= h + 1, bb)
-        d.get_by_role('button', name='OK', exact=True).tap(); settle(page, 300)
+        tap(page, d.get_by_role('button', name='OK', exact=True), 300)
         check('and OK by tap writes the chart' + tag, '\\begin{axis}' in src(page))
         check('the page never scrolls sideways' + tag, page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'))
         check('no page errors' + tag, not errs, errs[:3])
@@ -898,7 +915,8 @@ def r3_compiled(page):
     for eng in ('pdflatex', 'xelatex', 'lualatex'):
         doc = ('% !TEX program = ' + eng + '\n' if eng != 'pdflatex' else '') + WRAP(body_, pre)
         r = compile_pdf(page, doc)
-        check('R3 pictures compile with %s: a coloured, weighted border on a picture turned 30°, a moved drawing, a chart written again, a wrapfigure' % eng, r['ok'] and not r['problems'] and 'Words beside it' in pdf_text(r), r['problems'])
+        # (spaces aside: the pypdf CI pins, 5.9.0, reads XeLaTeX's kerned "Wo" as "W o")
+        check('R3 pictures compile with %s: a coloured, weighted border on a picture turned 30°, a moved drawing, a chart written again, a wrapfigure' % eng, r['ok'] and not r['problems'] and 'Wordsbesideit' in re.sub(r'\s', '', pdf_text(r)), (r['problems'], pdf_text(r)[:200]))
     one = WRAP('\\begin{center}\n\\includegraphics[width=0.4\\linewidth,angle=30]{a.png}\n\\end{center}')
     rr = compile_pdf(page, one)
     settle(page, 500)
@@ -932,7 +950,7 @@ def r3_phones(p):
             check('a finger turns the picture 30° the other way: angle=%s' % (m and m.group(1)) + tag, m and abs(int(m.group(1)) - 30) <= 2, body(page))
             load_doc(page, WRAP('Intro.\n\n' + SHAPE + '\nAfter.', TIKZPRE)); settle(page, 400)
             box = page.evaluate("(() => { const e = document.querySelector('#pages .raw.drawn svg.tz'); e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; })()")
-            page.touchscreen.tap(box[0] + box[2] / 2, box[1] + box[3] / 2); settle(page, 400)
+            tap(page, (box[0] + box[2] / 2, box[1] + box[3] / 2), 400)
             hs = page.evaluate("[...document.querySelectorAll('.shape-layer .shape-h')].filter((h) => !h.hidden).map((h) => [parseFloat(h.style.left), parseFloat(h.style.top), parseFloat(getComputedStyle(h, '::before').width)])")
             check('a tap on a drawing gives each point a 44 px handle' + tag, len(hs) == 2 and all(x[2] >= 44 for x in hs), hs)
             if hs:
