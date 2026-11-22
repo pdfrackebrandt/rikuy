@@ -1411,6 +1411,9 @@ def run():
             check('no console errors (%s)' % fn.__name__, not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
             browser.close()
     bad = [r for r in results if not r[1]]
+    # (the failures again at the end, where a runner's log, which keeps a long run's tail, shows them)
+    for r in bad:
+        print('FAILED ' + r[0] + '  :: ' + str(r[2])[:300])
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     return 1 if bad else 0
 

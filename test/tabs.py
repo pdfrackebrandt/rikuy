@@ -869,7 +869,10 @@ def frontier(p):
     # (Word: a dialog closed with Esc gives the document back, the caret where it was, src/app.js
     # closePop; ux.py dialogs_give_the_caret_back)
     check('Frontier by keys: Enter opens it with the focus on Close, Esc closes it and the caret is back on the page', k1 and page.get_by_role('dialog', name='Frontier').count() == 0 and page.evaluate('document.activeElement.id') == 'pages', page.evaluate('document.activeElement.id'))
-    check('Frontier asks nothing of the network', not [u for u in reqs if not u.startswith('https://rikuy.test/')], reqs[:4])
+    # (the requests that leave the page's own site, which the check is about: the page's own files,
+    # the spelling's among them, come while it runs or before as the machine is quick or slow)
+    away = [u for u in reqs if not u.startswith('https://rikuy.test/')]
+    check('Frontier asks nothing of the network', not away, away[:4])
     box = page.get_by_role('combobox', name='Search', exact=True)
     box.click(); box.fill('Researcher'); settle(page, 200)
     found = page.get_by_role('listbox', name='Commands', exact=True).get_by_role('option').all_inner_texts()
@@ -1065,6 +1068,9 @@ def run():
             try: f(p)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
     bad = [r for r in results if not r[1]]
+    # (the failures again at the end, where a runner's log, which keeps a long run's tail, shows them)
+    for r in bad:
+        print('FAILED ' + r[0] + '  :: ' + str(r[2])[:300])
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     sys.exit(1 if bad else 0)
 
