@@ -1,6 +1,6 @@
 """Typing math the way Word's equation editor takes it: command chips and Space, Tab for a
 suggestion, fractions and scripts left with Space, -> and <= turned into symbols."""
-import os, sys, json, time, traceback
+import os, re, sys, json, time, traceback
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import settle, until, TIMERS, ROUTES, SKELETON_HEAD, ROOT, SHOTS, check, results, PRINT_LAYOUT, policy
 from playwright.sync_api import sync_playwright
@@ -219,11 +219,16 @@ try:
         (['x^(a->b)+1'], 'x^{a\\tob}+1'),
         (['x^(a_i+1)+2'], 'x^{a_{i}+1}+2'),
         (['lim_(n->\\infty', '@Space', ')a_n'], '\\lim_{n\\to\\infty}a_{n}'),
+        # (the second script on the base, as Word and TeX read it: the field made x_{1^2})
+        (['x_1^2+1'], 'x_1^2+1'),
+        (['\\sum_i^n', '@Space', 'x'], '\\sum_{i}^{n}x'),
     ]
     for seq, want in cases:
         fresh_row()
         got = typed(seq)
-        check('build-up: ' + ' '.join(seq) + ' -> ' + want, got == want or got == want.replace('^2', '^{2}'), got)
+        # (x_{1} and x_1 are the same to TeX: the field writes either)
+        one = lambda t: re.sub(r'([_^])\{(\w)\}', r'\1\2', t)
+        check('build-up: ' + ' '.join(seq) + ' -> ' + want, got == want or got == want.replace('^2', '^{2}') or one(got) == one(want), got)
         k.press('Escape'); settle(frame, 150)
         k.press('Control+z'); settle(frame, 150)
     check('build-up tests leave the source as it was', src() == base)

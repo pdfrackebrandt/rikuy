@@ -584,6 +584,9 @@ export function installWordTyping(mf, opts) {
       mf.executeCommand('moveAfterParent');
       return true;
     }
+    // (x_1^2, \sum_i^n: the second script goes on the base, as Word and TeX both read it; the
+    // field put it on the first script's last letter, x_{1^2})
+    if (!s.group && !s.empty && ((k === '^' && s.br === 'subscript') || (k === '_' && s.br === 'superscript'))) { mf.executeCommand('moveAfterParent'); return false; }
     if (!s.group && !s.limit && !s.empty && ENDS_SCRIPT.test(k)) mf.executeCommand('moveAfterParent');
     return false;
   };
