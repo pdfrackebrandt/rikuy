@@ -232,6 +232,9 @@ try:
         (['\\sqrt', '@Space', 'x+1'], '\\sqrt{x}+1'),
         (['\\sqrt', '@Space', '(x+1)+2'], '\\sqrt{x+1}+2'),
         (['\\hat', '@Space', '\\beta', '@Space', '_t=0'], '\\hat{\\beta}_t=0'),
+        # (Tab from the last box steps out of it: MathLive's selected the whole formula, which the
+        # next key replaced, \frac{a}{b} lost for +c)
+        (['\\frac', '@Space', 'a', '@Tab', 'b', '@Tab', '+c'], '\\frac{a}{b}+c'),
     ]
     for seq, want in cases:
         fresh_row()

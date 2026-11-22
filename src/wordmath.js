@@ -585,6 +585,14 @@ export function installWordTyping(mf, opts) {
   };
   // (an accent named with Space takes one letter or symbol, as TeX reads \hat\beta_t: what comes
   // after it, a script too, goes after the accent, not under it)
+  // an empty box after the caret, where MathLive's Tab goes
+  const boxAhead = () => {
+    try {
+      const M = model(), end = mf.lastOffset;
+      for (let i = mf.position + 1; i <= end; i++) { const a = M.at(i); if (a && a.type === 'placeholder') return true; }
+    } catch (e) { return true; }
+    return false;
+  };
   const accentFull = (s) => !!s && s.br === 'body' && s.p.type === 'accent' && !s.group && !s.empty;
   const buildUp = (k) => {
     const s = slot();
@@ -886,6 +894,17 @@ export function installWordTyping(mf, opts) {
     }
     const trigger = k === ' ' || k === 'Enter' || k === 'Tab' || (k.length === 1 && !/[A-Za-z]/.test(k));
     const converted = trigger && recognize();
+    // Tab goes to the next empty box, as MathLive's own does, and from the last box out of its
+    // structure, a level at a time, as Space does; out of the formula at its top level. MathLive's
+    // Tab after the last box selected the whole formula, and the next key typed over all of it
+    // (\frac{a}{b}, Tab, +c: the formula became +c)
+    if (k === 'Tab' && !e.shiftKey && !converted && !boxAhead() && canStepOut()) {
+      stop();
+      const s = slot();
+      if (s && s.group) groups.pop();
+      mf.executeCommand('moveAfterParent');
+      return;
+    }
     if (k === '\\') { stop(); if (accentFull(slot())) mf.executeCommand('moveAfterParent'); buf = ''; pick = 0; draw(); return; }
     if (k.length === 1 && buildUp(k)) { stop(); changed(); return; }
     // a command's boxes as LaTeX fills them: } goes to the next box ({b} of \frac{a}{b}) or out
