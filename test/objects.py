@@ -717,7 +717,7 @@ def review_arrange(page):
             r = compile_pdf(page, ('% !TEX program = ' + eng + '\n' if eng != 'pdflatex' else '') + doc)
             t = pdf_text(r)
             # (spaces aside: the pypdf CI pins, 5.9.0, reads XeLaTeX's kerned "Ta" and "Wo" as "T a" and "W o")
-            check('%s compiles with %s, %s in the PDF' % (label, eng, want), r['ok'] and not r['problems'] and re.sub(r'\s', '', want) in re.sub(r'\s', '', t), (r['problems'], t[:200]))
+            check('%s compiles with %s, %s in the PDF' % (label, eng, want), r['ok'] and not r['problems'] and (want in t if eng != 'xelatex' else re.sub(r'\s', '', want) in re.sub(r'\s', '', t)), (r['problems'], t[:200]))
     # N1: Wrap on figure > center: \centering in a wrapfigure (a center there stops pdfLaTeX: "Not allowed in LR mode")
     for env, cap, want in (('figure', 'Box', 'Figure 1: Box'), ('table', 'Data', 'Table 1: Data')):
         N = body_of(env, cap)

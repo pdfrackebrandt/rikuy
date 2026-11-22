@@ -2,7 +2,7 @@
 included file, undo there, and save a zip whose files come back byte for byte."""
 import os, sys, time, json, zipfile, io, struct, zlib, base64, tempfile, traceback
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, open_page, check, results, SHOTS, src, wait_src, click_text, select_text, load_doc, download
+from browser import settle, saved, open_page, check, results, SHOTS, src, wait_src, click_text, select_text, load_doc, download
 from playwright.sync_api import sync_playwright
 
 TMP = tempfile.mkdtemp(prefix='rikuy-features-')
@@ -82,7 +82,7 @@ try:
         # --- persistence across reload
         click_text(page, 'Main text before input', 4)
         page.keyboard.type('X')
-        settle(page, 900)
+        saved(page)
         page.reload()
         page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=15000)
         check('document persists across reload', 'MainX text' in src(page))

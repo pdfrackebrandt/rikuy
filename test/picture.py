@@ -916,7 +916,7 @@ def r3_compiled(page):
         doc = ('% !TEX program = ' + eng + '\n' if eng != 'pdflatex' else '') + WRAP(body_, pre)
         r = compile_pdf(page, doc)
         # (spaces aside: the pypdf CI pins, 5.9.0, reads XeLaTeX's kerned "Wo" as "W o")
-        check('R3 pictures compile with %s: a coloured, weighted border on a picture turned 30°, a moved drawing, a chart written again, a wrapfigure' % eng, r['ok'] and not r['problems'] and 'Wordsbesideit' in re.sub(r'\s', '', pdf_text(r)), (r['problems'], pdf_text(r)[:200]))
+        check('R3 pictures compile with %s: a coloured, weighted border on a picture turned 30°, a moved drawing, a chart written again, a wrapfigure' % eng, r['ok'] and not r['problems'] and ('Words beside it' in pdf_text(r) if eng != 'xelatex' else 'Wordsbesideit' in re.sub(r'\s', '', pdf_text(r))), (r['problems'], pdf_text(r)[:200]))
     one = WRAP('\\begin{center}\n\\includegraphics[width=0.4\\linewidth,angle=30]{a.png}\n\\end{center}')
     rr = compile_pdf(page, one)
     settle(page, 500)

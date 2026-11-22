@@ -335,7 +335,8 @@ def files(page):
     for k in ('Control+s', 'Shift+F12'):
         click_text(page, 'First paragraph', 3)
         page.keyboard.type('Z'); settle(page, 100)
-        page.keyboard.press(k); settle(page, 1200)
+        # (a download that does not come: the time is under test, 1200 ms fixed)
+        page.keyboard.press(k); page.wait_for_timeout(1200)
         check(k + ' (Word\'s Save) downloads nothing: it says the document is saved in this browser, and it is', not got and toast().startswith('Saved in this browser') and page.evaluate('!window.rikuy.unsaved'), (got, toast()))
     undo(page)
 

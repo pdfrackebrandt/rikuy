@@ -515,7 +515,7 @@ def review(page):
 # double tap (the word selected) or the third of a triple (the paragraph). The suite's taps are
 # separate ones, as a person's are: one near the last waits out what is left of that time (the
 # gesture's own time, which no event marks; the fixed waits once kept the taps apart).
-DOUBLE_TAP, NEAR = 0.45, 100
+DOUBLE_TAP, NEAR = 0.5, 100  # (browser.py's tap(): Chromium's measured 350 to 450 ms, and a margin)
 _taps = {}
 
 

@@ -314,7 +314,7 @@ def run():
         load_doc(page, DOC); spell_settle(page)
         click_text(page, ' math', 0)
         n0 = page.evaluate("window.rikuy.sp.known.get('en_US').size")
-        page.keyboard.type(' recieve'); settle(page, 700)
+        page.keyboard.type(' recieve'); spell_settle(page)
         check('the word being typed is not marked yet', 'recieve' not in page.evaluate(BAD))
         page.keyboard.type(' '); spell_settle(page)
         check('once the caret leaves it, it is', 'recieve' in page.evaluate(BAD), page.evaluate(BAD))
@@ -323,12 +323,14 @@ def run():
         long = open(os.path.join(ROOT, 'dev/bench/long/main.tex'), encoding='utf8').read()
         bib = open(os.path.join(ROOT, 'dev/bench/long/refs.bib'), encoding='utf8').read()
         page.evaluate("([t, b]) => { const g = window.rikuy; g.sp.known.clear(); g.files = new Map([['main.tex', t], ['refs.bib', b]]); g.main = 'main.tex'; g.hist = []; g.forceRender = true; g.rebuild(); }", [long, bib])
+        # (under 3 s as the old fixed waits measured it: they added 470 ms of sleeping, spell_settle
+        # adds none, so the work itself gets 2530 ms)
         t0 = time.time(); spell_settle(page, 30000); wall = (time.time() - t0) * 1000
         stat = page.evaluate("(() => { const S = window.rikuy.sp; const t0 = performance.now(); const P = window.rikuy.spellState(); return { occ: S.plan.occ.length, distinct: [...S.plan.words.values()].reduce((k, s) => k + s.size, 0), worker: S.lastCheck }; })()")
         click_text(page, 'the', 0); page.keyboard.type('x'); spell_settle(page)
         plan_ms = page.evaluate("window.rikuy.sp.mainMs")
         print('141 KB paper:', json.dumps(stat), 'main thread plan after the first: %.1f ms' % plan_ms, 'first check to marks: %.0f ms' % wall)
-        check('a 141 KB paper is checked off the main thread in under 3 s, its words in the worker', wall < 3000 and stat['worker']['ms'] < 1500, (timed(wall, 3000), {**stat, 'worker': {**stat['worker'], 'ms': timed(stat['worker']['ms'], 1500)}}))
+        check('a 141 KB paper is checked off the main thread in under 3 s, its words in the worker', wall < 2530 and stat['worker']['ms'] < 1500, (timed(wall, 2530), {**stat, 'worker': {**stat['worker'], 'ms': timed(stat['worker']['ms'], 1500)}}))
         check('and checked again after an edit in a few ms of the main thread', plan_ms < 40, timed(plan_ms, 40))
         # the worst case for the worker: 141 KB of prose where nearly every word is another one
         words = [l.split('/')[0] for l in open(os.path.join(ROOT, 'tex/vendor/hunspell/dict/en_US.dic'), encoding='utf8').read().split('\n')[1:]]
@@ -343,12 +345,14 @@ def run():
             body.append(' '.join(para) + '.\n\n')
         big = '\\documentclass{article}\n\\begin{document}\n' + ''.join(body) + '\\end{document}\n'
         page.evaluate("(t) => { const g = window.rikuy; g.files = new Map([['main.tex', t]]); g.main = 'main.tex'; g.hist = []; g.forceRender = true; g.rebuild(); }", big)
+        # (under 3 s as the old fixed waits measured it: they added 470 ms of sleeping, spell_settle
+        # adds none, so the work itself gets 2530 ms)
         t0 = time.time(); spell_settle(page, 60000); wall = (time.time() - t0) * 1000
         stat = page.evaluate("(() => { const S = window.rikuy.sp; return { kb: Math.round(window.rikuy.src('main.tex').length / 1024), occ: S.plan.occ.length, distinct: [...S.plan.words.values()].reduce((k, s) => k + s.size, 0), bad: S.bad.length, worker: S.lastCheck }; })()")
         click_text(page, 'a', 0); page.keyboard.type('x'); spell_settle(page)
         plan_ms = page.evaluate("window.rikuy.sp.mainMs")
         print('141 KB of distinct words:', json.dumps(stat), 'main thread after an edit: %.1f ms' % plan_ms, 'first check to marks: %.0f ms' % wall)
-        check('141 KB of nearly all distinct words: checked in the worker in under 3 s, marks on the page', wall < 3000 and stat['bad'] > 100 and stat['distinct'] > 10000, (timed(wall, 3000), {**stat, 'worker': {k: v for k, v in stat['worker'].items() if k != 'ms'}}))
+        check('141 KB of nearly all distinct words: checked in the worker in under 3 s, marks on the page', wall < 2530 and stat['bad'] > 100 and stat['distinct'] > 10000, (timed(wall, 2530), {**stat, 'worker': {k: v for k, v in stat['worker'].items() if k != 'ms'}}))
         check('no page errors', not errors, errors[:5])
         browser.close()
 

@@ -637,6 +637,9 @@ def audit(page, cdp, width):
           and pane.get_by_role('button', name='Recompile', exact=True).count() == 1 and pane.get_by_role('button', name='Download this PDF', exact=True).count() == 1 and pane.get_by_role('button', name='Close the PDF', exact=True).count() == 1)
     status = page.get_by_role('status', name='PDF status', exact=True)
     page.wait_for_function('!window.rikuy.compiling && document.getElementById("pdf-live").textContent.length > 5', timeout=400000 if TREE else 30000)
+    # (and once TeX has finished: Print the preview and Try again come with its outcome, from the
+    # worker, which the look above, while it compiles, does not wait for)
+    look('the PDF preview, compiled')
     said = status.inner_text()
     check('what TeX did, or why it could not, is in the status region "PDF status", which is polite' + w, status.count() == 1 and status.get_attribute('aria-live') == 'polite'
           and (('pdfLaTeX' in said and 'page' in said) if TREE else said.startswith('TeX could not run here.')) and page.evaluate("document.getElementById('pdf-status').textContent.trim().length > 0"), said)
@@ -662,7 +665,7 @@ def audit(page, cdp, width):
     look('the script notice')
     check('the notice\'s buttons: Set it up, Not now' + w, button('Set it up').is_visible() and button('Not now').is_visible())
     page.evaluate('rikuy.undo()')
-    check('no interactive element is without a name, in any of %d states' % len(looked) + w, not found and len(looked) == (25 if width > 1000 else 26), found or looked)
+    check('no interactive element is without a name, in any of %d states' % len(looked) + w, not found and len(looked) == (26 if width > 1000 else 27), found or looked)
 
 
 TABLE = ('\\documentclass{article}\n\\begin{document}\nA paragraph.\n\n\\begin{tabular}{ll}\ncell & other \\\\\nmore & last \\\\\n\\end{tabular}\n\n'

@@ -714,8 +714,9 @@ def view(page):
 # (the review of PR 84, M5: Split copied the whole document after every edit, 190 ms a keystroke on
 # a long one, and kept the old width after a resize)
 def split_long(page):
-    # (the waits here are what is measured: the second view copies its pages after a pause and an
-    # idle time, and the checks count the pages it copied and the long tasks in those times)
+    # (the waits after typing are what is measured: the second view copies its pages after a pause
+    # and an idle time, and the checks count the pages it copied and the long tasks in those times;
+    # the waits after a resize and Split's toggles are the fixed ones this part had, not yet replaced)
     doc = WRAP('\n\n'.join('Paragraph number %d with some words to type in, enough of them to fill a line or two of the page.' % i for i in range(400)), '')
     load_doc(page, doc); page.wait_for_timeout(800)
     page.evaluate("window.rikuy.runCommand('split-view')"); page.wait_for_timeout(800)

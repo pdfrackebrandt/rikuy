@@ -92,7 +92,7 @@ def check(name, cond, detail=''):
 # a fixed wait of ms let run, and no others. The test's own waits use the timers kept raw here, so
 # they wait on nothing of their own. Transparent to the page: same ids, same calls, same order.
 TIMERS = """(() => { if (window.__rkT) return; const raw = { st: setTimeout.bind(window), ct: clearTimeout.bind(window) }, due = new Map();
-  window.setTimeout = function (fn, ms, ...a) { const id = raw.st(function () { due.delete(id); if (typeof fn === 'function') return fn.apply(this, a); }, ms); due.set(id, performance.now() + Math.max(0, Number(ms) || 0)); return id; };
+  window.setTimeout = function (fn, ms, ...a) { if (typeof fn !== 'function') return raw.st(fn, ms, ...a); const id = raw.st(function () { due.delete(id); if (typeof fn === 'function') return fn.apply(this, a); }, ms); due.set(id, performance.now() + Math.max(0, Number(ms) || 0)); return id; };
   window.clearTimeout = function (id) { due.delete(id); return raw.ct(id); };
   const w = { n: 0 }, tx = IDBDatabase.prototype.transaction;
   IDBDatabase.prototype.transaction = function (stores, mode, ...r) { const t = tx.call(this, stores, mode, ...r);
@@ -211,6 +211,8 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, tou
     # page is the test's once it has settled rikuy.ready, as rikuy.api.whenReady() says, and drawn
     page.evaluate('() => window.rikuy.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))')
     fonts_settled(page)
+    # (the relayout a font arriving during fonts_settled() sets going, 200 ms after; the old open_page slept 300)
+    settle(page, 300)
     return browser, page, errors
 
 
@@ -378,15 +380,19 @@ def landed(page, before, h, f='main.tex', timeout=5000, ms=0):
 _FRAME = """() => new Promise((r) => { const st = RAW; let n = 0; const go = () => { if (!n++) st(r, 0); }; requestAnimationFrame(go); st(go, 100); })""".replace('RAW', _RAW)
 # (frames until no timer of the page's due by then waits; once one ran, a frame more for what it queued)
 _SETTLE = """([ms, after, writes]) => new Promise((done) => { const T = window.__rkT, g = window.rikuy, end = performance.now() + ms, st = T ? T.raw.st : setTimeout; let ran = false;
+  if (!T && writes) return done(null);
   const busy = () => (!!T && [...T.due.values()].some((d) => d <= end)) || after.some((k) => g && g[k] && g[k].pending && g[k].pending()) || (writes && !!T && T.writes.n > 0);
   const next = (f) => { let n = 0; const go = () => { if (!n++) st(f, 0); }; requestAnimationFrame(go); st(go, 100); };
-  const t0 = performance.now(), step = () => next(() => { if (busy()) { ran = true; if (performance.now() - t0 > 10000) done(false); else step(); } else if (ran) { ran = false; step(); } else done(true); }); step(); })"""
+  const t0 = performance.now(), step = () => next(() => { if (busy()) { ran = true; if (performance.now() - t0 > 10000) done(false); else step(); } else if (ran) { ran = false; step(); } else done(true); }); if (T) step(); else st(step, ms); })"""
 
 
 def _settled(page, arg):
     # (work named in after, or a write, that never stops waiting is a bug of its own: raised)
-    if page.evaluate(_SETTLE, arg) is False:
+    r = page.evaluate(_SETTLE, arg)
+    if r is False:
         raise RuntimeError('the page never settled in 10 s: %r' % (arg,))
+    if r is None:
+        raise RuntimeError('stored() needs the TIMERS init script in this context (add_init_script(TIMERS))')
 
 
 def frame(page):
@@ -406,16 +412,20 @@ REPAINTS = ('marksSoon', 'commentsSoon')
 
 def settle(page, ms=0, full=False, after=()):
     """The wait after a step, for what the step set going: its next frame (a menu placed, the
-    ribbon fitted, the letters typed in one batch) and the page's timers due within SOON ms (the
-    ribbon's refresh after the caret moved), then the frame after them. With full, every timer due
-    within ms (the page laid out again 150 ms after a resize, the caret scrolled into sight after
-    120 ms, a debounced push): what a fixed wait of ms let happen, without waiting it out. ms is
-    the time the step once slept. Work that is not a timer (a fetch, a worker, a module loaded,
-    IndexedDB) needs a condition of its own. RIKUY_WAIT_SHADOW=1 waits ms as well and prints SHADOW
+    ribbon fitted, the letters typed in one batch) and every timer of the page's due within ms (the
+    page laid out again 150 ms after a resize, the caret scrolled into sight after 120 ms, a
+    debounced push), then the frame after them: what a fixed wait of ms let happen, without waiting
+    out the rest of it. ms is the time the step once slept; full is kept for the calls that name it
+    and changes nothing. Where the context has no TIMERS hook, the fixed wait of ms itself. Work that
+    is not a timer (a fetch, a worker, a module loaded, IndexedDB) needs a condition of its own, and a
+    check that something does NOT happen within a time keeps that time as a fixed wait.
+    RIKUY_WAIT_SHADOW=1 waits ms as well and prints SHADOW
     where the page still moved; RIKUY_CHECK_LOG keeps what every check saw, to set beside a run
     with the old times. after names the page's debounced work to wait for as well, whenever it
     is due (rikuy[name].pending(): REPAINTS, srcRebuild, syncSoon, problemsSoon...)."""
-    _settled(page, [(ms or 0) if full else min(ms or 0, SOON), list(after), False])
+    # (every timer due within ms, full or not: a wait of SOON alone let a check run before what the
+    # old fixed wait let happen, which a negative check or an error check cannot tell: PR 109's review)
+    _settled(page, [ms or 0, list(after), False])
     if _SHADOW and ms:
         # (where: the line that waited, and the line that called it when that was a suite's helper)
         f, at = sys._getframe(1), []
@@ -1593,9 +1603,14 @@ def run():
             return t
         def vis(t, state):
             t.evaluate('''(s) => { Object.defineProperty(document, 'visibilityState', {value: s, configurable: true}); document.dispatchEvent(new Event('visibilitychange')); }''', state)
-            # (hidden, the tab writes what it has; shown, it takes in what another tab wrote: both
-            # through IndexedDB, done when its copy and IndexedDB's agree)
-            settle(t, 300); kept(t)
+            # (hidden, the tab writes what it has at once: the time is under test, the ordinary save
+            # 700 ms after an edit would satisfy any wait on the write, so 300 ms fixed, then its
+            # writes finished; shown, it takes in what another tab wrote, done when its copy and
+            # IndexedDB's agree)
+            if state == 'hidden':
+                t.wait_for_timeout(300); stored(t)
+            else:
+                settle(t, 300); kept(t)
         B = tab()
         vis(B, 'hidden')
         click_text(A, 'Click anywhere in this paragraph', 5)
