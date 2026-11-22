@@ -56,6 +56,19 @@ try:
             check('paste ' + name + ': ' + repr(want), s == W(want), s[s.find('Some'):][:80])
             page.keyboard.press('Control+z'); settle(page, 150)
             check('undo after ' + name, src(page) == W(doc))
+        # words copied from a bold word into plain ones keep the bold of the bold part (they went
+        # as the visible words alone, plain); inside \\emph the outer format comes too
+        from browser import place
+        LAST = """() => { const d = new DataTransfer(); d.setData('text/plain', window.rikuy.lastCopy.plain); d.setData('text/x-galley-latex', window.rikuy.lastCopy.latex);
+          document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: d, bubbles: true, cancelable: true })); }"""
+        for doc, sel, want in (('Some \\textbf{bold} and plain.', ('old', 'and'), 'Some \\textbf{bold} and plain\\textbf{old} and.'),
+                               ('Some \\textbf{bold} and plain.', ('Some', 'old'), 'Some \\textbf{bold} and plainSome \\textbf{bold}.'),
+                               ('\\emph{A \\textbf{bold} c} and plain.', ('old', 'c'), '\\emph{A \\textbf{bold} c} and plain\\emph{\\textbf{old} c}.')):
+            load_doc(page, W(doc)); place(page, sel)
+            page.keyboard.press('Control+c'); settle(page, 150)
+            click_text(page, 'plain', 5); page.evaluate(LAST); settle(page, 250)
+            s = src(page)
+            check('copy %s..%s over a bold word\'s brace, paste: %r' % (sel[0], sel[1], want), s == W(want), s[s.find('\\begin{document}') + 17:][:90])
         load_doc(page, base)
         # Ctrl+Shift+V pastes plain text
         click_text(page, 'Click anywhere in this paragraph', 0)

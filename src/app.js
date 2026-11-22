@@ -2693,9 +2693,18 @@ class App {
   // (copyKept: the words and the wrappers put round them, for a paste where the same kinds of
   // format are around the place already: they go, or \emph{.. \emph{words}..} prints upright)
   copyLatex(c) {
-    const src = this.src(c.f), t = this.selectionLatex(c);
+    const src = this.src(c.f), bal = isBalanced(src, c.a, c.b);
+    let t = this.selectionLatex(c), crossed = false;
     this.copyKept = null;
-    if (!isBalanced(src, c.a, c.b) || this.texAt(c.f, c.a)) return t;
+    // (a selection over a format's brace, from a bold word into plain words: the formats closed in
+    // it opened again before it, those opened in it closed after it, so the copied bold stays bold;
+    // it was copied as the visible words alone, plain. Braces of other commands keep that way)
+    if (!bal && !this.texAt(c.f, c.a)) {
+      const pre = chainAt(src, c.a, c.a).filter((x) => x.W.ie < c.b), post = chainAt(src, c.b, c.b).filter((x) => x.W.s >= c.a);
+      const u = pre.map((x) => src.slice(x.W.s, x.W.is)).join('') + src.slice(c.a, c.b) + post.reverse().map((x) => src.slice(x.W.ie, x.W.e)).join('');
+      if (isBalanced(u, 0, u.length)) { t = u; crossed = true; }
+    }
+    if ((!bal && !crossed) || this.texAt(c.f, c.a)) return t;
     const X = chainAt(src, c.a, c.b).filter((x) => x.W.is <= c.a && c.b <= x.W.ie);
     if (!X.length) return t;
     const wraps = X.map((x) => ({ group: x.group, open: src.slice(x.W.s, x.W.is), close: src.slice(x.W.ie, x.W.e) }));
