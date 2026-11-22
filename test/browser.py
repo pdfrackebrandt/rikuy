@@ -78,11 +78,49 @@ PRINT_LAYOUT = '''(() => { try { const k = 'galley.prefs.v1', p = JSON.parse(loc
   if (p.narrowWeb === undefined) { p.narrowWeb = false; localStorage.setItem(k, JSON.stringify(p)); } } catch (e) {} })()'''
 
 
+# One Chromium per process and Playwright instance. Each open_page() call gets a context of its own
+# (its viewport, scheme, touch, storage, routes and policy), which is all a fresh browser gave it,
+# without a launch per call (ux.py launched 79).
+_SHARED = {}
+
+
+def shared_browser(p):
+    b = _SHARED.get(id(p))
+    if b is None or b[0] is not p or not b[1].is_connected():
+        b = _SHARED[id(p)] = (p, p.chromium.launch(args=[a for a in os.environ.get('CHROME_ARGS', '').split() if a]))
+    return b[1]
+
+
+class _Contexts:
+    """The browser open_page() returns: the shared Chromium, whose close() closes the contexts this
+    call made (and any a suite made through it), never the browser the next call reuses."""
+    def __init__(self, browser):
+        self._browser, self._contexts = browser, []
+
+    def new_context(self, *a, **k):
+        c = self._browser.new_context(*a, **k)
+        self._contexts.append(c)
+        return c
+
+    def new_page(self, *a, **k):
+        pg = self._browser.new_page(*a, **k)
+        self._contexts.append(pg.context)
+        return pg
+
+    def close(self, *a, **k):
+        for c in self._contexts:
+            c.close()
+        self._contexts = []
+
+    def __getattr__(self, name):
+        return getattr(self._browser, name)
+
+
 def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, touch=False, connect=(), layout='print', motion=None):
     # touch: a phone's page (a touch screen, a mobile viewport: pointer coarse, no hover; tap())
     # layout: 'print', a window under 700 px opens in Print Layout; 'mobile', in its default
     # motion: animations on (True) or off (False); None: off unless RIKUY_MOTION=1
-    browser = p.chromium.launch(args=[a for a in os.environ.get('CHROME_ARGS', '').split() if a])
+    browser = _Contexts(shared_browser(p))
     ctx = browser.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=1, has_touch=touch, is_mobile=touch)
     if layout == 'print' and width < 700:
         ctx.add_init_script(PRINT_LAYOUT)
@@ -123,7 +161,9 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, tou
         page.evaluate('localStorage.clear()')
         page.reload()
     page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
-    page.wait_for_timeout(300)
+    # init goes on after the boot screen hides (the review, a shared link, the first caret): the
+    # page is the test's once it has settled rikuy.ready, as rikuy.api.whenReady() says, and drawn
+    page.evaluate('() => window.rikuy.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))')
     return browser, page, errors
 
 
@@ -133,7 +173,8 @@ def download(page, el='b-save'):
     if page.locator('#' + el).is_visible():
         return page.click('#' + el)
     name = page.get_attribute('#' + el, 'aria-label')
-    page.click('#rb-dl-menu'); page.wait_for_timeout(150)
+    # (the click waits for the menu's item to be visible, stable and enabled)
+    page.click('#rb-dl-menu')
     page.get_by_role('menuitem', name=name, exact=True).click()
 
 
@@ -149,6 +190,21 @@ def wait_src(page, text, f='main.tex', timeout=5000):
         pass
 
 
+# A selection set by a script is announced by a selectionchange event the browser sends later, as
+# a task of its own; the page's handlers (where the caret was last on the page, the selection the
+# font boxes keep, the ghost paragraph given up) run then. A key pressed before that task could be
+# handled first, since input goes ahead of other tasks. The helpers that set a selection return
+# this: a promise, which page.evaluate awaits, settled once the event has reached every listener
+# of the page (this one was added last, so it runs after them). removeAllRanges() then addRange()
+# always sends one; the timer only keeps a lost event from hanging the suite.
+def _seen(fallback='setTimeout(go, 1000)'):
+    return """new Promise((done) => { let n = 0; const go = () => { if (n++) return; document.removeEventListener('selectionchange', go); done(true); };
+      document.addEventListener('selectionchange', go); FALLBACK; })""".replace('FALLBACK', fallback)
+
+
+_SEEN = _seen()
+
+
 def click_text(page, text, offset_chars=0, nth=0):
     """Place the caret inside the first rendered span containing text, after offset chars."""
     ok = page.evaluate('''([text, off, nth]) => {
@@ -158,8 +214,7 @@ def click_text(page, text, offset_chars=0, nth=0):
       const r = document.createRange(); r.setStart(s.firstChild, i); r.collapse(true);
       const el = document.getElementById('pages'); el.focus();
       const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
-      return true; }''', [text, offset_chars, nth])
-    page.wait_for_timeout(30)
+      return SEEN; }'''.replace('SEEN', _SEEN), [text, offset_chars, nth])
     return ok
 
 
@@ -171,7 +226,7 @@ def select_text(page, text, nth=0):
       const r = document.createRange(); r.setStart(s.firstChild, i); r.setEnd(s.firstChild, i + text.length);
       document.getElementById('pages').focus();
       const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
-      return true; }''', [text, nth])
+      return SEEN; }'''.replace('SEEN', _SEEN), [text, nth])
 
 
 def load_doc(page, files, main='main.tex'):
@@ -179,7 +234,7 @@ def load_doc(page, files, main='main.tex'):
     if isinstance(files, str):
         files = {main: files}
     page.evaluate('''([files, main]) => { const g = window.rikuy; g.files = new Map(Object.entries(files)); g.main = main; g.hist = []; g.redoStack = []; g.forceRender = true; g.rebuild(); if (g.cm) g.showSrcFile(main); }''', [files, main])
-    page.wait_for_timeout(50)
+    # (rebuild() draws the pages before it returns: the next step finds them drawn)
 
 
 
@@ -188,7 +243,11 @@ def place(page, select):
     first place they are drawn), ('words', k) puts the caret k characters into them, ('from', 'to')
     selects from the start of one to the end of the other, a function does it itself."""
     if callable(select):
+        # (a suite's own placing: its selectionchange has reached the page, or, where it moved
+        # nothing and sent none, the tasks queued before the next frame have run)
+        page.evaluate('() => { window.__rkSel = 0; document.addEventListener("selectionchange", () => { window.__rkSel++; }, { once: true }); }')
         select(page)
+        page.evaluate('() => window.__rkSel || ' + _seen('requestAnimationFrame(() => setTimeout(go, 0))'))
     elif isinstance(select, str):
         select_text(page, select)
     elif isinstance(select[1], int):
@@ -196,13 +255,42 @@ def place(page, select):
     else:
         page.evaluate('''([a, z]) => { const sp = [...document.querySelectorAll('#pages span.t')]; const s = sp.find((x) => x.textContent.includes(a)), e = sp.find((x) => x.textContent.includes(z));
           const r = document.createRange(); r.setStart(s.firstChild, s.textContent.indexOf(a)); r.setEnd(e.firstChild, e.textContent.indexOf(z) + z.length);
-          document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''', list(select))
-    page.wait_for_timeout(120)
+          document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); return SEEN; }'''.replace('SEEN', _SEEN), list(select))
 
 
 def pressed(page, command):
     """What the command's control shows where the caret is: pressed (True), not (False), or None for a command that is no toggle."""
     return page.evaluate('''(id) => { const c = window.rikuy.cmds.command(id), at = window.rikuy.ribbonAt(); if (at) at.memo = {}; if (!c.on) return null; const v = c.on(window.rikuy, at); return v == null ? null : !!v; }''', command)
+
+
+def landed(page, before, h, f='main.tex', timeout=5000):
+    """A command's step has landed: the source is no longer before, or the history no longer h
+    steps long. A command run by its id is done when runCommand returns (or the promise it returns
+    settles); one given as a function of the page, or a dialog's button, may land a moment later.
+    A step that never lands is the check's to report: the wait gives up and the check fails."""
+    try:
+        page.wait_for_function('([f, t, h]) => (window.rikuy.files.get(f) ?? "") !== t || window.rikuy.hist.length !== h', arg=[f, before, h], timeout=timeout)
+    except Exception:
+        pass
+    # (and what the step queued for its next frame and the tasks before it has run)
+    page.evaluate('() => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))')
+
+
+# RIKUY_WAIT_SHADOW=1: after each condition wait that replaced a fixed one, wait that fixed time
+# as well and print SHADOW when the source, the history or the caret moved in it: evidence that
+# the condition is all the next step needed (a line of its own, never a PASS or FAIL).
+_SHADOW = os.environ.get('RIKUY_WAIT_SHADOW') == '1'
+_STATE = '() => { const g = window.rikuy, c = g.caretNow(); return [[...g.files].map(([k, v]) => k + v.length + ":" + v.slice(-80)).join("|"), g.files.get(g.main), g.hist.length, c && [c.f, c.p, c.a, c.b]]; }'
+
+
+def shadow(page, ms, where):
+    if not _SHADOW:
+        return
+    a = page.evaluate(_STATE)
+    page.wait_for_timeout(ms)
+    b = page.evaluate(_STATE)
+    if a != b:
+        print('SHADOW ' + where + ' :: ' + json.dumps([a[2:], b[2:], a[1] == b[1]])[:300])
 
 
 def roundtrip(page, doc, select, command, expected, forms=(), off=None, label=None, off_command=None):
@@ -224,23 +312,24 @@ def roundtrip(page, doc, select, command, expected, forms=(), off=None, label=No
     ok = []
     load_doc(page, doc); place(page, select)
     h0 = page.evaluate('window.rikuy.hist.length')
-    run(); page.wait_for_timeout(200)
+    run(); landed(page, doc, h0); shadow(page, 200, name + ' run')
     got = src(page)
     ok.append(check(name + ': writes exactly the LaTeX expected, as one step', want(got) and page.evaluate('window.rikuy.hist.length') == h0 + 1, got[-160:]))
-    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    # (undo() puts the text back and draws the page before it returns)
+    page.evaluate('window.rikuy.undo()'); shadow(page, 150, name + ' undo')
     ok.append(check(name + ': one undo gives the source back byte for byte', src(page) == doc, src(page)[-160:]))
     toggle = pressed(page, command) is not None if isinstance(command, str) else False
     if isinstance(expected, str):
         load_doc(page, expected); place(page, select)
         if toggle:
             ok.append(check(name + ': read back from that source, the control shows it', pressed(page, command) is True))
-        undo_run(); page.wait_for_timeout(200)
+        undo_run(); landed(page, expected, 0); shadow(page, 200, name + ' off')
         ok.append(check(name + ': again on it, the bytes of before (off restores)', src(page) == back, src(page)[-160:]))
     for form in forms:
         load_doc(page, form); place(page, select)
         if toggle:
             ok.append(check(name + ': a hand written form shows as it: ' + form[form.find('\\begin{document}') + 16:][:40].strip(), pressed(page, command) is True))
-        undo_run(); page.wait_for_timeout(200)
+        undo_run(); landed(page, form, 0); shadow(page, 200, name + ' form off')
         ok.append(check(name + ': and takes off exactly that form', src(page) == back, src(page)[-160:]))
     return all(ok)
 

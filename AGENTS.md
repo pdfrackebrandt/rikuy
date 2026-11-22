@@ -189,6 +189,15 @@ Pick the checks by what you touched, and run them before you call it done:
   expression evals it in the page each time it polls; `browser.py` hands every one over as a
   function, so import it before Playwright starts. A live figure runs in its own document
   (`widget-<hash>.html`, `src/widget.js` `runWidget`).
+- The browser tests' helpers wait on conditions, not on time: `open_page()` returns once
+  `rikuy.ready` has settled, `load_doc()` once the pages are drawn (`rebuild()` is synchronous),
+  `click_text()`, `select_text()` and `place()` once their `selectionchange` has reached the page's
+  handlers, and `roundtrip()` once each step's edit has landed (`landed()`). A new wait waits on a
+  condition; a fixed `wait_for_timeout` is for where the time itself is under test, with a comment
+  saying so. `RIKUY_WAIT_SHADOW=1` waits the old time as well after each such condition and prints
+  `SHADOW` where something still moved. `open_page()` shares one Chromium per process: each call
+  gets a context of its own, and the browser it returns closes that call's contexts, not the
+  shared one.
 - This machine's Python may be linked with zlib-ng, whose gzip bytes differ from stock zlib's: packs
   built with it get other names than `dev/dist-manifest.txt` has. To make the manifest here, run
   `build_tree.py` with Ubuntu 24.04's `libz.so.1.3` in `LD_PRELOAD` (CI's Python uses that one).
