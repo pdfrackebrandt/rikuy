@@ -15,7 +15,7 @@ has it (Cmd, Word for Mac's own chords, ⌘ in tooltips). Screenshots in $RIKUY_
 /tmp/keys-shots): Help's list and a tooltip, at 1920 and 1366 px light and dark, and 390 px."""
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, open_page, check, results, src, click_text, select_text, load_doc
+from browser import settle, saved, ready, open_page, check, results, src, click_text, select_text, load_doc
 from playwright.sync_api import sync_playwright
 
 SHOTS = os.environ.get('RIKUY_SHOTS', '/tmp/keys-shots')
@@ -542,8 +542,10 @@ def lows(page):
     c = caret(page)
     check('Shift+F5 after an undo goes to the undone edit\'s place', c and abs(c[1] - DOC.index('Third paragraph') - 5) <= 2, (c, DOC.index('Third paragraph') + 5))
     heads = '\\documentclass{article}\n\\begin{document}\n\\section{Only heading}\n\\end{document}\n'
-    load_doc(page, heads); page.evaluate('window.rikuy.persist()'); settle(page, 500)
-    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); settle(page, 500)
+    # (persist() writes to IndexedDB: the reload waits for that copy to be the one kept, saved(),
+    # and the page reloaded for init to be through, ready(): the first caret comes after the boot screen)
+    load_doc(page, heads); page.evaluate('window.rikuy.persist()'); saved(page, 500)
+    page.reload(); ready(page); settle(page, 500)
     page.keyboard.type('Z'); settle(page, 300)
     check('after a reload, a document of headings alone takes the first keys in its first heading', '\\section{ZOnly heading}' in src(page), src(page)[30:120])
 
