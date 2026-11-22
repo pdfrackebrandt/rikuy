@@ -1306,6 +1306,15 @@ def keyboard_caret(page, w):
         seen.append(page.evaluate(CARET_Y))
     check(f'lines typed with Enter above the keyboard stay in sight ({w})', all(a[0] >= 0 and a[1] <= a[2] for a in seen) and 'Par' + '\n\nx' * 6 + 'agraph' in src(page), seen)
     page.evaluate(KEYBOARD, False); settle(page, 200)
+    # a browser whose keyboard makes the window itself shorter (Firefox for Android): the same
+    width = page.viewport_size['width']
+    load_doc(page, LONG); settle(page, 300)
+    low = page.evaluate("""() => { const sp = [...document.querySelectorAll('#pages span.t')].filter((x) => x.getBoundingClientRect().top > innerHeight - 220 && x.getBoundingClientRect().bottom < innerHeight - 90); return sp.length ? sp[0].textContent : null; }""")
+    tap_text(page, low, 3)
+    page.set_viewport_size({'width': width, 'height': 450}); settle(page, 500, full=True)
+    y = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(), d = document.getElementById('desk').getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom), Math.round(d.bottom)]; })()")
+    check(f'a window the keyboard makes shorter scrolls the caret into what is left of the page ({w})', y[0] >= 0 and y[1] <= y[2], (low, y))
+    page.set_viewport_size({'width': width, 'height': 820}); settle(page, 300, full=True)
 
 
 SPACING = "*:not(#pages *):not(#pages) { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p:not(#pages *) { margin-bottom: 2em !important; }"
