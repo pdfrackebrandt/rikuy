@@ -1309,7 +1309,9 @@ class App {
     // (the blocks shown as LaTeX move with these edits, src/cmd/view.js; typing ends Repeat's turn)
     this.viewMap(byFile, before);
     if (!this.cmdDepth) this.lastAct = null;
-    this.record(before, kind, cb && cb.f != null ? { f: cb.f, p: cb.p } : caret, caret, swaps, win);
+    // (a selection the step was made on comes back selected with Undo, as Word's: what was typed
+    // over or deleted is selected again, not a caret at its start)
+    this.record(before, kind, cb && cb.f != null ? (cb.collapsed === false && !cb.ghost ? { f: cb.f, p: cb.p, selA: cb.a, selB: cb.b } : { f: cb.f, p: cb.p }) : caret, caret, swaps, win);
     if (made.length) { const top = this.hist[this.hist.length - 1]; if (top) for (const d of top.files) if (made.includes(d.f)) d.made = true; }
     this.zipDirty = true;
     this.rebuild(caret);
@@ -1342,7 +1344,10 @@ class App {
     const prev = typed != null ? (this.files.get(files[0].f) || '')[files[0].s - 1] || '' : '';
     const had = typed != null ? ((top.files.find((d) => d.f === files[0].f) || {}).ins || '') : '';
     const newWord = typed != null && (/\n/.test(typed) || (/\s/.test(prev) && /^\S/.test(typed) && /\S/.test(had)));
-    if (top && top.open && kind && top.kind === kind && now - top.time < 2000 && (kind !== 'type' && kind !== 'del' || contiguous) && !newWord) {
+    // (the letters typed after the first over a selection belong to the step that replaced it:
+    // that word's own letters were a step apart, and Ctrl+Z left its first letter standing, "n")
+    const same = top && (top.kind === kind || (kind === 'type' && top.kind === 'replace'));
+    if (top && top.open && kind && same && now - top.time < 2000 && (kind !== 'type' && kind !== 'del' || contiguous) && !newWord) {
       // (what every edit of the step left alone is the least of what each left alone, for the files
       // nothing changed between its commits: src/editor.js stepJoin)
       stepJoin(top, before, (f) => this.files.get(f), win);

@@ -1869,6 +1869,14 @@ def word_typing(page):
     click_text(page, 'Second paragraph', 3); k.press('Control+Shift+Home'); k.type('Z'); settle(page, 100)
     held = WORD_DOC[WORD_DOC.index('Introduction'):WORD_DOC.index('ond paragraph')]
     check('from a paragraph, Ctrl+Shift+Home, then a letter: the heading\'s words become it, the paragraph between goes whole', src(page) == WORD_DOC.replace(held, 'Z}\n\n'), src(page)[30:120])
+    # 7: words typed over a selection undo word by word, and the last Ctrl+Z gives the selected
+    # words back selected, as Word's: the first letter typed was a step of its own ("n" stayed)
+    load_doc(page, WORD_DOC)
+    select_text(page, 'plain text'); k.type('new words'); settle(page, 100)
+    k.press('Control+z'); settle(page, 100); one = src(page)
+    k.press('Control+z'); settle(page, 100)
+    sel = page.evaluate('getSelection().toString()')
+    check('typed over a selection: Ctrl+Z takes the last word, a second gives the selection back, selected', one == WORD_DOC.replace('plain text', 'new ') and src(page) == WORD_DOC and sel == 'plain text', (one[250:300], src(page)[250:300], sel))
     # (one key at an item's start still takes no \item)
     load_doc(page, WORD_DOC)
     click_text(page, 'Banana', 0); k.press('Backspace'); settle(page, 100)
