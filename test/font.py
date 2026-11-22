@@ -901,6 +901,22 @@ def switch_space(page):
     check('a space after \\noindent is written as before', body(page) == '\\noindent  Text here.', body(page))
 
 
+def deleted_formats(page):
+    """A bold word selected and deleted (Delete, Backspace, Ctrl+X), the caret then moved: no \\textbf{} left."""
+    k = page.keyboard
+    T = WRAP('Some \\textbf{bold} and plain.')
+    steps = lambda: page.evaluate('window.rikuy.hist.length')
+    for key in ('Delete', 'Backspace', 'Control+x'):
+        load_doc(page, T); select_text(page, 'bold'); k.press(key); settle(page, 150)
+        check('%s on a selected bold word: \\textbf{} waits for what is typed' % key, body(page) == 'Some \\textbf{} and plain.', body(page))
+        click_text(page, 'plain', 2); settle(page, 200, full=True)
+        check('%s, then a click elsewhere: the empty \\textbf{} goes, in the same step' % key, body(page) == 'Some  and plain.' and steps() == 1, (body(page), steps()))
+        k.press('Control+z'); settle(page, 200)
+        check('%s: one undo gives the bold word back' % key, src(page) == T, body(page))
+    load_doc(page, T); select_text(page, 'bold'); k.press('Delete'); settle(page, 120); k.type('X'); settle(page, 120); click_text(page, 'plain', 2); settle(page, 200, full=True)
+    check('typed in after the deletion, it stays bold', body(page) == 'Some \\textbf{X} and plain.', body(page))
+
+
 def phone_box(page, sel):
     """The rect of the last element sel matches, the smallest of its controls, and the page's sideways overflow."""
     return page.evaluate("""(sel) => { const all = [...document.querySelectorAll(sel)].filter((x) => x.offsetParent || getComputedStyle(x).position === 'fixed'); const p = all[all.length - 1];
@@ -1066,7 +1082,7 @@ def phones(p):
 
 def run():
     with sync_playwright() as p:
-        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, caret_formats, word_formats, switch_space, phones, compiles, r2_compiles)
+        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, caret_formats, word_formats, switch_space, deleted_formats, phones, compiles, r2_compiles)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             if fn is phones:
                 phones(p)

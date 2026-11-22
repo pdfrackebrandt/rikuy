@@ -2126,6 +2126,8 @@ class App {
     const first = edits[0];
     if (first.s >= a) p = first.s + first.t.length;
     this.commit(edits, { f, p, bias: -1 }, 'del');
+    // (an empty \textbf{} left where the deleted words were: gone once the caret leaves it untyped)
+    if (this.watchDeleted) this.watchDeleted(f, p);
   }
 
   fallbackDeleteRange(c, backward) {
@@ -2754,6 +2756,7 @@ class App {
       if (T && T.f === c.f) { this.texEdit(T, c.a, c.b, '', 'cut'); return; }
       const edits = this.deletionEdits(c.f, c.a, c.b);
       this.commit(edits, { f: c.f, p: c.a }, 'cut');
+      if (this.watchDeleted) this.watchDeleted(c.f, c.a);
     }
   }
   onPaste(e) {

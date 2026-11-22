@@ -303,6 +303,15 @@ export const methods = {
     for (const g of kinds) { const r = F.clearKinds(t, 0, t.length, [g]); if (!r.error) t = r.text; }
     return t;
   },
+  // The empty format a deletion left at p, \textbf{} once its words were cut or deleted: kept for
+  // what is typed next, as Word's, and taken out in the deletion's own step when the caret leaves
+  // it (src/ribbon.js dropEmpty): it stayed in the source, drawn as nothing
+  watchDeleted(f, p) {
+    const t = this.src(f);
+    let W = null;
+    for (const { W: X } of F.chainAt(t, p, p).reverse()) { if (W ? X.is === W.s && X.ie === W.e : X.is === p && X.ie === p) W = X; else break; }
+    if (W) this.rbEmpty = { f, s: W.s, t: t.slice(W.s, W.e), fold: true, top: this.hist[this.hist.length - 1] };
+  },
   // the preamble's lines for what a blank paragraph's formats need, as edits of the main file
   fmtNeedsEdits(needs) {
     if (!needs || !needs.length) return [];

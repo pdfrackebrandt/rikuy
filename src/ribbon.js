@@ -184,6 +184,7 @@ export const ribbon = {
     if (this.src(w.f).slice(w.s, w.s + w.t.length) !== w.t) { this.rbEmpty = null; return; }
     if (c && !c.ghost && c.f === w.f && c.collapsed && c.a > w.s && c.a < w.s + w.t.length) return;
     this.rbEmpty = null;
+    if (w.fold) { this.dropDeleted(w, c); return; }
     // (n: the steps that made it, a caret's formats one each, src/cmd/font.js watchFormat; a
     // package one needed goes with them, before the body: the caret moves by what went before it)
     const n = w.n || 1, L0 = this.src(w.f).length;
@@ -195,6 +196,26 @@ export const ribbon = {
       this.rebuild(at);
       this.pushToSource(); this.saveSoon(); this.updateUndoUI();
     } else this.commit([{ f: w.f, s: w.s, e: w.s + w.t.length, t: '' }], c && !c.ghost ? { f: c.f, p: c.f === w.f && c.a >= w.s + w.t.length ? c.a - w.t.length : c.a, bias: -1 } : null, 'insert');
+  },
+
+  // An empty format a deletion left (src/cmd/font.js watchDeleted) goes in the deletion's own step:
+  // one undo gives the words back in their format, not an invisible \textbf{} first
+  dropDeleted(w, c) {
+    const cur = this.src(w.f), fin = cur.slice(0, w.s) + cur.slice(w.s + w.t.length);
+    const at = c && !c.ghost ? { f: c.f, p: c.f === w.f && c.a >= w.s + w.t.length ? c.a - w.t.length : c.a, bias: -1 } : null;
+    const h = this.hist[this.hist.length - 1];
+    if (h && h === w.top && h.files.length === 1 && h.files[0].f === w.f) {
+      this.hist.pop();
+      const d = h.files[0];
+      this.files.set(w.f, cur.slice(0, d.s) + d.del + cur.slice(d.s + d.ins.length));
+    }
+    // (one edit from the text before the step to the text without the empty format)
+    const t = this.src(w.f);
+    let s = 0, e = 0;
+    while (s < t.length && s < fin.length && t[s] === fin[s]) s++;
+    while (e < t.length - s && e < fin.length - s && t[t.length - 1 - e] === fin[fin.length - 1 - e]) e++;
+    this.commit([{ f: w.f, s, e: t.length - e, t: fin.slice(s, fin.length - e) }], at, 'del');
+    this.closeGroup();
   },
 
   // The focus back on the page after a list or a menu took it: the place as it is now if the
