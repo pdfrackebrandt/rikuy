@@ -2219,6 +2219,8 @@ class App {
       const base = B.base;
       const itemText = src.slice(+cmdE + base, +ie + base);
       if (!itemText.trim() && c.collapsed) {
+        // (an empty item before the list's last: src/cmd/lists.js listEnterEmpty)
+        if (this.listEnterEmpty()) return;
         // exit the list: remove empty item, continue after the list
         const s = +is + base, e0 = +ie + base;
         // (the empty item's line goes and one line break stays: \end{itemize} was glued to the
@@ -2230,6 +2232,15 @@ class App {
         const listEnd = +le + base;
         const removed = e - s2;
         const NL = /\r\n/.test(src) ? '\r\n' : '\n';
+        // Text on the line after \end goes on the paragraph the list stands in: what was typed at
+        // a caret put before it joined it ("Para After."). The empty paragraph is shown there
+        // instead, and what is typed in it is written as a paragraph of its own.
+        if (/^[ \t]*(?:\r?\n)?[ \t]*(?!\\end\b|%)\S/.test(src.slice(listEnd, listEnd + 200))) {
+          this.commit([{ f, s: s2, e, t: '' }], { f, p: s2, bias: -1 }, 'enter');
+          this.ghostAt(f, listEnd - removed);
+          if (this.ghost) this.ghost.place = true;
+          return;
+        }
         const ins = NL + NL;
         this.commit([{ f, s: s2, e, t: '' }, { f, s: listEnd, e: listEnd, t: ins }], { f, p: listEnd - removed + ins.length, bias: 1 }, 'enter');
         return;

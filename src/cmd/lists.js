@@ -19,7 +19,7 @@ import { escapeTeX, posFromDom } from '../editor.js';
 import { openMenu } from '../ui/kit.js';
 import { $ } from '../ui/dom.js';
 import { indentEdits, indentLen, INDENT_KEYS, bulletCode, textEngine, readLists, allLists, selectedItems, restartEdit, crlf, noindentBefore, maxStart, SYMBOLS, formatOf, labelEdits, startEdits, resumeEdits, sepEdits, kindEdits, demote, promote, unlist, listFrom, autoMarker, sortEdit,
-  multilevelEdits, multilevelOf, listSetup, mechOf, levelOf, BULLETS, NUMBERS, MULTI, OWN_SYMBOLS, bulletGlyph, numText, sameBullet, sameNumber, DEFAULT, indentAt, MAX_LEVEL } from '../lists.js';
+  multilevelEdits, multilevelOf, listSetup, mechOf, levelOf, BULLETS, NUMBERS, MULTI, OWN_SYMBOLS, bulletGlyph, numText, sameBullet, sameNumber, DEFAULT, indentAt, MAX_LEVEL, splitHead } from '../lists.js';
 import { openBulletDialog, openNumberDialog, openValueDialog, openMultilevelDialog, openSortDialog, openSpacingDialog, openPictureBulletDialog, openIndentsDialog } from '../ui/listdialog.js';
 
 const ENVS = { item: 'itemize', enum: 'enumerate', desc: 'description' };
@@ -408,6 +408,35 @@ export const methods = {
     }
     this.ghostAt(f, pos);
     // (a place for the caret, not a step of its own: Undo gives the item back)
+    if (this.ghost) this.ghost.place = true;
+    return true;
+  },
+  // Enter on an empty item that is not the list's last (enter asks here first): Word takes its
+  // number away and the empty paragraph stays where the item was, the list going on after it (its
+  // numbers too). The list ends there and begins again after it, the caret in an empty paragraph
+  // between the two. Before, the empty item was taken out and the caret put after the whole list,
+  // so what was typed next landed below its last item.
+  listEnterEmpty() {
+    const at = this.ribbonAt(), I = at && this.listAt(at);
+    if (!I || !I.L || !I.L.editable || !I.L.closed || I.chain.length > 1 || I.L.kind === 'desc') return false;
+    const { L, k, f, src } = I, it = L.items[k];
+    if (itemWords(src, it) || it.lists.length || it.lab || k + 1 >= L.items.length) return false;
+    const NL = /\r\n/.test(src) ? '\r\n' : '\n';
+    if (k === 0) return this.listEmptyFirst(I, f, src, NL);
+    const prev = L.items[k - 1], next = L.items[k + 1];
+    if (/\S/.test(src.slice(prev.e, it.s)) || /\S/.test(src.slice(lineRest(src, it.e), next.s))) return false;
+    const h = splitHead(src, L, k), ind = indentAt(src, L.s) || '', iind = indentAt(src, next.s) || '';
+    // (a numbered list goes on numbering after it, as Word's: where its start is not written,
+    // enumitem's resume, as Continue Numbering writes it)
+    const f0 = L.kind === 'enum' ? formatOf(src, L, this.listCfg()) : null;
+    const resume = !!f0 && !f0.startFrom && this.listMech() === 'enumitem';
+    const open = resume ? (h.open ? h.open.replace(/\]$/, ', resume]') : '[resume]') : h.open;
+    const end = NL + ind + '\\end{' + L.name + '}' + NL;
+    const t = end + NL + ind + '\\begin{' + L.name + '}' + open + NL + (h.setup ? iind + h.setup + NL : '') + iind;
+    const n0 = this.src(f).length;
+    this.listCommit(f, [{ s: prev.e, e: next.s, t }], resume ? ['enumitem'] : [], { f, p: prev.e, bias: -1 });
+    // (the package's line, written above it, moves the place)
+    this.ghostAt(f, prev.e + end.length + this.src(f).length - n0 - (t.length - (next.s - prev.e)));
     if (this.ghost) this.ghost.place = true;
     return true;
   },

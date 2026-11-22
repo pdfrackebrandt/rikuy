@@ -853,6 +853,25 @@ def item_edges(page):
     check('item_edges: in a nested list too, the words a paragraph of the item above at its level', '\\item Two\n\n      Three\n    \\end{itemize}' in src(page), src(page)[40:])
 
 
+def empty_items(page):
+    """(bugs 2026-11-22) Enter on an empty item before a list's last: Word takes its number away and
+    the empty paragraph stays there, the list numbered on after it. The item was taken out and the
+    caret put after the whole list, so what was typed landed below its last item. Enter twice at a
+    list's end with a line of text right after \\end: what was typed joined that line."""
+    load_doc(page, E3); click_text(page, 'Two', 3); key(page, 'Enter'); h0 = hist(page); key(page, 'Enter'); page.keyboard.type('Mid'); settle(page, 200)
+    s = src(page)
+    check('empty_items: Enter on an empty item in the middle ends the list there; what is typed stands between, the list numbered on after it',
+          '\\item Two\n\\end{enumerate}\n\nMid\n\n\\begin{enumerate}[resume]\n  \\item Three\n\\end{enumerate}' in s and '\\usepackage{enumitem}' in s, s)
+    check('empty_items: the page numbers it 1, 2, 3', labels(page) == ['1.', '2.', '3.'], labels(page))
+    key(page, 'Control+z'); key(page, 'Control+z')
+    check('empty_items: undo gives the empty item back', '\\item Two\n  \\item \n  \\item Three\n\\end{enumerate}' in src(page) and 'enumitem' not in src(page), src(page))
+    load_doc(page, L3); click_text(page, 'One', 0); key(page, 'Enter'); key(page, 'ArrowUp'); key(page, 'Enter'); page.keyboard.type('Top'); settle(page, 200)
+    check('empty_items: Enter on an empty first item: an empty paragraph above the list', '\\begin{document}\n\nTop\n\n\\begin{itemize}\n  \\item One\n  \\item Two' in src(page), src(page)[40:])
+    G = WRAP('\\begin{enumerate}\n  \\item One\n  \\item Two\n\\end{enumerate}\nAfter.')
+    load_doc(page, G); click_text(page, 'Two', 3); key(page, 'Enter'); key(page, 'Enter'); page.keyboard.type('Para'); settle(page, 200)
+    check('empty_items: Enter twice at a list\'s end before a line of text: what is typed is a paragraph of its own', 'Para\n\nAfter.' in src(page) and '\\item Two\n\\end{enumerate}' in src(page), src(page)[40:])
+
+
 def r2_phone(p, w, h, dark=False):
     """Picture Bullet and Adjust List Indents on a phone: from the bullet library's menu by taps,
     the dialogs on the screen with 44 px controls, no sideways scroll; screenshots"""
@@ -891,7 +910,7 @@ def run_all():
     want = lambda n: not only or n in only
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf, label_caret, item_edges):
+        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf, label_caret, item_edges, empty_items):
             if not want(f.__name__): continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
