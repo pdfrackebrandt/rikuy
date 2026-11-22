@@ -21,7 +21,7 @@ across the notes' files keeps the case of what it replaces. And the hostile revi
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, open_page, check, results, src, load_doc, click_text, ROOT
+from browser import settle, saved, until, open_page, check, results, src, load_doc, click_text, ROOT
 from playwright.sync_api import sync_playwright
 
 PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo', 'mathpkg', 'intertext', 'envlist', 'replace', 'review', 'review2', 'review3']
@@ -51,6 +51,14 @@ def compiles(page, name):
 
 def caret_text(page):
     return page.evaluate("(() => { const s = getSelection(); if (!s.rangeCount) return ''; const n = s.anchorNode; return (n.textContent || '').slice(0, s.anchorOffset).slice(-12) + '|' + (n.textContent || '').slice(s.anchorOffset, s.anchorOffset + 12); })()")
+
+
+def reload(page):
+    """The page loaded again, as open_page() leaves it: booted, rikuy.ready settled and drawn (the
+    project, its history and its review read back from IndexedDB)."""
+    page.reload()
+    page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
+    page.evaluate('() => window.rikuy.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))')
 
 
 def formula(page):
@@ -241,7 +249,10 @@ def split(page):
 
 def filename(page):
     k = page.keyboard
-    page.get_by_text('New document', exact=True).click(); settle(page, 600)
+    page.get_by_text('New document', exact=True).click()
+    # (the open project kept under Versions first, in IndexedDB: then the blank article, the caret in it)
+    until(page, "() => window.rikuy.name.startsWith('Untitled') && !!window.rikuy.ghost")
+    settle(page, 600)
     k.type('Optimal Taxation: a Note', delay=10)
     k.press('Control+Shift+S'); settle(page, 200); k.type('Title'); settle(page, 200); k.press('Enter'); settle(page, 400)
     check('filename: the project is still Untitled', page.evaluate("window.rikuy.name").startswith('Untitled'), page.evaluate("window.rikuy.name"))
@@ -297,9 +308,9 @@ def reload_undo(page):
     load_doc(page, DOC)
     page.evaluate("window.rikuy.persist()"); settle(page, 400)
     click_text(page, 'Agent income here.', 18)
-    k.type(' More words.', delay=15); settle(page, 2500)
+    k.type(' More words.', delay=15); saved(page, 2500)
     before = src(page)
-    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); settle(page, 400)
+    reload(page); settle(page, 400)
     check('reload_undo: the text is back', src(page) == before, src(page))
     k.press('Control+z'); settle(page, 300)
     check('reload_undo: Undo after a reload takes the last word', 'More \n' in src(page) and 'words.' not in src(page), src(page))
@@ -528,8 +539,8 @@ def review2(page):
     NEW = 'A completely different chapter, rewritten by a coauthor and sent by mail.\n'
     page.evaluate("async (t) => { await window.rikuy.openFiles([new File([t], 'ch1.tex', { type: 'text/plain' })]); }", NEW)
     settle(page, 800)
-    page.evaluate('window.rikuy.persist()'); settle(page, 600)
-    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); settle(page, 400)
+    page.evaluate('window.rikuy.persist()'); saved(page, 600)
+    reload(page); settle(page, 400)
     check('review E14: the coauthor\'s file is open after a reload', src(page, 'ch1.tex') == NEW, src(page, 'ch1.tex'))
     click_text(page, 'Last paragraph.', 4)
     k.press('Control+z'); settle(page, 400)
