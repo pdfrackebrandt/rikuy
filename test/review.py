@@ -377,7 +377,8 @@ def run():
             d2 = tempfile.mkdtemp(); open(os.path.join(d2, 'main.tex'), 'w').write(mt)
             r = subprocess.run([sys.executable, os.path.join(ROOT, 'dev', 'texrun.py'), d2, 'main.tex', 'pdflatex', '240'], env={**os.environ, 'RIKUY_DIST': os.path.join(ROOT, 'dist')}, capture_output=True, text=True, timeout=600)
             out = r.stdout + r.stderr
-            check('and it compiles in the page with pdfLaTeX (TeX\'s own changes and todonotes)', 'ok=True' in out and 'pdf=None' not in out, out[-400:])
+            # (what it saw without the compile's time, which differs from run to run)
+            check('and it compiles in the page with pdfLaTeX (TeX\'s own changes and todonotes)', 'ok=True' in out and 'pdf=None' not in out, re.sub(r' ms=\d+', '', out)[-400:])
         # Read Aloud, with the browser's voices (a stand in that records them)
         page.evaluate("""(() => { window.__said = []; Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { cancel() { window.__said.push('cancel'); }, speak(u) { window.__said.push([u.lang, u.text]); setTimeout(() => u.onend && u.onend(), 5); } } });
           Object.defineProperty(window, 'SpeechSynthesisUtterance', { configurable: true, writable: true, value: function (t) { this.text = t; } }); })()""")
