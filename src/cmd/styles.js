@@ -361,6 +361,61 @@ export const methods = {
     const A = this.armed, b = codeBlock(this.src(A.f), A.s, A.e);
     return b ? { v: 'verbatim', to: new Set(['p']), b, code: true } : { v: 'verbatim', to: new Set() };
   },
+  // Backspace at the start of a heading's, a quote's or a theorem's words, or of the paragraph after
+  // one, and Delete at the end of the block before (deleteInput asks here): the second block's
+  // words join the first's end and take its style, as Word keeps the first paragraph's formatting
+  // when two are joined. A heading takes words only (its argument is no place for a display or a
+  // list); a block of several paragraphs is joined at its last one, never taken apart; a theorem
+  // with a title stays. Between two such blocks the source holds \section{ or \begin{quote}, no
+  // visible text: Backspace only moved the caret to the end of the block above, and a second one
+  // took its last letter. True where it joined them.
+  blockJoin(back) {
+    const at = this.ribbonAt();
+    if (!at || !at.c || !at.c.collapsed || at.c.ghost || at.cell || !at.it || !at.B || at.c.f !== at.B.f || at.multi) return false;
+    const f = at.B.f, src = this.src(f), p = at.c.a;
+    const near = (d) => {
+      let X = null;
+      for (const B of this.renderer.blocks) if (B.f === f && B !== at.B && (d < 0 ? B.e <= at.B.s && (!X || B.e > X.e) : B.s >= at.B.e && (!X || B.s < X.s))) X = B;
+      const it = X && this.root.querySelector('.it[data-b="' + X.id + '"]');
+      return it ? { B: X, it } : null;
+    };
+    const here = { B: at.B, it: at.it }, other = near(back ? -1 : 1);
+    if (!other) return false;
+    const [W, X] = back ? [other, here] : [here, other];
+    const sw = this.styleOfBlock(W.B, W.it), sx = this.styleOfBlock(X.B, X.it);
+    const kind = (st) => (!st || !st.b || st.b.ws == null || st.opt || st.code ? null : st.v === 'p' ? 'p' : isHeading(st.v) || st.v === 'part' ? 'h' : isEnvStyle(st.v) && st.v !== 'verbatim' && st.v !== 'abstract' ? 'env' : null);
+    const kw = kind(sw), kx = kind(sx);
+    if (!kw || !kx || (kw === 'p' && kx === 'p')) return false;
+    const w = sw.b, x = sx.b, wEnd = w.after ?? w.e, xEnd = x.after ?? x.e;
+    // (the caret at the second block's words' start, or the first's words' end)
+    if (back ? p > x.ws || /\S/.test(src.slice(p, x.ws)) || p < x.s : p < w.we || /\S/.test(src.slice(w.we, p)) || p > wEnd) return false;
+    if (/\S/.test(src.slice(wEnd, x.s))) return false;
+    let words = src.slice(x.ws, x.we).trim(), label = x.after != null ? src.slice(x.e, x.after).trim() : '', E = xEnd, reopen = '';
+    // (a quote of several paragraphs: its first leaves it, the quote begins again before the rest)
+    const gap = kx === 'env' ? /[ \t]*\r?\n[ \t]*(?:\r?\n[ \t]*)+/.exec(words) : null;
+    if (gap) {
+      if (!SPLITS.test(envOf(sx.v))) return false;
+      const at0 = src.indexOf(words, x.ws);
+      E = at0 + gap.index + gap[0].length;
+      reopen = gap[0].replace(/[ \t]/g, '') + src.slice(x.s, x.ws).trim() + eolAt(src, x.s);
+      words = words.slice(0, gap.index);
+    }
+    if (!words) return false;
+    if (kw === 'h' && (NOT_PLAIN.test(words) || /(^|[^\\])%/.test(words) || words[0] === '%')) return false;
+    const close = src.slice(w.we, wEnd), sp = src.slice(w.ws, w.we).trim() ? ' ' : '';
+    // (joined into a paragraph, which ends nowhere of its own: what came after the second block
+    // keeps a blank line from it, or it would run on in the same paragraph)
+    let tail = reopen;
+    if (!close && !reopen) {
+      const m = /^[ \t]*(\r?\n)?[ \t]*(?=[^\s%])(?!\\(?:end|begin|part|chapter|(?:sub)*section|(?:sub)?paragraph|item|par|label)\b)/.exec(src.slice(E, E + 200));
+      const NL = /\r\n/.test(src) ? '\r\n' : '\n';
+      if (m) tail = m[1] ? NL : NL + NL;
+    }
+    const t = sp + words + label + close + tail;
+    this.closeGroup();
+    this.commit([{ f, s: w.we, e: E, t }], back ? { f, p: w.we + sp.length, bias: 1 } : { f, p: w.we, bias: -1 }, 'del');
+    return true;
+  },
   blockStyleOf(at) {
     const { c, it, B } = at, none = new Set();
     if (c.ghost) {

@@ -1413,9 +1413,38 @@ def heading_enter(page):
     check('heading_enter: Enter inside a bold run of a heading splits nothing in it: a paragraph after it, as before', '\\section{Head \\textbf{bold words} end}\n\nZ' in src(page), src(page)[40:])
 
 
+def block_join(page):
+    """(bugs 2026-11-22) Backspace at the start of a heading, a quote or a theorem, or of the paragraph
+    after one, and Delete at the end of the block before: the two join, the second's words taking
+    the first's style, as Word keeps the first paragraph's formatting. Backspace only moved the
+    caret to the end of the block above, and a second one took its last letter."""
+    H = A('Alpha para.\n\n\\section{Head}\nBody text.\n\nGamma.')
+    load_doc(page, H); h0 = page.evaluate('window.rikuy.hist.length'); click_text(page, 'Head', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('block_join: Backspace at a heading\'s start joins its words to the paragraph above, as text', src(page) == H.replace('Alpha para.\n\n\\section{Head}\nBody', 'Alpha para. Head\n\nBody'), src(page)[40:])
+    check('block_join: in one step', page.evaluate('window.rikuy.hist.length') == h0 + 1)
+    page.keyboard.type('X'); settle(page, 200)
+    check('block_join: the caret where they meet', 'Alpha para. XHead' in src(page), src(page)[40:])
+    load_doc(page, H); click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('block_join: Backspace at the start of the paragraph after a heading joins it to the heading', src(page) == H.replace('{Head}\nBody text.', '{Head Body text.}'), src(page)[40:])
+    page.keyboard.press('Control+z'); settle(page, 200)
+    check('block_join: one undo gives both back', src(page) == H, src(page)[40:])
+    load_doc(page, H); click_text(page, 'Head', 4); page.keyboard.press('Delete'); settle(page, 200)
+    check('block_join: Delete at a heading\'s end does the same', src(page) == H.replace('{Head}\nBody text.', '{Head Body text.}'), src(page)[40:])
+    Q = A('Alpha para.\n\n\\begin{quote}\nQuoted words.\n\\end{quote}\n\nGamma.')
+    load_doc(page, Q); click_text(page, 'Quoted', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('block_join: Backspace at a quote\'s start joins its words to the paragraph above', src(page) == A('Alpha para. Quoted words.\n\nGamma.'), src(page)[40:])
+    load_doc(page, Q); click_text(page, 'Gamma.', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('block_join: Backspace at the paragraph after a quote joins it into the quote', src(page) == A('Alpha para.\n\n\\begin{quote}\nQuoted words. Gamma.\n\\end{quote}'), src(page)[40:])
+    load_doc(page, A('Alpha.\n\n\\begin{quote}\nOne.\n\nTwo.\n\\end{quote}')); click_text(page, 'One.', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('block_join: on a quote of two paragraphs, its first leaves it and the second stays a quote', src(page) == A('Alpha. One.\n\n\\begin{quote}\nTwo.\n\\end{quote}'), src(page)[40:])
+    T = A('Alpha para.\n\n\\begin{theorem}\nStated words.\n\\end{theorem}', '\\newtheorem{theorem}{Theorem}\n')
+    load_doc(page, T); click_text(page, 'Stated', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('block_join: and at a theorem\'s start', 'Alpha para. Stated words.' in src(page) and '\\begin{theorem}\n' not in src(page), src(page)[40:])
+
+
 def run():
     with sync_playwright() as p:
-        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter)
+        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter, block_join)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style)
         # (names given on the command line run those alone)

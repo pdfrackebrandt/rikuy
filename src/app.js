@@ -2027,6 +2027,8 @@ class App {
     if (T && c.f === T.f && this.texDelete(T, c, type, ranges)) return;
     // (Backspace at a list item's start, Delete at its end, as Word's: src/cmd/lists.js listDelete)
     if (c.collapsed && this.listDelete(/Backward/.test(type))) return;
+    // (Backspace and Delete where a heading, a quote or a theorem meets a paragraph: src/cmd/styles.js blockJoin)
+    if (c.collapsed && this.blockJoin(/Backward/.test(type))) return;
     let f = c.f, a = c.a, b = c.b;
     if (c.collapsed) {
       // Caret in an empty placeholder: remove the empty wrapper it belongs to.
