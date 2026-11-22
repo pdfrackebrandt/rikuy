@@ -1278,6 +1278,15 @@ def android_input(page, w):
     tap(page, page.locator('#rb-b'), 250)
     cdp.send('Input.insertText', {'text': 'Z'}); settle(page, 150)
     check(f'a key after a command run while the keyboard marks a word goes in ({w})', 'Second paragraph he\\textbf{Z}re.' in src(page), body_of(page)[-50:])
+    # Select All, then a word composed (a phone's keyboard composes every word): the word is the
+    # document's body, as a key typed makes it
+    load_doc(page, doc); tap_text(page, 'Second paragraph', 2)
+    page.evaluate("window.rikuy.runCommand('select-all')"); settle(page, 200)
+    for t in ('X', 'Xy'):
+        cdp.send('Input.imeSetComposition', {'text': t, 'selectionStart': len(t), 'selectionEnd': len(t)}); settle(page, 40)
+    cdp.send('Input.insertText', {'text': 'Xy'}); settle(page, 200)
+    cdp.send('Input.insertText', {'text': ' z'}); settle(page, 200)
+    check(f'a word composed over Select All is the whole body ({w})', '\\begin{document}\n\nXy z\n\n\\end{document}' in src(page), src(page)[-60:])
     # a line break a keyboard or dictation writes as text: a new paragraph, as Enter makes
     load_doc(page, doc); tap_text(page, 'paragraph here.', 4)
     cdp.send('Input.insertText', {'text': '\n'}); settle(page, 200)

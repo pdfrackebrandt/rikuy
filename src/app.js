@@ -2682,6 +2682,9 @@ class App {
     // nothing, and the selection stays a caret: what it replaces is known at its first change,
     // compFrom; the text node is kept to tell whether the page changed without one)
     this.compFrom = undefined;
+    // (the whole document selected, Select All: what is composed becomes its body, as typed keys
+    // do, insertText; the selection is gone by the composition's end)
+    this.compWhole = this.compCaret && !this.compCaret.ghost && !this.compCaret.collapsed ? this.wholeDoc() : null;
     const s = getSelection(), n = s.rangeCount ? s.focusNode : null;
     this.compNode = n ? { n, data: n.nodeType === 3 ? n.data : null } : null;
   }
@@ -2716,6 +2719,11 @@ class App {
     // a second time at the caret ("here" became "heherere"); the page is as it was
     if (F === undefined && c && !c.ghost && !(N && N.n.isConnected && N.data != null && N.n.data !== N.data)) { this.compTex = null; return; }
     if (!c) { this.forceRender = true; this.rebuild(); return; }
+    const W = this.compWhole;
+    this.compWhole = null;
+    // (Select All, then a word composed, as a phone's keyboard writes every word: it left the first
+    // heading's command and blank lines, "\section{Xy}", where a key typed leaves the word alone)
+    if (W && data) { this.compTex = null; this.forceRender = true; this.replaceBody(W, escapeTeX(data, ' '), 'replace'); return; }
     if (c.ghost) { if (data && this.ghost) this.ghostInsert(this.ghostRaw() ? data : escapeTeX(data, ' ')); else this.relayout(true); return; }
     // what the composition replaced, where its first change said (a word marked on Android, the
     // caret in it elsewhere): only the letters that differ, so a format inside the word stays
