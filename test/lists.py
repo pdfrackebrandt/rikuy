@@ -908,6 +908,24 @@ def join_after_list(page):
     check('join_after_list: one undo gives them back', src(page) == L('\\begin{quote}\nQ words.\n\\end{quote}\n\nZ.'), src(page)[40:])
 
 
+def item_paste(page):
+    """(bugs 2026-11-22) Paragraphs pasted into a list item: the second and later become items of its
+    list, as Word gives pasted paragraphs the list's bullets. They went in as paragraphs of the one
+    item, with no bullet."""
+    def paste(t, h=None):
+        page.evaluate('''([t, h]) => { const dt = new DataTransfer(); dt.setData('text/plain', t); if (h) dt.setData('text/html', h);
+          document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }''', [t, h])
+        settle(page, 400)
+    I2 = WRAP('\\begin{itemize}\n  \\item One\n  \\item Two\n\\end{itemize}')
+    load_doc(page, I2); click_text(page, 'One', 3); paste('aa\n\nbb')
+    check('item_paste: two paragraphs pasted at an item\'s end: the second a new item', src(page) == I2.replace('\\item One\n', '\\item Oneaa\n  \\item bb\n'), src(page)[40:])
+    check('item_paste: three bullets on the page', labels(page) == ['•', '•', '•'], labels(page))
+    key(page, 'Control+z')
+    check('item_paste: one undo', src(page) == I2, src(page)[40:])
+    load_doc(page, I2); click_text(page, 'One', 2); paste('p1\np2', '<p>p1</p><p>p2</p>')
+    check('item_paste: from a web page, inside an item\'s words: the item split round them', src(page) == I2.replace('\\item One\n', '\\item Onp1\n  \\item p2e\n'), src(page)[40:])
+
+
 def r2_phone(p, w, h, dark=False):
     """Picture Bullet and Adjust List Indents on a phone: from the bullet library's menu by taps,
     the dialogs on the screen with 44 px controls, no sideways scroll; screenshots"""
@@ -946,7 +964,7 @@ def run_all():
     want = lambda n: not only or n in only
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf, label_caret, item_edges, empty_items, item_spans, join_after_list):
+        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf, label_caret, item_edges, empty_items, item_spans, join_after_list, item_paste):
             if not want(f.__name__): continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])

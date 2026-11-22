@@ -397,6 +397,22 @@ export const methods = {
     const t = sp + src.slice(X.ws, X.we).trim() + X.label + src.slice(it.e, L.e) + (m ? (m[1] ? NL : NL + NL) : '');
     return this.listCommit(f, [{ s: it.e, e: X.e, t }], [], { f, p: p != null ? p : it.e + sp.length, bias: p != null ? -1 : 1 });
   },
+  // Paragraphs pasted into a list item's words (onPaste asks here): the second and later become
+  // items of its list after it, as Word gives pasted paragraphs the list's bullets. They went in
+  // as paragraphs of the one item, under its words with no bullet. t as it will be written, at
+  // at: t again, or with its blank lines made \item.
+  listPaste(f, at, t) {
+    if (!/\n[ \t]*\n/.test(t) || /\\(?:begin|end|item|part|chapter|(?:sub)*section|(?:sub)?paragraph|par)\b|(^|[^\\])%/.test(t)) return t;
+    const src = this.src(f);
+    let X = null;
+    for (const B of this.renderer.blocks) if (B.f === f && B.s <= at && at <= B.e && (!X || B.s > X.s)) X = B;
+    if (!X) return t;
+    const ch = chainAt(readLists(src, X.s, X.e, this.model && this.model.userSigs), at), I = ch[ch.length - 1];
+    const it = I && I.L.items[I.k];
+    if (!it || !I.L.editable || I.L.kind === 'desc' || at < (it.lab ? it.lab.e : it.s + 5) || at > it.e || !isBalanced(src, it.cmdE, at)) return t;
+    const NL = /\r\n/.test(src) ? '\r\n' : '\n', ind = indentAt(src, it.s) ?? '  ';
+    return t.replace(/^\s+|\s+$/g, '').replace(/[ \t]*\r?\n[ \t]*(?:\r?\n[ \t]*)+/g, NL + ind + '\\item ');
+  },
   // A selection from one item's words into a later item's of the same list (deletionEdits asks
   // here): deleted whole, \item and all, so the two items become one, as Word joins the paragraphs
   // a selection runs over. Only its visible letters went, every item left standing, and Enter
