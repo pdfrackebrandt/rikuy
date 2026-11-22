@@ -872,6 +872,27 @@ def empty_items(page):
     check('empty_items: Enter twice at a list\'s end before a line of text: what is typed is a paragraph of its own', 'Para\n\nAfter.' in src(page) and '\\item Two\n\\end{enumerate}' in src(page), src(page)[40:])
 
 
+def item_spans(page):
+    """(bugs 2026-11-22) A selection from one item's words into another's: Delete, typing over it or
+    Enter joins the two items, as Word joins the paragraphs a selection runs over. Only its visible
+    letters went, every item left standing, and Enter left an empty item between the two halves."""
+    I3 = WRAP('\\begin{itemize}\n  \\item One\n  \\item Two\n  \\item Three\n\\end{itemize}')
+    def over(page):
+        page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')]; const s = sp.find((x) => x.textContent.includes('One')), e = sp.find((x) => x.textContent.includes('Two'));
+          const r = document.createRange(); r.setStart(s.firstChild, s.textContent.indexOf('One') + 2); r.setEnd(e.firstChild, e.textContent.indexOf('Two') + 1);
+          document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''')
+        settle(page, 150)
+    load_doc(page, I3); over(page); key(page, 'Delete')
+    check('item_spans: Delete over two items\' words joins them', src(page) == I3.replace('One\n  \\item Two', 'Onwo'), src(page)[40:])
+    check('item_spans: the page draws two items', labels(page) == ['•', '•'], labels(page))
+    key(page, 'Control+z')
+    check('item_spans: one undo gives them back', src(page) == I3, src(page)[40:])
+    load_doc(page, I3); over(page); page.keyboard.type('Z'); settle(page, 200)
+    check('item_spans: typing over them joins them round what is typed', src(page) == I3.replace('One\n  \\item Two', 'OnZwo'), src(page)[40:])
+    load_doc(page, I3); over(page); key(page, 'Enter')
+    check('item_spans: Enter over them leaves two items, no empty one between', src(page) == I3.replace('One\n  \\item Two', 'On\n  \\item wo'), src(page)[40:])
+
+
 def r2_phone(p, w, h, dark=False):
     """Picture Bullet and Adjust List Indents on a phone: from the bullet library's menu by taps,
     the dialogs on the screen with 44 px controls, no sideways scroll; screenshots"""
@@ -910,7 +931,7 @@ def run_all():
     want = lambda n: not only or n in only
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf, label_caret, item_edges, empty_items):
+        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf, label_caret, item_edges, empty_items, item_spans):
             if not want(f.__name__): continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])

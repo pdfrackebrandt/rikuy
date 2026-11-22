@@ -1911,6 +1911,9 @@ class App {
     if (isBalanced(src, a, b) && !/\\(begin|end)\s*\{(document)\}/.test(slice) && !/\\(section|subsection|subsubsection|chapter|part|maketitle|item|bibliography)\b/.test(slice)) {
       return [{ f, s: a, e: b, t: '' }];
     }
+    // (from one list item's words into another's: src/cmd/lists.js listSpan)
+    const items = this.listSpan(f, a, b);
+    if (items) return items;
     const vr = visibleRanges(this.renderer.blocks, f, a, b);
     return vr.map(([s, e]) => ({ f, s, e, t: '' }));
   }

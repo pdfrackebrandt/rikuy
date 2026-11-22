@@ -15,11 +15,12 @@ import { BLOCKS } from '../render.js';
 import { diffEdit } from '../wrap.js';
 import { docClass, hasPackage, preambleEnd } from '../preamble.js';
 import { NOT_PLAIN } from '../styles.js';
+import { isBalanced } from '../parser.js';
 import { escapeTeX, posFromDom } from '../editor.js';
 import { openMenu } from '../ui/kit.js';
 import { $ } from '../ui/dom.js';
 import { indentEdits, indentLen, INDENT_KEYS, bulletCode, textEngine, readLists, allLists, selectedItems, restartEdit, crlf, noindentBefore, maxStart, SYMBOLS, formatOf, labelEdits, startEdits, resumeEdits, sepEdits, kindEdits, demote, promote, unlist, listFrom, autoMarker, sortEdit,
-  multilevelEdits, multilevelOf, listSetup, mechOf, levelOf, BULLETS, NUMBERS, MULTI, OWN_SYMBOLS, bulletGlyph, numText, sameBullet, sameNumber, DEFAULT, indentAt, MAX_LEVEL, splitHead } from '../lists.js';
+  multilevelEdits, multilevelOf, listSetup, mechOf, levelOf, BULLETS, NUMBERS, MULTI, OWN_SYMBOLS, bulletGlyph, numText, sameBullet, sameNumber, DEFAULT, indentAt, MAX_LEVEL, splitHead, chainAt } from '../lists.js';
 import { openBulletDialog, openNumberDialog, openValueDialog, openMultilevelDialog, openSortDialog, openSpacingDialog, openPictureBulletDialog, openIndentsDialog } from '../ui/listdialog.js';
 
 const ENVS = { item: 'itemize', enum: 'enumerate', desc: 'description' };
@@ -382,6 +383,23 @@ export const methods = {
     if (!r || r.s < L.e || /\S/.test(src.slice(L.e, r.s))) return false;
     const sp = itemWords(src, it) ? ' ' : '';
     return this.listCommit(f, [{ s: it.e, e: r.e, t: sp + src.slice(r.s, r.e) + src.slice(it.e, L.e) }], [], { f, p: p != null ? p : it.e + sp.length, bias: p != null ? -1 : 1 });
+  },
+  // A selection from one item's words into a later item's of the same list (deletionEdits asks
+  // here): deleted whole, \item and all, so the two items become one, as Word joins the paragraphs
+  // a selection runs over. Only its visible letters went, every item left standing, and Enter
+  // over such a selection left an empty item between the two halves. The edits, or null.
+  listSpan(f, a, b) {
+    const src = this.src(f), slice = src.slice(a, b);
+    if (!/\\item\b/.test(slice) || /\\(?:part|chapter|(?:sub)*section|paragraph|maketitle|bibliography|end\s*\{document\})\b/.test(slice) || !isBalanced(src, a, b)) return null;
+    let X = null;
+    for (const B of this.renderer.blocks) if (B.f === f && B.s <= a && b <= B.e && (!X || B.s > X.s)) X = B;
+    if (!X) return null;
+    const lists = readLists(src, X.s, X.e, this.model && this.model.userSigs), A = chainAt(lists, a), Z = chainAt(lists, b);
+    const x = A[A.length - 1], z = Z[Z.length - 1];
+    if (!x || !z || x.L.s !== z.L.s || x.k >= z.k || !x.L.editable) return null;
+    const head = (it) => (it.lab ? it.lab.e : it.s + 5);
+    if (a < head(x.L.items[x.k]) || b < head(z.L.items[z.k])) return null;
+    return [{ f, s: a, e: b, t: '' }];
   },
   // an empty first item: it goes (its list too where it was the only item), and the caret is in an
   // empty paragraph where it stood, above the list, as Word's
