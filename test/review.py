@@ -10,7 +10,7 @@ author, Display for Review's Original (R4); the Review tab on a phone at 390 and
 $SHOTS/review-*."""
 import os, sys, time, json, re, subprocess, tempfile
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, open_page, check, results, src, load_doc, click_text, select_text, SHOTS, ROOT
+from browser import settle, until, open_page, check, results, src, load_doc, click_text, select_text, SHOTS, ROOT
 from playwright.sync_api import sync_playwright
 
 DOC = ('\\documentclass{article}\n\\begin{document}\n'
@@ -42,6 +42,23 @@ def fresh(page, doc=DOC):
     page.wait_for_function("!!window.rikuy.base")
     page.evaluate("(() => { const g = window.rikuy; g.setBase({ t: Date.now(), label: 'Opened', files: g.files, track: false }); })()")
     settle(page, 100)
+
+
+BASE_N = "window.rikuy.base ? window.rikuy.base.n || 0 : 0"
+
+
+def stored(page, n, ms):
+    """Track Changes' base on its way to this browser's storage: saveBase (src/review.js) reads the
+    stored one, then counts the base (n) one on and puts it at once, so a read made after the
+    count moved, by this tab or another, finds it (IndexedDB runs them in that order). A write is
+    no timer, so settle() cannot see it; ms is the time the step once slept."""
+    until(page, '(n) => !!window.rikuy.base && (window.rikuy.base.n || 0) > n', n, timeout=ms)
+
+
+def adopted(page, n, ms):
+    """The other tab's base taken in by adoptOtherTab, whose read of it (rvCheckBase) it does not
+    wait for: this tab's count has reached the one that tab stored."""
+    until(page, '(n) => !!window.rikuy.base && (window.rikuy.base.n || 0) >= n', n, timeout=ms)
 
 
 def r4(p):
@@ -134,7 +151,8 @@ def run():
         check('turned on, the marks show: All Markup', page.evaluate("window.rikuy.markup()") == 'all')
         edit(page, 'more words', 'many words')
         edit(page, 'ends here', 'ends')
-        settle(page, 300)
+        # (the marks are painted 180 ms after the page is drawn again: marksSoon, src/app.js)
+        settle(page, 300, full=True)
         check('with it on every edit is a change', page.evaluate(N) == 2, page.evaluate(N))
         check('marked on the page: insertions, deletions, bars', page.evaluate("(CSS.highlights.get('g-ins') || {size: 0}).size") >= 1 and page.evaluate("document.querySelectorAll('.del-mk').length") >= 1 and page.evaluate("document.querySelectorAll('.chg-bar').length") >= 1)
         page.screenshot(path=os.path.join(SHOTS, 'review-all-markup-1366.png'))
@@ -282,7 +300,8 @@ def run():
         fresh(page)
         click_text(page, 'third paragraph', 0)
         r = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); return [r.left, r.top]; })()")
-        page.mouse.click(r[0] + 2, r[1] + 4, button='right'); settle(page, 250)
+        # (and the comments' marks, painted 200 ms after the pages were drawn: commentsSoon, src/app.js)
+        page.mouse.click(r[0] + 2, r[1] + 4, button='right'); settle(page, 250, full=True)
         check('the right click menu on a commented line has Edit Comment', page.locator('.pop-ctx').get_by_role('menuitem', name='Edit Comment').count() == 1)
         page.keyboard.press('Escape')
         check('the margin shows the comments', page.evaluate("document.querySelectorAll('.cm-mark').length") == 2)
@@ -327,7 +346,8 @@ def run():
         fp = os.path.join(tmpd, 'other.tex'); open(fp, 'w').write(other)
         with page.expect_file_chooser() as fc:
             page.evaluate("window.rikuy.runCommand('compare-file')")
-        fc.value.set_files(fp); settle(page, 500)
+        # (the file is read with File.text(), no timer: the base it makes is the step's end)
+        fc.value.set_files(fp); until(page, "() => window.rikuy.base && window.rikuy.base.label.startsWith('Compared with')", timeout=500); settle(page, 500)
         check('Compare with a File: its differences are changes to accept or reject', page.evaluate(N) == 2 and page.evaluate("window.rikuy.base.label") == 'Compared with other.tex', page.evaluate(N))
         page.evaluate("window.rikuy.rejectAllChanges(false)"); settle(page, 300)
         check('rejecting them all gives that file\'s text', src(page) == other)
@@ -367,21 +387,27 @@ def run():
         check('Read Aloud reads from the caret on, in the document\'s language', said and said[1][0] == 'en-US' and said[1][1].startswith('second paragraph'), said[:3])
         # V-M2: two tabs on one project: one's Track Changes switch and Accept reach the other
         fresh(page)
-        page.evaluate("(() => { const g = window.rikuy; g.unsaved = true; g.leaving(); g.saveBase(true, true); })()"); settle(page, 400)
+        # (the project's write goes out as leaving() returns; the base's after its read: stored())
+        n = page.evaluate(BASE_N)
+        page.evaluate("(() => { const g = window.rikuy; g.unsaved = true; g.leaving(); g.saveBase(true, true); })()"); stored(page, n, 400); settle(page, 400)
         pb = page.context.new_page()
         pb.goto('https://rikuy.test/')
         pb.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden && window.rikuy.base', timeout=20000)
         settle(pb, 500)
         check('V-M2: the second tab opened the same project', pb.evaluate("window.rikuy.src(window.rikuy.main)") == src(page))
-        page.bring_to_front(); page.evaluate("window.rikuy.setTracking(true)"); settle(page, 400)
-        pb.bring_to_front(); pb.evaluate("window.rikuy.adoptOtherTab()"); settle(pb, 500)
+        n = page.evaluate(BASE_N)
+        page.bring_to_front(); page.evaluate("window.rikuy.setTracking(true)"); stored(page, n, 400); settle(page, 400)
+        n = page.evaluate(BASE_N)
+        pb.bring_to_front(); pb.evaluate("window.rikuy.adoptOtherTab()"); adopted(pb, n, 500); settle(pb, 500)
         check('V-M2: Track Changes turned on in one tab is on in the other once it is back', pb.evaluate("window.rikuy.trackOn()") is True)
         pb.evaluate("(() => { const g = window.rikuy, f = g.main, s = g.files.get(f), at = s.indexOf('more words'); g.closeGroup(); g.commit([{ f, s: at, e: at + 4, t: 'many' }], null, 'type'); g.closeGroup(); g.unsaved = true; g.leaving(); })()")
         settle(pb, 400)
         page.bring_to_front(); page.evaluate("window.rikuy.adoptOtherTab()"); settle(page, 700)
         check('V-M2: its typing is a change in the first tab too, whose switch stays on', 'many words' in src(page) and page.evaluate("window.rikuy.trackOn()") is True and page.evaluate("window.rikuy.realChanges().length") == 1, page.evaluate("window.rikuy.realChanges().map(c => [c.a, c.b])"))
-        page.evaluate("window.rikuy.acceptAllChanges(false)"); settle(page, 400)
-        pb.bring_to_front(); pb.evaluate("window.rikuy.adoptOtherTab()"); settle(pb, 600)
+        n = page.evaluate(BASE_N)
+        page.evaluate("window.rikuy.acceptAllChanges(false)"); stored(page, n, 400); settle(page, 400)
+        n = page.evaluate(BASE_N)
+        pb.bring_to_front(); pb.evaluate("window.rikuy.adoptOtherTab()"); adopted(pb, n, 600); settle(pb, 600)
         check('V-M2: an Accept in one tab is accepted in the other', pb.evaluate("window.rikuy.realChanges().length") == 0, pb.evaluate("window.rikuy.realChanges().map(c => [c.a, c.b])"))
         pb.close()
         check('no page errors', not errors, errors[:5])
