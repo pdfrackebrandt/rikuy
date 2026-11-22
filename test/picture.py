@@ -19,7 +19,7 @@ picture's box in the PDF against the page's.
 RIKUY_DIST names another dist/."""
 import os, sys, re, base64, struct, zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, open_page, check, results, src, load_doc, click_text, roundtrip, pressed, PRINT_LAYOUT
+from browser import settle, until, open_page, check, results, src, load_doc, click_text, roundtrip, pressed, PRINT_LAYOUT
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -44,6 +44,13 @@ PNG = png(300, 200, dpi=150)
 
 def asset(page, name='a.png', data=PNG):
     page.evaluate('([n, b]) => { const u = Uint8Array.from(atob(b), (c) => c.charCodeAt(0)); window.rikuy.addAsset(n, new Blob([u], { type: "image/png" })); }', [name, base64.b64encode(data).decode()])
+
+
+# The pictures drawn from their files: each file's size read from its first bytes (picNatural in
+# src/cmd/picture.js: a read of the file, no timer, then the page drawn again in the next frame) and
+# each <img> loaded. Not a timer: settle() does not wait for it.
+DRAWN = """() => { const g = window.rikuy, c = g.picNat; return !g.picNatT && (!c || [...c.values()].every((v) => !v.wait))
+  && [...document.querySelectorAll('#pages .a-img img')].every((i) => i.complete && i.naturalWidth > 0); }"""
 
 
 def run_cmd(page, cid, args=None):
@@ -475,12 +482,12 @@ def reviewed(page):
     page.evaluate('([n, b]) => { const u = Uint8Array.from(atob(b), (c) => c.charCodeAt(0)); for (let k = 0; k < n; k++) window.rikuy.addAsset("f" + k + ".png", new Blob([u], { type: "image/png" })); }', [40, data])
     page.evaluate("() => { const g = window.rikuy; if (!window.__rbw) { const r = g.rebuild; window.__rbw = 1; g.rebuild = function (...a) { window.__rb = (window.__rb || 0) + 1; return r.apply(this, a); }; } window.__rb = 0; }")
     load_doc(page, WRAP('\n\n'.join('P %d.\n\n\\begin{center}\n\\includegraphics[height=1cm]{f%d.png}\n\\end{center}' % (k, k) for k in range(40))))
-    settle(page, 1500)
+    until(page, DRAWN); settle(page, 1500)
     n = page.evaluate('window.__rb')
     check('H5: forty pictures sized from their files: at most 3 rebuilds (one for the document, one for the sizes that came)', n <= 3, n)
     # M2: the first Crop on a fresh picture opens
     asset(page, 'fresh.png', png(120, 80, dpi=144))
-    load_doc(page, WRAP(CENTER().replace('a.png', 'fresh.png'))); settle(page, 300); sel_pic()(page)
+    load_doc(page, WRAP(CENTER().replace('a.png', 'fresh.png'))); until(page, DRAWN); settle(page, 300); sel_pic()(page)
     run_cmd(page, 'picture-crop'); settle(page, 600)
     check('M2: the first Crop on a picture opens its bars', page.evaluate("!!document.querySelector('.pic-crop') && window.rikuy.picCropping"))
     page.keyboard.press('Escape'); settle(page, 150)
@@ -594,6 +601,12 @@ def phones(p):
         ctx = br.new_context(viewport={'width': w, 'height': h}, has_touch=True, is_mobile=True, device_scale_factor=2)
         # (a phone's Print Layout, which this suite was written for: browser.py, PRINT_LAYOUT)
         ctx.add_init_script(PRINT_LAYOUT)
+        # (what every context of open_page() gets: the page's timers seen, so settle() waits for them,
+        # and the animations off as in the other suites of features, unless RIKUY_MOTION=1; with them on,
+        # a dialog measured in its entrance stands lower than it comes to rest)
+        ctx.add_init_script(B.TIMERS)
+        if os.environ.get('RIKUY_MOTION') != '1':
+            ctx.add_init_script(B.MOTION_OFF)
         html = open(os.path.join(DIST, 'rikuy.html'), encoding='utf8').read()
         doc = B.SKELETON_HEAD + html + '</body></html>'
         def handler(route):
@@ -616,6 +629,8 @@ def phones(p):
         page.on('pageerror', lambda e: errs.append(str(e)))
         page.goto('https://rikuy.test/')
         page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=30000)
+        # (the page the test's once rikuy.ready has settled and drawn, as open_page() waits)
+        page.evaluate('() => window.rikuy.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))')
         tag = ' (%d px, touch)' % w
         asset(page)
         load_doc(page, DOC); settle(page, 600)

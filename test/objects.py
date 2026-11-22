@@ -384,7 +384,8 @@ def phones(p):
                 b = obj_box(page, sel_)
                 cdp = page.context.new_cdp_session(page)
                 x, y = b[0] + b[2] / 2, b[1] + b[3] / 2
-                cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': x, 'y': y}]}); settle(page, 750)
+                # (the finger held until the page's long press timer has run: every timer due within the old 750 ms)
+                cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': x, 'y': y}]}); settle(page, 750, full=True)
                 cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []}); cdp.detach(); settle(page, 300)
                 g = page.evaluate("""() => { const m = document.querySelector('.pop-ctx'); if (!m) return null; const r = m.getBoundingClientRect();
                   const it = [...m.querySelectorAll('[role^=menuitem]')].filter((a) => a.getClientRects().length).map((a) => a.getBoundingClientRect());
@@ -805,20 +806,29 @@ def review_arrange(page):
     check('N9: with a drawing selected in a long document, Align\'s when takes under 5 ms a look, every command\'s under 40 ms', ok, '' if ok else t)
 
 
+def reload(page):
+    # (the project read back from this browser's storage once rikuy.ready has settled, as open_page() waits:
+    # a document loaded before that could be replaced by it)
+    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=30000)
+    page.evaluate('() => window.rikuy.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))'); settle(page, 500)
+
+
 def selpane(page):
     D = WRAP('See Figure~\\ref{fig:a} and \\eqref{eq:1}.\n\n\\begin{figure}[h]\n\\centering\n' + SHAPE.replace('\\begin{center}\n', '').replace('\\end{center}\n', '') + '\\caption{A box}\\label{fig:a}\n\\end{figure}\n\n'
              + '\\begin{equation}a=b\\label{eq:1}\\end{equation}\n\\begin{equation}c=d\\end{equation}\n' + CHART + SMART + 'End words.')
-    load_doc(page, D); settle(page, 400)
+    # (the pane reads the page again 120 ms after each layout pass, src/ui/selpane.js: a step that draws
+    # the page waits for that before the pane is pressed or typed in)
+    load_doc(page, D); settle(page, 400, full=True)
     page.evaluate("rikuy.selectTab('layout')"); settle(page, 200)
     page.click('#rc-selection-pane'); settle(page, 300)
     rows = page.evaluate("[...document.querySelectorAll('#sel-pane .sel-go')].map((b) => b.getAttribute('aria-label'))")
     check('Layout › Selection Pane lists every object with its name: ' + '; '.join(rows), rows == ['A box, figure', 'Drawing 1, drawing', 'Equation 1, equation', 'Equation 2, equation', 'Chart 1, chart', 'SmartArt 1, smartart'], rows)
     h0 = page.evaluate('window.rikuy.hist.length')
-    page.get_by_role('textbox', name='Name of A box').fill('fig:box'); page.get_by_role('textbox', name='Name of A box').press('Enter'); settle(page, 300)
+    page.get_by_role('textbox', name='Name of A box').fill('fig:box'); page.get_by_role('textbox', name='Name of A box').press('Enter'); settle(page, 300, full=True)
     check('a figure renamed: its \\label and the \\ref to it, one step', src(page) == D.replace('fig:a', 'fig:box') and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page)[:300])
-    page.evaluate('window.rikuy.undo()'); settle(page, 300)
+    page.evaluate('window.rikuy.undo()'); settle(page, 300, full=True)
     check('one undo gives the names back', src(page) == D)
-    page.get_by_role('textbox', name='Name of Equation 2').fill('eq:two'); page.get_by_role('textbox', name='Name of Equation 2').press('Enter'); settle(page, 300)
+    page.get_by_role('textbox', name='Name of Equation 2').fill('eq:two'); page.get_by_role('textbox', name='Name of Equation 2').press('Enter'); settle(page, 300, full=True)
     check('a name given to an equation that had none: \\label at its end', src(page) == D.replace('c=d\\end{equation}', 'c=d\\label{eq:two}\\end{equation}'), src(page)[:400])
     check('a drawing outside a figure has no name to give (its field off, saying why)', page.evaluate("document.querySelector('[aria-label=\"Name of Drawing 1\"]').disabled"))
     page.get_by_role('button', name='Show Chart 1').click(); settle(page, 250)
@@ -834,7 +844,7 @@ def selpane(page):
     # the pane says it is the page's view only
     TWO_D = WRAP('Before.\n\n' + SHAPE + '\n' + SHAPE.replace('rectangle (3,2)', 'circle (1)') + '\nAfter.')
     page.evaluate('() => { localStorage.removeItem("galley.selhidden.v1"); window.rikuy.selHiddenFor = null; }')
-    load_doc(page, TWO_D); settle(page, 300)
+    load_doc(page, TWO_D); settle(page, 300, full=True)
     run_cmd(page, 'selection-pane'); settle(page, 200)
     check('M7: the pane says hiding is the page\'s view only', 'page\'s view only' in page.evaluate("document.querySelector('#sel-pane .sel-note').textContent"))
     page.get_by_role('button', name='Show Drawing 2').click(); settle(page, 200)
@@ -843,8 +853,8 @@ def selpane(page):
     page.keyboard.press('Escape')
     press(page, 'svg.tz', 0); page.keyboard.press('Delete'); settle(page, 400)
     check('M7: Drawing 1 deleted, the circle (Drawing 2 before) stays hidden', page.evaluate(vis) == ['hidden'] and 'circle (1)' in src(page), page.evaluate(vis))
-    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it")', timeout=30000); settle(page, 500)
-    load_doc(page, TWO_D); settle(page, 600)
+    reload(page)
+    load_doc(page, TWO_D); settle(page, 600, full=True)
     check('M7: after a reload the circle is hidden again, the rectangle shown', page.evaluate(vis) == ['visible', 'hidden'], page.evaluate(vis))
     # review N7: the hidden one formatted (selected through the pane) or renamed stays hidden
     run_cmd(page, 'selection-pane'); settle(page, 200)
@@ -852,21 +862,21 @@ def selpane(page):
     run_cmd(page, 'shape-fill', {'color': 'green!40'}); settle(page, 400)
     check('N7: Shape Fill on the hidden circle, selected through the pane: written, and it stays hidden', 'fill=green!40] (0,0) circle (1)' in src(page) and page.evaluate(vis) == ['visible', 'hidden'], (page.evaluate(vis), src(page)[-260:]))
     page.keyboard.press('Escape')
-    load_doc(page, D); settle(page, 400)
+    load_doc(page, D); settle(page, 400, full=True)
     run_cmd(page, 'selection-pane'); settle(page, 200)
-    page.get_by_role('button', name='Show A box').click(); settle(page, 200)
+    page.get_by_role('button', name='Show A box').click(); settle(page, 200, full=True)
     fig_vis = "getComputedStyle(document.querySelector('#pages svg.tz').closest('.raw')).visibility"
-    page.get_by_role('textbox', name='Name of A box').fill('fig:box'); page.get_by_role('textbox', name='Name of A box').press('Enter'); settle(page, 400)
+    page.get_by_role('textbox', name='Name of A box').fill('fig:box'); page.get_by_role('textbox', name='Name of A box').press('Enter'); settle(page, 400, full=True)
     check('N7: the hidden figure renamed (fig:a to fig:box) stays hidden', 'fig:box' in src(page) and page.evaluate(fig_vis) == 'hidden' and page.evaluate("document.querySelector('[aria-label=\"Show A box\"]').getAttribute('aria-pressed')") == 'false', page.evaluate(fig_vis))
-    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it")', timeout=30000); settle(page, 500)
+    reload(page)
     load_doc(page, D.replace('fig:a', 'fig:box')); settle(page, 600)
     check('N7: and after a reload', page.evaluate(fig_vis) == 'hidden', page.evaluate(fig_vis))
     page.evaluate('() => { localStorage.removeItem("galley.selhidden.v1"); window.rikuy.selHiddenFor = null; window.rikuy.selHidden.clear(); window.rikuy.selApplyHidden(); }')
     # review N6: a rename that cannot follow every place (a reference in verbatim) says so
     V = D.replace('End words.', 'End words.\n\\begin{verbatim}\n\\ref{fig:a}\n\\end{verbatim}\n')
-    load_doc(page, V); settle(page, 400)
+    load_doc(page, V); settle(page, 400, full=True)
     run_cmd(page, 'selection-pane'); settle(page, 200)
-    page.get_by_role('textbox', name='Name of A box').fill('fig:box'); page.get_by_role('textbox', name='Name of A box').press('Enter'); settle(page, 400)
+    page.get_by_role('textbox', name='Name of A box').fill('fig:box'); page.get_by_role('textbox', name='Name of A box').press('Enter'); settle(page, 400, full=True)
     st = page.evaluate("document.querySelector('#sel-pane .fr-st').textContent")
     check('N6: renamed, the verbatim copy left, and the pane says so: ' + st, src(page).count('fig:box') == 2 and '\\begin{verbatim}\n\\ref{fig:a}' in src(page) and '1 more place still names fig:a' in st, (st, src(page)[-200:]))
     page.keyboard.press('Escape')
