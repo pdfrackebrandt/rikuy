@@ -38,6 +38,8 @@ R = lambda body, pre='': '\\documentclass{report}\n' + pre + '\\begin{document}\
 DIAG = """(() => { const L = window.__diag = [], t0 = performance.now(), now = () => Math.round(performance.now() - t0);
   const add = (k, x) => { L.push([k, now(), x || '']); if (L.length > 400) L.shift(); };
   for (const k of ['selectionchange', 'focusin', 'touchstart', 'touchend', 'mousedown', 'click', 'change', 'keydown']) document.addEventListener(k, (e) => add(k, (e.target && (e.target.id || e.target.nodeName)) + (e.key ? ' ' + e.key : '') + (e.clientX != null ? ' ' + Math.round(e.clientX) + ',' + Math.round(e.clientY) : '')), { capture: true, passive: true });
+  document.addEventListener('scroll', (e) => { const t = e.target === document ? document.scrollingElement : e.target; if (t && !/^(ribbon|rb-)/.test(t.id || '')) add('scroll', (t.id || t.tagName) + ' ' + Math.round(t.scrollTop)); }, { capture: true, passive: true });
+  if (document.fonts) document.fonts.addEventListener('loadingdone', (e) => add('fonts', e.fontfaces.map((f) => f.family + ' ' + f.weight + ' ' + f.style).join('|')));
   window.__mark = (m) => { const s = getSelection(); add('MARK', m + ' ' + (s.rangeCount ? (s.anchorNode && (s.anchorNode.textContent || '').slice(0, 12)) + '@' + s.anchorOffset : '-') + ' ' + (document.activeElement && document.activeElement.id)); }; })()"""
 
 
@@ -723,7 +725,7 @@ def tap_text(page, text, k=0):
     """A tap in the words, k characters in (where click_text would click)."""
     box = page.evaluate("""([t, k]) => { const sp = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(t)); if (!sp) return null;
       sp.scrollIntoView({ block: 'center' }); const i = sp.textContent.indexOf(t) + k, r = document.createRange(); r.setStart(sp.firstChild, i); r.setEnd(sp.firstChild, i + 1); const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }""", [text, k])
-    tap(page, (box[0], box[1]), 250)
+    page.evaluate('(b) => window.__mark && window.__mark("box " + b.map(Math.round).join(",") + " desk " + document.getElementById("desk").scrollTop)', box); tap(page, (box[0], box[1]), 250)
 
 
 FITS = """(sel) => { const e = document.querySelector(sel); if (!e) return null; const r = e.getBoundingClientRect();
