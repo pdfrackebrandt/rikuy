@@ -338,6 +338,25 @@ def updown(page):
     check('Shift+Down then Delete: the column\'s two cells emptied, the other column kept', '\\midrule\n & two \\\\\n & four \\\\' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
 
 
+def formula_cells(page):
+    """A cell that holds only a formula is a cell for Tab, Shift+Tab, Up and Down (they passed over it)."""
+    doc = DOC.replace('one & two', '$x^2$ & two').replace('three & four', 'three & $y$')
+    def typed(setup, ks):
+        load_doc(page, doc); setup()
+        for k in ks: page.keyboard.press(k); settle(page, 60)
+        page.keyboard.type('X'); settle(page, 150)
+        s = src(page)
+        return s[s.find('\\midrule'):s.find('\\bottomrule')]
+    s = typed(lambda: click_text(page, 'Other', 2), ['Tab'])
+    check('Tab into a formula\'s cell selects the formula: typing replaces it', s == '\\midrule\nX & two \\\\\nthree & $y$ \\\\\n', s)
+    s = typed(lambda: click_text(page, 'two', 1), ['Shift+Tab'])
+    check('Shift+Tab into it too', s == '\\midrule\nX & two \\\\\nthree & $y$ \\\\\n', s)
+    s = typed(lambda: click_text(page, 'three', 1), ['Tab'])
+    check('Tab into the last cell, a formula, does not add a row', s == '\\midrule\n$x^2$ & two \\\\\nthree & X \\\\\n', s)
+    s = typed(lambda: click_text(page, 'two', 1), ['ArrowDown'])
+    check('Down into a formula\'s cell: the caret beside the formula', s in ('\\midrule\n$x^2$ & two \\\\\nthree & X$y$ \\\\\n', '\\midrule\n$x^2$ & two \\\\\nthree & $y$X \\\\\n'), s)
+
+
 def caption_enter(page):
     """Enter at the end of a table's caption: a paragraph after the float, as Word's; it did
     nothing, and a table at the document's end had no way past it."""
@@ -839,7 +858,7 @@ def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         names = sys.argv[1:]
-        for f in (inserting, tabs_and_trips, keys_and_select, cell_edges, updown, paste_cells, caption_enter, the_rest, drawing, reviewed, verified, compiled, r3_tables):
+        for f in (inserting, tabs_and_trips, keys_and_select, cell_edges, updown, formula_cells, paste_cells, caption_enter, the_rest, drawing, reviewed, verified, compiled, r3_tables):
             if names and f.__name__ not in names:
                 continue
             try: f(page)

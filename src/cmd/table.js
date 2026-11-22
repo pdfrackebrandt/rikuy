@@ -554,13 +554,14 @@ export const methods = {
     const el = n && (n.nodeType === 1 ? n : n.parentElement);
     const td = el && el.closest('td');
     if (!td) return;
-    const cells = this.tablePieces(td.closest('table')).flatMap((t) => [...t.querySelectorAll('td:not(.rule-cell)')].filter((x) => x.closest('table') === t && x.querySelector('span.t')));
+    // (a cell that holds only a formula or a picture is a cell too: Tab passed over it)
+    const cells = this.tablePieces(td.closest('table')).flatMap((t) => [...t.querySelectorAll('td:not(.rule-cell)')].filter((x) => x.closest('table') === t && x.querySelector('span.t, .atom')));
     const i = cells.indexOf(td);
     const next = cells[i + (back ? -1 : 1)];
     if (!next) { if (!back) this.tableRow(); return; }
     const sp = next.querySelector('span.t');
     const r = document.createRange();
-    r.selectNodeContents(sp);
+    r.selectNodeContents(sp || next);
     sel.removeAllRanges(); sel.addRange(r);
   },
 
@@ -597,7 +598,8 @@ export const methods = {
     const fn = sel.focusNode, el = fn.nodeType === 1 ? fn : fn.parentElement;
     const td = el && el.closest('td');
     if (!td || !this.root.contains(td) || td.classList.contains('rule-cell')) return false;
-    const lines = (cell) => [...cell.querySelectorAll('span.t')].flatMap((s) => [...s.getClientRects()]).filter((q) => q.height);
+    // (a formula or a picture counts as a line: a cell may hold nothing else)
+    const lines = (cell) => [...cell.querySelectorAll('span.t, .atom')].filter((s) => !s.parentElement.closest('.atom')).flatMap((s) => [...s.getClientRects()]).filter((q) => q.height);
     const here = lines(td);
     if (!here.length) return false;
     const r = document.createRange();
@@ -614,7 +616,7 @@ export const methods = {
     while (!to && (i += dir) >= 0 && i < rows.length) {
       const tr = rows[i], tb = tr.getBoundingClientRect();
       if (dir > 0 ? tb.bottom <= tdr.bottom + 1 : tb.top >= tdr.top - 1) continue;
-      const tds = [...tr.cells].filter((c) => !c.classList.contains('rule-cell') && c.querySelector('span.t'));
+      const tds = [...tr.cells].filter((c) => !c.classList.contains('rule-cell') && c.querySelector('span.t, .atom'));
       if (!tds.length) continue;
       const gap = (c) => { const b = c.getBoundingClientRect(); return x < b.left ? b.left - x : x > b.right ? x - b.right : 0; };
       to = tds.reduce((m, c) => (gap(c) < gap(m) ? c : m));
@@ -626,8 +628,11 @@ export const methods = {
     const tb = to.getBoundingClientRect();
     const hit = document.caretRangeFromPoint(Math.min(Math.max(x, tb.left + 1), tb.right - 1), line.top + line.height / 2);
     let node, off;
-    if (hit && to.contains(hit.startContainer) && hit.startContainer.nodeType === 3 && hit.startContainer.parentElement.closest('span.t')) { node = hit.startContainer; off = hit.startOffset; }
-    else { const sp = to.querySelector('span.t'); node = sp.firstChild || sp; off = 0; }
+    const sp = to.querySelector('span.t');
+    if (hit && to.contains(hit.startContainer) && hit.startContainer.nodeType === 3 && hit.startContainer.parentElement.closest('span.t') && !hit.startContainer.parentElement.closest('.atom')) { node = hit.startContainer; off = hit.startOffset; }
+    else if (sp) { node = sp.firstChild || sp; off = 0; }
+    // (a cell of a formula alone: before it or after it, by the side x is on, as a click there puts it)
+    else { node = to; off = x > line.left + line.width / 2 ? to.childNodes.length : 0; }
     if (extend) sel.extend(node, off); else sel.collapse(node, off);
     this.tableGoal = { node, off, x };
     return true;
