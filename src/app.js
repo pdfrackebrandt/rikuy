@@ -2261,8 +2261,12 @@ class App {
         const listEnd = +le + base;
         const removed = e - s2;
         const NL = /\r\n/.test(src) ? '\r\n' : '\n';
-        const ins = NL + NL;
-        this.commit([{ f, s: s2, e, t: '' }, { f, s: listEnd, e: listEnd, t: ins }], { f, p: listEnd - removed + ins.length, bias: 1 }, 'enter');
+        // (words right after the list, in the paragraph the list is part of, get a paragraph of
+        // their own too: what is typed on the new line stays apart from them, as Word's empty
+        // paragraph after a list does; it ran into them, "Out After the list...")
+        const glued = /^[ \t]*(?:\r?\n[ \t]*)?(?!\r?\n|%|\\(?:end|begin|item|par|paragraph|(?:sub){0,2}section|chapter|part)(?![A-Za-z])|\\\[)\S/.test(src.slice(listEnd));
+        const ins = NL + NL + (glued ? NL : '');
+        this.commit([{ f, s: s2, e, t: '' }, { f, s: listEnd, e: listEnd, t: ins }], { f, p: listEnd - removed + NL.length * 2, bias: 1 }, 'enter');
         return;
       }
       const NL = /\r\n/.test(src) ? '\r\n' : '\n';

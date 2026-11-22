@@ -1858,6 +1858,11 @@ def word_typing(page):
     load_doc(page, WORD_DOC)
     click_text(page, 'Background', 0); k.press('Enter'); k.press('Backspace'); settle(page, 100)
     check('Enter at a heading\'s start, then Backspace: as it was', src(page) == WORD_DOC, src(page)[330:420])
+    # 6: Enter twice at a list's end leaves it; the words typed next are a paragraph of their own,
+    # also where the list's paragraph goes on after it: they ran into those words
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Banana two', 10); k.press('Enter'); k.press('Enter'); k.type('Out'); settle(page, 100)
+    check('Enter twice at a list\'s end, then words: a paragraph between the list and the words after it', src(page) == WORD_DOC.replace('\\end{itemize}\nAfter', '\\end{itemize}\n\nOut\n\nAfter'), src(page)[250:380])
     # (one key at an item's start still takes no \item)
     load_doc(page, WORD_DOC)
     click_text(page, 'Banana', 0); k.press('Backspace'); settle(page, 100)
