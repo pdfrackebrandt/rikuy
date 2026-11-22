@@ -167,7 +167,7 @@ def widths(page):
     load_doc(page, DOC)
     seen = {}
     for w in (1400, 1024, 860, 390):
-        page.set_viewport_size({'width': w, 'height': 900}); settle(page, 300)
+        page.set_viewport_size({'width': w, 'height': 900}); settle(page, 300, full=True)
         click_text(page, 'Second paragraph', 3); settle(page, 150)
         seen[w] = page.evaluate('''() => { const r = document.getElementById('ribbon'), b = r.getBoundingClientRect(), top = document.getElementById('rb-top');
           return { tabs: !!top.offsetParent, sel: !!document.getElementById('rb-tabsel').offsetParent, over: r.scrollWidth > r.clientWidth + 1, h: Math.round(b.height),
@@ -187,7 +187,7 @@ def widths(page):
     # (from 900 px with a mouse the three stand one under another, a group as narrow as its longest
     # name: Home has room for them at 1024 px)
     check('the downloads: three at 1400 and 1024 px; one Download menu where the row has no room for three (860 px, and on a phone)', all(seen[w]['dl'] == ['rb-pdf', 'rb-word', 'b-save'] for w in (1400, 1024)) and all(seen[w]['dl'] == ['rb-dl-menu'] for w in (860, 390)) and not seen[860]['over'], {w: seen[w]['dl'] for w in seen})
-    page.set_viewport_size({'width': 390, 'height': 900}); settle(page, 300)
+    page.set_viewport_size({'width': 390, 'height': 900}); settle(page, 300, full=True)
     page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label='Insert'); settle(page, 200)
     check('on a phone the combobox opens a tab: Insert\'s Picture is there by its name', page.get_by_role('tabpanel', name='Insert', exact=True).get_by_role('button', name='Picture', exact=True).is_visible())
     page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label='Home'); settle(page, 200)
@@ -198,14 +198,14 @@ def widths(page):
       window.rikuy.ribbonBuild(); }''')
     f = {}
     for w in (900, 1024):
-        page.set_viewport_size({'width': w, 'height': 900}); settle(page, 300)
+        page.set_viewport_size({'width': w, 'height': 900}); settle(page, 300, full=True)
         click_text(page, 'Second paragraph', 3); settle(page, 150)
         f[w] = page.evaluate('''() => ({ folded: [...document.querySelectorAll('#rp-home .rb-grp.folded')].map((g) => g.dataset.group), over: document.getElementById('ribbon').scrollWidth > document.getElementById('ribbon').clientWidth + 1 })''')
     # (Clipboard folds at 900 px too where the downloads stand side by side; one under another they
     # leave it room)
     # (eight more in Clipboard, with their names, are three columns: at 1024 px it folds with Insert)
     check('with more than fits, groups fold, the spare Insert first and then the lowest ranks: at 1024 px Insert and at most Clipboard and Editing (ranks 2 and 1), at 900 px Editing with them and then Paragraph (rank 4) as the row needs; the row fits', 'insert' in f[1024]['folded'] and set(f[1024]['folded']) <= {'clipboard', 'editing', 'insert'} and {'editing', 'insert'} <= set(f[900]['folded']) <= {'clipboard', 'editing', 'insert', 'paragraph'} and not f[900]['over'] and not f[1024]['over'], f)
-    page.set_viewport_size({'width': 900, 'height': 900}); settle(page, 300)
+    page.set_viewport_size({'width': 900, 'height': 900}); settle(page, 300, full=True)
     gb = page.get_by_role('button', name='Editing', exact=True)
     check('a folded group is one button named after it; its own buttons are out of the accessibility tree', gb.count() == 1 and page.get_by_role('button', name='Editing test 0', exact=True).count() == 0 and not twice(page), twice(page))
     gb.click(); settle(page, 200)
@@ -215,10 +215,10 @@ def widths(page):
     check('it opens a menu "Editing" of its commands by their names', names[-6:] == ['Editing test %d' % k for k in range(6)] and names[:-6] == ['Find', 'Advanced Find', 'Go To', 'Replace', 'Select'] and gb.get_attribute('aria-expanded') == 'true', names)
     menu.get_by_role('menuitem', name='Editing test 3', exact=True).click(); settle(page, 150)
     check('and an item runs its command, the menu closed, the caret on the page', page.evaluate('window.__ran') == 't-ed3' and page.get_by_role('menu').count() == 0 and page.evaluate('document.activeElement.id') == 'pages')
-    page.set_viewport_size({'width': 1920, 'height': 900}); settle(page, 300)
+    page.set_viewport_size({'width': 1920, 'height': 900}); settle(page, 300, full=True)
     check('with room again (1920 px) every group is open but the spare Insert', page.evaluate("[...document.querySelectorAll('.rb-grp.folded')].map((g) => g.dataset.group)") in ([], ['insert']), page.evaluate("[...document.querySelectorAll('.rb-grp.folded')].map((g) => g.dataset.group)"))
     page.evaluate('''() => { for (const c of window.rikuy.cmds.commands()) if (/^t-(ed|cl)/.test(c.id)) window.rikuy.cmds.unregister(c.id); window.rikuy.ribbonBuild(); }''')
-    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300, full=True)
 
 
 def collapse(page):
@@ -504,6 +504,9 @@ def review_fixes(page):
     page.keyboard.press('Control+F1'); settle(page, 200)
     page.reload()
     page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
+    # (the page is the test's once rikuy.ready has settled and it is drawn, as open_page waits: the
+    # project read back from storage comes after the boot screen hides, and would replace load_doc's)
+    page.evaluate('() => window.rikuy.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))')
     settle(page, 300)
     a = page.evaluate('[document.body.classList.contains("rb-collapsed"), !!document.getElementById("ribbon").offsetParent, document.getElementById("rb-collapse").getAttribute("aria-pressed")]')
     load_doc(page, DOC)
@@ -520,11 +523,11 @@ def review_fixes(page):
     check('Ctrl+F1 acts with the focus in a field too (the search box), which keeps the focus', d == [False, 'rk-search'], d)
     page.keyboard.press('Escape')
     open_tab(page, 'Home')
-    page.set_viewport_size({'width': 390, 'height': 800}); settle(page, 300)
+    page.set_viewport_size({'width': 390, 'height': 800}); settle(page, 300, full=True)
     click_text(page, 'Second paragraph', 3)
     page.keyboard.press('Control+F1'); settle(page, 200)
     e = page.evaluate('document.body.classList.contains("rb-collapsed")')
-    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300, full=True)
     check('below 861 px Ctrl+F1 keeps no setting that would fold the wide ribbon later', e is False and page.evaluate('!!document.getElementById("ribbon").offsetParent'))
     # the row of tabs, 28 px
     hh = page.evaluate('document.getElementById("rb-top").getBoundingClientRect().height')
@@ -561,7 +564,7 @@ def review_fixes(page):
     check('a long press on a touch screen gives the system\'s menu, not Rikuy\'s', t == [False, False], t)
     # the combobox of tabs on a phone: a contextual tab\'s option goes with its tab
     load_doc(page, TABLE)
-    page.set_viewport_size({'width': 390, 'height': 800}); settle(page, 300)
+    page.set_viewport_size({'width': 390, 'height': 800}); settle(page, 300, full=True)
     click_text(page, 'cell', 2); settle(page, 250)
     inside = page.evaluate('[...document.getElementById("rb-tabsel").options].filter((o) => !o.hidden && !o.disabled).map((o) => o.textContent)')
     click_text(page, 'After it', 2); settle(page, 250)
@@ -573,13 +576,13 @@ def review_fixes(page):
     page.evaluate("() => { window.rikuy.runCommand('page-width'); }"); settle(page, 150)
     z2 = page.evaluate('[window.rikuy.prefs.zoom, window.rikuy.prefs.phone, window.rikuy.textFit]')
     check('on a phone View\'s Page width shows the whole sheet, and a second press keeps it', z1 == ['fit', 'sheet', False] and z2 == z1, (z1, z2))
-    page.set_viewport_size({'width': 860, 'height': 900}); settle(page, 300)
+    page.set_viewport_size({'width': 860, 'height': 900}); settle(page, 300, full=True)
     load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
     page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label='Home'); settle(page, 200)
     w = page.evaluate("""() => { const p = document.querySelector('#ribbon [role=tabpanel]:not([hidden]) [role=toolbar]'); const out = [...p.querySelectorAll('button')].filter((b) => b.offsetParent && b.getBoundingClientRect().right > innerWidth + 1).map((b) => b.getAttribute('aria-label') || b.textContent);
         return [out, p.scrollWidth <= p.clientWidth + 1]; }""")
     check('at 860 px every control of Home is on the screen (Footnote, Citation, Link no longer scroll off)', w == [[], True], w)
-    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300, full=True)
 
 
 
@@ -608,7 +611,7 @@ def word_layout(page):
     a time (its large buttons small, then its names) before any group folds; the KeyTips of a tab's
     controls after its own (Alt, a tab's letter, the control's letters), and Escape back."""
     load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
-    page.set_viewport_size({'width': 1920, 'height': 900}); settle(page, 300)
+    page.set_viewport_size({'width': 1920, 'height': 900}); settle(page, 300, full=True)
     tabs = page.evaluate('rikuy.rbTabs')
     home = page.evaluate("Math.round(document.getElementById('ribbon').getBoundingClientRect().height)")
     seen = {t: page.evaluate(LAID, t) for t in tabs if t not in ('home', 'file')}
@@ -620,9 +623,9 @@ def word_layout(page):
     cut = [(t, g['id']) for t, v in seen.items() for g in v['groups'] if not g['whole']]
     check('every group\'s name is whole under it (the group is at least as wide as its name)', not cut, cut)
     hs = {t: v['h'] for t, v in seen.items()}
-    page.set_viewport_size({'width': 880, 'height': 900}); settle(page, 300)
+    page.set_viewport_size({'width': 880, 'height': 900}); settle(page, 300, full=True)
     h880 = {t: page.evaluate(LAID, t)['h'] for t in tabs if t != 'file'}
-    page.set_viewport_size({'width': 1920, 'height': 900}); settle(page, 300)
+    page.set_viewport_size({'width': 1920, 'height': 900}); settle(page, 300, full=True)
     check('every tab is as tall as Home (%d px), and at 880 px too: the page does not jump when a tab opens' % home, all(h == home for h in hs.values()) and len(set(h880.values())) == 1, (home, hs, h880))
     # a large button's name over two lines, as Word breaks it; a menu's arrow after the name
     page.evaluate("rikuy.selectTab('references')"); settle(page, 150)
@@ -650,10 +653,10 @@ def word_layout(page):
     page.emulate_media(forced_colors='none'); settle(page, 100)
     check('in a forced colour scheme a pressed toggle (Print Layout) is drawn in the highlight, one not pressed (Draft) is not', len(fc) == 2 and fc[0][0] == 'true' and fc[1][0] == 'false' and fc[0][1] != fc[1][1], fc)
     # narrower: the steps before any group folds
-    page.set_viewport_size({'width': 1100, 'height': 900}); settle(page, 300)
+    page.set_viewport_size({'width': 1100, 'height': 900}); settle(page, 300, full=True)
     r = page.evaluate(LAID, 'review')
     check('at 1100 px Review gives way group by group (some small, some without names) and folds none', not any('folded' in g['cls'] for g in r['groups']) and any(' sm' in g['cls'] or ' nm' in g['cls'] for g in r['groups']) and all(g['whole'] for g in r['groups']), [(g['id'], g['cls']) for g in r['groups']])
-    page.set_viewport_size({'width': 1920, 'height': 900}); settle(page, 300)
+    page.set_viewport_size({'width': 1920, 'height': 900}); settle(page, 300, full=True)
     # KeyTips: Alt, then N for Insert, then its controls' letters
     click_text(page, 'Second paragraph', 3)
     page.keyboard.press('Alt'); settle(page, 100)
@@ -680,14 +683,14 @@ def word_layout(page):
     off = page.evaluate("[document.body.classList.contains('keytips'), document.querySelectorAll('.rb-kt').length, document.activeElement.id]")
     check('Escape goes back from a tab\'s letters to the tabs\' letters, and again away, the caret on the page', back == [True, 0] and off == [False, 0, 'pages'], (back, off))
     # a folded group's letters: Z and a letter of its name
-    page.set_viewport_size({'width': 1000, 'height': 900}); settle(page, 300)
+    page.set_viewport_size({'width': 1000, 'height': 900}); settle(page, 300, full=True)
     click_text(page, 'Second paragraph', 3)
     page.keyboard.press('Alt'); page.keyboard.press('h'); settle(page, 200)
     z = page.evaluate("[...document.querySelectorAll('.rb-kt')].map((x) => x.textContent).filter((k) => k[0] === 'Z')")
     page.keyboard.press('z'); page.keyboard.press('i'); settle(page, 250)
     check('Home at 1000 px: its folded Insert has ZI, which opens its menu', 'ZI' in z and page.get_by_role('menu', name='Insert', exact=True).count() == 1, z)
     page.keyboard.press('Escape'); settle(page, 150)
-    page.set_viewport_size({'width': 1920, 'height': 900}); settle(page, 300)
+    page.set_viewport_size({'width': 1920, 'height': 900}); settle(page, 300, full=True)
     # a contextual tab's letters: J then its letter, while it shows
     load_doc(page, TABLE); click_text(page, 'A paragraph', 2); settle(page, 200)
     page.keyboard.press('Alt'); settle(page, 100)
@@ -709,7 +712,7 @@ def word_layout(page):
     page.keyboard.press('Alt'); settle(page, 100); page.keyboard.press('Escape'); settle(page, 150)
     check('Escape that puts the letters away does not let go of a selected picture', armed and page.evaluate('!!(rikuy.armed && rikuy.armed.kind === "img")') and not page.evaluate("document.body.classList.contains('keytips')"))
     page.evaluate('rikuy.disarm()')
-    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300, full=True)
     load_doc(page, DOC)
     open_tab(page, 'Home')
 
@@ -731,7 +734,7 @@ def downloads_group(p):
     load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
     bad = {}
     for w in (1920, 1366):
-        page.set_viewport_size({'width': w, 'height': 900}); settle(page, 300)
+        page.set_viewport_size({'width': w, 'height': 900}); settle(page, 300, full=True)
         for t in ('home', 'insert', 'review', 'view', 'help'):
             page.evaluate('(t) => rikuy.selectTab(t)', t); settle(page, 150)
             d = page.evaluate(DL)
@@ -1036,7 +1039,7 @@ def fold_sweep(page):
             # and Paragraph wider than Clipboard and Editing can make room for)
             check('Home from 1920 to 1024 px folds nothing but its spare Insert; at 900 px one group of rank 4 or less may fold with it', all(set(home[w]['folded']) <= {'insert'} for w in widths if w >= 1024) and len(set(home[900]['folded']) - {'insert'}) <= 1 and set(home[900]['folded']) <= {'insert', 'editing', 'clipboard', 'paragraph'}, {w: home[w]['folded'] for w in (900, 1030, 1360)})
     page.evaluate("""() => { for (const c of window.rikuy.cmds.commands()) if (/^t-sw/.test(c.id)) window.rikuy.cmds.unregister(c.id); window.rikuy.ribbonBuild(); window.rikuy.ribbonFit = window.__rf; }""")
-    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300, full=True)
     open_tab(page, 'Home')
 
 

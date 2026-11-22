@@ -20,7 +20,7 @@ with KOMA-Script and memoir; and, where dist/tex holds a TeX tree, all of it com
 Run it alone with names to run some: python3 styles.py gallery design."""
 import os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, ROOT, SKELETON_HEAD, ROUTES, open_page, check, results, src, wait_src, click_text, select_text, load_doc, roundtrip, pressed, place, PRINT_LAYOUT, policy
+from browser import settle, TIMERS, MOTION_OFF, _SETTLE, ROOT, SKELETON_HEAD, ROUTES, open_page, check, results, src, wait_src, click_text, select_text, load_doc, roundtrip, pressed, place, PRINT_LAYOUT, policy
 from ribbon import DOC, DIST, state, style, undo_is, TILES, WRAP, body, boxes
 from playwright.sync_api import sync_playwright
 
@@ -181,7 +181,7 @@ def gallery_widths(page):
     load_doc(page, DOC)
     seen = {}
     for w in (1920, 1840, 1800, 1760, 1700, 1600, 1536, 1440, 1366, 1300, 1280, 1180, 1100, 1024, 1000, 900, 820, 390):
-        page.set_viewport_size({'width': w, 'height': 900}); settle(page, 250)
+        page.set_viewport_size({'width': w, 'height': 900}); settle(page, 250, full=True)
         click_text(page, 'First paragraph', 2); settle(page, 120)
         seen[w] = page.evaluate("""() => { const r = document.getElementById('ribbon'), sel = document.getElementById('rb-style');
           const tiles = [...document.querySelectorAll('#rb-gallery [data-style]')].filter((b) => !b.hidden && b.offsetParent).map((b) => b.dataset.style);
@@ -210,11 +210,11 @@ def gallery_widths(page):
     l = max(w for w in seen if seen[w]['list'] and w < g)
     check('the row is as tall with the list as with the gallery (no jump where the one gives way to the other, %d and %d px)' % (g, l), g >= 1024 and l >= 1000 and seen[g]['h'] == seen[l]['h'], (g, l, seen[g]['h'], seen[l]['h']))
     check('narrower, the style list takes the gallery\'s place, with every style (LaTeX, Quote and the rest)', all(seen[w]['list'] and not seen[w]['tiles'] and seen[w]['opts'] == ['p', 'title'] + LIST[1:] for w in (900, 820, 390)) and seen[390]['page'] <= 0 and seen[390]['h'] <= 44, {w: seen[w] for w in (820, 390)})
-    page.set_viewport_size({'width': 390, 'height': 800}); settle(page, 300)
+    page.set_viewport_size({'width': 390, 'height': 800}); settle(page, 300, full=True)
     click_text(page, 'Second paragraph', 3); state(page)
     style(page, 'latex')
     check('on a phone the list makes a LaTeX paragraph too', body(page).count('% rikuy: latex\nSecond paragraph here.') == 1 and boxes(page) == ['Second paragraph here.'], body(page)[:120])
-    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300, full=True)
 
 
 
@@ -227,12 +227,12 @@ def gallery_paging(page):
     # (how many tiles fit at a given width depends on the font; find a width that pages by four)
     width = None
     for w in (1440, 1400, 1366, 1480, 1500, 1520, 1460, 1420, 1380, 1340, 1320, 1300, 1280, 1260, 1240, 1220, 1200):
-        page.set_viewport_size({'width': w, 'height': 900}); settle(page, 200)
+        page.set_viewport_size({'width': w, 'height': 900}); settle(page, 200, full=True)
         if page.evaluate('document.querySelectorAll("#rb-gallery [data-style]:not([hidden])").length') == 4:
             width = w
             break
     check('a width shows exactly four style tiles', width is not None, width)
-    page.set_viewport_size({'width': width or 1440, 'height': 900}); settle(page, 200)
+    page.set_viewport_size({'width': width or 1440, 'height': 900}); settle(page, 200, full=True)
     click_text(page, 'Text here', 2); state(page)
     POS = """() => { const r = (id) => { const b = document.getElementById(id).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.width), Math.round(b.height)]; };
       return { up: r('rb-st-up'), down: r('rb-st-down'), more: r('rb-st-more'), bold: r('rb-b'), gal: r('rb-gallery'), tiles: [...document.querySelectorAll('#rb-gallery [data-style]')].filter((b) => !b.hidden).map((b) => b.dataset.style) }; }"""
@@ -262,10 +262,10 @@ def gallery_paging(page):
     load_doc(page, WRAP('Words with a note\\footnote{n}.')); click_text(page, 'Words', 2); state(page)
     info = page.evaluate('(() => { const b = document.getElementById("rb-st-section"); return [b.getAttribute("aria-disabled"), getComputedStyle(b).pointerEvents, b.title]; })()')
     before = src(page)
-    page.set_viewport_size({'width': 1920, 'height': 900}); settle(page, 300); click_text(page, 'Words', 2); state(page)
+    page.set_viewport_size({'width': 1920, 'height': 900}); settle(page, 300, full=True); click_text(page, 'Words', 2); state(page)
     page.click('#rb-st-section', force=True); settle(page, 150)
     check('a heading cannot hold a footnote: Heading 1 is marked so, its tooltip says why, and a click on it changes nothing', info[0] == 'true' and info[1] != 'none' and 'footnote' in info[2] and src(page) == before, info)
-    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300, full=True)
 
 
 
@@ -354,7 +354,7 @@ def headings(page):
     click_text(page, 'Lead words', 3); page.keyboard.type('X'); settle(page, 200)
     check('and typing in it goes into its heading', '\\paragraph{LeaXd words}' in src(page), body(page)[-160:])
     # Heading 4 shows in the gallery once Heading 3 is in use (Word's rule); Ctrl+Alt+4
-    page.set_viewport_size({'width': 1920, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1920, 'height': 1000}); settle(page, 300, full=True)
     click_text(page, 'One.', 1); state(page)
     t = page.evaluate(TILES)
     check('with a Heading 3 in the document the gallery has Heading 4 after it', 'paragraph' in t and t.index('paragraph') == t.index('subsubsection') + 1, t)
@@ -362,7 +362,7 @@ def headings(page):
     check('and without one it has not', 'paragraph' not in page.evaluate(TILES), page.evaluate(TILES))
     page.keyboard.press('Control+Alt+4'); settle(page, 200)
     check('Ctrl+Alt+4 makes the paragraph Heading 4', '\\paragraph{Words here.}' in src(page), body(page))
-    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300, full=True)
     # a report: Heading 1 is \chapter, and Part shows Part I above its title
     load_doc(page, R('\\part{First}\n\\chapter{Intro}\nText.'))
     look = page.evaluate("""() => [...document.querySelectorAll('#pages .it.h')].map((h) => h.textContent)""")
@@ -623,7 +623,7 @@ def design(page):
 
 def tile_menu(page):
     """A tile's right click menu: Remove from Style Gallery, Reset."""
-    page.set_viewport_size({'width': 1920, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1920, 'height': 1000}); settle(page, 300, full=True)
     load_doc(page, DOC); click_text(page, 'First paragraph', 3); state(page)
     page.click('#rb-st-subsection', button='right'); settle(page, 200)
     m = page.get_by_role('menu', name='Heading 2 style')
@@ -634,7 +634,7 @@ def tile_menu(page):
     page.click('#rb-st-section', button='right'); settle(page, 200)
     page.get_by_role('menu', name='Heading 1 style').get_by_role('menuitem', name='Reset Style Gallery').click(); settle(page, 250)
     check('Reset Style Gallery puts it back', 'subsection' in page.evaluate(TILES), page.evaluate(TILES))
-    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300, full=True)
 
 
 def big(page):
@@ -648,14 +648,21 @@ def big(page):
       const cs = C.commands().filter((c) => mine.test(c.id)), t0 = performance.now();
       for (let k = 0; k < 20; k++) { at.memo = {}; for (const c of cs) { C.enabled(g, c, at); if (c.on) c.on(g, at); if (c.sync) c.sync(g, at); } }
       return Math.round((performance.now() - t0) / 20); }""")
-    check('with a preamble of %d characters and 3000 paragraphs the styles\' commands look at the caret in %d ms (under 30)' % (len(pre), t), t < 30, t)
-    page.set_viewport_size({'width': 1920, 'height': 1000}); settle(page, 300)
+    # (a time measured is printed on a line of its own, outside the check's name: two runs then log
+    # the same check, as dev/suite_runs.py's verify compares them; a failure still says the time)
+    print('TIME the styles\' commands look at the caret in %d ms' % t)
+    check('with a preamble of %d characters and 3000 paragraphs the styles\' commands look at the caret in under 30 ms' % len(pre), t < 30, '' if t < 30 else t)
+    page.set_viewport_size({'width': 1920, 'height': 1000}); settle(page, 300, full=True)
     t0 = page.evaluate('performance.now()')
-    page.click('#rb-st-subsection', button='right'); settle(page, 50)
+    # (settle()'s own wait without its shadow, which would time RIKUY_WAIT_SHADOW's fixed wait and its
+    # look at the whole page too: the same time in a fast and in a shadow run)
+    page.click('#rb-st-subsection', button='right'); page.evaluate(_SETTLE, 50)
     t1 = page.evaluate('performance.now()')
-    check('and a tile\'s menu opens in %d ms (under 600)' % (t1 - t0), page.get_by_role('menu', name='Heading 2 style').count() == 1 and t1 - t0 < 600, t1 - t0)
+    ok = page.get_by_role('menu', name='Heading 2 style').count() == 1 and t1 - t0 < 600
+    print('TIME a tile\'s menu opens in %d ms' % (t1 - t0))
+    check('and a tile\'s menu opens in under 600 ms', ok, '' if ok else t1 - t0)
     page.keyboard.press('Escape')
-    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300, full=True)
 
 
 def open_phone(p, width, height, dark=False):
@@ -665,6 +672,11 @@ def open_phone(p, width, height, dark=False):
     ctx = browser.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=2, has_touch=True, is_mobile=True)
     # (a phone's Print Layout, which this suite was written for: browser.py, PRINT_LAYOUT)
     ctx.add_init_script(PRINT_LAYOUT)
+    # (as open_page's contexts: the page's timers seen, so settle() waits for what a step set going,
+    # and motion off unless RIKUY_MOTION=1, so a menu or a pane is measured where it lands)
+    ctx.add_init_script(TIMERS)
+    if os.environ.get('RIKUY_MOTION') != '1':
+        ctx.add_init_script(MOTION_OFF)
     page = ctx.new_page()
     errors = []
     page.on('console', lambda m: errors.append(m.text) if m.type == 'error' and 'Failed to load resource' not in m.text else None)
@@ -692,6 +704,8 @@ def open_phone(p, width, height, dark=False):
     page.evaluate('localStorage.clear()')
     page.reload()
     page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
+    # (the page is the test's once rikuy.ready has settled and it is drawn, as open_page waits)
+    page.evaluate('() => window.rikuy.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))')
     settle(page, 300)
     return browser, page, errors
 
@@ -952,10 +966,10 @@ def review_phone(p):
         page.select_option('#rb-style', '__new'); settle(page, 300)
         small = page.evaluate(SMALL, '#cs-name, .pop-modstyle select')
         check('L4: Create a Style\'s Name and lists are 44 px tall on a phone', not small, small)
-        page.set_viewport_size({'width': 360, 'height': 380}); settle(page, 400)
+        page.set_viewport_size({'width': 360, 'height': 380}); settle(page, 400, full=True)
         box = page.evaluate("() => { const r = document.querySelector('.pop-modstyle').getBoundingClientRect(), n = document.getElementById('cs-name').getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom), Math.round(n.top)]; }")
         check('L5: with the window shrunk to 380 px the dialog moves into it, its Name field in reach', box[0] >= 0 and box[1] <= 381 and box[2] >= 0, box)
-        page.set_viewport_size({'width': 360, 'height': 740}); settle(page, 300)
+        page.set_viewport_size({'width': 360, 'height': 740}); settle(page, 300, full=True)
         page.keyboard.press('Escape'); settle(page, 150)
         tap_text(page, 'words', 1)
         page.select_option('#rb-style', '__pane'); settle(page, 300)
@@ -1000,12 +1014,12 @@ def verify(page):
     load_doc(page, A('\\paragraph{Lead}\nText after.', '\\makeatletter\n\\renewcommand\\paragraph{\\@startsection{paragraph}{4}{\\z@}{3.25ex \\@plus1ex}{\\z@}{\\normalfont\\bfseries}}\n\\makeatother\n'))
     check('V3: an after skip of \\z@ runs the heading in', page.evaluate('!!document.querySelector("#pages .it.h4.runin")'))
     # V4: the narrow list follows a renamed environment
-    page.set_viewport_size({'width': 820, 'height': 900}); settle(page, 300)
+    page.set_viewport_size({'width': 820, 'height': 900}); settle(page, 300, full=True)
     load_doc(page, A('\\begin{aside}\nIn it.\n\\end{aside}', '\\newenvironment{aside}{\\par\\itshape}{\\par}\n')); click_text(page, 'In it', 2); state(page)
     load_doc(page, A('\\begin{memo}\nIn it.\n\\end{memo}', '\\newenvironment{memo}{\\par\\itshape}{\\par}\n')); click_text(page, 'In it', 2); state(page)
     vals = page.evaluate('[...document.getElementById("rb-style").options].map((o) => o.value)')
     check('V4: the narrow list offers the renamed memo, not aside, and shows it', 'env:memo' in vals and 'env:aside' not in vals and page.evaluate('document.getElementById("rb-style").value') == 'env:memo', [v for v in vals if v.startswith('env:')])
-    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); settle(page, 300, full=True)
     # V5: through the dialog, Numbered off and on gives \thesection. back
     hand = A('\\section{Intro}\nText.', '\\usepackage{titlesec}\n\\titleformat{\\section}[block]{\\Large\\bfseries}{\\thesection.}{0.5em}{\\MakeUppercase}\n')
     load_doc(page, hand); click_text(page, 'Intro', 2)
@@ -1063,6 +1077,8 @@ def lazy_names(page):
     # a list that cannot be fetched: a page started again (no list), the file answered with 404
     page.route('**/texnames-*.txt', lambda r: r.fulfill(status=404, body='gone'))
     page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
+    # (rikuy.ready settled, as open_page waits: what the page reads back from storage comes first)
+    page.evaluate('() => window.rikuy.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))')
     load_doc(page, doc); select_text(page, 'key words'); run_cmd(page, 'create-style')
     page.wait_for_function('window.rikuy.texNamesState() === "failed"', timeout=10000)
     page.fill('#cs-name', 'keyterm'); settle(page, 30)
