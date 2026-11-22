@@ -798,7 +798,11 @@ def review_arrange(page):
       at.memo = {}; out.on = C.enabled(g, c, at);
       let t0 = performance.now(); for (let k = 0; k < 20; k++) { at.memo = {}; C.enabled(g, c, at); } out.align = (performance.now() - t0) / 20;
       t0 = performance.now(); for (let k = 0; k < 5; k++) { at.memo = {}; for (const x of cs) { C.enabled(g, x, at); if (x.on) x.on(g, at); } } out.all = (performance.now() - t0) / 5; return out; }""")
-    check('N9: with a drawing selected in a long document, Align\'s when takes %.2f ms a look (under 5), every command\'s %.0f ms (under 40)' % (t['align'], t['all']), t['on'] and t['align'] < 5 and t['all'] < 40, t)
+    # (the times on a line of their own: a check's words and what it saw are set beside another run's,
+    # RIKUY_CHECK_LOG, and a time differs every run)
+    print('N9: Align\'s when %.2f ms a look, every command\'s %.0f ms' % (t['align'], t['all']))
+    ok = t['on'] and t['align'] < 5 and t['all'] < 40
+    check('N9: with a drawing selected in a long document, Align\'s when takes under 5 ms a look, every command\'s under 40 ms', ok, '' if ok else t)
 
 
 def selpane(page):
