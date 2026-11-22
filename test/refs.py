@@ -32,6 +32,10 @@ TEX = os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm'))
 def D(body, pre='', cls='\\documentclass{article}'):
     return cls + '\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
 
+# a footnote in another command's braces, where Enter writes \endgraf (refs.py notes, compiled)
+ENTER_NESTED = [('\\thanks in \\author', '\\documentclass{article}\n\\title{T}\n\\author{Ann\\thanks{Affil here}}\n\\begin{document}\n\\maketitle\nBody words.\n\\end{document}\n'),
+                ('a footnote in a heading', D('\\tableofcontents\n\n\\section{Intro\\protect\\footnote{Affil here}}\nBody words.'))]
+
 def cmd(page, cid, args=None):
     r = page.evaluate('([c, a]) => window.rikuy.runCommand(c, a === null ? undefined : a)', [cid, args])
     settle(page, 250)
@@ -159,6 +163,23 @@ def notes(page):
     check('Backspace takes the paragraph back, the caret at the first one\'s end in the footnote', '\\footnote{First part}' in src(page) and caret(), src(page)[40:120])
     page.keyboard.press('Escape'); page.keyboard.type(' X'); settle(page, 300)
     check('Esc leaves the footnote: the words after its mark', '\\footnote{First part} X of' in src(page), src(page)[40:120])
+    # (Enter again on the empty paragraph just begun: nothing, as LaTeX has no empty paragraph; it
+    # wrote a second blank line that drew nothing and took two Backspaces back)
+    load_doc(page, doc); click_text(page, 'Words of', 5)
+    page.keyboard.press('Control+Alt+f'); page.keyboard.type('One'); page.keyboard.press('Enter'); page.keyboard.press('Enter'); page.keyboard.type('Two'); settle(page, 300)
+    check('a second Enter in a footnote writes nothing', '\\footnote{One\n\nTwo}' in src(page), src(page)[40:120])
+    # (a footnote inside another command's braces: \thanks in \author, \protect\footnote in a heading;
+    # a blank line there stops TeX, "Paragraph ended before \author was complete")
+    for label, d in ENTER_NESTED:
+        load_doc(page, d); click_text(page, 'Affil here', 10)
+        page.keyboard.press('Enter'); page.keyboard.type('Second'); settle(page, 300)
+        check('Enter in ' + label + ': \\endgraf, a paragraph TeX takes there, drawn on a line of its own', 'Affil here\\endgraf Second}' in src(page) and page.evaluate('[...document.querySelectorAll(".fn")].map((e) => e.innerText)')[-1].endswith('Affil here\nSecond'), (src(page)[:200], page.evaluate('[...document.querySelectorAll(".fn")].map((e) => e.innerText)')))
+        for _ in range(len('Second') + 1): page.keyboard.press('Backspace')
+        settle(page, 300)
+        check('Backspace takes it back (' + label + ')', src(page) == d, src(page)[:200])
+    # \par and \footnotetext's blank line drawn as the paragraphs they are
+    load_doc(page, D('A\\footnote{One\\par Two} b\\footnotemark\\footnotetext{Three\n\nFour} c.'))
+    check('\\par in a footnote and \\footnotetext\'s blank line: paragraphs of their own', page.evaluate('[...document.querySelectorAll(".fn")].map((e) => e.innerText.slice(1))') == ['One\nTwo', 'Three\nFour'], page.evaluate('[...document.querySelectorAll(".fn")].map((e) => e.innerText)'))
     # Next Footnote, Previous, Show Notes
     fn = D('One\\footnote{first} two\\footnote{second} three.\n\nFour\\endnote{e1} five.\n\\printendnotes', '\\usepackage{enotez}\n')
     load_doc(page, fn); click_text(page, 'One', 0)
@@ -667,6 +688,13 @@ def compiled(page):
               not [x for x in ('Contents', '1 Intro', 'List of Figures', 'Figure 1: A cat & dog', 'See1 here', 'Notes', 'An endnote 50%.', 'References', 'On DNA & more', 'Index', 'alpha, 1') if x not in T], [x for x in ('Contents', '1 Intro', 'List of Figures', 'Figure 1: A cat & dog', 'See1 here', 'Notes', 'An endnote 50%.', 'References', 'On DNA & more', 'Index', 'alpha, 1') if x not in T])
         if engine == 'pdflatex':
             check('the index has the entry\'s page as the page drew it', re.search(r'alpha, (\d+)', T) and page.evaluate('[...document.querySelectorAll(".idx-e")].map((e) => e.textContent)') == ['alpha, ' + re.search(r'alpha, (\d+)', T).group(1)], (T[-300:], page.evaluate('[...document.querySelectorAll(".idx-e")].map((e) => e.textContent)')))
+    # Enter in a footnote inside \author or a heading writes \endgraf, which TeX takes there (a blank
+    # line stopped it: "Paragraph ended before \author was complete")
+    for label, d in ENTER_NESTED:
+        load_doc(page, d); click_text(page, 'Affil here', 10)
+        page.keyboard.press('Enter'); page.keyboard.type('Second'); settle(page, 300)
+        c = compile_doc(page, src(page)); T = re.sub(r'\s+', ' ', c['text'])
+        check('Enter in ' + label + ': what it writes compiles, both paragraphs in the PDF', c['ok'] and 'Affil here' in T and 'Second' in T, (src(page)[:160], c['log'][-300:]))
     # the review's cases where TeX is the judge
     nb = D('Words \\citet{knuth84} here.\n\n\\bibliographystyle{plainnat}\n\\bibliography{refs}', '\\usepackage{natbib}\n')
     load_doc(page, {'main.tex': nb, 'refs.bib': BIB}); click_text(page, 'here', 1)

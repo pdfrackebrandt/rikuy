@@ -2319,7 +2319,27 @@ class App {
       this.enterAct();
       return;
     }
-    const ins = w.close + '\n\n' + w.open;
+    // In a footnote at the page's foot: Enter where a paragraph of it has just begun writes
+    // nothing, as LaTeX has no empty paragraph (a second blank line drew nothing and took two
+    // Backspaces back). Where the footnote stands inside another command's braces (\thanks in
+    // \author, a footnote in a heading, a caption or \textbf) a blank line stops TeX
+    // ("Paragraph ended before \author was complete"): \endgraf ends the paragraph there, and
+    // those commands take it.
+    let para = '\n\n';
+    const F = kind === 'fn' && c.collapsed ? this.footnoteHere() : null;
+    if (F) {
+      const from = Math.max(F.s, w.p - 200);
+      if (/(?:\n[ \t\r]*\n|\\(?:par|endgraf)(?![A-Za-z]))[ \t\r\n]*$/.test(src.slice(from, w.p))) { this.restoreCaret({ f, p, bias: 1 }); return; }
+      let depth = 0;
+      for (let k = F.s - 1; k >= Math.max(0, F.s - 4000) && depth <= 0; k--) {
+        const ch = src[k], esc = src[k - 1] === '\\' && src[k - 2] !== '\\';
+        if (ch === '}' && !esc) depth--;
+        else if (ch === '{' && !esc) depth++;
+        else if (ch === '\n' && /\n[ \t\r]*$/.test(src.slice(Math.max(0, k - 20), k))) break;
+      }
+      if (depth > 0) para = '\\endgraf ';
+    }
+    const ins = w.close + para + w.open;
     // a break moved before a wrapper leaves the caret at the start of its text, still inside it
     this.commit([...edits, { f, s: w.p, e: w.p, t: ins }], { f, p: Math.max(w.p, p) + ins.length, bias: 1 }, 'enter');
   }

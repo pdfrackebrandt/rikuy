@@ -3277,7 +3277,9 @@ class Builder {
       if (v.length >= 1 && v.length <= 2) acc.ch(v, nd.s, nd.e);
       return false;
     }
-    if (name === '\\' || name === 'newline' || name === 'linebreak') {
+    // (\par and \endgraf in a footnote: a paragraph of its own there, as a blank line is; Enter
+    // writes \endgraf where the footnote stands in another command's braces, see app.js enter)
+    if (name === '\\' || name === 'newline' || name === 'linebreak' || (this.fnPar && (name === 'par' || name === 'endgraf'))) {
       acc.flush();
       if (this.inTable) return false;
       out.push(this.atom(ctx, { k: 'br', s: nd.s, e: nd.e }));
@@ -3426,7 +3428,11 @@ class Builder {
     if (name === 'footnotetext') {
       acc.flush();
       const a = nd.args[1];
+      // (its paragraphs drawn apart, as \footnote's are)
+      const fnWas = this.fnPar;
+      this.fnPar = true;
       const kids = a ? this.inl(a.nodes, ctx, fns) : [];
+      this.fnPar = fnWas;
       fns.push({ num: this.withinPrefix('footnote') + this.counterText(this.c.footnote, this.opts.fnStyle), inl: kids, f: ctx.f, dir: this.dirOf() });
       return false;
     }
