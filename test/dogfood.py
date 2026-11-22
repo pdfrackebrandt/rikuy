@@ -21,8 +21,22 @@ across the notes' files keeps the case of what it replaces. And the hostile revi
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, open_page, check, results, src, load_doc, click_text, ROOT
+from browser import settle, saved, until, ready, open_page as _open_page, check, results, src, load_doc, click_text, ROOT
 from playwright.sync_api import sync_playwright
+
+
+def open_page(p, **k):
+    """browser.py's open_page, and then what its old 300 ms after the boot let the page do before a
+    test began: its fonts in (a download, no timer), then the timers they and the window set going
+    (the page laid out again 200 ms after its fonts came, a refit 150 ms after the desk's size
+    settled). open_page now returns at rikuy.ready, before them; a relayout then, between Enter and
+    the next key, took away the empty paragraph Enter showed (app bug, reported: layoutPass removes
+    the ghost and restoreCaret puts the caret back in the paragraph above)."""
+    browser, page, errors = _open_page(p, **k)
+    page.evaluate('() => document.fonts.ready.then(() => 0)')
+    settle(page, 300, full=True)
+    return browser, page, errors
+
 
 PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo', 'mathpkg', 'intertext', 'envlist', 'replace', 'review', 'review2', 'review3']
 DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
@@ -51,6 +65,15 @@ def compiles(page, name):
 
 def caret_text(page):
     return page.evaluate("(() => { const s = getSelection(); if (!s.rangeCount) return ''; const n = s.anchorNode; return (n.textContent || '').slice(0, s.anchorOffset).slice(-12) + '|' + (n.textContent || '').slice(s.anchorOffset, s.anchorOffset + 12); })()")
+
+
+def reload(page):
+    """The page loaded again, as open_page() above leaves it: through init (the project, its history
+    and its review read back from IndexedDB; ready()), its fonts in and the relayout they set going."""
+    page.reload()
+    ready(page)
+    page.evaluate('() => document.fonts.ready.then(() => 0)')
+    settle(page, 300, full=True)
 
 
 def formula(page):
@@ -241,7 +264,10 @@ def split(page):
 
 def filename(page):
     k = page.keyboard
-    page.get_by_text('New document', exact=True).click(); settle(page, 600)
+    page.get_by_text('New document', exact=True).click()
+    # (the open project kept under Versions first, in IndexedDB: then the blank article, the caret in it)
+    until(page, "() => window.rikuy.name.startsWith('Untitled') && !!window.rikuy.ghost")
+    settle(page, 600)
     k.type('Optimal Taxation: a Note', delay=10)
     k.press('Control+Shift+S'); settle(page, 200); k.type('Title'); settle(page, 200); k.press('Enter'); settle(page, 400)
     check('filename: the project is still Untitled', page.evaluate("window.rikuy.name").startswith('Untitled'), page.evaluate("window.rikuy.name"))
@@ -297,9 +323,9 @@ def reload_undo(page):
     load_doc(page, DOC)
     page.evaluate("window.rikuy.persist()"); settle(page, 400)
     click_text(page, 'Agent income here.', 18)
-    k.type(' More words.', delay=15); settle(page, 2500)
+    k.type(' More words.', delay=15); saved(page, 2500)
     before = src(page)
-    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); settle(page, 400)
+    reload(page); settle(page, 400)
     check('reload_undo: the text is back', src(page) == before, src(page))
     k.press('Control+z'); settle(page, 300)
     check('reload_undo: Undo after a reload takes the last word', 'More \n' in src(page) and 'words.' not in src(page), src(page))
@@ -528,8 +554,8 @@ def review2(page):
     NEW = 'A completely different chapter, rewritten by a coauthor and sent by mail.\n'
     page.evaluate("async (t) => { await window.rikuy.openFiles([new File([t], 'ch1.tex', { type: 'text/plain' })]); }", NEW)
     settle(page, 800)
-    page.evaluate('window.rikuy.persist()'); settle(page, 600)
-    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000); settle(page, 400)
+    page.evaluate('window.rikuy.persist()'); saved(page, 600)
+    reload(page); settle(page, 400)
     check('review E14: the coauthor\'s file is open after a reload', src(page, 'ch1.tex') == NEW, src(page, 'ch1.tex'))
     click_text(page, 'Last paragraph.', 4)
     k.press('Control+z'); settle(page, 400)
@@ -586,7 +612,9 @@ def review2(page):
     t0 = page.evaluate("new Promise((ok) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const g = q.result.transaction('kv').objectStore('kv').get('history'); g.onsuccess = () => ok(g.result && g.result.t); }; })")
     page.evaluate('window.rikuy.persist()'); settle(page, 500)
     t1 = page.evaluate("new Promise((ok) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const g = q.result.transaction('kv').objectStore('kv').get('history'); g.onsuccess = () => ok(g.result && g.result.t); }; })")
-    check('review: a save with the same steps does not write them again', t0 and t0 == t1, (t0, t1))
+    # (the detail: how far apart the two writes' times are, 0 when there was one write; the times
+    # themselves change from run to run)
+    check('review: a save with the same steps does not write them again', t0 and t0 == t1, (t1 - t0) if t0 and t1 else (t0, t1))
     # not verified before: \intertext keeps the rows' = signs on one column
     load_doc(page, DOC.replace('Second paragraph.', '\\begin{align}\na &= b + c + d + e + f \\\\\n\\intertext{Taking first-order conditions,}\ndddddddd + e &= e\n\\end{align}\nAfter.'))
     settle(page, 400)
