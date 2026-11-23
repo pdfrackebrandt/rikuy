@@ -1270,10 +1270,37 @@ class App {
     // (a document of headings alone: the first heading's words; there was no caret, and the first
     // keys after a reload typed nothing)
     const first = this.root.querySelector('.it.p span.t:not(.gh)') || this.root.querySelector('.it:not(.atom) span.t:not(.gh)');
+    // the place this document was left at (leaving()): the view scrolled back to its top line,
+    // and on a computer the caret back in it, as long as the words around each are the same
+    // (once, as the page opens: later calls, as File's view closing with no caret, act as before)
+    let kept = null;
+    if (!this.placeTaken) try {
+      this.placeTaken = true;
+      const all = load('rikuy.place.v1'), P = all && typeof all === 'object' ? all[this.name] : null;
+      const same = (f, a, b, h) => { const t = this.files.get(f); return t != null && Number.isInteger(a) && Number.isInteger(b) && 0 <= a && a <= b && b <= t.length && textSig('', [['', t.slice(Math.max(0, a - 40), a)], ['', t.slice(b, b + 40)]]) === h; };
+      if (P && P.main === this.main) {
+        if (P.f != null && same(P.f, P.a, P.b, P.sig)) kept = P;
+        const T = P.top;
+        if (T && !this.desk.scrollTop && same(T.f, T.p, T.p, T.sig)) {
+          if (this.index.dirty) this.index.build();
+          const r = this.index.find(T.f, T.p, 1), n = r && r.node, it = n && (n.nodeType === 1 ? n : n.parentElement).closest('.it');
+          if (it) this.desk.scrollTop += it.getBoundingClientRect().top - this.desk.getBoundingClientRect().top - (T.dy || 0);
+        }
+      }
+    } catch (e) { kept = null; }
     if (!first || !first.firstChild || window.innerWidth < 700 || matchMedia('(pointer: coarse)').matches) return;
     const a = document.activeElement;
     if (a && a !== document.body && a !== this.root) return;
     if (this.caretNow()) return;
+    if (kept && kept.ghost) {
+      // (a blank paragraph is not in the text: shown again where it stood)
+      this.root.focus({ preventScroll: true });
+      this.ghostAt(kept.f, kept.a);
+      if (this.ghost) { this.ghost.place = true; return; }
+    } else if (kept) {
+      this.restoreCaret(kept.a === kept.b ? { f: kept.f, p: kept.a } : { f: kept.f, selA: kept.a, selB: kept.b });
+      if (this.caretNow()) { this.scrollToCaret(); return; }
+    }
     this.root.focus({ preventScroll: true });
     getSelection().collapse(first.firstChild, 0);
   }
@@ -1671,9 +1698,42 @@ class App {
     // (Track Changes' base, whose writes wait a moment: written now, or the last words typed
     // with tracking off would come back as changes)
     if (this.baseSaveT) this.saveBase(true);
-    if (!this.unsaved) return;
-    store(STORE, { name: this.name, main: this.main, files: [...this.files.entries()], t: Date.now(), zipDirty: this.zipDirty });
-    this.saveSoon.flush();
+    if (this.unsaved) {
+      store(STORE, { name: this.name, main: this.main, files: [...this.files.entries()], t: Date.now(), zipDirty: this.zipDirty });
+      this.saveSoon.flush();
+    }
+    // Where the caret and the view were, per document, as Word's "pick up where you left off": a
+    // reload (or the browser started again, or the app updated) opened every document at its
+    // first line, the caret and the page scrolled there, however far down the work had been.
+    // The view is kept as the source place of its top line, which holds at any width or zoom. A
+    // hash of the words around each place goes with it (never the words: what is kept here
+    // outlives Remove), so a text changed since is never given a caret in the wrong place
+    // (placeInitialCaret). After the text's own copy, and never in its way.
+    try {
+      let all = load('rikuy.place.v1');
+      if (!all || typeof all !== 'object' || Array.isArray(all)) all = {};
+      const sig = (f, a, b) => { const t = this.files.get(f); return textSig('', [['', t.slice(Math.max(0, a - 40), a)], ['', t.slice(b, b + 40)]]); };
+      // (the blank paragraph the caret is in, Enter's or the one after a table of contents: its place)
+      const c = this.caretNow(), g = c && c.ghost ? this.ghost : null;
+      const f = g ? g.f : c && c.f, a = g ? g.pos : c && c.a, b = g ? g.pos : c && c.b;
+      const P = { main: this.main, at: Date.now() };
+      if (f != null && a != null && this.files.has(f)) Object.assign(P, { f, a, b, ghost: !!g, sig: sig(f, a, b) });
+      // (the item under a few points down the view's middle: no walk over every item of a long
+      // document, each measured, as the page goes)
+      const D = this.desk.getBoundingClientRect(), pg = this.root.querySelector('.page'), Rp = pg && pg.getBoundingClientRect();
+      const x = Rp ? Rp.left + Rp.width / 2 : D.left + D.width / 2;
+      for (let y = D.top + 2; y < Math.min(D.bottom, D.top + 400) && !P.top; y += 24) {
+        const e = document.elementFromPoint(x, y), it = e && this.root.contains(e) ? e.closest('.it') : null;
+        const sp = it && it.querySelector('span.t:not(.gh)'), at = sp && sp.firstChild ? posFromDom(sp.firstChild, 0, this.root) : null;
+        if (at && !at.ghost && this.files.has(at.f)) P.top = { f: at.f, p: at.p, dy: Math.round(it.getBoundingClientRect().top - D.top), sig: sig(at.f, at.p, at.p) };
+      }
+      if (P.f == null && !P.top) delete all[this.name];
+      else all[this.name] = P;
+      // (the twenty documents last left, no more)
+      const names = Object.keys(all).sort((x, y) => ((all[y] && all[y].at) || 0) - ((all[x] && all[x].at) || 0));
+      for (const n of names.slice(20)) delete all[n];
+      store('rikuy.place.v1', all);
+    } catch (e) { /* a place to come back to is a convenience */ }
   }
 
   onGlobalKey(e) {
@@ -1990,7 +2050,9 @@ class App {
       // (a blank line still on either side, where an empty paragraph's text went: no paragraphs
       // join, and a space put there stood at the end of the paragraph before; review V8)
       const apart = /\n[ \t\r]*\n[ \t\r]*$/.test(src.slice(Math.max(0, a - 100), a)) || /^[ \t\r]*\n[ \t\r]*\n/.test(src.slice(b, b + 100));
-      if (!apart && (slice.match(/\n/g) || []).length >= 2) return [{ f, s: a, e: b, t: ' ' }];
+      // (an empty last paragraph of a footnote joined to the one before: nothing after it in its
+      // braces to keep apart, and a space left there had no place on the page for the caret)
+      if (!apart && (slice.match(/\n/g) || []).length >= 2 && src[b] !== '}') return [{ f, s: a, e: b, t: ' ' }];
       return [{ f, s: a, e: b, t: '' }];
     }
     // Only comment lines between two paragraphs (a note, a review comment): joining them takes
@@ -2516,7 +2578,27 @@ class App {
       this.enterAct();
       return;
     }
-    const ins = w.close + '\n\n' + w.open;
+    // In a footnote at the page's foot: Enter where a paragraph of it has just begun writes
+    // nothing, as LaTeX has no empty paragraph (a second blank line drew nothing and took two
+    // Backspaces back). Where the footnote stands inside another command's braces (\thanks in
+    // \author, a footnote in a heading, a caption or \textbf) a blank line stops TeX
+    // ("Paragraph ended before \author was complete"): \endgraf ends the paragraph there, and
+    // those commands take it.
+    let para = '\n\n';
+    const F = kind === 'fn' && c.collapsed ? this.footnoteHere() : null;
+    if (F) {
+      const from = Math.max(F.s, w.p - 200);
+      if (/(?:\n[ \t\r]*\n|\\(?:par|endgraf)(?![A-Za-z]))[ \t\r\n]*$/.test(src.slice(from, w.p))) { this.restoreCaret({ f, p, bias: 1 }); return; }
+      let depth = 0;
+      for (let k = F.s - 1; k >= Math.max(0, F.s - 4000) && depth <= 0; k--) {
+        const ch = src[k], esc = src[k - 1] === '\\' && src[k - 2] !== '\\';
+        if (ch === '}' && !esc) depth--;
+        else if (ch === '{' && !esc) depth++;
+        else if (ch === '\n' && /\n[ \t\r]*$/.test(src.slice(Math.max(0, k - 20), k))) break;
+      }
+      if (depth > 0) para = '\\endgraf ';
+    }
+    const ins = w.close + para + w.open;
     // a break moved before a wrapper leaves the caret at the start of its text, still inside it
     this.commit([...edits, { f, s: w.p, e: w.p, t: ins }], { f, p: Math.max(w.p, p) + ins.length, bias: 1 }, 'enter');
   }
