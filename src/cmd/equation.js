@@ -643,10 +643,37 @@ export const methods = {
   // Alt+=: numbered on an empty line, in the line in text (Word's)
   eqAltEquals(at) {
     if (!at) return false;
+    // (over selected words of the text: they become the equation, as Word's Alt+= takes them;
+    // the words were thrown away for an empty field)
+    if (this.eqFromWords(at)) return true;
     // (on an empty line: the kind Equation Options chose, a numbered equation by default)
     if (at.c.ghost && !this.ghostRaw() && !tight(at) && !at.sty && at.ctx !== 'tex') this.newDisplayMath((this.prefs && this.prefs.eqNewEnv) || 'equation');
     else this.newMath();
     return true;
+  },
+  // Words selected in one paragraph, a^2+b_1=c^2 typed in a sentence, made a formula in the line
+  // as Word's linear format reads them: from the source, its escapes of what was typed made math
+  // again (\textasciicircum{} ^, \_ _, \{ stays \{, \textasciitilde{} \sim), a typed --
+  // or a curly quote a minus or a prime; the page's text had f’(x), – and {1,2} with no braces.
+  // Spaces at either end stay outside the formula. Not over a formula, a command, an unescaped
+  // brace or &, a cell's edge or a blank line: false, and Alt+= goes on as without a selection.
+  eqFromWords(at) {
+    const c = !at.c.ghost && this.caretNow();
+    if (!c || c.ghost || c.crossFile || c.a === c.b || at.ctx === 'tex') return false;
+    const text = this.src(c.f), S = text.slice(c.a, c.b);
+    if (S.length > 400 || /\n[ \t]*\r?\n/.test(S)) return false;
+    const ESC = [['\\textasciicircum{}', '^'], ['\\textasciitilde{}', '\\sim '], ['\\textbackslash{}', '\\backslash '], ['\\_', '_'], ['\\&', '\\&'], ['\\%', '\\%'], ['\\#', '\\#'], ['\\{', '\\{'], ['\\}', '\\}'], ['\\$', '\\$']];
+    let tex = '';
+    for (let i = 0; i < S.length;) {
+      const e = ESC.find(([x]) => S.startsWith(x, i));
+      if (e) { tex += e[1]; i += e[0].length; continue; }
+      if (/[\\$&%{}]/.test(S[i])) return false;
+      tex += S[i++];
+    }
+    const lead = S.length - S.trimStart().length, trail = S.length - S.trimEnd().length;
+    tex = tex.trim().replace(/\s+/g, ' ').replace(/-{2,3}|[\u2013\u2014\u2212]/g, '-').replace(/[\u2018\u2019\u2032]/g, "'");
+    if (!tex || this.eqSafe(tex)) return false;
+    return this.eqInsertNew(tex, { f: c.f, a: c.a + lead, b: c.b - trail, display: false, text });
   },
   // the Equation tab in front, as Word brings it with a new equation
   eqTab() {

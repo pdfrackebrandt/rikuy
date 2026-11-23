@@ -1,6 +1,6 @@
 """Typing math the way Word's equation editor takes it: command chips and Space, Tab for a
 suggestion, fractions and scripts left with Space, -> and <= turned into symbols."""
-import os, sys, json, time, traceback
+import os, re, sys, json, time, traceback
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import settle, until, TIMERS, ROUTES, SKELETON_HEAD, ROOT, SHOTS, check, results, PRINT_LAYOUT, policy
 from playwright.sync_api import sync_playwright
@@ -219,13 +219,50 @@ try:
         (['x^(a->b)+1'], 'x^{a\\tob}+1'),
         (['x^(a_i+1)+2'], 'x^{a_{i}+1}+2'),
         (['lim_(n->\\infty', '@Space', ')a_n'], '\\lim_{n\\to\\infty}a_{n}'),
+        # (the second script on the base, as Word and TeX read it: the field made x_{1^2})
+        (['x_1^2+1'], 'x_1^2+1'),
+        (['\\sum_i^n', '@Space', 'x'], '\\sum_{i}^{n}x'),
+        # (a math alphabet named with Space takes the next letter, \text collects to its }: both
+        # came out as plain letters, \mathbb R as R)
+        (['\\mathbb', '@Space', 'R^n'], '\\mathbb{R}^{n}'),
+        (['\\mathca', '@Tab', 'L+1'], '\\mathcal{L}+1'),
+        (['\\text', '@Space', 'if x}+y'], '\\text{ifx}+y'),
+        # (a root named with Space holds up to an operator, an accent one letter: both took the
+        # rest of the formula in, \sqrt{x+1}, \hat{\beta_t=0})
+        (['\\sqrt', '@Space', 'x+1'], '\\sqrt{x}+1'),
+        (['\\sqrt', '@Space', '(x+1)+2'], '\\sqrt{x+1}+2'),
+        (['\\hat', '@Space', '\\beta', '@Space', '_t=0'], '\\hat{\\beta}_t=0'),
+        # (Tab from the last box steps out of it: MathLive's selected the whole formula, which the
+        # next key replaced, \frac{a}{b} lost for +c)
+        (['\\frac', '@Space', 'a', '@Tab', 'b', '@Tab', '+c'], '\\frac{a}{b}+c'),
+        # (review of the above: a command named after \bm's Space is its argument, not \}alpha;
+        # a name ends at the first key that is no letter; a root the caret went back into takes
+        # what is typed there)
+        (['\\bm', '@Space', '\\alpha+1'], '\\bm{\\alpha}+1'),
+        # (the field writes the name upright inside: _x after it, not in it)
+        (['\\operatorname', '@Space', 'argmax', '@Space', '_x'], '\\operatorname{\\mathrm{argmax}}_x'),
+        (['\\sqrt', '@Space', 'x+1', '@ArrowLeft', '@ArrowLeft', '@ArrowLeft', '-2'], '\\sqrt{x-2}+1'),
+        # (a font named with Space is its one symbol's alone: the field gave the letters typed
+        # after it the same style, \bm{\beta x}, \mathrm{dx})
+        (['\\bm', '@Space', '\\beta', '@Space', 'x'], '\\bm{\\beta}x'),
+        (['\\mathrm', '@Space', 'dx'], '\\mathrm{d}x'),
+        # (a script after a bold symbol goes on it, not into the bold: \bm{\alpha_{i}})
+        (['\\bm', '@Space', '\\alpha_i+1'], '{\\bm{\\alpha}}_i+1'),
+        (['\\bm', '@Space', '\\alpha', '@Space', '_i+1'], '{\\bm{\\alpha}}_i+1'),
     ]
     for seq, want in cases:
         fresh_row()
         got = typed(seq)
-        check('build-up: ' + ' '.join(seq) + ' -> ' + want, got == want or got == want.replace('^2', '^{2}'), got)
+        # (x_{1} and x_1 are the same to TeX: the field writes either)
+        one = lambda t: re.sub(r'([_^])\{(\w)\}', r'\1\2', t)
+        check('build-up: ' + ' '.join(seq) + ' -> ' + want, got == want or got == want.replace('^2', '^{2}') or one(got) == one(want), got)
         k.press('Escape'); settle(frame, 150)
         k.press('Control+z'); settle(frame, 150)
+    # (the cases compare without spaces: \text's own space checked here, as typed)
+    fresh_row(); typed(['\\text', '@Space', 'if x}+y'])
+    check('\\text Space keeps the words\' spaces', '\\text{if x}' in val(), val())
+    k.press('Escape'); settle(frame, 150)
+    k.press('Control+z'); settle(frame, 150)
     check('build-up tests leave the source as it was', src() == base)
 
     # Word brackets: typed pairs grow with their content, the source stays plain unless tall

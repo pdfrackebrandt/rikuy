@@ -48,6 +48,10 @@ const SAME = ('alpha beta gamma delta epsilon varepsilon zeta eta theta vartheta
 // their } (installWordTyping); the field's own box for them lost the font
 const TEXT_ARG = new Set(['text', 'textrm', 'textbf', 'textit', 'textsf', 'texttt', 'textup', 'mbox', 'mathrm', 'mathbf', 'mathbb', 'mathcal',
   'mathfrak', 'mathit', 'mathsf', 'mathtt', 'mathscr', 'operatorname', 'boldsymbol', 'bm']);
+// the math alphabets among them: named with a Space, as \mathbb R, they take the one letter after
+// it, as TeX reads \mathbb R^n (\mathbb{R}^n); \text and the rest collect words up to their }
+const ONE_ARG = new Set(['mathrm', 'mathbf', 'mathbb', 'mathcal', 'mathfrak', 'mathit', 'mathsf', 'mathtt', 'mathscr', 'boldsymbol', 'bm']);
+// and those whose argument is a name: it ends where a name does, at the first key that is no letter
 
 const WORD = {
   // structures
@@ -410,10 +414,11 @@ export function installWordTyping(mf, opts) {
       chip.replaceChildren();
       const head = document.createElement('div');
       head.className = 'wm-typed';
-      head.textContent = '\\' + arg.name + '{' + arg.text;
+      const one = arg.lead && arg.one;
+      head.textContent = '\\' + arg.name + (one ? ' ' : '{' + arg.text);
       const hint = document.createElement('div');
       hint.className = 'wm-hint';
-      hint.textContent = '} ends it';
+      hint.textContent = one ? 'The next letter goes in it, or { for more' : '} ends it';
       chip.append(head, hint);
       chip._list = [];
       place();
@@ -440,7 +445,7 @@ export function installWordTyping(mf, opts) {
       nm.className = 'wm-name';
       nm.textContent = '\\' + name;
       row.append(sym, nm);
-      row.addEventListener('mousedown', (e) => { e.preventDefault(); buf = name; commit(); mf.focus(); });
+      row.addEventListener('mousedown', (e) => { e.preventDefault(); buf = name; commit(true); mf.focus(); });
       chip.appendChild(row);
     });
     const hint = document.createElement('div');
@@ -451,15 +456,24 @@ export function installWordTyping(mf, opts) {
     place();
   };
   const cancel = () => { buf = null; pick = 0; draw(); };
-  const commit = () => {
+  // (named: by Space, Enter, Tab or a pick in the list, where a command of TEXT_ARG waits for its
+  // argument as at its {: put as an empty box of the field's own, \mathbb lost its font and
+  // \mathbb R came out as R)
+  const commit = (named) => {
     const name = buf;
     buf = null; pick = 0;
+    if (named && TEXT_ARG.has(name)) { arg = { name, text: '', depth: 0, lead: true, one: ONE_ARG.has(name), word: name === 'operatorname' }; draw(); return; }
     draw();
     if (!name) return;
     const tex = resolveCommand(name, macros(), dialect());
     if ((OPEN_KEY[tex] || CLOSE_KEY[tex]) && bracketKey(tex)) return;
     if (NEGATE[tex] && unslash(NEGATE[tex])) return;
     put(tex);
+    // (\sqrt x+1, \hat x+1: a root named with Space holds what follows up to an operator, as
+    // Word's linear format reads it, an accent one letter (accentFull), as TeX reads it; both
+    // took the +1 in too)
+    const b = emptyBox();
+    if (b && (b.owner.type === 'surd' || b.owner.type === 'accent')) typedBox.add(b.owner);
   };
 
   // Word sets a function name upright once a non-letter follows it: "sin x", "max_x".
@@ -548,6 +562,10 @@ export function installWordTyping(mf, opts) {
   //   a/b+c      the same for the denominator of a fraction typed with /
   //   (a+b)/c    parentheses around a typed numerator disappear
   const linear = new WeakSet();
+  // a root or an accent named with Space (commit): while it is typed on, its box ends as a typed
+  // fraction's denominator does; an arrow, a click or Tab and the box is the field's again (a root
+  // the caret went back into took -2 out of it: \sqrt{x}-2)
+  let typedBox = new WeakSet();
   let groups = []; // open invisible groups: how many scripts deep each started, and whether { opened it
   const LIMIT_PARENT = new Set(['extensible-symbol', 'operator', 'mop']);
   const ENDS_SCRIPT = /^[+\-=<>,;:!)\]}|*]$/;
@@ -561,15 +579,26 @@ export function installWordTyping(mf, opts) {
       const atoms = typeof p.branch === 'function' ? p.branch(br) || [] : [];
       const empty = atoms.every((x) => x.type === 'first' || x.type === 'placeholder');
       const script = br === 'superscript' || br === 'subscript';
-      const denom = br === 'below' && p.type === 'genfrac' && linear.has(p);
+      const denom = (br === 'below' && p.type === 'genfrac' && linear.has(p)) || (br === 'body' && typedBox.has(p));
       if (!script && !denom) return null;
       let depth = 0;
-      for (let x = a; x; x = x.parent) if (x.parentBranch === 'superscript' || x.parentBranch === 'subscript' || (x.parentBranch === 'below' && x.parent && x.parent.type === 'genfrac')) depth++;
+      for (let x = a; x; x = x.parent) if (x.parentBranch === 'superscript' || x.parentBranch === 'subscript' || (x.parentBranch === 'below' && x.parent && x.parent.type === 'genfrac') || (x.parentBranch === 'body' && typedBox.has(x.parent))) depth++;
       const top = groups[groups.length - 1];
       const group = !!top && top.d === depth;
       return { p, br, empty, depth, limit: script && LIMIT_PARENT.has(p.type), group, brace: group && top.brace, model };
     } catch (e) { return null; }
   };
+  // (an accent named with Space takes one letter or symbol, as TeX reads \hat\beta_t: what comes
+  // after it, a script too, goes after the accent, not under it)
+  // an empty box after the caret, where MathLive's Tab goes
+  const boxAhead = () => {
+    try {
+      const M = model(), end = mf.lastOffset;
+      for (let i = mf.position + 1; i <= end; i++) { const a = M.at(i); if (a && a.type === 'placeholder') return true; }
+    } catch (e) { return true; }
+    return false;
+  };
+  const accentFull = (s) => !!s && s.br === 'body' && s.p.type === 'accent' && !s.group && !s.empty;
   const buildUp = (k) => {
     const s = slot();
     if (!s) return false;
@@ -584,6 +613,10 @@ export function installWordTyping(mf, opts) {
       mf.executeCommand('moveAfterParent');
       return true;
     }
+    if (accentFull(s)) { mf.executeCommand('moveAfterParent'); return false; }
+    // (x_1^2, \sum_i^n: the second script goes on the base, as Word and TeX both read it; the
+    // field put it on the first script's last letter, x_{1^2})
+    if (!s.group && !s.empty && ((k === '^' && s.br === 'subscript') || (k === '_' && s.br === 'superscript'))) { mf.executeCommand('moveAfterParent'); return false; }
     if (!s.group && !s.limit && !s.empty && ENDS_SCRIPT.test(k)) mf.executeCommand('moveAfterParent');
     return false;
   };
@@ -690,12 +723,37 @@ export function installWordTyping(mf, opts) {
     return false;
   };
 
+  // a bold symbol just written (argDone): where it stands, for a script typed next
+  let font = null;
   const argDone = () => {
     const t = arg;
     arg = null; draw();
-    put('\\' + t.name + '{' + t.text + '}', { selectionMode: 'after' });
+    // (a backslash alone, ended before its name: nothing, never \bm{\})
+    const tex = '\\' + t.name + '{' + (t.cmd && t.text === '\\' ? '' : t.text) + '}', p0 = mf.position;
+    put(tex, { selectionMode: 'after' });
+    font = /^(mathbf|bm|boldsymbol)$/.test(t.name) ? { a: p0, b: mf.position, tex } : null;
+    // (the font is the argument's alone: MathLive gave the next letters typed the style of the
+    // atom before them, \bm \beta then x was \bm{\beta x}, \mathrm d then x \mathrm{dx})
+    try { mf.applyStyle({}, { operation: 'set' }); } catch (e) { /* the field's own style goes on */ }
     // (after \text{…} what follows is math again, not more of the text)
     try { if (mf.mode !== 'math') mf.executeCommand(['switchMode', 'math']); } catch (e) { /* ignore */ }
+  };
+  // A script typed right after a bold symbol goes on the symbol, not in its font: TeX reads
+  // \bm\alpha_i as a bold alpha and a plain i; the field wrote the script inside the bold,
+  // \bm{\alpha_{i}} (only its bold styles do: \mathbb{R}^{n} came out right). The symbol
+  // becomes a group, {\bm{\alpha}}_i.
+  const scriptOnFont = (k) => {
+    const F = font;
+    // (a Space between them, \bm \alpha Space _i, as TeX skips it: the symbol still waits)
+    if (k === ' ') return false;
+    font = null;
+    if (!F || (k !== '^' && k !== '_')) return false;
+    try {
+      if (mf.position !== F.b || !mf.selectionIsCollapsed) return false;
+      mf.selection = { ranges: [[F.a, F.b]], direction: 'forward' };
+      put('{' + F.tex + '}' + k + '{#?}', { selectionMode: 'placeholder' });
+      return true;
+    } catch (e) { return false; }
   };
   // the empty box of a command the caret is in (\frac's numerator, \sqrt's radicand): its owner
   const emptyBox = () => {
@@ -754,6 +812,12 @@ export function installWordTyping(mf, opts) {
       // (a chord ends the argument first, as Enter does, then does what it does: Ctrl+Enter's new
       // row came in as an insertion the input listener below took for the person's, review N1)
       if (shortcut || (e.altKey && !altGr)) { argDone(); return; }
+      // (a command after the Space, \bm \alpha: its name is the argument, a backslash and one
+      // symbol (\bm \{) too; the backslash went in as the one letter, \boldsymbol{\}alpha})
+      if (arg.cmd && arg.text === '\\' && k.length === 1 && !/^[A-Za-z]$/.test(k)) { stop(); arg.text += k; argDone(); return; }
+      // (a name ends at the first key that is no letter, \bm \alpha+1 and \operatorname argmax_x:
+      // Space and } with it, any other key goes on after it; _x went into the name)
+      if ((arg.cmd || arg.word) && !arg.lead && k.length === 1 && !/^[A-Za-z]$/.test(k)) { if (k === ' ' || k === '}') stop(); argDone(); if (scriptOnFont(k)) stop(); return; }
       if ((k === '}' && !arg.depth) || k === 'Enter' || k === 'Tab') { stop(); argDone(); return; }
       if (k === 'Escape') { stop(); arg = null; draw(); return; }
       if (k === 'Backspace') {
@@ -765,9 +829,20 @@ export function installWordTyping(mf, opts) {
         draw();
         return;
       }
+      if (k.length === 1 && arg.lead) {
+        // (after the Space that named it: TeX skips spaces before an argument, a { opens it, and a
+        // math alphabet takes one letter, \mathbb R)
+        stop();
+        if (k === ' ') return;
+        arg.lead = false;
+        if (k === '{') { arg.word = false; draw(); return; }
+        if (k === '\\' && arg.one) { arg.cmd = true; arg.text = '\\'; draw(); return; }
+        if (arg.one && k !== '}') { arg.text = k; argDone(); return; }
+      }
       if (k.length === 1) { stop(); arg.depth += k === '{' ? 1 : k === '}' ? -1 : 0; arg.text += k; draw(); }
       return;
     }
+    if (buf == null && !shortcut && k.length === 1 && font) { if (scriptOnFont(k)) { stop(); return; } } else if (k !== 'Shift') font = null;
     // $x^2$ typed as in Overleaf: the closing $ ends a formula in the line (\$ is a dollar sign)
     // (onDollar(true) asks whether a $ ends this formula: one in the line, a display opened by $$)
     // (a command's name being typed, \alpha$, is something in the formula already)
@@ -780,8 +855,8 @@ export function installWordTyping(mf, opts) {
       if (k === 'Escape') { stop(); cancel(); return; }
       if (k === 'ArrowDown') { stop(); pick = Math.min((chip._list || []).length - 1, pick + 1); draw(); return; }
       if (k === 'ArrowUp') { stop(); pick = Math.max(0, pick - 1); draw(); return; }
-      if (k === 'Tab') { stop(); const l = chip._list || []; if (l[pick]) buf = l[pick]; commit(); return; }
-      if (k === ' ' || k === 'Enter') { stop(); if (!buf) { cancel(); return; } commit(); return; }
+      if (k === 'Tab') { stop(); const l = chip._list || []; if (l[pick]) buf = l[pick]; commit(true); return; }
+      if (k === ' ' || k === 'Enter') { stop(); if (!buf) { cancel(); return; } commit(true); return; }
       // \left( and \right) as LaTeX writes them: one bracket each (\left\{, \left\langle too)
       if ((buf === 'left' || buf === 'right') && (k === '\\' || k === '.' || k === '|' || OPEN_KEY[k] || CLOSE_KEY[k])) {
         stop(); buf = k === '\\' ? '' : null; pick = 0; draw();
@@ -815,7 +890,7 @@ export function installWordTyping(mf, opts) {
       if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(k)) { commit(); return; }
       return;
     }
-    if (/^(Arrow|Home|End|Page|Tab|Escape|Enter)/.test(k)) { groups = []; boxes = []; }
+    if (/^(Arrow|Home|End|Page|Tab|Escape|Enter)/.test(k)) { groups = []; boxes = []; typedBox = new WeakSet(); }
     if (mode === 'latex') return; // MathLive's own command mode keeps its keys
     // Ctrl+Enter, or Shift+Enter as in Word's equations, starts a new row
     if (k === 'Enter' && !e.altKey && ((e.ctrlKey || e.metaKey) !== e.shiftKey)) {
@@ -857,7 +932,16 @@ export function installWordTyping(mf, opts) {
     }
     const trigger = k === ' ' || k === 'Enter' || k === 'Tab' || (k.length === 1 && !/[A-Za-z]/.test(k));
     const converted = trigger && recognize();
-    if (k === '\\') { stop(); buf = ''; pick = 0; draw(); return; }
+    // Tab goes to the next empty box, as MathLive's own does, and from the last box out of its
+    // structure, a level at a time, as Space does; out of the formula at its top level. MathLive's
+    // Tab after the last box selected the whole formula, and the next key typed over all of it
+    // (\frac{a}{b}, Tab, +c: the formula became +c)
+    if (k === 'Tab' && !e.shiftKey && !converted && !boxAhead() && canStepOut()) {
+      stop();
+      mf.executeCommand('moveAfterParent');
+      return;
+    }
+    if (k === '\\') { stop(); if (accentFull(slot())) mf.executeCommand('moveAfterParent'); buf = ''; pick = 0; draw(); return; }
     if (k.length === 1 && buildUp(k)) { stop(); changed(); return; }
     // a command's boxes as LaTeX fills them: } goes to the next box ({b} of \frac{a}{b}) or out
     const B = boxes[boxes.length - 1];
@@ -925,7 +1009,7 @@ export function installWordTyping(mf, opts) {
       if (!keyOf(chars[i])) { try { mf.executeCommand(['typedText', chars[i]]); } catch (err) { put(chars[i]); } }
     }
   }, true);
-  mf.addEventListener('pointerdown', () => { groups = []; }, true);
+  mf.addEventListener('pointerdown', () => { groups = []; typedBox = new WeakSet(); }, true);
   mf.addEventListener('blur', () => { if (buf != null) cancel(); if (arg) argDone(); });
   return { active: () => buf != null || arg != null, newRow, reposition: () => { if (buf != null) place(); }, destroy: () => { chip.remove(); } };
 }

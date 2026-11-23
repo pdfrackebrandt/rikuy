@@ -2,7 +2,7 @@
 name, edits in the field and in the LaTeX box reaching the source, rows added and closed."""
 import os, sys, traceback
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, open_page, check, results, SHOTS, src, click_text
+from browser import settle, open_page, check, results, SHOTS, src, click_text, load_doc
 from playwright.sync_api import sync_playwright
 
 try:
@@ -95,6 +95,46 @@ try:
         check('new math typed visually', 'or $x^2$type' in seg or 'or $x^{2}$type' in seg, seg)
         page.keyboard.press('Control+z')
         check('undo new math', src(page) == base, src(page)[src(page).find('or t'):][:40])
+
+        # --- a formula emptied in the field goes when it closes, as a new one closed empty does:
+        # $$ was left in the line (a display running on through the text after it), and an
+        # emptied equation a number beside a blank line, TeX's Missing $
+        EMPTIED = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nAlpha $x+y$ beta.\n'
+                   '\\begin{equation}\n  E = mc^2\n\\end{equation}\nMore text.\n\\end{document}\n')
+        load_doc(page, EMPTIED)
+        page.click('.a-math >> nth=0')
+        page.wait_for_selector('#pop-field', timeout=8000)
+        settle(page, 200)
+        for key in ('Control+a', 'Backspace', 'Enter'):
+            page.keyboard.press(key); settle(page, 150)
+        s4 = src(page)
+        check('an emptied formula in the line goes, no $$ left', 'Alpha  beta.' in s4 and '$' not in s4, s4[s4.find('Alpha'):][:40])
+        page.keyboard.type('Q')
+        check('the caret stays where it stood', 'Alpha Q beta.' in src(page), src(page)[src(page).find('Alpha'):][:40])
+        page.click('.it.dm >> nth=0')
+        page.wait_for_selector('#pop-field', timeout=8000)
+        settle(page, 200)
+        for key in ('Control+a', 'Backspace', 'Escape'):
+            page.keyboard.press(key); settle(page, 150)
+        s5 = src(page)
+        # (with the line breaks round it: the text on either side one paragraph again, as TeX had
+        # it; a blank line left there split it)
+        check('an emptied equation goes, with its environment, the paragraph whole', 'equation' not in s5 and 'beta.\nMore text.' in s5, s5[s5.find('beta'):][:60])
+        page.keyboard.type('W')
+        check('the caret at the start of the text after it', 'beta.\nWMore text.' in src(page), src(page)[src(page).find('beta'):][:60])
+        page.keyboard.press('Control+z'); page.keyboard.press('Control+z')
+        settle(page, 200)
+        check('one undo brings the equation back', '\\begin{equation}\n  E = mc^2\n\\end{equation}\nMore text.' in src(page), src(page)[src(page).find('beta'):][:80])
+
+        # --- Enter at the end of the line above a display, then words: a paragraph above the
+        # display, the display going on under it as in Word; a blank line before it printed an
+        # empty line above the equation (TeX begins a paragraph for the display alone)
+        load_doc(page, EMPTIED)
+        click_text(page, 'Alpha', 0); page.keyboard.press('End'); settle(page, 150)
+        page.keyboard.press('Enter'); settle(page, 150)
+        page.keyboard.type('New'); settle(page, 300, full=True)
+        s6 = src(page)
+        check('words typed on a new line above a display: no blank line before the display', 'beta.\n\nNew\n\\begin{equation}' in s6, s6[s6.find('beta'):][:60])
 
         # --- dark mode look
         check('no console errors', not errors, errors[:5])

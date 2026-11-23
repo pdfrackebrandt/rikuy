@@ -2783,7 +2783,11 @@ class App {
     let nlA = 0; for (let k = g.pos; k < src.length && /\s/.test(src[k]); k++) if (src[k] === '\n') nlA++;
     // no blank lines at the very start or end of a file: there is no paragraph to keep apart
     const pre = g.pos === 0 ? '' : '\n'.repeat(Math.max(0, (g.line ? 1 : 2) - nlB));
-    const post = g.pos >= src.length ? '' : '\n'.repeat(Math.max(0, (g.line ? 1 : 2) - nlA));
+    // (before a display that went on the paragraph above, one line break: the display goes on
+    // the new paragraph, as in Word it stands under it; a blank line before it is a paragraph TeX
+    // begins for the display alone, an empty line printed above the equation)
+    const disp = /^[ \t]*\r?\n[ \t]*(?:\\\[|\\begin\s*\{(?:equation|align|alignat|gather|multline|flalign|eqnarray|displaymath)\*?\})/.test(src.slice(g.pos));
+    const post = g.pos >= src.length ? '' : '\n'.repeat(Math.max(0, (g.line || disp ? 1 : 2) - nlA));
     this.removeGhost();
     const grew = extra.filter((x) => x.f === g.f && x.s <= g.pos).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
     this.commit([...extra, { f: g.f, s: g.pos, e: g.pos, t: pre + open + tex + close + post }], { f: g.f, p: g.pos + grew + pre.length + open.length + tex.length - back, bias: -1 }, 'type');
@@ -4112,11 +4116,53 @@ class App {
     // (the page's own moves of the focus to the field)
     const fieldFocus = () => { backOk = true; focusField(mf); backOk = false; };
     ta.addEventListener('input', sync);
+    // What the page copied carries its LaTeX beside the plain text, whose letters are the drawn
+    // formula's (\frac{a}{b} came in as ba): a formula from it goes in as its LaTeX, and words with
+    // formulas among them as \text{…} around the formulas' LaTeX, as Word pastes them into an equation
+    const ownLatex = (x) => {
+      const one = unwrapMath(x);
+      if (one != null || /\n[ \t]*\n/.test(x)) return one;
+      const parts = x.split(/(\$[^$]+\$)/);
+      let out = '';
+      for (const q of parts) {
+        if (/^\$[^$]+\$$/.test(q)) out += q.slice(1, -1);
+        else if (/[\\{}%&#^_~$]/.test(q)) return null;
+        else if (q.trim()) out += '\\text{' + q.replace(/\s+/g, ' ') + '}';
+      }
+      return parts.length > 1 ? out : null;
+    };
     mf.addEventListener('paste', (e) => {
+      let x = '';
+      try { x = (e.clipboardData && e.clipboardData.getData('text/x-galley-latex')) || ''; } catch (err) { x = ''; }
       const t = e.clipboardData && e.clipboardData.getData('text/plain');
-      const inner = t ? unwrapMath(t) : null;
+      const own = x ? ownLatex(x) : null;
+      let inner = own != null ? own : t ? unwrapMath(t) : null;
       if (inner == null) return;
       e.preventDefault(); e.stopImmediatePropagation();
+      // (a copy of an equation of this document leaves its label and tag with the equation: pasted
+      // too, the label was defined twice; rows and alignment marks outside an inner environment
+      // cannot stand in a formula in the line or a one-row equation, which got a\&=b\\c\&=d)
+      if (own != null) inner = inner.replace(/\\(label|tag\*?)\s*\{[^{}]*\}/g, '').replace(/\\(nonumber|notag)(?![A-Za-z])/g, '').trim();
+      const rows = /\\\\|(^|[^\\])&/.test(inner.replace(/\\begin\s*\{([A-Za-z*]+)\}[\s\S]*?\\end\s*\{\1\}/g, ''));
+      if (rows && (!opts.display || !st.multi)) {
+        this.toast(opts.display ? 'Rows cannot go into this equation: make it Aligned in its menu first, or paste them on a line of their own.' : 'Rows cannot go into a formula in the line: paste them on a line of their own.');
+        return;
+      }
+      // (in an equation of rows they are rows of its own, written in its LaTeX box at the caret,
+      // a row break before and after them where the row there holds something: the field took
+      // their & for characters and joined the first to the row there, q &= ra\&=b \\ c\&=d)
+      if (rows) {
+        // (an environment with no columns, gather or multline, takes rows but no & at the top
+        // level, which TeX rejects there; those inside a matrix or cases stay)
+        if (!/^(align|alignat|flalign|eqnarray|split|aligned|alignedat)\*?$/.test(String((opts.env && opts.env()) || ''))) inner = inner.replace(/(\\begin\s*\{([A-Za-z*]+)\}[\s\S]*?\\end\s*\{\2\})|(^|[^\\])&/g, (m, env, n, pre) => env || pre);
+        pull();
+        let at = ta.value.length;
+        try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (ta.value.startsWith(pre)) at = pre.length; } catch (err) { /* at the end */ }
+        const before = ta.value.slice(0, at).split('\\\\').pop(), after = ta.value.slice(at).split('\\\\')[0];
+        ta.setRangeText((before.trim() ? ' \\\\\n' : '') + inner + (after.trim() ? ' \\\\\n' : ''), at, at, 'end');
+        ta.dispatchEvent(new Event('input'));
+        return;
+      }
       mf.insert(D.toField(inner), { format: 'latex', insertionMode: 'replaceSelection', selectionMode: 'after', mode: 'math' });
       mf.dispatchEvent(new Event('input'));
     }, true);
@@ -4155,6 +4201,10 @@ class App {
         ta.dispatchEvent(new Event('input'));
       }
     });
+    // Copied or cut from a formula in the line, the plain text is that formula, $…$, as Word pastes
+    // a piece of an equation in the line as one: MathLive writes $$ … $$, which the page pasted as
+    // a display in the middle of a sentence. (Its own handler, inside the field, has run by now.)
+    if (!opts.display) for (const type of ['copy', 'cut']) mf.addEventListener(type, (e) => { const d = e.clipboardData, x = d && d.getData('application/x-latex').trim(); if (x) d.setData('text/plain', '$' + x + '$'); });
     mf.addEventListener('keydown', (e) => {
       if (wt.active() || mf.mode === 'latex') return;
       if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); pull(); opts.onEscape(); }
@@ -4352,7 +4402,38 @@ class App {
     // However the box closes, what was typed is kept: text held back is written made whole
     // (mathMadeWhole), in the box's undo step.
     const whole = () => mathMadeWhole(ta.value, kerr());
-    this.pop.onClose = () => { push.cancel(); if (!this.pop) return; const v = held() ? whole() : ta.value; this.pop.applyInner(v); this.eqClosed(this.pop, v); };
+    this.pop.onClose = () => {
+      push.cancel(); if (!this.pop) return; const v = held() ? whole() : ta.value;
+      // Emptied, a formula that was there goes, as a new one closed empty does (newDisplayMath's
+      // own onClose takes those): $$ left in the line opened a display that ran on through the
+      // text after it, and an empty equation printed its number beside a blank line, TeX's
+      // Missing $. (Only between its own delimiters, read from the source; the caret where it stood.)
+      const P = this.pop, R = P.range, S = R && P.anchorPos ? this.src(R.f) : '';
+      if (!v.trim() && !P.eqNew && S) {
+        const env = P.env || info.a.env, close = env === info.a.env ? info.e - info.ie : env === '\\[' ? 2 : ('\\end{' + env + '}').length;
+        const a = P.anchorPos.s, b = R.e + close;
+        if (/^(\$\$?|\\\(|\\\[|\\begin\s*\{[^{}]*\})$/.test(S.slice(a, R.s)) && /^(\$\$?|\\\)|\\\]|\\end\s*\{[^{}]*\})$/.test(S.slice(R.e, b))) {
+          if (!display) {
+            this.commit(this.deletionEdits(R.f, a, b).map((x) => ({ f: R.f, ...x })), null, P.session);
+            P.returnCaret = { f: R.f, p: a };
+          } else {
+            // A display goes with the line breaks around it, leaving the text on either side as
+            // TeX had it: one paragraph where a single line break stood on both sides (a blank
+            // line left there split it), a blank line where one stood on either; the caret at the
+            // start of the text after it (in a blank line, what is typed joined the next paragraph)
+            const wsB = /\s*$/.exec(S.slice(0, a))[0], wsA = /^\s*/.exec(S.slice(b))[0], s0 = a - wsB.length, e0 = b + wsA.length;
+            const nlB = (wsB.match(/\n/g) || []).length, nlA = (wsA.match(/\n/g) || []).length, nl = /\r\n/.test(wsB + wsA) ? '\r\n' : '\n';
+            const sep = !s0 || e0 >= S.length ? '' : nlB >= 2 || nlA >= 2 ? nl + nl : nlB || nlA ? nl : ' ';
+            this.commit([{ f: R.f, s: s0, e: e0, t: sep }], null, P.session);
+            P.returnCaret = { f: R.f, p: s0 + sep.length };
+          }
+          P.removed = true;
+          this.eqClosed(P, '');
+          return;
+        }
+      }
+      P.applyInner(v); this.eqClosed(P, v);
+    };
     // what is written must itself pass the box's check; if making it whole could not get it
     // there, the box stays open with its message (closePop asks) and nothing is lost
     this.pop.refuse = () => !!held() && !!mathBreaksOut(whole(), this.renderer.katex(this.mathPreviewTex(whole(), display), display).err);
