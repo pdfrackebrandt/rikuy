@@ -1654,12 +1654,14 @@ class App {
       const f = g ? g.f : c && c.f, a = g ? g.pos : c && c.a, b = g ? g.pos : c && c.b;
       const P = { main: this.main, at: Date.now() };
       if (f != null && a != null && this.files.has(f)) Object.assign(P, { f, a, b, ghost: !!g, sig: sig(f, a, b) });
-      const D = this.desk.getBoundingClientRect();
-      for (const it of this.root.querySelectorAll('.it')) {
-        const R = it.getBoundingClientRect();
-        if (R.bottom <= D.top) continue;
-        const sp = it.querySelector('span.t:not(.gh)'), at = sp && sp.firstChild ? posFromDom(sp.firstChild, 0, this.root) : null;
-        if (at && !at.ghost && this.files.has(at.f)) { P.top = { f: at.f, p: at.p, dy: Math.round(R.top - D.top), sig: sig(at.f, at.p, at.p) }; break; }
+      // (the item under a few points down the view's middle: no walk over every item of a long
+      // document, each measured, as the page goes)
+      const D = this.desk.getBoundingClientRect(), pg = this.root.querySelector('.page'), Rp = pg && pg.getBoundingClientRect();
+      const x = Rp ? Rp.left + Rp.width / 2 : D.left + D.width / 2;
+      for (let y = D.top + 2; y < Math.min(D.bottom, D.top + 400) && !P.top; y += 24) {
+        const e = document.elementFromPoint(x, y), it = e && this.root.contains(e) ? e.closest('.it') : null;
+        const sp = it && it.querySelector('span.t:not(.gh)'), at = sp && sp.firstChild ? posFromDom(sp.firstChild, 0, this.root) : null;
+        if (at && !at.ghost && this.files.has(at.f)) P.top = { f: at.f, p: at.p, dy: Math.round(it.getBoundingClientRect().top - D.top), sig: sig(at.f, at.p, at.p) };
       }
       if (P.f == null && !P.top) delete all[this.name];
       else all[this.name] = P;
