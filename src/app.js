@@ -1009,8 +1009,9 @@ class App {
     // button to act on; the pass's new nodes left it at a page's start. It goes back where it was,
     // the focus left where it is (Select sentence from Home's Select menu selected nothing).
     // (a docked pane's or the side panel's buttons and lists too: a pane that narrows the page lays it
-    // out again at a new zoom, and F7 then Esc put the caret at the document's start)
-    else if (c && !c.crossFile && document.activeElement && document.activeElement.closest('#ribbon, .pop, .stp, .sp-pane, .help-pane, #nav, #fr') && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+    // out again at a new zoom, and F7 then Esc put the caret at the document's start; and the title
+    // bar's and the status bar's, whose zoom put the next words at the document's start)
+    else if (c && !c.crossFile && document.activeElement && document.activeElement.closest('#ribbon, .pop, .stp, .sp-pane, .help-pane, #nav, #fr, #bar, #status') && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
       const x = this.index.find(c.f, c.collapsed ? c.p : c.a, c.collapsed ? -1 : 1), y = c.collapsed ? x : this.index.find(c.f, c.b, -1);
       if (x && x.node && y && y.node) {
         getSelection().setBaseAndExtent(x.node, x.offset, y.node, y.offset);
@@ -1252,7 +1253,10 @@ class App {
       if (!n) return;
       rect = n.getBoundingClientRect();
     }
-    const D = this.desk.getBoundingClientRect();
+    const R = this.desk.getBoundingClientRect(), V = window.visualViewport;
+    // (what is in sight: a phone's on-screen keyboard covers the window's lower part without making
+    // it shorter, and the visual viewport says what it leaves; lines typed with Enter went under it)
+    const D = this.kbCover && V ? { top: Math.max(R.top, V.offsetTop), bottom: Math.min(R.bottom, V.offsetTop + V.height) } : R;
     if (rect.bottom > D.bottom - 40) this.desk.scrollTop += rect.bottom - D.bottom + 80;
     else if (rect.top < D.top + 20) this.desk.scrollTop -= D.top - rect.top + 80;
   }
@@ -1402,6 +1406,7 @@ class App {
   undo() {
     // (letters waiting to go in go first: Undo from the Edit menu or a gesture comes with no key)
     this.typeFlush();
+    this.compFinish();
     // (nothing stays selected across a change of the text: its offsets would be stale)
     this.disarm();
     // typing in the source pane joins the history only after a pause: take it in first, so
@@ -1431,6 +1436,7 @@ class App {
   }
   redo() {
     this.typeFlush();
+    this.compFinish();
     this.disarm();
     if (this.srcRebuild.pending()) this.srcRebuild.flush();
     this.closePop(true);
@@ -1485,6 +1491,30 @@ class App {
     document.addEventListener('keydown', first, true);
     document.addEventListener('pointerdown', first, true);
     R.addEventListener('pointerdown', () => { this.tabOut = 0; }, true);
+    // A touch screen's on-screen keyboard coming up over the caret (a tap low on the screen, the
+    // document's last lines): the page scrolls it into sight, as Word's phone app does. The keyboard
+    // covers the window's lower part without shortening it (kbCover, which scrollToCaret keeps the
+    // caret above), so the page gets that much room to scroll at its end, or its last lines could
+    // never come above it. Only a keyboard: the visual viewport shorter from the bottom at the same
+    // width and scale, the caret in sight before and hidden now; a window resized, a zoom, a pinch
+    // or a phone turned leave the reader's place to refit()
+    if (window.visualViewport && matchMedia('(pointer: coarse)').matches) {
+      const V = window.visualViewport;
+      let was = { w: V.width, h: V.height, top: V.offsetTop, s: V.scale };
+      V.addEventListener('resize', () => {
+        const old = was, sel = getSelection();
+        was = { w: V.width, h: V.height, top: V.offsetTop, s: V.scale };
+        if (Math.abs(V.scale - 1) > 0.01 || Math.abs(old.s - 1) > 0.01 || V.width !== old.w) return;
+        const cover = Math.round(innerHeight - V.offsetTop - V.height);
+        this.kbCover = cover > 80 ? cover : 0;
+        this.desk.style.paddingBottom = this.kbCover ? cover + 'px' : '';
+        if (!(V.height < old.h - 80) || document.activeElement !== R || this.pop || !sel.rangeCount || !R.contains(sel.focusNode)) return;
+        const r = sel.getRangeAt(0).getBoundingClientRect(), D = this.desk.getBoundingClientRect();
+        if (!r.height) return;
+        const seen = r.top >= Math.max(D.top, old.top) && r.bottom <= old.top + old.h;
+        if (seen && r.bottom > Math.min(D.bottom, V.offsetTop + V.height)) this.scrollToCaret();
+      });
+    }
     R.addEventListener('blur', first);
     R.addEventListener('compositionstart', first, true);
     R.addEventListener('beforeinput', (e) => this.onBeforeInput(e));
@@ -1563,6 +1593,9 @@ class App {
     // a press on a button of the status bar leaves the page its focus, as the ribbon's do: the
     // dialog it opens (Word Count, Go To) gives the caret back when it closes
     $('#status').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
+    // (and the title bar's zoom: a phone's keyboard stayed down after the zoom button, the page
+    // having lost the focus to it, and Word's zoom leaves the caret typing where it was)
+    $('#bar .zoom').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
     // the status line scrolls when it is wider than the window; the fades follow the cut edges
     const stBar = $('#status');
     if (stBar) {
@@ -1806,8 +1839,14 @@ class App {
   onBeforeInput(e) {
     const t = e.inputType;
     if (this.armed && this.armed.kind === 'code' && /^insert/.test(t)) { e.preventDefault(); this.codeOpen(); return; }
+    // (a composition's first change says what it replaces: onCompEnd)
+    if (t === 'insertCompositionText' && this.composing && this.compFrom === undefined) this.compFrom = this.compRange(e);
     if (e.isComposing || t === 'insertCompositionText' || t === 'deleteCompositionText' || t === 'insertFromComposition') return;
     e.preventDefault();
+    // (a composition whose text the page drew again, a command run in the middle of it: the
+    // browser dropped it without a compositionend, and every key after it was swallowed here,
+    // a space or a full stop on a phone doing nothing)
+    if (this.composing && this.compNode && !this.compNode.n.isConnected) { this.composing = false; this.compCaret = null; this.compFrom = undefined; this.compNode = null; this.compTex = null; }
     if (this.composing) return;
     if (this.dollarPair && t === 'insertText' && this.dollarPairTakes(e.data)) return;
     this.dollarPair = null;
@@ -1822,6 +1861,16 @@ class App {
         let data = e.data;
         if (data == null && e.dataTransfer) data = e.dataTransfer.getData('text/plain');
         if (data == null) return;
+        // (a line break a keyboard writes as text, a dictated "new line": Enter, a new paragraph
+        // as Word makes it; it went into the source as a newline, a space on the page. Lines and
+        // a line break in more text, a keyboard's clipboard: a paste, one step, Rikuy's own rules
+        // for a paste's lines, in a cell or a caption too)
+        if (t === 'insertText' && /[\r\n]/.test(data)) {
+          this.typeFlush();
+          if (/^(\r\n?|\n)$/.test(data)) this.enter(false);
+          else if (this.pasteData) this.pasteData({ plain: data, html: '', latex: '' }, 'keep');
+          break;
+        }
         let range = null;
         if (t === 'insertReplacementText' && e.getTargetRanges) {
           const tr = e.getTargetRanges()[0];
@@ -2782,24 +2831,110 @@ class App {
     if (at) this.showGhost(at, f, pos, { before: !prev, style, line });
   }
 
+  // A command about to edit while an input method composes (a phone's keyboard composes every
+  // word until its space): the page drawn again dropped the composition and its text with it
+  // ("Hello", then Bold, then "world" gave "\textbf{world}"). The word goes in first, as Word takes
+  // an input method's word before a button acts: leaving the page ends the composition, and the
+  // focus comes straight back. Only for a command (runCommand, Undo, Redo): a press on a tab, a
+  // bar or a pane leaves the composition going, to be finished. (Android's keyboard marks the
+  // word the caret is in as composing with no change: nothing to keep, compFrom)
+  compFinish() {
+    const R = this.root;
+    if (!this.composing || this.compFrom === undefined || document.activeElement !== R) return false;
+    R.blur(); R.focus({ preventScroll: true });
+    return true;
+  }
   onCompStart() {
     this.composing = true;
     this.compCaret = this.caretNow();
     this.compTex = this.compCaret && !this.compCaret.ghost ? this.texHere() : null;
+    // (an Android keyboard starts a composition over the word a finger put the caret in, changing
+    // nothing, and the selection stays a caret: what it replaces is known at its first change,
+    // compFrom; the text node is kept to tell whether the page changed without one)
+    this.compFrom = undefined;
+    // (the whole document selected, Select All: what is composed becomes its body, as typed keys
+    // do, insertText; the selection is gone by the composition's end)
+    this.compWhole = this.compCaret && !this.compCaret.ghost && !this.compCaret.collapsed ? this.wholeDoc() : null;
+    const s = getSelection(), n = s.rangeCount ? s.focusNode : null;
+    this.compNode = n ? { n, data: n.nodeType === 3 ? n.data : null } : null;
+  }
+  // The text a composition's first change replaces (its beforeinput's target range): the
+  // selection, or the word an Android keyboard marked; in the source, with the page's text of it
+  // and each character's source places before and after it (null for a character the page draws
+  // from no text of its own, a formula's), so only what changed is written
+  compRange(e) {
+    const tr = e.getTargetRanges ? e.getTargetRanges()[0] : null;
+    // (a caret: where caretNow() put it as the composition began, which knows a place the page
+    // cannot hold, a space ending a paragraph, whose caret is drawn at the next one's start)
+    if (!tr || tr.collapsed) return null;
+    const r = this.rangeToSrc(tr);
+    if (!r) return null;
+    const rg = document.createRange();
+    try { rg.setStart(tr.startContainer, tr.startOffset); rg.setEnd(tr.endContainer, tr.endOffset); } catch (err) { return r; }
+    const top = rg.commonAncestorContainer, nodes = [];
+    if (top.nodeType === 3) nodes.push(top);
+    else for (let w = document.createTreeWalker(top, NodeFilter.SHOW_TEXT), n = w.nextNode(); n; n = w.nextNode()) if (rg.intersectsNode(n)) nodes.push(n);
+    const pre = [], post = [], at = (n, i) => { const P = posFromDom(n, i, this.root); return P && !P.ghost && P.f === r.f ? P.p : null; };
+    let old = '';
+    for (const n of nodes) {
+      const a = n === tr.startContainer ? tr.startOffset : 0, b = n === tr.endContainer ? tr.endOffset : n.data.length;
+      const sp = n.parentElement, plain = !!(sp && sp.matches('span.t:not(.gh)') && !sp.closest('.atom'));
+      for (let k = a; k < b; k++) { old += n.data[k]; pre.push(plain ? at(n, k) : null); post.push(plain ? at(n, k + 1) : null); }
+    }
+    const n = tr.startContainer;
+    return { ...r, old, pre, post, n: n.nodeType === 3 ? n : null, o: tr.startOffset };
   }
   onCompEnd(e) {
     this.composing = false;
-    const c = this.compCaret;
-    this.compCaret = null;
-    const data = e.data || '';
+    let c = this.compCaret;
+    const F = this.compFrom, N = this.compNode;
+    this.compCaret = null; this.compFrom = undefined; this.compNode = null;
+    let data = e.data || '';
+    // A composition that never changed the text: Android's keyboard marks the word the caret was
+    // put in as composing and ends that when the caret moves on, with the word as data. It went in
+    // a second time at the caret ("here" became "heherere"); the page is as it was
+    if (F === undefined && c && !c.ghost && !(N && N.n.isConnected && N.data != null && N.n.data !== N.data)) { this.compTex = null; return; }
     if (!c) { this.forceRender = true; this.rebuild(); return; }
+    const W = this.compWhole;
+    this.compWhole = null;
+    // (Select All, then a word composed, as a phone's keyboard writes every word: it left the first
+    // heading's command and blank lines, "\section{Xy}", where a key typed leaves the word alone;
+    // a composition given up there leaves an empty body, not empty commands)
+    if (W) { this.compTex = null; this.forceRender = true; this.replaceBody(W, data ? escapeTeX(data, ' ') : '', 'replace'); return; }
     if (c.ghost) { if (data && this.ghost) this.ghostInsert(this.ghostRaw() ? data : escapeTeX(data, ' ')); else this.relayout(true); return; }
+    // What the composition replaced, where its first change said (a word marked on Android, the
+    // caret in it elsewhere): only the characters that differ, at their own source places, so a
+    // format or a formula inside the word stays. Where those characters are not all plain text
+    // (a formula's), the word goes in at the caret as before: text twice, but no LaTeX lost.
+    // (The caret goes where the keyboard left it in the composed word, kept letters included:
+    // "here" selected and "the" typed keeps the old "e", and the caret after it, not before;
+    // at, a place before the letters written, or past, after kept letters)
+    let at = null, past = null;
+    if (F && F.f === c.f && F.old != null) {
+      const o = F.old, s = getSelection();
+      let P = 0, S = 0;
+      while (P < o.length && P < data.length && o[P] === data[P]) P++;
+      while (S < o.length - P && S < data.length - P && o[o.length - 1 - S] === data[data.length - 1 - S]) S++;
+      let a, b, ok = true;
+      if (o.length - S > P) {
+        a = F.pre[P]; b = F.post[o.length - S - 1];
+        for (let k = P; k < o.length - S; k++) if (F.pre[k] == null || F.post[k] == null) ok = false;
+      } else a = b = P > 0 ? F.post[P - 1] : F.pre[0];
+      if (ok && a != null && b != null && a <= b) {
+        const q = F.n && s.rangeCount && s.isCollapsed && s.focusNode === F.n && s.focusOffset >= F.o && s.focusOffset <= F.o + data.length ? s.focusOffset - F.o : data.length;
+        if (q < P) at = q ? F.post[q - 1] : F.pre[0];
+        else if (q > data.length - S) past = F.post[o.length - (data.length - q) - 1];
+        data = data.slice(P, data.length - S);
+        c = { f: F.f, a, b, collapsed: a === b };
+      }
+    } else if (F && F.f === c.f) c = { f: F.f, a: F.a, b: F.b, collapsed: F.a === F.b };
     // The browser mutated the DOM; rebuild from source regardless.
     this.forceRender = true;
-    if (!data) { this.rebuild({ f: c.f, p: c.a }); return; }
+    if (!data && c.collapsed) { this.rebuild({ f: c.f, p: at ?? past ?? c.a }); return; }
     const T = this.compTex;
     this.compTex = null;
-    if (T && T.f === c.f) { this.texEdit(T, c.a, c.b, data, 'type'); return; }
+    // (LaTeX shown as it is: the composed word over what it replaced, the caret after it)
+    if (T && T.f === c.f) { if (F && F.f === c.f) this.texEdit(T, F.a, F.b, e.data || '', 'type'); else this.texEdit(T, c.a, c.b, data, 'type'); return; }
     const src = this.src(c.f);
     const edits = c.collapsed ? [] : this.deletionEdits(c.f, c.a, c.b, true);
     const raw = this.texAt(c.f, c.a);
@@ -2807,7 +2942,9 @@ class App {
     if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, c.a)) t = '{}' + t;
     // the deletions of a replaced selection lie after c.a: they do not move the caret back
     const removedBefore = edits.filter((ed) => ed.e <= c.a).reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
-    this.commit([...edits, { f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a - removedBefore + t.length }, 'type');
+    const removed = edits.reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
+    const p = at ?? (past != null ? past - removed + t.length : c.a - removedBefore + t.length);
+    this.commit(t ? [...edits, { f: c.f, s: c.a, e: c.a, t }] : edits, { f: c.f, p }, 'type');
   }
 
   // ---- clipboard ------------------------------------------------------------------
