@@ -530,8 +530,9 @@ def modes(page):
 def keytips(page):
     load_doc(page, MATH)
     select_text(page, 'beta')
+    d0 = page.evaluate("(() => { const s = getSelection(); return [String(s), document.activeElement.id, window.__probe || []]; })()")
     for k in ('F10', 'h', '1'): key(page, k, 250)
-    check('keytips: F10, H, 1 makes the selection bold', '\\textbf{beta}' in src(page), src(page)[60:110])
+    check('keytips: F10, H, 1 makes the selection bold', '\\textbf{beta}' in src(page), (src(page)[60:110], d0, page.evaluate("window.__probe || []")))
     load_doc(page, MATH)
     click_text(page, 'beta', 2)
     # (z and a start no KeyTip of Insert's; J and W do since Word's gaps were built)
@@ -892,6 +893,7 @@ def run():
     only = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
+        page.evaluate('''() => { const g = window.rikuy; window.__probe = []; for (const m of ['leaving', 'placeInitialCaret', 'restoreCaret', 'closeFileView']) { const o = g[m]; g[m] = function (...a) { window.__probe.push(m + '@' + Math.round(performance.now()) + ' act=' + (document.activeElement && document.activeElement.id)); if (window.__probe.length > 400) window.__probe.splice(0, 200); return o.apply(this, a); }; } document.addEventListener('visibilitychange', () => window.__probe.push('vis ' + document.visibilityState)); addEventListener('pagehide', () => window.__probe.push('pagehide')); }''')
         for f in PARTS:
             if only and f.__name__ not in only: continue
             try: f(page)
