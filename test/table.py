@@ -18,7 +18,7 @@ every construct compiled in the page.
 RIKUY_DIST names another dist/."""
 import os, sys, re
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import settle, until, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, place, pressed
+from browser import settle, until, open_page, check, results, src, load_doc, click_text, select_text, roundtrip, place, pressed, select_between
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -299,17 +299,21 @@ def cell_edges(page):
     # (from inside a cell's words: those before the selection stay, as everything typing, pasting,
     # cutting, Shift+Enter and Alt+= do over a selection counts on; the header row's \\ went once)
     words = DOC.replace('one & two', 'one alpha & two beta')
+    # (from "one |alpha" to "two| beta"; a selection ending at the next cell's very start holds none
+    # of that cell's words, and stays a selection in one cell)
+    mid = lambda: place(page, lambda pg: select_between(pg, 'one alpha', 4, 'two beta', 3)) is None
     s = keys(lambda: click_text(page, 'one alpha', 4), ['Control+Shift+ArrowRight', 'Control+Shift+ArrowRight', 'type:Z'], words)
+    check('a selection up to the next cell\'s start, typed over: only the first cell\'s words', '\\midrule\none Z & two beta \\\\\nthree' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
+    s = keys(mid, ['type:Z'], words)
     check('a selection from inside a cell into the next, typed over: the letter where it starts, the rest of both cells gone', '\\midrule\none Z &  \\\\\nthree' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
-    load_doc(page, words); click_text(page, 'one alpha', 4)
-    for k in ('Control+Shift+ArrowRight', 'Control+Shift+ArrowRight'): page.keyboard.press(k); settle(page, 60)
+    load_doc(page, words); mid()
     page.evaluate(PASTE, ['pasted words', None]); settle(page, 200)
     s = src(page)
     check('and pasted over: the words where it starts', '\\midrule\none pasted words &  \\\\\nthree' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
     for name, ks, want in (('cut, then a letter', ['Control+x', 'type:Q'], '\\midrule\none Q &  \\\\\nthree'),
                            ('Shift+Enter, then a letter', ['Shift+Enter', 'type:Q'], '\\midrule\none \\newline Q &  \\\\\nthree'),
                            ('Alt+=, y, Esc', ['Alt+Equal', 'type:y', 'Escape'], 'Head & Other \\\\\n\\midrule\none $y$ &  \\\\\nthree')):
-        s = keys(lambda: click_text(page, 'one alpha', 4), ['Control+Shift+ArrowRight', 'Control+Shift+ArrowRight'] + ks, words)
+        s = keys(mid, ks, words)
         check('the same selection, %s: what it writes at the selection\'s start, every row\'s \\\\ kept' % name, want in s, s[s.find('\\toprule'):s.find('\\bottomrule')])
     s = keys(lambda: click_text(page, 'two', 0), ['Shift+ArrowRight'] * 6 + ['Control+x'])
     check('Ctrl+X from a row\'s last cell into the next row: the cells from the selection to its end\'s cell emptied, those before and after it kept', '\\midrule\none &  \\\\\n & four \\\\\n\\bottomrule' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
