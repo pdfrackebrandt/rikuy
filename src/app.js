@@ -1634,42 +1634,23 @@ class App {
     // (Track Changes' base, whose writes wait a moment: written now, or the last words typed
     // with tracking off would come back as changes)
     if (this.baseSaveT) this.saveBase(true);
-    if (this.unsaved) {
-      store(STORE, { name: this.name, main: this.main, files: [...this.files.entries()], t: Date.now(), zipDirty: this.zipDirty });
-      this.saveSoon.flush();
-    }
     // Where the caret and the view were, per document, as Word's "pick up where you left off": a
     // reload (or the browser started again, or the app updated) opened every document at its
-    // first line, the caret and the page scrolled there, however far down the work had been.
-    // The view is kept as the source place of its top line, which holds at any width or zoom. A
-    // hash of the words around each place goes with it (never the words: what is kept here
-    // outlives Remove), so a text changed since is never given a caret in the wrong place
-    // (placeInitialCaret). After the text's own copy, and never in its way.
-    try {
-      let all = load('rikuy.place.v1');
-      if (!all || typeof all !== 'object' || Array.isArray(all)) all = {};
-      const sig = (f, a, b) => { const t = this.files.get(f); return textSig('', [['', t.slice(Math.max(0, a - 40), a)], ['', t.slice(b, b + 40)]]); };
-      // (the blank paragraph the caret is in, Enter's or the one after a table of contents: its place)
-      const c = this.caretNow(), g = c && c.ghost ? this.ghost : null;
-      const f = g ? g.f : c && c.f, a = g ? g.pos : c && c.a, b = g ? g.pos : c && c.b;
-      const P = { main: this.main, at: Date.now() };
-      if (f != null && a != null && this.files.has(f)) Object.assign(P, { f, a, b, ghost: !!g, sig: sig(f, a, b) });
-      // (the item under a few points down the view's middle: no walk over every item of a long
-      // document, each measured, as the page goes)
-      const D = this.desk.getBoundingClientRect(), pg = this.root.querySelector('.page'), Rp = pg && pg.getBoundingClientRect();
-      const x = Rp ? Rp.left + Rp.width / 2 : D.left + D.width / 2;
-      for (let y = D.top + 2; y < Math.min(D.bottom, D.top + 400) && !P.top; y += 24) {
-        const e = document.elementFromPoint(x, y), it = e && this.root.contains(e) ? e.closest('.it') : null;
-        const sp = it && it.querySelector('span.t:not(.gh)'), at = sp && sp.firstChild ? posFromDom(sp.firstChild, 0, this.root) : null;
-        if (at && !at.ghost && this.files.has(at.f)) P.top = { f: at.f, p: at.p, dy: Math.round(it.getBoundingClientRect().top - D.top), sig: sig(at.f, at.p, at.p) };
-      }
-      if (P.f == null && !P.top) delete all[this.name];
-      else all[this.name] = P;
+    // first line, the caret and the page scrolled there, however far down the work had been. The
+    // words around the caret go with it, so a text changed since (another tab, an older copy)
+    // is never given a caret in the wrong place (placeInitialCaret).
+    const c = this.caretNow(), t = c && !c.ghost && this.files.get(c.f);
+    if (t != null && c.a != null) {
+      const all = load('rikuy.place.v1') || {};
+      all[this.name] = { main: this.main, f: c.f, a: c.a, b: c.b, pre: t.slice(Math.max(0, c.a - 40), c.a), post: t.slice(c.b, c.b + 40), top: this.desk.scrollTop, at: Date.now() };
       // (the twenty documents last left, no more)
-      const names = Object.keys(all).sort((x, y) => ((all[y] && all[y].at) || 0) - ((all[x] && all[x].at) || 0));
+      const names = Object.keys(all).sort((x, y) => (all[y].at || 0) - (all[x].at || 0));
       for (const n of names.slice(20)) delete all[n];
       store('rikuy.place.v1', all);
-    } catch (e) { /* a place to come back to is a convenience */ }
+    }
+    if (!this.unsaved) return;
+    store(STORE, { name: this.name, main: this.main, files: [...this.files.entries()], t: Date.now(), zipDirty: this.zipDirty });
+    this.saveSoon.flush();
   }
 
   onGlobalKey(e) {
