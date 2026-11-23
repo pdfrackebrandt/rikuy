@@ -744,6 +744,8 @@ export function installWordTyping(mf, opts) {
   // becomes a group, {\bm{\alpha}}_i.
   const scriptOnFont = (k) => {
     const F = font;
+    // (a Space between them, \bm \alpha Space _i, as TeX skips it: the symbol still waits)
+    if (k === ' ') return false;
     font = null;
     if (!F || (k !== '^' && k !== '_')) return false;
     try {
