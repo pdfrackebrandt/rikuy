@@ -3,7 +3,7 @@ Shift+Enter rows, wrapping a selection, pasting with delimiters, Copy for Word, 
 comma in German documents, chemistry with \\ce."""
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, until, open_page, check, results, src, SHOTS
+from browser import settle, until, open_page, check, results, src, SHOTS, load_doc
 from playwright.sync_api import sync_playwright
 
 with sync_playwright() as p:
@@ -95,6 +95,17 @@ with sync_playwright() as p:
     check('rows pasted into an equation of rows are rows of it, their & kept', 'a &= b \\\\\n  c &= d' in rows and '\\&' not in rows and rows.count('\\\\') >= 3, rows[-120:])
     k.press('Escape'); settle(page, 300)
     page.evaluate("window.rikuy.undo()"); settle(page, 300)
+    # (into a gather, which has no columns, the rows come without their &, which TeX rejects there)
+    keep = page.evaluate("window.rikuy.files.get('main.tex')")
+    load_doc(page, '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nText.\n\\begin{gather}\n  q = r \\\\\n  s = t\n\\end{gather}\nMore.\n\\end{document}\n')
+    page.locator('.it.dm').nth(0).click()
+    page.wait_for_selector('#pop-field', timeout=10000); settle(page, 300)
+    page.evaluate("(() => { const mf = document.getElementById('pop-field'); mf.focus(); mf.executeCommand('moveToMathfieldEnd'); })()")
+    page.evaluate(PASTE, [' a = b c = d ', '\\begin{align}\n  a &= b \\\\\n  c &= d\n\\end{align}']); settle(page, 400, full=True)
+    rows = ta()
+    check('rows pasted into a gather come without their &', '&' not in rows and 'a = b' in rows and 'c = d' in rows, rows[-80:])
+    k.press('Escape'); settle(page, 300)
+    load_doc(page, keep)
     open_inline()
     # paste into the LaTeX box
     page.evaluate("""(() => { const t = document.getElementById('pop-tex'); t.focus(); t.setSelectionRange(t.value.length, t.value.length); const dt = new DataTransfer(); dt.setData('text/plain', '\\\\[ z+1 \\\\]');

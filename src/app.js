@@ -3598,6 +3598,9 @@ class App {
       // a row break before and after them where the row there holds something: the field took
       // their & for characters and joined the first to the row there, q &= ra\&=b \\ c\&=d)
       if (rows) {
+        // (an environment with no columns, gather or multline, takes rows but no & at the top
+        // level, which TeX rejects there; those inside a matrix or cases stay)
+        if (!/^(align|alignat|flalign|eqnarray|split|aligned|alignedat)\*?$/.test(String((opts.env && opts.env()) || ''))) inner = inner.replace(/(\\begin\s*\{([A-Za-z*]+)\}[\s\S]*?\\end\s*\{\2\})|(^|[^\\])&/g, (m, env, n, pre) => env || pre);
         pull();
         let at = ta.value.length;
         try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (ta.value.startsWith(pre)) at = pre.length; } catch (err) { /* at the end */ }
