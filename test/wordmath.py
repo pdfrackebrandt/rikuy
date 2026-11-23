@@ -246,6 +246,8 @@ try:
         # after it the same style, \bm{\beta x}, \mathrm{dx})
         (['\\bm', '@Space', '\\beta', '@Space', 'x'], '\\bm{\\beta}x'),
         (['\\mathrm', '@Space', 'dx'], '\\mathrm{d}x'),
+        # (a script after a bold symbol goes on it, not into the bold: \bm{\alpha_{i}})
+        (['\\bm', '@Space', '\\alpha_i+1'], '{\\bm{\\alpha}}_i+1'),
     ]
     for seq, want in cases:
         fresh_row()

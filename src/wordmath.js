@@ -723,16 +723,35 @@ export function installWordTyping(mf, opts) {
     return false;
   };
 
+  // a bold symbol just written (argDone): where it stands, for a script typed next
+  let font = null;
   const argDone = () => {
     const t = arg;
     arg = null; draw();
     // (a backslash alone, ended before its name: nothing, never \bm{\})
-    put('\\' + t.name + '{' + (t.cmd && t.text === '\\' ? '' : t.text) + '}', { selectionMode: 'after' });
+    const tex = '\\' + t.name + '{' + (t.cmd && t.text === '\\' ? '' : t.text) + '}', p0 = mf.position;
+    put(tex, { selectionMode: 'after' });
+    font = /^(mathbf|bm|boldsymbol)$/.test(t.name) ? { a: p0, b: mf.position, tex } : null;
     // (the font is the argument's alone: MathLive gave the next letters typed the style of the
     // atom before them, \bm \beta then x was \bm{\beta x}, \mathrm d then x \mathrm{dx})
     try { mf.applyStyle({}, { operation: 'set' }); } catch (e) { /* the field's own style goes on */ }
     // (after \text{…} what follows is math again, not more of the text)
     try { if (mf.mode !== 'math') mf.executeCommand(['switchMode', 'math']); } catch (e) { /* ignore */ }
+  };
+  // A script typed right after a bold symbol goes on the symbol, not in its font: TeX reads
+  // \bm\alpha_i as a bold alpha and a plain i; the field wrote the script inside the bold,
+  // \bm{\alpha_{i}} (only its bold styles do: \mathbb{R}^{n} came out right). The symbol
+  // becomes a group, {\bm{\alpha}}_i.
+  const scriptOnFont = (k) => {
+    const F = font;
+    font = null;
+    if (!F || (k !== '^' && k !== '_')) return false;
+    try {
+      if (mf.position !== F.b || !mf.selectionIsCollapsed) return false;
+      mf.selection = { ranges: [[F.a, F.b]], direction: 'forward' };
+      put('{' + F.tex + '}' + k + '{#?}', { selectionMode: 'placeholder' });
+      return true;
+    } catch (e) { return false; }
   };
   // the empty box of a command the caret is in (\frac's numerator, \sqrt's radicand): its owner
   const emptyBox = () => {
@@ -796,7 +815,7 @@ export function installWordTyping(mf, opts) {
       if (arg.cmd && arg.text === '\\' && k.length === 1 && !/^[A-Za-z]$/.test(k)) { stop(); arg.text += k; argDone(); return; }
       // (a name ends at the first key that is no letter, \bm \alpha+1 and \operatorname argmax_x:
       // Space and } with it, any other key goes on after it; _x went into the name)
-      if ((arg.cmd || arg.word) && !arg.lead && k.length === 1 && !/^[A-Za-z]$/.test(k)) { if (k === ' ' || k === '}') stop(); argDone(); return; }
+      if ((arg.cmd || arg.word) && !arg.lead && k.length === 1 && !/^[A-Za-z]$/.test(k)) { if (k === ' ' || k === '}') stop(); argDone(); if (scriptOnFont(k)) stop(); return; }
       if ((k === '}' && !arg.depth) || k === 'Enter' || k === 'Tab') { stop(); argDone(); return; }
       if (k === 'Escape') { stop(); arg = null; draw(); return; }
       if (k === 'Backspace') {
@@ -821,6 +840,7 @@ export function installWordTyping(mf, opts) {
       if (k.length === 1) { stop(); arg.depth += k === '{' ? 1 : k === '}' ? -1 : 0; arg.text += k; draw(); }
       return;
     }
+    if (buf == null && !shortcut && k.length === 1 && font) { if (scriptOnFont(k)) { stop(); return; } } else if (k !== 'Shift') font = null;
     // $x^2$ typed as in Overleaf: the closing $ ends a formula in the line (\$ is a dollar sign)
     // (onDollar(true) asks whether a $ ends this formula: one in the line, a display opened by $$)
     // (a command's name being typed, \alpha$, is something in the formula already)
