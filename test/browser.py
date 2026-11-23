@@ -1707,6 +1707,11 @@ def run():
             check('no console errors (Enter kept, %d px)' % w, not errors, errors[:5])
             browser.close()
 
+        browser, page, errors = open_page(p, width=1366, height=900)
+        word_typing(page)
+        check('no console errors (typing as in Word)', not errors, errors[:5])
+        browser.close()
+
     bad = [r for r in results if not r[1]]
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     return 1 if bad else 0
@@ -1766,6 +1771,196 @@ def enter_kept(page, w):
     got = page.evaluate("window.rikuy.rbRange ? window.rikuy.rbRange.toString() : null")
     check('a relayout with a dialog\'s field focused keeps what the dialog acts on (%d px)' % w, got == 'Second one', got)
     page.keyboard.press('Escape'); settle(page, 200)
+
+
+# A short document with what a paragraph's edges meet: a heading, bold and italic words, an inline
+# formula, a footnote, a reference, a citation, a list and a display
+WORD_DOC = r"""\documentclass{article}
+\begin{document}
+\section{Introduction}
+First paragraph with \textbf{bold words} and \emph{italic words} here.
+A formula $x^2+y$ sits inline, a note\footnote{The note.} too, see Section~\ref{sec:b} and \cite{knuth}.
+
+Second paragraph is plain text only.
+\begin{itemize}
+\item Apple one
+\item Banana two
+\end{itemize}
+After the list comes text.
+\[ a = b \]
+After display text.
+
+\section{Background}\label{sec:b}
+Last paragraph of the document.
+\end{document}
+"""
+
+
+def word_typing(page):
+    """Everyday typing as a Word user does it at 1366 px: selections by mouse and keys typed over."""
+    k = page.keyboard
+    def at(text, off=1):
+        return page.evaluate("""([text, off]) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(text));
+          s.scrollIntoView({ block: 'center' });
+          const i = s.textContent.indexOf(text) + off, r = document.createRange(); r.setStart(s.firstChild, i); r.setEnd(s.firstChild, i + 1);
+          const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }""", [text, off])
+    # 1: the page's last paragraph above its footnotes. A triple click there, or Shift+Down on its
+    # last line, ends the selection at the footnotes' start, which was read as the footnote's own
+    # words, earlier in the source: typing over it deleted everything from the footnote to here
+    load_doc(page, WORD_DOC)
+    x, y = at('Last paragraph'); page.mouse.click(x, y, click_count=3); settle(page, 120, full=True)
+    k.type('Z'); settle(page, 100)
+    check('a triple click on the paragraph above the footnotes, then a letter: the paragraph alone is replaced', src(page) == WORD_DOC.replace('Last paragraph of the document.', 'Z'), src(page)[150:])
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Last paragraph', 0); k.press('Shift+ArrowDown'); k.type('Z'); settle(page, 100)
+    check('Shift+Down on the last line above the footnotes, then a letter: only that line is replaced', src(page) == WORD_DOC.replace('Last paragraph of the document.', 'Z'), src(page)[150:])
+    # (and one from a footnote's words into the next page ends at that footnote's end: it ended
+    # at the last footnote of the page, whose mark is in the body, and the body between went)
+    fill = '\n\n'.join('Filler paragraph number %d with enough words to take a few lines on the page so pages fill up quickly here.' % i for i in range(40))
+    D3 = '\\documentclass{article}\n\\begin{document}\nPara Alpha has a note\\footnote{Note one text.} and more.\n\nPara Bravo in between with words.\n\nPara Charlie has a note\\footnote{Note two text.} end.\n\n' + fill + '\n\nZeta last words.\n\\end{document}\n'
+    load_doc(page, D3)
+    page.evaluate("""() => { const sp = [...document.querySelectorAll('#pages span.t')];
+      const a = sp.find((s) => s.textContent.includes('Note one')), z = sp.find((s) => s.textContent.includes('number 30'));
+      const r = document.createRange(); r.setStart(a.firstChild, a.textContent.indexOf('one')); r.setEnd(z.firstChild, 3);
+      document.getElementById('pages').focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }""")
+    settle(page, 100, full=True); k.type('Z'); settle(page, 100)
+    check('from a footnote\'s words into the next page, then a letter: only that footnote\'s words after the place go', src(page) == D3.replace('Note one text.', 'Note Z'), src(page)[40:260])
+    # 2: a triple click selects the whole paragraph, as Word's: the browser's stopped at the first
+    # formula in it, and the letter typed over it left the rest of the paragraph standing
+    load_doc(page, WORD_DOC)
+    x, y = at('First paragraph'); page.mouse.click(x, y, click_count=3); settle(page, 120, full=True)
+    k.type('Z'); settle(page, 100)
+    first = WORD_DOC[WORD_DOC.index('First paragraph'):WORD_DOC.index('\n\nSecond')]
+    para = src(page)
+    load_doc(page, WORD_DOC)
+    x, y = at('Background'); page.mouse.click(x, y, click_count=3); settle(page, 120, full=True)
+    k.type('Z'); settle(page, 100)
+    check('a triple click on a paragraph with a formula, a footnote, a reference and a citation, then a letter, replaces all of it; on a heading, its words, the heading staying',
+          para == WORD_DOC.replace(first, 'Z') and src(page) == WORD_DOC.replace('{Background}', '{Z}'), (para[40:200], src(page)[300:]))
+    # 3: words copied from two paragraphs are pasted as two paragraphs, as Word's are: copied from
+    # a paragraph into the list item or the paragraph after a heading, they came as one run of
+    # words, "only.Apple one" (only a blank line in the source counted as a paragraph's end)
+    page.context.grant_permissions(['clipboard-read', 'clipboard-write'])
+    end = 'of the document.'
+    bad = []
+    for a, z, want in (('Second', 'Apple one', 'Second paragraph is plain text only.\n\nApple one'), ('Background', 'Last', '\\section{Background}\n\nLast'), ('bold', 'italic', 'bold words and italic')):
+        load_doc(page, WORD_DOC)
+        place(page, (a, z)); k.press('Control+c'); settle(page, 50)
+        click_text(page, end, len(end)); k.press('Control+v'); settle(page, 100)
+        if src(page) != WORD_DOC.replace(end, end + want): bad.append((a, z, src(page)[-80:]))
+    check('copied from a paragraph into a list item or from a heading into a paragraph, pasted: two paragraphs; across bold and italic in one paragraph: one line', not bad, bad)
+    # (and what a selection holds whole goes with its formatting and structure, as Word's copy
+    # keeps the paragraphs it holds: Select All, Copy, Paste gave every heading as plain words,
+    # every list as paragraphs and every bold word plain)
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Last', 0); k.press('Control+a'); k.press('Control+c'); settle(page, 50)
+    click_text(page, end, len(end)); k.press('Control+v'); settle(page, 100)
+    s2 = src(page)
+    check('Select All, Copy, then Paste at the end: headings, the list, bold, italic and the display come again as they are', all(s2.count(x) == 2 for x in ('\\section{Introduction}', '\\section{Background}', '\\begin{itemize}\n\\item Apple one\n\\item Banana two\n\\end{itemize}', '\\textbf{bold words}', '\\emph{italic words}', '\\[ a = b \\]', '\\footnote{The note.}')), s2[-300:])
+    # (into a heading's words what is copied goes as one line of words: a heading or a list
+    # pasted there as it was nested \section{Intro\section{...}} or a list in it, and TeX stopped)
+    for a, z, want in (('Background', 'Last', 'Intro{Background} Lastduction'), ('Second', 'After', 'IntroSecond paragraph is plain text only.')):
+        load_doc(page, WORD_DOC)
+        place(page, (a, z)); k.press('Control+c'); settle(page, 50)
+        click_text(page, 'Introduction', 5); k.press('Control+v'); settle(page, 100)
+        h = src(page)[src(page).index('\\section{'):]; h = h[:h.index('\n')]
+        check('copied from "%s" to "%s", pasted into a heading: one line of words in its braces' % (a, z), want in h and h.count('\\section') == 1 and '\\begin' not in h and h.endswith('}'), h)
+    # (review of 996ae58b: a comment in what is copied ends at its line's end, so joined into
+    # the heading's one line it took the closing brace with it; a footnote holds paragraphs and
+    # displays, which were flattened and lost there)
+    D1 = '\\documentclass{article}\n\\begin{document}\n\\section{Intro}\nSome words% joined\nmore words here.\n\n\\section{Next}\nTail para.\\footnote{A note.}\n\\end{document}\n'
+    load_doc(page, D1)
+    place(page, ('Some', 'here.')); k.press('Control+c'); settle(page, 50)
+    click_text(page, 'Next', 4); k.press('Control+v'); settle(page, 100)
+    check('words with a comment line pasted into a heading: one line as TeX reads them, the heading closed', src(page) == D1.replace('\\section{Next}', '\\section{NextSome wordsmore words here.}'), src(page)[60:160])
+    # (an address keeps its %: a heading's or a cell's one line took \url{x%20y}'s % for a
+    # comment and lost the brace and the words after it; the title takes no paragraph break)
+    DU = ('\\documentclass{article}\n\\usepackage{url}\n\\title{My Title}\n\\begin{document}\n\\maketitle\n\\section{Next}\nSee \\url{https://a.org/x%20y} now.\n\n'
+          'Para one.\n\nPara two.\n\n\\begin{tabular}{|l|l|}\n\\hline\nCell & B \\\\\n\\hline\n\\end{tabular}\n\\end{document}\n')
+    url = 'See \\url{https://a.org/x%20y} now.'
+    got = []
+    for into, off, was, now in (('Cell', 4, 'Cell &', 'Cell' + url + ' &'), ('Next', 4, '{Next}', '{Next' + url + '}')):
+        load_doc(page, DU)
+        place(page, ('See', 'now.')); k.press('Control+c'); settle(page, 50)
+        click_text(page, into, off); k.press('Control+v'); settle(page, 100)
+        got.append(src(page) == DU.replace(was, now, 1))
+    load_doc(page, DU)
+    place(page, ('Para one', 'Para two.')); k.press('Control+c'); settle(page, 50)
+    click_text(page, 'My Title', 3); k.press('Control+v'); settle(page, 100)
+    got.append(src(page) == DU.replace('{My Title}', '{My Para one. Para two.Title}'))
+    check('an address with % pasted into a cell and a heading keeps its %, brace and words; two paragraphs pasted into the title join in one line', all(got), (got, src(page)[:120]))
+    load_doc(page, WORD_DOC.replace('of the document.', 'of the document.\\footnote{A note.}'))
+    place(page, ('comes', 'After display')); k.press('Control+c'); settle(page, 50)
+    click_text(page, 'A note', 2); k.press('Control+v'); settle(page, 100)
+    fn1 = src(page)[src(page).index('\\footnote{A'):]
+    load_doc(page, WORD_DOC.replace('of the document.', 'of the document.\\footnote{A note.}'))
+    place(page, ('Second', 'Apple one')); k.press('Control+c'); settle(page, 50)
+    click_text(page, 'A note', 2); k.press('Control+v'); settle(page, 100)
+    fn = src(page)[src(page).index('\\footnote{A'):]
+    check('copied into a footnote, a display stays a display and two paragraphs stay two', fn1.startswith('\\footnote{A comes text.\n\\[ a = b \\]\nAfter displaynote.}') and fn.startswith('\\footnote{A Second paragraph is plain text only.\n\nApple onenote.}'), (fn1[:80], fn[:80]))
+    # 4: a selection holding whole headings or list items takes them with its words, as Word's
+    # takes the paragraphs it holds; their words alone went, and an empty numbered heading or two
+    # empty bullets stayed between the two paragraphs the deletion joined
+    # (one key at an item's start still takes no \item)
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Banana', 0); k.press('Backspace'); settle(page, 100)
+    kept = src(page) == WORD_DOC
+    for a, z, key, old_, new_ in (('paragraph is', 'After', 'Backspace', 'paragraph is plain text only.\n\\begin{itemize}\n\\item Apple one\n\\item Banana two\n\\end{itemize}\nAfter', ''),
+                                  ('display', 'Last', 'Z', 'display text.\n\n\\section{Background}\\label{sec:b}\nLast', 'Z'),
+                                  ('one', 'Banana', 'Delete', 'one\n\\item Banana', '')):
+        load_doc(page, WORD_DOC)
+        place(page, (a, z))
+        if len(key) == 1: k.type(key)
+        else: k.press(key)
+        settle(page, 100)
+        check('selected from "%s" to "%s", then %s: what it held is gone, the paragraphs at its ends joined' % (a, z, key) + ('; Backspace at an item\'s start alone leaves the list as it was' if key == 'Delete' else ''),
+              src(page) == WORD_DOC.replace(old_, new_) and (key != 'Delete' or kept), (kept, src(page)[200:420]))
+    # 5: Enter at a heading's start puts an empty paragraph above it and the caret stays, as
+    # Word's: the empty paragraph showed below the heading, and words typed went after it
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Background', 0); k.press('Enter'); k.type('Q'); settle(page, 100)
+    check('Enter at a heading\'s start, then a letter: it goes in the heading, at its start (as at a paragraph\'s start, the empty paragraph is written only when typed in)', src(page) == WORD_DOC.replace('{Background}', '{QBackground}'), src(page)[330:420])
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Background', 0); k.press('Enter'); k.press('ArrowUp'); k.type('New'); settle(page, 100)
+    check('Enter at a heading\'s start, Up, words: a paragraph of their own above the heading', src(page) == WORD_DOC.replace('\\section{Background}', 'New\n\n\\section{Background}'), src(page)[330:420])
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Background', 0); k.press('Enter'); settle(page, 100)
+    above = page.evaluate("() => { const h = [...document.querySelectorAll('#pages .it.h')].find((x) => x.textContent.includes('Background')); return !!h && !!h.previousElementSibling && h.previousElementSibling.classList.contains('ghostp') && !document.querySelectorAll('#pages .ghostp')[1]; }")
+    k.press('Backspace'); settle(page, 100)
+    gone = page.evaluate("() => !document.querySelector('#pages .ghostp')")
+    check('Enter at a heading\'s start shows the empty paragraph above it; Backspace takes it away, the source as it was', above and gone and src(page) == WORD_DOC, (above, gone, src(page)[330:420]))
+    # 6: Enter twice at a list's end leaves it; the words typed next are a paragraph of their own,
+    # also where the list's paragraph goes on after it: they ran into those words
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Banana two', 10); k.press('Enter'); k.press('Enter'); k.type('Out'); settle(page, 100)
+    check('Enter twice at a list\'s end, then words: a paragraph between the list and the words after it', src(page) == WORD_DOC.replace('\\end{itemize}\nAfter', '\\end{itemize}\n\nOut\n\nAfter'), src(page)[250:380])
+    # (also where those words stand on \end's own line, or after a comment there: review of 3185b2f3)
+    for was, now in ((' After', '\n\nOut\n\n After'), ('%\nAfter', '%\n\nOut\n\nAfter')):
+        D = WORD_DOC.replace('\\end{itemize}\nAfter', '\\end{itemize}' + was)
+        load_doc(page, D)
+        click_text(page, 'Banana two', 10); k.press('Enter'); k.press('Enter'); k.type('Out'); settle(page, 100)
+        check('Enter twice at a list\'s end followed by %r, then words: a paragraph of their own' % was, src(page) == D.replace('\\end{itemize}' + was, '\\end{itemize}' + now), src(page)[250:380])
+    # (and one that starts in a heading's words, Ctrl+Shift+Home here: the paragraphs it holds
+    # whole go whole, their bold and italic wrappers, formula and footnote with them)
+    load_doc(page, WORD_DOC)
+    click_text(page, 'Second paragraph', 3); k.press('Control+Shift+Home'); k.type('Z'); settle(page, 100)
+    held = WORD_DOC[WORD_DOC.index('Introduction'):WORD_DOC.index('ond paragraph')]
+    check('from a paragraph, Ctrl+Shift+Home, then a letter: the heading\'s words become it, the paragraph between goes whole', src(page) == WORD_DOC.replace(held, 'Z}\n\n'), src(page)[30:120])
+    # 7: words typed over a selection undo word by word, and the last Ctrl+Z gives the selected
+    # words back selected, as Word's: the first letter typed was a step of its own ("n" stayed)
+    load_doc(page, WORD_DOC)
+    select_text(page, 'plain text'); k.type('new words'); settle(page, 100)
+    k.press('Control+z'); settle(page, 100); one = src(page)
+    k.press('Control+z'); settle(page, 100)
+    sel = page.evaluate('getSelection().toString()')
+    check('typed over a selection: Ctrl+Z takes the last word, a second gives the selection back, selected', one == WORD_DOC.replace('plain text', 'new ') and src(page) == WORD_DOC and sel == 'plain text', (one[250:300], src(page)[250:300], sel))
+    # 8: Delete before a display selects it first, and the note says Delete, the key pressed
+    # (it said "Press Backspace again"); a second Delete takes it
+    load_doc(page, WORD_DOC)
+    click_text(page, 'comes text.', 11); k.press('Delete'); settle(page, 100)
+    say = page.inner_text('#toast')
+    k.press('Delete'); settle(page, 100)
+    check('Delete before a display: "Press Delete again", and a second Delete takes the display', 'Press Delete again' in say and src(page) == WORD_DOC.replace('\\[ a = b \\]', ''), (say[:50], src(page)[300:380]))
 
 if __name__ == '__main__':
     sys.exit(run())

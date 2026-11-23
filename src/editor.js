@@ -62,7 +62,9 @@ export function charRange(B, seg, k) {
 
 const isSkippable = (el) => el.nodeType === 1 && (el.classList.contains('chr') || el.classList.contains('lbl') || el.classList.contains('fnrule') || el.classList.contains('folio') || el.classList.contains('mk-layer'));
 
-export function posFromDom(node, off, root) {
+// end: the place is a selection's end, which an element's edge leaves after what stands before
+// it on the page (posFromDom below)
+export function posFromDom(node, off, root, end) {
   if (!node) return null;
   if (node.nodeType === 3) {
     const span = node.parentNode;
@@ -90,6 +92,15 @@ export function posFromDom(node, off, root) {
   if (el.classList && el.classList.contains('atom')) return off === 0 ? before(el, root) : after(el, root);
   const kids = el.childNodes;
   if (off > 0 && kids[off - 1]) { const r = lastPos(kids[off - 1]); if (r) return r; }
+  // A selection that ends at the edge of an element ends after the words before that edge: a
+  // triple click on a page's last paragraph, or Shift+Down on its last line, ends at the start of
+  // the footnotes below it, which were taken for the place of their own words, earlier in the
+  // source; the selection then reached back over half the document, and typing over it deleted it
+  if (end) {
+    for (let i = off - 2; i >= 0; i--) { const r = lastPos(kids[i]); if (r) return r; }
+    const r = before(el, root);
+    if (r) return r;
+  }
   if (kids[off]) { const r = firstPos(kids[off]); if (r) return r; }
   // (a place before a heading's number, which Home and Ctrl+Home give, is the start of the
   // heading's own words: looking outside the element first sent the keys typed there into the
