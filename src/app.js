@@ -1250,8 +1250,10 @@ class App {
     const first = this.root.querySelector('.it.p span.t:not(.gh)') || this.root.querySelector('.it:not(.atom) span.t:not(.gh)');
     // the place this document was left at (leaving()): the view scrolled back to its top line,
     // and on a computer the caret back in it, as long as the words around each are the same
+    // (once, as the page opens: later calls, as File's view closing with no caret, act as before)
     let kept = null;
-    try {
+    if (!this.placeTaken) try {
+      this.placeTaken = true;
       const all = load('rikuy.place.v1'), P = all && typeof all === 'object' ? all[this.name] : null;
       const same = (f, a, b, h) => { const t = this.files.get(f); return t != null && Number.isInteger(a) && Number.isInteger(b) && 0 <= a && a <= b && b <= t.length && textSig('', [['', t.slice(Math.max(0, a - 40), a)], ['', t.slice(b, b + 40)]]) === h; };
       if (P && P.main === this.main) {

@@ -363,7 +363,7 @@ def places(page):
     long = '\\documentclass{article}\n\\begin{document}\n' + '\n\n'.join('Paragraph %d has some words in it to fill the page with text.' % i for i in range(120)) + '\n\\end{document}\n'
     load_doc(page, long)
     caret = lambda: ev(page, '(() => { const c = window.rikuy.caretNow(); return c && [c.f, c.a, c.b, !!c.ghost]; })()')
-    again = '() => { const g = window.rikuy; g.removeGhost(); getSelection().removeAllRanges(); document.activeElement.blur(); g.desk.scrollTop = 0; g.placeInitialCaret(); }'
+    again = '() => { const g = window.rikuy; g.placeTaken = false; g.removeGhost(); getSelection().removeAllRanges(); document.activeElement.blur(); g.desk.scrollTop = 0; g.placeInitialCaret(); }'
     click_text(page, 'Paragraph 95 has', 3)
     ev(page, 'window.rikuy.leaving()')
     kept = ev(page, 'localStorage.getItem("rikuy.place.v1")')
@@ -380,7 +380,7 @@ def places(page):
     # the view: Paragraph 90 at the top, no caret on the page, then a narrower window
     ev(page, """() => { const g = window.rikuy, sp = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.startsWith('Paragraph 90 ')); g.desk.scrollTop += sp.closest('.it').getBoundingClientRect().top - g.desk.getBoundingClientRect().top; getSelection().removeAllRanges(); document.activeElement.blur(); g.leaving(); }""")
     page.set_viewport_size({'width': 760, 'height': 800}); settle(page, 400, full=True)
-    ev(page, '() => { const g = window.rikuy; g.desk.scrollTop = 0; g.placeInitialCaret(); }')
+    ev(page, '() => { const g = window.rikuy; g.placeTaken = false; g.desk.scrollTop = 0; g.placeInitialCaret(); }')
     top = ev(page, """() => { const D = window.rikuy.desk.getBoundingClientRect(); const it = [...document.querySelectorAll('#pages .it')].find((x) => x.getBoundingClientRect().bottom > D.top + 2); return it && it.textContent.slice(0, 14); }""")
     check('the view kept as its top line\'s words: a narrower window opens at Paragraph 90', top == 'Paragraph 90 h', top)
     page.set_viewport_size({'width': 1366, 'height': 800}); settle(page, 400, full=True)
