@@ -200,6 +200,16 @@ def hunt(p):
     check('hunt: after a control space (\\ ) Backspace takes it whole, not its backslash alone', got == 'Dr. Smith.', got)
     got = keys('Dr.\\ second Smith.', ('second', 6), ['Backspace'] * 6 + ['Delete'])
     check('hunt: and Delete there takes the space after it, not the S of "Smith" (a space the browser does not draw)', got == 'Dr.\\ Smith.', got)
+    # (second review) a CRLF file, a line that ends in a comment, a control space on the right
+    got = keys('The\r\nparagraph here.', ('The', 3), ['Delete'], ' ')
+    check('hunt: CRLF: a space typed at a line\'s end, then Delete: the line end goes, not the p', got == 'The paragraph here.', repr(got))
+    got = keys('The\r\nsecond paragraph.', ('second', 6), ['Backspace'] * 7)
+    check('hunt: CRLF: a word deleted at a line\'s start, then Backspace: \\r\\n goes whole, no lone \\r', got == 'The paragraph.', repr(got))
+    for doc, keep in (('word % note\nsecond more.', '% note\n'), ('text%\nsecond more.', '%\n')):
+        got = keys(doc, ('second', 6), ['Backspace'] * 7)
+        check('hunt: after a line that ends in a comment, Backspace never joins the next line into it: ' + doc.split('\n')[0], keep in got and 'more.' in got.split('\n')[-1], repr(got))
+    got = keys('Line second\\ next.', ('second', 6), ['Backspace'] * 7)
+    check('hunt: a control space after the caret: Backspace takes the space before, not the e of Line', got == 'Line\\ next.', repr(got))
     got = keys('The\nparagraph here.', ('The', 3), ['Control+Backspace'], ' ')
     check('hunt: Ctrl+Backspace there takes the word before ("The "), not one space', got == '\nparagraph here.', got)
     # a change pressed in the Changes list is selected on the page: Reject then rejects that one

@@ -2065,16 +2065,24 @@ class App {
       // space the browser does not draw is skipped), or the whole run (nothing went). Only a run
       // inside a paragraph (no blank line in it), and only Backspace and Delete themselves:
       // Ctrl+Backspace takes the word as ever. Backspace after a control space (\ ) takes it whole.
-      const S = this.src(c.f), back = type === 'deleteContentBackward', ws = (ch) => ch === ' ' || ch === '\t' || ch === '\n';
-      if ((back || type === 'deleteContentForward') && ws(S[c.a - 1]) && ws(S[c.a])) {
+      // (a line end is a space unless it closes a comment, % to the line's end: that one is the
+      // comment's, and taken, the next line joined the comment and vanished from the page; \r\n
+      // is one line end; a control space, \ , is a space of the run and goes whole)
+      const S = this.src(c.f), back = type === 'deleteContentBackward';
+      const comment = (x) => /(?:^|[^\\])(?:\\\\)*%/.test(S.slice(S.lastIndexOf('\n', x - 1) + 1, x));
+      const ctl = (x) => { if (S[x] !== '\\' || S[x + 1] !== ' ') return false; let n = 0; while (S[x - 1 - n] === '\\') n++; return n % 2 === 0; };
+      const ws = (x) => S[x] === ' ' || S[x] === '\t' || ((S[x] === '\n' || S[x] === '\r') && !comment(x));
+      if ((back || type === 'deleteContentForward') && ws(c.a - 1) && (ws(c.a) || ctl(c.a))) {
         let i = c.a, j = c.a;
-        while (i > 0 && ws(S[i - 1])) i--;
-        while (j < S.length && ws(S[j])) j++;
-        if (!/\n[ \t]*\n/.test(S.slice(i, j))) {
-          let k = back ? c.a - 1 : c.a, n = 0;
-          if (back && S[k] === ' ') while (S[k - 1 - n] === '\\') n++;
-          if (n % 2) k--;
-          this.commit([{ f: c.f, s: k, e: back ? c.a : c.a + 1, t: '' }], { f: c.f, p: k, bias: back ? -1 : 1 }, 'del');
+        while (i > 0 && ws(i - 1)) i--;
+        while (j < S.length && ws(j)) j++;
+        if (!/\n[ \t\r]*\n/.test(S.slice(i, j))) {
+          let a = back ? c.a - 1 : c.a, b = back ? c.a : c.a + 1;
+          if (back && S[a] === ' ' && a > 0 && ctl(a - 1)) a--;
+          if (!back && ctl(a)) b = a + 2;
+          if (S[a] === '\n' && S[a - 1] === '\r') a--;
+          if (S[b - 1] === '\r' && S[b] === '\n') b++;
+          this.commit([{ f: c.f, s: a, e: b, t: '' }], { f: c.f, p: a, bias: back ? -1 : 1 }, 'del');
           return;
         }
       }
