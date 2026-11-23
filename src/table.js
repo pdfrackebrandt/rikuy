@@ -500,6 +500,85 @@ export function barsOf(src, T) {
 
 // A row's text as a person reads it: each cell's words (for sorting, converting, merging)
 export const cellText = (src, c) => (c.empty ? '' : src.slice(c.mc ? (c.mr ? c.mr.textS : c.mc.textS) : c.mr ? c.mr.textS : c.ks, c.mc ? (c.mr ? c.mr.textE : c.mc.textE) : c.mr ? c.mr.textE : c.ce));
+// where those words stand in the source: [s, e] (s === e in an empty cell)
+export const cellWords = (c) => (c.empty ? [c.ks, c.ks] : [c.mc ? (c.mr ? c.mr.textS : c.mc.textS) : c.mr ? c.mr.textS : c.ks, c.mc ? (c.mr ? c.mr.textE : c.mc.textE) : c.mr ? c.mr.textE : c.ce]);
+
+// [a, b] of a table's body reaching over a cell's edge: { T, A, Z } (the cells at its two ends),
+// else null. (The & and \\ a deletion over an edge took joined two cells, or two rows, into one.)
+function overCells(src, a, b) {
+  if (a >= b || !/[&\\]/.test(src.slice(a, b))) return null;
+  const T = tableAt(src, a);
+  if (!T || a < T.bodyS || b > T.bodyE) return null;
+  const A = cellAt(T, a), Z = cellAt(T, b);
+  return A && Z && A.cell !== Z.cell ? { T, A, Z } : null;
+}
+
+// Backspace, Delete, or a word or a line of them, from a caret at p: the part of [a, b] in p's
+// cell, as Word stops them at the cell's edge ({ a, b }, empty at the edge: nothing goes), or null
+// where [a, b] stays in one cell or p is in no table.
+export function clipToCell(src, p, a, b) {
+  if (a >= b || !/[&\\]/.test(src.slice(a, b))) return null;
+  const T = tableAt(src, p), C = T && cellAt(T, p);
+  if (!C) return null;
+  // (out of the table too: Backspace in its first cell and Delete in its last stay in them)
+  if (a >= T.bodyS && b <= T.bodyE) { const A = cellAt(T, a), Z = cellAt(T, b); if (!A || !Z || A.cell === Z.cell) return null; }
+  const [s, e] = cellWords(C.cell);
+  const x = Math.min(Math.max(a, s), e);
+  return { a: x, b: Math.max(x, Math.min(b, e)) };
+}
+
+// A selection [a, b] over several cells copied: a tabular of their own, the block the page shows
+// (its columns' letters, merged cells and colours kept; the rules too where the block is as wide
+// as the table). Its source as it stood, & and \\ alone, pasted in a paragraph stopped TeX.
+const LT_ONLY = new Set(['endhead', 'endfirsthead', 'endfoot', 'endlastfoot', 'pagebreak', 'newpage', 'nopagebreak', 'clearpage', 'kill']);
+const WIDE_LETTERS = { X: 'l', L: 'l', C: 'c', R: 'r', J: 'l' };
+export function blockTabular(src, a, b) {
+  const o = overCells(src, a, b);
+  if (!o) return null;
+  const { T, A, Z } = o;
+  const R = grow(T, { r0: Math.min(A.r, Z.r), r1: Math.max(A.r, Z.r), c0: Math.min(A.cell.col, Z.cell.col), c1: Math.max(A.cell.col + A.cell.span - 1, Z.cell.col + Z.cell.span - 1) });
+  const cols = T.spec.cols.slice(R.c0, R.c1 + 1);
+  if (!cols.length || cols.some((c) => c.s == null || c.e == null)) return null;
+  const wide = R.c0 === 0 && R.c1 >= T.ncols - 1, nl = T.eol, out = [];
+  // (a longtable's head and foot marks and page breaks belong to it alone: in a tabular TeX stops)
+  const lead = (l) => l.filter((x) => !LT_ONLY.has(x.name)).map((x) => src.slice(x.s, x.e)).join(' ');
+  for (let r = R.r0; r <= R.r1; r++) {
+    const row = T.rows[r];
+    if (!row || row.kind !== 'row') continue;
+    if (wide && lead(row.lead)) out.push(lead(row.lead));
+    const cells = row.cells.filter((c) => c.col >= R.c0 && c.col + c.span - 1 <= R.c1).map((c) => (c.empty ? '' : src.slice(c.cs, c.ce)));
+    out.push(cells.join(' & ') + ' \\\\');
+  }
+  const last = T.rows.reduce((m, x, k) => (x.kind === 'row' ? k : m), -1);
+  if (wide && R.r1 === last && lead(T.tail.lead)) out.push(lead(T.tail.lead));
+  // (tabularx's X, tabulary's L C R J take their width from the table's: alone in a tabular an X
+  // column is no width at all, a word a line; the letter a tabular has instead)
+  const letter = (c) => (WIDE_LETTERS[c.letter] && c.ls != null ? src.slice(c.s, c.ls) + WIDE_LETTERS[c.letter] + src.slice(c.le, c.e) : src.slice(c.s, c.e));
+  return '\\begin{tabular}{' + cols.map(letter).join('') + '}' + nl + out.join(nl) + nl + '\\end{tabular}';
+}
+
+// A selection [a, b] over several cells deleted or typed over: the words of the cells of the block
+// it shows (Word's), the cells and the rows kept, from a to the end of b's cell: what types, pastes
+// or cuts over a selection writes at a and counts on nothing before a going (a cell's words before
+// a, or a whole cell of the block before it, stay; as the block's cells after b's cell do).
+// [{ s, e }] in order, or null where it is not one.
+export function clearCells(src, a, b) {
+  const o = overCells(src, a, b);
+  if (!o) return null;
+  const { T, A, Z } = o;
+  const R = grow(T, { r0: Math.min(A.r, Z.r), r1: Math.max(A.r, Z.r), c0: Math.min(A.cell.col, Z.cell.col), c1: Math.max(A.cell.col + A.cell.span - 1, Z.cell.col + Z.cell.span - 1) });
+  const out = [], end = Math.max(b, cellWords(Z.cell)[1]);
+  for (let r = R.r0; r <= R.r1; r++) {
+    const row = T.rows[r];
+    if (!row || row.kind !== 'row') continue;
+    for (const c of row.cells) {
+      if (c.col < R.c0 || c.col + c.span - 1 > R.c1) continue;
+      const [s0, e0] = cellWords(c), s = Math.max(s0, a), e = Math.min(e0, end);
+      if (e > s) out.push({ s, e });
+    }
+  }
+  return out;
+}
 
 // ---- new tables -----------------------------------------------------------------------------
 // The text of a new table of r rows and c columns, as Insert Table writes it: in a table float,
@@ -639,6 +718,85 @@ export function insertRow(src, T, r, below, o = {}) {
   const t = W + lead + (grid || '');
   return { edits: [{ s: at, e: at, t }, ...span], p: at + W.length };
 }
+// Cells copied from a spreadsheet or another table (rows of their words, as TeX) pasted at the cell
+// of row r that covers column col: Word's Overwrite Cells. Each cell's words are replaced from
+// there to the right and down; rows are added under the last where more come (in the table's own
+// style, its grid's rules too); words past the last column go into the last cell, so none is lost.
+// { edits, p } (p: the end of the first cell's words, after the edits)
+export function pasteCells(src, T, r, col, grid) {
+  const data = T.rows.map((x, k) => k).filter((k) => T.rows[k].kind === 'row' && k >= r);
+  if (!data.length || !grid.length) return null;
+  const n = T.ncols, edits = [], extra = [];
+  let p = null;
+  for (const [i, words] of grid.entries()) {
+    if (i >= data.length) {
+      // (a new row: the columns before col empty, as Word leaves them)
+      const cells = Array(n).fill('');
+      for (const [j, w] of words.entries()) { const c = Math.min(col + j, n - 1); cells[c] = cells[c] ? cells[c] + ' ' + w : w; }
+      extra.push(cells.join(' & ') + ' \\\\');
+      continue;
+    }
+    const row = T.rows[data[i]], put = new Map(), add = (m, k, w) => m.set(k, m.has(k) ? m.get(k) + ' ' + w : w);
+    // (a short row, fewer cells than the table has columns, which LaTeX allows: new cells after its
+    // last for the words that come there; the words past the last column in the last cell)
+    const width = row.cells.reduce((m, c) => Math.max(m, c.col + c.span), 0), more = new Map();
+    for (const [j, w] of words.entries()) {
+      const k = col + j;
+      if (k < width) { const at = cellOfCol(row, k); if (at) add(put, at.cell, w); }
+      else if (width < n) add(more, Math.min(k, n - 1) - width, w);
+      else { const at = cellOfCol(row, width - 1); if (at) add(put, at.cell, w); }
+    }
+    const L = row.cells[row.cells.length - 1];
+    const suffix = more.size ? Array.from({ length: Math.max(...more.keys()) + 1 }, (x, k) => ' & ' + (more.get(k) || '')).join('') : '';
+    // (after the last cell's words, or after its \multicolumn's or \multirow's brace)
+    const wrapped = !!(L && (L.mc || L.mr));
+    for (const [c, t] of put) {
+      const [s, e] = cellWords(c);
+      edits.push({ s, e, t: c === L && !wrapped ? t + suffix : t });
+      if (p == null) p = s + t.length;
+    }
+    if (suffix && L && (wrapped || !put.has(L))) { const e = wrapped ? L.ce : cellWords(L)[1]; edits.push({ s: e, e, t: suffix }); }
+  }
+  if (extra.length) {
+    const g = gridRules(src, T), W = T.eol + indentOf(src, T.rows[data[data.length - 1]]);
+    const add = insertRow(src, T, data[data.length - 1], true, { text: extra.join((g || '') + W) });
+    if (add) edits.push(...add.edits);
+  }
+  edits.sort((a, b) => a.s - b.s);
+  return { edits, p };
+}
+// A spreadsheet's text as its rows of cells: a tab between cells, a line end between rows, and a
+// cell holding either (or a quote) in quotes, "" for a quote, as Excel and Google Sheets copy it.
+// null where a quote is never closed (then it was no quoting).
+export function sheetRows(text) {
+  const t = String(text || '').replace(/\r\n?/g, '\n'), rows = [];
+  let row = [], f = '', q = false, quoted = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (q) { if (c !== '"') f += c; else if (t[i + 1] === '"') { f += '"'; i++; } else q = false; }
+    else if (c === '"' && f === '' && !quoted) q = quoted = true;
+    else if (c === '\t') { row.push(f); f = ''; quoted = false; }
+    else if (c === '\n') { row.push(f); rows.push(row); row = []; f = ''; quoted = false; }
+    else f += c;
+  }
+  if (q) return null;
+  if (f !== '' || row.length) { row.push(f); rows.push(row); }
+  return rows;
+}
+
+// The cells of a tabular, as LaTeX (each cell's words: its colours and \multicolumn left out), where
+// latex is one whole tabular and nothing else, as a copy of cells on the page puts it on the
+// clipboard; else null.
+export function tabularCells(latex) {
+  const t = String(latex || '').trim();
+  if (!/^\\begin\s*\{tabular\}/.test(t)) return null;
+  const T = parseTable(t, 0);
+  if (!T || T.e !== t.length) return null;
+  // (a merged cell's columns after it empty, so the cells after it keep their columns)
+  const rows = T.rows.filter((x) => x.kind === 'row').map((x) => x.cells.flatMap((c) => [cellText(t, c).trim(), ...Array(Math.max(0, Math.min(1000, c.span - 1))).fill('')]));
+  return rows.length ? rows : null;
+}
+
 // the end of a row's cells for Sort: its last cell's, empty or not, its trailing spaces left (rowEnd
 // stops at the last cell with words, so a row ending in an empty cell lost its & when moved)
 function sortEnd(src, row) {

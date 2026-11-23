@@ -803,6 +803,158 @@ def r2_pdf(page):
     page.set_default_timeout(30000)
 
 
+def label_caret(page):
+    """(bugs 2026-11-22) Right from the end of the paragraph above a list put the caret on the first
+    item's number, which was taken for the end of that paragraph: what was typed went there. Left
+    from an item's words, and Right again, went back where they came from."""
+    P = WRAP('Hello.\n\n\\begin{enumerate}\n  \\item One\n  \\item Two\n\\end{enumerate}')
+    load_doc(page, P); click_text(page, 'Hello.', 6); key(page, 'ArrowRight'); page.keyboard.type('X'); settle(page, 200)
+    check('label_caret: Right from the paragraph above a list, then typing, writes at the first item\'s start', '\\item XOne' in src(page) and 'Hello.\n' in src(page), src(page)[40:])
+    load_doc(page, P); click_text(page, 'One', 3); key(page, 'ArrowRight'); page.keyboard.type('X'); settle(page, 200)
+    check('label_caret: Right at an item\'s end goes to the next item\'s start', '\\item One\n  \\item XTwo' in src(page), src(page)[40:])
+    load_doc(page, P); click_text(page, 'Two', 0); key(page, 'ArrowLeft'); page.keyboard.type('X'); settle(page, 200)
+    check('label_caret: Left at an item\'s start goes to the end of the item above', '\\item OneX\n  \\item Two' in src(page), src(page)[40:])
+    load_doc(page, P); click_text(page, 'Two', 0); key(page, 'ArrowLeft'); key(page, 'ArrowLeft'); page.keyboard.type('X'); settle(page, 200)
+    check('label_caret: and Left again goes on into its words', '\\item OnXe\n' in src(page), src(page)[40:])
+    load_doc(page, WRAP('Hello.\n\n\\begin{itemize}\n  \\item One\n  \\item \n  \\item Three\n\\end{itemize}')); click_text(page, 'One', 3); key(page, 'ArrowRight')
+    # (looked at before anything is typed, which would move the caret into text anyway)
+    caret = page.evaluate("(() => { const n = getSelection().anchorNode; return !!(n && (n.nodeType === 1 ? n : n.parentElement).closest('.lbl')); })()")
+    check('label_caret: the caret is not left drawn on a number', not caret)
+    page.keyboard.type('X'); settle(page, 200)
+    check('label_caret: Right into an empty item writes in it', '\\item One\n  \\item X\n  \\item Three' in src(page), src(page)[40:])
+
+
+def item_edges(page):
+    """(bugs 2026-11-22) Backspace at an item's start and Delete at its end, as Word's. Between two
+    items' words the browser found only \\item to delete: the first Backspace moved the caret to the
+    end of the item above, the second took that item's last letter; Delete did nothing."""
+    I3 = WRAP('Intro.\n\n\\begin{itemize}\n  \\item One\n  \\item Two\n  \\item Three\n\\end{itemize}\n\nAfter.')
+    load_doc(page, I3); h0 = hist(page); click_text(page, 'Two', 0); key(page, 'Backspace')
+    check('item_edges: Backspace at an item\'s start takes its bullet away, its words a paragraph of the item above', src(page) == I3.replace('\\item One\n  \\item Two', '\\item One\n\n  Two'), src(page)[40:])
+    check('item_edges: one step', hist(page) == h0 + 1, hist(page) - h0)
+    check('item_edges: two bullets left on the page', labels(page) == ['•', '•'], labels(page))
+    key(page, 'Backspace')
+    check('item_edges: a second Backspace joins it to the item above', src(page) == I3.replace('\\item One\n  \\item Two', '\\item One Two'), src(page)[40:])
+    key(page, 'Control+z'); key(page, 'Control+z')
+    check('item_edges: two undos give the list back', src(page) == I3, src(page)[40:])
+    load_doc(page, I3); click_text(page, 'One', 0); key(page, 'Backspace')
+    check('item_edges: Backspace at the first item\'s start makes it a paragraph before the list', src(page) == I3.replace('\\begin{itemize}\n  \\item One\n', 'One\n\n\\begin{itemize}\n'), src(page)[40:])
+    load_doc(page, I3); click_text(page, 'One', 3); key(page, 'Delete')
+    check('item_edges: Delete at an item\'s end brings the next item\'s words up', src(page) == I3.replace('\\item One\n  \\item Two', '\\item One Two'), src(page)[40:])
+    load_doc(page, I3); click_text(page, 'Three', 5); key(page, 'Delete')
+    check('item_edges: Delete at the last item\'s end brings the paragraph after the list into it', src(page) == I3.replace('\\item Three\n\\end{itemize}\n\nAfter.', '\\item Three After.\n\\end{itemize}'), src(page)[40:])
+    load_doc(page, I3); click_text(page, 'After.', 0); key(page, 'Backspace'); page.keyboard.type('X'); settle(page, 200)
+    check('item_edges: Backspace at the start of the paragraph after a list joins it to the last item, the caret where they meet', src(page) == I3.replace('\\item Three\n\\end{itemize}\n\nAfter.', '\\item Three XAfter.\n\\end{itemize}'), src(page)[40:])
+    E = WRAP('\\begin{enumerate}\n  \\item One\n  \\item \n  \\item Three\n\\end{enumerate}')
+    load_doc(page, E); click_text(page, 'One', 3); key(page, 'ArrowDown'); key(page, 'Backspace'); page.keyboard.type('X'); settle(page, 200)
+    check('item_edges: Backspace in an empty item takes it away, the caret at the end of the item above', src(page) == E.replace('\\item One\n  \\item \n', '\\item OneX\n'), src(page)[40:])
+    load_doc(page, WRAP('Hello.')); click_text(page, 'Hello.', 6); key(page, 'Enter'); page.keyboard.type('1. '); settle(page, 300)
+    key(page, 'Backspace'); page.keyboard.type('Plain'); settle(page, 200)
+    check('item_edges: "1. " typed, then Backspace takes the number away and what is typed is a paragraph', '\\begin{enumerate}' not in src(page) and 'Hello.\n\nPlain' in src(page), src(page)[40:])
+    load_doc(page, WRAP('Hello.\n\n\\begin{itemize}\n  \\item One\n    \\begin{itemize}\n      \\item Two\n      \\item Three\n    \\end{itemize}\n\\end{itemize}')); click_text(page, 'Three', 0); key(page, 'Backspace')
+    check('item_edges: in a nested list too, the words a paragraph of the item above at its level', '\\item Two\n\n      Three\n    \\end{itemize}' in src(page), src(page)[40:])
+
+
+def empty_items(page):
+    """(bugs 2026-11-22) Enter on an empty item before a list's last: Word takes its number away and
+    the empty paragraph stays there, the list numbered on after it. The item was taken out and the
+    caret put after the whole list, so what was typed landed below its last item. Enter twice at a
+    list's end with a line of text right after \\end: what was typed joined that line."""
+    load_doc(page, E3); click_text(page, 'Two', 3); key(page, 'Enter'); h0 = hist(page); key(page, 'Enter'); page.keyboard.type('Mid'); settle(page, 200)
+    s = src(page)
+    check('empty_items: Enter on an empty item in the middle ends the list there; what is typed stands between, the list numbered on after it',
+          '\\item Two\n\\end{enumerate}\n\nMid\n\n\\begin{enumerate}[resume]\n  \\item Three\n\\end{enumerate}' in s and '\\usepackage{enumitem}' in s, s)
+    check('empty_items: the page numbers it 1, 2, 3', labels(page) == ['1.', '2.', '3.'], labels(page))
+    key(page, 'Control+z'); key(page, 'Control+z')
+    check('empty_items: undo gives the empty item back', '\\item Two\n  \\item \n  \\item Three\n\\end{enumerate}' in src(page) and 'enumitem' not in src(page), src(page))
+    load_doc(page, L3); click_text(page, 'One', 0); key(page, 'Enter'); key(page, 'ArrowUp'); key(page, 'Enter'); page.keyboard.type('Top'); settle(page, 200)
+    check('empty_items: Enter on an empty first item: an empty paragraph above the list', '\\begin{document}\n\nTop\n\n\\begin{itemize}\n  \\item One\n  \\item Two' in src(page), src(page)[40:])
+    G = WRAP('\\begin{enumerate}\n  \\item One\n  \\item Two\n\\end{enumerate}\nAfter.')
+    load_doc(page, G); click_text(page, 'Two', 3); key(page, 'Enter'); key(page, 'Enter'); page.keyboard.type('Para'); settle(page, 200)
+    check('empty_items: Enter twice at a list\'s end before a line of text: what is typed is a paragraph of its own', 'Para\n\nAfter.' in src(page) and '\\item Two\n\\end{enumerate}' in src(page), src(page)[40:])
+
+
+def item_spans(page):
+    """(bugs 2026-11-22) A selection from one item's words into another's: Delete, typing over it or
+    Enter joins the two items, as Word joins the paragraphs a selection runs over. Only its visible
+    letters went, every item left standing, and Enter left an empty item between the two halves."""
+    I3 = WRAP('\\begin{itemize}\n  \\item One\n  \\item Two\n  \\item Three\n\\end{itemize}')
+    def over(page):
+        page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')]; const s = sp.find((x) => x.textContent.includes('One')), e = sp.find((x) => x.textContent.includes('Two'));
+          const r = document.createRange(); r.setStart(s.firstChild, s.textContent.indexOf('One') + 2); r.setEnd(e.firstChild, e.textContent.indexOf('Two') + 1);
+          document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''')
+        settle(page, 150)
+    load_doc(page, I3); over(page); key(page, 'Delete')
+    check('item_spans: Delete over two items\' words joins them', src(page) == I3.replace('One\n  \\item Two', 'Onwo'), src(page)[40:])
+    check('item_spans: the page draws two items', labels(page) == ['•', '•'], labels(page))
+    key(page, 'Control+z')
+    check('item_spans: one undo gives them back', src(page) == I3, src(page)[40:])
+    load_doc(page, I3); over(page); page.keyboard.type('Z'); settle(page, 200)
+    check('item_spans: typing over them joins them round what is typed', src(page) == I3.replace('One\n  \\item Two', 'OnZwo'), src(page)[40:])
+    load_doc(page, I3); over(page); key(page, 'Enter')
+    check('item_spans: Enter over them leaves two items, no empty one between', src(page) == I3.replace('One\n  \\item Two', 'On\n  \\item wo'), src(page)[40:])
+
+
+def join_after_list(page):
+    """(bugs 2026-11-22) Backspace at the start of a heading or a quote right after a list, or Delete
+    at the list's last item before one: its words join the last item, as a paragraph's do. The caret
+    only moved to the item's end, and a second Backspace took its last letter."""
+    L = lambda after: WRAP('\\begin{itemize}\n  \\item One\n  \\item Two\n\\end{itemize}\n\n' + after)
+    load_doc(page, L('\\section{Head}\nBody.')); click_text(page, 'Head', 0); key(page, 'Backspace'); page.keyboard.type('X'); settle(page, 200)
+    check('join_after_list: Backspace at a heading\'s start after a list joins its words to the last item', src(page) == WRAP('\\begin{itemize}\n  \\item One\n  \\item Two XHead\n\\end{itemize}\n\nBody.'), src(page)[40:])
+    load_doc(page, L('\\section{Head}\nBody.')); click_text(page, 'Two', 3); key(page, 'Delete')
+    check('join_after_list: Delete at the last item\'s end before a heading does the same', src(page) == WRAP('\\begin{itemize}\n  \\item One\n  \\item Two Head\n\\end{itemize}\n\nBody.'), src(page)[40:])
+    load_doc(page, L('\\begin{quote}\nQ words.\n\\end{quote}\n\nZ.')); click_text(page, 'Q words', 0); key(page, 'Backspace')
+    check('join_after_list: and at a quote\'s start', src(page) == WRAP('\\begin{itemize}\n  \\item One\n  \\item Two Q words.\n\\end{itemize}\n\nZ.'), src(page)[40:])
+    key(page, 'Control+z')
+    check('join_after_list: one undo gives them back', src(page) == L('\\begin{quote}\nQ words.\n\\end{quote}\n\nZ.'), src(page)[40:])
+
+
+def item_paste(page):
+    """(bugs 2026-11-22) Paragraphs pasted into a list item: the second and later become items of its
+    list, as Word gives pasted paragraphs the list's bullets. They went in as paragraphs of the one
+    item, with no bullet."""
+    def paste(t, h=None):
+        page.evaluate('''([t, h]) => { const dt = new DataTransfer(); dt.setData('text/plain', t); if (h) dt.setData('text/html', h);
+          document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }''', [t, h])
+        settle(page, 400)
+    I2 = WRAP('\\begin{itemize}\n  \\item One\n  \\item Two\n\\end{itemize}')
+    load_doc(page, I2); click_text(page, 'One', 3); paste('aa\n\nbb')
+    check('item_paste: two paragraphs pasted at an item\'s end: the second a new item', src(page) == I2.replace('\\item One\n', '\\item Oneaa\n  \\item bb\n'), src(page)[40:])
+    check('item_paste: three bullets on the page', labels(page) == ['•', '•', '•'], labels(page))
+    key(page, 'Control+z')
+    check('item_paste: one undo', src(page) == I2, src(page)[40:])
+    load_doc(page, I2); click_text(page, 'One', 2); paste('p1\np2', '<p>p1</p><p>p2</p>')
+    check('item_paste: from a web page, inside an item\'s words: the item split round them', src(page) == I2.replace('\\item One\n', '\\item Onp1\n  \\item p2e\n'), src(page)[40:])
+
+
+def review_edges(page):
+    """(review of PR 117) Where the edge fixes above met comments, environments and labels of an
+    item's own: a word joined after a trailing % went into the comment; inside a theorem the empty
+    paragraph Enter shows had no place, and what was typed joined the item above or stood before
+    the first \\item (a LaTeX error); Delete over an item ending in a comment deleted it and glued
+    the words; a label of an item's own (\\item[Step:]) could not be typed in."""
+    load_doc(page, WRAP('\\begin{itemize}\n  \\item One % c\n\\end{itemize}\n\nAfter.')); click_text(page, 'After.', 0); key(page, 'Backspace'); page.keyboard.type('X'); settle(page, 200)
+    check('review_edges: Backspace after a list whose last item ends in a comment: the words on a line after it, not in it', '\\item One % c\n  XAfter.\n\\end{itemize}' in src(page), src(page)[40:])
+    load_doc(page, WRAP('\\begin{itemize}\n  \\item One % c\n  \\item Two\n\\end{itemize}')); click_text(page, 'One', 3); key(page, 'Delete')
+    check('review_edges: Delete at an item\'s end before its comment: the comment kept, the next words on the line after it', '\\item One % c\n  Two\n\\end{itemize}' in src(page), src(page)[40:])
+    TH = lambda b: WRAP('\\begin{theorem}\n' + b + '\n\\end{theorem}', '\\newtheorem{theorem}{Theorem}\n')
+    load_doc(page, TH('\\begin{enumerate}\n  \\item One\n  \\item Two\n  \\item Three\n\\end{enumerate}')); click_text(page, 'Two', 3); key(page, 'Enter'); key(page, 'Enter'); page.keyboard.type('Mid'); settle(page, 200)
+    s = src(page)
+    check('review_edges: in a theorem, Enter on an empty middle item: what is typed is not in an item, and the list is not split', '\\item TwoMid' not in s and 'resume' not in s and 'Mid' in s, s[40:])
+    load_doc(page, TH('Say.\n\\begin{itemize}\n  \\item \n  \\item One\n\\end{itemize}')); click_text(page, 'One', 0); key(page, 'ArrowUp'); key(page, 'Enter'); page.keyboard.type('Top'); settle(page, 200)
+    s = src(page)
+    check('review_edges: in a theorem, Enter on an empty first item: nothing typed before the first \\item', not re.search(r'\\begin\{itemize\}\s*[^\s\\]', s), s[40:])
+    load_doc(page, TH('\\begin{itemize}\n  \\item One\n  \\item Two\n\\end{itemize}\nAfter.')); click_text(page, 'Two', 3); key(page, 'Enter'); key(page, 'Enter'); page.keyboard.type('Para'); settle(page, 200)
+    check('review_edges: in a theorem, Enter twice at a list\'s end: what is typed is not in its last item', '\\item TwoPara' not in src(page) and 'Para' in src(page), src(page)[40:])
+    load_doc(page, WRAP('\\begin{itemize}\n  \\item[Step:] One\n\\end{itemize}')); click_text(page, 'Step', 2); page.keyboard.type('X'); settle(page, 200)
+    check('review_edges: a label of the item\'s own takes what is typed in it', '\\item[StXep:] One' in src(page), src(page)[40:])
+    load_doc(page, WRAP('\\begin{itemize}\n  \\item One\n  \\item \n  \\item[{[a]}] Two\n\\end{itemize}')); click_text(page, 'One', 3); key(page, 'ArrowDown'); key(page, 'Delete')
+    check('review_edges: Delete in an empty item before \\item[{[a]}]: the label\'s braces kept, so [a] stays words', '\\item {[a]} Two' in src(page), src(page)[40:])
+    load_doc(page, WRAP('Hello.\n\n\\begin{enumerate}\n  \\item \n\\end{enumerate}\n\nTail.')); click_text(page, 'Tail.', 0); key(page, 'ArrowUp'); key(page, 'Backspace'); page.keyboard.type('Plain'); settle(page, 200)
+    check('review_edges: Backspace in a list\'s only, empty item takes the list away; what is typed is a paragraph there', src(page) == WRAP('Hello.\n\nPlain\n\nTail.'), src(page)[40:])
+
+
 def r2_phone(p, w, h, dark=False):
     """Picture Bullet and Adjust List Indents on a phone: from the bullet library's menu by taps,
     the dialogs on the screen with 44 px controls, no sideways scroll; screenshots"""
@@ -841,7 +993,7 @@ def run_all():
     want = lambda n: not only or n in only
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf):
+        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf, label_caret, item_edges, empty_items, item_spans, join_after_list, item_paste, review_edges):
             if not want(f.__name__): continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])

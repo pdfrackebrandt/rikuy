@@ -39,6 +39,80 @@ try:
         settle(page, 200)
         check('paste into a heading stays inline', '\\section{Howone two to use it}' in src(page), src(page)[src(page).find('\\section'):][:60])
         page.keyboard.press('Control+z'); settle(page, 150)
+        # paragraphs pasted inside bold or italic words stay paragraphs: the format closes before the
+        # blank line and opens again after it (they ran into one line); a list stays on the line
+        from browser import load_doc
+        W = lambda b: '\\documentclass{article}\n\\begin{document}\n' + b + '\n\\end{document}\n'
+        for name, doc, at, html, plain, want in (
+                ('plain paragraphs into a bold word', 'Some \\textbf{boldword} here.', ('boldword', 4), None, 'P1\n\nP2', 'Some \\textbf{boldP1}\n\n\\textbf{P2word} here.'),
+                ('Word\'s paragraphs into an italic word', 'Some \\emph{italic} here.', ('italic', 3), '<p class=MsoNormal>A<o:p></o:p></p><p class=MsoNormal>B<o:p></o:p></p>', 'A\r\nB', 'Some \\emph{itaA}\n\n\\emph{Blic} here.'),
+                ('paragraphs into \\textbf{\\emph{..}}', 'Some \\textbf{\\emph{nested}} here.', ('nested', 3), None, 'X\n\nY', 'Some \\textbf{\\emph{nesX}}\n\n\\textbf{\\emph{Yted}} here.'),
+                # (italic into italic words stays italic: \emph in \emph is upright; bold into bold is bold once)
+                ('italic into an italic word', 'Some \\emph{italic} here.', ('italic', 3), '<i>XY</i>', 'XY', 'Some \\emph{itaXYlic} here.'),
+                ('bold and italic into a bold word', 'Some \\textbf{boldword} here.', ('boldword', 4), '<b>X</b> and <i>Y</i>', 'X and Y', 'Some \\textbf{boldX and \\emph{Y}word} here.')):
+            load_doc(page, W(doc)); click_text(page, *at)
+            page.evaluate(PASTE, [html, plain]); settle(page, 250)
+            s = src(page)
+            check('paste ' + name + ': ' + repr(want), s == W(want), s[s.find('Some'):][:80])
+            page.keyboard.press('Control+z'); settle(page, 150)
+            check('undo after ' + name, src(page) == W(doc))
+        # words copied from a bold word into plain ones keep the bold of the bold part (they went
+        # as the visible words alone, plain); inside \\emph the outer format comes too
+        from browser import place
+        LAST = """() => { const d = new DataTransfer(); d.setData('text/plain', window.rikuy.lastCopy.plain); d.setData('text/x-galley-latex', window.rikuy.lastCopy.latex);
+          document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: d, bubbles: true, cancelable: true })); }"""
+        for doc, sel, want in (('Some \\textbf{bold} and plain.', ('old', 'and'), 'Some \\textbf{bold} and plain\\textbf{old} and.'),
+                               ('Some \\textbf{bold} and plain.', ('Some', 'old'), 'Some \\textbf{bold} and plainSome \\textbf{bold}.'),
+                               ('\\emph{A \\textbf{bold} c} and plain.', ('old', 'c'), '\\emph{A \\textbf{bold} c} and plain\\emph{\\textbf{old} c}.'),
+                               # (plain words into the middle of an italic word, in one paragraph: each run its format)
+                               ('Text \\emph{italic} and plain.', ('ext', 'ita'), 'Text \\emph{italic} and plainext \\emph{ita}.')):
+            load_doc(page, W(doc)); place(page, sel)
+            page.keyboard.press('Control+c'); settle(page, 150)
+            click_text(page, 'plain', 5); page.evaluate(LAST); settle(page, 250)
+            s = src(page)
+            check('copy %s..%s over a bold word\'s brace, paste: %r' % (sel[0], sel[1], want), s == W(want), s[s.find('\\begin{document}') + 17:][:90])
+        # the hostile review: a block never goes inside a format's braces. On the blank paragraph after
+        # a formatted word (Enter), a list or a heading goes in as it is, italic into italic is italic
+        # once, two paragraphs after Ctrl+B are both bold; inside a \\uline word a list or a heading is
+        # flattened onto the line as before, paragraphs of text still split
+        UL = '\\usepackage[normalem]{ulem}\n'
+        W2 = lambda b, pre='': '\\documentclass{article}\n' + pre + '\\begin{document}\n' + b + '\n\\end{document}\n'
+        LIST = '<ul><li>one</li><li>two</li></ul>'
+        made = []
+        for name, pre, doc, word, keys, html, plain, want in (
+                ('B2 italic after Enter at \\emph{italic}', '', 'Some \\emph{italic}\n\nEnd.', 'italic', ('Enter',), '<i>XY</i>', 'XY', 'Some \\emph{italic}\n\n\\emph{XY}\n\nEnd.'),
+                ('B3 a list after Enter at \\uline{ul}', UL, 'Some \\uline{ul}\n\nEnd.', 'ul', ('Enter',), LIST, 'one\ntwo', 'Some \\uline{ul}\n\n\\begin{itemize}\n  \\item one\n  \\item two\n\\end{itemize}\n\nEnd.'),
+                ('B3 a heading after Enter at \\textbf{bold}', '', 'Some \\textbf{bold}\n\nEnd.', 'bold', ('Enter',), '<h1>Head</h1>', 'Head', 'Some \\textbf{bold}\n\n\\section{Head}\n\nEnd.'),
+                ('B4 a list into a \\uline word', UL, 'Some \\uline{ulword} here.', ('ulword', 2), (), LIST, 'one\ntwo', 'Some \\uline{ulone twoword} here.'),
+                ('B4 a heading into a \\uline word', UL, 'Some \\uline{ulword} here.', ('ulword', 2), (), '<h1>Head</h1>', 'Head', 'Some \\uline{ulHeadword} here.'),
+                ('paragraphs into a \\uline word', UL, 'Some \\uline{ulword} here.', ('ulword', 2), (), None, 'P1\n\nP2', 'Some \\uline{ulP1}\n\n\\uline{P2word} here.'),
+                ('paragraphs into {\\bfseries ..}', '', 'Some {\\bfseries boldword} here.', ('boldword', 4), (), None, 'P1\n\nP2', 'Some {\\bfseries boldP1}\n\n{\\bfseries P2word} here.'),
+                ('N5 two paragraphs after Enter and Ctrl+B', '', 'Some words.\n\nEnd.', 'words.', ('Enter', 'Control+b'), None, 'P1\n\nP2', 'Some words.\n\n\\textbf{P1}\n\n\\textbf{P2}\n\nEnd.'),
+                ('N4 a double underline into \\uline stays double', UL, 'Some \\uline{ulword} here.', ('ulword', 2), (), None, None, 'Some \\uline{ul\\uuline{x}word} here.'),
+                ('N4 a footnote\'s bold into bold stays', '', 'Some \\textbf{boldword} here.', ('boldword', 4), (), None, None, 'Some \\textbf{boldX\\footnote{see \\textbf{this}}word} here.')):
+            load_doc(page, W2(doc, pre))
+            if isinstance(word, tuple): click_text(page, *word)
+            else: click_text(page, word, len(word))
+            for key in keys: page.keyboard.press(key); settle(page, 120)
+            if html is None and plain is None:
+                # (LaTeX copied on the page: what the paste keeps of it)
+                lt = 'X\\footnote{see \\textbf{this}}' if 'footnote' in name else '\\uuline{x}'
+                page.evaluate('''(t) => { const d = new DataTransfer(); d.setData('text/plain', 'x'); d.setData('text/x-galley-latex', t);
+                  document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: d, bubbles: true, cancelable: true })); }''', lt)
+            else: page.evaluate(PASTE, [html, plain])
+            settle(page, 250)
+            s = src(page)
+            check('review %s: %r' % (name, want), s == W2(want, pre), s[s.find('\\begin{document}') + 17:][:120])
+            made.append((name, s))
+        if os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist', 'tex', 'tree.wasm')):
+            page.set_default_timeout(600000)
+            for name, t in made:
+                r = page.evaluate('async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile(); return r.ok; }', t)
+                check('review %s compiles' % name, r, t[t.find('begin{document}'):][:160])
+            page.set_default_timeout(30000)
+        else:
+            print('SKIP the compiles of the review cases: no TeX tree in dist')
+        load_doc(page, base)
         # Ctrl+Shift+V pastes plain text
         click_text(page, 'Click anywhere in this paragraph', 0)
         page.keyboard.down('Control'); page.keyboard.down('Shift'); page.keyboard.press('KeyV'); page.keyboard.up('Shift'); page.keyboard.up('Control')

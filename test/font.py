@@ -802,6 +802,207 @@ def r2_compiles(page):
     page.set_default_timeout(30000)
 
 
+def enter_formats(page):
+    """Enter at the end of formatted words: the new paragraph after their braces, in their formats."""
+    k = page.keyboard
+    paras = lambda: page.evaluate("[...document.querySelectorAll('#pages .it')].map((e) => e.textContent)")
+    load_doc(page, DOC); click_text(page, 'here.', 5)
+    k.press('Control+b'); settle(page, 80); k.type(' A'); settle(page, 150)
+    k.press('Enter'); settle(page, 150); k.type('Bc'); settle(page, 250)
+    check('Ctrl+B, " A", Enter, "Bc": a paragraph of its own, still bold, after the bold\'s brace', body(page) == 'Some plain words here.\\textbf{ A}\n\n\\textbf{Bc}\n\nAnother paragraph.', body(page))
+    check('and the page draws three paragraphs', paras()[:3] == ['Some plain words here. A', 'Bc', 'Another paragraph.'], paras()[:3])
+    page.keyboard.press('Control+z'); settle(page, 200)
+    check('one undo takes the new paragraph out', body(page) == 'Some plain words here.\\textbf{ A}\n\nAnother paragraph.', body(page))
+    # (nested: both go on; a frame stays behind on its line)
+    load_doc(page, WRAP('One \\textbf{\\emph{two}}\n\nThree \\fbox{four}\n\nEnd.')); click_text(page, 'two', 3)
+    k.press('Enter'); settle(page, 150); k.type('x'); settle(page, 250)
+    check('Enter after \\textbf{\\emph{two}}: \\textbf{\\emph{x}} in a paragraph after it', '\\textbf{\\emph{two}}\n\n\\textbf{\\emph{x}}\n\nThree' in body(page), body(page))
+    click_text(page, 'four', 4); k.press('Enter'); settle(page, 150); k.type('y'); settle(page, 250)
+    check('Enter after \\fbox{four}: y plain after it', '\\fbox{four}\n\ny\n\nEnd.' in body(page), body(page))
+
+
+def blank_formats(page):
+    """Bold, Italic, Underline, a colour on the blank paragraph Enter shows: its first words get them."""
+    k = page.keyboard
+    load_doc(page, DOC); click_text(page, 'here.', 5)
+    k.press('Enter'); settle(page, 150); k.press('Control+b'); settle(page, 120)
+    check('Ctrl+B on the blank paragraph after Enter: Bold shows pressed, nothing written yet', pressed(page, 'bold') is True and body(page) == BODY, body(page))
+    k.type('Bold words'); settle(page, 200)
+    check('what is typed next is bold, in its own paragraph', body(page) == 'Some plain words here.\n\n\\textbf{Bold words}\n\nAnother paragraph.', body(page))
+    k.press('Control+b'); settle(page, 80); k.type(' plain'); settle(page, 200)
+    check('Ctrl+B again ends it there', body(page) == 'Some plain words here.\n\n\\textbf{Bold words} plain\n\nAnother paragraph.', body(page))
+    load_doc(page, DOC); click_text(page, 'here.', 5)
+    k.press('Enter'); settle(page, 150); k.press('Control+i'); settle(page, 80); k.press('Control+u'); settle(page, 80); k.type('It'); settle(page, 250)
+    check('Ctrl+I and Ctrl+U there: \\emph{\\uline{It}}, ulem in the preamble, in one step', '\n\n\\emph{\\uline{It}}\n\n' in body(page) and '\\usepackage[normalem]{ulem}' in pre(page), src(page))
+    page.keyboard.press('Control+z'); settle(page, 200)
+    check('one undo gives the document back, the package too', src(page) == DOC, src(page))
+    load_doc(page, DOC); click_text(page, 'here.', 5)
+    k.press('Enter'); settle(page, 150); k.press('Control+b'); settle(page, 80); k.press('Control+b'); settle(page, 80); k.type('x'); settle(page, 200)
+    check('Ctrl+B twice there: x plain', body(page) == 'Some plain words here.\n\nx\n\nAnother paragraph.', body(page))
+    load_doc(page, DOC); click_text(page, 'here.', 5)
+    k.press('Enter'); settle(page, 150); run_cmd(page, 'font-color', {'pick': {'name': 'blue'}}); k.type('Blue'); settle(page, 200)
+    check('Font Color there: \\textcolor{blue}{Blue}, xcolor loaded', '\n\n\\textcolor{blue}{Blue}\n\n' in body(page) and '\\usepackage{xcolor}' in pre(page), src(page))
+    load_doc(page, WRAP('Some \\textbf{bold}\n\nAnother.')); click_text(page, 'bold', 4)
+    k.press('Enter'); settle(page, 150)
+    check('after Enter at a bold word\'s end Bold shows pressed', pressed(page, 'bold') is True)
+    k.press('Control+b'); settle(page, 80); k.type('x'); settle(page, 200)
+    check('and Ctrl+B there turns it off for what is typed', body(page) == 'Some \\textbf{bold}\n\nx\n\nAnother.', body(page))
+
+
+def caret_formats(page):
+    """Ctrl+B with nothing selected, then the caret moved away untyped: nothing stays in the source."""
+    k = page.keyboard
+    at = lambda: page.evaluate('(() => { const c = window.rikuy.caretNow(); return c && c.a; })()')
+    steps = lambda: page.evaluate('window.rikuy.hist.length')
+    load_doc(page, DOC); click_text(page, 'plain', 5); k.press('Control+b'); settle(page, 120)
+    check('Ctrl+B at a word\'s end: an empty \\textbf{} waits there', 'Some plain\\textbf{} words' in body(page), body(page))
+    click_text(page, 'Another', 3); settle(page, 200, full=True)
+    check('a click elsewhere: it goes, no step left, the caret where clicked', src(page) == DOC and steps() == 0 and at() == DOC.index('Another') + 3, (body(page), steps(), at()))
+    load_doc(page, DOC); click_text(page, 'plain', 5); k.press('Control+u'); settle(page, 120); click_text(page, 'Another', 3); settle(page, 200, full=True)
+    check('Ctrl+U, then away: \\uline{} and the ulem line it brought both go, the caret where clicked', src(page) == DOC and at() == DOC.index('Another') + 3, (src(page), at()))
+    load_doc(page, DOC); click_text(page, 'plain', 5); k.press('Control+b'); settle(page, 80); k.press('Control+i'); settle(page, 80); k.press('End'); settle(page, 200, full=True)
+    check('Ctrl+B, Ctrl+I, End: both go and the caret is at the line\'s end', src(page) == DOC and steps() == 0 and at() == DOC.index('here.') + 5, (body(page), steps(), at()))
+    load_doc(page, DOC); click_text(page, 'plain', 5); k.press('Control+b'); settle(page, 80); k.press('Home'); settle(page, 200, full=True)
+    check('Ctrl+B, Home: it goes and the caret is at the line\'s start', src(page) == DOC and at() == DOC.index('Some'), (body(page), at()))
+    load_doc(page, DOC); click_text(page, 'plain', 5); k.press('Control+b'); settle(page, 300, full=True); k.type('xy'); settle(page, 120); click_text(page, 'Another', 3); settle(page, 200, full=True)
+    check('typed in, it stays: \\textbf{xy}', 'Some plain\\textbf{xy} words' in body(page), body(page))
+
+
+def word_formats(page):
+    """Ctrl+I, Ctrl+B, Ctrl+U and Font Color at a caret inside a word: that word, as Word does."""
+    k = page.keyboard
+    at = lambda: page.evaluate('(() => { const c = window.rikuy.caretNow(); return c && c.a; })()')
+    load_doc(page, DOC); click_text(page, 'plain', 2); k.press('Control+i'); settle(page, 150)
+    check('Ctrl+I in the middle of "plain": \\emph{plain}, no empty \\emph{} inside the word', body(page).startswith('Some \\emph{plain} words'), body(page))
+    k.type('X'); settle(page, 150)
+    check('the caret stays where it was in the word', body(page).startswith('Some \\emph{plXain} words'), body(page))
+    load_doc(page, DOC); click_text(page, 'plain', 2); k.press('Control+u'); settle(page, 150)
+    check('Ctrl+U there: \\uline{plain}', body(page).startswith('Some \\uline{plain} words'), body(page))
+    load_doc(page, DOC); click_text(page, 'plain', 2); run_cmd(page, 'font-color', {'pick': {'name': 'red'}})
+    check('Font Color there: \\textcolor{red}{plain}', body(page).startswith('Some \\textcolor{red}{plain} words'), body(page))
+    T = WRAP('Some \\textbf{many bold words} here.')
+    load_doc(page, T); click_text(page, 'bold', 2); k.press('Control+b'); settle(page, 150)
+    check('Ctrl+B in a word of a bold sentence: that word alone loses the bold', body(page) == 'Some \\textbf{many }bold\\textbf{ words} here.', body(page))
+    k.press('Control+b'); settle(page, 150)
+    check('and again: one \\textbf as before', src(page) == T, body(page))
+
+
+def switch_space(page):
+    """A size set at a caret, then a space typed first: the space is kept (TeX skipped it after \\large)."""
+    k = page.keyboard
+    paras = lambda: page.evaluate("[...document.querySelectorAll('#pages .it')].map((e) => e.textContent)")
+    load_doc(page, DOC); click_text(page, 'plain', 5)
+    k.press('Control+Shift+Period'); settle(page, 150); k.type(' big'); settle(page, 250)
+    check('Increase Font Size at a word\'s end, then " big": the space kept ({} after the switch), on the page too', body(page).startswith('Some plain{\\large {} big} words') and paras()[0].startswith('Some plain big words'), (body(page), paras()[0]))
+    load_doc(page, DOC); click_text(page, 'plain', 5)
+    page.fill('#rb-size', '14'); page.press('#rb-size', 'Enter'); settle(page, 250); k.type(' big'); settle(page, 250)
+    check('14 in the size box, then " big": the space kept', '\\selectfont {} big} words' in body(page) and paras()[0].startswith('Some plain big words'), (body(page), paras()[0]))
+    load_doc(page, WRAP('\\noindent Text here.')); click_text(page, 'Text', 0); k.type(' '); settle(page, 200)
+    check('a space after \\noindent is written as before', body(page) == '\\noindent  Text here.', body(page))
+
+
+def deleted_formats(page):
+    """A bold word selected and deleted (Delete, Backspace, Ctrl+X), the caret then moved: no \\textbf{} left."""
+    k = page.keyboard
+    T = WRAP('Some \\textbf{bold} and plain.')
+    steps = lambda: page.evaluate('window.rikuy.hist.length')
+    for key in ('Delete', 'Backspace', 'Control+x'):
+        load_doc(page, T); select_text(page, 'bold'); k.press(key); settle(page, 150)
+        check('%s on a selected bold word: \\textbf{} waits for what is typed' % key, body(page) == 'Some \\textbf{} and plain.', body(page))
+        click_text(page, 'plain', 2); settle(page, 200, full=True)
+        check('%s, then a click elsewhere: the empty \\textbf{} goes, in the same step' % key, body(page) == 'Some  and plain.' and steps() == 1, (body(page), steps()))
+        k.press('Control+z'); settle(page, 200)
+        check('%s: one undo gives the bold word back' % key, src(page) == T, body(page))
+    load_doc(page, T); select_text(page, 'bold'); k.press('Delete'); settle(page, 120); k.type('X'); settle(page, 120); click_text(page, 'plain', 2); settle(page, 200, full=True)
+    check('typed in after the deletion, it stays bold', body(page) == 'Some \\textbf{X} and plain.', body(page))
+
+
+def between_words(page):
+    """Ctrl+B between two words of a bold sentence: the bold ends for what is typed there, the words stay bold."""
+    k = page.keyboard
+    T = WRAP('Some \\textbf{many bold words} here.')
+    load_doc(page, T); click_text(page, 'bold', 4); k.press('Control+b'); settle(page, 150)
+    check('Ctrl+B after "bold" in \\textbf{many bold words}: the sentence stays bold, Bold shows off', body(page) == 'Some \\textbf{many bold}\\textbf{ words} here.' and pressed(page, 'bold') is False, body(page))
+    k.type(' plain'); settle(page, 200)
+    check('what is typed there is plain', body(page) == 'Some \\textbf{many bold} plain\\textbf{ words} here.', body(page))
+    load_doc(page, T); click_text(page, 'bold', 4); k.press('Control+b'); settle(page, 120); click_text(page, 'here', 2); settle(page, 200, full=True)
+    check('left untyped: the wrapper is one again, no step left', src(page) == T and page.evaluate('window.rikuy.hist.length') == 0, body(page))
+    load_doc(page, T); click_text(page, 'bold', 4); k.press('Control+b'); settle(page, 120); k.press('Control+b'); settle(page, 120); k.type('X'); settle(page, 200)
+    check('Ctrl+B twice there: X bold in the one wrapper', body(page) == 'Some \\textbf{many boldX words} here.', body(page))
+
+
+def pdf_of(page, t):
+    """The source t compiled in the page: (ok, the PDF's text), or None without a TeX tree."""
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        return None
+    page.set_default_timeout(600000)
+    r = page.evaluate("""async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile();
+      let s = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) s += String.fromCharCode(...r.pdf.subarray(i, i + 8192));
+      return { ok: r.ok, pdf: s ? btoa(s) : '' }; }""", t)
+    page.set_default_timeout(30000)
+    import base64, shutil, subprocess, tempfile
+    if not r['pdf']:
+        return r['ok'], ''
+    # (poppler's pdftotext reads the spaces TeX set as glue, bold beside plain, ulem's lines; pypdf
+    # ran "Some many" together where the font changed)
+    if shutil.which('pdftotext'):
+        with tempfile.NamedTemporaryFile(suffix='.pdf') as fh:
+            fh.write(base64.b64decode(r['pdf'])); fh.flush()
+            return r['ok'], subprocess.run(['pdftotext', fh.name, '-'], capture_output=True, text=True).stdout
+    print('SKIP the words of the PDF: no pdftotext')
+    return r['ok'], None
+
+
+def review3(page):
+    """The hostile review of the branch: declaration groups, ulem, braces before the caret, other commands at a paragraph's end."""
+    k = page.keyboard
+    steps = lambda: page.evaluate('window.rikuy.hist.length')
+    made = []
+    # B1: {\bfseries ..} split between words: the space before "words" kept ({\bfseries{})
+    load_doc(page, WRAP('Some {\\bfseries many bold words} here.')); click_text(page, 'bold', 4)
+    k.press('Control+b'); settle(page, 120); k.type(' plain'); settle(page, 200)
+    check('review B1: Ctrl+B between words of {\\bfseries ..}, " plain": the group opened again as {\\bfseries{}', body(page) == 'Some {\\bfseries many bold} plain{\\bfseries{} words} here.', body(page))
+    made.append(('B1', src(page), 'bold plain words'))
+    # V1, V2: the part after the caret opened again with every switch in force there, and {} after it
+    for doc, want in (('Some {\\bfseries\\itshape many bold words} here.', 'Some {\\bfseries\\itshape many bold} plain{\\bfseries\\itshape{} words} here.'),
+                      ('Some \\textbf{many \\itshape bold words} here.', 'Some \\textbf{many \\itshape bold} plain\\textbf{\\itshape{} words} here.'),
+                      ('Some \\textbf{many \\color{red}\\large bold words} here.', 'Some \\textbf{many \\color{red}\\large bold} plain\\textbf{\\color{red}\\large{} words} here.'),
+                      ('Some {\\bfseries many {\\itshape x} bold words} here.', 'Some {\\bfseries many {\\itshape x} bold} plain{\\bfseries{} words} here.'),
+                      # (V3: \\color and \\usefont end in \\ignorespaces: {} after them too)
+                      ('Some \\textbf{many \\color{red} bold words} here.', 'Some \\textbf{many \\color{red} bold} plain\\textbf{\\color{red}{} words} here.'),
+                      ('Some \\textbf{many \\usefont{T1}{cmr}{m}{n} bold words} here.', 'Some \\textbf{many \\usefont{T1}{cmr}{m}{n} bold} plain\\textbf{\\usefont{T1}{cmr}{m}{n}{} words} here.')):
+        load_doc(page, WRAP(doc, XCOLOR)); click_text(page, 'bold', 4)
+        k.press('Control+b'); settle(page, 120); k.type(' plain'); settle(page, 200)
+        check('review V1/V2: Ctrl+B between words of %s, " plain": every switch in force opened again' % doc[5:40], body(page) == want, body(page))
+        made.append(('V ' + doc[5:30], src(page), 'bold plain words'))
+    # N1: a brace closed before the caret is no bar to the split
+    for doc, want in (('\\textbf{a \\emph{b} many bold words} here.', '\\textbf{a \\emph{b} many bold}\\textbf{ words} here.'),
+                      ('\\textbf{see \\ref{k} many bold words} here.', '\\textbf{see \\ref{k} many bold}\\textbf{ words} here.')):
+        load_doc(page, WRAP(doc)); click_text(page, 'bold', 4); k.press('Control+b'); settle(page, 150)
+        check('review N1: Ctrl+B between words after a closed brace: %s' % want, body(page) == want, body(page))
+    # \uline split, Ctrl+U between words
+    load_doc(page, WRAP('Some \\uline{many under words} here.', ULEM)); click_text(page, 'under', 5)
+    k.press('Control+u'); settle(page, 120); k.type(' x'); settle(page, 200)
+    check('review: Ctrl+U between words of \\uline{..}, " x": \\uline{many under} x\\uline{ words}', body(page) == 'Some \\uline{many under} x\\uline{ words} here.', body(page))
+    made.append(('uline split', src(page), 'under x words'))
+    # N2: Enter at the end of \textsl and \href: the new paragraph after their braces
+    for pre, doc, word, want in (('', 'Some \\textsl{slant}\n\nEnd.', 'slant', 'Some \\textsl{slant}\n\nx\n\nEnd.'),
+                                 ('\\usepackage{hyperref}\n', 'Some \\href{https://example.org}{link}\n\nEnd.', 'link', 'Some \\href{https://example.org}{link}\n\nx\n\nEnd.')):
+        load_doc(page, WRAP(doc, pre)); click_text(page, word, len(word)); k.press('Enter'); settle(page, 150); k.type('x'); settle(page, 200)
+        check('review N2: Enter at the end of %s, x: a paragraph after it' % word, body(page) == want, body(page))
+        made.append(('N2 ' + word, src(page), 'x'))
+    # N6: Ctrl+B twice at a caret, then away: no step left
+    load_doc(page, DOC); click_text(page, 'Some', 4); k.press('Control+b'); settle(page, 80); k.press('Control+b'); settle(page, 80)
+    click_text(page, 'words', 2); settle(page, 200, full=True)
+    check('review N6: Ctrl+B, Ctrl+B at a caret: no step left', src(page) == DOC and steps() == 0, (body(page), steps()))
+    for name, t, words in made:
+        r = pdf_of(page, t)
+        if r is None:
+            print('SKIP the compile of review %s: no TeX tree in %s' % (name, DIST))
+            continue
+        check('review %s compiles, the PDF reads "%s"' % (name, words), r[0] and (r[1] is None or words in ' '.join(r[1].split())), (r[0], (r[1] or '')[:120], t[t.find('begin{document}'):][:120]))
+
+
 def phone_box(page, sel):
     """The rect of the last element sel matches, the smallest of its controls, and the page's sideways overflow."""
     return page.evaluate("""(sel) => { const all = [...document.querySelectorAll(sel)].filter((x) => x.offsetParent || getComputedStyle(x).position === 'fixed'); const p = all[all.length - 1];
@@ -967,7 +1168,7 @@ def phones(p):
 
 def run():
     with sync_playwright() as p:
-        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, phones, compiles, r2_compiles)
+        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, caret_formats, word_formats, switch_space, deleted_formats, between_words, review3, phones, compiles, r2_compiles)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             if fn is phones:
                 phones(p)

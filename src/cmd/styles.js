@@ -14,6 +14,7 @@ import { escapeTeX } from '../editor.js';
 import { defines, packageLine, packageOptions, preambleEnd, stripComments } from '../preamble.js';
 import { wrapBlockEdits } from '../blockenv.js';
 import { diffEdit } from '../wrap.js';
+import { readLists, chainAt, unlist, formatOf } from '../lists.js';
 import { methods as pane } from '../ui/stylespane.js';
 import { methods as design } from '../ui/design.js';
 import { THEMES } from '../looks.js';
@@ -40,6 +41,10 @@ export const SLOT_EL = { p: 'rb-st-p', title: 'rb-st-title', h1: 'rb-st-section'
 // the environments of several paragraphs a heading on one of them splits (splitEnvEdits): no title
 // or counter of their own to print again, and the abstract, which ends before the heading
 const SPLITS = /^(?:quote|quotation|verse|abstract)$/;
+// words a heading's argument cannot hold however plain they look (TeX stops on \verb there), and a
+// comment in a text (an unescaped %)
+const VERBISH = /\\(?:verb|Verb|lstinline|mintinline)(?![A-Za-z])/;
+const COMMENT = /(^|[^\\])(\\\\)*%/;
 // a name for an environment of the document's own that Rikuy writes in a regular expression
 const SAFE_NAME = /^[A-Za-z]{1,40}$/;
 // classes that have no abstract environment
@@ -61,7 +66,9 @@ const style = (id, v, name, el, more = {}) => ({
   when: (app, at) => { const st = styleOf(app, at), t = target(app, v); return !!st && !!t && st.to.has(t); },
   on: (app, at) => { const st = styleOf(app, at), t = target(app, v); return !!st && !!t && st.v === t; },
   run: (app) => { app.setBlockStyle(target(app, v)); app.ribbonSync(); },
-  whyNot: (app, at) => { const t = target(app, v); return t === 'proof' && app.noProof() ? app.noProof() : t ? app.whyNot(styleOf(app, at) || { on: false }, t) : WHY.cls; },
+  // (with the caret's place, as the gallery gives it: without it every reason the search box and an
+  // agent were given was "Click in the text of the page first", the caret in the text or not)
+  whyNot: (app, at) => { const t = target(app, v); return t === 'proof' && app.noProof() ? app.noProof() : t ? app.whyNot({ ...(styleOf(app, at) || {}), on: !!at }, t) : WHY.cls; },
   ...more
 });
 const heading = (k, keys) => style('style-heading' + k, level(k), 'Heading ' + k, SLOT_EL['h' + k], {
@@ -361,6 +368,72 @@ export const methods = {
     const A = this.armed, b = codeBlock(this.src(A.f), A.s, A.e);
     return b ? { v: 'verbatim', to: new Set(['p']), b, code: true } : { v: 'verbatim', to: new Set() };
   },
+  // Backspace at the start of a heading's, a quote's or a theorem's words, or of the paragraph after
+  // one, and Delete at the end of the block before (deleteInput asks here): the second block's
+  // words join the first's end and take its style, as Word keeps the first paragraph's formatting
+  // when two are joined. A heading takes words only (its argument is no place for a display or a
+  // list); a block of several paragraphs is joined at its last one, never taken apart; a theorem
+  // with a title stays. Between two such blocks the source holds \section{ or \begin{quote}, no
+  // visible text: Backspace only moved the caret to the end of the block above, and a second one
+  // took its last letter. True where it joined them.
+  blockJoin(back) {
+    const at = this.ribbonAt();
+    if (!at || !at.c || !at.c.collapsed || at.c.ghost || at.cell || !at.it || !at.B || at.c.f !== at.B.f || at.multi) return false;
+    const f = at.B.f, src = this.src(f), p = at.c.a;
+    const near = (d) => {
+      let X = null;
+      for (const B of this.renderer.blocks) if (B.f === f && B !== at.B && (d < 0 ? B.e <= at.B.s && (!X || B.e > X.e) : B.s >= at.B.e && (!X || B.s < X.s))) X = B;
+      const it = X && this.root.querySelector('.it[data-b="' + X.id + '"]');
+      return it ? { B: X, it } : null;
+    };
+    const here = { B: at.B, it: at.it }, other = near(back ? -1 : 1);
+    if (!other) return false;
+    const [W, X] = back ? [other, here] : [here, other];
+    const sw = this.styleOfBlock(W.B, W.it), sx = this.styleOfBlock(X.B, X.it);
+    const kind = (st) => (!st || !st.b || st.b.ws == null || st.opt || st.code ? null : st.v === 'p' ? 'p' : isHeading(st.v) || st.v === 'part' ? 'h' : isEnvStyle(st.v) && st.v !== 'verbatim' && st.v !== 'abstract' ? 'env' : null);
+    const kw = kind(sw), kx = kind(sx);
+    if (!kw || !kx || (kw === 'p' && kx === 'p')) return false;
+    const w = sw.b, x = { ...sx.b }, wEnd = w.after ?? w.e, xEnd = x.after ?? x.e;
+    // (a \label right after a heading starts the paragraph under it on the page's side: it stays
+    // with the heading, after it, and the words after it join)
+    const lead = kw === 'h' ? /^\\label\s*\{[^{}]*\}\s*/.exec(src.slice(x.ws, x.we)) : null;
+    if (lead) x.ws += lead[0].length;
+    // (one on the heading's own line is the heading's already: written once)
+    const leadLab = lead && !(w.after != null && x.s < wEnd) ? lead[0].trim() : '';
+    // (a heading's short title, \section[S]{...}, would be lost)
+    if (kx === 'h' && src.slice(x.s, x.ws).includes('[')) return false;
+    // (the caret at the second block's words' start, or the first's words' end)
+    if (back ? p > x.ws || /\S/.test(src.slice(p, x.ws)) || p < x.s : p < w.we || /\S/.test(src.slice(w.we, p)) || p > wEnd) return false;
+    if (/\S/.test(src.slice(wEnd, x.s))) return false;
+    let words = src.slice(x.ws, x.we).trim(), label = x.after != null ? src.slice(x.e, x.after).trim() : '', E = xEnd, reopen = '';
+    // (a quote of several paragraphs: its first leaves it, the quote begins again before the rest)
+    const gap = kx === 'env' ? /[ \t]*\r?\n[ \t]*(?:\r?\n[ \t]*)+/.exec(words) : null;
+    if (gap) {
+      if (!SPLITS.test(envOf(sx.v))) return false;
+      const at0 = src.indexOf(words, x.ws);
+      E = at0 + gap.index + gap[0].length;
+      reopen = gap[0].replace(/[ \t]/g, '') + src.slice(x.s, x.ws).trim() + eolAt(src, x.s);
+      words = words.slice(0, gap.index);
+    }
+    if (!words) return false;
+    if (kw === 'h' && (NOT_PLAIN.test(words) || VERBISH.test(words) || /(^|[^\\])%/.test(words) || words[0] === '%')) return false;
+    if (label && COMMENT.test(words)) return false;
+    // (after a comment that ends the first block's words: on a line of their own, or the comment
+    // would take them off the page)
+    const NL = /\r\n/.test(src) ? '\r\n' : '\n', close = src.slice(w.we, wEnd);
+    const sp = COMMENT.test(src.slice(src.lastIndexOf('\n', w.we - 1) + 1, w.we)) ? NL : src.slice(w.ws, w.we).trim() ? ' ' : '';
+    // (joined into a paragraph, which ends nowhere of its own: what came after the second block
+    // keeps a blank line from it, or it would run on in the same paragraph)
+    let tail = reopen;
+    if (!close && !reopen) {
+      const m = /^[ \t]*(\r?\n)?[ \t]*(?=[^\s%])(?!\\(?:end|begin|part|chapter|(?:sub)*section|(?:sub)?paragraph|item|par|label)\b)/.exec(src.slice(E, E + 200));
+      if (m) tail = m[1] ? NL : NL + NL;
+    }
+    const t = sp + words + label + close + leadLab + tail;
+    this.closeGroup();
+    this.commit([{ f, s: w.we, e: E, t }], back ? { f, p: w.we + sp.length, bias: 1 } : { f, p: w.we, bias: -1 }, 'del');
+    return true;
+  },
   blockStyleOf(at) {
     const { c, it, B } = at, none = new Set();
     if (c.ghost) {
@@ -428,6 +501,19 @@ export const methods = {
     // (an environment only for a paragraph that starts its line: after \noindent or the like on the
     // same line, the environment would go in after it, and the way back would not be byte for byte)
     if (r) return { v: 'p', to: latex(new Set([...heads, ...(startsLine(src, r.s) ? envs : [])])), b: { v: 'p', s: r.s, ws: r.s, we: r.e, e: r.e, spot } };
+    // A list item's words (its first paragraph, of plain words, in a list of the text's own level):
+    // a heading takes it out of the list, as Word gives a bullet the heading's style (the list
+    // goes on around it). It was refused, the key and the gallery doing nothing.
+    if (it.dataset.li && /,0$/.test(it.dataset.li)) {
+      const lists = readLists(src, B.s, B.e, this.model && this.model.userSigs), ch = chainAt(lists, +it.dataset.li.split(',')[0] + B.base);
+      const I = ch.length === 1 ? ch[0] : null, item = I && I.L.items[I.k];
+      if (item && I.L.editable && I.L.closed && I.L.kind !== 'desc' && !item.lab && !item.lists.length) {
+        let ws = item.cmdE;
+        while (ws < item.e && /\s/.test(src[ws])) ws++;
+        const words = src.slice(ws, item.e);
+        if (words && !NOT_PLAIN.test(words) && !VERBISH.test(words) && !/\n[ \t]*\n/.test(words) && !/(^|[^\\])%/.test(words)) return { v: '', to: latex(new Set(heads)), item: { B, ws, we: item.e, L: I.L, k: I.k }, b: { spot } };
+      }
+    }
     if (ctx === 'p' && B.items.length === 1 && !/\bthm\b/.test(it.className)) {
       // a paragraph with a footnote or a display in it: no heading can hold it, an environment can
       let s = B.s, e = B.e;
@@ -466,6 +552,11 @@ export const methods = {
     if (!list.length) return { v: '', to: none, why: WHY.multi };
     const sts = list.map((x) => ({ ...x, st: this.styleOfBlock(x.B, x.it) }));
     const vs = new Set(sts.map((x) => x.st.v)), v = vs.size === 1 ? [...vs][0] : '';
+    // (a list item's heading is for the item alone: in a selection over several items or blocks
+    // the list is one of them, which no heading holds)
+    const sel = getSelection(), one = (n) => (n.nodeType === 1 ? n : n.parentElement).closest('.it');
+    const items = sel.rangeCount && one(sel.getRangeAt(0).startContainer) === one(sel.getRangeAt(0).endContainer) ? 1 : 2;
+    for (const x of sts) if (x.st.item && (list.length > 1 || items > 1)) x.st = { v: '', to: new Set(), b: x.st.b };
     if (list.length === 1) return sts[0].st;
     // each may take it, or has it already
     const to = new Set();
@@ -514,6 +605,7 @@ export const methods = {
       return;
     }
     if (cur.many) { this.setManyStyle(cur, to, c); this.closeGroup(); return; }
+    if (cur.item && (isHeading(to) || to === 'part')) return this.itemToHeading(cur.item, to);
     // a heading on one paragraph of an abstract or a quote of several: that paragraph alone, the
     // environment split around it (Word styles the paragraph, not its neighbours)
     if (cur.split && (isHeading(to) || to === 'part')) {
@@ -528,6 +620,30 @@ export const methods = {
     const needs = this.styleNeeds(to), grow = needs.filter((x) => x.f === f && x.s <= cur.b.s).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
     this.commit([...needs, ...r.edits.map((x) => ({ f, ...x }))], { f, p: r.p + grow, bias: -1 }, 'block');
     this.closeGroup();
+  },
+  // a list item made a heading: the list split round it (src/lists.js unlist), its words wrapped
+  itemToHeading(I, to) {
+    const f = I.B.f, src = this.src(f), r = unlist(src, I.B.s, I.B.e, I.ws, I.ws, this.model && this.model.userSigs);
+    if (!r || r.a == null) return;
+    const after = src.slice(0, r.s) + r.t + src.slice(r.e), words = src.slice(I.ws, I.we);
+    if (after.slice(r.a, r.a + words.length) !== words) return;
+    // (a \label in the item's words goes after the heading: in its argument it would be printed
+    // in the contents)
+    const labs = words.match(/\\label\s*\{[^{}]*\}/g) || [], body = labs.length ? words.replace(/[ \t]*\\label\s*\{[^{}]*\}[ \t]*/g, ' ').trim() : words;
+    const open = '\\' + to + '{', head = open + body + '}' + labs.join('');
+    let t = after.slice(0, r.a) + head + after.slice(r.a + words.length), pkgs = [];
+    // A numbered list goes on numbering after the heading, as Word's list keeps its numbers round a
+    // heading: where its start is not written, enumitem's resume (it began again at 1)
+    const L = I.L, name = L && L.name;
+    // (only where the list was split: on its first item nothing stands before the heading to go on from)
+    if (L && L.kind === 'enum' && I.k > 0 && I.k + 1 < L.items.length && !formatOf(src, L, this.listCfg()).startFrom && this.listMech() === 'enumitem') {
+      const z = r.a + head.length, m = new RegExp('^\\s*\\\\begin\\{' + name.replace('*', '\\*') + '\\}(\\[)?').exec(t.slice(z, z + 200));
+      if (m) { const q = z + m[0].length; t = t.slice(0, q) + (m[1] ? 'resume, ' : '[resume]') + t.slice(q); pkgs = ['enumitem']; }
+    }
+    const d = diffEdit(src, t);
+    if (!d) return;
+    const c = this.caretNow(), k = c && c.f === f && c.a != null ? Math.min(Math.max(c.a - I.ws, 0), body.length) : 0;
+    this.listCommit(f, [{ s: d.s, e: d.e, t: d.t }], pkgs, { f, p: r.a + open.length + k, bias: -1 });
   },
   // (R2) a Code block to Normal: its lines out of verbatim, LaTeX's specials in them escaped as
   // typing escapes them (Rikuy's own Code has none: the bytes of before)

@@ -310,10 +310,17 @@ export const methods = {
     this.toast('A new document. The one you had is under Review, Versions.', 5000);
     return true;
   },
-  newFromTemplate(id) {
+  async newFromTemplate(id) {
     const t = TEMPLATES.find((x) => x[0] === id);
     if (!t) return false;
-    return this.newFromText(t[3], t[1], 'New ' + t[1].toLowerCase());
+    const ok = await this.newFromText(t[3], t[1], 'New ' + t[1].toLowerCase());
+    // the template's first words to replace (Title, Their name, Your name) selected, as a Word
+    // template's placeholder is: what is typed replaces them. The caret stood before them, and a
+    // title typed there read "My paperTitle", the template's word left to find and delete.
+    const c = ok && this.caretNow(), s = c && !c.ghost && c.collapsed ? this.src(c.f) : null;
+    const m = s && /^[^{}\\\n%$]*[^{}\\\s%$]/.exec(s.slice(c.a, c.a + 120));
+    if (m) this.restoreCaret({ f: c.f, selA: c.a, selB: c.a + m[0].length });
+    return ok;
   },
   // the blank document: the default preamble kept by Set as default, or Rikuy's article
   defaultPreambleDoc() {
@@ -418,6 +425,9 @@ export const methods = {
     // (the collapsed headings, kept in localStorage under the same name: src/cmd/find.js)
     const folds = load('rikuy.fold.v1');
     if (folds && typeof folds === 'object') { let moved = false; for (const m of mains) { const k = from + '|' + m; if (k in folds) { folds[to + '|' + m] = folds[k]; delete folds[k]; moved = true; } } if (moved) store('rikuy.fold.v1', folds); }
+    // (and the place it was left at, which a reload goes back to: src/app.js leaving())
+    const places = load('rikuy.place.v1');
+    if (places && typeof places === 'object' && places[from]) { places[to] = places[from]; delete places[from]; store('rikuy.place.v1', places); }
     if (from === this.name) {
       this.name = to;
       if (this.linkCache) for (const m of mains) { const k = from + '|' + m; if (this.linkCache.has(k)) { this.linkCache.set(to + '|' + m, this.linkCache.get(k)); this.linkCache.delete(k); } }
@@ -442,6 +452,9 @@ export const methods = {
       // (and its collapsed headings, which a later document of that name must not take on)
       const folds = load('rikuy.fold.v1');
       if (folds && typeof folds === 'object') { for (const m of new Set(vs.map((v) => v.main))) delete folds[name + '|' + m]; store('rikuy.fold.v1', folds); }
+      // (and the place it was left at, src/app.js leaving())
+      const places = load('rikuy.place.v1');
+      if (places && typeof places === 'object' && places[name]) { delete places[name]; store('rikuy.place.v1', places); }
       this.memSnaps = (this.memSnaps || []).filter((m) => m.name !== name);
       this.snapList = null;
       this.toast('Removed ' + name + '.');

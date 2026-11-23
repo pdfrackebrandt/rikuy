@@ -14,12 +14,13 @@ import { register, onInsertText, onInstall, command, enabled, run as runCmd } fr
 import { BLOCKS } from '../render.js';
 import { diffEdit } from '../wrap.js';
 import { docClass, hasPackage, preambleEnd } from '../preamble.js';
-import { NOT_PLAIN } from '../styles.js';
-import { escapeTeX } from '../editor.js';
+import { NOT_PLAIN, isHeading, isEnvStyle } from '../styles.js';
+import { isBalanced } from '../parser.js';
+import { escapeTeX, posFromDom } from '../editor.js';
 import { openMenu } from '../ui/kit.js';
 import { $ } from '../ui/dom.js';
 import { indentEdits, indentLen, INDENT_KEYS, bulletCode, textEngine, readLists, allLists, selectedItems, restartEdit, crlf, noindentBefore, maxStart, SYMBOLS, formatOf, labelEdits, startEdits, resumeEdits, sepEdits, kindEdits, demote, promote, unlist, listFrom, autoMarker, sortEdit,
-  multilevelEdits, multilevelOf, listSetup, mechOf, levelOf, BULLETS, NUMBERS, MULTI, OWN_SYMBOLS, bulletGlyph, numText, sameBullet, sameNumber, DEFAULT, indentAt, MAX_LEVEL } from '../lists.js';
+  multilevelEdits, multilevelOf, listSetup, mechOf, levelOf, BULLETS, NUMBERS, MULTI, OWN_SYMBOLS, bulletGlyph, numText, sameBullet, sameNumber, DEFAULT, indentAt, MAX_LEVEL, splitHead, chainAt } from '../lists.js';
 import { openBulletDialog, openNumberDialog, openValueDialog, openMultilevelDialog, openSortDialog, openSpacingDialog, openPictureBulletDialog, openIndentsDialog } from '../ui/listdialog.js';
 
 const ENVS = { item: 'itemize', enum: 'enumerate', desc: 'description' };
@@ -183,6 +184,22 @@ onInstall((app) => {
     e.preventDefault(); e.stopImmediatePropagation();
     app.listLevel(d);
   }, true);
+  // The caret on an item's bullet or number (Right from the paragraph above, Left from the item's
+  // words, a press on the number) goes where it counts (src/editor.js posFromDom): the item's
+  // words' start, or with Left the end of what is above. It was drawn before the number, and the
+  // next Left or Right from there went back where it came from.
+  let left = 0;
+  app.root.addEventListener('keydown', (e) => { left = e.key === 'ArrowLeft' && !e.shiftKey ? performance.now() : 0; }, true);
+  document.addEventListener('selectionchange', () => {
+    const sel = getSelection();
+    if (!sel.rangeCount || !sel.isCollapsed || app.composing) return;
+    const n = sel.anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement), lbl = el && el.closest && el.closest('.lbl');
+    // (a label of the item's own, \item[Step:], is words to edit: only a number or a bullet is passed over)
+    if (!lbl || !app.root.contains(lbl) || lbl.querySelector('span.t')) return;
+    const back = left && performance.now() - left < 500;
+    const P = posFromDom(lbl, back ? lbl.childNodes.length : 0, app.root);
+    if (P && !P.ghost && P.f != null) app.restoreCaret({ f: P.f, p: P.p, bias: back ? -1 : 1 }, true);
+  });
   // the libraries' tiles: the arrow keys move in two directions
   document.addEventListener('keydown', (e) => {
     const a = document.activeElement;
@@ -199,6 +216,16 @@ onInstall((app) => {
 
 const tile = (name, html, checked, run, cols, title) => ({ name, label: '', html, title: title || name, checked: !!checked, radio: true, cls: 'li-tile li-c' + cols, run });
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// an item's words (after \item and its label), trimmed; where they start; its own label as words, as
+// Bulleted list off keeps it (src/lists.js unlist); the end of the spaces after p on its line
+const itemWords = (src, it) => src.slice(it.cmdE, it.e).trim();
+const textStart = (src, it) => { let t = it.cmdE; while (t < it.e && /\s/.test(src[t])) t++; return t; };
+// (braces kept round a label that begins with [: right after \item it would be read as one again)
+const labelWords = (src, it) => { if (!it.lab) return ''; const r = src.slice(it.lab.is, it.lab.ie).trim(), l = /^\{\s*\[/.test(r) ? r : r.replace(/^\{([\s\S]*)\}$/, '$1'); return l ? l + ' ' : ''; };
+const lineRest = (src, p) => { while (src[p] === ' ' || src[p] === '\t') p++; return p; };
+// a comment on p's line before p (words written at p would be in it), or anywhere in t
+const inComment = (src, p) => /(^|[^\\])(\\\\)*%/.test(src.slice(src.lastIndexOf('\n', p - 1) + 1, p));
+const hasComment = (t) => /(^|[^\\])(\\\\)*%/.test(t);
 
 export const methods = {
   // ---- where the caret is ---------------------------------------------------------------------
@@ -285,6 +312,203 @@ export const methods = {
   listCaret(f, edits, p, q) {
     const map = (x) => { let d = 0; for (const e of edits) if (e.e <= x) d += e.t.length - (e.e - e.s); return x + d; };
     return q != null && q !== p ? { f, selA: map(p), selB: map(q) } : { f, p: map(p), bias: -1 };
+  },
+
+  // ---- Backspace, Delete and Enter at an item's edges, as Word's --------------------------------
+  // Backspace at an item's start takes its bullet or number away (deleteInput asks here first): its
+  // words stay where they are, a paragraph of the item above (under that item's words, the items
+  // after it numbered on), or on a list's first item a paragraph before the list; a second
+  // Backspace joins them as at any paragraph's start. An empty item goes, the caret at the end of
+  // the item above (or, the list's first, in an empty paragraph above the list). Delete at an
+  // item's end brings the next item's words up into it, and the paragraph after the list into its
+  // last item; Backspace at that paragraph's start does the same. Between two items' words the
+  // browser found only \item to delete, which is no visible text: the first Backspace moved the
+  // caret to the end of the item above and the second took that item's last letter, and Delete
+  // did nothing. True where it did it.
+  listDelete(back) {
+    const at = this.ribbonAt();
+    if (!at || !at.c || !at.c.collapsed || at.c.ghost || at.cell || !at.it || !at.B || at.c.f !== at.B.f) return false;
+    const f = at.B.f, src = this.src(f), p = at.c.a, NL = /\r\n/.test(src) ? '\r\n' : '\n';
+    if (!at.it.dataset.li) return back ? this.listJoinAfter(at, f, src, p) : false;
+    const I = this.listAt(at);
+    if (!I || !I.L || I.L.kind === 'desc' || !I.L.editable || !I.L.closed) return false;
+    const { L, k } = I, it = L.items[k], words = itemWords(src, it), empty = !words && !it.lists.length;
+    const gapOk = (s, e) => !/\S/.test(src.slice(s, e));
+    // (after \item and its label: cmdE is past the spaces after them, past the line's end in an
+    // empty item, whose caret stands before it)
+    const head = it.lab ? it.lab.e : it.s + 5;
+    if (back) {
+      if (p < head || /\S/.test(src.slice(head, p))) return false;
+      if (k > 0) {
+        const prev = L.items[k - 1];
+        if (!gapOk(prev.e, it.s)) return false;
+        if (empty) return this.listCommit(f, [{ s: prev.e, e: lineRest(src, Math.max(it.e, p)), t: '' }], [], { f, p: prev.e, bias: -1 });
+        const ind = indentAt(src, it.s) || '', t = NL + NL + ind + labelWords(src, it);
+        return this.listCommit(f, [{ s: prev.e, e: textStart(src, it), t }], [], { f, p: prev.e + NL.length * 2 + ind.length, bias: 1 });
+      }
+      if (empty) return this.listEmptyFirst(I, f, src, NL);
+      const r = unlist(src, I.B.s, I.B.e, p, p, this.model && this.model.userSigs);
+      if (!r) return false;
+      return this.listCommit(f, [{ s: r.s, e: r.e, t: r.t }], [], { f, p: r.a ?? r.s, bias: 1 });
+    }
+    // Delete at the end of the item's words (a comment after them on their line: the next words go
+    // on a line of their own after it, or the comment would take them)
+    const rest = src.slice(p, Math.max(p, it.e)), cm = /^[ \t]*%[^\n]*$/.test(rest);
+    if (it.lists.length || p < head || (/\S/.test(rest) && !cm)) return false;
+    if (k + 1 < L.items.length) {
+      const next = L.items[k + 1], nw = itemWords(src, next);
+      if (!gapOk(it.e, next.s) || next.lists.length) return false;
+      const t = nw ? (cm ? NL + (indentAt(src, next.s) ?? '') : words ? ' ' : '') + labelWords(src, next) : '';
+      return this.listCommit(f, [{ s: it.e, e: nw ? textStart(src, next) : lineRest(src, next.e), t }], [], { f, p, bias: -1 });
+    }
+    return I.chain.length === 1 ? this.listJoinPara(L, it, f, src, p, null) : false;
+  },
+  // Backspace at the start of the block right after a list (a paragraph, a heading, a quote or a
+  // theorem of one paragraph): its words join the list's last item
+  listJoinAfter(at, f, src, p) {
+    const X = this.listJoinable(at.B, at.it);
+    if (!X || p > X.ws || p < X.s || /\S/.test(src.slice(p, X.ws))) return false;
+    const m = /\\end\s*\{(itemize|enumerate)\}\s*$/.exec(src.slice(Math.max(0, X.s - 300), X.s));
+    if (!m) return false;
+    const end = X.s - (m[0].length - m[0].trimEnd().length);
+    let Y = null;
+    for (const B of this.renderer.blocks) if (B.f === f && B.s < end && B.e >= end && (!Y || B.s > Y.s)) Y = B;
+    const L = Y && allLists(readLists(src, Y.s, Y.e, this.model && this.model.userSigs)).find((x) => x.e === end);
+    if (!L || L.parent || !L.editable || !L.closed || !L.items.length) return false;
+    const it = L.items[L.items.length - 1];
+    if (it.lists.length) return false;
+    return this.listJoinPara(L, it, f, src, null, X);
+  },
+  // what of block B can join a list item: a paragraph's words, a heading's, a quote's or a
+  // theorem's of one paragraph (src/cmd/styles.js styleOfBlock): { s, ws, we, e } (e past a
+  // heading's \label), or null
+  listJoinable(B, it) {
+    const st = B && it && this.styleOfBlock ? this.styleOfBlock(B, it) : null, b = st && st.b;
+    if (!b || b.ws == null || st.opt || st.code || st.item) return null;
+    // (a heading's short title, \section[S]{...}, would be lost)
+    if (isHeading(st.v) && this.src(B.f).slice(b.s, b.ws).includes('[')) return null;
+    const words = this.src(B.f).slice(b.ws, b.we);
+    if (b.after != null && hasComment(words)) return null;
+    const ok = st.v === 'p' || isHeading(st.v) || (isEnvStyle(st.v) && !/^(verbatim|abstract)$/.test(st.v) && !/\n[ \t]*\n/.test(words.trim()));
+    return ok && words.trim() ? { s: b.s, ws: b.ws, we: b.we, e: b.after ?? b.e, label: b.after != null ? this.src(B.f).slice(b.e, b.after).trim() : '' } : null;
+  },
+  // the block after list L joined to its last item it: the caret at p (Delete) or where the two
+  // meet (Backspace); what followed the block keeps a blank line from the list
+  listJoinPara(L, it, f, src, p, X) {
+    if (!X) {
+      let Y = null;
+      for (const B of this.renderer.blocks) if (B.f === f && B.s >= L.e && (!Y || B.s < Y.s)) Y = B;
+      const el = Y && this.root.querySelector('.it[data-b="' + Y.id + '"]');
+      X = el ? this.listJoinable(Y, el) : null;
+    }
+    if (!X || X.s < L.e || /\S/.test(src.slice(L.e, X.s))) return false;
+    const NL = /\r\n/.test(src) ? '\r\n' : '\n';
+    // (after a comment ending the item: on a line of their own, or the comment would take them)
+    const sp = inComment(src, it.e) ? NL + (indentAt(src, it.s) ?? '') : itemWords(src, it) ? ' ' : '';
+    const m = /^[ \t]*(\r?\n)?[ \t]*(?=[^\s%])(?!\\(?:end|begin|part|chapter|(?:sub)*section|(?:sub)?paragraph|item|par|label)\b)/.exec(src.slice(X.e, X.e + 200));
+    const t = sp + src.slice(X.ws, X.we).trim() + X.label + src.slice(it.e, L.e) + (m ? (m[1] ? NL : NL + NL) : '');
+    return this.listCommit(f, [{ s: it.e, e: X.e, t }], [], { f, p: p != null ? p : it.e + sp.length, bias: p != null ? -1 : 1 });
+  },
+  // Paragraphs pasted into a list item's words (onPaste asks here): the second and later become
+  // items of its list after it, as Word gives pasted paragraphs the list's bullets. They went in
+  // as paragraphs of the one item, under its words with no bullet. t as it will be written, at
+  // at: t again, or with its blank lines made \item.
+  listPaste(f, at, t) {
+    if (!/\n[ \t]*\n/.test(t) || /\\(?:begin|end|item|part|chapter|(?:sub)*section|(?:sub)?paragraph|par)\b|(^|[^\\])%/.test(t)) return t;
+    const src = this.src(f);
+    let X = null;
+    for (const B of this.renderer.blocks) if (B.f === f && B.s <= at && at <= B.e && (!X || B.s > X.s)) X = B;
+    if (!X) return t;
+    const ch = chainAt(readLists(src, X.s, X.e, this.model && this.model.userSigs), at), I = ch[ch.length - 1];
+    const it = I && I.L.items[I.k];
+    if (!it || !I.L.editable || I.L.kind === 'desc' || at < (it.lab ? it.lab.e : it.s + 5) || at > it.e || !isBalanced(src, it.cmdE, at)) return t;
+    const NL = /\r\n/.test(src) ? '\r\n' : '\n', ind = indentAt(src, it.s) ?? '  ';
+    // (only a blank line outside braces: one inside \textbf{...} would put \item in its group)
+    const depth = (x, i) => { let d = 0; for (let k = 0; k < i; k++) { if (x[k] === '\\') k++; else if (x[k] === '{') d++; else if (x[k] === '}') d--; } return d; };
+    return t.replace(/^\s+|\s+$/g, '').replace(/[ \t]*\r?\n[ \t]*(?:\r?\n[ \t]*)+/g, (m, i, x) => (depth(x, i) ? m : NL + ind + '\\item '));
+  },
+  // A selection from one item's words into a later item's of the same list (deletionEdits asks
+  // here): deleted whole, \item and all, so the two items become one, as Word joins the paragraphs
+  // a selection runs over. Only its visible letters went, every item left standing, and Enter
+  // over such a selection left an empty item between the two halves. The edits, or null.
+  listSpan(f, a, b) {
+    const src = this.src(f), slice = src.slice(a, b);
+    // (a comment in it: deleted with it, and the words met with no space; the old way keeps it)
+    if (!/\\item\b/.test(slice) || hasComment(slice) || /\\(?:part|chapter|(?:sub)*section|paragraph|maketitle|bibliography|end\s*\{document\})\b/.test(slice) || !isBalanced(src, a, b)) return null;
+    let X = null;
+    for (const B of this.renderer.blocks) if (B.f === f && B.s <= a && b <= B.e && (!X || B.s > X.s)) X = B;
+    if (!X) return null;
+    const lists = readLists(src, X.s, X.e, this.model && this.model.userSigs), A = chainAt(lists, a), Z = chainAt(lists, b);
+    const x = A[A.length - 1], z = Z[Z.length - 1];
+    if (!x || !z || x.L.s !== z.L.s || x.k >= z.k || !x.L.editable) return null;
+    const head = (it) => (it.lab ? it.lab.e : it.s + 5);
+    if (a < head(x.L.items[x.k]) || b < head(z.L.items[z.k])) return null;
+    return [{ f, s: a, e: b, t: '' }];
+  },
+  // whether list L (from s to e) is a block of the page of its own: the empty paragraph Enter shows
+  // stands between blocks, and one inside a theorem, a quote or a minipage would have none to stand
+  // by (enter in src/app.js asks too)
+  listAlone(f, s, e) {
+    const src = this.src(f);
+    return this.renderer.blocks.some((B) => B.f === f && B.s <= s && e <= B.e && !/\S/.test(src.slice(B.s, s)) && !/\S/.test(src.slice(e, B.e)));
+  },
+  // an empty first item: it goes (its list too where it was the only item), and the caret is in an
+  // empty paragraph where it stood, above the list, as Word's
+  listEmptyFirst(I, f, src, NL) {
+    const { L } = I, it = L.items[0];
+    if (I.chain.length > 1) {
+      // (a nested list's: the caret back at the end of the item above's words)
+      if (L.items.length > 1) return false;
+      let s = L.s;
+      while (s > 0 && /[ \t\r\n]/.test(src[s - 1])) s--;
+      return this.listCommit(f, [{ s, e: L.e, t: '' }], [], { f, p: s, bias: -1 });
+    }
+    if (!this.listAlone(f, L.s, L.e)) return false;
+    let pos;
+    if (L.items.length === 1) {
+      let s = L.s, e = L.e;
+      while (s > 0 && /[ \t\r\n]/.test(src[s - 1])) s--;
+      while (e < src.length && /[ \t\r\n]/.test(src[e])) e++;
+      const t = s > 0 && e < src.length ? NL + NL : '';
+      this.listCommit(f, [{ s, e, t }], [], { f, p: s, bias: -1 });
+      pos = s + (t ? NL.length : 0);
+    } else {
+      this.listCommit(f, [{ s: it.s, e: L.items[1].s, t: '' }], [], { f, p: it.s, bias: 1 });
+      pos = L.s;
+    }
+    this.ghostAt(f, pos);
+    // (a place for the caret, not a step of its own: Undo gives the item back)
+    if (this.ghost) this.ghost.place = true;
+    return true;
+  },
+  // Enter on an empty item that is not the list's last (enter asks here first): Word takes its
+  // number away and the empty paragraph stays where the item was, the list going on after it (its
+  // numbers too). The list ends there and begins again after it, the caret in an empty paragraph
+  // between the two. Before, the empty item was taken out and the caret put after the whole list,
+  // so what was typed next landed below its last item.
+  listEnterEmpty() {
+    const at = this.ribbonAt(), I = at && this.listAt(at);
+    if (!I || !I.L || !I.L.editable || !I.L.closed || I.chain.length > 1 || I.L.kind === 'desc') return false;
+    const { L, k, f, src } = I, it = L.items[k];
+    if (itemWords(src, it) || it.lists.length || it.lab || k + 1 >= L.items.length || !this.listAlone(f, L.s, L.e)) return false;
+    const NL = /\r\n/.test(src) ? '\r\n' : '\n';
+    if (k === 0) return this.listEmptyFirst(I, f, src, NL);
+    const prev = L.items[k - 1], next = L.items[k + 1];
+    if (/\S/.test(src.slice(prev.e, it.s)) || /\S/.test(src.slice(lineRest(src, it.e), next.s))) return false;
+    const h = splitHead(src, L, k), ind = indentAt(src, L.s) || '', iind = indentAt(src, next.s) || '';
+    // (a numbered list goes on numbering after it, as Word's: where its start is not written,
+    // enumitem's resume, as Continue Numbering writes it)
+    const f0 = L.kind === 'enum' ? formatOf(src, L, this.listCfg()) : null;
+    const resume = !!f0 && !f0.startFrom && this.listMech() === 'enumitem';
+    const open = resume ? (h.open ? h.open.replace(/\]$/, ', resume]') : '[resume]') : h.open;
+    const end = NL + ind + '\\end{' + L.name + '}' + NL;
+    const t = end + NL + ind + '\\begin{' + L.name + '}' + open + NL + (h.setup ? iind + h.setup + NL : '') + iind;
+    const n0 = this.src(f).length;
+    this.listCommit(f, [{ s: prev.e, e: next.s, t }], resume ? ['enumitem'] : [], { f, p: prev.e, bias: -1 });
+    // (the package's line, written above it, moves the place)
+    this.ghostAt(f, prev.e + end.length + this.src(f).length - n0 - (t.length - (next.s - prev.e)));
+    if (this.ghost) this.ghost.place = true;
+    return true;
   },
 
   // ---- Bulleted list, Numbered list, Description list --------------------------------------------

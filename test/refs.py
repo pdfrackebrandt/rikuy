@@ -32,6 +32,10 @@ TEX = os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm'))
 def D(body, pre='', cls='\\documentclass{article}'):
     return cls + '\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
 
+# a footnote in another command's braces, where Enter writes \endgraf (refs.py notes, compiled)
+ENTER_NESTED = [('\\thanks in \\author', '\\documentclass{article}\n\\title{T}\n\\author{Ann\\thanks{Affil here}}\n\\begin{document}\n\\maketitle\nBody words.\n\\end{document}\n'),
+                ('a footnote in a heading', D('\\tableofcontents\n\n\\section{Intro\\protect\\footnote{Affil here}}\nBody words.'))]
+
 def cmd(page, cid, args=None):
     r = page.evaluate('([c, a]) => window.rikuy.runCommand(c, a === null ? undefined : a)', [cid, args])
     settle(page, 250)
@@ -77,6 +81,12 @@ def toc(page):
     hand = DOC.replace('\\begin{document}\n', '\\begin{document}\n\\tableofcontents\n')
     off = run('toc-remove')
     roundtrip(page, DOC, ('First paragraph', 3), run('table-of-contents'), want, forms=[hand.replace('\\begin{document}\n\\tableofcontents\n', '\\begin{document}\n\\tableofcontents\n')], off_command=off, label='Table of Contents')
+    # the caret after the contents on a blank paragraph of its own, as Word's: it landed inside the
+    # next heading's word (a mark moved twice over the insertion), and what was typed went there
+    for cid, line in (('table-of-contents', '\\tableofcontents'), ('table-of-figures', '\\listoffigures'), ('list-of-tables', '\\listoftables')):
+        load_doc(page, DOC); click_text(page, 'First paragraph', 3)
+        cmd(page, cid); page.keyboard.type('Next'); settle(page, 300)
+        check(cid + ': what is typed next is a paragraph after it, the headings untouched', src(page) == DOC.replace('First paragraph here.\n\n', 'First paragraph here.\n\n' + line + '\n\nNext\n\n'), src(page)[40:140])
     load_doc(page, want); settle(page, 300)
     rows = toc_rows(page)
     check('the page draws the contents as TeX: numbered headings, the starred one left out', rows[:3] == ['1 Intro 1', '1.1 Detail 1', '2 Last 1'] and len(rows) == 3, rows)
@@ -138,6 +148,38 @@ def notes(page):
     hw = D('A\\endnote{one} b.\n\n\\theendnotes', '\\usepackage{endnotes}\n')
     load_doc(page, hw); settle(page, 200)
     check('the endnotes package\'s \\theendnotes drawn with its raised numbers', texts(page, '.en-endnotes') == ['1one'] and page.locator('.en-endnotes sup.en-n').count() == 1, texts(page, '.en-e'))
+    # Enter in a footnote at the page's foot, as Word's: a paragraph of its own in the footnote (a
+    # blank line, as TeX reads one), drawn on a line of its own with the caret in it. The
+    # paragraphs ran together, the caret showed in the text after the mark, and what was typed
+    # there went on in the footnote; Backspace takes the paragraph back, Esc leaves it.
+    load_doc(page, doc); click_text(page, 'Words of', 5)
+    page.keyboard.press('Control+Alt+f'); page.keyboard.type('First part'); page.keyboard.press('Enter'); settle(page, 300)
+    caret = lambda: page.evaluate('(() => { const s = getSelection(), n = s.anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement); return !!(el && el.closest(".fn")); })()')
+    check('Enter in a footnote: the caret on a new line in the footnote', caret() and page.locator('.fn .a-br').count() == 1, page.evaluate('[...document.querySelectorAll(".fn")].map((e) => e.innerText)'))
+    page.keyboard.type('Second part'); settle(page, 300)
+    check('what is typed then is the footnote\'s second paragraph, drawn below the first', '\\footnote{First part\n\nSecond part}' in src(page) and page.evaluate('[...document.querySelectorAll(".fn")].map((e) => e.innerText)') == ['1First part\nSecond part'], (src(page)[40:120], page.evaluate('[...document.querySelectorAll(".fn")].map((e) => e.innerText)')))
+    for _ in range(len('second part') + 1): page.keyboard.press('Backspace')
+    settle(page, 300)
+    check('Backspace takes the paragraph back, the caret at the first one\'s end in the footnote', '\\footnote{First part}' in src(page) and caret(), src(page)[40:120])
+    page.keyboard.press('Escape'); page.keyboard.type(' X'); settle(page, 300)
+    check('Esc leaves the footnote: the words after its mark', '\\footnote{First part} X of' in src(page), src(page)[40:120])
+    # (Enter again on the empty paragraph just begun: nothing, as LaTeX has no empty paragraph; it
+    # wrote a second blank line that drew nothing and took two Backspaces back)
+    load_doc(page, doc); click_text(page, 'Words of', 5)
+    page.keyboard.press('Control+Alt+f'); page.keyboard.type('One'); page.keyboard.press('Enter'); page.keyboard.press('Enter'); page.keyboard.type('Two'); settle(page, 300)
+    check('a second Enter in a footnote writes nothing', '\\footnote{One\n\nTwo}' in src(page), src(page)[40:120])
+    # (a footnote inside another command's braces: \thanks in \author, \protect\footnote in a heading;
+    # a blank line there stops TeX, "Paragraph ended before \author was complete")
+    for label, d in ENTER_NESTED:
+        load_doc(page, d); click_text(page, 'Affil here', 10)
+        page.keyboard.press('Enter'); page.keyboard.type('Second'); settle(page, 300)
+        check('Enter in ' + label + ': \\endgraf, a paragraph TeX takes there, drawn on a line of its own', 'Affil here\\endgraf Second}' in src(page) and page.evaluate('[...document.querySelectorAll(".fn")].map((e) => e.innerText)')[-1].endswith('Affil here\nSecond'), (src(page)[:200], page.evaluate('[...document.querySelectorAll(".fn")].map((e) => e.innerText)')))
+        for _ in range(len('Second') + 1): page.keyboard.press('Backspace')
+        settle(page, 300)
+        check('Backspace takes it back (' + label + ')', src(page) == d, src(page)[:200])
+    # \par and \footnotetext's blank line drawn as the paragraphs they are
+    load_doc(page, D('A\\footnote{One\\par Two} b\\footnotemark\\footnotetext{Three\n\nFour} c.'))
+    check('\\par in a footnote and \\footnotetext\'s blank line: paragraphs of their own', page.evaluate('[...document.querySelectorAll(".fn")].map((e) => e.innerText.slice(1))') == ['One\nTwo', 'Three\nFour'], page.evaluate('[...document.querySelectorAll(".fn")].map((e) => e.innerText)'))
     # Next Footnote, Previous, Show Notes
     fn = D('One\\footnote{first} two\\footnote{second} three.\n\nFour\\endnote{e1} five.\n\\printendnotes', '\\usepackage{enotez}\n')
     load_doc(page, fn); click_text(page, 'One', 0)
@@ -261,6 +303,11 @@ def sources(page):
     nb = D('As shown \\citet{knuth84}, words.\n\nLast.', '\\usepackage{natbib}\n')
     insert_case(page, {'main.tex': nb, 'refs.bib': BIB}['main.tex'], lambda page: (page.evaluate('rikuy.files.set("refs.bib", %r); rikuy.rebuild()' % BIB), click_text(page, 'Last', 1)), run('bibliography'), nb.replace('Last.', 'Last.\n\n\\bibliographystyle{plainnat}\n\\bibliography{refs}\n'), 'Bibliography (natbib)')
     check('the page draws it under References', 'References' in texts(page, '.refs-h') and len(texts(page, '.it.ref')) == 1, texts(page, '.refs-h'))
+    # (a document with no system yet: natbib's line, or biblatex's \addbibresource, went into the copy
+    # first, and the bibliography's lines that many characters too early, into a word or \begin{document})
+    withbib = lambda w: (lambda page: (page.evaluate('rikuy.files.set("refs.bib", %r); rikuy.rebuild()' % BIB), click_text(page, w, 1)))
+    insert_case(page, D('As shown here, words.\n\nLast.'), withbib('As shown'), run('bibliography'), D('As shown here, words.\n\n\\bibliographystyle{plainnat}\n\\bibliography{refs}\n\nLast.', '\\usepackage{natbib}\n'), 'Bibliography with no system yet: natbib, and its lines after the paragraph')
+    insert_case(page, D('As shown here, words.\n\nLast.', '\\usepackage{biblatex}\n'), withbib('As shown'), run('bibliography'), D('As shown here, words.\n\n\\printbibliography\n\nLast.', '\\usepackage{biblatex}\n\\addbibresource{refs.bib}\n'), 'Bibliography with biblatex and no \\addbibresource: it, and \\printbibliography after the paragraph')
     wc = NAT.replace('\\bibliographystyle{plainnat}', '\\renewcommand{\\refname}{Works Cited}\n\\bibliographystyle{plainnat}')
     roundtrip(page, NAT, ('words.', 1), lambda page: (page.evaluate('rikuy.files.set("refs.bib", %r)' % BIB), page.evaluate('rikuy.bibRetitle("Works Cited")')), wc, off_command=lambda page: page.evaluate('rikuy.bibRetitle(null)'), label='Bibliography titled Works Cited (BibTeX)')
     load_doc(page, {'main.tex': wc, 'refs.bib': BIB}); settle(page, 200)
@@ -356,6 +403,9 @@ def index(page):
     insert_case(page, doc, sel('Alpha'), run('mark-entry', {'main': 'alpha', 'all': True}), lambda t: t.count('\\index{alpha}') == 1 and 'alpha\\index{alpha} again' in t, 'Mark All: every place the words stand, as typed (case kept)')
     insert_case(page, doc, sel('Alpha'), run('mark-entry', {'main': 'A!b@c|d'}), lambda t: '\\index{A"!b"@c\\textbar{}d}' in t, 'makeindex\'s own characters quoted, a | as \\textbar{} (hyperref reads a quoted one too)')
     marked = D('Alpha\\index{Alpha} words here\\index{beta!sub|textbf}.\n\nBeta\\index{Gamma|see{Alpha}} words.\n\nLast.', '\\usepackage{imakeidx}\n\\makeindex\n')
+    # (the preamble's lines went into the copy first, and \printindex as many characters too early:
+    # into \begin{document} of a document with no index set up yet, which TeX could not read)
+    insert_case(page, doc, at('Beta', 1), run('insert-index', {'columns': 2}), D('Alpha words here.\n\nBeta words and alpha again.\n\n\\printindex\n\nGamma at the end.', '\\usepackage{imakeidx}\n\\makeindex\n'), 'Insert Index with no index set up: imakeidx, \\makeindex, and \\printindex after the paragraph')
     got = insert_case(page, marked, at('Last', 1), run('insert-index', {'columns': 2}), marked.replace('Last.', 'Last.\n\n\\printindex\n'), 'Insert Index: \\printindex after the paragraph')
     settle(page, 300)
     rows = texts(page, '.idx-e')
@@ -638,6 +688,13 @@ def compiled(page):
               not [x for x in ('Contents', '1 Intro', 'List of Figures', 'Figure 1: A cat & dog', 'See1 here', 'Notes', 'An endnote 50%.', 'References', 'On DNA & more', 'Index', 'alpha, 1') if x not in T], [x for x in ('Contents', '1 Intro', 'List of Figures', 'Figure 1: A cat & dog', 'See1 here', 'Notes', 'An endnote 50%.', 'References', 'On DNA & more', 'Index', 'alpha, 1') if x not in T])
         if engine == 'pdflatex':
             check('the index has the entry\'s page as the page drew it', re.search(r'alpha, (\d+)', T) and page.evaluate('[...document.querySelectorAll(".idx-e")].map((e) => e.textContent)') == ['alpha, ' + re.search(r'alpha, (\d+)', T).group(1)], (T[-300:], page.evaluate('[...document.querySelectorAll(".idx-e")].map((e) => e.textContent)')))
+    # Enter in a footnote inside \author or a heading writes \endgraf, which TeX takes there (a blank
+    # line stopped it: "Paragraph ended before \author was complete")
+    for label, d in ENTER_NESTED:
+        load_doc(page, d); click_text(page, 'Affil here', 10)
+        page.keyboard.press('Enter'); page.keyboard.type('Second'); settle(page, 300)
+        c = compile_doc(page, src(page)); T = re.sub(r'\s+', ' ', c['text'])
+        check('Enter in ' + label + ': what it writes compiles, both paragraphs in the PDF', c['ok'] and 'Affil here' in T and 'Second' in T, (src(page)[:160], c['log'][-300:]))
     # the review's cases where TeX is the judge
     nb = D('Words \\citet{knuth84} here.\n\n\\bibliographystyle{plainnat}\n\\bibliography{refs}', '\\usepackage{natbib}\n')
     load_doc(page, {'main.tex': nb, 'refs.bib': BIB}); click_text(page, 'here', 1)
@@ -936,6 +993,12 @@ def r4refs(page):
     select_text(page, 'Smith v. Jones')
     cmd(page, 'mark-citation', {'long': 'Smith | Jones, 2 U.S. 3', 'short': 'Smith v. Jones', 'category': 'Cases'})
     check('R4 Mark Citation: a | in the citation is \\textbar{}', '!Smith \\textbar{} Jones, 2 U.S. 3}' in src(page) and src(page).count('|') == 0, src(page))
+    # (with nothing marked yet: its \makeindex line first, then \printindex[toa] after the paragraph,
+    # where it went that line's length too early, into the preamble's own line)
+    load_doc(page, TOA)
+    click_text(page, 'Last', 1)
+    cmd(page, 'insert-toa')
+    check('Insert Table of Authorities with no index set up: \\makeindex[name=toa] and \\printindex[toa] after the paragraph', src(page) == want.replace(' Jones\\index[toa]{1@\\textbf{Cases}!Smith v. Jones, 1 U.S. 2 (1990)}', ' Jones').replace('Last.', 'Last.\n\n\\printindex[toa]\n'), src(page))
     load_doc(page, want)
     click_text(page, 'Last', 1)
     cmd(page, 'insert-toa')

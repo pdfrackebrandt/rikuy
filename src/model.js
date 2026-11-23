@@ -468,6 +468,10 @@ function minOffset(x, f, cur) {
 // block it keeps), its items and footnotes together, with one memo, when either is first read
 // (Word's export, the tests).
 const LAZY = Symbol('moved');
+// the unit a moved one was first made from: the same words (src/ui/wordcount.js counts them once and
+// keeps the count by it), read without making the moved copy
+// (through every move since: a moved unit read once is the base of the next move)
+export function unitBase(u) { let x = u; for (let n = 0; n < 1e4 && x && x[LAZY] && x[LAZY].base && x[LAZY].base !== x; n++) x = x[LAZY].base; return x; }
 function movedUnit(u, f, at, d) {
   const L = u[LAZY], base = L && !L.done ? L.base : u, D = (L && !L.done ? L.D : 0) + d;
   let min = MIN_OFF.get(base);
@@ -3143,7 +3147,8 @@ class Builder {
       }
       switch (nd.t) {
         case 'text': this.text(nd, ctx, acc); break;
-        case 'par': acc.ch(' ', nd.s, nd.e); break;
+        // (a blank line in a footnote: a paragraph of its own, drawn as a break, see footnote below)
+        case 'par': if (this.fnPar) { acc.flush(); out.push(this.atom(ctx, { k: 'br', s: nd.s, e: nd.e })); } else acc.ch(' ', nd.s, nd.e); break;
         case 'comment': acc.flush(); break;
         case 'special': {
           if (nd.ch === '~') acc.ch(' ', nd.s, nd.e);
@@ -3276,7 +3281,9 @@ class Builder {
       if (v.length >= 1 && v.length <= 2) acc.ch(v, nd.s, nd.e);
       return false;
     }
-    if (name === '\\' || name === 'newline' || name === 'linebreak') {
+    // (\par and \endgraf in a footnote: a paragraph of its own there, as a blank line is; Enter
+    // writes \endgraf where the footnote stands in another command's braces, see app.js enter)
+    if (name === '\\' || name === 'newline' || name === 'linebreak' || (this.fnPar && (name === 'par' || name === 'endgraf'))) {
       acc.flush();
       if (this.inTable) return false;
       out.push(this.atom(ctx, { k: 'br', s: nd.s, e: nd.e }));
@@ -3402,9 +3409,18 @@ class Builder {
       this.use('f' + num);
       const saveT = this.lastTarget;
       this.lastTarget = { num, kind: 'footnote' };
+      // A blank line in a footnote starts a paragraph of its own there, as TeX sets it and as Enter
+      // in a footnote writes it: drawn as a break. It was drawn as a space, the paragraphs ran
+      // together, and after Enter the caret had no place in the footnote: it showed in the text
+      // after the mark while what was typed next went on in the footnote. An empty last paragraph
+      // gets a place for the caret.
+      const fnWas = this.fnPar;
+      this.fnPar = true;
       const kids = a ? this.inl(a.nodes, ctx, fns) : [];
+      this.fnPar = fnWas;
       trimInl(kids);
       if (a && !kids.length) kids.push(this.ph(ctx, a.is));
+      else if (a && kids[kids.length - 1].k === 'br') kids.push(this.ph(ctx, a.ie));
       this.lastTarget = saveT;
       const th = name === 'thanks' || !!this.thanksMode;
       const mark = this.atom(ctx, { k: 'fn', s: nd.s, e: nd.e, num, is: a ? a.is : null, ie: a ? a.ie : null, ...(th ? { th: true } : {}) });
@@ -3416,7 +3432,11 @@ class Builder {
     if (name === 'footnotetext') {
       acc.flush();
       const a = nd.args[1];
+      // (its paragraphs drawn apart, as \footnote's are)
+      const fnWas = this.fnPar;
+      this.fnPar = true;
       const kids = a ? this.inl(a.nodes, ctx, fns) : [];
+      this.fnPar = fnWas;
       fns.push({ num: this.withinPrefix('footnote') + this.counterText(this.c.footnote, this.opts.fnStyle), inl: kids, f: ctx.f, dir: this.dirOf() });
       return false;
     }

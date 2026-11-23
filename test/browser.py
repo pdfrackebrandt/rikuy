@@ -1840,10 +1840,11 @@ def word_typing(page):
     # 3: words copied from two paragraphs are pasted as two paragraphs, as Word's are: copied from
     # a paragraph into the list item or the paragraph after a heading, they came as one run of
     # words, "only.Apple one" (only a blank line in the source counted as a paragraph's end)
+    # (across a bold and an italic word, each keeps its format, as Word's copy does: PR 118)
     page.context.grant_permissions(['clipboard-read', 'clipboard-write'])
     end = 'of the document.'
     bad = []
-    for a, z, want in (('Second', 'Apple one', 'Second paragraph is plain text only.\n\nApple one'), ('Background', 'Last', '\\section{Background}\n\nLast'), ('bold', 'italic', 'bold words and italic')):
+    for a, z, want in (('Second', 'Apple one', 'Second paragraph is plain text only.\n\nApple one'), ('Background', 'Last', '\\section{Background}\n\nLast'), ('bold', 'italic', '\\textbf{bold words} and \\emph{italic}')):
         load_doc(page, WORD_DOC)
         place(page, (a, z)); k.press('Control+c'); settle(page, 50)
         click_text(page, end, len(end)); k.press('Control+v'); settle(page, 100)
@@ -1901,10 +1902,7 @@ def word_typing(page):
     # 4: a selection holding whole headings or list items takes them with its words, as Word's
     # takes the paragraphs it holds; their words alone went, and an empty numbered heading or two
     # empty bullets stayed between the two paragraphs the deletion joined
-    # (one key at an item's start still takes no \item)
-    load_doc(page, WORD_DOC)
-    click_text(page, 'Banana', 0); k.press('Backspace'); settle(page, 100)
-    kept = src(page) == WORD_DOC
+    # (one key at an item's start is Word's own rule, the bullet first: lists.py review_edges)
     for a, z, key, old_, new_ in (('paragraph is', 'After', 'Backspace', 'paragraph is plain text only.\n\\begin{itemize}\n\\item Apple one\n\\item Banana two\n\\end{itemize}\nAfter', ''),
                                   ('display', 'Last', 'Z', 'display text.\n\n\\section{Background}\\label{sec:b}\nLast', 'Z'),
                                   ('one', 'Banana', 'Delete', 'one\n\\item Banana', '')):
@@ -1913,8 +1911,8 @@ def word_typing(page):
         if len(key) == 1: k.type(key)
         else: k.press(key)
         settle(page, 100)
-        check('selected from "%s" to "%s", then %s: what it held is gone, the paragraphs at its ends joined' % (a, z, key) + ('; Backspace at an item\'s start alone leaves the list as it was' if key == 'Delete' else ''),
-              src(page) == WORD_DOC.replace(old_, new_) and (key != 'Delete' or kept), (kept, src(page)[200:420]))
+        check('selected from "%s" to "%s", then %s: what it held is gone, the paragraphs at its ends joined' % (a, z, key),
+              src(page) == WORD_DOC.replace(old_, new_), src(page)[200:420])
     # 5: Enter at a heading's start puts an empty paragraph above it and the caret stays, as
     # Word's: the empty paragraph showed below the heading, and words typed went after it
     load_doc(page, WORD_DOC)

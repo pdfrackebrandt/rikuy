@@ -16,7 +16,7 @@ import { cleanPath } from '../share.js';
 import * as X from '../table.js';
 import { mapPos } from '../wrap.js';
 import { BLOCKS } from '../render.js';
-import { segOfSpan, boundary } from '../editor.js';
+import { segOfSpan, boundary, escapeTeX, atomOfEl } from '../editor.js';
 import { packageOptions, packages as pkgLines, docClass, preambleEnd, stripComments } from '../preamble.js';
 import { openMenu, colorPicker, colorArg, colorNeeds } from '../ui/kit.js';
 import { openTablePicker, insertTableDialog, textToTableDialog, tableToTextDialog, sortDialog, propertiesDialog, marginsDialog, deleteCellsDialog, dataFileDialog, bordersDialog, formulaDialog } from '../ui/tablepicker.js';
@@ -34,6 +34,22 @@ const here = (app, at) => {
   return m.table;
 };
 const inTable = (app, at) => !!here(app, at);
+// The rows of a clipboard's HTML when it holds one table and nothing else, each cell's text (a line
+// break a space; a merged cell's columns after it empty), or null
+const htmlRows = (html) => {
+  const d = new DOMParser().parseFromString(html, 'text/html'), t = d.querySelector('table');
+  if (!t || d.querySelectorAll('table').length !== t.querySelectorAll('table').length + 1) return null;
+  // (only a table and nothing else: words round it, "Intro" and "Outro", were dropped; a sheet's
+  // <style> in the body, as Google Sheets sends it, is no words)
+  for (const x of d.querySelectorAll('style, script, template, title, meta')) x.remove();
+  const all = (d.body.textContent || '').replace(/\s+/g, ''), inT = (t.textContent || '').replace(/\s+/g, '');
+  if (all.length !== inT.length) return null;
+  const rows = [...t.rows].slice(0, 100000).map((tr) => [...tr.cells].flatMap((td) => {
+    for (const br of td.querySelectorAll('br')) br.replaceWith(' ');
+    return [td.textContent, ...Array(Math.max(0, Math.min(100, (+td.colSpan || 1) - 1))).fill('')];
+  })).filter((x) => x.length);
+  return rows.length ? rows : null;
+};
 const ICON = {
   rowAbove: '<path d="M3.5 9.5h13v7h-13zM3.5 13h13M10 9.5v7M10 2.5v4M8 4.5h4"/>',
   rowBelow: '<path d="M3.5 3.5h13v7h-13zM3.5 7h13M10 3.5v7M10 13.5v4M8 15.5h4"/>',
@@ -410,6 +426,10 @@ export const methods = {
       if (q < c.s || q > c.e) continue;
       const r = document.createRange();
       if (!c.empty && p >= c.ks && p <= c.ce) { this.restoreCaret({ f, p }); return; }
+      // (a place outside the words, between two rows after Delete Rows, under a rule after Split
+      // Table: at the words' start. The caret was drawn there, but what was typed went where the
+      // place was, outside the cell: "two \\Q", "\toprule{}Q")
+      if (!c.empty) { const [ws, we] = X.cellWords(c); this.restoreCaret({ f, p: Math.min(Math.max(p, ws), we), bias: p < ws ? 1 : -1 }); return; }
       r.setStart(sp.firstChild || sp, sp.firstChild && info.seg.ph ? sp.firstChild.length : 0);
       r.collapse(true);
       const sel = getSelection();
@@ -554,14 +574,42 @@ export const methods = {
     const el = n && (n.nodeType === 1 ? n : n.parentElement);
     const td = el && el.closest('td');
     if (!td) return;
-    const cells = this.tablePieces(td.closest('table')).flatMap((t) => [...t.querySelectorAll('td:not(.rule-cell)')].filter((x) => x.closest('table') === t && x.querySelector('span.t')));
+    // (a cell that holds only a formula or a picture is a cell too: Tab passed over it)
+    const cells = this.tablePieces(td.closest('table')).flatMap((t) => [...t.querySelectorAll('td:not(.rule-cell)')].filter((x) => x.closest('table') === t && x.querySelector('span.t, .atom')));
     const i = cells.indexOf(td);
     const next = cells[i + (back ? -1 : 1)];
     if (!next) { if (!back) this.tableRow(); return; }
     const sp = next.querySelector('span.t');
     const r = document.createRange();
-    r.selectNodeContents(sp);
+    r.selectNodeContents(sp || next);
     sel.removeAllRanges(); sel.addRange(r);
+  },
+
+  // Cells pasted in a table fill the cells from the caret's, or from the first of the cells
+  // selected, as Word's Overwrite Cells, rows added where more come: cells copied on the page (the
+  // clipboard's LaTeX is their tabular, kept as LaTeX), a spreadsheet's or a web page's table (its
+  // HTML), or several rows of tab separated text (a spreadsheet's quoting read). A whole table
+  // float went into the one cell, which TeX refuses. One line with a tab in it, from an editor or a
+  // terminal, is text and goes in as text. false where it is no such paste or no table is here.
+  tablePasteCells(plain, html, latex) {
+    const at = this.ribbonAt(), h = at && this.tableHere(at);
+    if (!h) return false;
+    let grid = X.tabularCells(latex);
+    if (!grid) {
+      // (plain text is read as cells only with no HTML beside it, as a terminal or a .tsv gives: a
+      // spreadsheet or Word sends its table as HTML, an editor its code as HTML without one; and
+      // only a grid, every line as many cells, none starting with a tab: tab indented code is text)
+      let rows = html && html.length < 4e6 && /<table[\s>]/i.test(html) ? htmlRows(html) : null;
+      if (!rows && !/<[a-z]/i.test(html || '')) { const s = X.sheetRows(plain); rows = s && s.length > 1 && s[0].length > 1 && s.every((x) => x.length === s[0].length && x[0] !== '') ? s : null; }
+      if (!rows || !rows.length || (rows.length < 2 && rows[0].length < 2)) return false;
+      grid = rows.map((x) => x.map((w) => escapeTeX(w.replace(/\s+/g, ' ').trim(), ' ')));
+    }
+    // (thirty thousand rows froze the page for seconds and made a table too long to read again)
+    const size = grid.reduce((n, x) => n + x.reduce((m, w) => m + w.length + 3, 0), 0);
+    if (grid.length > 2000 || size > 400000) { this.toast('Too much to paste into the table\'s cells (' + grid.length + ' rows). Paste it outside the table: it becomes a table of its own.', 7000); return true; }
+    const r = h.multi ? h.rect.r0 : h.r, col = h.multi ? h.rect.c0 : h.cell.col;
+    const out = X.pasteCells(h.src, h.T, r, col, grid);
+    return !!out && this.tableApply(h, out);
   },
 
   // the <table> pieces of the table tbl is one of: a table that runs over pages is one a page
@@ -570,6 +618,96 @@ export const methods = {
     if (!key) return tbl ? [tbl] : [];
     const all = [...this.root.querySelectorAll('table[data-tab="' + CSS.escape(key) + '"]')];
     return all.includes(tbl) ? all : [tbl];
+  },
+
+  // Up and Down from a cell's first or last line: the cell above or below, where the caret's x
+  // falls, as Word's (Shift: the selection grows there). Chromium's own went to the next cell in
+  // the source's order, the one to the right, so Down from "one" typed into "two". false where
+  // the browser's move is right: another line of the same cell, or out of the table.
+  tableUpDown(dir, extend) {
+    const sel = getSelection();
+    if (!sel.rangeCount || !sel.focusNode) return false;
+    const fn = sel.focusNode, el = fn.nodeType === 1 ? fn : fn.parentElement;
+    const td = el && el.closest('td');
+    if (!td || !this.root.contains(td) || td.classList.contains('rule-cell')) return false;
+    // (a formula or a picture counts as a line: a cell may hold nothing else)
+    const lines = (cell) => [...cell.querySelectorAll('span.t, .atom')].filter((s) => !s.parentElement.closest('.atom')).flatMap((s) => [...s.getClientRects()]).filter((q) => q.height);
+    const here = lines(td);
+    if (!here.length) return false;
+    const r = document.createRange();
+    r.setStart(fn, sel.focusOffset); r.collapse(true);
+    const rc = [...r.getClientRects()].find((q) => q.height) || here[dir > 0 ? here.length - 1 : 0];
+    const top = Math.min(...here.map((q) => q.top)), bottom = Math.max(...here.map((q) => q.bottom)), h = rc.height || 12;
+    if (dir > 0 ? rc.bottom < bottom - h / 2 : rc.top > top + h / 2) return false;
+    // (the x of the first of several presses, as Word keeps the caret's column over short cells)
+    const G = this.tableGoal, x = G && G.node === fn && G.off === sel.focusOffset ? G.x : rc.left;
+    const rows = this.tablePieces(td.closest('table')).flatMap((t) => [...t.rows]);
+    // (a cell another one's rowspan reaches down past: the row under the bottom of that one)
+    const tdr = td.getBoundingClientRect();
+    let i = rows.indexOf(td.parentElement), to = null;
+    while (!to && (i += dir) >= 0 && i < rows.length) {
+      const tr = rows[i], tb = tr.getBoundingClientRect();
+      if (dir > 0 ? tb.bottom <= tdr.bottom + 1 : tb.top >= tdr.top - 1) continue;
+      const tds = [...tr.cells].filter((c) => !c.classList.contains('rule-cell') && c.querySelector('span.t, .atom'));
+      if (!tds.length) continue;
+      const gap = (c) => { const b = c.getBoundingClientRect(); return x < b.left ? b.left - x : x > b.right ? x - b.right : 0; };
+      to = tds.reduce((m, c) => (gap(c) < gap(m) ? c : m));
+    }
+    if (!to) return this.tableLeave(this.tablePieces(td.closest('table')), dir, x, extend);
+    const there = lines(to);
+    if (!there.length) return false;
+    const line = dir > 0 ? there.reduce((m, q) => (q.top < m.top ? q : m)) : there.reduce((m, q) => (q.bottom > m.bottom ? q : m));
+    const tb = to.getBoundingClientRect();
+    const hit = document.caretRangeFromPoint(Math.min(Math.max(x, tb.left + 1), tb.right - 1), line.top + line.height / 2);
+    let node, off;
+    const sp = to.querySelector('span.t');
+    if (hit && to.contains(hit.startContainer) && hit.startContainer.nodeType === 3 && hit.startContainer.parentElement.closest('span.t') && !hit.startContainer.parentElement.closest('.atom')) { node = hit.startContainer; off = hit.startOffset; }
+    else if (sp) { node = sp.firstChild || sp; off = 0; }
+    // (a cell of a formula alone: before it or after it, by the side x is on, as a click there puts it)
+    else { node = to; off = x > line.left + line.width / 2 ? to.childNodes.length : 0; }
+    if (extend) sel.extend(node, off); else sel.collapse(node, off);
+    this.tableGoal = { node, off, x };
+    return true;
+  },
+  // Down from a table's last row, Up from its first: the line below or above the table, at x, as
+  // Word's (its caption, the next paragraph). Chromium's own went to the cell beside the caret's.
+  // false where no text is there (the document's end): the browser's move.
+  tableLeave(pieces, dir, x, extend) {
+    const tbl = pieces[dir > 0 ? pieces.length - 1 : 0];
+    if (!tbl) return false;
+    const ok = (n) => n && n.nodeType === 3 && n.parentElement.closest('span.t') && !n.parentElement.closest('.atom, .gh') && !pieces.some((t) => t.contains(n));
+    let node = null, off = 0;
+    // straight down (up) from x, as the eye goes: the first line there, in the column the table
+    // stands in (a minipage beside it is passed by, as the next span in the page's order was not)
+    const tb = tbl.getBoundingClientRect();
+    for (let y = dir > 0 ? tb.bottom + 1 : tb.top - 1, k = 0; !node && k < 150 && y > 0 && y < innerHeight; y += dir * 3, k++) {
+      const el = document.elementFromPoint(x, y);
+      if (!el || pieces.some((t) => t.contains(el)) || !this.root.contains(el)) continue;
+      // (a formula, a picture or a \hfill under the table is passed over to the line after it: the
+      // caret has no place inside one)
+      if (el.closest('.atom')) continue;
+      if (!el.closest('span.t') && !(el.closest('.it') && el.querySelector('span.t'))) continue;
+      // (where the point falls between lines Chromium's caret can snap anywhere, back into a row or
+      // over to the other minipage: only a line past the table's edge, in a box under x, counts)
+      const hit = document.caretRangeFromPoint(x, y), q = hit && hit.getClientRects()[0];
+      const box = hit && ok(hit.startContainer) && hit.startContainer.parentElement.closest('div, td, li'), bx = box && box.getBoundingClientRect();
+      if (q && bx && bx.left - 2 <= x && x <= bx.right + 2 && el.contains(hit.startContainer) && (dir > 0 ? q.top >= tb.bottom - 1 : q.bottom <= tb.top + 1)) { node = hit.startContainer; off = hit.startOffset; }
+    }
+    // (off the screen: the next text in the page's order, a few thousand nodes at most)
+    if (!node) {
+      const w = document.createTreeWalker(this.root, NodeFilter.SHOW_TEXT);
+      w.currentNode = dir > 0 ? (tbl.lastChild || tbl) : tbl;
+      for (let k = 0; k < 5000 && !node; k++) {
+        const n = dir > 0 ? w.nextNode() : w.previousNode();
+        if (!n) break;
+        if (ok(n) && n.parentElement.getClientRects().length) { node = n; off = dir > 0 ? 0 : n.length; }
+      }
+    }
+    if (!node) return false;
+    const sel = getSelection();
+    if (extend) sel.extend(node, off); else sel.collapse(node, off);
+    this.tableGoal = { node, off, x };
+    return true;
   },
 
   // ---- selecting ------------------------------------------------------------------------------------
@@ -588,14 +726,15 @@ export const methods = {
     else if (what === 'column') { a = pick(data[0], h.cell.col); z = pick(data[data.length - 1], h.cell.col); }
     else { const first = T.rows[data[0]], last = T.rows[data[data.length - 1]]; a = first.cells[0]; z = last.cells[last.cells.length - 1]; }
     if (!a || !z) return false;
-    const spans = this.tablePieces(tbl).flatMap((t) => [...t.querySelectorAll('td span.t')]);
-    const pos = (sp) => { const i = segOfSpan(sp); return i ? boundary(i.B, i.seg, i.o) : -1; };
+    // (a formula or a picture is a cell's content too: a row ending in a formula was no row to select)
+    const spans = this.tablePieces(tbl).flatMap((t) => [...t.querySelectorAll('td span.t, td .atom')]).filter((x) => !x.parentElement.closest('.atom'));
+    const pos = (sp) => { if (sp.classList.contains('atom')) { const A = atomOfEl(sp); return A ? A.s : -1; } const i = segOfSpan(sp); return i ? boundary(i.B, i.seg, i.o) : -1; };
     const inA = spans.filter((sp) => { const q = pos(sp); return q >= a.s && q <= a.e; });
     const inZ = spans.filter((sp) => { const q = pos(sp); return q >= z.s && q <= z.e; });
     if (!inA.length || !inZ.length) return false;
-    const r = document.createRange(), last = inZ[inZ.length - 1];
-    r.setStart(inA[0].firstChild || inA[0], 0);
-    r.setEnd(last.firstChild || last, last.firstChild ? last.firstChild.length : 0);
+    const r = document.createRange(), first = inA[0], last = inZ[inZ.length - 1];
+    if (first.classList.contains('atom')) r.setStartBefore(first); else r.setStart(first.firstChild || first, 0);
+    if (last.classList.contains('atom')) r.setEndAfter(last); else r.setEnd(last.firstChild || last, last.firstChild ? last.firstChild.length : 0);
     const sel = getSelection();
     this.root.focus({ preventScroll: true });
     sel.removeAllRanges(); sel.addRange(r);
@@ -615,9 +754,10 @@ export const methods = {
     for (const t of all) t.classList.add('tsel-on');
     const { r0, r1, c0, c1 } = h.rect;
     for (const td of all.flatMap((t) => [...t.querySelectorAll('td')])) {
-      const sp = td.querySelector('span.t'), info = sp && segOfSpan(sp);
-      if (!info) continue;
-      const hit = X.cellAt(h.T, boundary(info.B, info.seg, info.o));
+      // (a cell of a formula alone is painted too)
+      const sp = td.querySelector('span.t'), info = sp && segOfSpan(sp), A = !info && atomOfEl(td.querySelector('.atom'));
+      if (!info && !A) continue;
+      const hit = X.cellAt(h.T, info ? boundary(info.B, info.seg, info.o) : A.s);
       if (hit && hit.r >= r0 && hit.r <= r1 && hit.cell.col >= c0 && hit.cell.col + hit.cell.span - 1 <= c1) td.classList.add('tsel');
     }
   },
@@ -1254,6 +1394,11 @@ onInstall((app) => {
     app.tableDrawAt(td, e.clientX, e.clientY, e.pointerType === 'touch');
   }, true);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && app.tableDraw) { e.preventDefault(); app.tableDrawMode(app.tableDraw); } }, true);
+  // Up and Down between a table's rows (tableUpDown)
+  app.root.addEventListener('keydown', (e) => {
+    if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp') || e.ctrlKey || e.metaKey || e.altKey || e.isComposing || e.defaultPrevented) return;
+    if (app.tableUpDown(e.key === 'ArrowDown' ? 1 : -1, e.shiftKey)) e.preventDefault();
+  });
   // the Table button's arrow: the grid of sizes, then Insert Table…, Convert Text to Table… and
   // Table from Data File… (by the keyboard too: the down arrow presses it)
   document.addEventListener('click', (e) => {

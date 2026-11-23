@@ -57,7 +57,7 @@ import { TOOLS, agentTools, callTool as callAgentTool, describeCommand } from '.
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass, pickMain } from './preamble.js';
 import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, THM_STYLES, titleInfo } from './styles.js';
-import { tableAt, cellAt as tableCellAt, colAlign } from './table.js';
+import { tableAt, cellAt as tableCellAt, colAlign, clipToCell, clearCells, blockTabular } from './table.js';
 import { eolAt } from './blockenv.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
@@ -1009,8 +1009,9 @@ class App {
     // button to act on; the pass's new nodes left it at a page's start. It goes back where it was,
     // the focus left where it is (Select sentence from Home's Select menu selected nothing).
     // (a docked pane's or the side panel's buttons and lists too: a pane that narrows the page lays it
-    // out again at a new zoom, and F7 then Esc put the caret at the document's start)
-    else if (c && !c.crossFile && document.activeElement && document.activeElement.closest('#ribbon, .pop, .stp, .sp-pane, .help-pane, #nav, #fr') && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+    // out again at a new zoom, and F7 then Esc put the caret at the document's start; and the title
+    // bar's and the status bar's, whose zoom put the next words at the document's start)
+    else if (c && !c.crossFile && document.activeElement && document.activeElement.closest('#ribbon, .pop, .stp, .sp-pane, .help-pane, #nav, #fr, #bar, #status') && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
       const x = this.index.find(c.f, c.collapsed ? c.p : c.a, c.collapsed ? -1 : 1), y = c.collapsed ? x : this.index.find(c.f, c.b, -1);
       if (x && x.node && y && y.node) {
         getSelection().setBaseAndExtent(x.node, x.offset, y.node, y.offset);
@@ -1252,7 +1253,10 @@ class App {
       if (!n) return;
       rect = n.getBoundingClientRect();
     }
-    const D = this.desk.getBoundingClientRect();
+    const R = this.desk.getBoundingClientRect(), V = window.visualViewport;
+    // (what is in sight: a phone's on-screen keyboard covers the window's lower part without making
+    // it shorter, and the visual viewport says what it leaves; lines typed with Enter went under it)
+    const D = this.kbCover && V ? { top: Math.max(R.top, V.offsetTop), bottom: Math.min(R.bottom, V.offsetTop + V.height) } : R;
     if (rect.bottom > D.bottom - 40) this.desk.scrollTop += rect.bottom - D.bottom + 80;
     else if (rect.top < D.top + 20) this.desk.scrollTop -= D.top - rect.top + 80;
   }
@@ -1266,10 +1270,37 @@ class App {
     // (a document of headings alone: the first heading's words; there was no caret, and the first
     // keys after a reload typed nothing)
     const first = this.root.querySelector('.it.p span.t:not(.gh)') || this.root.querySelector('.it:not(.atom) span.t:not(.gh)');
+    // the place this document was left at (leaving()): the view scrolled back to its top line,
+    // and on a computer the caret back in it, as long as the words around each are the same
+    // (once, as the page opens: later calls, as File's view closing with no caret, act as before)
+    let kept = null;
+    if (!this.placeTaken) try {
+      this.placeTaken = true;
+      const all = load('rikuy.place.v1'), P = all && typeof all === 'object' ? all[this.name] : null;
+      const same = (f, a, b, h) => { const t = this.files.get(f); return t != null && Number.isInteger(a) && Number.isInteger(b) && 0 <= a && a <= b && b <= t.length && textSig('', [['', t.slice(Math.max(0, a - 40), a)], ['', t.slice(b, b + 40)]]) === h; };
+      if (P && P.main === this.main) {
+        if (P.f != null && same(P.f, P.a, P.b, P.sig)) kept = P;
+        const T = P.top;
+        if (T && !this.desk.scrollTop && same(T.f, T.p, T.p, T.sig)) {
+          if (this.index.dirty) this.index.build();
+          const r = this.index.find(T.f, T.p, 1), n = r && r.node, it = n && (n.nodeType === 1 ? n : n.parentElement).closest('.it');
+          if (it) this.desk.scrollTop += it.getBoundingClientRect().top - this.desk.getBoundingClientRect().top - (T.dy || 0);
+        }
+      }
+    } catch (e) { kept = null; }
     if (!first || !first.firstChild || window.innerWidth < 700 || matchMedia('(pointer: coarse)').matches) return;
     const a = document.activeElement;
     if (a && a !== document.body && a !== this.root) return;
     if (this.caretNow()) return;
+    if (kept && kept.ghost) {
+      // (a blank paragraph is not in the text: shown again where it stood)
+      this.root.focus({ preventScroll: true });
+      this.ghostAt(kept.f, kept.a);
+      if (this.ghost) { this.ghost.place = true; return; }
+    } else if (kept) {
+      this.restoreCaret(kept.a === kept.b ? { f: kept.f, p: kept.a } : { f: kept.f, selA: kept.a, selB: kept.b });
+      if (this.caretNow()) { this.scrollToCaret(); return; }
+    }
     this.root.focus({ preventScroll: true });
     getSelection().collapse(first.firstChild, 0);
   }
@@ -1303,7 +1334,15 @@ class App {
       let apart = true;
       for (let k = 1; k < list.length; k++) if (list[k].e > list[k - 1].s) apart = false;
       if (apart) win.set(f, { pre: list[list.length - 1].s, suf: text.length - list[0].e });
-      for (const ed of list) text = text.slice(0, ed.s) + ed.t + text.slice(ed.e);
+      // (edits apart in one pass, pieces joined once: an edit at a time copied the whole text once
+      // per edit, 0.3 s of Replace All's 4,220 on dev/bench/long)
+      if (apart && list.length > 16) {
+        const parts = [];
+        let end = text.length;
+        for (const ed of list) { parts.push(text.slice(ed.e, end), ed.t); end = ed.s; }
+        parts.push(text.slice(0, end));
+        text = parts.reverse().join('');
+      } else for (const ed of list) text = text.slice(0, ed.s) + ed.t + text.slice(ed.e);
       this.files.set(f, text);
       // (the document's last selection, where a command acts with no caret on the page, moves too)
       if (this.rbLast && this.rbLast.f === f && this.rbLast.text === before.get(f)) this.restMove(f, list, text);
@@ -1402,6 +1441,7 @@ class App {
   undo() {
     // (letters waiting to go in go first: Undo from the Edit menu or a gesture comes with no key)
     this.typeFlush();
+    this.compFinish();
     // (nothing stays selected across a change of the text: its offsets would be stale)
     this.disarm();
     // typing in the source pane joins the history only after a pause: take it in first, so
@@ -1431,6 +1471,7 @@ class App {
   }
   redo() {
     this.typeFlush();
+    this.compFinish();
     this.disarm();
     if (this.srcRebuild.pending()) this.srcRebuild.flush();
     this.closePop(true);
@@ -1485,6 +1526,30 @@ class App {
     document.addEventListener('keydown', first, true);
     document.addEventListener('pointerdown', first, true);
     R.addEventListener('pointerdown', () => { this.tabOut = 0; }, true);
+    // A touch screen's on-screen keyboard coming up over the caret (a tap low on the screen, the
+    // document's last lines): the page scrolls it into sight, as Word's phone app does. The keyboard
+    // covers the window's lower part without shortening it (kbCover, which scrollToCaret keeps the
+    // caret above), so the page gets that much room to scroll at its end, or its last lines could
+    // never come above it. Only a keyboard: the visual viewport shorter from the bottom at the same
+    // width and scale, the caret in sight before and hidden now; a window resized, a zoom, a pinch
+    // or a phone turned leave the reader's place to refit()
+    if (window.visualViewport && matchMedia('(pointer: coarse)').matches) {
+      const V = window.visualViewport;
+      let was = { w: V.width, h: V.height, top: V.offsetTop, s: V.scale };
+      V.addEventListener('resize', () => {
+        const old = was, sel = getSelection();
+        was = { w: V.width, h: V.height, top: V.offsetTop, s: V.scale };
+        if (Math.abs(V.scale - 1) > 0.01 || Math.abs(old.s - 1) > 0.01 || V.width !== old.w) return;
+        const cover = Math.round(innerHeight - V.offsetTop - V.height);
+        this.kbCover = cover > 80 ? cover : 0;
+        this.desk.style.paddingBottom = this.kbCover ? cover + 'px' : '';
+        if (!(V.height < old.h - 80) || document.activeElement !== R || this.pop || !sel.rangeCount || !R.contains(sel.focusNode)) return;
+        const r = sel.getRangeAt(0).getBoundingClientRect(), D = this.desk.getBoundingClientRect();
+        if (!r.height) return;
+        const seen = r.top >= Math.max(D.top, old.top) && r.bottom <= old.top + old.h;
+        if (seen && r.bottom > Math.min(D.bottom, V.offsetTop + V.height)) this.scrollToCaret();
+      });
+    }
     R.addEventListener('blur', first);
     R.addEventListener('compositionstart', first, true);
     R.addEventListener('beforeinput', (e) => this.onBeforeInput(e));
@@ -1563,6 +1628,9 @@ class App {
     // a press on a button of the status bar leaves the page its focus, as the ribbon's do: the
     // dialog it opens (Word Count, Go To) gives the caret back when it closes
     $('#status').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
+    // (and the title bar's zoom: a phone's keyboard stayed down after the zoom button, the page
+    // having lost the focus to it, and Word's zoom leaves the caret typing where it was)
+    $('#bar .zoom').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
     // the status line scrolls when it is wider than the window; the fades follow the cut edges
     const stBar = $('#status');
     if (stBar) {
@@ -1630,9 +1698,42 @@ class App {
     // (Track Changes' base, whose writes wait a moment: written now, or the last words typed
     // with tracking off would come back as changes)
     if (this.baseSaveT) this.saveBase(true);
-    if (!this.unsaved) return;
-    store(STORE, { name: this.name, main: this.main, files: [...this.files.entries()], t: Date.now(), zipDirty: this.zipDirty });
-    this.saveSoon.flush();
+    if (this.unsaved) {
+      store(STORE, { name: this.name, main: this.main, files: [...this.files.entries()], t: Date.now(), zipDirty: this.zipDirty });
+      this.saveSoon.flush();
+    }
+    // Where the caret and the view were, per document, as Word's "pick up where you left off": a
+    // reload (or the browser started again, or the app updated) opened every document at its
+    // first line, the caret and the page scrolled there, however far down the work had been.
+    // The view is kept as the source place of its top line, which holds at any width or zoom. A
+    // hash of the words around each place goes with it (never the words: what is kept here
+    // outlives Remove), so a text changed since is never given a caret in the wrong place
+    // (placeInitialCaret). After the text's own copy, and never in its way.
+    try {
+      let all = load('rikuy.place.v1');
+      if (!all || typeof all !== 'object' || Array.isArray(all)) all = {};
+      const sig = (f, a, b) => { const t = this.files.get(f); return textSig('', [['', t.slice(Math.max(0, a - 40), a)], ['', t.slice(b, b + 40)]]); };
+      // (the blank paragraph the caret is in, Enter's or the one after a table of contents: its place)
+      const c = this.caretNow(), g = c && c.ghost ? this.ghost : null;
+      const f = g ? g.f : c && c.f, a = g ? g.pos : c && c.a, b = g ? g.pos : c && c.b;
+      const P = { main: this.main, at: Date.now() };
+      if (f != null && a != null && this.files.has(f)) Object.assign(P, { f, a, b, ghost: !!g, sig: sig(f, a, b) });
+      // (the item under a few points down the view's middle: no walk over every item of a long
+      // document, each measured, as the page goes)
+      const D = this.desk.getBoundingClientRect(), pg = this.root.querySelector('.page'), Rp = pg && pg.getBoundingClientRect();
+      const x = Rp ? Rp.left + Rp.width / 2 : D.left + D.width / 2;
+      for (let y = D.top + 2; y < Math.min(D.bottom, D.top + 400) && !P.top; y += 24) {
+        const e = document.elementFromPoint(x, y), it = e && this.root.contains(e) ? e.closest('.it') : null;
+        const sp = it && it.querySelector('span.t:not(.gh)'), at = sp && sp.firstChild ? posFromDom(sp.firstChild, 0, this.root) : null;
+        if (at && !at.ghost && this.files.has(at.f)) P.top = { f: at.f, p: at.p, dy: Math.round(it.getBoundingClientRect().top - D.top), sig: sig(at.f, at.p, at.p) };
+      }
+      if (P.f == null && !P.top) delete all[this.name];
+      else all[this.name] = P;
+      // (the twenty documents last left, no more)
+      const names = Object.keys(all).sort((x, y) => ((all[y] && all[y].at) || 0) - ((all[x] && all[x].at) || 0));
+      for (const n of names.slice(20)) delete all[n];
+      store('rikuy.place.v1', all);
+    } catch (e) { /* a place to come back to is a convenience */ }
   }
 
   onGlobalKey(e) {
@@ -1689,6 +1790,18 @@ class App {
       // collapses to the top of the page: Ctrl+A then Ctrl+C copied nothing and Delete did nothing
       if (k === 'a' && !e.shiftKey) { e.preventDefault(); this.selectAllText(); return; }
       if (e.key === 'End' && this.textEnd(e.shiftKey)) { e.preventDefault(); return; }
+    }
+    // (Home and End in the mark of an empty format, Ctrl+B's \textbf{} waiting for words: the mark
+    // is a box of its own, and the browser's Home and End stayed in it or stopped beside it; from
+    // just outside it, the mark drawn inline while the browser moves, they go to the line's ends)
+    if ((e.key === 'Home' || e.key === 'End') && !mod && !e.altKey) {
+      const s = getSelection(), n = s.rangeCount ? s.focusNode : null, ph = n && (n.nodeType === 1 ? n : n.parentElement).closest('span.t.ph');
+      if (ph && this.root.contains(ph)) {
+        const p = ph.parentNode, i = [...p.childNodes].indexOf(ph) + (e.key === 'End' ? 1 : 0);
+        if (e.shiftKey) s.extend(p, i); else s.collapse(p, i);
+        ph.style.display = 'inline';
+        setTimeout(() => { ph.style.display = ''; }, 0);
+      }
     }
     // out of a footnote at the page's foot: Esc, or Right at its end (Shift+F5 too: goBack)
     if ((e.key === 'Escape' && !this.pop) || (e.key === 'ArrowRight' && !e.shiftKey && !mod && !e.altKey)) {
@@ -1806,8 +1919,14 @@ class App {
   onBeforeInput(e) {
     const t = e.inputType;
     if (this.armed && this.armed.kind === 'code' && /^insert/.test(t)) { e.preventDefault(); this.codeOpen(); return; }
+    // (a composition's first change says what it replaces: onCompEnd)
+    if (t === 'insertCompositionText' && this.composing && this.compFrom === undefined) this.compFrom = this.compRange(e);
     if (e.isComposing || t === 'insertCompositionText' || t === 'deleteCompositionText' || t === 'insertFromComposition') return;
     e.preventDefault();
+    // (a composition whose text the page drew again, a command run in the middle of it: the
+    // browser dropped it without a compositionend, and every key after it was swallowed here,
+    // a space or a full stop on a phone doing nothing)
+    if (this.composing && this.compNode && !this.compNode.n.isConnected) { this.composing = false; this.compCaret = null; this.compFrom = undefined; this.compNode = null; this.compTex = null; }
     if (this.composing) return;
     if (this.dollarPair && t === 'insertText' && this.dollarPairTakes(e.data)) return;
     this.dollarPair = null;
@@ -1822,6 +1941,16 @@ class App {
         let data = e.data;
         if (data == null && e.dataTransfer) data = e.dataTransfer.getData('text/plain');
         if (data == null) return;
+        // (a line break a keyboard writes as text, a dictated "new line": Enter, a new paragraph
+        // as Word makes it; it went into the source as a newline, a space on the page. Lines and
+        // a line break in more text, a keyboard's clipboard: a paste, one step, Rikuy's own rules
+        // for a paste's lines, in a cell or a caption too)
+        if (t === 'insertText' && /[\r\n]/.test(data)) {
+          this.typeFlush();
+          if (/^(\r\n?|\n)$/.test(data)) this.enter(false);
+          else if (this.pasteData) this.pasteData({ plain: data, html: '', latex: '' }, 'keep');
+          break;
+        }
         let range = null;
         if (t === 'insertReplacementText' && e.getTargetRanges) {
           const tr = e.getTargetRanges()[0];
@@ -1913,11 +2042,17 @@ class App {
     if (a >= b) return [];
     const src = this.src(f);
     const slice = src.slice(a, b);
+    // a selection over several cells of a table: their words go and the cells stay, as Word
+    // clears a block of cells; the & and \\ between them went too, which joined cells and rows
+    const cells = clearCells(src, a, b);
+    if (cells) return cells.map((x) => ({ f, s: x.s, e: x.e, t: '' }));
     if (/^\s+$/.test(slice)) {
       // (a blank line still on either side, where an empty paragraph's text went: no paragraphs
       // join, and a space put there stood at the end of the paragraph before; review V8)
       const apart = /\n[ \t\r]*\n[ \t\r]*$/.test(src.slice(Math.max(0, a - 100), a)) || /^[ \t\r]*\n[ \t\r]*\n/.test(src.slice(b, b + 100));
-      if (!apart && (slice.match(/\n/g) || []).length >= 2) return [{ f, s: a, e: b, t: ' ' }];
+      // (an empty last paragraph of a footnote joined to the one before: nothing after it in its
+      // braces to keep apart, and a space left there had no place on the page for the caret)
+      if (!apart && (slice.match(/\n/g) || []).length >= 2 && src[b] !== '}') return [{ f, s: a, e: b, t: ' ' }];
       return [{ f, s: a, e: b, t: '' }];
     }
     // Only comment lines between two paragraphs (a note, a review comment): joining them takes
@@ -1940,6 +2075,9 @@ class App {
     if (isBalanced(src, a, b) && !/\\(begin|end)\s*\{(document)\}/.test(slice) && !keep.test(slice)) {
       return [{ f, s: a, e: b, t: '' }];
     }
+    // (from one list item's words into another's: src/cmd/lists.js listSpan)
+    const items = this.listSpan(f, a, b);
+    if (items) return items;
     const vr = visibleRanges(this.renderer.blocks, f, a, b);
     if (!sel) return vr.map(([s, e]) => ({ f, s, e, t: '' }));
     // A selection whose ends cannot go as LaTeX (it starts in a heading's words, or ends in a
@@ -2057,6 +2195,10 @@ class App {
     let t = lands ? data : escapeTeX(data, src[at - 1] || ' ');
     if (!lands && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!lands && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
+    // (a space after a control word and the space that ends it, as in {\large |} the size box
+    // opened at a caret: TeX skips it, and the page drew "plainbig" as TeX would; {} keeps it)
+    // (a font's switches only: after \item or \noindent a space is no word's)
+    if (!lands && /^[ \t]/.test(t)) { let k = at; while (k > 0 && (src[k - 1] === ' ' || src[k - 1] === '\t')) k--; if (k < at && endsWithControlWord(src, k) && /\\(?:tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge|selectfont|[a-z]{2}(?:family|series|shape)|em|bf|it|sc|sf|tt|rm|sl)$/.test(src.slice(Math.max(0, k - 14), k))) t = '{}' + t; }
     return t;
   }
 
@@ -2074,6 +2216,10 @@ class App {
     if (!c) return;
     const T = this.texHere();
     if (T && c.f === T.f && this.texDelete(T, c, type, ranges)) return;
+    // (Backspace at a list item's start, Delete at its end, as Word's: src/cmd/lists.js listDelete)
+    if (c.collapsed && this.listDelete(/Backward/.test(type))) return;
+    // (Backspace and Delete where a heading, a quote or a theorem meets a paragraph: src/cmd/styles.js blockJoin)
+    if (c.collapsed && this.blockJoin(/Backward/.test(type))) return;
     let f = c.f, a = c.a, b = c.b;
     if (c.collapsed) {
       // Caret in an empty placeholder: remove the empty wrapper it belongs to.
@@ -2101,6 +2247,35 @@ class App {
           }
         }
       }
+      // Inside a run of spaces in the source (a word deleted letter by letter leaves "The
+      // paragraph" with two; a space typed at a source line's end, "The \nparagraph"; a control
+      // space and a space, "Dr.\  Smith"): Backspace takes the space or line end before the caret
+      // and Delete the one after it, as Word takes one of its two spaces. The browser's range is a
+      // drawn space, which named the letter before it (that letter went), the letter after it (a
+      // space the browser does not draw is skipped), or the whole run (nothing went). Only a run
+      // inside a paragraph (no blank line in it), and only Backspace and Delete themselves:
+      // Ctrl+Backspace takes the word as ever. Backspace after a control space (\ ) takes it whole.
+      // (a line end is a space unless it closes a comment, % to the line's end: that one is the
+      // comment's, and taken, the next line joined the comment and vanished from the page; \r\n
+      // is one line end; a control space, \ , is a space of the run and goes whole)
+      const S = this.src(c.f), back = type === 'deleteContentBackward';
+      const comment = (x) => /(?:^|[^\\])(?:\\\\)*%/.test(S.slice(S.lastIndexOf('\n', x - 1) + 1, x));
+      const ctl = (x) => { if (S[x] !== '\\' || S[x + 1] !== ' ') return false; let n = 0; while (S[x - 1 - n] === '\\') n++; return n % 2 === 0; };
+      const ws = (x) => S[x] === ' ' || S[x] === '\t' || ((S[x] === '\n' || S[x] === '\r') && !comment(x));
+      if ((back || type === 'deleteContentForward') && ws(c.a - 1) && (ws(c.a) || ctl(c.a))) {
+        let i = c.a, j = c.a;
+        while (i > 0 && ws(i - 1)) i--;
+        while (j < S.length && ws(j)) j++;
+        if (!/\n[ \t\r]*\n/.test(S.slice(i, j))) {
+          let a = back ? c.a - 1 : c.a, b = back ? c.a : c.a + 1;
+          if (back && S[a] === ' ' && a > 0 && ctl(a - 1)) a--;
+          if (!back && ctl(a)) b = a + 2;
+          if (S[a] === '\n' && S[a - 1] === '\r') a--;
+          if (S[b - 1] === '\r' && S[b] === '\n') b++;
+          this.commit([{ f: c.f, s: a, e: b, t: '' }], { f: c.f, p: a, bias: back ? -1 : 1 }, 'del');
+          return;
+        }
+      }
       const tr = ranges && ranges[0];
       let r = tr ? this.rangeToSrc(tr) : null;
       if (r && r.a === r.b) r = null;
@@ -2125,6 +2300,10 @@ class App {
       // what is after it. At the start of a theorem's body the browser names a range that begins
       // past the generated "Theorem 1." label, which maps to the paragraph's end: taken as it
       // came, one Backspace deleted the whole paragraph.
+      // (from inside a run of spaces drawn as one, Ctrl+Backspace's word reaches the run's end:
+      // the part of it past the caret is spaces only, and is left; the whole range was refused,
+      // and nothing went)
+      if (r && r.f === c.f && r.a < c.a && c.a < r.b && !(/Backward/.test(type) ? S.slice(c.a, r.b) : S.slice(r.a, c.a)).trim()) r = /Backward/.test(type) ? { ...r, b: c.a } : { ...r, a: c.a };
       if (r && (/Backward/.test(type) ? r.b > c.a : r.a < c.a)) r = null;
       if (!r) {
         // Nothing the browser would delete: paragraph boundary or atom edge.
@@ -2132,6 +2311,10 @@ class App {
         if (!r) return;
       }
       f = r.f; a = r.a; b = r.b;
+      // In a table Backspace at a cell's start and Delete at its end do nothing, and a word or a
+      // line taken stops at the cell's edge, as Word's: the & or \\ went, joining two cells or rows
+      const clip = f === c.f && clipToCell(this.src(f), c.a, a, b);
+      if (clip) { if (clip.a === clip.b) return; a = clip.a; b = clip.b; }
       // Select-first for atoms
       let vr = visibleRanges(this.renderer.blocks, f, a, b);
       // One keystroke takes one visible thing: a range reaching over several (two display
@@ -2164,6 +2347,8 @@ class App {
     const first = edits[0];
     if (first.s >= a) p = first.s + first.t.length;
     this.commit(edits, { f, p, bias: -1 }, 'del');
+    // (an empty \textbf{} left where the deleted words were: gone once the caret leaves it untyped)
+    if (this.watchDeleted) this.watchDeleted(f, p);
   }
 
   fallbackDeleteRange(c, backward) {
@@ -2249,7 +2434,16 @@ class App {
       this.commit([...edits, { f, s: p, e: p, t: '\\\\\n' }], { f, p: p + 3, bias: 1 }, 'type');
       return;
     }
-    if (kind === 'cell' || kind === 'cap') return;
+    // Enter at the end of a float's last caption: a paragraph after the float, as Word's Enter at a
+    // caption's end. It did nothing, and a table or a figure at the document's end had no way past it.
+    if (kind === 'cap') {
+      const itemEl = el.closest('.it'), B = itemEl && BLOCKS.get(+itemEl.dataset.b);
+      // (what may stand between: a \label in the caption or after it, closing braces, comments, and
+      // the \end of a center or a minipage round the table before the float's own)
+      if (c.collapsed && B && B.e > p && B.e - p < 2000 && /^(?:\s|\\label\s*\{[^{}]*\}|%[^\n]*\n)*\}(?:\s|\}|\\label\s*\{[^{}]*\}|%[^\n]*\n)*(?:\\end\s*\{[^{}]+\}\s*)+$/.test(src.slice(p, B.e))) { this.showGhost(itemEl, f, B.e); this.enterAct(); }
+      return;
+    }
+    if (kind === 'cell') return;
     const itemEl = el.closest('.it');
     if (kind === 'ttl') {
       // Enter in the title, an author or the date starts the text below them, after \maketitle
@@ -2273,6 +2467,34 @@ class App {
       }
       // the \label on the heading's next line stays with the heading: the new paragraph goes after it
       const lab = B && /^\s*\\label\s*\{[^}]*\}/.exec(src.slice(B.e));
+      const m = B && c.collapsed && B.f === f && src[B.e - 1] === '}' ? /^\\[A-Za-z]+\*?\s*(\[[^\]]*\]\s*)?\{\s*/.exec(src.slice(B.s, B.e)) : null;
+      const ws = m ? B.s + m[0].length : 0, we = B.e - 1;
+      // Enter at the heading's start: an empty paragraph above it, the caret staying on the
+      // heading, as Word's and as at a paragraph's start. It was shown below the heading, and
+      // what was typed next was written there, after the heading.
+      if (m && p <= ws) {
+        const keep = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+        this.showGhost(itemEl, f, B.s, { before: true });
+        if (keep) { sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true; if (this.ghost) this.ghost.keepAt = keep; }
+        this.enterAct();
+        return;
+      }
+      // Enter inside its words splits it in two headings of its level, as Word splits a paragraph
+      // and both keep its style (a \label stays with the first). Only at the top level of its
+      // words, outside braces and math, and not in a heading with a short title for the contents.
+      // It showed the empty paragraph below the heading, the words after the caret left in it.
+      if (m && !m[1] && p > ws && p < we && src.slice(p, we).trim() && isBalanced(src, ws, p) && isBalanced(src, p, we) &&
+        ((src.slice(ws, p).replace(/\\./g, '').match(/\$/g) || []).length % 2 === 0)) {
+        let s0 = p, e0 = p;
+        while (s0 > ws && /[ \t\r\n]/.test(src[s0 - 1])) s0--;
+        while (e0 < we && /[ \t\r\n]/.test(src[e0])) e0++;
+        const NL = /\r\n/.test(src) ? '\r\n' : '\n', open = m[0].trimEnd();
+        const t = '}' + (lab ? lab[0] : '') + NL + NL + open;
+        const edits = [{ f, s: s0, e: e0, t }];
+        if (lab) edits.push({ f, s: B.e, e: B.e + lab[0].length, t: '' });
+        this.commit(edits, { f, p: s0 + t.length, bias: 1 }, 'enter');
+        return;
+      }
       if (B) { this.showGhost(itemEl, f, B.e + (lab ? lab[0].length : 0)); this.enterAct(); }
       return;
     }
@@ -2282,6 +2504,8 @@ class App {
       const base = B.base;
       const itemText = src.slice(+cmdE + base, +ie + base);
       if (!itemText.trim() && c.collapsed) {
+        // (an empty item before the list's last: src/cmd/lists.js listEnterEmpty)
+        if (this.listEnterEmpty()) return;
         // exit the list: remove empty item, continue after the list
         const s = +is + base, e0 = +ie + base;
         // (the empty item's line goes and one line break stays: \end{itemize} was glued to the
@@ -2293,12 +2517,22 @@ class App {
         const listEnd = +le + base;
         const removed = e - s2;
         const NL = /\r\n/.test(src) ? '\r\n' : '\n';
+        // (a comment on \end's line stays on it, and what follows goes in after it: before it, what
+        // was typed met the comment, and the words after it, "Out%" then "After")
+        const at = listEnd + (/^[ \t]*%[^\n]*/.exec(src.slice(listEnd)) || [''])[0].replace(/\r$/, '').length;
+        // Text on the line after \end goes on the paragraph the list stands in: what was typed at
+        // a caret put before it joined it ("Para After."). The empty paragraph is shown there
+        // instead, and what is typed in it is written as a paragraph of its own.
+        // (a list of its own on the page: inside a theorem or a quote no empty paragraph can stand by it)
+        if (this.listAlone(f, +ls + base, listEnd) && /^[ \t]*(?:\r?\n)?[ \t]*(?!\\end\b|%)\S/.test(src.slice(at, at + 200))) {
+          this.commit([{ f, s: s2, e, t: '' }], { f, p: s2, bias: -1 }, 'enter');
+          this.ghostAt(f, at - removed);
+          if (this.ghost) this.ghost.place = true;
+          return;
+        }
         // (words right after the list, in the paragraph the list is part of, get a paragraph of
         // their own too: what is typed on the new line stays apart from them, as Word's empty
         // paragraph after a list does; it ran into them, "Out After the list...")
-        // (a comment on \end's line stays on it, and the lines go in after it: before it, what
-        // was typed met the comment, and the words after it, "Out%" then "After")
-        const at = listEnd + (/^[ \t]*%[^\n]*/.exec(src.slice(listEnd)) || [''])[0].replace(/\r$/, '').length;
         const glued = /^[ \t]*(?:\r?\n[ \t]*)?(?!\r?\n|%|\\(?:end|begin|item|par|paragraph|(?:sub){0,2}section|chapter|part)(?![A-Za-z])|\\\[)\S/.exec(src.slice(at));
         // (as many line breaks after the caret as make a blank line before those words: two where
         // they stood on \end's own line)
@@ -2318,7 +2552,16 @@ class App {
     }
     // Paragraph: at end -> ghost paragraph; otherwise split
     if (c.collapsed && itemEl && this.atItemEnd(itemEl, sel)) {
-      this.showGhost(itemEl, f, p);
+      // (at the end of a format's words, \textbf{ A|} after Ctrl+B and typing: the new paragraph
+      // goes after the closing brace. It went inside, and what was typed next ran the bold over a
+      // blank line, drawn as one paragraph; its words take the formats on, as Word's do)
+      const E = this.formatsEnding ? this.formatsEnding(f, p) : { p, wrap: null };
+      // (and out of any other command's words ending there, \textsl, \enquote, \href: written
+      // plain after them; \textsl{..} round a blank line stopped TeX, which takes no paragraph there)
+      const out = this.wrapBreak(el, f, E.p);
+      if (!out.close) E.p = out.p;
+      this.showGhost(itemEl, f, E.p);
+      if (E.wrap && this.ghost) this.ghost.wrap = E.wrap;
       this.enterAct();
       return;
     }
@@ -2335,7 +2578,27 @@ class App {
       this.enterAct();
       return;
     }
-    const ins = w.close + '\n\n' + w.open;
+    // In a footnote at the page's foot: Enter where a paragraph of it has just begun writes
+    // nothing, as LaTeX has no empty paragraph (a second blank line drew nothing and took two
+    // Backspaces back). Where the footnote stands inside another command's braces (\thanks in
+    // \author, a footnote in a heading, a caption or \textbf) a blank line stops TeX
+    // ("Paragraph ended before \author was complete"): \endgraf ends the paragraph there, and
+    // those commands take it.
+    let para = '\n\n';
+    const F = kind === 'fn' && c.collapsed ? this.footnoteHere() : null;
+    if (F) {
+      const from = Math.max(F.s, w.p - 200);
+      if (/(?:\n[ \t\r]*\n|\\(?:par|endgraf)(?![A-Za-z]))[ \t\r\n]*$/.test(src.slice(from, w.p))) { this.restoreCaret({ f, p, bias: 1 }); return; }
+      let depth = 0;
+      for (let k = F.s - 1; k >= Math.max(0, F.s - 4000) && depth <= 0; k--) {
+        const ch = src[k], esc = src[k - 1] === '\\' && src[k - 2] !== '\\';
+        if (ch === '}' && !esc) depth--;
+        else if (ch === '{' && !esc) depth++;
+        else if (ch === '\n' && /\n[ \t\r]*$/.test(src.slice(Math.max(0, k - 20), k))) break;
+      }
+      if (depth > 0) para = '\\endgraf ';
+    }
+    const ins = w.close + para + w.open;
     // a break moved before a wrapper leaves the caret at the start of its text, still inside it
     this.commit([...edits, { f, s: w.p, e: w.p, t: ins }], { f, p: Math.max(w.p, p) + ins.length, bias: 1 }, 'enter');
   }
@@ -2493,6 +2756,23 @@ class App {
     }
     const open = g.style === 'latex' ? LATEX_MARK + '\n' : isEnvStyle(g.style) ? '\\begin{' + envOf(g.style) + '}\n' : '';
     const close = isEnvStyle(g.style) ? '\n\\end{' + envOf(g.style) + '}' : '';
+    // (the formats the paragraph above ended in, Enter's: the words go in them, the caret before
+    // their closing braces; not a paste of paragraphs, which they would hold over a blank line)
+    // (or set on it with Ctrl+B and the rest, with the preamble's lines they need: fmtGhost)
+    // Each paragraph of text goes in them; a list, a heading, a display, a table goes in as it is
+    // (\uline{\begin{itemize}..} stopped TeX), and the formats they have already come off what is
+    // pasted (\emph in \emph is upright: pasteInFormats)
+    const W = g.style !== 'latex' && g.wrap ? g.wrap : null;
+    let back = 0;
+    if (W) {
+      if (this.pasteInFormats) tex = this.pasteInFormats(g.f, W.open.length, tex, W.open + W.close);
+      const parts = tex.split(/(\s*\n[ \t]*\n\s*)/), ok = (x) => (this.wrappable ? this.wrappable(x) : !/[\\{}%$]/.test(x));
+      if (parts.some((x, i) => !(i % 2) && ok(x))) {
+        tex = parts.map((x, i) => (!(i % 2) && ok(x) ? W.open + x + W.close : x)).join('');
+        back = ok(parts[parts.length - 1]) ? W.close.length : 0;
+        if (W.needs && this.fmtNeedsEdits) extra = [...extra, ...this.fmtNeedsEdits(W.needs)];
+      }
+    }
     const src = this.src(g.f);
     // comment lines right under the paragraph belong to it (a review comment is about the line
     // above it): the new paragraph goes after them (not for one before a block: those are its own)
@@ -2503,10 +2783,14 @@ class App {
     let nlA = 0; for (let k = g.pos; k < src.length && /\s/.test(src[k]); k++) if (src[k] === '\n') nlA++;
     // no blank lines at the very start or end of a file: there is no paragraph to keep apart
     const pre = g.pos === 0 ? '' : '\n'.repeat(Math.max(0, (g.line ? 1 : 2) - nlB));
-    const post = g.pos >= src.length ? '' : '\n'.repeat(Math.max(0, (g.line ? 1 : 2) - nlA));
+    // (before a display that went on the paragraph above, one line break: the display goes on
+    // the new paragraph, as in Word it stands under it; a blank line before it is a paragraph TeX
+    // begins for the display alone, an empty line printed above the equation)
+    const disp = /^[ \t]*\r?\n[ \t]*(?:\\\[|\\begin\s*\{(?:equation|align|alignat|gather|multline|flalign|eqnarray|displaymath)\*?\})/.test(src.slice(g.pos));
+    const post = g.pos >= src.length ? '' : '\n'.repeat(Math.max(0, (g.line || disp ? 1 : 2) - nlA));
     this.removeGhost();
     const grew = extra.filter((x) => x.f === g.f && x.s <= g.pos).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
-    this.commit([...extra, { f: g.f, s: g.pos, e: g.pos, t: pre + open + tex + close + post }], { f: g.f, p: g.pos + grew + pre.length + open.length + tex.length, bias: -1 }, 'type');
+    this.commit([...extra, { f: g.f, s: g.pos, e: g.pos, t: pre + open + tex + close + post }], { f: g.f, p: g.pos + grew + pre.length + open.length + tex.length - back, bias: -1 }, 'type');
   }
 
   // ---- LaTeX paragraphs (src/styles.js) ----------------------------------------------
@@ -2718,24 +3002,110 @@ class App {
     if (at) this.showGhost(at, f, pos, { before: !prev, style, line });
   }
 
+  // A command about to edit while an input method composes (a phone's keyboard composes every
+  // word until its space): the page drawn again dropped the composition and its text with it
+  // ("Hello", then Bold, then "world" gave "\textbf{world}"). The word goes in first, as Word takes
+  // an input method's word before a button acts: leaving the page ends the composition, and the
+  // focus comes straight back. Only for a command (runCommand, Undo, Redo): a press on a tab, a
+  // bar or a pane leaves the composition going, to be finished. (Android's keyboard marks the
+  // word the caret is in as composing with no change: nothing to keep, compFrom)
+  compFinish() {
+    const R = this.root;
+    if (!this.composing || this.compFrom === undefined || document.activeElement !== R) return false;
+    R.blur(); R.focus({ preventScroll: true });
+    return true;
+  }
   onCompStart() {
     this.composing = true;
     this.compCaret = this.caretNow();
     this.compTex = this.compCaret && !this.compCaret.ghost ? this.texHere() : null;
+    // (an Android keyboard starts a composition over the word a finger put the caret in, changing
+    // nothing, and the selection stays a caret: what it replaces is known at its first change,
+    // compFrom; the text node is kept to tell whether the page changed without one)
+    this.compFrom = undefined;
+    // (the whole document selected, Select All: what is composed becomes its body, as typed keys
+    // do, insertText; the selection is gone by the composition's end)
+    this.compWhole = this.compCaret && !this.compCaret.ghost && !this.compCaret.collapsed ? this.wholeDoc() : null;
+    const s = getSelection(), n = s.rangeCount ? s.focusNode : null;
+    this.compNode = n ? { n, data: n.nodeType === 3 ? n.data : null } : null;
+  }
+  // The text a composition's first change replaces (its beforeinput's target range): the
+  // selection, or the word an Android keyboard marked; in the source, with the page's text of it
+  // and each character's source places before and after it (null for a character the page draws
+  // from no text of its own, a formula's), so only what changed is written
+  compRange(e) {
+    const tr = e.getTargetRanges ? e.getTargetRanges()[0] : null;
+    // (a caret: where caretNow() put it as the composition began, which knows a place the page
+    // cannot hold, a space ending a paragraph, whose caret is drawn at the next one's start)
+    if (!tr || tr.collapsed) return null;
+    const r = this.rangeToSrc(tr);
+    if (!r) return null;
+    const rg = document.createRange();
+    try { rg.setStart(tr.startContainer, tr.startOffset); rg.setEnd(tr.endContainer, tr.endOffset); } catch (err) { return r; }
+    const top = rg.commonAncestorContainer, nodes = [];
+    if (top.nodeType === 3) nodes.push(top);
+    else for (let w = document.createTreeWalker(top, NodeFilter.SHOW_TEXT), n = w.nextNode(); n; n = w.nextNode()) if (rg.intersectsNode(n)) nodes.push(n);
+    const pre = [], post = [], at = (n, i) => { const P = posFromDom(n, i, this.root); return P && !P.ghost && P.f === r.f ? P.p : null; };
+    let old = '';
+    for (const n of nodes) {
+      const a = n === tr.startContainer ? tr.startOffset : 0, b = n === tr.endContainer ? tr.endOffset : n.data.length;
+      const sp = n.parentElement, plain = !!(sp && sp.matches('span.t:not(.gh)') && !sp.closest('.atom'));
+      for (let k = a; k < b; k++) { old += n.data[k]; pre.push(plain ? at(n, k) : null); post.push(plain ? at(n, k + 1) : null); }
+    }
+    const n = tr.startContainer;
+    return { ...r, old, pre, post, n: n.nodeType === 3 ? n : null, o: tr.startOffset };
   }
   onCompEnd(e) {
     this.composing = false;
-    const c = this.compCaret;
-    this.compCaret = null;
-    const data = e.data || '';
+    let c = this.compCaret;
+    const F = this.compFrom, N = this.compNode;
+    this.compCaret = null; this.compFrom = undefined; this.compNode = null;
+    let data = e.data || '';
+    // A composition that never changed the text: Android's keyboard marks the word the caret was
+    // put in as composing and ends that when the caret moves on, with the word as data. It went in
+    // a second time at the caret ("here" became "heherere"); the page is as it was
+    if (F === undefined && c && !c.ghost && !(N && N.n.isConnected && N.data != null && N.n.data !== N.data)) { this.compTex = null; return; }
     if (!c) { this.forceRender = true; this.rebuild(); return; }
+    const W = this.compWhole;
+    this.compWhole = null;
+    // (Select All, then a word composed, as a phone's keyboard writes every word: it left the first
+    // heading's command and blank lines, "\section{Xy}", where a key typed leaves the word alone;
+    // a composition given up there leaves an empty body, not empty commands)
+    if (W) { this.compTex = null; this.forceRender = true; this.replaceBody(W, data ? escapeTeX(data, ' ') : '', 'replace'); return; }
     if (c.ghost) { if (data && this.ghost) this.ghostInsert(this.ghostRaw() ? data : escapeTeX(data, ' ')); else this.relayout(true); return; }
+    // What the composition replaced, where its first change said (a word marked on Android, the
+    // caret in it elsewhere): only the characters that differ, at their own source places, so a
+    // format or a formula inside the word stays. Where those characters are not all plain text
+    // (a formula's), the word goes in at the caret as before: text twice, but no LaTeX lost.
+    // (The caret goes where the keyboard left it in the composed word, kept letters included:
+    // "here" selected and "the" typed keeps the old "e", and the caret after it, not before;
+    // at, a place before the letters written, or past, after kept letters)
+    let at = null, past = null;
+    if (F && F.f === c.f && F.old != null) {
+      const o = F.old, s = getSelection();
+      let P = 0, S = 0;
+      while (P < o.length && P < data.length && o[P] === data[P]) P++;
+      while (S < o.length - P && S < data.length - P && o[o.length - 1 - S] === data[data.length - 1 - S]) S++;
+      let a, b, ok = true;
+      if (o.length - S > P) {
+        a = F.pre[P]; b = F.post[o.length - S - 1];
+        for (let k = P; k < o.length - S; k++) if (F.pre[k] == null || F.post[k] == null) ok = false;
+      } else a = b = P > 0 ? F.post[P - 1] : F.pre[0];
+      if (ok && a != null && b != null && a <= b) {
+        const q = F.n && s.rangeCount && s.isCollapsed && s.focusNode === F.n && s.focusOffset >= F.o && s.focusOffset <= F.o + data.length ? s.focusOffset - F.o : data.length;
+        if (q < P) at = q ? F.post[q - 1] : F.pre[0];
+        else if (q > data.length - S) past = F.post[o.length - (data.length - q) - 1];
+        data = data.slice(P, data.length - S);
+        c = { f: F.f, a, b, collapsed: a === b };
+      }
+    } else if (F && F.f === c.f) c = { f: F.f, a: F.a, b: F.b, collapsed: F.a === F.b };
     // The browser mutated the DOM; rebuild from source regardless.
     this.forceRender = true;
-    if (!data) { this.rebuild({ f: c.f, p: c.a }); return; }
+    if (!data && c.collapsed) { this.rebuild({ f: c.f, p: at ?? past ?? c.a }); return; }
     const T = this.compTex;
     this.compTex = null;
-    if (T && T.f === c.f) { this.texEdit(T, c.a, c.b, data, 'type'); return; }
+    // (LaTeX shown as it is: the composed word over what it replaced, the caret after it)
+    if (T && T.f === c.f) { if (F && F.f === c.f) this.texEdit(T, F.a, F.b, e.data || '', 'type'); else this.texEdit(T, c.a, c.b, data, 'type'); return; }
     const src = this.src(c.f);
     const edits = c.collapsed ? [] : this.deletionEdits(c.f, c.a, c.b, true);
     const raw = this.texAt(c.f, c.a);
@@ -2743,7 +3113,9 @@ class App {
     if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, c.a)) t = '{}' + t;
     // the deletions of a replaced selection lie after c.a: they do not move the caret back
     const removedBefore = edits.filter((ed) => ed.e <= c.a).reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
-    this.commit([...edits, { f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a - removedBefore + t.length }, 'type');
+    const removed = edits.reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
+    const p = at ?? (past != null ? past - removed + t.length : c.a - removedBefore + t.length);
+    this.commit(t ? [...edits, { f: c.f, s: c.a, e: c.a, t }] : edits, { f: c.f, p }, 'type');
   }
 
   // ---- clipboard ------------------------------------------------------------------
@@ -2753,9 +3125,21 @@ class App {
   // (copyKept: the words and the wrappers put round them, for a paste where the same kinds of
   // format are around the place already: they go, or \emph{.. \emph{words}..} prints upright)
   copyLatex(c) {
-    const src = this.src(c.f), t = this.selectionLatex(c);
+    const src = this.src(c.f), bal = isBalanced(src, c.a, c.b);
+    let t = this.selectionLatex(c), crossed = false;
     this.copyKept = null;
-    if (!isBalanced(src, c.a, c.b) || this.texAt(c.f, c.a)) return t;
+    // cells of a table: a table of their own (their & and \\ alone, pasted in a paragraph, stop TeX)
+    const cells = blockTabular(src, c.a, c.b);
+    if (cells) return cells;
+    // (a selection over a format's brace, from a bold word into plain words: the formats closed in
+    // it opened again before it, those opened in it closed after it, so the copied bold stays bold;
+    // it was copied as the visible words alone, plain. Braces of other commands keep that way)
+    if (!bal && !this.texAt(c.f, c.a)) {
+      const pre = chainAt(src, c.a, c.a).filter((x) => x.W.ie < c.b), post = chainAt(src, c.b, c.b).filter((x) => x.W.s >= c.a);
+      const u = pre.map((x) => src.slice(x.W.s, x.W.is)).join('') + src.slice(c.a, c.b) + post.reverse().map((x) => src.slice(x.W.ie, x.W.e)).join('');
+      if (isBalanced(u, 0, u.length)) { t = u; crossed = true; }
+    }
+    if ((!bal && !crossed) || this.texAt(c.f, c.a)) return t;
     const X = chainAt(src, c.a, c.b).filter((x) => x.W.is <= c.a && c.b <= x.W.ie);
     if (!X.length) return t;
     const wraps = X.map((x) => ({ group: x.group, open: src.slice(x.W.s, x.W.is), close: src.slice(x.W.ie, x.W.e) }));
@@ -2777,6 +3161,10 @@ class App {
   }
   selectionLatex(c) {
     const src = this.src(c.f);
+    // cells of a table: a table of their own, for a copy, a drag, the Spike or a Quick Part (their
+    // & and \\ alone, put in a paragraph, stop TeX)
+    const cells = blockTabular(src, c.a, c.b);
+    if (cells) return cells;
     if (isBalanced(src, c.a, c.b)) return src.slice(c.a, c.b);
     const vr = visibleRanges(this.renderer.blocks, c.f, c.a, c.b);
     // (the paragraph on the page each piece is in: words of two paragraphs stay two paragraphs, as
@@ -2829,6 +3217,7 @@ class App {
       if (T && T.f === c.f) { this.texEdit(T, c.a, c.b, '', 'cut'); return; }
       const edits = this.deletionEdits(c.f, c.a, c.b, true);
       this.commit(edits, { f: c.f, p: c.a }, 'cut');
+      if (this.watchDeleted) this.watchDeleted(c.f, c.a);
     }
   }
   onPaste(e) {
@@ -2862,6 +3251,9 @@ class App {
     const T = c.ghost ? null : this.texHere();
     if (T && T.f === c.f && !this.wholeDoc()) { this.texEdit(T, c.a, c.b, (latex || plain).replace(/\r\n?/g, '\n'), 'paste'); return; }
     if (c.ghost && this.ghostRaw()) { this.ghostInsert((latex || plain).replace(/\r\n?/g, '\n')); return; }
+    // cells copied from a spreadsheet, pasted in a table: into the cells from the caret's, as Word's
+    // Overwrite Cells (src/cmd/table.js); a whole table float went into the one cell, which TeX refuses
+    if (!c.ghost && !plainOnly && this.tablePasteCells(plain, html, latex)) return;
     const src = this.src(c.ghost ? this.ghost.f : c.f);
     const at0 = c.ghost ? this.ghost.pos : c.a;
     // inside a command argument (a heading, a cell, a caption) a paste stays one paragraph
@@ -2870,6 +3262,11 @@ class App {
     const whole = c.ghost ? null : this.wholeDoc();
     const inArg = c.ghost || whole ? false : braceDepth(src, at0) > 0;
     const el = getSelection().anchorNode && (getSelection().anchorNode.nodeType === 1 ? getSelection().anchorNode : getSelection().anchorNode.parentElement);
+    // (inside bold or italic words, braces of formats alone: paragraphs stay paragraphs, each format
+    // closed before the blank line and opened again after it, as Enter splits them; a paste there
+    // ran its paragraphs into one line)
+    const fw = inArg && c.collapsed && el && el.closest && !el.closest('td, .it.h, .cap') ? (this.formatsBreak ? this.formatsBreak(c.f, at0) : this.wrapBreak(el, c.f, at0)) : null;
+    const fmtOnly = !!fw && braceDepth(src, fw.p) === (fw.close.match(/\}/g) || []).length;
     const inline = inArg || (!whole && !!(el && el.closest && el.closest('td, .it.h, .cap')));
     // (copied LaTeX put in a heading, a table's cell or a caption, whose argument a paragraph
     // break ends, goes in as one line: src/paste.js oneLineLatex. Pasted as it was,
@@ -2884,23 +3281,36 @@ class App {
     const pdfText = !this.textEngine().unicode;
     // (a preamble that sets Greek up for pdfLaTeX's text: Greek pasted there stays letters)
     const greekSet = /\\usepackage\s*\[[^\]]*\b(greek|polutonikogreek|LGR)\b[^\]]*\]\s*\{(babel|fontenc)\}|\\usepackage\s*(\[[^\]]*\])?\s*\{[^}]*\b(textgreek|alphabeta|teubner|greektex|lgrx)\b|\\DeclareUnicodeCharacter\s*\{0?3[9AaBbCc][0-9A-Fa-f]\}|\\newunicodechar\s*\{[\u0370-\u03FF]\}/.test(pre);
-    const rich = () => withPdfText(pdfText, () => {
+    // (flat: on one line, as a heading, a cell or a command's argument takes it)
+    const rich = (flat = inline) => withPdfText(pdfText, () => {
       if (plainOnly) return textToTeX(plain, o.prev);
+      const q = { ...o, inlineOnly: flat };
       let t = '';
-      if (html && /<[a-z]/i.test(html)) { try { t = htmlToTeX(html, o); } catch (err) { t = ''; } }
-      if (!t.trim()) t = plainToTeX(plain, o.prev, o);
-      if (inline) t = t.replace(/\s*\n\s*\n\s*/g, ' ').replace(/\n/g, ' ');
+      if (html && /<[a-z]/i.test(html)) { try { t = htmlToTeX(html, q); } catch (err) { t = ''; } }
+      if (!t.trim()) t = plainToTeX(plain, o.prev, q);
+      if (flat) t = t.replace(/\s*\n\s*\n\s*/g, ' ').replace(/\n/g, ' ');
       return t;
     }, { greek: !greekSet });
     if (c.ghost) { const t = latex || rich(); this.ghostInsert(t, this.pastePackages(t)); return; }
     if (whole) { const t = latex || rich(), pk = this.pastePackages(t); this.replaceBody(whole, t, 'paste'); if (pk.length) this.commit(pk, null, 'paste'); return; }
     const edits = this.deletionEdits(c.f, c.a, c.b, true);
-    const at = edits.length && edits[0].s >= c.a ? edits[0].s : c.a;
+    let at = edits.length && edits[0].s >= c.a ? edits[0].s : c.a;
     // (landing in a LaTeX paragraph from a selection that started outside it: as source)
     const raw = this.texAt(c.f, at);
     let t = raw ? (latex || plain).replace(/\r\n?/g, '\n') : this.pasteKept(latex, c.f, at) || rich();
+    // (italic into italic words stays italic: pasteInFormats, src/cmd/font.js)
+    if (!raw && this.pasteInFormats) t = this.pasteInFormats(c.f, at, t);
+    // (paragraphs of text alone into formatted words: split there, each in the formats. Anything
+    // else, a list, a heading, a table, a display, a comment, stays flattened on the line as before:
+    // \uline{..\begin{itemize}..} stopped TeX)
+    if (fmtOnly && !raw) {
+      const u = this.pasteInFormats(c.f, fw.p, latex ? this.pasteKept(latex, c.f, fw.p) : rich(false)), parts = u.split(/\s*\n[ \t]*\n\s*/);
+      if (parts.length > 1 && this.wrappable && parts.every((x) => this.wrappable(x))) { t = parts.join(fw.close + '\n\n' + fw.open); at = fw.p; }
+    }
     if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!raw && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
+    // (paragraphs pasted into a list item: items of its list, src/cmd/lists.js listPaste)
+    if (!raw) t = this.listPaste(c.f, at, t);
     const removedBefore = edits.filter((ed) => ed.e <= at).reduce((s, ed) => s + (ed.e - ed.s), 0);
     const pk = raw ? [] : this.pastePackages(t), grew = pk.filter((x) => x.f === c.f && x.s <= at).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
     this.commit([...edits, { f: c.f, s: at, e: at, t }, ...pk], { f: c.f, p: at - removedBefore + t.length + grew }, 'paste');
@@ -3706,11 +4116,53 @@ class App {
     // (the page's own moves of the focus to the field)
     const fieldFocus = () => { backOk = true; focusField(mf); backOk = false; };
     ta.addEventListener('input', sync);
+    // What the page copied carries its LaTeX beside the plain text, whose letters are the drawn
+    // formula's (\frac{a}{b} came in as ba): a formula from it goes in as its LaTeX, and words with
+    // formulas among them as \text{…} around the formulas' LaTeX, as Word pastes them into an equation
+    const ownLatex = (x) => {
+      const one = unwrapMath(x);
+      if (one != null || /\n[ \t]*\n/.test(x)) return one;
+      const parts = x.split(/(\$[^$]+\$)/);
+      let out = '';
+      for (const q of parts) {
+        if (/^\$[^$]+\$$/.test(q)) out += q.slice(1, -1);
+        else if (/[\\{}%&#^_~$]/.test(q)) return null;
+        else if (q.trim()) out += '\\text{' + q.replace(/\s+/g, ' ') + '}';
+      }
+      return parts.length > 1 ? out : null;
+    };
     mf.addEventListener('paste', (e) => {
+      let x = '';
+      try { x = (e.clipboardData && e.clipboardData.getData('text/x-galley-latex')) || ''; } catch (err) { x = ''; }
       const t = e.clipboardData && e.clipboardData.getData('text/plain');
-      const inner = t ? unwrapMath(t) : null;
+      const own = x ? ownLatex(x) : null;
+      let inner = own != null ? own : t ? unwrapMath(t) : null;
       if (inner == null) return;
       e.preventDefault(); e.stopImmediatePropagation();
+      // (a copy of an equation of this document leaves its label and tag with the equation: pasted
+      // too, the label was defined twice; rows and alignment marks outside an inner environment
+      // cannot stand in a formula in the line or a one-row equation, which got a\&=b\\c\&=d)
+      if (own != null) inner = inner.replace(/\\(label|tag\*?)\s*\{[^{}]*\}/g, '').replace(/\\(nonumber|notag)(?![A-Za-z])/g, '').trim();
+      const rows = /\\\\|(^|[^\\])&/.test(inner.replace(/\\begin\s*\{([A-Za-z*]+)\}[\s\S]*?\\end\s*\{\1\}/g, ''));
+      if (rows && (!opts.display || !st.multi)) {
+        this.toast(opts.display ? 'Rows cannot go into this equation: make it Aligned in its menu first, or paste them on a line of their own.' : 'Rows cannot go into a formula in the line: paste them on a line of their own.');
+        return;
+      }
+      // (in an equation of rows they are rows of its own, written in its LaTeX box at the caret,
+      // a row break before and after them where the row there holds something: the field took
+      // their & for characters and joined the first to the row there, q &= ra\&=b \\ c\&=d)
+      if (rows) {
+        // (an environment with no columns, gather or multline, takes rows but no & at the top
+        // level, which TeX rejects there; those inside a matrix or cases stay)
+        if (!/^(align|alignat|flalign|eqnarray|split|aligned|alignedat)\*?$/.test(String((opts.env && opts.env()) || ''))) inner = inner.replace(/(\\begin\s*\{([A-Za-z*]+)\}[\s\S]*?\\end\s*\{\2\})|(^|[^\\])&/g, (m, env, n, pre) => env || pre);
+        pull();
+        let at = ta.value.length;
+        try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (ta.value.startsWith(pre)) at = pre.length; } catch (err) { /* at the end */ }
+        const before = ta.value.slice(0, at).split('\\\\').pop(), after = ta.value.slice(at).split('\\\\')[0];
+        ta.setRangeText((before.trim() ? ' \\\\\n' : '') + inner + (after.trim() ? ' \\\\\n' : ''), at, at, 'end');
+        ta.dispatchEvent(new Event('input'));
+        return;
+      }
       mf.insert(D.toField(inner), { format: 'latex', insertionMode: 'replaceSelection', selectionMode: 'after', mode: 'math' });
       mf.dispatchEvent(new Event('input'));
     }, true);
@@ -3749,6 +4201,10 @@ class App {
         ta.dispatchEvent(new Event('input'));
       }
     });
+    // Copied or cut from a formula in the line, the plain text is that formula, $…$, as Word pastes
+    // a piece of an equation in the line as one: MathLive writes $$ … $$, which the page pasted as
+    // a display in the middle of a sentence. (Its own handler, inside the field, has run by now.)
+    if (!opts.display) for (const type of ['copy', 'cut']) mf.addEventListener(type, (e) => { const d = e.clipboardData, x = d && d.getData('application/x-latex').trim(); if (x) d.setData('text/plain', '$' + x + '$'); });
     mf.addEventListener('keydown', (e) => {
       if (wt.active() || mf.mode === 'latex') return;
       if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); pull(); opts.onEscape(); }
@@ -3946,7 +4402,38 @@ class App {
     // However the box closes, what was typed is kept: text held back is written made whole
     // (mathMadeWhole), in the box's undo step.
     const whole = () => mathMadeWhole(ta.value, kerr());
-    this.pop.onClose = () => { push.cancel(); if (!this.pop) return; const v = held() ? whole() : ta.value; this.pop.applyInner(v); this.eqClosed(this.pop, v); };
+    this.pop.onClose = () => {
+      push.cancel(); if (!this.pop) return; const v = held() ? whole() : ta.value;
+      // Emptied, a formula that was there goes, as a new one closed empty does (newDisplayMath's
+      // own onClose takes those): $$ left in the line opened a display that ran on through the
+      // text after it, and an empty equation printed its number beside a blank line, TeX's
+      // Missing $. (Only between its own delimiters, read from the source; the caret where it stood.)
+      const P = this.pop, R = P.range, S = R && P.anchorPos ? this.src(R.f) : '';
+      if (!v.trim() && !P.eqNew && S) {
+        const env = P.env || info.a.env, close = env === info.a.env ? info.e - info.ie : env === '\\[' ? 2 : ('\\end{' + env + '}').length;
+        const a = P.anchorPos.s, b = R.e + close;
+        if (/^(\$\$?|\\\(|\\\[|\\begin\s*\{[^{}]*\})$/.test(S.slice(a, R.s)) && /^(\$\$?|\\\)|\\\]|\\end\s*\{[^{}]*\})$/.test(S.slice(R.e, b))) {
+          if (!display) {
+            this.commit(this.deletionEdits(R.f, a, b).map((x) => ({ f: R.f, ...x })), null, P.session);
+            P.returnCaret = { f: R.f, p: a };
+          } else {
+            // A display goes with the line breaks around it, leaving the text on either side as
+            // TeX had it: one paragraph where a single line break stood on both sides (a blank
+            // line left there split it), a blank line where one stood on either; the caret at the
+            // start of the text after it (in a blank line, what is typed joined the next paragraph)
+            const wsB = /\s*$/.exec(S.slice(0, a))[0], wsA = /^\s*/.exec(S.slice(b))[0], s0 = a - wsB.length, e0 = b + wsA.length;
+            const nlB = (wsB.match(/\n/g) || []).length, nlA = (wsA.match(/\n/g) || []).length, nl = /\r\n/.test(wsB + wsA) ? '\r\n' : '\n';
+            const sep = !s0 || e0 >= S.length ? '' : nlB >= 2 || nlA >= 2 ? nl + nl : nlB || nlA ? nl : ' ';
+            this.commit([{ f: R.f, s: s0, e: e0, t: sep }], null, P.session);
+            P.returnCaret = { f: R.f, p: s0 + sep.length };
+          }
+          P.removed = true;
+          this.eqClosed(P, '');
+          return;
+        }
+      }
+      P.applyInner(v); this.eqClosed(P, v);
+    };
     // what is written must itself pass the box's check; if making it whole could not get it
     // there, the box stays open with its message (closePop asks) and nothing is lost
     this.pop.refuse = () => !!held() && !!mathBreaksOut(whole(), this.renderer.katex(this.mathPreviewTex(whole(), display), display).err);

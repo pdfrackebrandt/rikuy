@@ -1183,6 +1183,235 @@ def keyboard_room(page, w):
 
 
 
+
+# An Android keyboard's composition as Chrome reports it (setComposingRegion, then setComposingText):
+# the word around the caret marked as composing with no change (compositionstart with no data, an
+# update with the word) while the selection stays a caret; a key then a beforeinput whose target
+# range is that word, the browser's own change of the word, the caret put after the letter typed.
+# CDP's Input.imeSetComposition always selects what it replaces, so these are the page's events.
+REGION = """([word, data, caretAfter]) => { const R = document.getElementById('pages'), s = getSelection(), n = s.focusNode, o = s.focusOffset;
+  let a = o; while (a > 0 && /[\\p{L}\\p{N}]/u.test(n.data[a - 1])) a--;
+  const st = n.data.indexOf(word, a); if (st !== a) return false;
+  const fire = (t, d) => R.dispatchEvent(new CompositionEvent(t, { data: d, bubbles: true }));
+  fire('compositionstart', ''); fire('compositionupdate', word);
+  if (data == null) return true;
+  fire('compositionupdate', data);
+  const sr = new StaticRange({ startContainer: n, startOffset: st, endContainer: n, endOffset: st + word.length });
+  R.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertCompositionText', data, isComposing: true, targetRanges: [sr], bubbles: true }));
+  n.replaceData(st, word.length, data); s.collapse(n, st + caretAfter);
+  R.dispatchEvent(new InputEvent('input', { inputType: 'insertCompositionText', data, isComposing: true, bubbles: true }));
+  return true; }"""
+
+# The same over a word the page draws in several pieces (a format inside it, a formula before it):
+# the region from the start of the piece holding `first` (or of the first formula, '@atom') to the
+# caret, which is put after `last` at the start of a piece; data: the region's text and `add`
+# (or the word after "="), the browser's change of the page written in its place
+SPAN_REGION = """([first, last, add, caretAfter]) => { const R = document.getElementById('pages'), sp = [...R.querySelectorAll('span.t')];
+  const e = sp.find((x) => x.textContent.startsWith(last)); if (!e) return false;
+  const en = e.firstChild, rg = document.createRange();
+  if (first === '@atom') { const a = R.querySelector('.atom'); rg.setStart(a.parentNode, [...a.parentNode.childNodes].indexOf(a)); }
+  else { const b = sp.find((x) => x.textContent.endsWith(first)); rg.setStart(b.firstChild, b.textContent.length - first.length); }
+  rg.setEnd(en, last.length);
+  const s = getSelection(); s.collapse(en, last.length);
+  const old = rg.toString(), data = add[0] === '=' ? add.slice(1) : old + add;
+  const fire = (t, d) => R.dispatchEvent(new CompositionEvent(t, { data: d, bubbles: true }));
+  fire('compositionstart', ''); fire('compositionupdate', old); fire('compositionupdate', data);
+  R.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertCompositionText', data, isComposing: true, targetRanges: [new StaticRange(rg)], bubbles: true }));
+  const sc = rg.startContainer, so = rg.startOffset; rg.deleteContents();
+  const t = document.createTextNode(data); (sc.nodeType === 3 ? sc.parentNode : sc).insertBefore(t, sc.nodeType === 3 ? sc.nextSibling : sc.childNodes[so] || null);
+  s.collapse(t, caretAfter == null ? data.length : caretAfter);
+  R.dispatchEvent(new InputEvent('input', { inputType: 'insertCompositionText', data, isComposing: true, bubbles: true }));
+  return data; }"""
+
+
+def comp_end(page, data):
+    page.evaluate("(d) => document.getElementById('pages').dispatchEvent(new CompositionEvent('compositionend', { data: d, bubbles: true }))", data)
+    settle(page, 250)
+
+
+def body_of(page):
+    s = src(page)
+    return s[s.find('\\section'):s.find('\\end{document}')]
+
+
+def android_input(page, w):
+    """Writing with an Android phone's keyboard as Chrome hands it over. A tap in a word makes the
+    keyboard mark that word as composing (for its suggestions) and end the composition, the word
+    unchanged, when the caret moves on: Word's text stays as it was. A letter typed inside the
+    word (the keyboard ends the composition first, as AOSP's does, and inserts the letter), a
+    letter at the end of a marked word, a suggestion taken for it, change only those letters: a
+    format or a formula inside the word stays."""
+    doc = DOC.replace('bold word', '\\textbf{bold} word')
+    load_doc(page, doc); settle(page, 300)
+    before = body_of(page)
+    tap_text(page, 'here.', 2)
+    page.evaluate(REGION, ['here', None, 0]); comp_end(page, 'here')
+    check(f'a word an Android keyboard marked, ended unchanged, is written once ({w})', body_of(page) == before, body_of(page)[-40:])
+    load_doc(page, doc); tap_text(page, 'here.', 2)
+    cdp = page.context.new_cdp_session(page)
+    page.evaluate(REGION, ['here', None, 0]); comp_end(page, 'here')
+    cdp.send('Input.insertText', {'text': 'x'}); settle(page, 150)
+    page.keyboard.type('Q'); settle(page, 200)
+    check(f'a letter typed in the marked word goes where it was typed, the caret after it ({w})', 'Second paragraph hexQre.' in src(page), body_of(page)[-40:])
+    load_doc(page, doc); click_text(page, 'bold', 4)
+    page.evaluate(REGION, ['bold', 'bolds', 5]); comp_end(page, 'bolds')
+    check(f'a letter at the end of a marked bold word stays bold ({w})', 'with a \\textbf{bolds} word.' in src(page), body_of(page)[:80])
+    load_doc(page, doc); tap_text(page, 'paragraph', 3)
+    page.evaluate(REGION, ['paragraph', 'paragraphs', 10]); comp_end(page, 'paragraphs')
+    check(f'a suggestion taken for the marked word replaces it ({w})', 'First paragraphs here' in src(page), body_of(page)[:60])
+    # a marked word in two formats ("he\textbf{re}") and one after a formula ("$n$th"): a letter at
+    # its end and a suggestion change those letters alone; the format and the formula stay
+    two = DOC.replace('Second paragraph here.', 'Second paragraph he\\textbf{re} and $n$th now.')
+    load_doc(page, two); settle(page, 300)
+    d = page.evaluate(SPAN_REGION, ['he', 're', 's', None]); comp_end(page, d)
+    check(f'a letter at the end of a word in two formats goes in the last, the first kept ({w})', 'paragraph he\\textbf{res} and' in src(page), body_of(page)[-60:])
+    load_doc(page, two); settle(page, 300)
+    d = page.evaluate(SPAN_REGION, ['he', 're', '=there', None]); comp_end(page, d)
+    page.keyboard.type('Q'); settle(page, 200)
+    check(f'a suggestion for a word in two formats keeps the format and puts the caret after it ({w})', 'paragraph the\\textbf{reQ} and' in src(page), body_of(page)[-60:])
+    load_doc(page, two); settle(page, 300)
+    d = page.evaluate(SPAN_REGION, ['@atom', 'th', 's', None]); comp_end(page, d)
+    check(f'a letter at the end of a word after a formula keeps the formula ({w})', 'and $n$ths now.' in src(page), (d, body_of(page)[-60:]))
+    # a suggestion that keeps the old word's last letters ("here" to "there"), and a selected word
+    # typed over with a word ending as it did ("here" to "the"): the caret after the whole new word
+    load_doc(page, doc); tap_text(page, 'here.', 2)
+    page.evaluate(REGION, ['here', 'there', 5]); comp_end(page, 'there')
+    page.keyboard.type('Q'); settle(page, 200)
+    check(f'after a suggestion ending as the old word did, the caret is after it ({w})', 'Second paragraph thereQ.' in src(page), body_of(page)[-40:])
+    load_doc(page, doc); select_text(page, 'here', 1)
+    cdp = page.context.new_cdp_session(page)
+    for t in ('t', 'th', 'the'):
+        cdp.send('Input.imeSetComposition', {'text': t, 'selectionStart': len(t), 'selectionEnd': len(t)}); settle(page, 40)
+    cdp.send('Input.insertText', {'text': 'the'}); settle(page, 100)
+    cdp.send('Input.insertText', {'text': ' x'}); settle(page, 150)
+    check(f'a word composed over a selection ending as it did leaves the caret after it ({w})', 'Second paragraph the x.' in src(page), body_of(page)[-40:])
+    # words composed one by one, as a keyboard types them, at the end of a paragraph before a list:
+    # the second after a space that ends the paragraph so far (the page draws that caret at the
+    # list's start, caretNow() knows the place)
+    load_doc(page, doc.replace('Second paragraph here.', '\\begin{itemize}\n\\item One\n\\end{itemize}')); settle(page, 300)
+    click_text(page, 'word.', 5)
+    cdp = page.context.new_cdp_session(page)
+    for wd in ('Hello', 'world'):
+        for i in range(1, len(wd) + 1):
+            cdp.send('Input.imeSetComposition', {'text': wd[:i], 'selectionStart': i, 'selectionEnd': i}); settle(page, 40)
+        cdp.send('Input.insertText', {'text': wd}); settle(page, 100)
+        if wd == 'Hello':
+            cdp.send('Input.insertText', {'text': ' '}); settle(page, 100)
+    check(f'words composed after a space ending a paragraph stay in it ({w})', 'word.Hello world\n' in src(page) and '\\item One\n' in src(page), body_of(page)[:120])
+    # a word still composing when Bold is tapped goes in first, the next word bold (Word takes an
+    # input method's word before a button acts); and a command that draws the page again while the
+    # keyboard marks a word leaves the keys after it working
+    load_doc(page, doc); click_text(page, 'here.', 5)
+    cdp.send('Input.insertText', {'text': ' '}); settle(page, 100)
+    for wd in ('Hello', 'world'):
+        for i in range(1, len(wd) + 1):
+            cdp.send('Input.imeSetComposition', {'text': wd[:i], 'selectionStart': i, 'selectionEnd': i}); settle(page, 40)
+        if wd == 'Hello':
+            tap(page, page.locator('#rb-b'), 250)
+    cdp.send('Input.insertText', {'text': 'world'}); settle(page, 150)
+    check(f'a word composing when Bold is tapped is kept, the next one bold ({w})', 'here. Hello\\textbf{world}' in src(page), body_of(page)[-50:])
+    load_doc(page, doc); tap_text(page, 'here.', 2)
+    page.evaluate(REGION, ['here', None, 0])
+    # (Bold with the caret inside a word bolds the word, as Word's does: PR 118; the key goes in it)
+    tap(page, page.locator('#rb-b'), 250)
+    cdp.send('Input.insertText', {'text': 'Z'}); settle(page, 150)
+    check(f'a key after a command run while the keyboard marks a word goes in ({w})', 'Second paragraph \\textbf{heZre}.' in src(page), src(page)[src(page).find('Second'):][:60])
+    # Select All, then a word composed (a phone's keyboard composes every word): the word is the
+    # document's body, as a key typed makes it
+    load_doc(page, doc); tap_text(page, 'Second paragraph', 2)
+    page.evaluate("window.rikuy.runCommand('select-all')"); settle(page, 200)
+    for t in ('X', 'Xy'):
+        cdp.send('Input.imeSetComposition', {'text': t, 'selectionStart': len(t), 'selectionEnd': len(t)}); settle(page, 40)
+    cdp.send('Input.insertText', {'text': 'Xy'}); settle(page, 200)
+    cdp.send('Input.insertText', {'text': ' z'}); settle(page, 200)
+    check(f'a word composed over Select All is the whole body ({w})', '\\begin{document}\n\nXy z\n\n\\end{document}' in src(page), src(page)[-60:])
+    # a line break a keyboard or dictation writes as text: a new paragraph, as Enter makes; lines
+    # in more text (a keyboard's clipboard) are a paste: one undo step, a cell's words kept in it
+    load_doc(page, doc); tap_text(page, 'paragraph here.', 4)
+    cdp.send('Input.insertText', {'text': '\n'}); settle(page, 200)
+    n0 = page.evaluate('window.rikuy.hist.length')
+    cdp.send('Input.insertText', {'text': 'ab\ncd\n\n' + '\n'.join('line %d' % i for i in range(40))}); settle(page, 300)
+    n1 = page.evaluate('window.rikuy.hist.length')
+    check(f'a line break written as text makes a new paragraph, more lines one paste ({w})', 'Second para\n\nab cd\n\nline 0 line 1' in src(page) and n1 == n0 + 1, (n0, n1, body_of(page)[-80:]))
+    load_doc(page, doc.replace('Second paragraph here.', '\\begin{tabular}{ll}\na & bee\\\\\nc & d\n\\end{tabular}')); settle(page, 300)
+    click_text(page, 'bee', 3)
+    cdp.send('Input.insertText', {'text': 'x\ny'}); settle(page, 300)
+    check(f'lines written as text in a table cell stay its words ({w})', 'a & beex y\\\\' in src(page), body_of(page)[-60:])
+
+
+
+KB_DOC = '\\documentclass{article}\n\\begin{document}\n' + '\n\n'.join(f'Paragraph number {i} with a few words in it.' for i in range(1, 40)) + '\n\\end{document}\n'
+# a phone's on-screen keyboard: Chrome on Android and Safari on iOS leave the window's height as it
+# is and shorten the visual viewport (the keyboard's top at 500 of 820 px)
+KEYBOARD = """(up) => { const vv = visualViewport; if (up) { const H = innerHeight - 320; Object.defineProperty(vv, 'height', { configurable: true, get: () => H }); } else delete vv.height; vv.dispatchEvent(new Event('resize')); }"""
+CARET_Y = "(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom), innerHeight - 320]; })()"
+
+
+def keyboard_caret(page, w):
+    """The caret stays in sight above a phone's on-screen keyboard, as in Word's phone app: a tap
+    low on the screen, then the keyboard coming up over it, scrolls it above the keyboard; and the
+    lines Enter makes there go on scrolling up, never under the keyboard."""
+    load_doc(page, KB_DOC); settle(page, 300)
+    low = page.evaluate("""() => { const sp = [...document.querySelectorAll('#pages span.t')].filter((x) => x.getBoundingClientRect().top > innerHeight - 220 && x.getBoundingClientRect().bottom < innerHeight - 90); return sp.length ? sp[0].textContent : null; }""")
+    tap_text(page, low, 3)
+    page.evaluate(KEYBOARD, True); settle(page, 300)
+    y = page.evaluate(CARET_Y)
+    check(f'a caret tapped low on the screen is scrolled above the keyboard as it comes up ({w})', y[0] >= 0 and y[1] <= y[2], (low, y))
+    cdp = page.context.new_cdp_session(page)
+    seen = []
+    for _ in range(6):
+        page.keyboard.press('Enter'); settle(page, 150)
+        cdp.send('Input.insertText', {'text': 'x'}); settle(page, 150)
+        seen.append(page.evaluate(CARET_Y))
+    check(f'lines typed with Enter above the keyboard stay in sight ({w})', all(a[0] >= 0 and a[1] <= a[2] for a in seen) and 'Par' + '\n\nx' * 6 + 'agraph' in src(page), seen)
+    page.evaluate(KEYBOARD, False); settle(page, 200)
+    # the zoom button tapped while typing: the page keeps the focus (the keyboard stays up) and the
+    # caret stays where it was, as Word's zoom leaves it
+    load_doc(page, DOC); tap_text(page, 'Second paragraph', 4)
+    tap(page, page.locator('#zoomv'), 400)
+    focus = page.evaluate('document.activeElement.id')
+    cdp.send('Input.insertText', {'text': 'Q'}); settle(page, 200)
+    tap(page, page.locator('#zoomv'), 400)
+    check(f'the zoom button leaves the page its focus and the caret its place ({w})', focus == 'pages' and 'SecoQnd paragraph' in src(page), (focus, body_of(page)[-50:]))
+    # a browser whose keyboard makes the window itself shorter (Firefox for Android): the same
+    width = page.viewport_size['width']
+    load_doc(page, KB_DOC); settle(page, 300)
+    low = page.evaluate("""() => { const sp = [...document.querySelectorAll('#pages span.t')].filter((x) => x.getBoundingClientRect().top > innerHeight - 220 && x.getBoundingClientRect().bottom < innerHeight - 90); return sp.length ? sp[0].textContent : null; }""")
+    tap_text(page, low, 3)
+    page.set_viewport_size({'width': width, 'height': 450}); settle(page, 500, full=True)
+    y = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(), d = document.getElementById('desk').getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom), Math.round(d.bottom)]; })()")
+    check(f'a window the keyboard makes shorter scrolls the caret into what is left of the page ({w})', y[0] >= 0 and y[1] <= y[2], (low, y))
+    page.set_viewport_size({'width': width, 'height': 820}); settle(page, 300, full=True)
+
+
+
+def desktop_input(page, w):
+    """What the phone's fixes must leave alone on a desktop. An input method composing pinyin
+    ("nihao") goes on composing through a press on a ribbon tab, and converts to its characters:
+    nothing half typed is written. A window made shorter keeps the reader's place in a long
+    document, the caret far above, as Word does: the page scrolls back to the caret only for a
+    phone's keyboard."""
+    load_doc(page, DOC); settle(page, 300)
+    click_text(page, 'Second paragraph', 6)
+    cdp = page.context.new_cdp_session(page)
+    for t in ('n', 'ni', 'nih', 'niha', 'nihao'):
+        cdp.send('Input.imeSetComposition', {'text': t, 'selectionStart': len(t), 'selectionEnd': len(t)}); settle(page, 40)
+    open_tab(page, 'Insert')
+    cdp.send('Input.imeSetComposition', {'text': '你好', 'selectionStart': 2, 'selectionEnd': 2}); settle(page, 60)
+    cdp.send('Input.insertText', {'text': '你好'}); settle(page, 200)
+    check(f'pinyin composing through a press on a ribbon tab converts, none of it written ({w})', 'Second你好 paragraph' in src(page) and 'nihao' not in src(page), body_of(page)[-50:])
+    open_tab(page, 'Home')
+    load_doc(page, LONG); settle(page, 300)
+    click_text(page, 'Words of part 2', 3)
+    page.evaluate("(() => { const d = document.getElementById('desk'); d.scrollTop = Math.min(6000, d.scrollHeight - d.clientHeight - 10); })()"); settle(page, 200)
+    t0 = page.evaluate("document.getElementById('desk').scrollTop")
+    width, height = page.viewport_size['width'], page.viewport_size['height']
+    page.set_viewport_size({'width': width, 'height': height - 100}); settle(page, 600, full=True)
+    t1 = page.evaluate("document.getElementById('desk').scrollTop")
+    page.set_viewport_size({'width': width, 'height': height}); settle(page, 400, full=True)
+    check(f'a desktop window made shorter keeps the reader\'s place, not the caret\'s ({w})', t0 > 3000 and t1 > t0 - 600, (t0, t1))
+
+
 SPACING = "*:not(#pages *):not(#pages) { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p:not(#pages *) { margin-bottom: 2em !important; }"
 CUT = """(sel) => { const out = []; for (const root of document.querySelectorAll(sel)) for (const e of [root, ...root.querySelectorAll('*')]) {
   if (!e.checkVisibility || !e.checkVisibility() || !e.textContent.trim() || e.matches('.sr, .sr *')) continue; const c = getComputedStyle(e);
@@ -1260,7 +1489,10 @@ def tooltips(page, w):
     page.keyboard.press('Escape')
 
 
-PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
+PARTS = {'android_input': (android_input, [(390, False), (360, True)]),
+         'keyboard_caret': (keyboard_caret, [(390, False), (360, True)]),
+         'desktop_input': (desktop_input, [(1366, False)]),
+         'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
          'bar_room': (bar_room, None),
          'motion': (motion, [(1366, False)]),
          'tooltips': (tooltips, [(1366, False)]),
@@ -1294,7 +1526,7 @@ PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False)
 
 
 # the parts that meet a phone's own default, Mobile View (the others open in Print Layout, as the suites written for it do)
-MOBILE = {'mobile_view', 'first_visit', 'doc_name', 'sample_spelling', 'place_kept'}
+MOBILE = {'android_input', 'keyboard_caret', 'mobile_view', 'first_visit', 'doc_name', 'sample_spelling', 'place_kept'}
 # the parts on tablets: a touch screen at any width
 TOUCH = {'lows'}
 

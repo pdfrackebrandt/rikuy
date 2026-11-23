@@ -552,7 +552,11 @@ export const collab = {
   commentOnSelection() {
     const sel = getSelection();
     let c = this.caretNow();
-    if ((!c || c.collapsed) && this.lastSel && Date.now() - this.lastSelT < 60000) c = this.lastSel;
+    // (the last selection stands in for one a button's press collapsed, the caret left at one of
+    // its ends; a caret put anywhere else since, inside it too, is where the comment goes, as Word
+    // puts it: one on a word selected earlier went to that word's paragraph)
+    const L = this.lastSel;
+    if ((!c || c.collapsed) && L && Date.now() - this.lastSelT < 60000 && (!c || (c.f === L.f && (c.p === L.a || c.p === L.b)))) c = L;
     if (!c || c.f == null) { this.toast('Select the words the comment is about, or put the cursor there.'); return; }
     const quote = sel.rangeCount && !sel.isCollapsed ? String(sel) : '';
     const rect = sel.rangeCount ? sel.getRangeAt(0).getBoundingClientRect() : null;
@@ -635,7 +639,10 @@ export const collab = {
       const head = mk('button', 'cm-head'); head.type = 'button';
       head.append(mk('b', '', t.who), document.createTextNode(' ' + t.body));
       if (t.quote) head.prepend(mk('span', 'cm-q', '“' + t.quote + '” '));
-      head.addEventListener('click', () => { this.goTo(t.f, t.as); this.flashComment(t); });
+      // (the caret to the comment on the page, as Next Comment puts it and Word's pane does: the
+      // press only scrolled, and the next key or Delete Comment acted where the caret had been;
+      // a finger's tap brings no keyboard up)
+      head.addEventListener('click', () => { this.goTo(t.f, t.as); if (!matchMedia('(pointer: coarse)').matches) this.restoreCaret({ f: t.f, p: t.as, bias: 1 }, true); this.flashComment(t); });
       card.append(head);
       for (const r of t.replies) { const x = mk('div', 'cm-reply'); x.append(mk('b', '', r.who), document.createTextNode(' ' + r.body)); card.append(x); }
       const row = mk('div', 'pop-row');

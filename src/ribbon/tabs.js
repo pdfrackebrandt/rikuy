@@ -325,6 +325,8 @@ export const tabs = {
     // (the font box gives the page's selection back as it loses the focus; a key pressed before
     // that is done must find it on the page, see fbxFlush)
     if (this.fbxFlush && this.fbxFlush() && at !== undefined) at = this.ribbonAt();
+    // (a word an input method is composing goes in first, where the command finds it: compFinish)
+    if (this.compFinish && this.compFinish() && at) at = this.ribbonAt();
     const c = command(id);
     if (!c || !c.run) return false;
     if (at === undefined) at = this.ribbonAt();

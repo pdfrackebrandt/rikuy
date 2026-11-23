@@ -3,7 +3,7 @@ Shift+Enter rows, wrapping a selection, pasting with delimiters, Copy for Word, 
 comma in German documents, chemistry with \\ce."""
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, until, open_page, check, results, src, SHOTS
+from browser import settle, until, open_page, check, results, src, SHOTS, load_doc
 from playwright.sync_api import sync_playwright
 
 with sync_playwright() as p:
@@ -57,6 +57,56 @@ with sync_playwright() as p:
       t.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true, composed: true })); })()""")
     settle(page, 250)
     check('pasting $x^2$ drops the dollars', val() == 'y=x^2', val())
+    # a formula copied on the page: its LaTeX, kept beside the plain text (the drawn letters: \frac{a}{b}
+    # came in as ba); words with it as \text{…}
+    PASTE = """([plain, own]) => { const mf = document.getElementById('pop-field'); const dt = new DataTransfer(); dt.setData('text/plain', plain); dt.setData('text/x-galley-latex', own);
+      const t = mf.shadowRoot && (mf.shadowRoot.querySelector('[contenteditable], textarea') || mf.shadowRoot.activeElement) || mf;
+      t.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true, composed: true })); }"""
+    reset('y=')
+    page.evaluate(PASTE, [' \nb\na\n\n ', '$\\frac{a}{b}$']); settle(page, 250)
+    one = val()
+    reset('y=')
+    page.evaluate(PASTE, ['if  b a ', 'if $\\frac{a}{b}$']); settle(page, 250)
+    check('a formula copied on the page pastes into the field as its LaTeX, words as \\text', one == 'y=\\frac{a}{b}' and val() == 'y=\\text{if }\\frac{a}{b}', (one, val()))
+    # (an equation copied with its label leaves the label with it; an equation of rows does not go
+    # into a formula in the line)
+    reset('y=')
+    page.evaluate(PASTE, [' z ', '\\begin{equation}\n  z\\label{eq:z}\n\\end{equation}']); settle(page, 250)
+    lab = val()
+    reset('y=')
+    page.evaluate(PASTE, [' a = b c = d ', '\\begin{align}\n  a &= b \\\\\n  c &= d\n\\end{align}']); settle(page, 250)
+    check('pasted into a formula in the line: a copied equation without its label, rows refused', lab == 'y=z' and val() == 'y=', (lab, val()))
+    k.press('Escape'); settle(page, 300)
+    # (nor into an equation of one row, where the & came in as a literal \&)
+    page.evaluate("document.querySelectorAll('.it.dm')[0].scrollIntoView({block:'center'})")
+    page.locator('.it.dm').nth(0).click()
+    page.wait_for_selector('#pop-field', timeout=10000); settle(page, 300)
+    before = val()
+    page.evaluate(PASTE, [' a = b c = d ', '\\begin{align}\n  a &= b \\\\\n  c &= d\n\\end{align}']); settle(page, 250)
+    check('rows pasted into an equation of one row are refused', val() == before and '\\&' not in val(), (before[-40:], val()[-40:]))
+    k.press('Escape'); settle(page, 300)
+    # (into an equation of rows they are its rows: the field wrote q &= ra\&=b \\ c\&=d)
+    page.evaluate("document.querySelectorAll('.it.dm')[1].scrollIntoView({block:'center'})")
+    page.locator('.it.dm').nth(1).click()
+    page.wait_for_selector('#pop-field', timeout=10000); settle(page, 300)
+    page.evaluate("(() => { const mf = document.getElementById('pop-field'); mf.focus(); mf.executeCommand('moveToMathfieldEnd'); })()")
+    page.evaluate(PASTE, [' a = b c = d ', '\\begin{align}\n  a &= b \\\\\n  c &= d\n\\end{align}']); settle(page, 400, full=True)
+    rows = ta()
+    check('rows pasted into an equation of rows are rows of it, their & kept', 'a &= b \\\\\n  c &= d' in rows and '\\&' not in rows and rows.count('\\\\') >= 3, rows[-120:])
+    k.press('Escape'); settle(page, 300)
+    page.evaluate("window.rikuy.undo()"); settle(page, 300)
+    # (into a gather, which has no columns, the rows come without their &, which TeX rejects there)
+    keep = page.evaluate("window.rikuy.files.get('main.tex')")
+    load_doc(page, '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nText.\n\\begin{gather}\n  q = r \\\\\n  s = t\n\\end{gather}\nMore.\n\\end{document}\n')
+    page.locator('.it.dm').nth(0).click()
+    page.wait_for_selector('#pop-field', timeout=10000); settle(page, 300)
+    page.evaluate("(() => { const mf = document.getElementById('pop-field'); mf.focus(); mf.executeCommand('moveToMathfieldEnd'); })()")
+    page.evaluate(PASTE, [' a = b c = d ', '\\begin{align}\n  a &= b \\\\\n  c &= d\n\\end{align}']); settle(page, 400, full=True)
+    rows = ta()
+    check('rows pasted into a gather come without their &', '&' not in rows and 'a = b' in rows and 'c = d' in rows, rows[-80:])
+    k.press('Escape'); settle(page, 300)
+    load_doc(page, keep)
+    open_inline()
     # paste into the LaTeX box
     page.evaluate("""(() => { const t = document.getElementById('pop-tex'); t.focus(); t.setSelectionRange(t.value.length, t.value.length); const dt = new DataTransfer(); dt.setData('text/plain', '\\\\[ z+1 \\\\]');
       t.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); })()""")
@@ -71,6 +121,15 @@ with sync_playwright() as p:
     settle(page, 300)
     got = page.evaluate("window.__copied['text/plain']")
     check('Copy for Word puts MathML on the clipboard', got and got.startswith('<math') and '<mfrac>' in got and 'annotation' not in got, (got or '')[:120])
+    # Ctrl+C and Ctrl+X in a formula in the line: the plain text is the formula as $…$ (MathLive's
+    # $$ … $$ pasted as a display in the middle of a sentence)
+    page.click('#pop-field'); settle(page, 100)
+    page.evaluate("window.__copied = {}")
+    k.press('Control+a'); k.press('Control+c'); settle(page, 150)
+    got = page.evaluate("window.__copied['text/plain']")
+    k.press('End'); k.press('Shift+Home'); k.press('Control+x'); settle(page, 150)
+    cut = page.evaluate("window.__copied['text/plain']")
+    check('copied or cut from a formula in the line, the plain text is $...$', got == '$\\frac{a}{b}$' and cut == '$\\frac{a}{b}$', (got, cut))
     k.press('Escape'); settle(page, 300)
 
     # display: Shift+Enter makes a new row
