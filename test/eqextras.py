@@ -85,6 +85,16 @@ with sync_playwright() as p:
     page.evaluate(PASTE, [' a = b c = d ', '\\begin{align}\n  a &= b \\\\\n  c &= d\n\\end{align}']); settle(page, 250)
     check('rows pasted into an equation of one row are refused', val() == before and '\\&' not in val(), (before[-40:], val()[-40:]))
     k.press('Escape'); settle(page, 300)
+    # (into an equation of rows they are its rows: the field wrote q &= ra\&=b \\ c\&=d)
+    page.evaluate("document.querySelectorAll('.it.dm')[1].scrollIntoView({block:'center'})")
+    page.locator('.it.dm').nth(1).click()
+    page.wait_for_selector('#pop-field', timeout=10000); settle(page, 300)
+    page.evaluate("(() => { const mf = document.getElementById('pop-field'); mf.focus(); mf.executeCommand('moveToMathfieldEnd'); })()")
+    page.evaluate(PASTE, [' a = b c = d ', '\\begin{align}\n  a &= b \\\\\n  c &= d\n\\end{align}']); settle(page, 400, full=True)
+    rows = ta()
+    check('rows pasted into an equation of rows are rows of it, their & kept', 'a &= b \\\\\n  c &= d' in rows and '\\&' not in rows and rows.count('\\\\') >= 3, rows[-120:])
+    k.press('Escape'); settle(page, 300)
+    page.evaluate("window.rikuy.undo()"); settle(page, 300)
     open_inline()
     # paste into the LaTeX box
     page.evaluate("""(() => { const t = document.getElementById('pop-tex'); t.focus(); t.setSelectionRange(t.value.length, t.value.length); const dt = new DataTransfer(); dt.setData('text/plain', '\\\\[ z+1 \\\\]');

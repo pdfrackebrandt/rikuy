@@ -3589,8 +3589,21 @@ class App {
       // too, the label was defined twice; rows and alignment marks outside an inner environment
       // cannot stand in a formula in the line or a one-row equation, which got a\&=b\\c\&=d)
       if (own != null) inner = inner.replace(/\\(label|tag\*?)\s*\{[^{}]*\}/g, '').replace(/\\(nonumber|notag)(?![A-Za-z])/g, '').trim();
-      if ((!opts.display || !st.multi) && /\\\\|(^|[^\\])&/.test(inner.replace(/\\begin\s*\{([A-Za-z*]+)\}[\s\S]*?\\end\s*\{\1\}/g, ''))) {
+      const rows = /\\\\|(^|[^\\])&/.test(inner.replace(/\\begin\s*\{([A-Za-z*]+)\}[\s\S]*?\\end\s*\{\1\}/g, ''));
+      if (rows && (!opts.display || !st.multi)) {
         this.toast(opts.display ? 'Rows cannot go into this equation: make it Aligned in its menu first, or paste them on a line of their own.' : 'Rows cannot go into a formula in the line: paste them on a line of their own.');
+        return;
+      }
+      // (in an equation of rows they are rows of its own, written in its LaTeX box at the caret,
+      // a row break before and after them where the row there holds something: the field took
+      // their & for characters and joined the first to the row there, q &= ra\&=b \\ c\&=d)
+      if (rows) {
+        pull();
+        let at = ta.value.length;
+        try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (ta.value.startsWith(pre)) at = pre.length; } catch (err) { /* at the end */ }
+        const before = ta.value.slice(0, at).split('\\\\').pop(), after = ta.value.slice(at).split('\\\\')[0];
+        ta.setRangeText((before.trim() ? ' \\\\\n' : '') + inner + (after.trim() ? ' \\\\\n' : ''), at, at, 'end');
+        ta.dispatchEvent(new Event('input'));
         return;
       }
       mf.insert(D.toField(inner), { format: 'latex', insertionMode: 'replaceSelection', selectionMode: 'after', mode: 'math' });
