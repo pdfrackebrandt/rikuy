@@ -1248,34 +1248,16 @@ class App {
     // (a document of headings alone: the first heading's words; there was no caret, and the first
     // keys after a reload typed nothing)
     const first = this.root.querySelector('.it.p span.t:not(.gh)') || this.root.querySelector('.it:not(.atom) span.t:not(.gh)');
-    // the place this document was left at (leaving()): the view scrolled back to its top line,
-    // and on a computer the caret back in it, as long as the words around each are the same
-    // (once, as the page opens: later calls, as File's view closing with no caret, act as before)
-    let kept = null;
-    if (!this.placeTaken) try {
-      this.placeTaken = true;
-      const all = load('rikuy.place.v1'), P = all && typeof all === 'object' ? all[this.name] : null;
-      const same = (f, a, b, h) => { const t = this.files.get(f); return t != null && Number.isInteger(a) && Number.isInteger(b) && 0 <= a && a <= b && b <= t.length && textSig('', [['', t.slice(Math.max(0, a - 40), a)], ['', t.slice(b, b + 40)]]) === h; };
-      if (P && P.main === this.main) {
-        if (P.f != null && same(P.f, P.a, P.b, P.sig)) kept = P;
-        const T = P.top;
-        if (T && !this.desk.scrollTop && same(T.f, T.p, T.p, T.sig)) {
-          if (this.index.dirty) this.index.build();
-          const r = this.index.find(T.f, T.p, 1), n = r && r.node, it = n && (n.nodeType === 1 ? n : n.parentElement).closest('.it');
-          if (it) this.desk.scrollTop += it.getBoundingClientRect().top - this.desk.getBoundingClientRect().top - (T.dy || 0);
-        }
-      }
-    } catch (e) { kept = null; }
+    // the place this document was left at (leaving()): the view scrolled back to it, and on a
+    // computer the caret back in it, as long as the words around it are still the same
+    const P = (load('rikuy.place.v1') || {})[this.name], t = P && P.main === this.main && this.files.get(P.f);
+    const kept = t != null && P.a <= P.b && t.slice(Math.max(0, P.a - 40), P.a) === P.pre && t.slice(P.b, P.b + 40) === P.post ? P : null;
+    if (kept && !this.desk.scrollTop) this.desk.scrollTop = kept.top || 0;
     if (!first || !first.firstChild || window.innerWidth < 700 || matchMedia('(pointer: coarse)').matches) return;
     const a = document.activeElement;
     if (a && a !== document.body && a !== this.root) return;
     if (this.caretNow()) return;
-    if (kept && kept.ghost) {
-      // (a blank paragraph is not in the text: shown again where it stood)
-      this.root.focus({ preventScroll: true });
-      this.ghostAt(kept.f, kept.a);
-      if (this.ghost) { this.ghost.place = true; return; }
-    } else if (kept) {
+    if (kept) {
       this.restoreCaret(kept.a === kept.b ? { f: kept.f, p: kept.a } : { f: kept.f, selA: kept.a, selB: kept.b });
       if (this.caretNow()) { this.scrollToCaret(); return; }
     }
