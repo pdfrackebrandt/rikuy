@@ -1307,7 +1307,15 @@ class App {
       let apart = true;
       for (let k = 1; k < list.length; k++) if (list[k].e > list[k - 1].s) apart = false;
       if (apart) win.set(f, { pre: list[list.length - 1].s, suf: text.length - list[0].e });
-      for (const ed of list) text = text.slice(0, ed.s) + ed.t + text.slice(ed.e);
+      // (edits apart in one pass, pieces joined once: an edit at a time copied the whole text once
+      // per edit, 0.3 s of Replace All's 4,220 on dev/bench/long)
+      if (apart && list.length > 16) {
+        const parts = [];
+        let end = text.length;
+        for (const ed of list) { parts.push(text.slice(ed.e, end), ed.t); end = ed.s; }
+        parts.push(text.slice(0, end));
+        text = parts.reverse().join('');
+      } else for (const ed of list) text = text.slice(0, ed.s) + ed.t + text.slice(ed.e);
       this.files.set(f, text);
       // (the document's last selection, where a command acts with no caret on the page, moves too)
       if (this.rbLast && this.rbLast.f === f && this.rbLast.text === before.get(f)) this.restMove(f, list, text);
@@ -2177,6 +2185,35 @@ class App {
           }
         }
       }
+      // Inside a run of spaces in the source (a word deleted letter by letter leaves "The
+      // paragraph" with two; a space typed at a source line's end, "The \nparagraph"; a control
+      // space and a space, "Dr.\  Smith"): Backspace takes the space or line end before the caret
+      // and Delete the one after it, as Word takes one of its two spaces. The browser's range is a
+      // drawn space, which named the letter before it (that letter went), the letter after it (a
+      // space the browser does not draw is skipped), or the whole run (nothing went). Only a run
+      // inside a paragraph (no blank line in it), and only Backspace and Delete themselves:
+      // Ctrl+Backspace takes the word as ever. Backspace after a control space (\ ) takes it whole.
+      // (a line end is a space unless it closes a comment, % to the line's end: that one is the
+      // comment's, and taken, the next line joined the comment and vanished from the page; \r\n
+      // is one line end; a control space, \ , is a space of the run and goes whole)
+      const S = this.src(c.f), back = type === 'deleteContentBackward';
+      const comment = (x) => /(?:^|[^\\])(?:\\\\)*%/.test(S.slice(S.lastIndexOf('\n', x - 1) + 1, x));
+      const ctl = (x) => { if (S[x] !== '\\' || S[x + 1] !== ' ') return false; let n = 0; while (S[x - 1 - n] === '\\') n++; return n % 2 === 0; };
+      const ws = (x) => S[x] === ' ' || S[x] === '\t' || ((S[x] === '\n' || S[x] === '\r') && !comment(x));
+      if ((back || type === 'deleteContentForward') && ws(c.a - 1) && (ws(c.a) || ctl(c.a))) {
+        let i = c.a, j = c.a;
+        while (i > 0 && ws(i - 1)) i--;
+        while (j < S.length && ws(j)) j++;
+        if (!/\n[ \t\r]*\n/.test(S.slice(i, j))) {
+          let a = back ? c.a - 1 : c.a, b = back ? c.a : c.a + 1;
+          if (back && S[a] === ' ' && a > 0 && ctl(a - 1)) a--;
+          if (!back && ctl(a)) b = a + 2;
+          if (S[a] === '\n' && S[a - 1] === '\r') a--;
+          if (S[b - 1] === '\r' && S[b] === '\n') b++;
+          this.commit([{ f: c.f, s: a, e: b, t: '' }], { f: c.f, p: a, bias: back ? -1 : 1 }, 'del');
+          return;
+        }
+      }
       const tr = ranges && ranges[0];
       let r = tr ? this.rangeToSrc(tr) : null;
       if (r && r.a === r.b) r = null;
@@ -2201,6 +2238,10 @@ class App {
       // what is after it. At the start of a theorem's body the browser names a range that begins
       // past the generated "Theorem 1." label, which maps to the paragraph's end: taken as it
       // came, one Backspace deleted the whole paragraph.
+      // (from inside a run of spaces drawn as one, Ctrl+Backspace's word reaches the run's end:
+      // the part of it past the caret is spaces only, and is left; the whole range was refused,
+      // and nothing went)
+      if (r && r.f === c.f && r.a < c.a && c.a < r.b && !(/Backward/.test(type) ? S.slice(c.a, r.b) : S.slice(r.a, c.a)).trim()) r = /Backward/.test(type) ? { ...r, b: c.a } : { ...r, a: c.a };
       if (r && (/Backward/.test(type) ? r.b > c.a : r.a < c.a)) r = null;
       if (!r) {
         // Nothing the browser would delete: paragraph boundary or atom edge.

@@ -11,7 +11,9 @@
 // main=), or polyglossia's \setdefaultlanguage, or a new \usepackage[name]{babel}.
 
 import { mk } from './dom.js';
-import { proseRuns, mainLanguage, dictOf, DICT_NAME } from '../spell/words.js';
+import { segOfSpan, boundary } from '../editor.js';
+import { proseRuns, blockRuns, mainLanguage, dictOf, DICT_NAME } from '../spell/words.js';
+import { unitBase } from '../model.js';
 
 const WORDS = /[\p{L}\p{N}][\p{L}\p{N}\p{M}‌‍'’-]*/gu;
 const count = (t) => (t.match(WORDS) || []).length;
@@ -22,20 +24,64 @@ function linesOf(range) {
   return tops.size;
 }
 
+// The words of the document as Word counts them: every heading, cell, list item and paragraph,
+// footnotes and captions as the box says. The status bar shows it beside this dialog's: it counted
+// the paragraphs alone, two numbers for one document.
+export function docWords(model, notes) {
+  let words = 0;
+  for (const B of model.blocks || []) {
+    // (each unit's count kept by the unit it was made from: a keystroke counts its own paragraph
+    // again, and the units it moved, never copied for it, keep theirs)
+    const k = unitBase(B);
+    let c = COUNTS.get(k);
+    if (!c) COUNTS.set(k, (c = {}));
+    if (c[notes] == null) { let n = 0; for (const r of blockRuns(k, { code: true, notes, noMap: true })) n += count(r.text); c[notes] = n; }
+    words += c[notes];
+  }
+  return words;
+}
+const COUNTS = new WeakMap();
+// how many units have no count kept yet (a full build's, every one)
+export function wordsToCount(model, notes) { let n = 0; for (const B of model.blocks || []) { const c = COUNTS.get(unitBase(B)); if (!c || c[notes] == null) n++; } return n; }
+// The words of a selection, counted over the text the page draws inside it by the same rules
+// (headings and cells too, the contents' list not, a footnote's and a caption's as the box says)
+export function selWords(root, r, notes, src) {
+  let text = '', prev = null;
+  for (const span of root.querySelectorAll('span.t')) {
+    if (!r.intersectsNode(span) || span.classList.contains('ph') || span.closest('.toc') || (!notes && span.closest('[data-ctx="cap"], .fn'))) continue;
+    const node = span.firstChild;
+    if (!node) continue;
+    const a = node === r.startContainer ? r.startOffset : 0, b = node === r.endContainer ? r.endOffset : node.length;
+    // (a piece that goes on where the last stopped, as the model's text does, joins it with no
+    // space: a word the lines cut or hyphenated, \textbf{well}-known, \emph{don't}s; put apart,
+    // each was two words, and Ctrl+A counted more than the document had. Between them in the
+    // source nothing but braces and a style's command: \author{ between a title's fields parts them)
+    const P = prev && segOfSpan(prev), Q = segOfSpan(span);
+    let on = false;
+    if (P && Q && P.seg.f === Q.seg.f && P.B.f === Q.B.f && src) {
+      const x = boundary(P.B, P.seg, P.o + P.len), y = boundary(Q.B, Q.seg, Q.o);
+      on = y >= x && y - x < 200 && /^(?:[{}]|\\(?:text(?:bf|it|sc|sf|rm|tt|up|sl|md|normal)|emph|underline|uline|sout|textsuperscript|textsubscript)\s*\{)*$/.test(src(P.seg.f || P.B.f).slice(x, y));
+    }
+    text += (on || !prev ? '' : ' ') + node.data.slice(a, b);
+    prev = span;
+  }
+  return count(text);
+}
+
 export function wordStats(app, notes, sel) {
   const out = { pages: app.layout ? app.layout.pages.length : 0 };
   const s = sel ? getSelection() : null;
   if (s && s.rangeCount && !s.isCollapsed && app.root.contains(s.anchorNode)) {
     const r = s.getRangeAt(0), t = String(s);
     out.sel = true;
-    out.words = count(t);
+    out.words = selWords(app.root, r, notes, (f) => app.src(f));
     out.chars = t.replace(/[\n\r]/g, '').length;
     out.charsNoSpace = t.replace(/\s/g, '').length;
     out.paras = [...app.root.querySelectorAll('.it')].filter((el) => r.intersectsNode(el) && /\S/.test(el.textContent)).length;
     out.lines = linesOf(r);
     return out;
   }
-  const runs = proseRuns(app.model, { code: true, notes });
+  const runs = proseRuns(app.model, { code: true, notes, noMap: true });
   let words = 0, chars = 0, ns = 0;
   for (const r of runs) { const t = r.text.replace(/\s+/g, ' '); words += count(t); chars += t.length; ns += t.replace(/\s/g, '').length; }
   out.words = words; out.chars = chars; out.charsNoSpace = ns;
@@ -68,7 +114,8 @@ export function openWordCount(app) {
       tab.append(tr);
     }
   };
-  cb.addEventListener('change', () => { app.prefs.countNotes = cb.checked; app.savePrefs(); fill(); });
+  // (the status bar's count follows the box, as Word's does)
+  cb.addEventListener('change', () => { app.prefs.countNotes = cb.checked; app.savePrefs(); fill(); if (app.wordStatus) app.wordStatus(); });
   const row = mk('div', 'pop-row');
   const close = mk('button', 'btn sm', 'Close'); close.type = 'button';
   close.addEventListener('click', () => app.closePop());

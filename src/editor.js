@@ -239,6 +239,10 @@ export class CaretIndex {
     let k0 = E.o, k1 = E.o + E.len, best = E.o;
     while (k0 <= k1) { const m = (k0 + k1) >> 1; if (boundary(E.B, E.seg, m) <= p) { best = m; k0 = m + 1; } else k1 = m - 1; }
     if (bias > 0) { while (best > E.o && boundary(E.B, E.seg, best - 1) === p) best--; }
+    // (a place inside a run of spaces the page draws as one, as a word deleted letter by letter
+    // leaves "The  paragraph": after that space, where the letters were; before it, the caret
+    // jumped back a space and Backspace took the letter before it)
+    if (best < E.o + E.len && E.span.firstChild.data[best - E.o] === ' ' && charRange(E.B, E.seg, best)[0] < p) best++;
     return { node: E.span.firstChild, offset: best - E.o, entry: E };
   }
   // DOM ranges over the visible characters of file f whose source lies in any of the sorted,

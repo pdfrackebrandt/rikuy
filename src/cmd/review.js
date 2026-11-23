@@ -35,6 +35,8 @@ import { coreCanRun } from '../native.js';
 import { findComments, commentOnly, safeCommentLine } from '../share.js';
 import { spacingOnly } from '../diff.js';
 import { kvGet, kvPut } from '../store.js';
+// (places as [block of the page, file, offset], compared in that order)
+const keyCmp = (a, b) => (a[0] - b[0]) || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0) || a[2] - b[2];
 
 const SPELL = typeof __RIKUY_SPELL__ === 'undefined' ? null : __RIKUY_SPELL__;
 const reviewOpen = () => document.body.classList.contains('nav-on');
@@ -619,10 +621,13 @@ export const methods = {
     this.ribbonSoon();
   },
   realChanges() { return this.base ? this.currentChanges().filter((c) => !spacingOnly(c) && !commentOnly(c)) : []; },
-  // changes in reading order: the main file first, then the others by name
+  // changes in reading order: a chapter's file comes where \input reads it, as Word goes through
+  // one document (the main file's changes went first, then the other files' by name, and Next
+  // Change jumped from the introduction to the conclusion over every chapter); a file the page
+  // does not show after them, by name
+  rvKey(f, p) { return [this.blockIndexOf(f, p), f === this.main ? '' : f, p]; },
   orderedChanges() {
-    const rank = (f) => (f === this.main ? '' : f);
-    return this.realChanges().slice().sort((a, b) => (rank(a.f) < rank(b.f) ? -1 : rank(a.f) > rank(b.f) ? 1 : a.bs - b.bs));
+    return this.realChanges().map((c) => [this.rvKey(c.f, c.bs), c]).sort((a, b) => keyCmp(a[0], b[0])).map((x) => x[1]);
   },
   changeHere() {
     const c = this.caretNow();
@@ -634,9 +639,8 @@ export const methods = {
     const list = this.orderedChanges();
     if (!list.length) { this.toast('There are no changes.'); return null; }
     const c = from || this.caretNow();
-    const rank = (f) => (f === this.main ? '' : f);
-    const here = c && c.f != null ? [rank(c.f), c.collapsed === false ? (dir > 0 ? c.b : c.a) : c.p] : null;
-    const cmp = (x) => (rank(x.f) < here[0] ? -1 : rank(x.f) > here[0] ? 1 : dir > 0 ? x.bs - here[1] : x.be - here[1]);
+    const here = c && c.f != null ? this.rvKey(c.f, c.collapsed === false ? (dir > 0 ? c.b : c.a) : c.p) : null;
+    const cmp = (x) => keyCmp(this.rvKey(x.f, dir > 0 ? x.bs : x.be), here);
     let x = !here ? (dir > 0 ? list[0] : list[list.length - 1]) : dir > 0 ? list.find((y) => cmp(y) > 0 || (cmp(y) === 0 && y.bs === y.be && c.collapsed)) : [...list].reverse().find((y) => cmp(y) < 0);
     if (!x) x = dir > 0 ? list[0] : list[list.length - 1];
     this.goTo(x.f, x.bs);

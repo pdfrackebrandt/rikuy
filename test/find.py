@@ -323,7 +323,7 @@ def review(page):
     load_doc(page, WRAP('\\section{A heading}\nFirst words here.\n\nSecond words.'))
     click_text(page, 'First', 1); page.keyboard.press('Control+a'); settle(page, 350, full=True)
     w = page.inner_text('#st-words')
-    check('low: Ctrl+A counts as many words as the document has, headings left out as the total leaves them (5 of 5 words)', w == '5 of 5 words', w)
+    check('low: Ctrl+A counts as many words as the document has, its heading\'s too as Word counts them (7 of 7 words)', w == '7 of 7 words', w)
     # low: the folded group Editing's menu has Find's other choices too (it folds below 861 px:
     # where Home's other groups, the Font group's and the lists', leave it the room, 700 px at most)
     for w in (860, 820, 780, 740, 700):
@@ -616,13 +616,80 @@ def r5_review(page):
         check('compiled in the page: what the fixed replacements wrote has no error', r['ok'] and not errs, errs[:2])
 
 
+def hunt(page):
+    """What a heavy Word user met in the bug hunt of 2026-11-22, each a regression check."""
+    # words selected, Ctrl+H, Replace: Word replaces them at the first press and shows the next
+    doc = WRAP('Alpha cat one. Beta cat two.')
+    load_doc(page, doc)
+    select_text(page, 'cat')
+    page.keyboard.press('Control+h'); settle(page, 250)
+    d = page.get_by_role('dialog', name='Find and Replace', exact=True)
+    # (the options the parts before left as they were)
+    for o in ('Match case', 'Find whole words only', 'Use wildcards', 'Use regular expressions', 'In LaTeX source', 'In selection'):
+        if d.get_by_label(o, exact=True).is_checked(): d.get_by_label(o, exact=True).uncheck()
+    if d.get_by_role('button', name='No formatting', exact=True).is_enabled(): d.get_by_role('button', name='No formatting', exact=True).click()
+    settle(page, 250, full=True)
+    check('hunt: Ctrl+H takes the selected words into the box', d.get_by_label('Find what', exact=True).input_value() == 'cat', d.get_by_label('Find what', exact=True).input_value())
+    d.get_by_label('Replace with', exact=True).fill('dog')
+    d.get_by_role('button', name='Replace one', exact=True).click(); settle(page, 250)
+    check('hunt: a selected hit, Ctrl+H, one press of Replace: it is replaced, the next one shown', src(page) == doc.replace('Alpha cat', 'Alpha dog') and summary(page) == 'Result 1 of 1', (src(page)[40:80], summary(page)))
+    # Replace All where the replacement holds the words found: none is left, all are replaced
+    d.get_by_label('Replace with', exact=True).fill('cats')
+    d.get_by_role('button', name='Replace All', exact=True).click(); settle(page, 300)
+    st = d.get_by_role('status').first.inner_text()
+    check('hunt: Replace All of cat with cats says Replaced 1 place, not that the new one is left', src(page) == doc.replace('Alpha cat', 'Alpha dog').replace('cat two', 'cats two') and st == 'Replaced 1 place.', (src(page)[40:80], st))
+    # Replace All of many, the path commit() applies joined (more than 16 edits apart): byte for
+    # byte and one undo, as the one at a time path gave (its speed is the commit's measurement)
+    many = WRAP(' '.join('cat%d \\textbf{cat} cat,cat' % k for k in range(30)))
+    load_doc(page, many)
+    d.get_by_label('Find what', exact=True).fill('cat'); settle(page, 300, full=True)
+    d.get_by_label('Replace with', exact=True).fill('dog & co')
+    d.get_by_role('button', name='Replace All', exact=True).click(); settle(page, 300)
+    check('hunt: Replace All of 120 places, edits applied joined: every one, escaped, byte for byte', src(page) == many.replace('cat', 'dog \\& co'), src(page)[40:140])
+    page.evaluate('window.rikuy.undo()'); settle(page, 200)
+    check('hunt: and one undo gives the bytes back', src(page) == many)
+    # (review of PR 119) Replace acts only on the hit the dialog shows: a selection from before
+    # Ctrl+H, left behind by Find Next, is never replaced unseen
+    tri = WRAP('Alpha cat one. Beta cat two. Gamma cat three.')
+    load_doc(page, tri)
+    select_text(page, 'cat')
+    page.keyboard.press('Control+h'); settle(page, 250)
+    d.get_by_label('Replace with', exact=True).fill('dog')
+    for _ in range(2):
+        d.get_by_role('button', name='Find Next', exact=True).click(); settle(page, 200)
+    d.get_by_label('Match case', exact=True).check(); settle(page, 250, full=True)
+    d.get_by_role('button', name='Replace one', exact=True).click(); settle(page, 250)
+    check('hunt: selected cat, Ctrl+H, Find Next twice, Match case, Replace: nothing replaced unseen, a result shown', src(page) == tri and summary(page).startswith('Result'), (src(page)[40:100], summary(page)))
+    d.get_by_label('Match case', exact=True).uncheck(); settle(page, 250, full=True)
+    load_doc(page, tri)
+    d.get_by_label('Find what', exact=True).fill('cat'); settle(page, 300, full=True)
+    d.get_by_label('Replace with', exact=True).fill('cats')
+    seen = []
+    for _ in range(4):
+        d.get_by_role('button', name='Replace one', exact=True).click(); settle(page, 200)
+        seen.append(summary(page))
+    s4 = src(page)
+    d.get_by_role('button', name='Replace one', exact=True).click(); settle(page, 200)
+    check('hunt: cat to cats, three replaced and then "Replaced." with none said left; the press after only shows a result, never catss unseen',
+          s4 == tri.replace('cat', 'cats') and seen[-1] == 'Replaced.' and src(page) == s4 and summary(page).startswith('Result'), (src(page)[40:110], seen, summary(page)))
+    # the count left after Replace All follows later edits of the page
+    load_doc(page, tri)
+    d.get_by_label('Find what', exact=True).fill('cat'); settle(page, 300, full=True)
+    d.get_by_role('button', name='Replace All', exact=True).click(); settle(page, 300)
+    a = summary(page)
+    page.evaluate("(() => { const g = window.rikuy, s = g.files.get(g.main), at = s.indexOf('Gamma'); g.closeGroup(); g.commit([{ f: g.main, s: at, e: at, t: 'cat ' }], null, 'type'); g.closeGroup(); })()"); settle(page, 300, full=True)
+    page.evaluate('window.rikuy.findRun(); window.rikuy.findViews()'); settle(page, 100)
+    check('hunt: after Replace All, an edit of the page ends what it said: the search\'s own count, 4 results, not a stale left', a == 'Replaced 3 places.' and summary(page) == '4 results', (a, summary(page)))
+    page.keyboard.press('Escape'); settle(page, 150)
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         # (the page lays its pages out again 200 ms after the last of its fonts came, app.js's
         # loadingdone: that drops the caret's place, which Enter's first hit is counted from)
         until(page, "() => document.fonts.status === 'loaded'"); settle(page, 200, full=True)
-        for f in (ctrl_f, dialog, in_selection_and_source, review, go_to, select_and_words, para_marks, kinds, r5_review, pdf_check):
+        for f in (ctrl_f, dialog, in_selection_and_source, review, go_to, select_and_words, para_marks, kinds, r5_review, hunt, pdf_check):
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
@@ -633,4 +700,13 @@ def run():
 
 
 if __name__ == '__main__':
+    if sys.argv[1:] == ['hunt']:
+        with sync_playwright() as p:
+            browser, page, errors = open_page(p)
+            until(page, "() => document.fonts.status === 'loaded'"); settle(page, 200, full=True)
+            hunt(page)
+            check('no page errors', not errors, errors[:4])
+        bad = [r for r in results if not r[1]]
+        print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
+        sys.exit(1 if bad else 0)
     run()

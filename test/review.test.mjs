@@ -226,6 +226,14 @@ group('R4: changes carry their author, cut where two people wrote a change, thro
   segs = authorEdit(segs, 2, 3, 0, 'Bob');
   assert.deepStrictEqual(segs, [{ s: 0, e: 2, who: 'Ana' }, { s: 2, e: 2, who: 'Bob' }, { s: 2, e: 4, who: 'Ana' }]);
   assert.deepStrictEqual(editSpans('abc', 'aXc', false), [{ s: 1, e: 2, n: 1 }]);
+  // (its scan 4096 code units at a time gives what one at a time gave, at the pieces' edges too)
+  const scan = (p, c) => { let a = 0; const n = Math.min(p.length, c.length); while (a < n && p[a] === c[a]) a++; let b = 0; while (b < n - a && p[p.length - 1 - b] === c[c.length - 1 - b]) b++; return [{ s: a, e: p.length - b, n: c.length - b - a }]; };
+  const long = 'word '.repeat(4000);
+  for (const at of [0, 1, 4095, 4096, 4097, 8192, 10000, long.length - 4097, long.length - 4096, long.length - 1, long.length])
+    for (const [del, ins] of [[0, 'x'], [1, ''], [1, 'y'], [3, ' word'], [0, ' ']]) {
+      const c = long.slice(0, at) + ins + long.slice(Math.min(long.length, at + del));
+      assert.deepStrictEqual(editSpans(long, c, false), scan(long, c), at + ' ' + del + ' ' + ins);
+    }
   const one = byAuthor(changes('x y z', 'X y Z')[0], [{ s: 0, e: 1, who: 'A' }, { s: 4, e: 5, who: 'B' }]);
   assert.deepStrictEqual(one.map((c) => [c.a, c.b, c.who]), [['x', 'X', 'A'], ['z', 'Z', 'B']]);
 });

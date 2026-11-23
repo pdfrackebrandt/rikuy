@@ -468,6 +468,10 @@ function minOffset(x, f, cur) {
 // block it keeps), its items and footnotes together, with one memo, when either is first read
 // (Word's export, the tests).
 const LAZY = Symbol('moved');
+// the unit a moved one was first made from: the same words (src/ui/wordcount.js counts them once and
+// keeps the count by it), read without making the moved copy
+// (through every move since: a moved unit read once is the base of the next move)
+export function unitBase(u) { let x = u; for (let n = 0; n < 1e4 && x && x[LAZY] && x[LAZY].base && x[LAZY].base !== x; n++) x = x[LAZY].base; return x; }
 function movedUnit(u, f, at, d) {
   const L = u[LAZY], base = L && !L.done ? L.base : u, D = (L && !L.done ? L.D : 0) + d;
   let min = MIN_OFF.get(base);

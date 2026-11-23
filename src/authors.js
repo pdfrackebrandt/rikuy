@@ -73,8 +73,14 @@ function capped(segs, rest) {
 export function editSpans(prev, cur, fine) {
   let a = 0;
   const n = Math.min(prev.length, cur.length);
+  // (4096 code units at a time first, which the engine compares natively, then one by one: this
+  // runs on every keystroke, and a character at a time over a 144 kB file took 1 to 10 ms of it,
+  // 0.1 so)
+  const C = 4096;
+  while (a + C <= n && prev.slice(a, a + C) === cur.slice(a, a + C)) a += C;
   while (a < n && prev.charCodeAt(a) === cur.charCodeAt(a)) a++;
   let b = 0;
+  while (b + C <= n - a && prev.slice(prev.length - b - C, prev.length - b) === cur.slice(cur.length - b - C, cur.length - b)) b += C;
   while (b < n - a && prev.charCodeAt(prev.length - 1 - b) === cur.charCodeAt(cur.length - 1 - b)) b++;
   const one = [{ s: a, e: prev.length - b, n: cur.length - b - a }];
   if (!fine || (one[0].e - one[0].s < 200 && one[0].n < 200)) return one;

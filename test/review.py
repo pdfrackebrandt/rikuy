@@ -22,6 +22,7 @@ DOC = ('\\documentclass{article}\n\\begin{document}\n'
        '% comment (Bo): Shorter?\n'
        '\\end{document}\n')
 N = "window.rikuy.realChanges().length"
+WRAP = lambda body: '\\documentclass{article}\n\\begin{document}\n' + body + '\n\\end{document}\n'
 
 
 def edit(page, find, repl, kind='type'):
@@ -135,8 +136,141 @@ def r4(p):
         browser.close()
 
 
+def hunt(p):
+    """What a heavy Word user met in the bug hunt of 2026-11-22, each a regression check."""
+    browser, page, errors = open_page(p, width=1366, height=900)
+    # a comment goes where the caret is: a word selected earlier and left was where it went
+    fresh(page)
+    page.evaluate("window.rikuy.prefs.who = 'Ana'")
+    select_text(page, 'second paragraph'); settle(page, 100)
+    click_text(page, 'third paragraph', 4)
+    page.keyboard.press('Control+Alt+m'); settle(page, 250)
+    page.keyboard.type('Caret note'); page.keyboard.press('Control+Enter'); settle(page, 250)
+    s = src(page)
+    check('hunt: New Comment with the caret in the third paragraph hangs there, not under the words selected before',
+          s.find('Caret note') > s.find('third paragraph') and s.replace('% comment (Ana): Caret note\n', '') == DOC, s[-200:])
+    # (review of PR 119) a click inside the words selected before is a caret of its own too: the
+    # comment hangs under the clicked line, not under the old selection's last line
+    two = WRAP('The second paragraph\nhas more words here.\n\nThe end.')
+    fresh(page, two)
+    page.evaluate("window.rikuy.prefs.who = 'Ana'")
+    select_text(page, 'paragraph has more'); settle(page, 100)
+    click_text(page, 'paragraph has more', 3)
+    page.keyboard.press('Control+Alt+m'); settle(page, 250)
+    page.keyboard.type('Inside note'); page.keyboard.press('Control+Enter'); settle(page, 250)
+    check('hunt: a click inside the words selected before, then New Comment: the comment at the caret\'s line, no quote of the old words', 'The second paragraph\n% comment (Ana): Inside note\nhas more' in src(page), src(page)[40:180])
+    # a word deleted letter by letter, Track Changes on, then one more Backspace: the space goes,
+    # not the letter before it; Delete there takes the space after
+    fresh(page)
+    page.evaluate("window.rikuy.setTracking(true)")
+    click_text(page, 'second', 6)
+    for _ in range(6): page.keyboard.press('Backspace')
+    settle(page, 150)
+    caret = page.evaluate("(() => { const s = getSelection(); return s.anchorNode.data.slice(0, s.anchorOffset); })()")
+    check('hunt: the word "second" deleted letter by letter: the caret after the space it stood after', caret.endswith('The '), caret)
+    page.keyboard.press('Backspace'); settle(page, 150)
+    check('hunt: one more Backspace takes a space ("The paragraph"), never the e of "The"', 'The paragraph has more words.' in src(page) and page.evaluate(N) == 1, src(page)[40:110])
+    page.evaluate("window.rikuy.rejectAllChanges(false)"); settle(page, 200)
+    check('hunt: and Reject All gives the bytes back', src(page) == DOC, src(page)[40:110])
+    click_text(page, 'second', 6)
+    for _ in range(6): page.keyboard.press('Backspace')
+    page.keyboard.press('Delete'); settle(page, 150)
+    check('hunt: Delete there takes the space after the caret, not the p of "paragraph"', 'The paragraph has more words.' in src(page), src(page)[40:110])
+    page.keyboard.type('X'); settle(page, 150)
+    check('hunt: and typing goes after the space', 'The Xparagraph has more words.' in src(page), src(page)[40:110])
+    page.evaluate("window.rikuy.setTracking(false)")
+    # (review of PR 119) a space typed at a source line's end, then Delete or Backspace: the
+    # space or the line's end goes, never the next line's first letter; a word deleted at a line's
+    # start, then Backspace; a control space; Ctrl+Backspace takes the word
+    def keys(doc, at, k, typed=''):
+        load_doc(page, WRAP(doc)); settle(page, 100)
+        click_text(page, at[0], at[1])
+        if typed: page.keyboard.type(typed)
+        for x in k: page.keyboard.press(x)
+        settle(page, 150)
+        b = src(page)
+        return b[b.index('document}\n') + 10:b.rindex('\n\\end{doc')]
+    got = keys('The\nparagraph here.', ('The', 3), ['Delete'], ' ')
+    check('hunt: a space typed at a line\'s end, then Delete: "The paragraph", not the p of the next line', got == 'The paragraph here.', got)
+    got = keys('The\nparagraph here.', ('The', 3), ['Backspace'], ' ')
+    check('hunt: and Backspace there takes the typed space', got == 'The\nparagraph here.', got)
+    got = keys('The\nsecond paragraph.', ('second', 6), ['Backspace'] * 7)
+    check('hunt: a word deleted at a line\'s start, then Backspace: the line\'s end goes ("The paragraph")', got == 'The paragraph.', got)
+    got = keys('Dr.\\ second Smith.', ('second', 6), ['Backspace'] * 7)
+    check('hunt: after a control space (\\ ) Backspace takes it whole, not its backslash alone', got == 'Dr. Smith.', got)
+    got = keys('Dr.\\ second Smith.', ('second', 6), ['Backspace'] * 6 + ['Delete'])
+    check('hunt: and Delete there takes the space after it, not the S of "Smith" (a space the browser does not draw)', got == 'Dr.\\ Smith.', got)
+    # (second review) a CRLF file, a line that ends in a comment, a control space on the right
+    got = keys('The\r\nparagraph here.', ('The', 3), ['Delete'], ' ')
+    check('hunt: CRLF: a space typed at a line\'s end, then Delete: the line end goes, not the p', got == 'The paragraph here.', repr(got))
+    got = keys('The\r\nsecond paragraph.', ('second', 6), ['Backspace'] * 7)
+    check('hunt: CRLF: a word deleted at a line\'s start, then Backspace: \\r\\n goes whole, no lone \\r', got == 'The paragraph.', repr(got))
+    for doc, keep in (('word % note\nsecond more.', '% note\n'), ('text%\nsecond more.', '%\n')):
+        got = keys(doc, ('second', 6), ['Backspace'] * 7)
+        check('hunt: after a line that ends in a comment, Backspace never joins the next line into it: ' + doc.split('\n')[0], keep in got and 'more.' in got.split('\n')[-1], repr(got))
+    got = keys('Line second\\ next.', ('second', 6), ['Backspace'] * 7)
+    check('hunt: a control space after the caret: Backspace takes the space before, not the e of Line', got == 'Line\\ next.', repr(got))
+    got = keys('The\nparagraph here.', ('The', 3), ['Control+Backspace'], ' ')
+    check('hunt: Ctrl+Backspace there takes the word before ("The "), not one space', got == '\nparagraph here.', got)
+    # a change pressed in the Changes list is selected on the page: Reject then rejects that one
+    fresh(page)
+    page.evaluate("window.rikuy.setTracking(true)")
+    edit(page, 'some words', 'few words'); edit(page, 'more words', 'many words')
+    click_text(page, 'first paragraph', 0)
+    page.evaluate("window.rikuy.toggleNav(true, 'changes')"); settle(page, 300)
+    page.locator('#nav-body .chg-txt', has_text='many').first.click(); settle(page, 200)
+    sel = page.evaluate('String(getSelection())')
+    page.evaluate("window.rikuy.runCommand('change-reject')"); settle(page, 250)
+    check('hunt: a change pressed in the Changes list is selected on the page, and Reject rejects that one', sel == 'many' and 'few words' in src(page) and 'more words' in src(page), (sel, src(page)[40:130]))
+    page.evaluate("window.rikuy.setTracking(false)")
+    # a comment pressed in the pane: the caret goes to it, and Delete Comment deletes that one
+    fresh(page)
+    click_text(page, 'first paragraph', 0)
+    page.evaluate("window.rikuy.toggleNav(true, 'changes')"); settle(page, 300)
+    page.locator('#nav-body .cm-head', has_text='Shorter').first.click(); settle(page, 200)
+    page.evaluate("window.rikuy.runCommand('comment-delete')"); settle(page, 250)
+    check('hunt: a comment pressed in the pane puts the caret there: Delete Comment deletes that one', src(page) == DOC.replace('% comment (Bo): Shorter?\n', ''), src(page)[-160:])
+    page.evaluate("window.rikuy.toggleNav(false)")
+    # Next Change goes in reading order: a chapter's file where \\input reads it
+    fresh(page, {'main.tex': WRAP('Main text here.\n\\input{ch1}\n\nEnd text.'), 'ch1.tex': 'Chapter text in a file.\n'})
+    page.evaluate("window.rikuy.setTracking(true)")
+    for at, word in (('Chapter', 'New '), ('End', 'The '), ('Main', 'A ')):
+        click_text(page, at, 0); page.keyboard.type(word); settle(page, 150)
+    click_text(page, 'Main', 0)
+    seen = []
+    for _ in range(3):
+        page.evaluate("window.rikuy.runCommand('change-next')"); settle(page, 150)
+        seen.append(page.evaluate('String(getSelection())'))
+    check('hunt: Next Change goes in reading order, the \\input file\'s change between the main file\'s two', seen == ['New ', 'The ', 'A '], seen)
+    page.evaluate("window.rikuy.setTracking(false)")
+    # the status bar counts what Word Count counts: the headings, a cell, a caption, a footnote
+    load_doc(page, WRAP('\\section{Opening words}\nThe first paragraph has words.\\footnote{Two notes.}\n\n'
+                        '\\begin{table}[h]\\centering\\begin{tabular}{ll}Cell one & Cell two\\\\\\end{tabular}\\caption{A caption}\\end{table}\n\n\\section{End}\nLast one.'))
+    settle(page, 200, full=True)
+    page.evaluate("window.rikuy.runCommand('word-count')"); settle(page, 300)
+    dlg = page.evaluate("[...document.querySelectorAll('.rv-count tr')].map(r => r.textContent)")
+    bar = page.inner_text('#st-words')
+    check('hunt: the status bar gives the words Word Count gives (headings, cells, a caption and a footnote too): 18', bar == '18 words' and 'Words18' in dlg, (bar, dlg))
+    page.locator('#rv-count-notes').uncheck(); settle(page, 150)
+    bar = page.inner_text('#st-words')
+    check('hunt: and without footnotes and captions as the box says, both: 14', bar == '14 words' and 'Words14' in page.evaluate("[...document.querySelectorAll('.rv-count tr')].map(r => r.textContent)"), bar)
+    page.locator('#rv-count-notes').check(); page.keyboard.press('Escape'); settle(page, 150)
+    select_text(page, 'Opening words'); settle(page, 200, full=True)
+    check('hunt: a heading selected counts its words in the status bar: 2 of 18', page.inner_text('#st-words') == '2 of 18 words', page.inner_text('#st-words'))
+    # (review of PR 119) Ctrl+A counts what the total counts: a word split over \textbf, a word the
+    # line cut, the authors of a title apart
+    load_doc(page, '\\documentclass{article}\n\\title{T}\\author{A. Author \\and B. Author}\n\\begin{document}\n\\maketitle\nA \\textbf{well}-known and \\emph{don\'t}s word. ' + ' '.join(['Extraordinarily'] * 60) + '\n\\end{document}\n')
+    settle(page, 200, full=True)
+    click_text(page, 'known', 0); page.keyboard.press('Control+a'); settle(page, 300, full=True)
+    bar = page.inner_text('#st-words')
+    check('hunt: Ctrl+A says as many words as the document has (well-known one word, the authors apart): 70 of 70', bar == '70 of 70 words', bar)
+    check('hunt: no page errors', not errors, errors[:5])
+    browser.close()
+
+
 def run():
     with sync_playwright() as p:
+        hunt(p)
         browser, page, errors = open_page(p, width=1366, height=900)
         fresh(page)
         st = lambda: page.evaluate("document.getElementById('st-track').textContent")
@@ -460,9 +594,9 @@ def run():
 
 
 if __name__ == '__main__':
-    if sys.argv[1:] == ['r4']:
+    if sys.argv[1:] in (['r4'], ['hunt']):
         with sync_playwright() as p:
-            r4(p)
+            (r4 if sys.argv[1] == 'r4' else hunt)(p)
         bad = [r for r in results if not r[1]]
         print(f"{len(results) - len(bad)}/{len(results)} passed")
         sys.exit(1 if bad else 0)

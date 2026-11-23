@@ -20,6 +20,7 @@ import { absAtom, posFromDom, diff, endsWithControlWord } from '../editor.js';
 import { $, load, store } from '../ui/dom.js';
 import { openMenu } from '../ui/kit.js';
 import { openFindDialog, closeFindDialog, findDialogSync } from '../ui/finddialog.js';
+import { docWords, selWords, wordsToCount } from '../ui/wordcount.js';
 
 const isMacUA = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const plural = (n, a, b) => n.toLocaleString('en-US') + ' ' + (n === 1 ? a : b);
@@ -160,6 +161,7 @@ export const methods = {
     fs.on = true;
     fs.note = '';
     fs.cur = -1;
+    fs.made = null;
     this.findRun();
   },
   findActive() { const fs = this.fs; return !!fs && fs.on && !!(fs.q || fs.o.fmt); },
@@ -385,7 +387,10 @@ export const methods = {
   findSummary() {
     const fs = this.findState();
     // (what Replace did, until the next search or step)
-    if (fs.note) return fs.note + (fs.hits.length ? ' ' + plural(fs.hits.length, 'result is', 'results are') + ' left.' : '');
+    // (what Replace said holds until the text is edited elsewhere: then the search's own summary)
+    const A = fs.noteAt;
+    if (fs.note && A && A.note === fs.note && (A.files.size !== this.files.size || [...this.files].some(([n, t]) => A.files.get(n) !== t))) { fs.note = ''; fs.noteAt = null; }
+    if (fs.note) { const n = this.findLeft(); return fs.note + (n ? ' ' + plural(n, 'result is', 'results are') + ' left.' : ''); }
     if (fs.msg && !fs.hits.length) return fs.msg;
     if (!fs.on || (!fs.q && !fs.o.fmt)) return '';
     if (!fs.hits.length) return fs.o.insel ? 'Not found in the selection.' : 'Not found.';
@@ -397,6 +402,7 @@ export const methods = {
   findGo(dir = 1) {
     const fs = this.findState();
     fs.note = '';
+    fs.pick = null;
     if (!fs.on) this.findRun();
     if (!fs.hits.length) { this.findViews(); return null; }
     let k;
@@ -552,11 +558,54 @@ export const methods = {
     }
     return d === 0 && k === 0 && !math;
   },
+  // The places this search's replacements wrote (fs.made: the texts they were written in, and each
+  // file's ranges in order), followed through its own edits: a hit found again inside one is the
+  // new text, none left to replace ("cat" to "cats" said "2 results are left", "the" to "THE"
+  // 4,220). Any other edit of the text, or a new search, forgets them. texts: the files before
+  // the edits.
+  findMade(texts, edits) {
+    const fs = this.findState(), M = fs.made;
+    const old = M && M.files.size === texts.size && [...texts].every(([n, t]) => M.files.get(n) === t) ? M.R : new Map();
+    const by = new Map();
+    for (const ed of edits) { if (!by.has(ed.f)) by.set(ed.f, []); by.get(ed.f).push(ed); }
+    const R = new Map([...old].filter(([f]) => !by.has(f)));
+    for (const [f, list] of by) {
+      list.sort((x, y) => x.s - y.s || x.e - y.e);
+      const out = [];
+      let d = 0;
+      for (const ed of list) { out.push([ed.s + d, ed.s + d + ed.t.length]); d += ed.t.length - (ed.e - ed.s); }
+      // (an earlier one an edit leaves whole moves by the edits before it; one an edit cuts goes)
+      let e = 0, dd = 0;
+      for (const [a, b] of old.get(f) || []) {
+        while (e < list.length && list[e].e <= a) { dd += list[e].t.length - (list[e].e - list[e].s); e++; }
+        if (e < list.length && list[e].s < b) continue;
+        out.push([a + dd, b + dd]);
+      }
+      R.set(f, out.sort((x, y) => x[0] - y[0]));
+    }
+    fs.made = { files: new Map(this.files), R };
+  },
+  // the hits not inside a replacement just made
+  findLeft() {
+    const fs = this.findState(), M = fs.made;
+    if (!M || M.files.size !== this.files.size || ![...this.files].every(([n, t]) => M.files.get(n) === t)) return fs.hits.length;
+    const inMade = (h) => { const R = M.R.get(h.f); if (!R) return false; let lo = 0, hi = R.length - 1, k = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (R[m][0] <= h.s) { k = m; lo = m + 1; } else hi = m - 1; } return k >= 0 && h.e <= R[k][1]; };
+    return fs.hits.filter((h) => !inMade(h)).length;
+  },
   // Replace: the hit shown, if it is still what was found (an edit since may have moved it: it is
   // looked for again where the edit took it); then the next one in the list is shown
   replaceOne() {
     const fs = this.findState();
     const before = fs.hits[fs.cur], stale = this.findFresh();
+    // (the words selected as the dialog opened, still selected on the page, are a hit, as when
+    // Ctrl+H took them into the box: Word replaces them at the first press; it only went to them.
+    // Once the dialog has shown or replaced anything they are forgotten: a selection kept from
+    // before replaced a hit never shown, "cats" made "catss")
+    const P = fs.pick;
+    fs.pick = null;
+    // (still selected: the page's last selection, kept while the page had the focus, is them)
+    const L = this.lastPagePos;
+    if (fs.on && fs.cur < 0 && P && L && L.f === P.f && L.selA === P.a && L.selB === P.b) { const k = fs.hits.findIndex((x) => x.f === P.f && x.s === P.a && x.e === P.b); if (k >= 0) fs.cur = k; }
     if (!fs.on || fs.cur < 0) {
       this.findGo(1);
       if (stale && before) { fs.note = 'The text changed since: this is the next result; Replace again to replace it.'; this.findViews(); }
@@ -572,9 +621,11 @@ export const methods = {
     if (edits.skip) { this.findGo(1); fs.note = SKIP_NOTE[edits.skip]; this.findViews(); return; }
     const shown = (fs.o.wildcards || fs.o.regex || /\^/.test(fs.rep) ? expandRep(fs.rep, h, fs.o, true) : fs.rep).length;
     const was = { bi: h.bi, i: h.i, f: h.f, s: h.s, src: !!h.src, len: shown };
+    const texts = new Map(this.files);
     this.closeGroup();
     this.commit(edits, null, 'replace');
     this.closeGroup();
+    this.findMade(texts, edits);
     this.findRun();
     // (the next in the list's order, the order Enter goes in: past the words just written)
     const k = was.src ? fs.hits.findIndex((x) => x.f === was.f && x.s >= was.s + was.len) : fs.hits.findIndex((x) => x.bi > was.bi || (x.bi === was.bi && x.i >= was.i + was.len));
@@ -583,6 +634,7 @@ export const methods = {
     this.snapFiles();
     this.findPaint();
     fs.note = k >= 0 ? '' : 'Replaced.';
+    fs.noteAt = { note: fs.note, files: new Map(this.files) };
     this.findViews();
   },
   // Replace All: every hit at once, one commit, so one undo takes it all back
@@ -602,13 +654,16 @@ export const methods = {
     const left = (ro ? '; ' + plural(ro, 'other is', 'others are') + ' drawn by a macro and stayed' : '') + (tex ? '; ' + plural(tex, 'is', 'are') + ' in a LaTeX paragraph, where the replacement\'s %, $, & or braces would be LaTeX: tick In LaTeX source to write it there' : '') +
       (para ? '; ' + plural(para, 'runs', 'run') + ' across a paragraph\'s end with braces or a heading around it and stayed' : '') + (brk ? '; ' + plural(brk, 'is', 'are') + ' where a paragraph break (^p) cannot go (a heading, a cell, a caption, a group) and stayed' : '');
     if (!ok.length) { fs.note = fs.hits.length ? 'None replaced' + left + '.' : ''; this.findViews(); return 0; }
-    const c = this.caretNow();
+    const c = this.caretNow(), texts = new Map(this.files);
+    fs.pick = null;
     this.closeGroup();
     this.commit(edits, c && c.f != null ? { f: c.f, p: c.a } : null, 'replace-all');
     this.closeGroup();
     const n = ok.length;
+    this.findMade(texts, edits);
     this.findRun();
     fs.note = 'Replaced ' + plural(n, 'place', 'places') + left + '.';
+    fs.noteAt = { note: fs.note, files: new Map(this.files) };
     this.findPaint();
     this.findViews();
     return n;
@@ -710,23 +765,23 @@ export const methods = {
   wordStatus() {
     const w = $('#st-words');
     if (!w || this.stWords == null) return;
-    const total = this.stWords.toLocaleString('en-US');
+    // (the words Word Count counts, with footnotes and captions as its box says, once a model:
+    // the model's own count is its paragraphs', no heading, cell or note, and the status bar
+    // and the dialog gave two numbers)
+    const notes = this.prefs.countNotes !== false;
+    // (each unit counted once and kept: a keystroke counts its own paragraph again; after a full
+    // build, every unit new, the count comes a moment later, after the key is drawn: 2 ms of
+    // every key on a 144 kB paper)
+    if (this.model && (this.wcOf !== this.model || this.wcNotes !== notes)) {
+      clearTimeout(this.wcTimer);
+      const now = () => { this.wcOf = this.model; this.wcNotes = notes; this.wcTotal = docWords(this.model, notes); };
+      if (this.wcTotal == null || this.wcNotes !== notes || wordsToCount(this.model, notes) <= 8) now();
+      else this.wcTimer = setTimeout(() => { this.wcTimer = 0; if (!this.model) return; this.wcNotes = this.prefs.countNotes !== false; this.wcOf = this.model; this.wcTotal = docWords(this.model, this.wcNotes); this.wordStatus(); }, 50);
+    }
+    const total = (this.model ? this.wcTotal : this.stWords).toLocaleString('en-US');
     const s = getSelection();
     let t = total + ' words';
-    if (s.rangeCount && !s.isCollapsed && this.root.contains(s.anchorNode)) {
-      // the words of the page's text inside the selection, counted as the model counts them
-      const r = s.getRangeAt(0), parts = [];
-      // (the words the total counts: a paragraph's, not a heading's, a caption's or a cell's)
-      for (const span of this.root.querySelectorAll('.it.p span.t')) {
-        if (!r.intersectsNode(span) || span.classList.contains('ph') || span.closest('td, [data-ctx="cap"]')) continue;
-        const node = span.firstChild;
-        if (!node) continue;
-        const a = node === r.startContainer ? r.startOffset : 0, b = node === r.endContainer ? r.endOffset : node.length;
-        parts.push(node.data.slice(a, b));
-      }
-      const n = (parts.join(' ').match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}‌‍'’-]*/gu) || []).length;
-      t = n.toLocaleString('en-US') + ' of ' + total + ' words';
-    }
+    if (s.rangeCount && !s.isCollapsed && this.root.contains(s.anchorNode)) t = selWords(this.root, s.getRangeAt(0), notes, (f) => this.src(f)).toLocaleString('en-US') + ' of ' + total + ' words';
     if (w.textContent !== t) w.textContent = t;
   },
 

@@ -440,12 +440,32 @@ def collapse_phones(p):
             browser.close()
 
 
+def hunt(page):
+    """What a heavy Word user met in the bug hunt of 2026-11-22, each a regression check."""
+    # a heading pressed in the Navigation pane: the caret at its start on the page, typing there
+    load_doc(page, DOC)
+    click_text(page, 'Alpha text', 2)
+    page.evaluate("window.rikuy.toggleNav(true, 'outline'); window.rikuy.setNavView('headings')"); settle(page, 300)
+    page.get_by_role('tree', name='Headings', exact=True).get_by_role('treeitem', name='3 Gamma', exact=True).click(); settle(page, 300)
+    page.keyboard.type('New '); settle(page, 200)
+    check('hunt: a heading pressed in the Navigation pane puts the caret at its start on the page: typing goes there',
+          src(page) == DOC.replace('\\section{Gamma}', '\\section{New Gamma}') and page.evaluate("document.activeElement.id") == 'pages', src(page)[-120:])
+    page.evaluate("window.rikuy.undo()"); settle(page, 200)
+    # a heading that starts with a formula: the caret before the formula, not after it
+    doc = WRAP('\\section{Alpha}\nAlpha text.\n\n\\section{$x$ results}\nBeta text.')
+    load_doc(page, doc); settle(page, 200)
+    page.get_by_role('tree', name='Headings', exact=True).get_by_role('treeitem', name='2 x results', exact=True).click(); settle(page, 300)
+    page.keyboard.type('New '); settle(page, 200)
+    check('hunt: a heading that starts with a formula, pressed in the pane: typing goes before the formula', src(page) == doc.replace('{$x$ results}', '{New $x$ results}'), src(page)[-80:])
+    page.evaluate("window.rikuy.toggleNav(false)")
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         until(page, FONTS); settle(page, 200, full=True)
         os.makedirs(SHOTS, exist_ok=True)
-        for f in (promote_demote, moves, heading_menu, pane, outline_view, review, collapse, fold_review, pdf_check):
+        for f in (promote_demote, moves, heading_menu, pane, outline_view, review, collapse, fold_review, hunt, pdf_check):
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
@@ -458,4 +478,13 @@ def run():
 
 
 if __name__ == '__main__':
+    if sys.argv[1:] == ['hunt']:
+        with sync_playwright() as p:
+            browser, page, errors = open_page(p)
+            until(page, FONTS); settle(page, 200, full=True)
+            hunt(page)
+            check('no page errors', not errors, errors[:4])
+        bad = [r for r in results if not r[1]]
+        print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
+        sys.exit(1 if bad else 0)
     run()

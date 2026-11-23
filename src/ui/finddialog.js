@@ -258,6 +258,9 @@ export function openFindDialog(app, tab = 'find') {
     // way the selection can be ticked as the place, and it follows the edits made in it)
     const words = String(s).trim();
     fs.sel = { f: c.f, a: c.a, b: c.b };
+    // (the words selected as the dialog opens: the first Replace replaces them if they are a hit
+    // and still selected, as Word's does; anything the dialog shows or replaces first forgets them)
+    fs.pick = { f: c.f, a: c.a, b: c.b };
     (fs.snap = fs.snap || new Map()).set(c.f, app.src(c.f));
     if (words && words.length <= 32 && !/\n/.test(words) && words.split(/\s+/).length <= 4) { D.q.value = words; fs.q = words; fs.o.insel = false; }
     else fs.o.insel = true;

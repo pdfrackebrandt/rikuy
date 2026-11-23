@@ -4,7 +4,7 @@
 // methods of src/app.js); refreshNav hands the panel to them. The methods join App's prototype.
 
 import { $, mk, store, PREFS } from './ui/dom.js';
-import { atomOfEl } from './editor.js';
+import { atomOfEl, posFromDom } from './editor.js';
 import { findProblems } from './problems.js';
 import { spacingOnly } from './diff.js';
 import { commentOnly } from './share.js';
@@ -146,6 +146,18 @@ export const nav = {
   headingEl(f, s) {
     for (const B of this.renderer.blocks) if (B.f === f && B.s <= s && B.e > s) return B.items[0] && B.items[0].el;
     return null;
+  },
+  // Where a heading's words start: its source start is the \section before them, and a caret put
+  // back there stood at the end of the paragraph above, so what Go To or a press in the
+  // Navigation pane let the person type next went before the heading. (A heading a collapsed
+  // one hides is opened first, so it is drawn.)
+  headingStart(f, s) {
+    this.foldOpenAt(f, s);
+    // (its first place, a formula's start where one comes first: past it, the words typed went
+    // after the formula)
+    const el = this.headingEl(f, s), t = el && el.querySelector('span.t');
+    for (const at of [el && posFromDom(el, 0, this.root), t && posFromDom(t, 0, this.root)]) if (at && !at.ghost && at.f === f && at.p >= s) return at.p;
+    return s;
   },
 
   markCurrentHeading() {
@@ -488,7 +500,15 @@ export const nav = {
         const t = mk('span', '', r.h.text || '');
         b.append(n, t);
         if (has) b.setAttribute('aria-expanded', shut ? 'false' : 'true');
-        b.addEventListener('click', () => { this.navSel = key; this.goTo(x.h.f, x.h.s, true); if (window.innerWidth <= 860) this.toggleNav(false); });
+        // (Word puts the insertion point at the heading's start, on the page, so the next key
+        // types there; the pane only scrolled, and what was typed next went nowhere. The Outline
+        // view keeps the focus in its list, and a finger's tap brings no keyboard up)
+        b.addEventListener('click', () => {
+          this.navSel = key;
+          if (!this.outlineView && !matchMedia('(pointer: coarse)').matches) this.restoreCaret({ f: x.h.f, p: this.headingStart(x.h.f, x.h.s), bias: 1 }, true);
+          this.goTo(x.h.f, x.h.s, true);
+          if (window.innerWidth <= 860) this.toggleNav(false);
+        });
         row.append(b);
         this.navHeads.push({ h: r.h, b, key });
         if (shut) hideTo = r.h.level;
