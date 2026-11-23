@@ -389,7 +389,8 @@ export const methods = {
         // own and those declared in it before the caret at its own level ({\bfseries\itshape ..},
         // \textbf{many \itshape bold| ..}, a \color or a size), or " words" lost its italic. Ending
         // in a control word, the opener gets {}, or TeX skips the space before "words" with the
-        // switch's own and the PDF read "plainwords".
+        // switch's own and the PDF read "plainwords" (so does \color's \ignorespaces): an opener
+        // that ends in no brace of its own gets {}.
         const inner = t.slice(W.is, c.a), sw = [];
         for (let m, d = 0, i = 0, re = SWITCH; i < inner.length; i++) {
           if (inner[i] === '{') d++;
@@ -401,7 +402,8 @@ export const methods = {
           }
         }
         let open = t.slice(W.s, W.is).replace(/[ \t]+$/, '') + sw.join('');
-        if (/\\[A-Za-z]+$/.test(open)) open += '{}';
+        // (any switch last, a control word or \color and \usefont, which end in \ignorespaces)
+        if (!/\{$/.test(open)) open += '{}';
         const ins = '}' + open, mark = { h0: this.hist.length, redo0: this.redoStack };
         this.closeGroup();
         this.commit([{ f: c.f, s: c.a, e: c.a, t: ins }], { f: c.f, p: c.a + 1, bias: -1 }, 'format');

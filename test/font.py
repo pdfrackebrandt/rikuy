@@ -967,7 +967,10 @@ def review3(page):
     for doc, want in (('Some {\\bfseries\\itshape many bold words} here.', 'Some {\\bfseries\\itshape many bold} plain{\\bfseries\\itshape{} words} here.'),
                       ('Some \\textbf{many \\itshape bold words} here.', 'Some \\textbf{many \\itshape bold} plain\\textbf{\\itshape{} words} here.'),
                       ('Some \\textbf{many \\color{red}\\large bold words} here.', 'Some \\textbf{many \\color{red}\\large bold} plain\\textbf{\\color{red}\\large{} words} here.'),
-                      ('Some {\\bfseries many {\\itshape x} bold words} here.', 'Some {\\bfseries many {\\itshape x} bold} plain{\\bfseries{} words} here.')):
+                      ('Some {\\bfseries many {\\itshape x} bold words} here.', 'Some {\\bfseries many {\\itshape x} bold} plain{\\bfseries{} words} here.'),
+                      # (V3: \\color and \\usefont end in \\ignorespaces: {} after them too)
+                      ('Some \\textbf{many \\color{red} bold words} here.', 'Some \\textbf{many \\color{red} bold} plain\\textbf{\\color{red}{} words} here.'),
+                      ('Some \\textbf{many \\usefont{T1}{cmr}{m}{n} bold words} here.', 'Some \\textbf{many \\usefont{T1}{cmr}{m}{n} bold} plain\\textbf{\\usefont{T1}{cmr}{m}{n}{} words} here.')):
         load_doc(page, WRAP(doc, XCOLOR)); click_text(page, 'bold', 4)
         k.press('Control+b'); settle(page, 120); k.type(' plain'); settle(page, 200)
         check('review V1/V2: Ctrl+B between words of %s, " plain": every switch in force opened again' % doc[5:40], body(page) == want, body(page))
