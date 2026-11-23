@@ -2171,7 +2171,9 @@ body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outli
 @media (max-width: 520px) { .sv-mobile { order: -1; } }
 @media (max-width: 699px) and (pointer: coarse) { .sv-mobile { height: 44px; min-width: 44px; } }
 /* (the status bar's words a finger's target too: Word Count) */
-@media (pointer: coarse) { #status #st-words { min-width: 44px; justify-content: center; } }
+/* (never cut: its count takes every word now, headings and cells too, "13 words" was 3 px past
+   its 44 px on a phone; the bar scrolls sideways there instead) */
+@media (pointer: coarse) { #status #st-words { min-width: 44px; justify-content: center; flex: none; white-space: nowrap; } }
 .st-zoom input { width: 110px; height: 16px; margin: 0; accent-color: var(--blue); cursor: pointer; }
 #st-zoomv { min-width: 38px; text-align: right; color: var(--mute); text-decoration: none; font-size: 12px; }
 #st-zoomv:hover { color: var(--ink-ui); }
