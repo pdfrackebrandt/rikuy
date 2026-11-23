@@ -24,6 +24,12 @@ import { openFontDialog, openRubyDialog } from '../ui/fontdialog.js';
 
 const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + '</svg>';
 const can = (app, at) => !!at && !at.c.ghost && at.ctx !== 'tex';
+// a font's switch, in force to the end of its group: what a group split at the caret opens again with
+const SWITCH = /\\(?:(?:tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge|[a-z]{2}(?:family|series|shape)|normalfont|em|bf|it|sc|sf|tt|rm|sl|selectfont)(?![A-Za-z])|color\s*(?:\[[^\]{}]*\])?\s*\{[^{}]*\}|fontsize\s*\{[^{}]*\}\s*\{[^{}]*\}|fontfamily\s*\{[^{}]*\}|usefont\s*(?:\{[^{}]*\}\s*){4})[ \t]*/y;
+const NO_SPACES = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+// (the toggles and colours also on the blank paragraph Enter showed: Word's empty paragraph takes
+// Bold and the rest for its first words, which went in plain)
+const canG = (app, at) => !!at && at.ctx !== 'tex' && (!at.c.ghost || !!app.ghostFmt());
 const WHY = 'Click in the text of the page first (a LaTeX paragraph is formatted in its source).';
 // the wrappers around the caret or the selection, read from the source once for each look at the
 // ribbon (every toggle asks): one walk back for all the kinds, the forms written by hand among them
@@ -42,6 +48,7 @@ const cellOn = (t, [a, b, s, e], group, max) => F.allOn(t.slice(s, e), a - s, b 
 const BLOCK_CELLS = 5000;
 // on with the caret in words that have a wrapper of the group; a block of cells: all its cells
 const on = (group) => (app, at) => {
+  if (at && at.c.ghost) { const G = app.ghostFmt(); return !!G && F.chainAt(G.text, G.a, G.a).some((x) => groupNames(group).includes(x.W.cmd)); }
   if (!can(app, at)) return false;
   const cells = blockOf(app, at);
   if (cells && cells.length > 1) { const t = app.src(at.c.f); return cells.length <= BLOCK_MAX && cells.every((x) => cellOn(t, x, group)); }
@@ -97,28 +104,28 @@ register(
     when: can, whyNot: () => WHY, run: (app) => app.clearFormatting(false) },
 
   { id: 'bold', name: 'Bold', order: 10, title: 'Bold (Ctrl+B): make the selected text bold', tab: 'home', group: 'font', el: 'rb-b', kind: 'toggle', glyph: '<b aria-hidden="true">B</b>', keys: ['Ctrl+B'], menu: { selection: 20 },
-    keysQuiet: ['Ctrl+Shift+B'], synonyms: ['Strong', 'textbf'], when: can, on: on('bold'), run: (app) => app.fmtToggle('bold'),
+    keysQuiet: ['Ctrl+Shift+B'], synonyms: ['Strong', 'textbf'], when: canG, on: on('bold'), run: (app) => app.fmtToggle('bold'),
     palette: { k: 'textbf', d: 'Bold', order: 60, t: { open: '\\textbf{', close: '}' } } },
   { id: 'italic', name: 'Italic', order: 20, title: 'Italic (Ctrl+I): make the selected text italic', tab: 'home', group: 'font', el: 'rb-i', kind: 'toggle', glyph: '<i aria-hidden="true">I</i>', keys: ['Ctrl+I'], menu: { selection: 30 },
-    keysQuiet: ['Ctrl+Shift+I'], synonyms: ['Emphasis', 'emph', 'textit'], when: can, on: on('italic'), run: (app) => app.fmtToggle('italic'),
+    keysQuiet: ['Ctrl+Shift+I'], synonyms: ['Emphasis', 'emph', 'textit'], when: canG, on: on('italic'), run: (app) => app.fmtToggle('italic'),
     palette: { k: 'emph', d: 'Emphasis', order: 50, t: { open: '\\emph{', close: '}' } } },
   { id: 'underline', name: 'Underline', order: 30, title: 'Underline (Ctrl+U): \\uline, which breaks across lines; the arrow for double, wave, dashed, dotted and a colour', tab: 'home', group: 'font', el: 'rb-u', kind: 'split', glyph: '<u aria-hidden="true">U</u>', keys: ['Ctrl+U'], keysQuiet: ['Ctrl+Shift+U'],
-    synonyms: ['underline', 'uline', 'Double underline', 'Wave underline', 'Underline color'], when: can, on: on('underline'), run: (app, args) => (args && args.cmd ? app.fmtSet('underline', { cmd: args.cmd }) : app.fmtToggle('underline')),
+    synonyms: ['underline', 'uline', 'Double underline', 'Wave underline', 'Underline color'], when: canG, on: on('underline'), run: (app, args) => (args && args.cmd ? app.fmtSet('underline', { cmd: args.cmd }) : app.fmtToggle('underline')),
     menuItems: (app, at) => app.underlineMenu(at) },
   { id: 'double-underline', name: 'Double Underline', keys: ['Ctrl+Shift+D'],
     title: 'Double underline (Ctrl+Shift+D): \\uuline, ulem\'s double line', synonyms: ['uuline', 'Double'],
     when: can, whyNot: () => WHY, run: (app) => app.doubleUnderline() },
   { id: 'strikethrough', name: 'Strikethrough', order: 40, title: 'Strikethrough (Ctrl+Shift+X): \\sout', tab: 'home', group: 'font', kind: 'toggle', glyph: ICON.strike, keys: ['Ctrl+Shift+X'],
-    synonyms: ['Strike', 'Cross out', 'sout'], when: can, on: on('strike'), run: (app) => app.fmtToggle('strike') },
+    synonyms: ['Strike', 'Cross out', 'sout'], when: canG, on: on('strike'), run: (app) => app.fmtToggle('strike') },
   { id: 'subscript', name: 'Subscript', order: 50, title: 'Subscript (Ctrl+,): \\textsubscript', tab: 'home', group: 'font', kind: 'toggle', glyph: ICON.sub, keys: ['Ctrl+,'],
-    synonyms: ['textsubscript', 'Lower'], when: can, on: on('sub'), run: (app) => app.fmtToggle('sub', { other: 'sup' }) },
+    synonyms: ['textsubscript', 'Lower'], when: canG, on: on('sub'), run: (app) => app.fmtToggle('sub', { other: 'sup' }) },
   { id: 'superscript', name: 'Superscript', order: 60, title: 'Superscript (Ctrl+.): \\textsuperscript', tab: 'home', group: 'font', kind: 'toggle', glyph: ICON.sup, keys: ['Ctrl+.'],
-    synonyms: ['textsuperscript', 'Raise', 'Exponent'], when: can, on: on('sup'), run: (app) => app.fmtToggle('sup', { other: 'sub' }) },
+    synonyms: ['textsuperscript', 'Raise', 'Exponent'], when: canG, on: on('sup'), run: (app) => app.fmtToggle('sup', { other: 'sub' }) },
   { id: 'highlight', name: 'Text Highlight Color', order: 70, title: 'Text Highlight Color (Ctrl+Alt+H): \\hl, in yellow or the colour picked last', tab: 'home', group: 'font', kind: 'split', glyph: ICON.highlight, keys: ['Ctrl+Alt+H'],
-    synonyms: ['Highlight', 'Highlighter', 'Marker', 'hl'], when: can, whyNot: () => WHY, on: on('highlight'),
+    synonyms: ['Highlight', 'Highlighter', 'Marker', 'hl'], when: canG, whyNot: () => WHY, on: on('highlight'),
     run: (app, args) => app.highlight(args && 'color' in args ? args.color : undefined), menuItems: (app, at) => app.highlightMenu(at) },
   { id: 'font-color', name: 'Font Color', order: 80, title: 'Font Color: \\textcolor, in the colour picked last; the arrow for every colour', tab: 'home', group: 'font', kind: 'split', glyph: ICON.color,
-    synonyms: ['Text color', 'Colour', 'textcolor'], when: can, whyNot: () => WHY,
+    synonyms: ['Text color', 'Colour', 'textcolor'], when: canG, whyNot: () => WHY,
     run: (app, args) => app.fontColor(args && 'pick' in args ? args.pick : undefined), menuItems: (app, at) => [{ name: 'Font Colors…', title: 'Every colour: Word\'s, xcolor\'s, dvipsnames and any other', run: () => app.fontColorPicker(at) }] },
   { id: 'font-more', name: 'More Font Effects', order: 90, tab: 'home', group: 'font', kind: 'menu', icon: '<path d="M5.5 10h.01M10 10h.01M14.5 10h.01"/>',
     title: 'More Font Effects: small caps, all caps, double strikethrough, border, shading, enclosed characters, ruby', synonyms: ['Effects', 'Text effects'],
@@ -158,7 +165,8 @@ export const methods = {
   // done as one commit, the preamble's lines with it. false when nothing could change.
   fmtCommit(steps, o = {}) {
     const at = o.at || this.ribbonAt(), c = at && at.c;
-    if (!c || c.ghost || this.texHere()) return false;
+    if (c && c.ghost) return this.fmtGhost(steps);
+    if (!c || this.texHere()) return false;
     // (Select all: the main file's body, not the page's last drawn character, which may be a
     // footnote's, and the whole of each file it reads in that the page draws (\input, \include);
     // a selection over two files has a caret for its place, so Select all is read off the page)
@@ -171,7 +179,9 @@ export const methods = {
     const more = whole ? [...new Set([...this.root.querySelectorAll('.it[data-b]')].map((el) => (BLOCKS.get(+el.dataset.b) || {}).f))].filter((x) => x && x !== f && this.files.has(x)) : [];
     // (a caret in a word: the word, as Word formats it; o.word 'inside' wants the caret inside it,
     // not at its ends, where what is typed next takes the format)
-    if (o.word && c.collapsed && !whole) { const w = F.wordAt(src0, c.a); if (w && (o.word !== 'inside' || (w[0] < c.a && c.a < w[1]))) st = { text: src0, a: w[0], b: w[1], word: c.a - w[0], f }; }
+    // (not in a script written without spaces, Chinese, Japanese, Thai: its letters up to the next
+    // mark would be a whole sentence, not a word)
+    if (o.word && c.collapsed && !whole) { const w = F.wordAt(src0, c.a); if (w && (o.word !== 'inside' || (w[0] < c.a && c.a < w[1])) && !(o.word === 'inside' && NO_SPACES.test(src0.slice(w[0], w[1])))) st = { text: src0, a: w[0], b: w[1], word: c.a - w[0], f }; }
     // (a block of cells: each cell's words; the steps see the block as it was, block.cells in
     // block.text, to choose once for all of them; o.one: one run over the selection that reads it)
     const cells = whole ? null : this.blockCells(at);
@@ -241,11 +251,112 @@ export const methods = {
     const caret = a !== b && (!c.collapsed || o.keepWord) ? { f, p: b, selA: a, selB: b }
       : st.word != null ? { f, p: Math.min(a + st.word, b), bias: -1 } : { f, p: a === b ? a : b, bias: a === b && r && r.on ? 1 : -1 };
     this.closeGroup();
+    const mark = { h0: this.hist.length, redo0: this.redoStack };
     this.commit(edits, caret, 'format');
     this.closeGroup();
+    if (c.collapsed && a === b && st.word == null && !whole && !cells) this.watchFormat(f, a, mark);
     // (all of it stays selected, every file's)
     if (whole && this.selectAllText) this.selectAllText();
     return true;
+  },
+
+  // The blank paragraph Enter showed has no source until a character is typed in it: the formats
+  // set there wait on it (ghost.wrap, written round its first words by ghostInsert, with the
+  // preamble's lines they need), as Word's empty paragraph keeps Bold for what is typed next.
+  // ghostFmt: their text and the caret's place in it, or null where the paragraph is LaTeX's
+  ghostFmt() {
+    const g = this.ghost;
+    if (!g || this.ghostRaw()) return null;
+    const W = g.wrap || { open: '', close: '' };
+    return { text: W.open + W.close, a: W.open.length };
+  },
+  fmtGhost(steps) {
+    const G = this.ghostFmt();
+    if (!G) return false;
+    const needs = [...((this.ghost.wrap || {}).needs || [])];
+    let x = { text: G.text, a: G.a, b: G.a };
+    for (const step of steps) {
+      const r = step(x.text, x.a, x.b, x);
+      if (!r) continue;
+      if (r.error) { this.toast(r.error === 'crosses' || r.error === 'split' ? 'Type the words first, then format them.' : r.error); return false; }
+      x = { ...x, ...r };
+      if (r.need) needs.push(...[].concat(r.need));
+    }
+    this.ghost.wrap = x.text ? { open: x.text.slice(0, x.a), close: x.text.slice(x.a), needs } : null;
+    this.ribbonSoon && this.ribbonSoon();
+    return true;
+  },
+  // A caret's format (Ctrl+B with nothing selected) is an empty \textbf{} for what is typed next.
+  // Left empty, it goes again with the steps that made it (src/ribbon.js dropEmpty), as Word's
+  // waiting format leaves nothing behind: a \textbf{} stayed wherever the caret had been, drawn as
+  // nothing on the page. A second format on the same empty one (Ctrl+B, then Ctrl+I) joins its watch.
+  watchFormat(f, p, mark) {
+    const t = this.src(f);
+    let W = null;
+    for (const { W: X } of F.chainAt(t, p, p).reverse()) { if (W ? X.is === W.s && X.ie === W.e : X.is === p && X.ie === p) W = X; else break; }
+    const w = this.rbEmpty, on = w && w.fmt && !w.split && w.f === f && W && W.s === w.s && this.hist.length === w.h0 + w.n + 1 ? w : null;
+    // (Ctrl+B and Ctrl+B again with nothing typed: the text is as it was, and the two steps that
+    // changed nothing go, as Word's toggle at a caret leaves no undo step)
+    if (!W && w && w.fmt && !w.split && w.f === f && this.hist.length === w.h0 + w.n + 1) {
+      let x = t;
+      for (const h of this.hist.slice(w.h0).reverse()) for (const d of h.files) if (x != null) x = d.f === f ? x.slice(0, d.s) + d.del + x.slice(d.s + d.ins.length) : null;
+      if (x === t) { this.hist.splice(w.h0); this.redoStack = w.redo0; if (this.updateUndoUI) this.updateUndoUI(); }
+    }
+    this.rbEmpty = !W ? null : on ? { ...on, t: t.slice(W.s, W.e), n: on.n + 1 } : { f, s: W.s, t: t.slice(W.s, W.e), ...mark, n: 1, fmt: true };
+  },
+  // What is pasted at p of file f, less the toggles the words there already have: italic pasted
+  // into italic stayed \emph in \emph, which TeX and the page set upright, and bold into bold was
+  // \textbf twice. Word's pasted words are italic there either way.
+  // (src and p: a text and a place in it, the blank paragraph's waiting formats among them.) A kind
+  // goes in all its forms (italic in italic turns upright); a line only as the same line (a double
+  // underline pasted into a single one stays double). Not through a footnote's text, which TeX sets
+  // in its own font: none is taken off where the paste holds one.
+  pasteInFormats(f, p, t, src) {
+    if (/\\(?:footnote|footnotetext|marginpar|thanks|todo|endnote|sidenote)\b/.test(t)) return t;
+    for (const { group, W } of F.chainAt(src ?? this.src(f), p, p)) {
+      if (!/^(bold|italic|underline|strike|dstrike|smallcaps|allcaps|sub|sup|mono)$/.test(group)) continue;
+      const names = group === 'underline' || group === 'strike' || group === 'dstrike' ? (/^(uline|underline)$/.test(W.cmd) ? ['uline', 'underline'] : [W.cmd]) : groupNames(group);
+      const r = F.clearInside(t, 0, t.length, names);
+      if (r && !r.error && r.text != null) t = r.text;
+    }
+    return t;
+  },
+  // The formats round p of file f, as src/app.js wrapBreak reads them off the page, but from the
+  // source, so a declaration's group ({\bfseries ..}, which the page marks no element for) counts:
+  // { p, close, open }, p moved out past those that end or start at it
+  formatsBreak(f, p) {
+    const t = this.src(f);
+    let close = '', open = '';
+    for (const { W } of F.chainAt(t, p, p).reverse()) {
+      if (!close && p === W.ie) { p = W.e; continue; }
+      if (!open && p === W.is) { p = W.s; continue; }
+      close += t.slice(W.ie, W.e);
+      open = t.slice(W.s, W.is) + open;
+    }
+    return { p, close, open };
+  },
+  // A paragraph of text a format's braces can hold: no list, heading, display or table, no footnote
+  // (ulem's lines cannot cross one), no comment (it would hide the closing brace), its braces balanced
+  wrappable(x) {
+    if (!x.trim() || /\\(?:begin|end|item|part|chapter|(?:sub)*section|(?:sub)?paragraph|caption|footnote|marginpar|par)\b|\\\[|\$\$/.test(x) || /(?:^|[^\\])%/.test(x)) return false;
+    let d = 0;
+    for (let i = 0; i < x.length; i++) { if (x[i] === '\\') { i++; continue; } if (x[i] === '{') d++; else if (x[i] === '}' && --d < 0) return false; }
+    return d === 0;
+  },
+  // The empty format a deletion left at p, \textbf{} once its words were cut or deleted: kept for
+  // what is typed next, as Word's, and taken out in the deletion's own step when the caret leaves
+  // it (src/ribbon.js dropEmpty): it stayed in the source, drawn as nothing
+  watchDeleted(f, p) {
+    const t = this.src(f);
+    let W = null;
+    for (const { W: X } of F.chainAt(t, p, p).reverse()) { if (W ? X.is === W.s && X.ie === W.e : X.is === p && X.ie === p) W = X; else break; }
+    if (W) this.rbEmpty = { f, s: W.s, t: t.slice(W.s, W.e), fold: true, top: this.hist[this.hist.length - 1] };
+  },
+  // the preamble's lines for what a blank paragraph's formats need, as edits of the main file
+  fmtNeedsEdits(needs) {
+    if (!needs || !needs.length) return [];
+    const main = this.main, others = this.preambleOthers ? this.preambleOthers() : [];
+    return (F.preambleFor(this.src(main), needs, { others }) || []).map((x) => ({ f: main, s: x.s, e: x.e, t: x.t }));
   },
 
   // Bold, Italic, Underline and the rest: on or off where the caret is
@@ -259,7 +370,48 @@ export const methods = {
     // again after the bold, the caret in them, as Ctrl+B on a caret opens an empty \textbf{}.
     const at = this.ribbonAt(), c = at && at.c;
     if (!o.force && c && !c.ghost && c.collapsed && c.f != null && !this.texHere() && !(this.wholeDoc && this.wholeDoc()) && !this.blockCells(at)) {
+      // (pressed again where it was just ended: the split goes again, the words one wrapper as they were)
+      const S = this.rbEmpty;
+      if (S && S.split === group && S.f === c.f && c.a === S.s + 1 && this.hist.length === S.h0 + 1 && this.src(c.f).slice(S.s, S.s + S.t.length) === S.t) {
+        this.rbEmpty = null; this.undo(); this.redoStack = S.redo0; this.updateUndoUI && this.updateUndoUI(); this.ribbonSoon && this.ribbonSoon();
+        return true;
+      }
       const t = this.src(c.f), W = F.around(t, c.a, c.a, group);
+      // A caret between words inside the format (\textbf{many bold| words}): Word ends it for what
+      // is typed there and leaves the words bold. It took the bold off the whole sentence. The
+      // wrapper is closed and opened again at the caret, which stands between; left untyped, the
+      // step goes again (dropEmpty). Not where other braces open between (a nested format).
+      const w = W && W.is < c.a && c.a < W.ie ? F.wordAt(t, c.a) : null;
+      // (braces closed again before the caret, \emph{b} or \cite{k}, are no bar: the depth is what counts)
+      const depth0 = (x) => { let d = 0; for (let i = 0; i < x.length; i++) { if (x[i] === '\\') { i++; continue; } if (x[i] === '{') d++; else if (x[i] === '}' && --d < 0) return false; } return d === 0; };
+      if (W && W.is < c.a && c.a < W.ie && W.e === W.ie + 1 && t[W.ie] === '}' && !(w && w[0] < c.a && c.a < w[1]) && depth0(t.slice(W.is, c.a))) {
+        // The part after the caret is opened again with every switch in force there: the group's
+        // own and those declared in it before the caret at its own level ({\bfseries\itshape ..},
+        // \textbf{many \itshape bold| ..}, a \color or a size), or " words" lost its italic. Ending
+        // in a control word, the opener gets {}, or TeX skips the space before "words" with the
+        // switch's own and the PDF read "plainwords" (so does \color's \ignorespaces): an opener
+        // that ends in no brace of its own gets {}.
+        const inner = t.slice(W.is, c.a), sw = [];
+        for (let m, d = 0, i = 0, re = SWITCH; i < inner.length; i++) {
+          if (inner[i] === '{') d++;
+          else if (inner[i] === '}') d--;
+          else if (inner[i] === '\\') {
+            re.lastIndex = i;
+            if (!d && (m = re.exec(inner)) && m.index === i) { sw.push(m[0].trim()); i += m[0].length - 1; continue; }
+            i++;
+          }
+        }
+        let open = t.slice(W.s, W.is).replace(/[ \t]+$/, '') + sw.join('');
+        // (any switch last, a control word or \color and \usefont, which end in \ignorespaces)
+        if (!/\{$/.test(open)) open += '{}';
+        const ins = '}' + open, mark = { h0: this.hist.length, redo0: this.redoStack };
+        this.closeGroup();
+        this.commit([{ f: c.f, s: c.a, e: c.a, t: ins }], { f: c.f, p: c.a + 1, bias: -1 }, 'format');
+        this.closeGroup();
+        this.rbEmpty = { f: c.f, s: c.a, t: ins, ...mark, n: 1, fmt: true, split: group };
+        this.ribbonSoon && this.ribbonSoon();
+        return true;
+      }
       if (W && W.is < c.a && W.e === W.ie + 1 && t[W.ie] === '}' && /^\}*$/.test(t.slice(c.a, W.ie))) {
         if (c.a === W.ie) { this.restoreCaret({ f: c.f, p: W.e, bias: -1 }); this.ribbonSoon && this.ribbonSoon(); return true; }
         // (each brace between closes a group opened inside the bold: its command, outermost first)
@@ -272,20 +424,39 @@ export const methods = {
           opens.unshift(m[0] + '{');
         }
         if (opens.length) {
-          const ins = opens.join('') + '}'.repeat(opens.length);
+          const ins = opens.join('') + '}'.repeat(opens.length), mark = { h0: this.hist.length, redo0: this.redoStack };
           this.commit([{ f: c.f, s: W.e, e: W.e, t: ins }], { f: c.f, p: W.e + opens.join('').length, bias: -1 }, 'format');
+          this.watchFormat(c.f, W.e + opens.join('').length, mark);
         } else this.restoreCaret({ f: c.f, p: W.e, bias: -1 });
         this.ribbonSoon && this.ribbonSoon();
         return true;
       }
     }
+    // (a caret inside a word: the whole word, as Word formats it, the caret staying where it was;
+    // it opened an empty \textbf{} in the middle of the word, and in a bold sentence took the bold
+    // off the whole sentence. At a word's ends what is typed next takes the format)
     return this.fmtCommit([(t, a, b, x) => {
       // (a block of cells: on in every cell takes it off all of them, else all of them get it,
       // as Word chooses for the block as a whole)
       const B = x && x.block;
       const r = F.toggle(t, a, b, group, B && !o.force ? { ...o, force: (B.memo[group] ??= B.cells.every((x) => cellOn(B.text, x, group, F.ALL_ON_MAX)) ? 'off' : 'on') } : o);
       return r.error ? r : { ...r, need: r.on ? F.needsOf(group, r.w || { cmd: '' }) : null };
-    }]);
+    }], o.force ? {} : { word: 'inside' });
+  },
+  // The formats whose words end at p of file f (\textbf{\emph{word|}}): the place after their
+  // closing braces, and the openers and closers of those a new paragraph's words go on in. Enter
+  // at a paragraph's end puts the new paragraph there, as Word's keeps the formats the one above
+  // ended in; a frame, a circle, a box of colour or a raised word holds one line, and stays behind.
+  formatsEnding(f, p) {
+    const t = this.src(f), chain = F.chainAt(t, p, p);
+    let open = '', close = '';
+    for (let k = chain.length - 1; k >= 0; k--) {
+      const { group, W } = chain[k];
+      if (W.ie !== p) break;
+      if (!/^(border|enclose|shading|scale|position)$/.test(group)) { open = t.slice(W.s, W.is) + open; close += t.slice(W.ie, W.e); }
+      p = W.e;
+    }
+    return { p, wrap: open ? { open, close } : null };
   },
   // the buttons the page's own keys and the selection's bubble reach (Ctrl+B in beforeinput, the bubble's B)
   toggleStyle(cmd) { return this.fmtToggle(STYLE_GROUP[cmd] || 'bold'); },
@@ -301,9 +472,11 @@ export const methods = {
   // the same value again takes it off (Character Shading, the highlighter's colour)
   fmtSetToggle(group, w) {
     const at = this.ribbonAt(), c = at && at.c;
-    if (!c || c.ghost) return false;
-    const W = F.around(this.src(c.f), c.a, c.b, group);
-    if (W && (c.collapsed || (c.a >= W.is && c.b <= W.ie)) && W.cmd === w.cmd && (W.args || []).join() === (w.args || []).join() && (W.opt || '') === (w.opt || '')) return this.fmtSet(group, null);
+    // (on the blank paragraph after Enter: the formats waiting there)
+    const G = c && c.ghost ? this.ghostFmt() : null;
+    if (!c || (c.ghost && !G)) return false;
+    const W = G ? F.around(G.text, G.a, G.a, group) : F.around(this.src(c.f), c.a, c.b, group);
+    if (W && (c.collapsed || G || (c.a >= W.is && c.b <= W.ie)) && W.cmd === w.cmd && (W.args || []).join() === (w.args || []).join() && (W.opt || '') === (w.opt || '')) return this.fmtSet(group, null);
     return this.fmtSet(group, w);
   },
 
@@ -806,10 +979,10 @@ export const methods = {
   fontColor(pick) {
     if (pick === undefined) pick = this.colorLast || { name: 'red' };
     else if (pick) this.colorLast = pick;
-    if (!pick) return this.fmtSet('color', null);
+    if (!pick) return this.fmtSet('color', null, { word: 'inside' });
     const w = pick.html ? { cmd: 'textcolor', opt: 'HTML', args: [String(pick.html).replace(/[^0-9A-Fa-f]/g, '').slice(0, 6).toUpperCase()] } : { cmd: 'textcolor', args: [pick.name] };
     w.declAlt = { cmd: 'color', opt: w.opt, args: w.args, decl: true };
-    return this.fmtSet('color', w);
+    return this.fmtSet('color', w, { word: 'inside' });
   },
   fontColorPicker(at) {
     const W = at && at.c && !at.c.ghost ? F.around(this.src(at.c.f), at.c.a, at.c.b, 'color') : null;
