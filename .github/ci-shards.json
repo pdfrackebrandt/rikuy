@@ -110,7 +110,7 @@
     {"name": "Lists (levels by Tab, the libraries, numbering values, multilevel lists, sorting, automatic lists)", "argv": ["python3", "lists.py"], "p95": 85.3, "n": 1},
     {"name": "The math field", "argv": ["python3", "mathfield.py"], "p95": 9.7, "n": 1},
     {"name": "Rikuy as an agent meets it (the scripting surface, every control by its name, the WebMCP tools, the page in the accessibility tree)", "argv": ["python3", "agent.py"], "p95": 113.1, "n": 1},
-    {"name": "What a newcomer meets outside the ribbon (dialogs, the File view, the status bar, panes, phones) (part)", "argv": ["python3", "ux.py", "motion", "tap_alternatives", "dialog_kinds", "widen", "caret_back", "help_pane", "mobile_view", "first_comment", "status_bar", "first_visit"], "p95": 132.2, "n": 1},
+    {"name": "What a newcomer meets outside the ribbon (dialogs, the File view, the status bar, panes, phones) (part)", "argv": ["python3", "ux.py", "motion", "tap_alternatives", "dialog_kinds", "widen", "caret_back", "help_pane", "mobile_view", "first_comment", "status_bar", "first_visit", "android_input", "keyboard_caret", "desktop_input"], "p95": 132.2, "n": 1},
     {"name": "Tables (the grid of sizes, Table Design and Table Layout, round trips, the page's drawing)", "argv": ["python3", "table.py"], "p95": 64.3, "n": 1}
    ]
   },
