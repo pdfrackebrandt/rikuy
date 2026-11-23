@@ -1840,10 +1840,11 @@ def word_typing(page):
     # 3: words copied from two paragraphs are pasted as two paragraphs, as Word's are: copied from
     # a paragraph into the list item or the paragraph after a heading, they came as one run of
     # words, "only.Apple one" (only a blank line in the source counted as a paragraph's end)
+    # (across a bold and an italic word, each keeps its format, as Word's copy does: PR 118)
     page.context.grant_permissions(['clipboard-read', 'clipboard-write'])
     end = 'of the document.'
     bad = []
-    for a, z, want in (('Second', 'Apple one', 'Second paragraph is plain text only.\n\nApple one'), ('Background', 'Last', '\\section{Background}\n\nLast'), ('bold', 'italic', 'bold words and italic')):
+    for a, z, want in (('Second', 'Apple one', 'Second paragraph is plain text only.\n\nApple one'), ('Background', 'Last', '\\section{Background}\n\nLast'), ('bold', 'italic', '\\textbf{bold words} and \\emph{italic}')):
         load_doc(page, WORD_DOC)
         place(page, (a, z)); k.press('Control+c'); settle(page, 50)
         click_text(page, end, len(end)); k.press('Control+v'); settle(page, 100)

@@ -1312,9 +1312,10 @@ def android_input(page, w):
     check(f'a word composing when Bold is tapped is kept, the next one bold ({w})', 'here. Hello\\textbf{world}' in src(page), body_of(page)[-50:])
     load_doc(page, doc); tap_text(page, 'here.', 2)
     page.evaluate(REGION, ['here', None, 0])
+    # (Bold with the caret inside a word bolds the word, as Word's does: PR 118; the key goes in it)
     tap(page, page.locator('#rb-b'), 250)
     cdp.send('Input.insertText', {'text': 'Z'}); settle(page, 150)
-    check(f'a key after a command run while the keyboard marks a word goes in ({w})', 'Second paragraph he\\textbf{Z}re.' in src(page), body_of(page)[-50:])
+    check(f'a key after a command run while the keyboard marks a word goes in ({w})', 'Second paragraph \\textbf{heZre}.' in src(page), src(page)[src(page).find('Second'):][:60])
     # Select All, then a word composed (a phone's keyboard composes every word): the word is the
     # document's body, as a key typed makes it
     load_doc(page, doc); tap_text(page, 'Second paragraph', 2)
