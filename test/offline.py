@@ -75,6 +75,22 @@ def tree_version(d):
     return json.loads(gzip.decompress(b[i:])).get('v') or ''
 
 
+# The app's own script (build.mjs APP_JS) as the page names it: whether the service worker kept it
+# (rikuy-immutable) and whether the page's copy came through the worker (resource timing's
+# workerStart). An offline start the HTTP cache alone could make proves nothing of the worker: the
+# offline steps clear that cache first (CLEAR).
+APP_KEPT = """async () => { const s = document.querySelector('script[src^="app-"]'), name = s && s.getAttribute('src');
+  const url = name && new URL(name, location.href).href, e = url && performance.getEntriesByName(url)[0];
+  const kept = url ? !!(await (await caches.open('rikuy-immutable')).match(url)) : false;
+  return { name, kept, viaWorker: !!(e && e.workerStart > 0) }; }"""
+
+
+def clear_http_cache(ctx, page):
+    s = ctx.new_cdp_session(page)
+    s.send('Network.clearBrowserCache')
+    s.detach()
+
+
 def ready(page, timeout=30000):
     page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=timeout)
 
@@ -133,6 +149,9 @@ def main():
         check('the TeX worker\'s scripts are asked for under the page\'s version', ('/_v/' + va + '/tex/') in both['base'], both['base'])
         imm = page.evaluate('caches.open("rikuy-immutable").then(c => c.keys()).then(k => k.map(r => r.url))')
         nfonts = len(os.listdir(os.path.join(DIST, 'fonts')))
+        ak = page.evaluate(APP_KEPT)
+        APP_A = ak['name']
+        check('install kept the app\'s own script (%s), named by its hash, apart from the version' % ak['name'], ak['kept'] and re.match(r'^app-[0-9a-f]{16}\.js$', ak['name'] or ''), ak)
         check('install kept the fonts (%d, 5 of them the Latin Extended cut), named by their hash, apart from the version' % nfonts,
               nfonts > 30 and sum('/fonts/' in u for u in imm) == nfonts and sum('/fonts/ibm-plex-' in u and '-latin-ext-' in u for u in imm) == 5, imm)
         tnames = [f for f in os.listdir(DIST) if re.match(r'^texnames-[0-9a-f]{16}\.txt$', f)]
@@ -308,6 +327,14 @@ def main():
               page.evaluate("() => [...document.querySelectorAll('#wlayer iframe')].map((f) => f.src)"))
         page.evaluate('([fs, main]) => { const g = window.rikuy; g.files = new Map(fs); g.main = main; g.rebuild(); }', keep)
         page.wait_for_timeout(300)
+        # the same offline start with the browser's HTTP cache emptied (after the live figure, whose
+        # document only that cache holds): the page and its script come from the worker alone
+        clear_http_cache(ctx, page)
+        page.reload()
+        ready(page)
+        ak = page.evaluate(APP_KEPT)
+        check('offline, with the browser\'s HTTP cache emptied, the page starts and its script comes from the service worker\'s copy',
+              ak['kept'] and ak['viaWorker'] and page.evaluate("document.querySelectorAll('#pages .katex').length") == nmath, ak)
         page.evaluate('window.rikuy.runCommand("create-style")')
         page.wait_for_function('window.rikuy.texNamesState() !== "loading"', timeout=10000)
         check('offline, Create a Style gets LaTeX\'s names from the kept copy', page.evaluate('window.rikuy.texNamesState()') == 'ready' and page.get_by_role('dialog', name='Create a Style').count() == 1, page.evaluate('window.rikuy.texNamesState()'))
@@ -344,6 +371,17 @@ def main():
           return { text: b.innerText, role: b.getAttribute('role'), shown: !b.hidden && r.height > 100, button: !!k && k.getBoundingClientRect().width > 20 && k.getBoundingClientRect().height > 15, app: !!window.rikuy }; }''')
         check('the app\'s script not loading: the page says so in words and offers Reload, with nothing refused by its policy',
               'could not load' in said['text'] and said['role'] == 'alert' and said['shown'] and said['button'] and fp.get_by_role('button', name='Reload').count() == 1 and not said['app'] and not ferr, (said, ferr))
+        # on a phone: the line and the button inside the screen, the button a 44 px target
+        mctx = b.new_context(viewport={'width': 390, 'height': 844}, has_touch=True, is_mobile=True, device_scale_factor=1)
+        mp = mctx.new_page()
+        mp.route(APPJS, lambda r: r.abort())
+        mp.goto(URL)
+        try: mp.wait_for_selector('#boot.failed button', timeout=15000)
+        except Exception: pass
+        box = mp.evaluate('''() => { const k = document.querySelector('#boot.failed button'), p = document.querySelector('#boot.failed p'); if (!k || !p) return null;
+          const r = k.getBoundingClientRect(), t = p.getBoundingClientRect(); return { w: r.width, h: r.height, inside: r.left >= 0 && r.right <= innerWidth && t.left >= 0 && t.right <= innerWidth && r.bottom <= innerHeight }; }''')
+        check('on a phone the line and the Reload button stay inside the screen, the button a 44 px target', box and box['w'] >= 44 and box['h'] >= 44 and box['inside'], box)
+        mctx.close()
         fp.unroute(APPJS)
         if said['button']: fp.get_by_role('button', name='Reload').click()
         else: fp.reload()
@@ -385,12 +423,15 @@ def main():
         check('the new version runs its own script (another app-<hash>.js)', page.evaluate('window.__rkBundle') == 'version B', page.evaluate('window.__rkBundle || null'))
         # the updated app opened again without a network: the page and its new script from what the
         # worker kept (the new script among the content addressed files, rikuy-immutable)
+        clear_http_cache(ctx, page)
         ctx.set_offline(True)
         p3 = ctx.new_page()
         p3.goto(URL)
         ready(p3)
-        check('offline, the updated app starts again with its new script', version(p3) == vb and p3.evaluate('window.__rkBundle') == 'version B' and p3.evaluate('document.querySelectorAll(".page .it").length') > 3,
-              (version(p3), p3.evaluate('window.__rkBundle || null')))
+        ak = p3.evaluate(APP_KEPT)
+        check('offline, the updated app starts again with its new script, from the worker\'s copy (the HTTP cache emptied)',
+              version(p3) == vb and p3.evaluate('window.__rkBundle') == 'version B' and p3.evaluate('document.querySelectorAll(".page .it").length') > 3 and ak['kept'] and ak['viaWorker'] and ak['name'] != APP_A,
+              (version(p3), p3.evaluate('window.__rkBundle || null'), ak))
         p3.close()
         ctx.set_offline(False)
         page2.wait_for_selector('#st-update', state='visible', timeout=10000)

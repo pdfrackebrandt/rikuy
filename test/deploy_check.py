@@ -208,7 +208,7 @@ def server(state):
             elif p == '/' + APPJS and state.get('app') != 'gone':
                 st, body = 200, b'go(); x()' if state.get('app') == 'bytes' else b'go()'
                 hs = {'Content-Type': 'text/plain' if state.get('app') == 'type' else 'text/javascript',
-                      'Cache-Control': 'public, max-age=31536000, immutable' + ('' if state.get('app') == 'transform' else ', no-transform')}
+                      'Cache-Control': 'public, max-age=31536000' + ('' if state.get('app') == 'mutable' else ', immutable') + ('' if state.get('app') == 'transform' else ', no-transform')}
             elif p == '/' + SHELL:
                 st, body = 200, open(os.path.join(LIVE, SHELL + '.html'), 'rb').read()
                 hs = {'Content-Security-Policy': "script-src 'unsafe-inline'; frame-ancestors 'self'"} if state['widget'] else {'Content-Security-Policy': "frame-ancestors 'none'", 'X-Frame-Options': 'DENY'}
@@ -254,10 +254,11 @@ own['rewritten'] = False
 # (the app's script as the page names it: gone, as after a deployment that replaced it; other
 # bytes; another type, which nosniff stops; changeable on the way; or not the one the policy names)
 for k, v, why in (('app', 'gone', 'answers 404'), ('app', 'bytes', "not this build's bytes"), ('app', 'type', "served as 'text/plain'"),
-                  ('app', 'transform', 'lacks Cache-Control: immutable, no-transform'), ('named', GUARDHASH, "not the app's script by its hash")):
+                  ('app', 'transform', 'lacks Cache-Control: immutable, no-transform'), ('app', 'mutable', 'lacks Cache-Control: immutable, no-transform'),
+                  ('named', GUARDHASH, "not the app's script by its hash")):
     own[k] = v
     code, out, took = live(EDGE, OWN)
-    ok('live check: the app\'s script %s fails at once (%s)' % ({'gone': 'missing', 'bytes': 'with other bytes', 'type': 'of another type', 'transform': 'without no-transform', GUARDHASH: 'not named by the policy'}[v], why),
+    ok('live check: the app\'s script %s fails at once (%s)' % ({'gone': 'missing', 'bytes': 'with other bytes', 'type': 'of another type', 'transform': 'without no-transform', 'mutable': 'not kept as immutable', GUARDHASH: 'not named by the policy'}[v], why),
        code == 1 and why in out and EDGE not in out and took < 2, out)
     del own[k]
 edge['version'] = 'cccccccccccccccc'
