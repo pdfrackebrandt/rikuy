@@ -823,13 +823,15 @@ class App {
     const g = this.viewGeometry(geometry(model.opts));
     // (whose fonts draw the Chinese characters is part of it: other fonts, other widths)
     const cjk = this.cjkOrder();
-    const gsig = JSON.stringify(g) + '|' + this.px + '|' + model.opts.spread + '|' + model.opts.parindent + '|' + model.opts.pt + '|' + model.opts.font + '|' + cjk;
+    const gsig = JSON.stringify(g) + '|' + this.px + '|' + model.opts.spread + '|' + model.opts.parindent + '|' + model.opts.pt + '|' + model.opts.font + '|' + cjk + '|' + model.opts.bcp + '|' + model.opts.lang;
     if (gsig !== this.gsig || force) {
       this.gsig = gsig;
       if (cjk) document.documentElement.dataset.cjk = cjk; else delete document.documentElement.dataset.cjk;
       this.layout.setGeometry(g, this.px, this.sheet, model.sizes, model.opts);
       this.sheet.dataset.font = model.opts.font || '';
-      this.sheet.lang = { de: 'de', es: 'es', fr: 'fr' }[model.opts.lang] || 'en';
+      // (the document's own language, so a screen reader reads an Arabic, Hebrew or Chinese page in
+      // its voice: it was said to be English whatever its language)
+      this.sheet.lang = model.opts.bcp || { de: 'de', es: 'es', fr: 'fr' }[model.opts.lang] || 'en';
       for (const it of items) { it.measured = false; it.pieces = null; }
       for (const f of fns) f.measured = false;
     }

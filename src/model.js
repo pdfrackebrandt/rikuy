@@ -7,7 +7,7 @@ import { refsSetup, readIndexArg, indexKey, istRight } from './refsrc.js';
 import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bib.js';
 import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
 import { widgetPath, hashText } from './widget.js';
-import { rtlDocument, languageDir } from './scripts.js';
+import { rtlDocument, languageDir, documentLang } from './scripts.js';
 import { isLatexMark, readEnvBegin, thmMakersIn } from './styles.js';
 import { readHeadLooks, defaultLook, startsectionShapes } from './looks.js';
 import { readPage, paperName, NO_MEDIA_CLASSES, setsMedia, KOMA_CLASS } from './pagesrc.js';
@@ -849,6 +849,8 @@ class Builder {
       // a document whose main language is Arabic, Hebrew or the like runs right to left as a whole
       this.opts.rtl = rtlDocument(src);
       this.dir = this.opts.rtl ? 'rtl' : 'ltr';
+      // (the page's lang, as the web names the document's language: src/scripts.js documentLang)
+      this.opts.bcp = documentLang(src);
       this.collectDefs(docEnv.nodes, ctx);
       // at: where \begin{document} starts; closed: its \end{document} was found
       this.docBody = { s: docEnv.be, e: docEnv.es, at: docEnv.s, closed: docEnv.e > docEnv.es };

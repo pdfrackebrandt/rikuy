@@ -2,7 +2,7 @@
 // up, whether a document runs right to left and the lines that set it up; then the page's model
 // of the commands and environments that turn text or only name CJK's font (src/model.js).
 import assert from 'node:assert/strict';
-import { scriptsIn, scriptSetup, scriptNeeds, rtlDocument, scriptLines, addScriptSetup, languageDir, RTL_LANGUAGES, INDIC, MORE, scriptName } from '../src/scripts.js';
+import { scriptsIn, scriptSetup, scriptNeeds, rtlDocument, scriptLines, addScriptSetup, languageDir, RTL_LANGUAGES, INDIC, MORE, scriptName, documentLang } from '../src/scripts.js';
 import { buildModel } from '../src/model.js';
 import { clusterAt, clusterEdge, sourceEdge, backspaceUnits } from '../src/editor.js';
 
@@ -729,6 +729,23 @@ ok('words of the five scripts are counted with their marks', () => {
   assert.equal(build(doc('', '한국어 문장 입니다')).words, 3);
   assert.equal(build(doc('', 'සිංහල භාෂාව')).words, 2);
   assert.equal(build(doc('', 'ที่นี่ น้ำ')).words, 2, 'Thai between spaces (it writes none inside a phrase)');
+});
+
+ok('Round 3: the document\'s language as the web names it, for the page\'s lang', () => {
+  const d = (pre, cls = 'article') => '\\documentclass{' + cls + '}\n' + pre + '\n\\begin{document}\nx\n\\end{document}\n';
+  assert.equal(documentLang(d('\\usepackage[english, bidi=basic]{babel}\n\\babelprovide[import, main]{arabic}')), 'ar');
+  assert.equal(documentLang(d('\\usepackage{polyglossia}\n\\setmainlanguage{hebrew}')), 'he');
+  assert.equal(documentLang(d('\\usepackage[scheme=plain]{ctex}')), 'zh');
+  assert.equal(documentLang(d('', 'ctexart')), 'zh');
+  assert.equal(documentLang(d('\\usepackage[english]{babel}\n\\usepackage{xeCJK}')), 'zh', 'babel\'s English beside a Chinese set up');
+  assert.equal(documentLang(d('', 'ltjsarticle')), 'ja');
+  assert.equal(documentLang(d('\\usepackage{kotex}')), 'ko');
+  assert.equal(documentLang(d('\\usepackage[ngerman]{babel}')), 'de');
+  assert.equal(documentLang(d('\\usepackage[main=french, english]{babel}')), 'fr');
+  assert.equal(documentLang(d('\\usepackage[russian, english]{babel}')), 'en', 'the last named is the main one');
+  assert.equal(documentLang(d('% \\usepackage[ngerman]{babel}')), '');
+  assert.equal(documentLang(d('')), '');
+  assert.equal(documentLang('no preamble here'), '');
 });
 
 console.log(n + '/' + n + ' passed');

@@ -1272,11 +1272,29 @@ def direction_keys(page):
     check('the two commands name their keys', sorted(tip) == ['Ctrl+Left Shift', 'Ctrl+Right Shift'], tip)
 
 
+def page_lang(page):
+    """Round 3: the page's lang is the document's language, as the web names it, so a screen
+    reader reads an Arabic, Hebrew, Chinese or Japanese page in that language's voice: every page
+    was said to be English but a German, Spanish or French one. It follows an edit of the preamble."""
+    lang = lambda: page.evaluate('() => { const t = document.querySelector("#pages span.t"); const l = t && t.closest("[lang]"); return l && l.getAttribute("lang"); }')
+    seen = {}
+    for k, d in (('ar', EDIT_DOC), ('zh', ZH_DOC), ('he', doc('\\usepackage{polyglossia}\n\\setmainlanguage{hebrew}', 'שלום עולם.')),
+                 ('ja', doc('\\usepackage{luatexja}', 'これは日本語です。')), ('ko', doc('\\usepackage{kotex}', '한국어 문장.')), ('en', PLAIN)):
+        load_doc(page, d)
+        seen[k] = lang()
+    check('the page names the document\'s language: Arabic, Chinese, Hebrew, Japanese, Korean, English', all(seen[k] == k for k in seen), seen)
+    base = src(page)
+    i = base.index('\\usepackage{amsmath}')
+    page.evaluate('([i, text]) => window.rikuy.api.editSource({ file: "main.tex", start: i, end: i, text })', [i, AR_PRE.split('\n\\babelfont')[0] + '\n'])
+    page.wait_for_timeout(300)
+    check('and follows the preamble when its main language changes', lang() == 'ar', [lang(), src(page)[:140]])
+
+
 only = set(sys.argv[1:])
 try:
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (rendering, wrappers, editing, ime_keys, direction_keys, long_rtl, fonts):
+        for f in (rendering, wrappers, editing, ime_keys, direction_keys, page_lang, long_rtl, fonts):
             if not only or f.__name__ in only: f(page)
         for f in (india, marks_after_syntax, five, notice):
             if only and f.__name__ not in only: continue

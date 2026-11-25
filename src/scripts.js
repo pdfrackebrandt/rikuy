@@ -196,6 +196,43 @@ export function rtlDocument(tex) {
   return pkgs.has('xepersian') || /^xepersian/i.test(cls.name);
 }
 
+// The language of the document's text as the web names it (BCP 47), for the page's lang: a screen
+// reader reads the page in the voice its lang names, and an Arabic, Hebrew or Chinese document was
+// said to be English and read in an English voice. From polyglossia's main language, babel's
+// (main=, \babelprovide's main, else the last named, the class's options first), else the
+// package or class that sets up Chinese, Japanese or Korean; '' where nothing says.
+const BCP = { english: 'en', american: 'en-US', usenglish: 'en-US', british: 'en-GB', ukenglish: 'en-GB', canadian: 'en-CA', australian: 'en-AU',
+  german: 'de', ngerman: 'de', austrian: 'de-AT', naustrian: 'de-AT', swissgerman: 'de-CH', nswissgerman: 'de-CH', french: 'fr', francais: 'fr', spanish: 'es',
+  catalan: 'ca', galician: 'gl', basque: 'eu', portuguese: 'pt', portuges: 'pt', brazilian: 'pt-BR', brazil: 'pt-BR', italian: 'it', latin: 'la', romanian: 'ro',
+  dutch: 'nl', danish: 'da', swedish: 'sv', norsk: 'nb', nynorsk: 'nn', norwegian: 'no', icelandic: 'is', finnish: 'fi', estonian: 'et', latvian: 'lv',
+  lithuanian: 'lt', polish: 'pl', czech: 'cs', slovak: 'sk', slovene: 'sl', slovenian: 'sl', croatian: 'hr', serbian: 'sr', bulgarian: 'bg', macedonian: 'mk',
+  russian: 'ru', ukrainian: 'uk', belarusian: 'be', greek: 'el', polutonikogreek: 'el', turkish: 'tr', hungarian: 'hu', magyar: 'hu', albanian: 'sq',
+  irish: 'ga', welsh: 'cy', breton: 'br', esperanto: 'eo', indonesian: 'id', bahasa: 'id', malay: 'ms', vietnamese: 'vi', armenian: 'hy', georgian: 'ka',
+  mongolian: 'mn', arabic: 'ar', farsi: 'fa', persian: 'fa', hebrew: 'he', urdu: 'ur', kurdish: 'ku', sorani: 'ckb', pashto: 'ps', syriac: 'syr', uyghur: 'ug',
+  sindhi: 'sd', chinese: 'zh', japanese: 'ja', korean: 'ko', thai: 'th', sinhala: 'si', hindi: 'hi', marathi: 'mr', nepali: 'ne', konkani: 'kok', sanskrit: 'sa',
+  bengali: 'bn', bangla: 'bn', assamese: 'as', punjabi: 'pa', panjabi: 'pa', gujarati: 'gu', odia: 'or', oriya: 'or', tamil: 'ta', telugu: 'te', kannada: 'kn', malayalam: 'ml' };
+const bcpOf = (name) => { const n = String(name || '').trim().toLowerCase(); return BCP[n] || BCP[n.split('-')[0]] || ''; };
+export function documentLang(tex) {
+  const pre = stripComments(preambleOf(tex || ''));
+  if (!pre) return '';
+  const pkgs = packagesOf(pre), cls = classOf(pre);
+  const poly = /\\set(?:main|default)language\s*(?:\[[^\]]{0,2000}\]\s*)?\{\s*([A-Za-z-]+)/.exec(pre);
+  if (poly) return bcpOf(poly[1]);
+  for (const m of pre.matchAll(/\\babelprovide\s*\[([^\]]{0,2000})\]\s*\{([^}]{0,2000})\}/g)) if (options(m[1]).includes('main')) return bcpOf(m[2]);
+  const cjk = pkgs.has('ctex') || pkgs.has('xeCJK') || pkgs.has('CJKutf8') || pkgs.has('CJK') || /^ctex/i.test(cls.name) ? 'zh'
+    : pkgs.has('luatexja') || pkgs.has('luatexja-preset') || pkgs.has('zxjatype') || /^(ltjs?|u?jl?)(article|report|book)/i.test(cls.name) ? 'ja'
+      : pkgs.has('kotex') || pkgs.has('xetexko') ? 'ko' : '';
+  if (pkgs.has('babel')) {
+    const all = [...options(cls.options), ...options(pkgs.get('babel'))];
+    const main = all.map((o) => /^main\s*=\s*(.+)$/.exec(o)).filter(Boolean).pop();
+    const name = main ? main[1] : all.filter((o) => !o.includes('=') && bcpOf(o)).pop();
+    const lang = bcpOf(name);
+    // (babel's English beside ctex is the Latin words' language; the text is Chinese)
+    if (lang && !(cjk && /^en/.test(lang))) return lang;
+  }
+  return cjk;
+}
+
 // The line Rikuy writes for Chinese alone. When Arabic joins it the document moves to LuaLaTeX,
 // where ctex would need luatexja: the line goes and babel sets the Chinese too.
 const OWN_CTEX = /^[ \t]*\\usepackage\[scheme=plain\]\{ctex\}[^\n]*\n?/m;
