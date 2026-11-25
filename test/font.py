@@ -821,6 +821,29 @@ def enter_formats(page):
     check('Enter after \\fbox{four}: y plain after it', '\\fbox{four}\n\ny\n\nEnd.' in body(page), body(page))
 
 
+def r3_join(page):
+    """(round 3) Backspace after Enter in formatted words joins the paragraphs again, as Word's, the
+    words keeping their formats (the same formats either side one again, with the space a plain
+    join leaves); typing goes on in the format of the letter before. The range held the formats'
+    braces: nothing went, the caret stepped into the paragraph above, the next words went there."""
+    k = page.keyboard
+    for doc, at, key, want, typed in (('Some \\textbf{boldword} here.', ('boldword', 4), ('Enter', 'Backspace'), 'Some \\textbf{bold word} here.', 'Some \\textbf{bold Xword} here.'),
+                                      ('Some \\textbf{bold} here.', ('bold', 4), ('Enter', 'Backspace'), 'Some \\textbf{bold} here.', 'Some \\textbf{boldX} here.'),
+                                      ('Some \\textbf{\\emph{boldword}} here.', ('boldword', 4), ('Enter', 'Backspace'), 'Some \\textbf{\\emph{bold word}} here.', None),
+                                      ('Some {\\bfseries bold}\n\n{\\bfseries word} here.', ('word', 0), ('Backspace',), 'Some {\\bfseries bold word} here.', None),
+                                      ('Some \\textbf{bold}\n\n\\emph{word} here.', ('word', 0), ('Backspace',), 'Some \\textbf{bold} \\emph{word} here.', 'Some \\textbf{boldX} \\emph{word} here.'),
+                                      ('Some \\textbf{bold}\n\n\\textbf{word} here.', ('bold', 4), ('Delete',), 'Some \\textbf{bold word} here.', None)):
+        load_doc(page, WRAP(doc)); click_text(page, *at)
+        for x in key: k.press(x); settle(page, 150)
+        check('r3 %s in %r: the paragraphs joined, each word in its formats' % (', '.join(key), doc), body(page) == want, body(page))
+        if typed:
+            k.type('X'); settle(page, 150)
+            check('r3 and what is typed next takes the format before it (%r)' % doc, body(page) == typed, body(page))
+            k.press('Control+z'); settle(page, 150)
+        k.press('Control+z'); settle(page, 150)
+        if len(key) == 1: check('r3 one undo gives the paragraphs back (%r)' % doc, src(page) == WRAP(doc), body(page))
+
+
 def blank_formats(page):
     """Bold, Italic, Underline, a colour on the blank paragraph Enter shows: its first words get them."""
     k = page.keyboard
@@ -1199,7 +1222,7 @@ def r2_bare_switch(page):
 
 def run():
     with sync_playwright() as p:
-        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, caret_formats, word_formats, switch_space, deleted_formats, between_words, review3, r2_bare_switch, phones, compiles, r2_compiles)
+        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, r3_join, blank_formats, caret_formats, word_formats, switch_space, deleted_formats, between_words, review3, r2_bare_switch, phones, compiles, r2_compiles)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             if fn is phones:
                 phones(p)

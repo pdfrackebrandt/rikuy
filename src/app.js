@@ -2601,6 +2601,28 @@ class App {
           return;
         }
       }
+      // A paragraph break between formatted words (Enter in bold words splits them
+      // \textbf{bold}\n\n\textbf{word}): Backspace at the second's start or Delete at the first's
+      // end joins the paragraphs, as Word's, each word keeping its formats, and the same formats
+      // either side become one again (\textbf{bold word}), as a plain join, with its space. The
+      // range held the formats' braces, so nothing was deleted and the caret only stepped back:
+      // the paragraphs stayed apart and the next words went into the one above.
+      if (!vr.length && c.collapsed) {
+        const S = this.src(f);
+        let x = a, y = b;
+        const shut = [], opened = [];
+        for (let k = 0, W; k < 20 && S[x] === '}' && (W = chainAt(S, x, x).map((z) => z.W).find((w) => w.ie === x && w.e === x + 1)); k++) { shut.push(W); x = W.e; }
+        for (let k = 0, W; k < 20 && y > x && (W = chainAt(S, y, y).map((z) => z.W).find((w) => w.is === y && w.s >= x)); k++) { opened.push(W); y = W.s; }
+        const mid = S.slice(x, y);
+        if ((shut.length || opened.length) && x <= y && /^\s*$/.test(mid) && /\n[ \t\r]*\n/.test(mid)) {
+          const same = shut.length === opened.length && shut.every((W, i) => S.slice(W.s, W.is) === S.slice(opened[i].s, opened[i].is));
+          const s0 = same ? a : x, e0 = same ? b : y, t = /\s/.test(S[s0 - 1] || ' ') || /\s/.test(S[e0] || ' ') ? '' : ' ';
+          // (the caret where the first paragraph's words end, in their formats: what is typed next
+          // takes the format of the letter before it, as Word's)
+          this.commit([{ f, s: s0, e: e0, t }], { f, p: same ? a + t.length : a, bias: -1 }, 'del');
+          return;
+        }
+      }
       // Nothing of it is on the page, yet it holds a command with an argument (a letter's
       // \date{...} and \subject{...}, a \label, a \vspace): one keystroke would delete what the
       // user cannot see. The caret steps over it instead.
