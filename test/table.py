@@ -484,6 +484,12 @@ def paste_cells(page):
     check('the caret in the first pasted cell after it', '\\midrule\nAx & B' in src(page), src(page)[150:260])
     page.evaluate('window.rikuy.undo()'); page.evaluate('window.rikuy.undo()'); settle(page, 150)
     check('undo gives the table back byte for byte', src(page) == DOC)
+    # (a page's table with words around it, in one cell: on one line, each cell's words apart; they
+    # ran together, "AB CD")
+    load_doc(page, DOC); at_src(page, 'one', 3)
+    page.evaluate(PASTE, ['Before\nA\tB\nC\tD\nAfter', '<p>Before</p><table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table><p>After</p>']); settle(page, 300)
+    s = src(page)
+    check('HTML with a table among words pasted in a cell: one line, the cells\' words apart', re.search(r'\\midrule\noneBefore A B C D After & two', s), s[s.find('\\midrule'):s.find('\\bottomrule')])
     s = pasted(lambda: click_text(page, 'one', 1), 'A\tB\nC\tD\nE\tF')
     check('three rows pasted into two: a row added under the last, in booktabs', s.endswith('\\midrule\nA & B \\\\\nC & D \\\\\nE & F \\\\\n\\bottomrule\n'), s)
     s = pasted(lambda: click_text(page, 'two', 1), 'A\tB\tC\nD\tE\tF')

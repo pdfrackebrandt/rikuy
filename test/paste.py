@@ -19,6 +19,8 @@ cases = [
     ('money stays money', None, 'It costs $5 and $10.', 'It costs \\$5 and \\$10.'),
     ('link with hyperref', '<p>See <a href="https://arxiv.org/abs/1234">the preprint</a>.</p>', 'See the preprint.', 'See \\href{https://arxiv.org/abs/1234}{the preprint}.'),
     ('display math from chatgpt', None, 'The loss is\n\n$$L=\\sum_i (y_i-\\hat y_i)^2$$', 'The loss is\n\n\\[\nL=\\sum_i (y_i-\\hat y_i)^2\n\\]'),
+    # (a quote after a no-break space opens: it came out ''q'')
+    ('a quote after a no-break space', '<p>Section&nbsp;"Data" here.</p>', 'Section\u00a0"Data" here.', "Section~``Data'' here."),
 ]
 try:
     with sync_playwright() as p:

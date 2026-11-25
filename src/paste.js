@@ -46,7 +46,8 @@ export function htmlToTeX(html, opts = {}) {
       if (!t) return '';
       if (t === '~') { prev = '~'; return '~'; }
       const parts = t.split('~');
-      let r = parts.map((p, i) => { const e = escapeTeX(p, i === 0 ? prev : 'x'); if (p) prev = p[p.length - 1]; return e; }).join('~');
+      // (a part after a no-break space follows a space: a quote there opens, ``q'', where it came out ''q'')
+      let r = parts.map((p, i) => { const e = escapeTeX(p, i === 0 ? prev : ' '); if (p) prev = p[p.length - 1]; return e; }).join('~');
       return r;
     }
     if (node.nodeType !== 1) return '';
@@ -95,7 +96,8 @@ export function htmlToTeX(html, opts = {}) {
     if (el.tagName === 'PRE') sub.pre = true;
     let s = '';
     for (const c of el.childNodes) {
-      if (c.nodeType === 1 && BLOCK.test(c.tagName)) s += opts.inlineOnly ? ' ' + inline(c, sub) + ' ' : '\n\n' + block(c, sub) + '\n\n';
+      // (on one line, a table's cells apart as its rows are: their words ran together, "AB CD")
+      if (c.nodeType === 1 && (BLOCK.test(c.tagName) || (opts.inlineOnly && /^(TD|TH)$/.test(c.tagName)))) s += opts.inlineOnly ? ' ' + inline(c, sub) + ' ' : '\n\n' + block(c, sub) + '\n\n';
       else s += inline(c, sub);
     }
     return opts.inlineOnly ? s.replace(/ {2,}/g, ' ') : s;
