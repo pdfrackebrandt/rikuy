@@ -339,6 +339,15 @@ def quote_style(page):
     load_doc(page, WRAP('\\begin{quote}\nOne.\n\nTwo.\n\\end{quote}')); page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')]; const s = sp.find((x) => x.textContent.includes('One')), e = sp.find((x) => x.textContent.includes('Two'));
       const r = document.createRange(); r.setStart(s.firstChild, 0); r.setEnd(e.firstChild, 2); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }'''); state(page); style(page, 'p')
     check('Normal on both paragraphs selected: the quote off both, byte for byte as before it', body(page) == 'One.\n\nTwo.', body(page))
+    # (review of round 2) the caret in a list inside the quote: a blank line inside the list is no
+    # paragraph of the quote's: Normal takes the quote off whole, as before (\\end{quote} went
+    # inside the list, and TeX stopped)
+    QL = '\\begin{quote}\nIntro.\n\n\\begin{itemize}\n\\item Apple\n\n\\item Banana\n\\end{itemize}\n\nOutro.\n\\end{quote}'
+    for w in ('Apple', 'Banana'):
+        load_doc(page, WRAP(QL)); click_text(page, w, 1); state(page); style(page, 'p')
+        check('Normal with the caret in a list inside a quote (%s): the quote off whole, nothing ended inside the list' % w, body(page) == 'Intro.\n\n\\begin{itemize}\n\\item Apple\n\n\\item Banana\n\\end{itemize}\n\nOutro.', body(page))
+    load_doc(page, WRAP(QL)); click_text(page, 'Outro', 1); state(page); style(page, 'p')
+    check('Normal on the quote\'s own last paragraph after the list: it alone leaves, the list stays quoted', body(page) == '\\begin{quote}\nIntro.\n\n\\begin{itemize}\n\\item Apple\n\n\\item Banana\n\\end{itemize}\n\\end{quote}\n\nOutro.', body(page))
     load_doc(page, WRAP('\\begin{quote}\nOne.\n\nTwo.\n\\end{quote}')); click_text(page, 'Two', 1); state(page)
     style(page, 'section')
     check('Heading 1 on its second paragraph: the quote ends before it, the heading alone', body(page) == '\\begin{quote}\nOne.\n\\end{quote}\n\n\\section{Two.}', body(page))
@@ -1527,6 +1536,12 @@ def r2_heading_join(page):
     check('r2_heading_join: and in a file with CRLF line ends', src(page) == C.replace('{Head}\r\n\\noindent Body text.', '{Head Body text.}'), repr(src(page)[40:]))
     load_doc(page, A('\\section{Head \\emph{end}}\nBody text.\n\nNext.')); click_text(page, 'end', 3); page.keyboard.press('Delete'); settle(page, 200)
     check('r2_heading_join: Delete at a heading ending in \\emph joins the paragraph under it', src(page) == A('\\section{Head \\emph{end} Body text.}\n\nNext.'), src(page)[40:])
+    # (review of round 2) a review comment's line opening the paragraph keeps its own line, the
+    # pane still finds it: it was joined onto the heading's line, "Head % comment (Ana)"
+    for k, at in (('Backspace', ('Body', 0)), ('Delete', ('Head', 4))):
+        load_doc(page, A('\\section{Head}\n% comment (Ana): check this\nBody text.\n\nNext.')); click_text(page, *at); page.keyboard.press(k); settle(page, 250)
+        cs = page.evaluate("window.rikuy.allComments().map((c) => ({ s: c.s, text: c.body }))")
+        check('r2_heading_join: %s joins a paragraph that opens with a review comment, the comment on its own line' % k, src(page) == A('\\section{Head\n% comment (Ana): check this\nBody text.}\n\nNext.') and len(cs) == 1 and cs[0]['text'] == 'check this' and src(page)[cs[0]['s'] - 1] == '\n', (cs, src(page)[40:]))
     F = A('\\section{Head}\nBody\\footnote{N.} text.\n\nNext.')
     load_doc(page, F); click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 200)
     toast = page.evaluate("(document.querySelector('.toast') || {}).textContent || ''")

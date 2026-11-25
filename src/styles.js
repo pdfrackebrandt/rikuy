@@ -185,11 +185,25 @@ export function restyle(src, b, to, p) {
 // \begin, those after it get a bare one. Returns { edits, p } or { why }.
 export function splitEnvEdits(src, b, to, p) {
   const name = envOf(b.v), words = src.slice(b.ws, b.we);
-  // the paragraphs: [s, e) of each one's words, apart by blank lines
-  const paras = [];
+  // the paragraphs: [s, e) of each one's words, apart by blank lines of the environment's own level
+  // (a blank line inside a list, a minipage or a center in it, or inside braces, parts none: the
+  // quote was ended inside the list there, and TeX stopped)
+  const paras = [], top = new Uint8Array(words.length + 1);
+  for (let i = 0, d = 0, n = 0; i <= words.length; i++) {
+    top[i] = d === 0 && n === 0 ? 1 : 0;
+    const c = words[i];
+    if (c === '%') { const z = words.indexOf('\n', i); if (z < 0) break; for (; i < z; i++) top[i + 1] = top[i]; continue; }
+    if (c === '\\') {
+      const m = /^\\(begin|end)\s*\{[^{}]*\}/.exec(words.slice(i, i + 80));
+      if (m) { n += m[1] === 'begin' ? 1 : -1; i += m[0].length - 1; continue; }
+      i++; continue;
+    }
+    if (c === '{') d++;
+    else if (c === '}') d--;
+  }
   const gap = /[ \t]*\r?\n[ \t]*(?:\r?\n[ \t]*)+/g;
   let at = 0;
-  for (let m; (m = gap.exec(words));) { paras.push([b.ws + at, b.ws + m.index]); at = m.index + m[0].length; }
+  for (let m; (m = gap.exec(words));) { if (!top[m.index]) continue; paras.push([b.ws + at, b.ws + m.index]); at = m.index + m[0].length; }
   paras.push([b.ws + at, b.ws + words.length]);
   if (paras.length < 2) return { why: 'one paragraph' };
   let k = paras.findIndex(([s, e]) => p >= s && p <= e);
@@ -199,8 +213,9 @@ export function splitEnvEdits(src, b, to, p) {
   // (Normal: the paragraph leaves the environment as it is, whatever it holds; a heading holds words only)
   const normal = to === 'p';
   if (!text.trim() || (!normal && (NOT_PLAIN.test(text) || text[0] === '%' || /(^|[^\\])%/.test(text)))) return { why: 'This paragraph holds more than words: a heading cannot hold it.' };
-  // (an abstract begun again after a paragraph in its middle would print its title twice)
-  if (normal && name === 'abstract' && k > 0 && k < paras.length - 1) return { why: 'abstract' };
+  // (an abstract begun again after a paragraph in its middle would print its title twice; the caret
+  // in a list, a minipage or a center inside the quote: the quote comes off whole, as before)
+  if (normal && ((name === 'abstract' && k > 0 && k < paras.length - 1) || /\\(?:begin|end)\s*\{|\\item\b/.test(text))) return { why: 'whole' };
   const eol = eolAt(src, b.s);
   // before it: the environment ends where its last paragraph ends, or (it was the first) its
   // \begin line goes

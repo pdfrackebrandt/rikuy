@@ -430,15 +430,21 @@ export const methods = {
     // What a heading's argument cannot hold (a display, a list, a footnote, \verb, a % in an
     // address) stays out of it, and Backspace says why: it did nothing at all. A comment can stay
     // in it, the closing brace on a line after it (below).
-    if (kw === 'h' && (NOT_PLAIN.test(words) || VERBISH.test(words) || /\\(?:url|href|path)\s*\{[^{}]*%/.test(words))) {
-      this.toast('A heading cannot hold ' + (/\\footnote\b/.test(words) ? 'a footnote' : /\\item\b/.test(words) ? 'a list' : VERBISH.test(words) || /%/.test(words) ? 'verbatim text or an address with %' : 'a display or an environment') + ': the paragraph stays under it.', 2600);
+    // (read without their comments: a \begin in a comment is no environment)
+    const plain = words.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, '$1$2'), addr = /\\(?:url|href|path)\s*\{[^{}]*%/.test(words);
+    if (kw === 'h' && (NOT_PLAIN.test(plain) || VERBISH.test(words) || addr)) {
+      this.toast('A heading cannot hold ' + (/\\footnote\b/.test(plain) ? 'a footnote' : /\\item\b/.test(plain) ? 'a list' : VERBISH.test(words) || addr ? 'verbatim text or an address with %' : 'a display or an environment') + ': the paragraph stays under it.', 2600);
       return true;
     }
     if (label && COMMENT.test(words)) return false;
     // (after a comment that ends the first block's words: on a line of their own, or the comment
     // would take them off the page)
     const NL = /\r\n/.test(src) ? '\r\n' : '\n', close = src.slice(w.we, wEnd);
-    const sp = COMMENT.test(src.slice(src.lastIndexOf('\n', w.we - 1) + 1, w.we)) ? NL : src.slice(w.ws, w.we).trim() ? ' ' : '';
+    // (words that begin with a comment's line, a review comment: it keeps its own line, the words
+    // after it on theirs, or it was joined onto the line above, "Head % comment (Ana)", where the
+    // review pane no longer reads it; the caret after it)
+    const leadCm = /^(?:[ \t]*%[^\n]*\n[ \t]*)+/.exec(words), skip = leadCm ? leadCm[0].length : 0;
+    const sp = COMMENT.test(src.slice(src.lastIndexOf('\n', w.we - 1) + 1, w.we)) || leadCm ? NL : src.slice(w.ws, w.we).trim() ? ' ' : '';
     // (joined into a paragraph, which ends nowhere of its own: what came after the second block
     // keeps a blank line from it, or it would run on in the same paragraph)
     let tail = reopen;
@@ -450,7 +456,7 @@ export const methods = {
     const cut = kw === 'h' && close && COMMENT.test(words.slice(words.lastIndexOf('\n') + 1)) ? NL : '';
     const t = sp + words + label + cut + close + (gapLab ? NL + gapLab[1] : '') + leadLab + tail;
     this.closeGroup();
-    this.commit([{ f, s: w.we, e: E, t }], back ? { f, p: w.we + sp.length, bias: 1 } : { f, p: w.we, bias: -1 }, 'del');
+    this.commit([{ f, s: w.we, e: E, t }], back ? { f, p: w.we + sp.length + skip, bias: 1 } : { f, p: w.we, bias: -1 }, 'del');
     return true;
   },
   blockStyleOf(at) {
@@ -632,8 +638,8 @@ export const methods = {
     const several = to === 'p' && !c.collapsed && c.f === at.B.f && /\n[ \t]*\r?\n/.test(this.src(c.f).slice(c.a, c.b));
     if (cur.split && (isHeading(to) || to === 'part' || (to === 'p' && !several))) {
       const f = at.B.f, r = splitEnvEdits(this.src(f), cur.b, to, c.a);
-      // (Normal in an abstract's middle: the abstract goes whole, as before)
-      if (r.why === 'abstract') return this.setBlockStyleWhole(at, cur, to);
+      // (Normal in an abstract's middle, or in a list inside the quote: it goes whole, as before)
+      if (r.why === 'whole') return this.setBlockStyleWhole(at, cur, to);
       if (r.why) { this.toast(r.why); return; }
       this.commit(r.edits.map((x) => ({ f, ...x })), { f, p: r.p, bias: -1 }, 'block');
       this.closeGroup();
