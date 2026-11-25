@@ -220,7 +220,9 @@ try:
         check('r3 paste a green highlight where soul defines \\hl: \\hl{..}, no definition', BODY(src(page)) == 'Alpha para.\\hl{green}' and 'DeclareRobustCommand' not in src(page), repr(src(page)))
         # (review of round 3: soul's \\hl holds words alone; a colour or \\sout in it stopped TeX: it goes inside them)
         for name, html, want in (('a colour in a highlight', "<p>x <span style='background:yellow;mso-highlight:yellow'>a <span style='color:#FF0000'>b</span></span> y</p>", 'Alpha para.x \\hl{a} \\textcolor[HTML]{FF0000}{\\hl{b}} y'),
-                                 ('struck and highlighted', '<b id="docs-internal-guid-1" style="font-weight:normal"><p><span style="background-color:#ffff00;text-decoration:line-through">both</span><span> plain words</span></p></b>', 'Alpha para.\\sout{\\hl{both}} plain words')):
+                                 # (soul's \\hl of several words in \\sout stops TeX, "Leaders not followed by proper glue", and \\sout in \\hl too: a word at a time)
+                                 ('struck and highlighted', '<b id="docs-internal-guid-1" style="font-weight:normal"><p><span style="background-color:#ffff00;text-decoration:line-through">just these words</span><span> plain words</span></p></b>', 'Alpha para.\\sout{\\hl{just}} \\sout{\\hl{these}} \\sout{\\hl{words}} plain words'),
+                                 ('a highlight in a struck run', "<p><del>gone <span style='background:yellow;mso-highlight:yellow'>two words</span> end</del></p>", 'Alpha para.\\sout{gone} \\sout{\\hl{two}} \\sout{\\hl{words}} \\sout{end}')):
             load_doc(page, W2('Alpha para.', SOUL + '\\usepackage{xcolor}\n')); click_text(page, 'Alpha para.', 11)
             page.evaluate(PASTE, [html, 'x']); settle(page, 250)
             check('r3 soul: %s keeps \\hl innermost' % name, BODY(src(page)) == want, repr(BODY(src(page))))

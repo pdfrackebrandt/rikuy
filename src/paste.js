@@ -105,7 +105,14 @@ export function htmlToTeX(html, opts = {}) {
   };
   // the marks' commands, innermost first: \sout, \hl, then \textcolor round them
   const markCmds = (m) => [...(m.strike ? ['sout'] : []), ...(m.hl ? [m.hl === 'yellow' || opts.hlColor === false ? 'hl' : 'hl[' + m.hl + ']'] : []), ...(m.color ? ['textcolor[HTML]{' + m.color + '}'] : [])];
-  const markText = (r, m) => { const lead = (/^\s+/.exec(r) || [''])[0], tail = (/\s+$/.exec(r) || [''])[0]; let x = r.trim(); for (const cmd of markCmds(m)) x = '\\' + cmd + '{' + x + '}'; return lead + x + tail; };
+  const markText = (r, m) => {
+    // (soul's \hl goes inside \sout, \sout{\hl{word}}: the other way stops TeX)
+    const cmds = markCmds(m), soul = opts.hlColor === false && m.strike && m.hl ? [cmds[1], cmds[0], ...cmds.slice(2)] : cmds;
+    const lead = (/^\s+/.exec(r) || [''])[0], tail = (/\s+$/.exec(r) || [''])[0], on = (x) => { for (const cmd of soul) x = '\\' + cmd + '{' + x + '}'; return x; };
+    // (soul's \hl in \sout: a word at a time)
+    if (opts.hlColor === false && m.strike && m.hl) return lead + r.trim().split(/((?<!\\)\s+)/).map((w, i) => (i % 2 ? w : on(w))).join('') + tail;
+    return lead + on(r.trim()) + tail;
+  };
   let prev = opts.prev || ' ';
   const out = [];
   const emit = (t) => { if (t) { out.push(t); prev = t[t.length - 1]; } };
@@ -147,7 +154,11 @@ export function htmlToTeX(html, opts = {}) {
     if ((mk.color || P.color) && (mk.color || P.color) !== O.color) want.color = mk.color || P.color;
     let here = ctx.pre ? {} : { ...want };
     const down = {};
+    // (with soul, a struck run's \sout goes on its words too: soul's \hl of several words in
+    // \sout stops TeX, "Leaders not followed by proper glue", and \sout in \hl does too; each
+    // word struck and highlighted on its own compiles: markText)
     if (here.hl && opts.hlColor === false) { down.hl = here.hl; delete here.hl; }
+    if (here.strike && opts.hlColor === false) { down.strike = true; delete here.strike; }
     const p0 = prev;
     // (a mark given to the words is not on: each run inside passes it on to its own words)
     let body = kids(el, { ...ctx, on: { ...O, ...here }, pend: Object.keys(down).length ? down : null });

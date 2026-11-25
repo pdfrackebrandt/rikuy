@@ -253,6 +253,23 @@ function noLineBefore(src, p) {
   return /(?:\n[ \t\r]*\n|\\begin\s*\{[^{}]*\}(?:\s*\[[^\]]*\]|\s*\{[^{}]*\})*|\\item(?![A-Za-z])(?:\s*\[[^\]]*\])?|\\\\(?:\s*\[[^\]]*\])?|\\par(?![A-Za-z])|\\(?:begin\s*\{document\})|\\(?:footnote|endnote|thanks|footnotetext|parbox(?:\[[^\]]*\])*\{[^{}]*\}|fbox|mbox|centerline)\s*\{)\s*$/.test(t);
 }
 
+// Whether the page draws anything of its paragraph before a point (words, a formula, a mark; a
+// line break alone is none): where it draws nothing, the point is in vertical mode for TeX, after
+// a heading, an environment's end, a \vspace or \maketitle as after a blank line, and a \\ there
+// stops TeX. null where the point is in no paragraph of the page (a footnote's text at its foot).
+function drawnBefore(node, offset) {
+  const el = node && (node.nodeType === 1 ? node : node.parentElement);
+  const it = el && el.closest && el.closest('.it');
+  if (!it) return null;
+  if (it.classList.contains('split-b')) return true;
+  const r = document.createRange();
+  try { r.setStart(it, 0); r.setEnd(node, offset); } catch (e) { return null; }
+  const frag = r.cloneContents();
+  if ([...frag.querySelectorAll('span.t')].some((x) => x.textContent.replace(/[\u200B\s]/g, ''))) return true;
+  if (node.nodeType === 3 && el.closest('span.t') && node.data.slice(0, offset).replace(/[\u200B\s]/g, '')) return true;
+  return !!frag.querySelector('.atom:not(.a-br)');
+}
+
 // How many { are open at position p, counting from the start of its paragraph.
 function braceDepth(src, p) {
   let s = src.lastIndexOf('\n\n', p - 1);
@@ -2792,7 +2809,8 @@ class App {
           const apart = X.edits.some((x) => x.f !== X.at.f && /\n[ \t\r]*\n[ \t\r]*$/.test(/\s*$/.exec(this.src(x.f).slice(Math.max(0, x.s - 400), x.s))[0]));
           // (and none where nothing stands before it on its line, the paragraph's start: a \\ there
           // stops TeX, "There's no line here to end"; the deletion alone, as the page shows it)
-          if (!apart && !/\n[ \t\r]*\n/.test(gap) && !(ctx && /^(h|cap|cell)$/.test(ctx.dataset.ctx)) && !noLineBefore(S, X.at.p)) {
+          const sr = getSelection().getRangeAt(0), before = drawnBefore(sr.startContainer, sr.startOffset);
+          if (!apart && !/\n[ \t\r]*\n/.test(gap) && !(ctx && /^(h|cap|cell)$/.test(ctx.dataset.ctx)) && (before === true || (before === null && !noLineBefore(S, X.at.p)))) {
             const t = '\\\\' + (/^[ \t]*\r?\n/.test(gap) || !gap.length && end >= S.length ? '' : '\n');
             if (ed) ed.t += t; else X.edits.push({ f: X.at.f, s: X.at.p, e: X.at.p, t });
             this.commit(X.edits, { f: X.at.f, p: X.at.p + t.length, bias: 1 }, 'type');
@@ -2824,9 +2842,13 @@ class App {
     if (soft) {
       if (kind === 'cell') { this.cellEnter(c, edits); return; }
       if (kind === 'h' || kind === 'cap') return;
-      // (at a paragraph's start a bare \\ stops TeX, "There's no line here to end": an empty
-      // line there is \mbox{}\\, as Word's Shift+Enter there makes one)
-      const t = noLineBefore(src, p) ? '\\mbox{}\\\\\n' : '\\\\\n';
+      // (where the page draws nothing of the paragraph before the caret, at its start after a
+      // blank line, a heading, an environment's end, a \vspace or \maketitle, a bare \\ stops
+      // TeX, "There's no line here to end": Shift+Enter there is Enter, an empty line on the page;
+      // in a footnote's text, which is no paragraph of the page, \mbox{}\\ there)
+      const sr = sel.rangeCount ? sel.getRangeAt(0) : null, before = sr ? drawnBefore(sr.startContainer, sr.startOffset) : null;
+      if (before === false) { this.enter(false); return; }
+      const t = before === null && noLineBefore(src, p) ? '\\mbox{}\\\\\n' : '\\\\\n';
       this.commit([...edits, { f, s: p, e: p, t }], { f, p: p + t.length, bias: 1 }, 'type');
       return;
     }

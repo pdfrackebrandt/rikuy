@@ -360,8 +360,17 @@ def cross_files():
         # Shift+Enter at a paragraph's start writes \mbox{}\\, an empty line as Word's
         T = os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist', 'tex', 'tree.wasm'))
         ONE = '\\documentclass{article}\n\\begin{document}\nAlpha para.\n\nBeta words.\n\\end{document}\n'
-        for G, a, want, label in ((P, ['Some words', 0, 'inner text', 6], {'main.tex': P['main.tex'].replace('Some words here', ''), 'part.tex': 'text of part'}, 'from a paragraph\'s start into an \\input file'),
-                                  ({'main.tex': ONE}, ('Beta', 0), {'main.tex': ONE.replace('Beta', '\\mbox{}\\\\\nBeta')}, 'at a paragraph\'s start in one file')):
+        # (review of round 3, verification) decided by what the page draws before the caret in its
+        # paragraph: after a heading, an environment's end, a \vspace or \maketitle as after a blank
+        # line, Shift+Enter is Enter (an empty line on the page), never a bare \\
+        PS = {'main.tex': P['main.tex'].replace('\\begin{document}\n', '\\begin{document}\n\\section{Head}\n'), 'part.tex': P['part.tex']}
+        D1 = lambda b: '\\documentclass{article}\n\\title{T}\\author{A}\n\\begin{document}\n' + b + '\n\\end{document}\n'
+        cases = [(P, ['Some words', 0, 'inner text', 6], {'main.tex': P['main.tex'].replace('Some words here', ''), 'part.tex': 'text of part'}, 'from a paragraph\'s start into an \\input file'),
+                 (PS, ['Some words', 0, 'inner text', 6], {'main.tex': PS['main.tex'].replace('Some words here', ''), 'part.tex': 'text of part'}, 'from a paragraph\'s start after a heading into an \\input file')]
+        for name, body in (('after a blank line', 'Alpha para.\n\nBeta words.'), ('after \\section', '\\section{Head}\\label{s}\nBeta words.'), ('after \\end{itemize}', '\\begin{itemize}\n\\item one\n\\end{itemize}\nBeta words.'),
+                           ('after \\vspace', 'Alpha.\n\n\\vspace{1cm}\nBeta words.'), ('after \\maketitle', '\\maketitle\nBeta words.')):
+            cases.append(({'main.tex': D1(body)}, ('Beta', 0), lambda got, d=D1(body): got['main.tex'].count('\\\\') == d.count('\\\\') and 'Beta words.' in got['main.tex'], 'at a paragraph\'s start ' + name))
+        for G, a, want, label in cases:
             load_doc(page, G)
             if isinstance(a, list): page.evaluate(SEL, a)
             else: click_text(page, *a)
@@ -369,7 +378,7 @@ def cross_files():
             page.keyboard.press('Shift+Enter')
             settle(page, 200)
             got = {f: src(page, f) for f in G}
-            check('Shift+Enter %s: no bare \\\\ where nothing stands before it' % label, got == want, got)
+            check('Shift+Enter %s: no bare \\\\ where nothing stands before it' % label, want(got) if callable(want) else got == want, got)
             if T:
                 page.set_default_timeout(600000)
                 r = page.evaluate('async () => { const r = await window.rikuy.api.compile(); return [r.ok, r.problems.filter((p) => p.severity === "error").map((p) => p.message)]; }')
