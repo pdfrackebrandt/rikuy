@@ -822,8 +822,10 @@ export const methods = {
     for (const c of caps) { const v = capPage.has(c.dataset.cap) ? String(capPage.get(c.dataset.cap)) : ''; if (c.textContent !== v) c.textContent = v; }
     // (an entry's page: the page holding the words just before it, a paragraph cut over two pages
     // giving each part its own; blocks by file, searched by halves: review M9, L12)
-    // (the number each page prints, which makeindex writes: 1 again after a book's front matter)
-    const pageNo = new Map([...this.root.querySelectorAll('.page')].map((p, k) => [p, plan[k] && Number.isFinite(plan[k].num) ? plan[k].num : k + 1]));
+    const pageNo = new Map([...this.root.querySelectorAll('.page')].map((p, k) => [p, k + 1]));
+    // (the pages are counted along the document, for their order and their ranges; each is written as
+    // the page prints its number, which makeindex writes: iii in a book's front matter, 1 again after)
+    const printed = (n) => (plan[n - 1] && Number.isFinite(plan[n - 1].num) ? fmtNum(plan[n - 1].num, plan[n - 1].fmt) : String(n));
     const byF = new Map();
     for (const B of this.renderer.blocks) { if (!byF.has(B.f)) byF.set(B.f, []); byF.get(B.f).push(B); }
     for (const L of byF.values()) L.sort((a, b) => a.s - b.s);
@@ -879,7 +881,7 @@ export const methods = {
       for (const [k, p] of list.entries()) {
         x.append(right && k === 0 ? '' : ', ');
         const tag = /^(textbf|bfseries)$/.test(p.fmt) ? 'b' : /^(textit|emph|itshape)$/.test(p.fmt) ? 'i' : 'span';
-        const el = document.createElement(tag); el.textContent = p.t; x.append(el);
+        const el = document.createElement(tag); el.textContent = String(p.t).replace(/\d+/g, (d) => printed(+d)); x.append(el);
       }
     }
   },

@@ -1106,7 +1106,15 @@ class App {
     const where = [];
     // (the number the page prints, as TeX writes it in the .toc: i, ii in a book's front matter,
     // 1 again from its main matter)
-    plan.forEach((pg) => { for (const e of pg.entries) if (e.it.kind === 'h' && e.a === 0) where.push({ el: e.it.el, page: fmtNum(pg.num, pg.fmt) }); });
+    // (and the contents', the lists' and the bibliography's own heads, which memoir and tocbibind
+    // list in the contents: "Contents  i")
+    plan.forEach((pg) => {
+      for (const e of pg.entries) {
+        if (e.a !== 0) continue;
+        const el = e.it.kind === 'h' ? e.it.el : e.it.toc ? e.it.el.querySelector('.toc-head') : e.it.el && e.it.el.classList.contains('refs-h') ? e.it.el : null;
+        if (el) where.push({ el, page: fmtNum(pg.num, pg.fmt) });
+      }
+    });
     const byText = new Map();
     for (const w of where) byText.set(w.el.textContent.replace(/\s+/g, ' ').trim(), w.page);
     for (const t of tocs) {

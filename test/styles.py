@@ -1398,6 +1398,12 @@ def r3_fontspec(page):
         check('R3 fontspec: one undo goes back byte for byte', undo_is(page, doc))
         select_text(page, 'words'); page.keyboard.press('Control+b'); wait_src(page, 'textbf')
         check('R3 fontspec: Ctrl+B on a word of the group bolds it inside the group', '{\\headfont Heros \\textbf{words}} back' in src(page), src(page)[-70:])
+    # (\headfont{words} after.: the braces are a group, the switch holds on after it, as TeX reads it)
+    load_doc(page, doc.replace('{\\headfont Heros words} back', '\\headfont{Heros words} back'))
+    got = page.evaluate("[...document.querySelectorAll('#pages .y')].map((x) => x.className.includes('ff-sans') + ':' + x.textContent.replace(/\\s+/g, ' ').trim())")
+    check('R3 fontspec: \\headfont{words} after: words and what follows in the family\'s look, no chip', got == ['true:Heros words back to main.'], got)
+    click_text(page, 'Heros words', 5); page.keyboard.type('X'); wait_src(page, 'HerosX')
+    check('R3 fontspec: and typing in them edits inside the braces', '\\headfont{HerosX words} back' in src(page), src(page)[-60:])
     if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
         for eng in ('xelatex', 'lualatex'):
             r = pdf_text(page, doc.replace('xelatex', eng))
@@ -1419,6 +1425,16 @@ def r3_beamer(page):
     click_text(page, 'bold', 2); page.keyboard.type('X'); wait_src(page, 'boXld')
     click_text(page, 'world', 5); page.keyboard.type('s'); wait_src(page, 'worlds')
     check('R3 beamer: typing in them edits inside their braces, the specifications kept', 'Hello \\alert<2>{worlds} and \\textbf<3>{boXld}.' in src(page), src(page)[40:120])
+    # Ctrl+B on a word bold by \textbf<3>{..} takes the bold off, as on any bold word
+    load_doc(page, doc); select_text(page, 'bold'); page.keyboard.press('Control+b'); wait_src(page, 'and bold.')
+    check('R3 beamer: Ctrl+B on the word \\textbf<3>{bold} draws bold takes the bold off', 'Hello \\alert<2>{world} and bold.' in src(page), src(page)[40:110])
+    # an environment's specification (no argument read there) and a theorem's, and a file \input
+    # into the deck, read so too
+    blk = ('\\documentclass{beamer}\n\\begin{document}\n\\begin{frame}\n\\begin{block}<2->{Block Title}\nIn block.\n\\end{block}\n'
+           '\\begin{theorem}<3->[Name]\nThm.\n\\end{theorem}\n\\input{part}\n\\end{frame}\n\\end{document}\n')
+    load_doc(page, {'main.tex': blk, 'part.tex': 'From \\alert<2>{part} file.\n'})
+    got = page.evaluate("[...document.querySelectorAll('#pages .it')].map((x) => x.textContent.replace(/\\s+/g, ' ').trim()).filter(Boolean)")
+    check('R3 beamer: \\begin{block}<2->, \\begin{theorem}<3->[Name] and an \\input file\'s \\alert<2> drawn without their specifications', not any('<' in t for t in got) and any('Theorem 1 (Name)' in t for t in got) and any('From part file.' in t for t in got), got)
     if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
         r = pdf_text(page, doc)
         check('R3 beamer: the deck compiles, two slides (<1-2>) with the words the page draws', r['ok'] and not r['errors'] and r['text'].count('\f') == 2 and 'Hello world and bold. Later' in re.sub(r'\s+', ' ', r['text']), (r['errors'], r['text'][-200:]))

@@ -981,33 +981,73 @@ R3_BOOK = ('\\documentclass{book}\n\\begin{document}\n\\frontmatter\n\\chapter{P
 
 def r3_matter(page):
     """Round 3's hunt: a report's and a book's pages as TeX sets them. A \\title and \\author written
-    in the text before \\maketitle make the title page (it was not drawn at all); the contents, the
-    list of figures and the bibliography each start a page, as \\chapter* does; \\frontmatter numbers
-    its pages i, ii and \\mainmatter 1 again (each on an odd page of a book), and the contents give
-    the numbers the pages print; with dist/tex every page starts with the words TeX starts it with"""
-    PAGES = "[...document.querySelectorAll('#pages > .page')].map((p) => [p.querySelector('.flow').textContent.replace(/\\s+/g, ' ').trim(), ((p.querySelector('.hd').hidden ? '' : p.querySelector('.hd').textContent) + ' ' + (p.querySelector('.ft').hidden ? '' : p.querySelector('.ft').textContent)).trim()])"
+    in the text before \\maketitle make the title page (it was not drawn at all), and typing in them
+    draws it again; the contents, the list of figures and the bibliography each start a page, as
+    \\chapter* does, its number at the foot (plain); \\frontmatter numbers its pages i, ii and
+    \\mainmatter 1 again (each on an odd page of a book), and the contents and the index give the
+    numbers the pages print; memoir's and KOMA-Script's blank pages are empty, KOMA's chapters have
+    no "Chapter" unless chapterprefix (\\KOMAoptions too) asks; with dist/tex every page starts with
+    the words TeX starts it with, its number on the same side (head or foot)"""
+    PAGES = "[...document.querySelectorAll('#pages > .page')].map((p) => [p.querySelector('.flow').textContent.replace(/\\s+/g, ' ').trim(), p.querySelector('.hd').hidden ? '' : p.querySelector('.hd').textContent, p.querySelector('.ft').hidden ? '' : p.querySelector('.ft').textContent])"
     TOC = "[...document.querySelectorAll('.toc-p')].map((x) => x.textContent)"
-    for text, firsts, nums, toc in ((R3_REPORT, ['Report Title', 'Contents', 'List of Figures', 'Chapter 1', 'Chapter 2', 'Appendix A', 'Bibliography'], ['', '1', '2', '3', '4', '5', '6'], ['3', '4', '5', '3']),
-                                    (R3_BOOK, ['Preface', '', 'Contents', '', 'Chapter 1', '', 'Appendix A', '', 'Notes'], ['i', 'ii', 'iii', 'iv', '1', '2', '3', '4', '5'], ['i', '1', '1', '3', '5']),
+    NUM = r'(?<![a-z0-9.])([ivxlc]+|\d+)(?![a-z0-9.])'
+
+    def side(hd, ft):
+        # (the page's number: in the foot, or the head's first or last word where the head has it)
+        f = re.findall(NUM, ft)
+        if f: return 'f' + f[0]
+        h = re.findall(NUM, hd)
+        return ('h' + (h[0] if re.match(NUM, hd.strip()) else h[-1])) if h else ''
+
+    def tex_side(c, k):
+        H = float(c['pdf'].pages[k].mediabox.height)
+        for x0, y0, x1, y1, w in c['words'][k]:
+            if re.fullmatch(r'[ivxlc]+|\d+', w):
+                # (the head's line stands above the text's first, the foot's below its last)
+                if y1 < 150: return 'h' + w
+                if y0 > H - 200: return 'f' + w
+        return ''
+    f = lambda *n: ['f' + x if x else '' for x in n]
+    for text, firsts, nums, toc in ((R3_REPORT, ['Report Title', 'Contents', 'List of Figures', 'Chapter 1', 'Chapter 2', 'Appendix A', 'Bibliography'], f('', '1', '2', '3', '4', '5', '6'), ['3', '4', '5', '3']),
+                                    (R3_BOOK, ['Preface', '', 'Contents', '', 'Chapter 1', '', 'Appendix A', '', 'Notes'], ['fi', 'hii', 'fiii', 'hiv', 'f1', 'h2', 'f3', 'h4', 'f5'], ['i', '1', '1', '3', '5']),
                                     # (memoir's and KOMA-Script's blank pages have no head and no number; KOMA's
-                                    # chapters no "Chapter" before their number)
-                                    (R3_MATTER % 'memoir', ['Contents', '', 'Preface', '', 'Chapter 1', '', 'Chapter 2', '', 'Bibliography'], ['i', '', 'iii', '', '1', '', '3', '', '5'], ['', 'iii', '1', '1', '3']),
-                                    (R3_MATTER % 'scrbook', ['Contents', '', 'Preface', '', '1One', '', '2Two', '', 'Bibliography'], ['i', '', 'iii', '', '1', '', '3', '', '5'], ['iii', '1', '1', '3'])):
+                                    # chapters no "Chapter" before their number; memoir lists its contents in them)
+                                    (R3_MATTER % 'memoir', ['Contents', '', 'Preface', '', 'Chapter 1', '', 'Chapter 2', '', 'Bibliography'], f('i', '', 'iii', '', '1', '', '3', '', '5'), ['i', 'iii', '1', '1', '3']),
+                                    (R3_MATTER % 'scrbook', ['Contents', '', 'Preface', '', '1One', '', '2Two', '', 'Bibliography'], f('i', '', 'iii', '', '1', '', '3', '', '5'), ['iii', '1', '1', '3']),
+                                    (R3_MATTER.replace('\\begin{document}', '\\KOMAoptions{chapterprefix=true}\n\\begin{document}') % 'scrbook', ['Contents', '', 'Preface', '', 'Chapter 1', '', 'Chapter 2', '', 'Bibliography'], f('i', '', 'iii', '', '1', '', '3', '', '5'), ['iii', '1', '1', '3'])):
         # (the contents are read from the build before, as TeX reads the .toc: built twice)
         load_doc(page, text); load_doc(page, text); settle(page, 300)
         got = page.evaluate(PAGES)
-        kind = re.search(r'\{(\w+)\}', text).group(1)
-        check('R3 matter: the %s is %d pages, each starting as TeX starts it' % (kind, len(firsts)), len(got) == len(firsts) and all(g[0].startswith(f) for g, f in zip(got, firsts)), [g[0][:30] for g in got])
-        check('R3 matter: the %s\'s pages print TeX\'s numbers' % kind, [re.sub(r'[^ivx0-9]', ' ', g[1]).split()[:1] for g in got] == [[n] if n else [] for n in nums], [g[1] for g in got])
+        kind = re.search(r'\{(\w+)\}', text).group(1) + (' with \\KOMAoptions' if 'KOMAoptions' in text else '')
+        check('R3 matter: the %s is %d pages, each starting as TeX starts it' % (kind, len(firsts)), len(got) == len(firsts) and all(g[0].startswith(x) for g, x in zip(got, firsts)), [g[0][:30] for g in got])
+        check('R3 matter: the %s\'s pages print TeX\'s numbers, each in the head or the foot as TeX does' % kind, [side(g[1], g[2]) for g in got] == nums, [side(g[1], g[2]) for g in got])
         check('R3 matter: the %s\'s contents and lists give the numbers the pages print' % kind, page.evaluate(TOC) == toc, page.evaluate(TOC))
         if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
             c = compile_doc(page, text)
-            tex = [' '.join(t.split()) for t in c['txt'] if t.strip() or True][:len(c['pdf'].pages) if c['pdf'] else 0]
-            bad = [(k, f) for k, f in enumerate(firsts) if k < len(tex) and f.replace(' ', '') not in tex[k].replace(' ', '')]
+            tex = [' '.join(t.split()) for t in c['txt']][:len(c['pdf'].pages) if c['pdf'] else 0]
+            bad = [(k, x) for k, x in enumerate(firsts) if k < len(tex) and x.replace(' ', '') not in tex[k].replace(' ', '')]
             check('R3 matter: TeX\'s PDF of the %s has as many pages, each starting with the same words' % kind, c['ok'] and len(tex) == len(firsts) and not bad, (len(tex), bad[:3]))
-    # typing in the title written in the text edits its \title
+            sides = [tex_side(c, k) for k in range(len(tex))]
+            check('R3 matter: and TeX prints each page\'s number where the page does', sides == nums, sides)
+    # typing in the title written in the text edits its \title and draws it again, with an abstract
+    # or a paragraph between it and \maketitle too
     load_doc(page, R3_REPORT); click_text(page, 'Report Title', 6); page.keyboard.type('X'); settle(page, 200)
     check('R3 matter: typing in a title written in the text edits its \\title', '\\title{ReportX Title}' in src(page), src(page)[40:110])
+    TITLE = "(() => { const t = [...document.querySelectorAll('#pages .it')].find((x) => /Author/.test(x.textContent)); return t ? t.textContent.replace(/\\s+/g, ' ').trim() : null; })()"
+    for between in ('\\begin{abstract}Abs words.\\end{abstract}\n', 'Intro words.\n\n'):
+        doc = '\\documentclass{article}\n\\begin{document}\n\\title{Body Title}\\author{Some Author}\n' + between + '\\maketitle\nText.\n\\end{document}\n'
+        load_doc(page, doc); click_text(page, 'Body Title', 4); page.keyboard.type('XY'); settle(page, 200)
+        for _ in range(3): page.keyboard.press('Backspace')
+        settle(page, 200)
+        click_text(page, 'Some Author', 4); page.keyboard.type('Z'); settle(page, 200)
+        check('R3 matter: with %s between \\title and \\maketitle, the title page draws what typing wrote' % ('an abstract' if 'abstract' in between else 'a paragraph'),
+              '\\title{Bod Title}\\author{SomeZ Author}' in src(page) and (page.evaluate(TITLE) or '').replace(' ', '').startswith('BodTitleSomeZAuthor'), (src(page)[30:80], page.evaluate(TITLE)))
+    # the index's numbers: iii for a word in a book's front matter, as makeindex writes it
+    ix = ('\\documentclass{book}\n\\usepackage{makeidx}\n\\makeindex\n\\begin{document}\n\\frontmatter\n\\tableofcontents\n\\chapter{Preface}\nAlpha\\index{alpha} words.\n'
+          '\\mainmatter\n\\chapter{One}\nBeta\\index{beta} words.\n\\printindex\n\\end{document}\n')
+    load_doc(page, ix); load_doc(page, ix); settle(page, 300)
+    rows = page.evaluate("[...document.querySelectorAll('.idx-p')].map((x) => x.textContent.replace(/^[,\\s]+/, ''))")
+    check('R3 matter: the index gives a front matter word\'s page as iii, a main matter word\'s as 1', rows == ['iii', '1'], rows)
 
 
 def run():
