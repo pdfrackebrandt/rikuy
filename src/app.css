@@ -1528,8 +1528,10 @@ body.nav-on.nav-outline #nav { width: 460px; }
 .tp-head { font: 600 12px var(--font-ui); color: var(--ink-ui); padding: 4px 4px 6px; min-height: 16px; }
 .tp-grid { display: grid; gap: 3px; padding: 2px 4px 6px; outline: none; border-radius: 6px; }
 .tp-grid:focus-visible { box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 45%, transparent); }
-.tp-row { display: grid; grid-template-columns: repeat(10, 18px); gap: 3px; }
-.tp-cell { width: 18px; height: 18px; box-sizing: border-box; border: 1px solid var(--line); background: var(--panel); border-radius: 2px; cursor: pointer; }
+.tp-row { display: grid; grid-template-columns: repeat(var(--tp-n, 10), var(--tp-s, 18px)); gap: 3px; }
+.tp-cell { width: var(--tp-s, 18px); height: var(--tp-s, 18px); box-sizing: border-box; border: 1px solid var(--line); background: var(--panel); border-radius: 2px; cursor: pointer; }
+/* (a finger's cells on a touch screen, as many columns as fit: src/ui/tablepicker.js) */
+.tp-grid.tp-touch { --tp-s: 44px; }
 .tp-cell.on { border-color: var(--blue); background: var(--blue-wash); }
 .pop-tpick .nav-act { width: 100%; min-height: 32px; font-weight: 400; padding: 0 8px; }
 .pop-tpick .nav-act svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; flex: none; }

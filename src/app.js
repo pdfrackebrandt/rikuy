@@ -156,6 +156,43 @@ function focusField(mf) {
     if (sink) sink.focus({ preventScroll: true });
   } catch (e) { /* ignore */ }
 }
+// The selection as plain text, each formula in it as its LaTeX with its delimiters ($…$, \\[ … \\],
+// its environment), as Word gives an equation's linear form: the letters of its drawing (x 2 + b a
+// for $x^2+\\frac{a}{b}$, the KaTeX lines one by one) were what another program or the source pane
+// got. Paragraphs on lines of their own, a table's cells by tabs, as the selection's own text has
+// them. latexOf(el): a formula element's source. Without a formula, the selection's own text.
+function selectionPlain(sel, root, latexOf) {
+  const own = () => sel.toString().replace(/\u200B/g, '');
+  if (!sel.rangeCount) return '';
+  const r = sel.getRangeAt(0), MATH = '.a-math[data-a], .dm[data-a]';
+  if (![...root.querySelectorAll(MATH)].some((el) => r.intersectsNode(el))) return own();
+  const SKIP = '[aria-hidden="true"], .lbl-num, .pg-foot, .fn-mark-hidden, script, style';
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, { acceptNode: (n) => (r.intersectsNode(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT) });
+  let out = '', skip = null, at = null;
+  const add = (node, t) => {
+    if (!t) return;
+    const el = node.nodeType === 1 ? node : node.parentElement;
+    const it = el.closest('.it'), td = el.closest('td, th'), tr = td && td.parentElement;
+    if (at && out) out += at.tr && tr && at.tr === tr && at.td !== td ? '\t' : at.it !== it || at.tr !== tr ? '\n' : '';
+    at = { it, td, tr };
+    out += t;
+  };
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    if (skip && skip.contains(n)) continue;
+    skip = null;
+    if (n.nodeType === 1) {
+      if (n.matches(MATH)) { const t = latexOf(n); if (t == null) return own(); add(n, t.trim()); skip = n; continue; }
+      if (n.matches(SKIP)) { skip = n; continue; }
+      if (n.tagName === 'BR') { out += '\n'; continue; }
+      continue;
+    }
+    let t = n.data;
+    if (n === r.endContainer) t = t.slice(0, r.endOffset);
+    if (n === r.startContainer) t = t.slice(r.startOffset);
+    add(n, t);
+  }
+  return out.replace(/\u200B/g, '');
+}
 // The selection as clean HTML for Word, Google Docs and mail: bold and italics as tags,
 // math as MathML (Word turns it into live equations), page furniture dropped.
 function selectionHTML(sel, mathml) {
@@ -1956,6 +1993,12 @@ class App {
           const tr = e.getTargetRanges()[0];
           if (tr) range = this.rangeToSrc(tr);
         }
+        // (an insertText aimed at a word while the selection is a caret: iOS's autocorrect, "teh"
+        // made "the" in one insert; it went in at the caret, "tehthe")
+        if (t === 'insertText' && e.getTargetRanges) {
+          const tr = e.getTargetRanges()[0], s = getSelection();
+          if (tr && !tr.collapsed && s.rangeCount && s.isCollapsed) range = this.rangeToSrc(tr);
+        }
         if (!range && t === 'insertText' && this.typeQueueable(data)) { this.typeQueue(data); break; }
         this.typeFlush();
         this.typeIn(data, range);
@@ -2545,7 +2588,7 @@ class App {
     let edits = c.collapsed ? [] : this.deletionEdits(f, c.a, c.b, true);
     const p = c.a;
     if (soft) {
-      if (kind === 'cell') { this.commit([...edits, { f, s: p, e: p, t: '\\newline ' }], { f, p: p + 9 }, 'type'); return; }
+      if (kind === 'cell') { this.cellEnter(c, edits); return; }
       if (kind === 'h' || kind === 'cap') return;
       this.commit([...edits, { f, s: p, e: p, t: '\\\\\n' }], { f, p: p + 3, bias: 1 }, 'type');
       return;
@@ -2559,7 +2602,8 @@ class App {
       if (c.collapsed && B && B.e > p && B.e - p < 2000 && /^(?:\s|\\label\s*\{[^{}]*\}|%[^\n]*\n)*\}(?:\s|\}|\\label\s*\{[^{}]*\}|%[^\n]*\n)*(?:\\end\s*\{[^{}]+\}\s*)+$/.test(src.slice(p, B.e))) { this.showGhost(itemEl, f, B.e); this.enterAct(); }
       return;
     }
-    if (kind === 'cell') return;
+    // (Enter in a cell: a new line in it, as Word's; it did nothing)
+    if (kind === 'cell') { this.cellEnter(c, edits); return; }
     const itemEl = el.closest('.it');
     if (kind === 'ttl') {
       // Enter in the title, an author or the date starts the text below them, after \maketitle
@@ -3332,7 +3376,7 @@ class App {
     if (!c || c.collapsed) return;
     e.preventDefault();
     const latex = this.copyLatex(c);
-    const plain = getSelection().toString().replace(/\u200B/g, '');
+    const plain = selectionPlain(getSelection(), this.root, (el) => { const i = atomOfEl(el); return i && i.s != null ? this.src(i.f).slice(i.s, i.e) : null; });
     e.clipboardData.setData('text/plain', plain);
     try { e.clipboardData.setData('text/x-galley-latex', latex); } catch (err) { /* ignore */ }
     try { e.clipboardData.setData('text/html', selectionHTML(getSelection(), (el) => this.mathML(el))); } catch (err) { /* plain text still works */ }
@@ -3940,7 +3984,7 @@ class App {
     if (!P) return;
     const it = P.anchor && P.anchor.closest ? P.anchor.closest('.it') : null;
     const rtl = P.rtl != null ? P.rtl : !!(it && getComputedStyle(it).direction === 'rtl');
-    if (rtl && how !== 'tab') d = d === 'forward' ? 'backward' : 'forward';
+    if (rtl && how !== 'tab' && how !== 'line') d = d === 'forward' ? 'backward' : 'forward';
     P.leftBy = d;
     P.extend = how === 'extend';
     this.closePop();
@@ -3972,11 +4016,26 @@ class App {
     }
     P.el.remove();
     this.closeGroup();
+    // (a display left by an arrow: the caret at the start of the text after it, or at the end of
+    // the text before it for Left and Up, as Word's; the blank line after it, or before it, only
+    // where no text stands there, as a display that ends the document or one beside another)
+    let beside = null;
+    if (!silent && P.display && P.leftBy && !P.extend && P.returnCaret && P.returnCaret.p != null && P.anchorPos && !P.removed) {
+      const f0 = P.anchorPos.f, t = this.src(f0), p0 = P.returnCaret.p, fwd = P.leftBy === 'forward';
+      const q = fwd ? p0 + /^\s*/.exec(t.slice(p0, p0 + 400))[0].length : p0 - /\s*$/.exec(t.slice(Math.max(0, p0 - 400), p0))[0].length;
+      // (only beside words of a paragraph: never in a comment, where what is typed went unseen, nor
+      // after a command's closing brace or before a command, a heading's or a list's, \item: typed
+      // there it went into the heading's line or the item before; there the blank line, a new
+      // paragraph of its own)
+      const ch = fwd ? t[q] : t[q - 1], line = t.slice(t.lastIndexOf('\n', q - 1) + 1, q);
+      if (ch && !/[\\%{}\s]/.test(ch) && !(!fwd && /(^|[^\\])(\\\\)*%/.test(line))) beside = { f: f0, p: q, bias: fwd ? 1 : -1 };
+    }
     if (!silent && P.returnCaret) {
-      this.restoreCaret(P.returnCaret);
+      this.restoreCaret(beside || P.returnCaret);
       if (P.returnCaret.extendBy) try { getSelection().modify('extend', P.returnCaret.extendBy, 'character'); } catch (e) { /* the formula alone stays selected */ }
     }
-    if (!silent && P.display && P.returnCaret && !P.removed && !P.dollarClosed && !P.midLine) this.caretAfterDisplay(P.returnCaret);
+    if (beside) { const c = this.caretNow(); if (!c || c.ghost || !c.collapsed || c.f !== beside.f || c.p !== beside.p) beside = null; }
+    if (!silent && P.display && P.returnCaret && !P.removed && !P.dollarClosed && !P.midLine && !beside && !P.extend) this.caretAfterDisplay(P.returnCaret);
     // Opened from a blank paragraph and closed with nothing made, or a document that so far
     // holds only what the popover made (a first formula) and has no text to put the caret in:
     // the caret goes to the blank paragraph, so typing goes on
@@ -4279,6 +4338,71 @@ class App {
       }
       return parts.length > 1 ? out : null;
     };
+    // Where the field's caret stands in the LaTeX box: what the field holds before it, read back
+    // (fromField). In an equation of rows the field reads that part across the rows' cells (a=bc=
+    // for a &= b \\\\ c &= |d), no start of the box: there the caret's row and cell are found in the
+    // box, by its \\\\ and & outside braces and environments, and its place in the cell by the
+    // characters before it there (spaces aside); else the box's end (where a paste or an & went,
+    // whatever the row)
+    // The box's \\ and & outside braces and environments: [from, to, a row's end]; a \\'s * and
+    // [length] go with it (a paste at the start of the row after \\[2pt] went in before the [2pt],
+    // which then printed)
+    const cutsOf = (v) => {
+      const cuts = [];
+      for (let i = 0, d = 0, env = 0; i < v.length; i++) {
+        const ch = v[i];
+        if (ch === '%') { const n = v.indexOf('\n', i); i = n < 0 ? v.length : n; continue; }
+        if (ch === '\\') {
+          if (v[i + 1] === '\\' && !d && !env) {
+            // (its * after any spaces, as \@ifstar reads it; its [length] only right after it or the
+            // *, as amsmath's \new@ifnextchar reads it: a row may start with [u, v])
+            const m = /^(?:\s*\*)?(?:\[[^\][{}]*\])?/.exec(v.slice(i + 2, i + 60)), y = i + 2 + (m ? m[0].length : 0);
+            cuts.push([i, y, 1]);
+            i = y - 1;
+            continue;
+          }
+          const m = /^\\(begin|end)\s*\{/.exec(v.slice(i, i + 12));
+          if (m) env += m[1] === 'begin' ? 1 : -1;
+          i++;
+          continue;
+        }
+        if (ch === '{') d++;
+        else if (ch === '}') d--;
+        else if (ch === '&' && !d && !env) cuts.push([i, i + 1, 0]);
+      }
+      return cuts;
+    };
+    // the box's row that holds at: its & at the top level (amps)
+    const rowOf = (v, at) => {
+      let amps = 0;
+      for (const [x, , row] of cutsOf(v)) { if (row) { if (x >= at) break; amps = 0; } else amps++; }
+      return { amps };
+    };
+    // Where the field's caret stands in the LaTeX box: what the field holds before it, read back
+    // (fromField). In an equation of rows the field reads that part across the rows' cells (a=bc=
+    // for a &= b \\ c &= |d), no start of the box: there the caret's row and cell are found in the
+    // box by its \\ and &, and its place in the cell by the characters before it there (spaces
+    // aside); else the box's end (where a paste or an & went, whatever the row), or -1 for exact
+    // (an & inside a fraction went to the row's end)
+    const boxAt = (exact) => {
+      const v = ta.value, miss = exact ? -1 : v.length;
+      try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (v.startsWith(pre)) return pre.length; } catch (e) { /* by its cell */ }
+      const C = st.multi ? wt.cellOf() : null;
+      if (!C) return miss;
+      let r = 0, c = 0, a = 0, z = -1;
+      for (const [x, y, row] of [...cutsOf(v), [v.length, v.length, 1]]) {
+        if (r === C.r && c === C.c) { z = x; break; }
+        if (row) { r++; c = 0; } else c++;
+        a = y;
+      }
+      if (z < 0) return miss;
+      const want = C.pre.replace(/\s+/g, '');
+      let i = a, j = 0;
+      while (i < z && j < want.length) { if (/\s/.test(v[i])) { i++; continue; } if (v[i] !== want[j]) break; i++; j++; }
+      if (j < want.length) return exact ? -1 : z;
+      if (!j) while (i < z && /\s/.test(v[i])) i++;
+      return i;
+    };
     mf.addEventListener('paste', (e) => {
       let x = '';
       try { x = (e.clipboardData && e.clipboardData.getData('text/x-galley-latex')) || ''; } catch (err) { x = ''; }
@@ -4301,13 +4425,30 @@ class App {
       // their & for characters and joined the first to the row there, q &= ra\&=b \\ c\&=d)
       if (rows) {
         // (an environment with no columns, gather or multline, takes rows but no & at the top
-        // level, which TeX rejects there; those inside a matrix or cases stay)
-        if (!/^(align|alignat|flalign|eqnarray|split|aligned|alignedat)\*?$/.test(String((opts.env && opts.env()) || ''))) inner = inner.replace(/(\\begin\s*\{([A-Za-z*]+)\}[\s\S]*?\\end\s*\{\2\})|(^|[^\\])&/g, (m, env, n, pre) => env || pre);
+        // level, which TeX rejects there; those inside a matrix or cases stay; each & of && too,
+        // where the second was left alone)
+        if (!/^(align|alignat|flalign|eqnarray|split|aligned|alignedat)\*?$/.test(String((opts.env && opts.env()) || ''))) inner = inner.replace(/(\\begin\s*\{([A-Za-z*]+)\}[\s\S]*?\\end\s*\{\2\})|(?<!\\)&/g, (m, env) => env || '');
         pull();
-        let at = ta.value.length;
-        try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (ta.value.startsWith(pre)) at = pre.length; } catch (err) { /* at the end */ }
-        const before = ta.value.slice(0, at).split('\\\\').pop(), after = ta.value.slice(at).split('\\\\')[0];
-        ta.setRangeText((before.trim() ? ' \\\\\n' : '') + inner + (after.trim() ? ' \\\\\n' : ''), at, at, 'end');
+        const at = boxAt();
+        // (one row, its & and all, goes in at the caret as words do, the row staying one row, as
+        // Word pastes into an equation's line; rows go in as rows, a row break before and after
+        // them where the row there holds something, each new line indented as the caret's row:
+        // the row after them lost its indent)
+        const many = /\\\\/.test(inner.replace(/\\begin\s*\{([A-Za-z*]+)\}[\s\S]*?\\end\s*\{\1\}/g, ''));
+        const v = ta.value, ind = /^[ \t]*/.exec(v.slice(v.lastIndexOf('\n', at - 1) + 1))[0];
+        const lines = inner.split('\n'), cut = Math.min(...lines.slice(1).filter((l) => l.trim()).map((l) => /^[ \t]*/.exec(l)[0].length));
+        if (lines.length > 1 && Number.isFinite(cut)) inner = lines.map((l, k) => (k && l.trim() ? ind + l.slice(cut) : l)).join('\n');
+        // (the caret's row as the box's row breaks cut it, a \\'s [2pt] or * with the break: split on
+        // \\ alone, the [2pt] was words before the caret, and an empty numbered row came first)
+        let rs = 0, re = v.length;
+        for (const [x, y, row] of cutsOf(v)) { if (!row) continue; if (y <= at) rs = y; else if (x >= at) { re = x; break; } }
+        const before = v.slice(rs, at), after = v.slice(at, re);
+        // (one row goes into the caret's row only where the row then has no more columns than its
+        // equation takes, alignat{n} 2n, eqnarray 3; else it is a row of its own, as before)
+        const fits = !many && rowOf(v, at).amps + cutsOf(inner).filter((x) => !x[2]).length < (opts.cols ? opts.cols() : Infinity);
+        // (the spaces beside the caret go where a row break goes between the words and it)
+        const sp = !fits && after.trim() ? /^[ \t]*/.exec(after)[0].length : 0, sb = !fits && before.trim() ? /[ \t]*$/.exec(before)[0].length : 0;
+        ta.setRangeText(fits ? inner : (before.trim() ? ' \\\\\n' + ind : '') + inner + (after.trim() ? ' \\\\\n' + ind : ''), at - sb, at + sp, 'end');
         ta.dispatchEvent(new Event('input'));
         return;
       }
@@ -4324,6 +4465,34 @@ class App {
       macros: () => plain,
       dialect: () => D,
       onNewRowOutside: opts.onNewRowOutside,
+      // (& in a display: an alignment point at the caret, written in the LaTeX box there; a display
+      // of one line made one of rows first, opts.onAmp, as Ctrl+Enter makes it; inside an
+      // environment the box holds, as split or aligned, only the &)
+      onAmp: opts.onAmp ? () => {
+        pull();
+        // (a display of one line that holds an environment, cases, a matrix, split, gathered: its
+        // alignment is that environment's, nothing here, as before; the display became an align and
+        // the & went after its \end. Nor inside a fraction, a root or a script, nor where the box
+        // shows no place for the caret: the & went to the row's end or the formula's start.)
+        if (!st.multi && (wt.cellOf() || /\\begin\s*\{/.test(ta.value) || !wt.atTop())) return;
+        const at = boxAt(true);
+        if (at < 0) return;
+        const v = ta.value, head = v.slice(0, at);
+        if ((head.match(/\\begin\s*\{/g) || []).length > (head.match(/\\end\s*\{/g) || []).length) return;
+        // (no more columns than the environment takes, alignat{n} 2n, eqnarray 3: TeX stopped at one
+        // more, "Extra & on this line")
+        const cols = opts.cols ? opts.cols() : Infinity;
+        if (st.multi && rowOf(v, at).amps + 1 >= cols) { this.toast('This row has all the columns its equation takes (' + cols + ').'); return; }
+        if (!opts.onAmp()) return;
+        if (ta.value !== v) return;
+        // (the cell the & starts: the rows and the & before it)
+        let r = 0, c = 0;
+        for (const [x, , row] of cutsOf(v)) { if (x >= at) break; if (row) { r++; c = 0; } else c++; }
+        ta.setRangeText('&', at, at, 'end');
+        ta.dispatchEvent(new Event('input'));
+        fieldFocus();
+        wt.toCell(r, c + 1);
+      } : null,
       renderTex: (t) => this.renderer.katex(t, false).html,
       decimalComma,
       baseDepth: () => (st.multi ? 1 : 0),
@@ -4342,8 +4511,7 @@ class App {
         // (keys typed into the field whose input event is still to come: in the box first)
         pull();
         backOk = false;
-        let at = ta.value.length;
-        try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (ta.value.startsWith(pre)) at = pre.length; } catch (e) { /* at the end */ }
+        const at = boxAt();
         ta.focus();
         ta.setRangeText(more, at, at, 'end');
         ta.dispatchEvent(new Event('input'));
@@ -4359,16 +4527,18 @@ class App {
       else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) { e.preventDefault(); e.stopImmediatePropagation(); pull(); opts.onEnter(); }
     }, true);
     // Right at a formula's end, Left at its start: the caret leaves it, as Word's does; the words
-    // typed next went into the formula, their spaces lost ($ihasincome$). Only in a formula in the
-    // line: in a display the arrows stay in it.
+    // typed next went into the formula, their spaces lost ($ihasincome$). A display is left so too,
+    // and by Down from its last row and Up from its first, as Word's arrows leave an equation of
+    // its own line (they stayed in it, and only Esc or a click got out).
     if (opts.onMoveOut) {
       // The keys that leave a formula: Right and Left (with Shift, the selection goes on out of it,
       // as Word's), and Tab at its end, which Word takes as leaving forward. Shift+Tab goes on to
-      // the LaTeX box. MathLive sends move-out for all of them, Tab's leap and Shift+Tab's too.
+      // the LaTeX box. MathLive sends move-out for all of them, Tab's leap and Shift+Tab's too, and
+      // for Up and Down where there is no row above or below (upward, downward).
       let key = null;
       mf.addEventListener('keydown', (e) => {
         const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
-        key = plain && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') ? (e.shiftKey ? 'extend' : 'arrow') : plain && e.key === 'Tab' && !e.shiftKey ? 'tab' : null;
+        key = plain && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') ? (e.shiftKey ? 'extend' : 'arrow') : plain && !e.shiftKey && opts.display && (e.key === 'ArrowUp' || e.key === 'ArrowDown') ? 'line' : plain && e.key === 'Tab' && !e.shiftKey ? 'tab' : null;
         // (Shift with an arrow at the field's edge sends no move-out: MathLive keeps the selection in)
         if (key === 'extend' && !wt.active() && mf.mode !== 'latex') {
           let at = -1, last = -2;
@@ -4378,8 +4548,10 @@ class App {
         }
       }, true);
       mf.addEventListener('move-out', (e) => {
-        const d = e.detail && e.detail.direction, how = key;
-        if (!how || (d !== 'forward' && d !== 'backward') || (how === 'tab' && d !== 'forward') || wt.active() || mf.mode === 'latex') return;
+        const how = key, d0 = e.detail && e.detail.direction;
+        // (Up leaves a display backward, Down forward; a row above or below takes them first)
+        const d = how === 'line' ? { upward: 'backward', downward: 'forward' }[d0] : d0 === 'forward' || d0 === 'backward' ? d0 : null;
+        if (!how || !d || (how === 'tab' && d !== 'forward') || wt.active() || mf.mode === 'latex') return;
         e.preventDefault();
         pull();
         // (after MathLive is done with the key: the field torn down inside its handling threw
@@ -4626,7 +4798,21 @@ class App {
         if (display || this.pop.dollarClose) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; }
         this.closePop();
       },
-      onMoveOut: display ? null : (d, how) => { if (stay()) return; push.flush(); this.leaveMath(d, how); },
+      onMoveOut: (d, how) => { if (stay()) return; push.flush(); this.leaveMath(d, how); },
+      // (& typed in a display of one line: made one of rows, as Ctrl+Enter does, for its alignment
+      // point; gather and multline have no columns)
+      onAmp: display ? () => {
+        if (/^(gather|multline)\*?$/.test(String((this.pop && this.pop.env) || info.a.env))) { this.toast('Gather and Multline have no alignment points: pick Align in the menu.'); return false; }
+        return toRows();
+      } : null,
+      // (the columns its environment takes: alignat{n} 2n, eqnarray 3, split 2; align as many as come)
+      cols: () => {
+        const P = this.pop, env = String((P && P.env) || info.a.env);
+        if (/^eqnarray\*?$/.test(env)) return 3;
+        if (env === 'split') return 2;
+        const m = /^x{0,2}alignat\*?$/.test(env) && P && P.anchorPos ? /^\\begin\s*\{x{0,2}alignat\*?\}\s*\{\s*(\d+)\s*\}/.exec(this.src(P.anchorPos.f).slice(P.anchorPos.s, P.anchorPos.s + 60)) : null;
+        return m ? 2 * +m[1] : Infinity;
+      },
       onEscape: () => { push.flush(); this.closePop(); }
     });
   }

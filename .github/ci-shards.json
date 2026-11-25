@@ -71,7 +71,7 @@
    "minutes": 13,
    "commands": [
     {"name": "Review (Track Changes, Display for Review, Accept and Reject, comments, Word Count, Compare, Read Aloud, phones)", "argv": ["python3", "review.py"], "p95": 48.9, "n": 1},
-    {"name": "What a newcomer meets outside the ribbon (dialogs, the File view, the status bar, panes, phones) (part)", "argv": ["python3", "ux.py", "consistency", "target_gaps", "keyboard_room", "empty_panes", "contrast", "verify_lows", "lows", "download_pdf", "pdf_bar", "panes", "file_view"], "p95": 135.5, "n": 1},
+    {"name": "What a newcomer meets outside the ribbon (dialogs, the File view, the status bar, panes, phones) (part)", "argv": ["python3", "ux.py", "consistency", "target_gaps", "keyboard_room", "empty_panes", "contrast", "verify_lows", "lows", "download_pdf", "pdf_bar", "panes", "file_view", "tab_picker", "ios_autocorrect"], "p95": 135.5, "n": 1},
     {"name": "Pictures and objects (selecting, Picture Format as round trips, handles, crop, the page's drawing, Insert's objects, phones)", "argv": ["python3", "picture.py"], "p95": 105.8, "n": 1},
     {"name": "Find, Replace and Go To (the Navigation pane's search, the Find and Replace dialog, Select)", "argv": ["python3", "find.py"], "p95": 38.9, "n": 1},
     {"name": "Typing on the page", "argv": ["python3", "browser.py"], "p95": 94.6, "n": 1}

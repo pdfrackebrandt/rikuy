@@ -320,10 +320,17 @@ def tables(page):
 
 def files(page):
     # (Open first: a file chooser wants the key's own activation, which a download just before may take)
+    # (Playwright turns the browser's interception of file choosers on when the first "filechooser"
+    # listener comes, by a message it does not wait for: the key sent right after it could reach
+    # the browser first, its chooser not intercepted and never reported, CI's one time out. A
+    # listener from before the document loads has it on long before the key.)
+    chooser = lambda fc: None
+    page.on('filechooser', chooser)
     load_doc(page, DOC); click_text(page, 'First paragraph', 3)
     with page.expect_file_chooser(timeout=8000) as fc:
         page.keyboard.press('Control+F12')
     check('Ctrl+F12 (Word\'s Open) opens the file chooser', fc.value is not None)
+    page.remove_listener('filechooser', chooser)
     settle(page, 300)
     click_text(page, 'First paragraph', 3)
     with page.expect_download(timeout=8000) as dl:
