@@ -15,7 +15,7 @@ import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
 import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath, oneLineLatex, headingsAsWords } from './paste.js';
-import { chainAt } from './charfmt.js';
+import { chainAt, needsOf, preambleFor, hlTakesColor } from './charfmt.js';
 import { mapPos } from './wrap.js';
 import { findProblems, missingFigures } from './problems.js';
 import { WidgetLayer } from './widget.js';
@@ -3620,7 +3620,9 @@ class App {
     if (latex && !whole && el && el.closest && el.closest('td, th, .it.h, .cap, .it.ttl')) latex = oneLineLatex(latex);
     else if (latex && inArg) latex = headingsAsWords(latex);
     const pre = this.src(this.main).split(/\\begin\s*\{document\}/)[0];
-    const o = { prev: src[at0 - 1] || ' ', hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*hyperref/.test(pre), booktabs: /\\usepackage(\[[^\]]*\])?\{[^}]*booktabs/.test(pre), inlineOnly: inline };
+    const o = { prev: src[at0 - 1] || ' ', hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*hyperref/.test(pre), booktabs: /\\usepackage(\[[^\]]*\])?\{[^}]*booktabs/.test(pre), inlineOnly: inline,
+      // (soul's \hl, or the document's own, takes no colour: a pasted highlight is yellow there)
+      hlColor: !!html && /mso-highlight|background/i.test(html) ? hlTakesColor(this.src(this.main), this.preambleOthers()) : true };
     // (a PDF's ligatures as letters; its Greek and symbols as formulas where pdfLaTeX compiles it: escapeTeX)
     const pdfText = !this.textEngine().unicode;
     // (a preamble that sets Greek up for pdfLaTeX's text: Greek pasted there stays letters)
@@ -4266,9 +4268,18 @@ class App {
       for (const p of mathNeeds(x)) need.add(p);
       x.replace(/\\([A-Za-z]+)/g, (q, n) => { if (PACKAGES[n]) need.add(PACKAGES[n]); return q; });
     }
-    if (!need.size) return [];
+    // (and what a pasted strikethrough, colour or highlight needs: ulem, xcolor, the highlighter's
+    // definition, src/paste.js; the Font group's own lines, src/charfmt.js preambleFor)
+    const chars = [];
+    for (const m of String(t).matchAll(/\\(sout|hl|textcolor)(?![A-Za-z])(?:\[([^\]{}]*)\])?(?:\{([^{}]*)\})?/g)) {
+      const n = m[1] === 'sout' ? needsOf('strike', {}) : m[1] === 'hl' ? needsOf('highlight', { cmd: 'hl', opt: m[2] || null }) : needsOf('color', { cmd: 'textcolor', opt: m[2] || null, args: [m[3] || ''] });
+      if (n) chars.push(n);
+    }
+    if (!need.size && !chars.length) return [];
     const f = this.main, src = this.src(f), others = this.preambleOthers();
-    return usePackages(src, [...need].filter((x) => !hasPackage(src, x, undefined, others)), { others }).map((x) => ({ f, ...x }));
+    const add = [...need].filter((x) => !hasPackage(src, x, undefined, others));
+    if (chars.length) return preambleFor(src, [{ pkgs: Object.fromEntries(add.map((x) => [x, null])) }, ...chars], { others }).map((x) => ({ f, ...x }));
+    return usePackages(src, add, { others }).map((x) => ({ f, ...x }));
   }
   ensurePackages(tex, P) {
     // (amssymb's \mathbb and the like too, as the Equation tab adds them: typed in the field they

@@ -8,7 +8,42 @@ const BLOCK = /^(P|DIV|H[1-6]|LI|UL|OL|BLOCKQUOTE|TABLE|TR|PRE|SECTION|ARTICLE|H
 function styleOf(el) {
   const st = (el.getAttribute && el.getAttribute('style')) || '';
   const get = (p) => { const m = new RegExp('(?:^|;)\\s*' + p + '\\s*:\\s*([^;]+)', 'i').exec(st); return m ? m[1].trim().toLowerCase() : ''; };
-  return { weight: get('font-weight'), fstyle: get('font-style'), deco: get('text-decoration') || get('text-decoration-line'), valign: get('vertical-align'), family: get('font-family') };
+  return { weight: get('font-weight'), fstyle: get('font-style'), deco: get('text-decoration') || get('text-decoration-line'), valign: get('vertical-align'), family: get('font-family'),
+    color: get('color') || (el.tagName === 'FONT' && el.getAttribute('color')) || '', bg: get('background-color') || get('background'), hl: get('mso-highlight') };
+}
+
+// A CSS colour as six hex digits (null for none, transparent, Word's automatic or a name not known
+// here): what Word, Google Docs and a browser's copy write, #C00000, rgb(192, 0, 0), red, windowtext
+const CSS_NAMES = { black: '000000', windowtext: '000000', white: 'FFFFFF', window: 'FFFFFF', red: 'FF0000', green: '008000', lime: '00FF00', blue: '0000FF', yellow: 'FFFF00',
+  cyan: '00FFFF', aqua: '00FFFF', magenta: 'FF00FF', fuchsia: 'FF00FF', maroon: '800000', navy: '000080', olive: '808000', purple: '800080', teal: '008080', silver: 'C0C0C0',
+  gray: '808080', grey: '808080', orange: 'FFA500', darkblue: '00008B', darkred: '8B0000', darkgreen: '006400', darkcyan: '008B8B', darkmagenta: '8B008B',
+  darkyellow: '808000', darkgray: '808080', lightgray: 'C0C0C0' };
+function hexOf(v) {
+  const c = String(v || '').trim().toLowerCase().replace(/\s*!important$/, '');
+  let m;
+  // (the shorthand background: its colour is its first word, "#FFFF00" of "#FFFF00 none")
+  if (/^#[0-9a-f]+\s/.test(c)) return hexOf(c.split(/\s+/)[0]);
+  if ((m = /^#([0-9a-f]{6})$/.exec(c))) return m[1].toUpperCase();
+  if ((m = /^#([0-9a-f]{3})$/.exec(c))) return m[1].replace(/./g, (x) => x + x).toUpperCase();
+  if ((m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(c))) {
+    if (m[4] !== undefined && +m[4] < 0.5) return null;
+    return [m[1], m[2], m[3]].map((x) => Math.min(255, +x).toString(16).padStart(2, '0')).join('').toUpperCase();
+  }
+  const w = c.split(/\s+/)[0];
+  return Object.hasOwn(CSS_NAMES, w) ? CSS_NAMES[w] : null;
+}
+// Word's highlighter colours (Text Highlight Color, src/cmd/font.js HIGHLIGHTS) by their RGB, and
+// the xcolor colour \hl takes for each: a pasted highlight becomes the nearest of them, as Word's
+// own highlighter has only these (its dark ones as xcolor's mix, as Word import writes them)
+const HL = [['FFFF00', 'yellow'], ['00FF00', 'green'], ['00FFFF', 'cyan'], ['FF00FF', 'magenta'], ['0000FF', 'blue'], ['FF0000', 'red'], ['008080', 'teal'],
+  ['800080', 'violet'], ['808000', 'olive'], ['808080', 'gray'], ['C0C0C0', 'lightgray'], ['000000', 'black'], ['000080', 'rgb,255:red,0;green,0;blue,128'],
+  ['008000', 'rgb,255:red,0;green,128;blue,0'], ['800000', 'rgb,255:red,128;green,0;blue,0']];
+const rgb = (h) => [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+function hlName(hex) {
+  const [r, g, b] = rgb(hex);
+  let best = null, d = Infinity;
+  for (const [h, n] of HL) { const [R, G, B] = rgb(h), e = (r - R) ** 2 + (g - G) ** 2 + (b - B) ** 2; if (e < d) { d = e; best = n; } }
+  return best;
 }
 
 // The TeX behind rendered math on a web page, if the page kept it.
@@ -34,6 +69,33 @@ export function htmlToTeX(html, opts = {}) {
   const body = doc.body;
   for (const x of body.querySelectorAll('style, meta, link, title, o\\:p, xml')) x.remove();
   wordLists(doc);
+  // A colour or a background over most of the text is the page's ink or paper (a browser's copy
+  // writes its grey text and white paper on every run): only one that marks some words is kept,
+  // as Word import keeps a colour (src/wordjobs.js ink). Word's highlighter (mso-highlight) is
+  // always a mark.
+  const inkOf = (key) => {
+    const n = new Map();
+    let all = 0;
+    const walk = doc.createTreeWalker(body, 4);
+    for (let t; (t = walk.nextNode());) {
+      const k = t.nodeValue.replace(/\s+/g, '').length;
+      if (!k) continue;
+      all += k;
+      let c = null;
+      for (let e = t.parentElement; e && e !== body.parentElement && c === null; e = e.parentElement) { const v = styleOf(e)[key]; if (v) c = hexOf(v) || ''; }
+      if (c) n.set(c, (n.get(c) || 0) + k);
+    }
+    return new Set([...n].filter(([, k]) => k / (all || 1) > 0.5).map(([c]) => c));
+  };
+  const ink = inkOf('color'), paper = inkOf('bg');
+  // the colour, highlight and strikethrough an element itself marks its words with (null: none)
+  const marks = (el, st) => {
+    const col = /^(A|BODY)$/.test(el.tagName) || el.closest('a') ? null : hexOf(st.color);
+    const h = st.hl && st.hl !== 'none' ? hexOf(st.hl) : null, bg = h || hexOf(st.bg);
+    return { color: col && col !== '000000' && !ink.has(col) ? col : null,
+      hl: bg && (h || (bg !== 'FFFFFF' && !paper.has(bg))) ? hlName(bg) : null,
+      strike: el.tagName === 'S' || el.tagName === 'STRIKE' || el.tagName === 'DEL' || /line-through/.test(st.deco) };
+  };
   let prev = opts.prev || ' ';
   const out = [];
   const emit = (t) => { if (t) { out.push(t); prev = t[t.length - 1]; } };
@@ -70,13 +132,22 @@ export function htmlToTeX(html, opts = {}) {
     const sup = tag === 'SUP' || st.valign === 'super';
     const sub = tag === 'SUB' || st.valign === 'sub';
     const mono = tag === 'CODE' || tag === 'KBD' || tag === 'TT' || tag === 'SAMP' || /monospace|courier|consolas|menlo/.test(st.family);
-    const wrap = (cmd) => { const lead = (/^\s+/.exec(body) || [''])[0], tail = (/\s+$/.exec(body) || [''])[0]; body = lead + '\\' + cmd + '{' + body.trim() + '}' + tail; };
+    // (each paragraph in its own: a line break, <br>, inside a coloured or struck run made a blank
+    // line inside \textcolor's braces, and TeX stopped there)
+    const wrap = (cmd) => { const lead = (/^\s+/.exec(body) || [''])[0], tail = (/\s+$/.exec(body) || [''])[0]; body = lead + body.trim().split(/(\s*\n\s*\n\s*)/).map((x, i) => (i % 2 ? x : '\\' + cmd + '{' + x + '}')).join('') + tail; };
+    const mk = marks(el, st);
     if (mono && !ctx.pre) wrap('texttt');
     if (sup) wrap('textsuperscript');
     if (sub) wrap('textsubscript');
     if (under) wrap('underline');
     if (ital && !ctx.ital) wrap('emph');
     if (bold && !ctx.bold) wrap('textbf');
+    // strikethrough, the highlighter and a font colour, as the Font group writes them (src/charfmt.js):
+    // \sout, \hl[colour] and \textcolor[HTML]; the preamble's lines come with the paste
+    // (App.pastePackages). They were dropped.
+    if (mk.strike && !ctx.strike && !ctx.pre) wrap('sout');
+    if (mk.hl && mk.hl !== ctx.hl && !ctx.pre) wrap(mk.hl === 'yellow' || opts.hlColor === false ? 'hl' : 'hl[' + mk.hl + ']');
+    if (mk.color && mk.color !== ctx.color && !ctx.pre) wrap('textcolor[HTML]{' + mk.color + '}');
     if (tag === 'A') {
       const href = el.getAttribute('href') || '';
       if (/^https?:|^mailto:/.test(href)) {
@@ -94,6 +165,8 @@ export function htmlToTeX(html, opts = {}) {
     if (el.tagName === 'B' || el.tagName === 'STRONG' || /^(bold|[6-9]00)$/.test(st.weight)) sub.bold = !/^(normal|[1-4]00)$/.test(st.weight);
     if (el.tagName === 'I' || el.tagName === 'EM' || st.fstyle === 'italic') sub.ital = st.fstyle !== 'normal';
     if (el.tagName === 'PRE') sub.pre = true;
+    // (what an inline run marks, so a run inside it marking the same is not wrapped twice)
+    if (!BLOCK.test(el.tagName)) { const mk = marks(el, st); if (mk.color) sub.color = mk.color; if (mk.hl) sub.hl = mk.hl; if (mk.strike) sub.strike = true; }
     let s = '';
     for (const c of el.childNodes) {
       // (on one line, a table's cells apart as its rows are: their words ran together, "AB CD")

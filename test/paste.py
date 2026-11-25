@@ -155,6 +155,42 @@ try:
             page.set_default_timeout(30000)
         else:
             print('SKIP the compiles of the review cases: no TeX tree in dist')
+        # (round 3) strikethrough, a font colour and the highlighter pasted from Word, Google Docs or a
+        # page come as the Font group writes them, with the preamble's lines in the same step; a colour
+        # or a background over most of the text is the page's ink and paper, not a mark (they were dropped)
+        BODY = lambda d: d[d.find('\\begin{document}') + 17:d.find('\n\\end{document}')]
+        PRE = lambda d: d[:d.find('\\begin{document}')]
+        r3 = []
+        for name, html, plain, want, pkgs in (
+                ('Word\'s strikethrough', "<p class=MsoNormal>Some <s>old</s> text.<o:p></o:p></p>", 'Some old text.', 'Alpha para. Some \\sout{old} text.', ['\\usepackage[normalem]{ulem}']),
+                ('Word\'s font colour', "<p class=MsoNormal>The <span style='color:#C00000'>red words</span> and the plain words after them.</p>", 'x',
+                 'Alpha para. The \\textcolor[HTML]{C00000}{red words} and the plain words after them.', ['\\usepackage{xcolor}']),
+                ('Word\'s highlighter', "<p class=MsoNormal>A <span style='background:yellow;mso-highlight:yellow'>marked</span> word and <span style='background:lime;mso-highlight:lime'>green</span>.</p>", 'x',
+                 'Alpha para. A \\hl{marked} word and \\hl[green]{green}.', ['\\usepackage[normalem]{ulem}', '\\usepackage{xcolor}', '\\DeclareRobustCommand{\\hl}[1][yellow]']),
+                ('Google Docs\' runs', '<b style="font-weight:normal;" id="docs-internal-guid-1"><p dir="ltr"><span style="color:#000000;background-color:transparent;">Plain and </span><span style="color:#000000;background-color:transparent;text-decoration:line-through;">struck</span><span style="color:#ff0000;background-color:#ffff00;"> red on yellow</span><span style="color:#000000;background-color:transparent;"> then the rest of it.</span></p></b>', 'x',
+                 'Alpha para. Plain and \\sout{struck} \\textcolor[HTML]{FF0000}{\\hl{red on yellow}} then the rest of it.', ['\\usepackage[normalem]{ulem}', '\\usepackage{xcolor}']),
+                ('a page\'s grey ink and white paper', '<span style="color: rgb(32, 33, 36); background-color: rgb(255, 255, 255);">Words from a page, <span style="color: rgb(26, 13, 171);">one blue</span> in them.</span>', 'x',
+                 'Alpha para. Words from a page, \\textcolor[HTML]{1A0DAB}{one blue} in them.', ['\\usepackage{xcolor}']),
+                ('a struck line break', "<p class=MsoNormal><s>one<br>two</s></p>", 'x', 'Alpha para. \\sout{one}\n\n\\sout{two}', ['\\usepackage[normalem]{ulem}'])):
+            load_doc(page, W2('Alpha para.')); click_text(page, 'Alpha para.', 11); page.keyboard.type(' '); settle(page, 100)
+            page.evaluate(PASTE, [html, plain]); settle(page, 250)
+            s = src(page)
+            check('r3 paste %s: %r' % (name, want), BODY(s) == want, repr(BODY(s)))
+            check('r3 paste %s: the preamble gets %s' % (name, ', '.join(pkgs)), all(k in PRE(s) for k in pkgs) and PRE(s).count('ulem') <= 1, repr(PRE(s)))
+            page.keyboard.press('Control+z'); settle(page, 150)
+            check('r3 undo after paste %s: one step' % name, src(page) == W2('Alpha para. '), repr(src(page)))
+            r3.append((name, s))
+        # (soul's \\hl takes no colour: a green highlight pasted there is \\hl alone, and no definition comes)
+        SOUL = '\\usepackage{soul}\n'
+        load_doc(page, W2('Alpha para.', SOUL)); click_text(page, 'Alpha para.', 11)
+        page.evaluate(PASTE, ["<span style='background:lime;mso-highlight:lime'>green</span>", 'green']); settle(page, 250)
+        check('r3 paste a green highlight where soul defines \\hl: \\hl{..}, no definition', BODY(src(page)) == 'Alpha para.\\hl{green}' and 'DeclareRobustCommand' not in src(page), repr(src(page)))
+        if os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist', 'tex', 'tree.wasm')):
+            page.set_default_timeout(600000)
+            for name, t in r3:
+                r = page.evaluate('async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile(); return r.ok; }', t)
+                check('r3 paste %s compiles' % name, r, t[:300])
+            page.set_default_timeout(30000)
         load_doc(page, base)
         # Ctrl+Shift+V pastes plain text
         click_text(page, 'Click anywhere in this paragraph', 0)
