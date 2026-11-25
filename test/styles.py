@@ -326,9 +326,28 @@ def quote_style(page):
     check('Normal on one with no blank line around it leaves a paragraph of its own', src(page) == WRAP('Before.\n\nSaid here.\n\nAfter.'), body(page))
     load_doc(page, WRAP('\\begin{quote}\nOne.\n\nTwo.\n\\end{quote}')); click_text(page, 'Two', 1); state(page)
     t = page.evaluate(TILES)
-    check('a quote of two paragraphs shows as Quote: Normal takes the environment off both, LaTeX takes it as a whole, a heading takes the caret\'s paragraph out of it (dogfood)', t == ['p', 'section', 'subsection', 'subsubsection', 'latex', 'quote*'], t)
+    check('a quote of two paragraphs shows as Quote: Normal or a heading takes the caret\'s paragraph out of it, LaTeX takes it as a whole (dogfood)', t == ['p', 'section', 'subsection', 'subsubsection', 'latex', 'quote*'], t)
     style(page, 'p')
-    check('Normal on it: the two paragraphs, byte for byte as before the quote', body(page) == 'One.\n\nTwo.', body(page))
+    # (round 2: Word styles the paragraph with the caret, not its neighbours; Normal took the quote off both)
+    check('Normal on its second paragraph: that paragraph alone leaves the quote', body(page) == '\\begin{quote}\nOne.\n\\end{quote}\n\nTwo.', body(page))
+    page.keyboard.type('X'); settle(page, 200)
+    check('Normal on it: the caret stays in its words', 'TXwo.' in body(page), body(page))
+    load_doc(page, WRAP('\\begin{quote}\nOne.\n\nTwo.\n\n\\[ x \\]\n\\end{quote}')); click_text(page, 'One', 1); state(page); style(page, 'p')
+    check('Normal on the first of three: it leaves, the quote begins after it', body(page) == 'One.\n\n\\begin{quote}\nTwo.\n\n\\[ x \\]\n\\end{quote}', body(page))
+    page.keyboard.press('Control+z'); settle(page, 150)
+    check('one undo gives the quote back whole', body(page) == '\\begin{quote}\nOne.\n\nTwo.\n\n\\[ x \\]\n\\end{quote}', body(page))
+    load_doc(page, WRAP('\\begin{quote}\nOne.\n\nTwo.\n\\end{quote}')); page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')]; const s = sp.find((x) => x.textContent.includes('One')), e = sp.find((x) => x.textContent.includes('Two'));
+      const r = document.createRange(); r.setStart(s.firstChild, 0); r.setEnd(e.firstChild, 2); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }'''); state(page); style(page, 'p')
+    check('Normal on both paragraphs selected: the quote off both, byte for byte as before it', body(page) == 'One.\n\nTwo.', body(page))
+    # (review of round 2) the caret in a list inside the quote: a blank line inside the list is no
+    # paragraph of the quote's: Normal takes the quote off whole, as before (\\end{quote} went
+    # inside the list, and TeX stopped)
+    QL = '\\begin{quote}\nIntro.\n\n\\begin{itemize}\n\\item Apple\n\n\\item Banana\n\\end{itemize}\n\nOutro.\n\\end{quote}'
+    for w in ('Apple', 'Banana'):
+        load_doc(page, WRAP(QL)); click_text(page, w, 1); state(page); style(page, 'p')
+        check('Normal with the caret in a list inside a quote (%s): the quote off whole, nothing ended inside the list' % w, body(page) == 'Intro.\n\n\\begin{itemize}\n\\item Apple\n\n\\item Banana\n\\end{itemize}\n\nOutro.', body(page))
+    load_doc(page, WRAP(QL)); click_text(page, 'Outro', 1); state(page); style(page, 'p')
+    check('Normal on the quote\'s own last paragraph after the list: it alone leaves, the list stays quoted', body(page) == '\\begin{quote}\nIntro.\n\n\\begin{itemize}\n\\item Apple\n\n\\item Banana\n\\end{itemize}\n\\end{quote}\n\nOutro.', body(page))
     load_doc(page, WRAP('\\begin{quote}\nOne.\n\nTwo.\n\\end{quote}')); click_text(page, 'Two', 1); state(page)
     style(page, 'section')
     check('Heading 1 on its second paragraph: the quote ends before it, the heading alone', body(page) == '\\begin{quote}\nOne.\n\\end{quote}\n\n\\section{Two.}', body(page))
@@ -1497,9 +1516,41 @@ def review_joins(page):
     check('review_joins: Backspace at the paragraph under a heading with its \\label joins it, the label kept once', src(page) == A('\\section{Head Body.}\\label{s}\n\nNext.'), src(page)[40:])
 
 
+def r2_heading_join(page):
+    """(round 2) Backspace at the start of the paragraph under a heading did nothing where the
+    paragraph opened with \\textbf{ or \\noindent, had a comment, or the heading's \\label stood on a
+    line of its own: Word joins the paragraph into the heading. What a heading cannot hold (a
+    footnote) stays out of it, and Backspace says why instead of doing nothing."""
+    for name, a, b in (
+            ('opening with bold', '\\section{Head}\n\\textbf{Body} text.\n\nNext.', '\\section{Head \\textbf{Body} text.}\n\nNext.'),
+            ('after \\noindent', '\\section{Head}\n\\noindent Body text.\n\nNext.', '\\section{Head Body text.}\n\nNext.'),
+            ('with a comment in it', '\\section{Head}\nBody text % c\nmore.\n\nNext.', '\\section{Head Body text % c\nmore.}\n\nNext.'),
+            ('ending in a comment', '\\section{Head}\nBody text. % c\n\nNext.', '\\section{Head Body text. % c\n}\n\nNext.'),
+            ('under a \\label on its own line', '\\section{Head}\n\\label{s}\n\nBody text.\n\nNext.', '\\section{Head Body text.}\n\\label{s}\n\nNext.')):
+        load_doc(page, A(a)); click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 200)
+        check('r2_heading_join: Backspace at a paragraph %s under a heading joins it into the heading' % name, src(page) == A(b), src(page)[40:])
+        page.keyboard.type('X'); settle(page, 200)
+        check('r2_heading_join: the caret where they meet (%s)' % name, 'Head X' in src(page) or 'Head \\textbf{XBody' in src(page) or 'Head X\\textbf' in src(page), src(page)[40:])
+    C = A('\\section{Head}\r\n\\noindent Body text.\r\n\r\nNext.').replace('\n', '\r\n').replace('\r\r', '\r')
+    load_doc(page, C); click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('r2_heading_join: and in a file with CRLF line ends', src(page) == C.replace('{Head}\r\n\\noindent Body text.', '{Head Body text.}'), repr(src(page)[40:]))
+    load_doc(page, A('\\section{Head \\emph{end}}\nBody text.\n\nNext.')); click_text(page, 'end', 3); page.keyboard.press('Delete'); settle(page, 200)
+    check('r2_heading_join: Delete at a heading ending in \\emph joins the paragraph under it', src(page) == A('\\section{Head \\emph{end} Body text.}\n\nNext.'), src(page)[40:])
+    # (review of round 2) a review comment's line opening the paragraph keeps its own line, the
+    # pane still finds it: it was joined onto the heading's line, "Head % comment (Ana)"
+    for k, at in (('Backspace', ('Body', 0)), ('Delete', ('Head', 4))):
+        load_doc(page, A('\\section{Head}\n% comment (Ana): check this\nBody text.\n\nNext.')); click_text(page, *at); page.keyboard.press(k); settle(page, 250)
+        cs = page.evaluate("window.rikuy.allComments().map((c) => ({ s: c.s, text: c.body }))")
+        check('r2_heading_join: %s joins a paragraph that opens with a review comment, the comment on its own line' % k, src(page) == A('\\section{Head\n% comment (Ana): check this\nBody text.}\n\nNext.') and len(cs) == 1 and cs[0]['text'] == 'check this' and src(page)[cs[0]['s'] - 1] == '\n', (cs, src(page)[40:]))
+    F = A('\\section{Head}\nBody\\footnote{N.} text.\n\nNext.')
+    load_doc(page, F); click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    toast = page.evaluate("(document.querySelector('.toast') || {}).textContent || ''")
+    check('r2_heading_join: a paragraph with a footnote stays out of the heading, and Backspace says why', src(page) == F and 'footnote' in toast, toast)
+
+
 def run():
     with sync_playwright() as p:
-        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter, block_join, item_heading, style_why, review_joins)
+        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter, block_join, item_heading, style_why, review_joins, r2_heading_join)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style)
         # (names given on the command line run those alone)

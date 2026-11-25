@@ -46,7 +46,8 @@ export function htmlToTeX(html, opts = {}) {
       if (!t) return '';
       if (t === '~') { prev = '~'; return '~'; }
       const parts = t.split('~');
-      let r = parts.map((p, i) => { const e = escapeTeX(p, i === 0 ? prev : 'x'); if (p) prev = p[p.length - 1]; return e; }).join('~');
+      // (a part after a no-break space follows a space: a quote there opens, ``q'', where it came out ''q'')
+      let r = parts.map((p, i) => { const e = escapeTeX(p, i === 0 ? prev : ' '); if (p) prev = p[p.length - 1]; return e; }).join('~');
       return r;
     }
     if (node.nodeType !== 1) return '';
@@ -95,7 +96,8 @@ export function htmlToTeX(html, opts = {}) {
     if (el.tagName === 'PRE') sub.pre = true;
     let s = '';
     for (const c of el.childNodes) {
-      if (c.nodeType === 1 && BLOCK.test(c.tagName)) s += opts.inlineOnly ? ' ' + inline(c, sub) + ' ' : '\n\n' + block(c, sub) + '\n\n';
+      // (on one line, a table's cells apart as its rows are: their words ran together, "AB CD")
+      if (c.nodeType === 1 && (BLOCK.test(c.tagName) || (opts.inlineOnly && /^(TD|TH)$/.test(c.tagName)))) s += opts.inlineOnly ? ' ' + inline(c, sub) + ' ' : '\n\n' + block(c, sub) + '\n\n';
       else s += inline(c, sub);
     }
     return opts.inlineOnly ? s.replace(/ {2,}/g, ' ') : s;
@@ -200,10 +202,14 @@ export function plainToTeX(text, prev, opts = {}) {
     p = ' ';
   }
   const out = tidyParas(outParas.map((x) => x.trim()).join('\n\n'));
-  // a space at either end of plain text is part of the sentence it lands in: keep it
-  const lead = /^[ \t]/.test(t) && out && !/^\\(begin|section|subsection)/.test(out) ? ' ' : '';
-  const trail = /[ \t]$/.test(t) && out && !/\\end\{[^}]*\}$/.test(out) ? ' ' : '';
-  return lead + out + trail;
+  // a space at either end of plain text is part of the sentence it lands in: keep it. A blank line
+  // there is a paragraph break where the text lands, as Word's paste of "\n\nNew words" at a
+  // paragraph's end starts a new paragraph (it was dropped, and the words ran on in the paragraph
+  // above); a lone line end there is a space, as one inside the text is.
+  const leadPar = /^[ \t]*\n[ \t]*\n/.test(t) && out ? '\n\n' : '', trailPar = /\n[ \t]*\n[ \t]*$/.test(t) && out ? '\n\n' : '';
+  const lead = !leadPar && /^\s/.test(t) && out && !/^\\(begin|section|subsection)/.test(out) ? ' ' : '';
+  const trail = !trailPar && /\s$/.test(t) && out && !/\\end\{[^}]*\}$/.test(out) ? ' ' : '';
+  return leadPar + lead + out + trail + trailPar;
 }
 function mdList(lines, env, re) {
   const items = [];

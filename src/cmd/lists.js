@@ -353,6 +353,15 @@ export const methods = {
     }
     // Delete at the end of the item's words (a comment after them on their line: the next words go
     // on a line of their own after it, or the comment would take them)
+    // (before a list nested in the item, right after its words: that list's first item's words
+    // come up, as Word's Delete brings the next paragraph up whatever its level; it did nothing)
+    if (it.lists.length && p >= head) {
+      const C = it.lists[0], first = C.items[0];
+      if (!first || !C.editable || /\S/.test(src.slice(p, C.s)) || hasComment(src.slice(head, p)) || first.lists.length) return false;
+      const fw = src.slice(textStart(src, first), first.e), t = fw ? (words ? ' ' : '') + labelWords(src, first) + fw : '';
+      const out = C.items.length > 1 ? [{ s: p, e: p, t }, { s: first.s, e: C.items[1].s, t: '' }] : [{ s: p, e: C.e, t }];
+      return this.listCommit(f, out, [], { f, p, bias: -1 });
+    }
     const rest = src.slice(p, Math.max(p, it.e)), cm = /^[ \t]*%[^\n]*$/.test(rest);
     if (it.lists.length || p < head || (/\S/.test(rest) && !cm)) return false;
     if (k + 1 < L.items.length) {
@@ -361,7 +370,28 @@ export const methods = {
       const t = nw ? (cm ? NL + (indentAt(src, next.s) ?? '') : words ? ' ' : '') + labelWords(src, next) : '';
       return this.listCommit(f, [{ s: it.e, e: nw ? textStart(src, next) : lineRest(src, next.e), t }], [], { f, p, bias: -1 });
     }
-    return I.chain.length === 1 ? this.listJoinPara(L, it, f, src, p, null) : false;
+    // At the end of a nested list's last item: the next item up the chain comes up into it (the
+    // nested list the last thing in its item), or the paragraph after the outermost list. Delete
+    // did nothing there.
+    for (let j = I.chain.length - 1; j > 0; j--) {
+      const { L: Lj } = I.chain[j], up = I.chain[j - 1], P = up.L.items[up.k];
+      if (!up.L.editable || /\S/.test(src.slice(Lj.e, P.e))) return false;
+      const next = up.L.items[up.k + 1];
+      if (!next) continue;
+      if (next.lists.length) return false;
+      const nw = src.slice(textStart(src, next), next.e);
+      const t = nw ? (cm ? NL + (indentAt(src, it.s) ?? '') : words ? ' ' : '') + labelWords(src, next) + nw : '';
+      return this.listCommit(f, [...(t ? [{ s: it.e, e: it.e, t }] : []), { s: P.e, e: next.e, t: '' }], [], { f, p, bias: -1 });
+    }
+    return this.listJoinPara(I.chain[0].L, it, f, src, p, null);
+  },
+  // the item a list's words end in: its last item, or that item's own nested list's last, where
+  // the nested list is the last thing in it; null where words or a list come after a nested list
+  lastLeaf(src, L) {
+    const it = L.items[L.items.length - 1];
+    if (!it || !it.lists.length) return it || null;
+    const C = it.lists[it.lists.length - 1];
+    return C.editable && C.closed && !/\S/.test(src.slice(C.e, it.e)) ? this.lastLeaf(src, C) : null;
   },
   // Backspace at the start of the block right after a list (a paragraph, a heading, a quote or a
   // theorem of one paragraph): its words join the list's last item
@@ -375,8 +405,9 @@ export const methods = {
     for (const B of this.renderer.blocks) if (B.f === f && B.s < end && B.e >= end && (!Y || B.s > Y.s)) Y = B;
     const L = Y && allLists(readLists(src, Y.s, Y.e, this.model && this.model.userSigs)).find((x) => x.e === end);
     if (!L || L.parent || !L.editable || !L.closed || !L.items.length) return false;
-    const it = L.items[L.items.length - 1];
-    if (it.lists.length) return false;
+    // (a last item with a list nested at its end: the words join that list's last item; it did nothing)
+    const it = this.lastLeaf(src, L);
+    if (!it) return false;
     return this.listJoinPara(L, it, f, src, null, X);
   },
   // what of block B can join a list item: a paragraph's words, a heading's, a quote's or a
@@ -425,7 +456,10 @@ export const methods = {
     const NL = /\r\n/.test(src) ? '\r\n' : '\n', ind = indentAt(src, it.s) ?? '  ';
     // (only a blank line outside braces: one inside \textbf{...} would put \item in its group)
     const depth = (x, i) => { let d = 0; for (let k = 0; k < i; k++) { if (x[k] === '\\') k++; else if (x[k] === '{') d++; else if (x[k] === '}') d--; } return d; };
-    return t.replace(/^\s+|\s+$/g, '').replace(/[ \t]*\r?\n[ \t]*(?:\r?\n[ \t]*)+/g, (m, i, x) => (depth(x, i) ? m : NL + ind + '\\item '));
+    // (a blank line at the pasted text's start, or at its end before more of the item's words, is
+    // an item's start too: it was dropped, and the words ran on, "One wordsNew words.")
+    const lead = /^[ \t]*\r?\n[ \t]*\r?\n/.test(t) ? NL + ind + '\\item ' : '', trail = /\r?\n[ \t]*\r?\n\s*$/.test(t) && src.slice(at, it.e).trim() ? NL + ind + '\\item ' : '';
+    return lead + t.replace(/^\s+|\s+$/g, '').replace(/[ \t]*\r?\n[ \t]*(?:\r?\n[ \t]*)+/g, (m, i, x) => (depth(x, i) ? m : NL + ind + '\\item ')) + trail;
   },
   // A selection from one item's words into a later item's of the same list (deletionEdits asks
   // here): deleted whole, \item and all, so the two items become one, as Word joins the paragraphs
@@ -444,6 +478,72 @@ export const methods = {
     const head = (it) => (it.lab ? it.lab.e : it.s + 5);
     if (a < head(x.L.items[x.k]) || b < head(z.L.items[z.k])) return null;
     return [{ f, s: a, e: b, t: '' }];
+  },
+  // A selection from outside a list into one of its items, or from an item out past the list's
+  // end (a drag, Shift+Down, Ctrl+Shift+End): as Word's, the two ends' words meet in one
+  // paragraph, which keeps the first one's style (the paragraph's, or the item's), and the items
+  // it held whole go with their bullets; from the very start of the first block's words it held
+  // that block whole, and the second keeps its own (the item stays an item, the paragraph a
+  // paragraph). Only the words went before: the items it held stayed as empty bullets, and the
+  // two ends' words stayed apart. Edits for deletionEdits, the place where the words meet at a
+  // (what is typed or pasted goes there), or null where the old way stays (comments, a nested
+  // item, two lists, what a heading's or an environment's braces hold).
+  listSelEdits(f, a, b) {
+    const src = this.src(f), NL = /\r\n/.test(src) ? '\r\n' : '\n';
+    if (a >= b || hasComment(src.slice(a, b))) return null;
+    const blocks = this.renderer.blocks.filter((B) => B.f === f);
+    const blockAt = (p) => { let X = null; for (const B of blocks) if (B.s <= p && p <= B.e && (!X || B.s > X.s)) X = B; return X; };
+    const A0 = blockAt(a), Z0 = blockAt(b);
+    if (!A0 || !Z0 || A0 === Z0) return null;
+    // (the top level item that holds p: false in a nested one, null outside any list)
+    const itemAt = (B, p) => { const ch = chainAt(readLists(src, B.s, B.e, this.model && this.model.userSigs), p); return !ch.length ? null : ch.length > 1 ? false : ch[0]; };
+    const x = itemAt(A0, a), z = itemAt(Z0, b);
+    if (x === false || z === false || !!x === !!z) return null;
+    const I = x || z, L = I.L;
+    if (!L.editable || !L.closed || L.kind === 'desc' || L.parent) return null;
+    const safe = (s, e) => s <= e && isBalanced(src, s, e) && !/\\(?:begin|end)\s*\{document\}|\\(?:maketitle|bibliography)\b/.test(src.slice(s, e));
+    // (no visible text: only commands, their braces and spaces)
+    const bare = (t) => !/[^\s{}]/.test(t.replace(/\\[A-Za-z@]+\*?/g, ''));
+    const tx = (it) => textStart(src, it), last = L.items[L.items.length - 1];
+    if (z) {
+      // from block P before the list into item k
+      const it = z.L.items[z.k];
+      if (it.lists.length || b > it.e || b < tx(it) || L.s < a || !isBalanced(src, tx(it), b)) return null;
+      const open = src.slice(L.s, L.items[0].s);
+      if (bare(src.slice(A0.s, a))) {
+        // P held whole: the item keeps its bullet, the list going on with it
+        // (the spaces before P's first character stay, the list opening after them)
+        let ps = A0.s;
+        while (ps < a && /\s/.test(src[ps])) ps++;
+        let ws = ps;
+        while (ws > 0 && /\s/.test(src[ws - 1])) ws--;
+        if (!safe(ps, L.s)) return null;
+        const out = [{ f, s: ws, e: ps, t: src.slice(ws, ps) + open + src.slice(it.s, tx(it)) }];
+        if (a > ps) out.push({ f, s: ps, e: a, t: '' });
+        out.push({ f, s: a, e: b, t: '' });
+        return out;
+      }
+      const next = L.items[z.k + 1];
+      // (a comment between the item's words and what follows them would go with what is replaced)
+      if (!safe(a, L.s) || hasComment(src.slice(it.e, next ? next.s : L.e))) return null;
+      return [{ f, s: a, e: b, t: '' }, next ? { f, s: it.e, e: next.s, t: NL + NL + open } : { f, s: it.e, e: L.e, t: '' }];
+    }
+    // from item k out of the list into block Q after it
+    const it = L.items[x.k];
+    if (Z0.s < L.e || a < it.s || !safe(L.e, b) || !isBalanced(src, Math.max(a, tx(it)), L.es)) return null;
+    if (a <= tx(it)) {
+      // the item held whole from its words' start: Q keeps its style, the items before stay a list
+      const prev = L.items[x.k - 1];
+      if (hasComment(src.slice(prev ? prev.e : L.s, a))) return null;
+      return prev ? [{ f, s: prev.e, e: a, t: src.slice(last.e, L.e) + src.slice(L.e, Z0.s) }, { f, s: a, e: b, t: '' }] : [{ f, s: L.s, e: a, t: '' }, { f, s: a, e: b, t: '' }];
+    }
+    // Q's words join the item, and the list ends after them
+    let qe = Z0.e;
+    while (qe > b && /\s/.test(src[qe - 1])) qe--;
+    if (!isBalanced(src, b, qe) || /\\(?:begin|end|item|part|chapter|(?:sub)*section|(?:sub)?paragraph)\b/.test(src.slice(b, qe))) return null;
+    // (after a comment ending Q's last line: the list's end on a line of its own, or the comment
+    // hides it and the list never closes)
+    return [{ f, s: a, e: b, t: '' }, { f, s: qe, e: qe, t: (inComment(src, qe) ? NL : '') + src.slice(last.e, L.e) }];
   },
   // whether list L (from s to e) is a block of the page of its own: the empty paragraph Enter shows
   // stands between blocks, and one inside a theorem, a quote or a minipage would have none to stand
