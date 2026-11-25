@@ -87,13 +87,20 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
   references resolve; with `prev` once, and again only if `sameRefs()` sees a reference change.
 - **Incremental model.** With `prev`, `buildModel` first tries `incremental()`: a keystroke in a
   top level paragraph of plain text (text, characters, accents, the style wrappers of
-  `PURE_CMDS`, inline math without a reference or a colour; no citation, reference, label,
-  footnote, macro or environment) changes nothing else the builder knows. It finds the edit
-  (common prefix and suffix of the main file's two texts), the one unit of `prev` holding it, and
+  `PURE_CMDS`, the logos, `\today`, `\url` and `\href` of `INCR_PURE`, inline math without a
+  reference or a colour; no footnote, index entry, macro or environment) changes nothing else
+  the builder knows. A citation, a cross reference, a formula holding one and a `\label` may
+  stand in it if the edit leaves each exactly as it was (`plainNodes` lists their sources, old
+  and new, which must be the same): they read the last build's references, and the paragraph is
+  built with that build's labels, bibliography entries, `\bibitem` list and citation index.
+  Enter (one paragraph made two), a Backspace at a paragraph's start (two made one) and a
+  selection over paragraph breaks take it too: the edit may touch up to `INCR_UNITS` such
+  paragraphs next to each other, with the spaces around a blank line taken out. It finds the
+  edit (common prefix and suffix of the main file's two texts), the units of `prev` holding it, and
   proves the rest from the two parse trees: the same document environment, the same top level
-  nodes before the paragraph and the same moved by the edit's length after it, the same user
-  signatures, the old and the new paragraph both plain, the failed `$` scans under their budget.
-  Then only that paragraph goes through `Builder.flow` (with the old one's indent, alignment,
+  nodes before the paragraphs and the same moved by the edit's length after them, the same user
+  signatures, the old and the new paragraphs all plain, the failed `$` scans under their budget.
+  Then only those paragraphs go through `Builder.flow` (the first with the old first one's indent, alignment,
   direction and line spacing, and a heading run into it carried over with its signature: what
   the units before it decided); a paragraph with B2's own settings (a hanging indent, a box, kept
   lines) takes the full build; the units before are `prev`'s, the units after are moved (`movedUnit`: their range
@@ -101,9 +108,11 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
   came first, checked against the unit's smallest offset), a table of contents lists `prev`'s
   headings as a full build's does, and the words, headings and body end follow. Anything else is
   the full build, which stays the reference: `test/incremental.test.mjs` holds the two equal on
-  random edit streams of the repository's documents and the corpus. A field a unit gains that
+  random edit streams of the repository's documents and the corpus, and on a split and a join
+  of every paragraph as the page's Enter and Backspace write them. A field a unit gains that
   holds an offset must be added to `OFFSET_KEYS`; the same test names any it misses. The page's
-  renderer reads whether a block holds references from its key, so moved items stay unread.
+  renderer keeps every block whose key is the same (a list of references too: `refsBlock`'s
+  signature holds everything drawn of it), so moved items stay unread.
   A moved unit's copy keeps what the unit shared as one object shared (a footnote's mark is the
   atom in its text, which Word's export finds by identity), and the test compares that structure
   per unit (`sharedParts`) as well as the JSON. The fast path also falls back when a table of

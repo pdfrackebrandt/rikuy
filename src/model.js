@@ -386,16 +386,29 @@ function bibStyleIn(t) {
 
 const MATH_READS = /\\(?:eqref|ref|cref|Cref|autoref|label|intertext|shortintertext)\b|color/;
 
-function pureNodes(ns, src, macros) {
+// The nodes a paragraph of plain text may hold: text, characters, the style wrappers, inline math
+// that reads no reference or colour; and what reads the document's references (a citation, a
+// cross reference, a formula holding one) or writes one the last build made just so (a \label,
+// its target what stood before it), whose source goes into kept: an edit keeps the model's
+// references as they were only where it leaves these exactly as they were. top: the paragraphs'
+// own level, where the blank lines between paragraphs may stand.
+function plainNodes(ns, src, macros, kept, top) {
   for (const n of ns) {
     switch (n.t) {
       case 'text': case 'special': case 'comment': case 'verb': case 'stray': break;
-      case 'math': if (n.display || MATH_READS.test(src.slice(n.is, n.ie))) return false; break;
-      case 'group': if (!pureNodes(n.nodes, src, macros)) return false; break;
+      case 'par': if (!top) return false; break;
+      case 'math': {
+        if (n.display) return false;
+        const body = src.slice(n.is, n.ie);
+        if (MATH_READS.test(body)) { if (MATH_WRITES.test(body)) return false; kept.push(src.slice(n.s, n.e)); }
+        break;
+      }
+      case 'group': if (!plainNodes(n.nodes, src, macros, kept, false)) return false; break;
       case 'cmd': {
         if (macros.has(n.name)) return false;
-        if (!(n.accent || PURE_CMDS.has(n.name) || (Object.prototype.hasOwnProperty.call(CHARS, n.name) && !n.args.length))) return false;
-        for (const a of n.args) if (a && !pureNodes(a.nodes, src, macros)) return false;
+        if (CITE_CMDS.has(n.name) || REF_CMDS.has(n.name) || n.name === 'label') { kept.push(src.slice(n.s, n.e)); break; }
+        if (!(n.accent || PURE_CMDS.has(n.name) || INCR_PURE.has(n.name) || (Object.prototype.hasOwnProperty.call(CHARS, n.name) && !n.args.length))) return false;
+        for (const a of n.args) if (a && !plainNodes(a.nodes, src, macros, kept, false)) return false;
         break;
       }
       default: return false;
@@ -403,6 +416,13 @@ function pureNodes(ns, src, macros) {
   }
   return true;
 }
+// (what else draws the same whatever stands before it: the logos, the date, an address and a link
+// whose words are plain)
+const INCR_PURE = new Set(['TeX', 'LaTeX', 'LaTeXe', 'BibTeX', 'XeLaTeX', 'pdfLaTeX', 'LuaLaTeX', 'today', 'url', 'nolinkurl', 'href']);
+// (what in a formula writes a label, reads the colours or is an align's text: a full build)
+const MATH_WRITES = /\\(?:label|intertext|shortintertext)\b|color/;
+// the most paragraphs one edit may touch and still be built alone
+const INCR_UNITS = 8;
 
 // a $ that found no partner: the parse's searches past MATH_BUDGET depend on how many failed, and
 // so on text far from the edit
@@ -540,28 +560,44 @@ function incremental(project, hint) {
   while (q + C <= m - p && old.slice(old.length - q - C, old.length - q) === now.slice(now.length - q - C, now.length - q)) q += C;
   while (q < m - p && old.charCodeAt(old.length - 1 - q) === now.charCodeAt(now.length - 1 - q)) q++;
   const del = old.length - q - p, d = now.length - old.length;
-  // the one unit of the main file that holds it, a plain top level paragraph
-  let ui = -1;
-  for (let i = 0; i < hint.blocks.length; i++) {
-    const u = hint.blocks[i];
-    if (u.f !== f || u.e < p || u.s > p + del) continue;
-    if (ui >= 0) return null;
-    ui = i;
+  // the units of the main file that hold it: one top level paragraph of plain text, or a few such
+  // paragraphs next to each other (Enter splits one paragraph into two, a Backspace at a
+  // paragraph's start joins two, a selection over a paragraph break takes it out)
+  const touched = (lo, hi) => {
+    let i0 = -1, i1 = -1;
+    for (let i = 0; i < hint.blocks.length; i++) {
+      const u = hint.blocks[i];
+      if (u.f !== f || u.e < lo || u.s > hi) continue;
+      if (i0 >= 0 && i !== i1 + 1) return null;
+      if (i0 < 0) i0 = i;
+      i1 = i;
+    }
+    return i0 < 0 || i1 - i0 >= INCR_UNITS || hint.blocks[i0].s > p || p + del > hint.blocks[i1].e ? null : [i0, i1];
+  };
+  // (a Backspace that took the blank line between two paragraphs leaves the spaces around it,
+  // which are neither's: the paragraphs on either side of them)
+  let R = touched(p, p + del);
+  if (!R) {
+    let lo = p, hi = p + del;
+    while (lo > 0 && p - lo < 64 && /\s/.test(old[lo - 1])) lo--;
+    while (hi < old.length && hi - p - del < 64 && /\s/.test(old[hi])) hi++;
+    R = touched(lo, hi);
   }
-  if (ui < 0) return null;
-  const U = hint.blocks[ui], it = U.items[0];
-  if (!(U.s <= p && p + del <= U.e) || U.items.length !== 1 || it.type !== 'p' || U.fns.length || it.cls || it.ctx !== 'p' || it.pad || it.depth || it.label || it.lead || it.li) return null;
+  if (!R) return null;
+  const [ui, uj] = R, olds = hint.blocks.slice(ui, uj + 1);
   // (B2's settings an environment gives its paragraphs, or the paragraph's own assignments: none of
   // them on a top level paragraph of plain text, where a full build is the answer anyway)
-  if (it.mx || it.box || it.keepLines || it.nohy || it.hang != null) return null;
-  // the two parse trees: the same nodes before the paragraph, the same moved by d after it
+  const plainUnit = (u) => { const x = u.items.length === 1 ? u.items[0] : null; return !!x && x.type === 'p' && !u.fns.length && !x.cls && x.ctx === 'p' && !x.pad && !x.depth && !x.label && !x.lead && !x.li && !(x.mx || x.box || x.keepLines || x.nohy || x.hang != null); };
+  if (!olds.every(plainUnit)) return null;
+  const U = { s: olds[0].s, e: olds[olds.length - 1].e }, it = olds[0].items[0];
+  // the two parse trees: the same nodes before the paragraphs, the same moved by d after them
   const userSigs = {};
   for (const [n, t] of files) if (!WIDGET_FILE.test(n)) scanUserSigs(t, userSigs);
   if (JSON.stringify(userSigs) !== H.sigKey) return null;
   const nodes = parseCached(f, now, userSigs, H.sigKey);
   const docO = H.tree.find((n) => n.t === 'env' && n.name === 'document'), docN = nodes.find((n) => n.t === 'env' && n.name === 'document');
   if (!docO || !docN || docN.s !== docO.s || docN.be !== docO.be || docN.es !== docO.es + d || docN.e !== docO.e + d) return null;
-  // (the count of the old tree, less the old paragraph's, plus the new one's)
+  // (the count of the old tree, less the old paragraphs', plus the new ones')
   if (H.failed === undefined) H.failed = failedDollars(H.tree);
   const Lo = docO.nodes, Ln = docN.nodes;
   let a = 0;
@@ -574,25 +610,40 @@ function incremental(project, hint) {
   for (let k = 0; k < a; k++) if (Ln[k].t !== Lo[k].t || Ln[k].s !== Lo[k].s || Ln[k].e !== Lo[k].e) return null;
   for (let k = 0; k < after; k++) { const x = Lo[b + k], y = Ln[Ln.length - after + k]; if (y.t !== x.t || y.s !== x.s + d || y.e !== x.e + d) return null; }
   const mine = Ln.slice(a, Ln.length - after), oldMine = Lo.slice(a, b);
-  if (mine[0].s !== U.s || mine[mine.length - 1].e !== U.e + d || mine.some((n) => n.t === 'par')) return null;
-  const macros = hint.textMacros;
-  if (!pureNodes(mine, now, macros) || !pureNodes(oldMine, old, macros)) return null;
+  if (mine[0].s !== U.s || mine[mine.length - 1].e !== U.e + d || mine[0].t === 'par' || mine[mine.length - 1].t === 'par') return null;
+  // Plain text, the blank lines between paragraphs, and what reads the document's references
+  // without changing them (a citation, a cross reference, a formula holding one), each of which
+  // must be the same, with the same source, before and after: such a node gives what it gave
+  // in the last build, which read the same references (Builder.lookupLabel, citeInfo: the last
+  // model's), and adds no citation the last build did not list in the same order
+  const macros = hint.textMacros, keptO = [], keptN = [];
+  if (!plainNodes(mine, now, macros, keptN, true) || !plainNodes(oldMine, old, macros, keptO, true)) return null;
+  if (keptO.length !== keptN.length || keptO.some((x, k) => x !== keptN[k])) return null;
   const failed = H.failed - failedDollars(oldMine) + failedDollars(mine);
   if (failed * now.length > MATH_BUDGET) return null;
-  // the paragraph built again where it was: its indent, alignment and direction are the old one's
+  // the paragraphs built again where they were: the first one's indent, alignment and direction
+  // are the old first one's, and the flow sets the ones after it as the full build's would
   const B = new Builder(project, hint);
   B.opts = hint.opts; B.textMacros = hint.textMacros; B.mathMacros = hint.mathMacros; B.siOpts = hint.siOpts; B.siUnits = hint.siUnits; B.thms = hint.thms;
+  // (what a citation reads: the last build's entries, \bibitem list and citation index, unchanged
+  // by an edit that adds or takes no citation; the colours a formula may name)
+  B.bibEntries = hint.bibEntries; B.bibLoaded = true; B.bibItems = H.bibItems || null; B.colors = hint.colors;
+  // (and the labels as the full build has them there: a \label kept in the paragraph is the one
+  // the last build made, whose target stood before it, and a reference after it in the paragraph
+  // reads that, not the empty target of a builder that saw nothing before)
+  B.labels = new Map(hint.labels);
+  if (H.refIndex) B._refIndex = H.refIndex;
   B.dir = it.dir || 'ltr';
   B.userSigs = userSigs;
   // (the line spacing a declaration before it set, \onehalfspacing in the body: flow keeps it as
   // it goes, and the old paragraph carries it)
   const units = B.flow(mine, { f, src: now, pm: null }, { top: true, afterHeading: false, noindent: !it.indent, align: it.align || null, spread: it.spread ?? null });
-  if (units.length !== 1 || units[0].items.length !== 1 || units[0].items[0].type !== 'p' || units[0].fns.length || B.warn.length) return null;
-  // and the old paragraph made no warning either (\underline with no argument does): a warning it
+  if (!units.length || B.warn.length || !units.every((u) => u.items.length === 1 && u.items[0].type === 'p' && !u.fns.length)) return null;
+  // and the old paragraphs made no warning either (\underline with no argument does): a warning
   // made would stay in the model's list after the edit took it away
   // (its mark: the chip an unknown command leaves, the only place a warning is made)
   const unknown = (x) => (Array.isArray(x) ? x.some(unknown) : !!x && typeof x === 'object' && ((x.k === 'chip' && x.title === UNKNOWN) || Object.values(x).some((v) => v && typeof v === 'object' && unknown(v))));
-  if (unknown(it)) return null;
+  if (olds.some((u) => unknown(u.items[0]))) return null;
   const nu = units[0], ni = nu.items[0];
   if (it.cont) ni.cont = true;
   // a heading run into this paragraph (Builder.runIns, which the heading before it decided and an
@@ -613,21 +664,25 @@ function incremental(project, hint) {
   const said = (es) => JSON.stringify(es.map((h) => [h.num, h.text, h.level]));
   for (const u of hint.blocks) if (types(u).includes('toc')) for (const x of u.items) if (x.type === 'toc' && !x.lof && said(x.entries) !== said(tocEntries)) return null;
   const blocks = hint.blocks.slice(0, ui).map(toc);
-  blocks.push({ ...nu, key: f + '\u0000' + now.slice(nu.s, nu.e) + '\u0000' + (nu.sig || '') + '\u0000' + nu.items.map((x) => x.type).join(',') });
-  for (let i = ui + 1; i < hint.blocks.length; i++) { const u = hint.blocks[i]; blocks.push(toc(u.f === f && d ? movedUnit(u, f, U.e, d) : u)); }
+  for (const u of units) blocks.push({ ...u, key: f + '\u0000' + now.slice(u.s, u.e) + '\u0000' + (u.sig || '') + '\u0000' + u.items.map((x) => x.type).join(',') });
+  for (let i = uj + 1; i < hint.blocks.length; i++) { const u = hint.blocks[i]; blocks.push(toc(u.f === f && d ? movedUnit(u, f, U.e, d) : u)); }
   // (the model's own fields, as the full build makes them: not what the app wrote on the last one,
   // a cache of a build that would go stale)
   const r = {};
   for (const k of H.keys) r[k] = hint[k];
-  r.blocks = blocks; r.words = hint.words - count(it.inl) + count(ni.inl);
+  r.blocks = blocks;
+  r.words = hint.words;
+  for (const u of olds) r.words -= count(u.items[0].inl);
+  for (const u of units) r.words += count(u.items[0].inl);
   if (d) {
     r.headings = hint.headings.map((h) => (h.f === f && h.s >= U.e ? { ...h, s: h.s + d, ...(h.e != null ? { e: h.e + d } : {}) } : h));
-    // (B9: captions, endnotes and index entries after the paragraph move with it; its plain words hold none)
+    // (B9: captions, endnotes and index entries after the paragraphs move with them; their plain
+    // words hold none)
     for (const k of ['captions', 'endnotes', 'indexEntries']) if (hint[k]) r[k] = hint[k].map((x) => (x.f === f && x.s >= U.e ? { ...x, s: x.s + d } : x));
     if (hint.ixAt != null && hint.ixFile === f && hint.ixAt >= U.e) r.ixAt = hint.ixAt + d;
     if (hint.docBody) r.docBody = { ...hint.docBody, e: hint.docBody.e + d };
   }
-  Object.defineProperty(r, '_incr', { value: { main: f, files: new Map(files), tree: nodes, sigKey: H.sigKey, failed, keys: H.keys } });
+  Object.defineProperty(r, '_incr', { value: { main: f, files: new Map(files), tree: nodes, sigKey: H.sigKey, failed, keys: H.keys, bibItems: H.bibItems, refIndex: B._refIndex || H.refIndex } });
   return r;
 }
 
@@ -3806,7 +3861,8 @@ class Builder {
       docBody: this.docBody || null
     };
     // what the next keystroke's incremental build compares against (not part of the model)
-    if (this.parsed && this.parsed.has(this.project.main)) Object.defineProperty(r, '_incr', { value: { main: this.project.main, files: new Map(this.files), tree: this.parsed.get(this.project.main), sigKey: this.userSigKey, keys: Object.keys(r) } });
+    // (with the \bibitem list a citation reads, which the model does not carry)
+    if (this.parsed && this.parsed.has(this.project.main)) Object.defineProperty(r, '_incr', { value: { main: this.project.main, files: new Map(this.files), tree: this.parsed.get(this.project.main), sigKey: this.userSigKey, keys: Object.keys(r), bibItems: this.bibItems || null } });
     return r;
   }
 }

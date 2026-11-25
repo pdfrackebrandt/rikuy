@@ -175,8 +175,10 @@ check('every edit of every stream: the incremental model is the full build\'s ('
 // the sources of f5bb84d, task 53's, for every document both read alike; R1's two were full builds
 // then). A change that sends such keystrokes to the full build fails here.
 {
-  const FLOOR = { 'dev/bench/long': [99, 191], 'dev/bench/sample': [1, 13], 'dev/bench/lua': [4, 5], 'dev/bench/heavy': [0, 3], sample: [1, 13], 'styles (B4)': [49, 85], 'pictures (B8)': [3, 6],
-    'references (B9)': [6, 18], 'paragraph settings (B2)': [4, 8], 'font, lists and styles (R2)': [1, 4], 'page and paragraph leftovers (R1)': [2, 7], 'a LaTeX paragraph (its groups)': [2, 2] };
+  // (2026-11-25: paragraphs with citations, cross references, labels, logos and links take it too,
+  // dev/bench/long's 188 of 191 where 99 did)
+  const FLOOR = { 'dev/bench/long': [188, 191], 'dev/bench/sample': [6, 13], 'dev/bench/lua': [4, 5], 'dev/bench/heavy': [1, 3], sample: [6, 14], 'styles (B4)': [49, 85], 'pictures (B8)': [3, 6],
+    'references (B9)': [6, 18], 'paragraph settings (B2)': [4, 8], 'font, lists and styles (R2)': [2, 4], 'page and paragraph leftovers (R1)': [2, 7], 'a LaTeX paragraph (its groups)': [2, 2] };
   const got = {};
   for (const [name, files, main] of docs.slice(0, repoDocs)) {
     if (!FLOOR[name]) continue;
@@ -192,8 +194,56 @@ check('every edit of every stream: the incremental model is the full build\'s ('
     }
     got[name] = [f, n];
   }
+  // (INCR_COUNTS=1 prints the counts, for a change that moves a floor)
+  if (process.env.INCR_COUNTS) console.log(JSON.stringify(got));
   const short = Object.keys(FLOOR).filter((k) => !got[k] || got[k][0] < FLOOR[k][0]);
-  check('a keystroke in the middle of each paragraph takes the fast path at least as often as on 2026-11-20 (' + Object.values(got).reduce((x, [f]) => x + f, 0) + ' of ' + Object.values(got).reduce((x, [, n]) => x + n, 0) + ')', !short.length, JSON.stringify(short.map((k) => [k, got[k], FLOOR[k]])));
+  check('a keystroke in the middle of each paragraph takes the fast path at least as often as on 2026-11-25 (' + Object.values(got).reduce((x, [f]) => x + f, 0) + ' of ' + Object.values(got).reduce((x, [, n]) => x + n, 0) + ')', !short.length, JSON.stringify(short.map((k) => [k, got[k], FLOOR[k]])));
+}
+// Enter and a Backspace at a paragraph's start, as the page writes them: a paragraph split at a
+// space in its middle (the space made a blank line), and two paragraphs joined (the blank lines
+// between them made a space). Each on every paragraph of each repository document, the
+// incremental model against the full build, and taken by the fast path at least as often as on
+// 2026-11-25 (none was before: dev/bench/long's 191 splits and 150 joins were full builds).
+{
+  const FLOOR = { 'dev/bench/long': [191, 150], 'dev/bench/sample': [7, 0], 'dev/bench/lua': [5, 4], sample: [7, 0], 'styles (B4)': [49, 0], 'references (B9)': [6, 0], 'paragraph settings (B2)': [4, 0] };
+  const got = {}, bad = [];
+  for (const [name, files, main] of docs.slice(0, repoDocs)) {
+    if (!FLOOR[name]) continue;
+    const src = files.get(main), m = buildModel({ files, main });
+    const one = (t, what) => {
+      const next = new Map(files);
+      next.set(main, t);
+      const r0 = INCR.reused;
+      const a = buildModel({ files: next, main }, m);
+      const took = INCR.reused > r0;
+      INCR.on = false;
+      const b = buildModel({ files: next, main }, m);
+      INCR.on = true;
+      if (!sameModels(a, b)) bad.push(name + ' ' + what);
+      return took;
+    };
+    let split = 0, join = 0;
+    for (const u of m.blocks) {
+      if (u.f !== main || !u.items[0] || u.items[0].type !== 'p') continue;
+      const sp = src.indexOf(' ', (u.s + u.e) >> 1);
+      if (!(sp > 0 && sp < u.e)) continue;
+      // (the space made the blank line; and as the page's Enter writes it, before the space)
+      if (one(src.slice(0, sp) + '\n\n' + src.slice(sp + 1), 'split at ' + sp) & one(src.slice(0, sp) + '\n\n' + src.slice(sp), 'split before ' + sp)) split++;
+    }
+    for (let i = 0; i + 1 < m.blocks.length; i++) {
+      const u = m.blocks[i], v = m.blocks[i + 1];
+      if (u.f !== main || v.f !== main || !/^[ \t]*\n[ \t]*\n\s*$/.test(src.slice(u.e, v.s))) continue;
+      // (the whole space between them made one; and as the page's Backspace writes it, the blank
+      // line alone, the spaces around it left)
+      const nl = src.indexOf('\n', u.e), nl2 = src.indexOf('\n', nl + 1);
+      if (one(src.slice(0, u.e) + ' ' + src.slice(v.s), 'join at ' + u.e) & one(src.slice(0, nl) + ' ' + src.slice(nl2 + 1), 'join of the blank line at ' + nl)) join++;
+    }
+    got[name] = [split, join];
+  }
+  if (process.env.INCR_COUNTS) console.log(JSON.stringify(got));
+  check('Enter and Backspace joining paragraphs: the incremental model is the full build\'s', !bad.length, bad.slice(0, 5).join('; '));
+  const short = Object.keys(FLOOR).filter((k) => !got[k] || got[k][0] < FLOOR[k][0] || got[k][1] < FLOOR[k][1]);
+  check('and they take the fast path at least as often as on 2026-11-25 (' + JSON.stringify(got['dev/bench/long']) + ' on dev/bench/long)', !short.length, JSON.stringify(short.map((k) => [k, got[k], FLOOR[k]])));
 }
 console.log('edits ' + steps + ', on the fast path ' + fast + ', documents ' + docs.length);
 
