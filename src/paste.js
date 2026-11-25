@@ -109,8 +109,18 @@ export function htmlToTeX(html, opts = {}) {
     // (soul's \hl goes inside \sout, \sout{\hl{word}}: the other way stops TeX)
     const cmds = markCmds(m), soul = opts.hlColor === false && m.strike && m.hl ? [cmds[1], cmds[0], ...cmds.slice(2)] : cmds;
     const lead = (/^\s+/.exec(r) || [''])[0], tail = (/\s+$/.exec(r) || [''])[0], on = (x) => { for (const cmd of soul) x = '\\' + cmd + '{' + x + '}'; return x; };
-    // (soul's \hl in \sout: a word at a time)
-    if (opts.hlColor === false && m.strike && m.hl) return lead + r.trim().split(/((?<!\\)\s+)/).map((w, i) => (i % 2 ? w : on(w))).join('') + tail;
+    // (soul's \hl in \sout: a word at a time, every space TeX sees outside them: a space, ~, a
+    // control space \ , \, and the like; a formula is one word. A piece soul cannot take, a
+    // command with an argument of its own, is left unmarked rather than stop TeX)
+    if (opts.hlColor === false && m.strike && m.hl) {
+      let out = '', word = '';
+      const put = () => { if (word) out += /\\(?:url|href|footnote|verb|cite\w*|ref|label|index)(?![A-Za-z])/.test(word) ? word : on(word); word = ''; };
+      for (const [t] of r.trim().matchAll(/\$[^$]*\$|\s+|~|\\[ ,;:!](?![A-Za-z])|\\(?:quad|qquad|enspace|thinspace)(?![A-Za-z])|\\[A-Za-z]+(?:\{\})?|\\[^A-Za-z]|[^\s~$\\]+|[\s\S]/g)) {
+        if (/^(?:\s+|~|\\[ ,;:!]|\\(?:quad|qquad|enspace|thinspace))$/.test(t)) { put(); out += t; } else word += t;
+      }
+      put();
+      return lead + out + tail;
+    }
     return lead + on(r.trim()) + tail;
   };
   let prev = opts.prev || ' ';

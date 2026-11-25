@@ -222,10 +222,14 @@ try:
         for name, html, want in (('a colour in a highlight', "<p>x <span style='background:yellow;mso-highlight:yellow'>a <span style='color:#FF0000'>b</span></span> y</p>", 'Alpha para.x \\hl{a} \\textcolor[HTML]{FF0000}{\\hl{b}} y'),
                                  # (soul's \\hl of several words in \\sout stops TeX, "Leaders not followed by proper glue", and \\sout in \\hl too: a word at a time)
                                  ('struck and highlighted', '<b id="docs-internal-guid-1" style="font-weight:normal"><p><span style="background-color:#ffff00;text-decoration:line-through">just these words</span><span> plain words</span></p></b>', 'Alpha para.\\sout{\\hl{just}} \\sout{\\hl{these}} \\sout{\\hl{words}} plain words'),
-                                 ('a highlight in a struck run', "<p><del>gone <span style='background:yellow;mso-highlight:yellow'>two words</span> end</del></p>", 'Alpha para.\\sout{gone} \\sout{\\hl{two}} \\sout{\\hl{words}} \\sout{end}')):
-            load_doc(page, W2('Alpha para.', SOUL + '\\usepackage{xcolor}\n')); click_text(page, 'Alpha para.', 11)
+                                 ('a highlight in a struck run', "<p><del>gone <span style='background:yellow;mso-highlight:yellow'>two words</span> end</del></p>", 'Alpha para.\\sout{gone} \\sout{\\hl{two}} \\sout{\\hl{words}} \\sout{end}'),
+                                 # (every space TeX sees stays outside: a no-break space gave \\sout{\\hl{x~y}}, which stopped TeX; a formula, \\% and a link's words too)
+                                 ('a struck and highlighted run with ~, punctuation, an apostrophe, a formula, % and links',
+                                  "<p><span style='background:yellow;mso-highlight:yellow;text-decoration:line-through'>Its&nbsp;cost, it's 50% of <span class=\"katex\"><span class=\"katex-mathml\"><math><semantics><mrow><mi>x</mi></mrow><annotation encoding=\"application/x-tex\">x^2</annotation></semantics></math></span></span> (see <a href='https://a.b/c'>https://a.b/c</a> and <a href='https://a.b'>the site</a>).</span></p>",
+                                  lambda b: all(k in b for k in ('\\sout{\\hl{Its}}~\\sout{\\hl{cost,}}', "\\sout{\\hl{it's}}", '\\sout{\\hl{50\\%}}', '$x^2$', '\\url{https://a.b/c}', '\\href{https://a.b}{\\sout{\\hl{the}} \\sout{\\hl{site}}}')) and 'x~' not in b.replace('\\sout{\\hl{Its}}~', ''))):
+            load_doc(page, W2('Alpha para.', SOUL + '\\usepackage{xcolor}\n\\usepackage{hyperref}\n')); click_text(page, 'Alpha para.', 11)
             page.evaluate(PASTE, [html, 'x']); settle(page, 250)
-            check('r3 soul: %s keeps \\hl innermost' % name, BODY(src(page)) == want, repr(BODY(src(page))))
+            check('r3 soul: %s keeps \\hl innermost' % name, want(BODY(src(page))) if callable(want) else BODY(src(page)) == want, repr(BODY(src(page))))
             r3.append(('soul: ' + name, src(page)))
         if os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist', 'tex', 'tree.wasm')):
             page.set_default_timeout(600000)
