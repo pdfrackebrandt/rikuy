@@ -564,7 +564,7 @@ export const methods = {
   tableInsertCol(right) {
     return this.tableOp((src, T, h) => X.insertCol(src, T, right ? h.rect.c1 : h.rect.c0, right, { row: h.r }));
   },
-  tableDeleteRows() { return this.tableOp((src, T, h) => X.deleteRows(src, T, h.rect.r0, h.rect.r1)); },
+  tableDeleteRows() { return this.tableOp((src, T, h) => X.deleteRows(src, T, h.rect.r0, h.rect.r1, h.cell.col)); },
   tableDeleteCols() { return this.tableOp((src, T, h) => X.deleteCols(src, T, h.rect.c0, h.rect.c1)); },
   // the table, and the float around it when it holds nothing else
   tableDelete() {

@@ -850,7 +850,7 @@ function rowEnd(src, row) {
 
 // Delete rows r0..r1: { edits, p } or { table: true } when no row would be left. In a grid the
 // rule under each goes with it; a \multirow over them shrinks, or moves down when its own row goes.
-export function deleteRows(src, T, r0, r1) {
+export function deleteRows(src, T, r0, r1, col = null) {
   const data = T.rows.map((r, k) => k).filter((k) => T.rows[k].kind === 'row');
   if (data.every((k) => k >= r0 && k <= r1)) return { table: true };
   const grid = !!gridRules(src, T);
@@ -888,7 +888,14 @@ export function deleteRows(src, T, r0, r1) {
     const repl = left > 1 ? src.slice(c.mr.s, c.mr.nS) + left + src.slice(c.mr.nE, c.mr.e) : src.slice(c.mr.textS, c.mr.textE);
     edits.push({ s: at.cell.ks, e: at.cell.ks, t: repl });
   }
-  return { edits: edits.sort((x, y) => x.s - y.s), p };
+  // (col, the caret's column: the caret to its cell in the row that takes the rows' place, or in
+  // the row above where the last rows went, at its words' start, as Word keeps the column; after
+  // the last row it went to the end of the row above, whatever the column)
+  let q = p;
+  const k = col == null ? null : data.find((x) => x > r1) ?? [...data].reverse().find((x) => x < r0);
+  const at = k != null ? cellOfCol(T.rows[k], col) : null;
+  if (at) { const w = cellWords(at.cell)[0]; q = edits.reduce((x, d) => (d.e <= w ? x + d.t.length - (d.e - d.s) : x), w); }
+  return { edits: edits.sort((x, y) => x.s - y.s), p: q };
 }
 
 // ---- edits on columns ---------------------------------------------------------------------------

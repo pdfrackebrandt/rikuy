@@ -428,6 +428,14 @@ def caret_after_ops(page):
         page.keyboard.type('Q'); settle(page, 200)
         s = src(page)
         check('%s, then typing: the letter in the cell under the caret' % cmd, want in s, s[s.find('\\midrule'):s.find('\\caption')])
+    # (Delete Rows keeps the caret's column, as Word's: in the row that takes the rows' place, or
+    # the row above where the last row went; after the last row it went to the end of the row
+    # above, whatever the column)
+    for where, k, want in (('four', 2, 'one & two \\\\\nfive & Qsix'), ('six', 1, 'three & Qfour \\\\\n\\bottomrule'), ('five', 2, 'Qthree & four \\\\\n\\bottomrule')):
+        load_doc(page, doc); at_src(page, where, k); run_cmd(page, 'delete-rows'); settle(page, 250)
+        page.keyboard.type('Q'); settle(page, 200)
+        s = src(page)
+        check('Delete Rows from "%s", then typing: the letter at the start of the same column\'s cell' % where, want in s and s.replace('Q', '', 1).count(' & ') == 3, s[s.find('\\midrule'):s.find('\\caption')])
 
 
 def caption_enter(page):
