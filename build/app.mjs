@@ -203,9 +203,10 @@ export function appFiles(OUT) {
   for (const f of fs.readdirSync(R('build/icons')).filter((n) => n.endsWith('.png'))) fs.copyFileSync(R('build/icons/' + f), O('icons/' + f));
   fs.writeFileSync(O('manifest.webmanifest'), JSON.stringify(manifest(), null, 1) + '\n');
   // (index.html and rikuy.html are written by now. The policy names the app's bundle by its hash
-  // as rikuy.html carries it inline, the copy the browser tests run under this policy; index.html
-  // loads the same bytes as a file, app-<hash>.js, which 'self' allows, and has no inline script
-  // of its own to add)
+  // as rikuy.html carries it inline, the copy the browser tests run under this policy, and
+  // index.html's one inline script, the guard that says so when the app's script does not load
+  // (build.mjs BOOT_GUARD); index.html loads the bundle as a file, app-<hash>.js, which 'self'
+  // allows)
   fs.writeFileSync(O('_headers'), headers([...new Set([...pageHashes(fs.readFileSync(O('rikuy.html'), 'utf8')), ...pageHashes(fs.readFileSync(O('index.html'), 'utf8'))])]));
   fs.writeFileSync(O('404.html'), NOT_FOUND);
   fs.writeFileSync(O('robots.txt'), robots());
@@ -984,12 +985,12 @@ export function cleanApp(OUT) {
 // script-src runs no text that is not a file of this site, and no eval:
 //   'self'                the page's files: the app's bundle (app-<hash>.js), lib/, the workers
 //                         (tex/engine.js, spell/, word/), git.js
-//   'sha256-...'          the app's bundle as an inline script, by its hash (pageHashes, computed
-//                         from the built rikuy.html, which carries it inline and which the browser
-//                         tests run under this policy: a change of one byte needs a build);
-//                         index.html has no inline script: it loads the same bytes as
-//                         app-<hash>.js, and its one script element is schema.org data, which
-//                         runs nothing
+//   'sha256-...'          two inline scripts by their hashes (pageHashes, computed from the built
+//                         pages: a change of one byte needs a build): the app's bundle as
+//                         rikuy.html carries it inline (the browser tests run that copy under this
+//                         policy; index.html loads the same bytes as app-<hash>.js), and index.html's
+//                         guard, which says so when that file does not load (build.mjs BOOT_GUARD);
+//                         index.html's other script element is schema.org data, which runs nothing
 //   'wasm-unsafe-eval'    compiling WebAssembly, and nothing else: TeX and its programs, Pyodide,
 //                         pdf.js, pandoc, Hunspell, Harper and the editor's native core are all
 //                         WebAssembly. Safari has it from 16; Safari 15 refuses WebAssembly here
@@ -1087,10 +1088,11 @@ export function headers(hashes) {
     // there, from PR 81 on, the hosted widget document kept the page's policy and X-Frame-Options,
     // and no live figure ran: dev/live_check.py failed every deployment since)
     + WIDGET_RULE
-    // (the page runs only if its inline script is byte for byte the one whose hash the policy
-    // names: no-transform asks Cloudflare's edge, and anything between, to change none of it,
-    // e.g. Email Address Obfuscation, which a zone has on by default; deploy.yml checks the live
-    // page against its policy after each deployment, dev/live_check.py)
+    // (the page runs no inline script but its guard, whose hash the policy names, and its script
+    // only from the site: no-transform asks Cloudflare's edge, and anything between, to change
+    // none of it, e.g. Email Address Obfuscation, which a zone has on by default and which adds an
+    // inline script that would not run; deploy.yml checks the live page and its app-<hash>.js
+    // against the policy after each deployment, dev/live_check.py)
     + ['/', '/index.html'].map((p) => rule(p, 'Cache-Control: ' + NO_CACHE + ', no-transform')).join('')
     + ['/sw.js', '/manifest.webmanifest'].map((p) => rule(p, 'Cache-Control: ' + NO_CACHE)).join('')
     // What agents and crawlers fetch, and only that: readable from a script on any site (they

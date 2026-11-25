@@ -850,7 +850,10 @@ servers), is unchanged, and the artifact build (`RIKUY_SHARE` set) compiles `src
   script. On a GitHub runner (`test/loadbench.py open long`, 8 runs each) a repeat visit draws the
   sample 389 to 275 ms from the start, the editor ready 466 to 339 ms, a 100 page document 720
   to 599 ms; a first visit on the cable line 1039 to 984 ms. The page is 0.35 MB (80 KB
-  compressed). The app's script, the fifteen faces that `loadFonts()` waits for
+  compressed). Should the file not come (a first visit whose line dropped after the page, a page of
+  one deployment asking for the script of the one before), the page's one inline script, its guard
+  (`BOOT_GUARD`, named by its hash in the policy), hears the load fail and puts a line saying so
+  and a Reload button in place of "Typesetting…" (`test/offline.py`). The app's script, the fifteen faces that `loadFonts()` waits for
   before the first layout (`FIRST_FONTS` in `build.mjs`: the two lists are one) and KaTeX's
   script are asked for by `<link rel="preload">` at the top of the body, so they travel beside
   the page. The service worker is registered once the

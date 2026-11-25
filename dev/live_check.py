@@ -1,7 +1,8 @@
 """The hosted copy as it answers after a deployment (deploy.yml runs it): the page is this build's
-(its version), it runs no inline script and loads the app's script, app-<hash>.js, byte for byte
-as built, whose hash its policy names (anything that rewrote the page or the script on the way
-would stop the app or show here), nothing may transform either, HSTS is on; the widget document answers at its address without .html
+(its version), it runs no inline script but those its policy names (its guard) and loads the app's
+script, app-<hash>.js, byte for byte as built, as JavaScript, whose hash its policy names too
+(anything that rewrote the page or the script on the way would stop the app or show here), nothing
+may transform either and the script is kept for good, HSTS is on; the widget document answers at its address without .html
 with the widgets' own policy and may be framed (and its .html name redirects there, as Pages
 does); /git answers git's request for a git host it knows, inert, and refuses one without the
 page's mark and a host it does not know.
@@ -69,20 +70,24 @@ def problem(site, dist):
     csp = h.get('content-security-policy', '')
     named = sorted(re.findall(r"'sha256-([^']+)'", csp.split('script-src', 1)[1].split(';')[0])) if 'script-src' in csp else []
     served = sorted(inline_hashes(page))
-    # the page runs no inline script (an added one is something that rewrote it on the way) and
-    # loads the app as app-<hash>.js (build.mjs APP_JS), whose bytes the policy names
+    # the page runs no inline script the policy does not name (its guard, build.mjs BOOT_GUARD: an
+    # added one is something that rewrote the page on the way) and loads the app as app-<hash>.js
+    # (build.mjs APP_JS), whose bytes the policy names too
     app = re.findall(r'<script src="(app-[0-9a-f]{16}\.js)"></script>', page)
-    if served or len(app) != 1:
-        return 'wrong', 'the page serves inline scripts hashing to %s and loads %s for the app: something rewrote the page' % (served, app)
+    if any(x not in named for x in served) or len(app) != 1:
+        return 'wrong', 'the policy names %s, the page serves inline scripts hashing to %s and loads %s for the app: something rewrote the page' % (named, served, app)
     if 'no-transform' not in h.get('cache-control', ''):
         return 'wrong', 'the page lacks Cache-Control: no-transform: %r' % h.get('cache-control')
     st, ah, js = get(site, app[0], **{'Accept-Encoding': 'identity'})
     if st != 200 or js != open(os.path.join(dist, app[0]), 'rb').read():
         return 'wrong', 'the app\'s script %s answers %s, not this build\'s bytes' % (app[0], st)
-    if named != [base64.b64encode(hashlib.sha256(js).digest()).decode()]:
+    if base64.b64encode(hashlib.sha256(js).digest()).decode() not in named:
         return 'wrong', 'the policy names %s, not the app\'s script by its hash' % named
-    if 'no-transform' not in ah.get('cache-control', ''):
-        return 'wrong', 'the app\'s script lacks Cache-Control: no-transform: %r' % ah.get('cache-control')
+    # (the page sends nosniff: a script of another type would not run)
+    if 'javascript' not in ah.get('content-type', ''):
+        return 'wrong', 'the app\'s script is served as %r, which a page with nosniff does not run' % ah.get('content-type')
+    if 'no-transform' not in ah.get('cache-control', '') or 'immutable' not in ah.get('cache-control', ''):
+        return 'wrong', 'the app\'s script lacks Cache-Control: immutable, no-transform: %r' % ah.get('cache-control')
     if h.get('strict-transport-security') != 'max-age=31536000':
         return 'wrong', 'HSTS: %r' % h.get('strict-transport-security')
     shell = [f for f in os.listdir(dist) if re.match(r'^widget-[0-9a-f]{16}\.html$', f)][0]

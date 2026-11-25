@@ -1,6 +1,7 @@
 """The hosted page's Content-Security-Policy over a whole session, with nothing refused. The page
-runs under the policy dist/_headers gives it (build/app.mjs policy: the page's one inline script by
-its hash, its own files, WebAssembly, no eval, no inline script or handler of anything else), as
+runs under the policy dist/_headers gives it (build/app.mjs policy: the app's bundle inline by its
+hash, as rikuy.html carries it, and index.html's guard by its; its own files, WebAssembly, no eval, no
+inline script or handler of anything else), as
 serve.py serves it, with every refusal reported to the server (report-uri): the page's, a live
 figure's and each worker's, which takes its policy from its own script. The session: open the page
 and type; the source pane (CodeMirror), the math field (MathLive), the Git panel (git.js);

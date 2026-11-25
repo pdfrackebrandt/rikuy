@@ -960,6 +960,9 @@ body.dark-page .ghostp.empty .gh::after { border-bottom-color: #8AA4BC; }
 
 /* drop + boot */
 .boot { position: absolute; inset: 0; display: grid; place-items: center; color: var(--mute); font: italic 18px var(--font-doc); background: var(--desk); z-index: 2; }
+/* (the installed app's page when its script did not load: build.mjs BOOT_GUARD) */
+.boot.failed { align-content: center; gap: 12px; font-style: normal; color: var(--ink-ui); }
+.boot.failed p { margin: 0; }
 .dropzone { display: none; position: absolute; inset: 12px; border: 2px dashed var(--blue); border-radius: 12px; background: color-mix(in srgb, var(--desk) 82%, transparent); color: var(--blue-ink); font-weight: 500; place-items: center; z-index: 5; pointer-events: none; }
 body.dropping .dropzone { display: grid; }
 

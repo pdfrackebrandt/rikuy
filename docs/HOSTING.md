@@ -93,7 +93,8 @@ as its canonical one.
 - **What Pages serves**: `_headers` (written by `build/app.mjs`): the page's Content-Security-
   Policy (the one the browser tests run under: scripts only from the site and the app's bundle
   inline by its SHA-256, which the build computes from `rikuy.html`, the copy the tests run;
-  `index.html` has no inline script and loads the same bytes as `app-<hash>.js`; WebAssembly but no
+  `index.html` loads the same bytes as `app-<hash>.js`, and its one inline script, the guard that
+  says so when that file does not load (`BOOT_GUARD` in `build.mjs`), by its SHA-256 too; WebAssembly but no
   eval; no outside source, git included (it goes through `/git`, below); `frame-ancestors
   'none'`), and for `widget-<hash>.html`, the document
   live figures run in, the widgets' own policy in its place (`frame-ancestors 'self'`, no

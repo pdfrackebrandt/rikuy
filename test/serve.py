@@ -1,7 +1,7 @@
 """Serve dist/ for the browser tests and the build's tools: the page wrapped in the publish skeleton
 (as the claude.ai artifact host wraps rikuy.html), its files next to it, and on every response the
 hosted copy's Content-Security-Policy (and X-Frame-Options) as dist/_headers gives it for that path
-(build/app.mjs wrote it; headers_for): the page's own, with the hash of its one inline script, for
+(build/app.mjs wrote it; headers_for): the page's own, with the hash of its inline bundle, for
 the page and every file and worker; the widgets' own for widget-<hash>.html. To it comes jsDelivr,
 where rikuy.html takes the libraries index.html ships in lib/. So the browser tests that open the
 page here or with browser.py's open_page run under the policy the hosted copy has, and a page that

@@ -30,8 +30,10 @@ def sw_info(d):
 
 
 def variant(name, mark):
-    """dist/ as a later deployment would ship it: git.js and the TeX worker's engine.js changed,
-    the version stamped again (build/app.mjs). TeX packs are linked, not copied."""
+    """dist/ as a later deployment would ship it: git.js, the TeX worker's engine.js and the app's
+    own script changed (that one renamed by its new hash and named so in index.html, as build.mjs
+    names it, with window.__rkBundle set to mark), the version stamped again (build/app.mjs). TeX
+    packs are linked, not copied."""
     d = os.path.join(work, name)
     for dp, dns, fns in os.walk(DIST):
         rel = os.path.relpath(dp, DIST)
@@ -42,6 +44,15 @@ def variant(name, mark):
             else: shutil.copyfile(src, dst)
     for f in ('git.js', 'tex/engine.js'):
         with open(os.path.join(d, f), 'a', encoding='utf8') as fh: fh.write('\n// ' + mark + '\n')
+    old = [f for f in os.listdir(d) if re.match(r'^app-[0-9a-f]{16}\.js$', f)][0]
+    body = open(os.path.join(d, old), 'rb').read() + ('\n;window.__rkBundle = %s;\n' % json.dumps(mark)).encode()
+    new = 'app-' + hashlib.sha256(body).hexdigest()[:16] + '.js'
+    os.remove(os.path.join(d, old))
+    open(os.path.join(d, new), 'wb').write(body)
+    ix = os.path.join(d, 'index.html')
+    page = open(ix, encoding='utf8').read()
+    assert page.count(old) == 2, 'index.html names its script once in a preload and once in its tag'
+    open(ix, 'w', encoding='utf8').write(page.replace(old, new))
     subprocess.run(['node', os.path.join(ROOT, 'build', 'app.mjs'), d], check=True, stdout=subprocess.DEVNULL)
     return d
 
@@ -316,6 +327,30 @@ def main():
         bdir = variant('b', 'version B')
         vb = sw_info(bdir)['v']
         srv = pages.start(PORT, bdir)
+        # ---- the app's script does not come (a fresh browser, version B served) ---------
+        # (a first visit whose line dropped after the page, or a page of one deployment asking for
+        # the script of the one before: build.mjs BOOT_GUARD, the page's one inline script)
+        fctx = b.new_context()
+        fp = fctx.new_page()
+        ferr = []
+        fp.on('pageerror', lambda e: ferr.append('PAGEERROR ' + str(e)))
+        fp.on('console', lambda m: ferr.append(m.text) if m.type == 'error' and 'Failed to load resource' not in m.text else None)
+        APPJS = re.compile(r'.*/app-[0-9a-f]{16}\.js$')
+        fp.route(APPJS, lambda r: r.abort())
+        fp.goto(URL)
+        try: fp.wait_for_selector('#boot.failed button', timeout=15000)
+        except Exception: pass  # (the check below says what the page showed instead)
+        said = fp.evaluate('''() => { const b = document.getElementById('boot'), r = b.getBoundingClientRect(), k = b.querySelector('button');
+          return { text: b.innerText, role: b.getAttribute('role'), shown: !b.hidden && r.height > 100, button: !!k && k.getBoundingClientRect().width > 20 && k.getBoundingClientRect().height > 15, app: !!window.rikuy }; }''')
+        check('the app\'s script not loading: the page says so in words and offers Reload, with nothing refused by its policy',
+              'could not load' in said['text'] and said['role'] == 'alert' and said['shown'] and said['button'] and fp.get_by_role('button', name='Reload').count() == 1 and not said['app'] and not ferr, (said, ferr))
+        fp.unroute(APPJS)
+        if said['button']: fp.get_by_role('button', name='Reload').click()
+        else: fp.reload()
+        ready(fp)
+        check('and Reload loads the app once the script comes', fp.evaluate('!!window.rikuy && !document.getElementById("boot").classList.contains("failed")') and not ferr, ferr)
+        fctx.close()
+
         ctx.set_offline(False)
         page.reload()
         ready(page)
@@ -347,6 +382,17 @@ def main():
         both = page.evaluate(ENGINE_BOTH)
         check('after the click the page reloads as the new version, its worker\'s scripts too', both['page'].strip().endswith('// version B') and both['worker'] == both['page'], both)
         check('and what was typed is still there', 'Still typing. Offline proof.' in page.evaluate('window.rikuy.files.get("main.tex")'))
+        check('the new version runs its own script (another app-<hash>.js)', page.evaluate('window.__rkBundle') == 'version B', page.evaluate('window.__rkBundle || null'))
+        # the updated app opened again without a network: the page and its new script from what the
+        # worker kept (the new script among the content addressed files, rikuy-immutable)
+        ctx.set_offline(True)
+        p3 = ctx.new_page()
+        p3.goto(URL)
+        ready(p3)
+        check('offline, the updated app starts again with its new script', version(p3) == vb and p3.evaluate('window.__rkBundle') == 'version B' and p3.evaluate('document.querySelectorAll(".page .it").length') > 3,
+              (version(p3), p3.evaluate('window.__rkBundle || null')))
+        p3.close()
+        ctx.set_offline(False)
         page2.wait_for_selector('#st-update', state='visible', timeout=10000)
         both2 = page2.evaluate(ENGINE_BOTH)
         check('the second tab, left on the old version, still gets the old version\'s scripts', version(page2) == va and not both2['page'].strip().endswith('version B') and both2['worker'] == both2['page'] and 'ERR' not in both2['worker'], both2)
@@ -367,7 +413,8 @@ def main():
         page.goto(URL)
         ready(page)
         both = page.evaluate(ENGINE_BOTH)
-        check('the next open starts the newer version, page and worker scripts alike', version(page) == vc and both['page'].strip().endswith('// version C') and both['worker'] == both['page'], (version(page), both))
+        check('the next open starts the newer version, page and worker scripts alike', version(page) == vc and both['page'].strip().endswith('// version C') and both['worker'] == both['page']
+              and page.evaluate('window.__rkBundle') == 'version C', (version(page), both, page.evaluate('window.__rkBundle || null')))
         left = page.evaluate('caches.keys()')
         check('the cache of the version before the last is dropped', ('rikuy-v-' + va) not in left and ('rikuy-v-' + vc) in left, left)
         check('no page errors', not errors, errors[:3])

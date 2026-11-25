@@ -182,7 +182,8 @@ Pick the checks by what you touched, and run them before you call it done:
   it controls; a test that changes what a server returns must go through it (or a new context).
 - The page runs under a strict Content Security Policy (`build/app.mjs` `policy`; `test/serve.py`
   and `browser.py`'s `open_page` serve it, read from `dist/_headers`): scripts only from the page's own
-  site and the page's one inline script by its hash, WebAssembly but no eval, `connect-src 'self'`
+  site, the app's bundle inline by its hash (`rikuy.html`; `index.html` loads it as `app-<hash>.js`)
+  and `index.html`'s guard by its, WebAssembly but no eval, `connect-src 'self'`
   (the worker, which shares the policy, can fetch only files next to the page; git goes through
   the site's own proxy, `/git`, a Pages Function: `functions/git/[[path]].js`, `src/gitproxy.js`).
   A test whose own servers stand in for hosts passes them to `open_page(connect=[...])`;

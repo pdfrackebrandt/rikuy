@@ -225,10 +225,21 @@ let appHtml = html;
 // artifact is one file.
 const APP_JS = APP ? 'app-' + crypto.createHash('sha256').update(js).digest('hex').slice(0, 16) + '.js' : null;
 for (const f of fs.existsSync(OUT) ? fs.readdirSync(OUT) : []) if (/^app-[0-9a-f]{16}\.js$/.test(f) && f !== APP_JS) fs.rmSync(O(f));
+// A page whose script does not come (a first visit whose line dropped, or a page of one deployment
+// asking for the script of the one before, gone from the site) would say "Typesetting…" for ever:
+// BOOT_GUARD, the page's one inline script (the policy names it by its hash; an onerror attribute
+// would need 'unsafe-hashes'), hears the script's load fail and puts in its place a line saying so
+// and a Reload button. The load error of an element does not bubble: it is heard on its way down.
+const BOOT_GUARD = "addEventListener('error',function(e){var s=e.target,b=document.getElementById('boot');"
+  + "if(!b||!s||s.tagName!=='SCRIPT'||!/(^|\\/)app-[0-9a-f]{16}\\.js$/.test(s.getAttribute('src')||''))return;"
+  + "var p=document.createElement('p'),r=document.createElement('button');"
+  + "p.textContent='Rikuy could not load: the network or the site did not answer.';"
+  + "r.type='button';r.className='btn';r.textContent='Reload';r.addEventListener('click',function(){location.reload()});"
+  + "b.textContent='';b.classList.add('failed');b.setAttribute('role','alert');b.appendChild(p);b.appendChild(r)},true);";
 if (APP) {
   const tag = '<script>' + js + '</script>';
   if (appHtml.split(tag).length !== 2) throw new Error('src/template.html: the app\'s script is not there once to take out of index.html');
-  appHtml = appHtml.replace(tag, () => '<script src="' + APP_JS + '"></script>');
+  appHtml = appHtml.replace(tag, () => '<script>' + BOOT_GUARD + '</script><script src="' + APP_JS + '"></script>');
   fs.writeFileSync(O(APP_JS), js);
 }
 if (APP) {
