@@ -432,7 +432,7 @@ def r5(p):
     page.get_by_role('menuitem', name='wrong', exact=True).click(); settle(page, 300)
     page.keyboard.type('Z'); settle(page, 200)
     check('a suggestion for a word half bold: the caret after the word, where the next key goes', src(page) == doc.replace('onng', 'ongZ'), src(page)[40:110])
-    if page.evaluate('window.rikuy.thesAvailable()'):
+    if check('R5: the thesaurus is here (hosted build)', page.evaluate('window.rikuy.thesAvailable()') is True):
         load_doc(page, doc); spell_settle(page, 15000)
         right_click_word(page, 'important')
         page.get_by_role('menuitem', name='Synonyms').click(); settle(page, 300)

@@ -54,7 +54,7 @@ export async function lintText(text, dialect = 0) {
     const s = sp.start, e = sp.end;
     // (a capital letter alone, "A introduction": Harper matches its case as all capitals, "AN",
     // where the words after it are not; Word gives "An". A suggestion Harper gives twice, once.)
-    const word = text.slice(s, e), next = /^\s*(\S*)/.exec(text.slice(e))[1];
+    const word = text.slice(s, e), next = /^\s*([\p{L}\p{M}]*)/u.exec(text.slice(e))[1];
     const caps = /^\p{Lu}$/u.test(word) && !/^\p{Lu}{2,}$/u.test(next);
     const sugg = [];
     for (const x of l.suggestions().slice(0, 6)) {
