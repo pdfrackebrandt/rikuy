@@ -1026,6 +1026,15 @@ def hunt(page):
         until(page, '() => (window.rikuy.files.get("main.tex").match(/includegraphics/g) || []).length === 2')
         check('a picture pasted with its <img> tag as HTML is placed: ' + html[:30], src(page).count('\\includegraphics') == 2 and re.search(r'\{pasted-[a-z0-9]+\.png\}', src(page)) is not None, src(page)[60:])
 
+    # A figure's picture deleted: the caret shows at the caption's start, and what is typed goes
+    # there (it went to the line above the caption, unseen)
+    fig = WRAP('Before it here.\n\n\\begin{figure}[h]\n\\centering\n\\includegraphics[width=0.5\\linewidth]{a.png}\n\\caption{Cap}\n\\end{figure}\n\nAfter it here.')
+    load_doc(page, fig); settle(page, 300)
+    sel_pic()(page)
+    page.keyboard.press('Delete'); settle(page, 200)
+    page.keyboard.type('Z'); settle(page, 200)
+    check('a figure\'s picture deleted, then typing: the letter where the caret shows, the caption\'s start', '\\caption{ZCap}' in src(page) and '\\includegraphics' not in src(page), src(page)[60:])
+
 
 def run():
     with sync_playwright() as p:

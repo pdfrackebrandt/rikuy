@@ -1863,6 +1863,11 @@ class App {
       if (still) {
         e.preventDefault();
         this.commit([{ f: info.f, s: info.s, e: info.e, t: '' }], { f: info.f, p: info.s }, 'del-atom');
+        // (where nothing is drawn now, as the line a figure's picture leaves above its caption,
+        // what is typed goes where the caret shows: the caption's start. It went to the line
+        // above, unseen, while the caret blinked in the caption. An empty paragraph left keeps it.)
+        const P = this.pending, ph = P && P.node && P.node.parentElement && P.node.parentElement.closest('span.t.ph');
+        if (P && P.node && !ph) this.pending = null;
         return;
       }
     }
