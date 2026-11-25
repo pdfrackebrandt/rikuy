@@ -402,7 +402,10 @@ export const tabs = {
     const at = this.ribbonAt();
     if (at) at.memo = {};
     this.ribbonContexts(at);
-    for (const b of rb.querySelectorAll('.rb-panel button[data-cmd]')) {
+    // (the open tab's buttons: the others are read when their tab opens, selectTab, which syncs;
+    // all 336 of every tab took 9 ms after each keystroke on dev/bench/long, the open one's 51
+    // a sixth of it)
+    for (const b of rb.querySelectorAll('.rb-panel:not([hidden]) button[data-cmd]')) {
       const c = command(b.dataset.cmd);
       if (!c || c.static) continue;
       const off = !enabled(this, c, at);
@@ -521,10 +524,15 @@ export const tabs = {
   ribbonRove(to) {
     // (of the controls this width shows: a phone has one Download button, a wider screen the three)
     // (and the boxes a toolbar may hold, the font's and the size's)
-    const every = [...$('#ribbon').querySelectorAll('select, button, input')], all = every.filter((x) => x.offsetParent !== null);
+    // (a closed tab's controls are out of the toolbar's Tab order, as before, found by one query;
+    // every control of every tab read and written after each keystroke took 2 to 3 ms)
+    const rb = $('#ribbon');
+    for (const x of rb.querySelectorAll('.rb-panel[hidden] :is(select, button, input):not([tabindex="-1"])')) x.tabIndex = -1;
+    const every = [...rb.querySelectorAll('select, button, input')].filter((x) => { const p = x.closest('.rb-panel'); return !p || !p.hidden; }), all = every.filter((x) => x.offsetParent !== null);
     if (to) this.rbStop = to;
     const cur = this.rbStop && !isOff(this.rbStop) && all.includes(this.rbStop) ? this.rbStop : all.find((x) => !isOff(x));
-    for (const x of every) x.tabIndex = x === cur ? 0 : -1;
+    // (written where it changes only: a written attribute is a style to work out again)
+    for (const x of every) { const v = x === cur ? '0' : '-1'; if (x.getAttribute('tabindex') !== v) x.tabIndex = +v; }
     return all;
   },
 
