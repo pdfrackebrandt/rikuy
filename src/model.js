@@ -2607,6 +2607,16 @@ class Builder {
     return { type: 'p', inl: [{ k: 'seg', f: ctx.f, t: '​', map: [pos, pos], ph: true }], indent: false, cls: cls || '', ctx: 'p', f: ctx.f, dir: this.dirOf() };
   }
 
+  // the font switches fontspec's \newfontfamily, \newfontface and their like define in the
+  // preamble, with the page's look for each font (read once): { name: look }
+  fontFamilies() {
+    if (this.fontFams) return this.fontFams;
+    this.fontFams = new Map();
+    const t = (this.files && this.project && this.files.get(this.project.main)) || '', end = this.docBody ? this.docBody.at : Math.min(t.length, 200000);
+    const re = /\\(?:re)?(?:new|set|provide)fontfamily\s*\{?\s*\\([A-Za-z@]+)\s*\}?\s*(?:\[[^\]]*\]\s*)?\{([^{}]*)\}|\\newfontface\s*\{?\s*\\([A-Za-z@]+)\s*\}?\s*(?:\[[^\]]*\]\s*)?\{([^{}]*)\}/g;
+    for (const m of t.slice(0, end).replace(/(^|[^\\])%.*$/gm, '$1').matchAll(re)) this.fontFams.set(m[1] || m[3], fontLook(m[2] || m[4]));
+    return this.fontFams;
+  }
   // beamer numbers its captions only with \setbeamertemplate{caption}[numbered] (read once)
   beamerNumbered() {
     if (this.beamerNum == null) { const t = (this.files && this.project && this.files.get(this.project.main)) || ''; this.beamerNum = /\\setbeamertemplate\s*\{caption\}\s*\[numbered\]/.test(t.slice(0, 200000)); }
@@ -3460,6 +3470,15 @@ class Builder {
       const kids = this.inl(nodes.slice(k + 1), ctx, fns);
       if (name === 'fontsize') { const pt = parseFloat(A(0)); out.push({ k: 'sty', st: 'fs', fs: pt > 0 && pt < 400 ? pt : null, kids, f: ctx.f, decl: true }); }
       else { const look = fontLook(A(name === 'fontspec' ? 1 : 0)); out.push({ k: 'sty', st: look ? 'ff-' + look : 'ff', kids, f: ctx.f, decl: true }); }
+      return true;
+    }
+    // a family fontspec's \newfontfamily\headfont{TeX Gyre Heros} named (XeLaTeX and LuaLaTeX
+    // documents): {\headfont words} switches the font for the rest of the group, as \fontspec does,
+    // not a command the page does not know
+    if (!nd.args.length && this.fontFamilies().has(name)) {
+      acc.flush();
+      const kids = this.inl(nodes.slice(k + 1), ctx, fns), look = this.fontFamilies().get(name);
+      out.push({ k: 'sty', st: look ? 'ff-' + look : 'ff', kids, f: ctx.f, decl: true });
       return true;
     }
     // ruby (luatexja-ruby, the ruby package): the reading above its base, as the title the page shows
