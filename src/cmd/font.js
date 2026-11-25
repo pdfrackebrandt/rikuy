@@ -15,7 +15,7 @@ import { firstKey, macUA } from '../keys.js';
 import { groupNames, mapPos } from '../wrap.js';
 import * as F from '../charfmt.js';
 import { openMenu, colorPicker, BASE_COLORS, CARET } from '../ui/kit.js';
-import { $, mk } from '../ui/dom.js';
+import { $, mk, setAttr, setProp } from '../ui/dom.js';
 import { docClass } from '../preamble.js';
 import * as P from '../parasrc.js';
 import { segOfSpan } from '../editor.js';
@@ -655,19 +655,21 @@ export const methods = {
     const inp = $(kind === 'font' ? '#rb-font' : '#rb-size');
     if (!inp || (document.activeElement === inp && !force)) return;
     const st = this.fontState(at), ok = !!st && can(this, at);
-    inp.disabled = !ok;
+    setProp(inp, 'disabled', !ok);
     inp.closest('.fbx').classList.toggle('off', !!st && !ok);
     // with no caret yet, still show the document's own font and size, as Word's boxes do
     const show = st || { docFont: F.docFont(this.src(this.main), this.engineChoice ? this.engineChoice() : 'auto'), size: this.baseSize(), family: null, fontSel: false, familyW: null, sizeW: null };
     if (kind === 'font') {
       const id = show.fontSel && show.family ? show.family : show.docFont.id;
       const name = (F.GENERIC.find((g) => g.id === id) || F.FONTS.find((f) => f.id === id) || show.docFont).name;
-      inp.value = inp.dataset.shown = name;
-      inp.title = 'Font: ' + name + (show.familyW ? '' : ' (the document\'s)') + ' (' + firstKey(command('font-name'), macUA()) + ')';
+      // (each written where it changes: src/ui/dom.js setProp)
+      setProp(inp, 'value', name); setAttr(inp, 'data-shown', name);
+      setProp(inp, 'title', 'Font: ' + name + (show.familyW ? '' : ' (the document\'s)') + ' (' + firstKey(command('font-name'), macUA()) + ')');
     } else {
       const v = Math.round(show.size * 100) / 100;
-      inp.value = inp.dataset.shown = Number.isFinite(v) ? String(v) : '';
-      inp.title = 'Font Size: ' + v + 'pt' + (show.sizeW && show.sizeW.cmd !== 'fontsize' ? ' (\\' + show.sizeW.cmd + ')' : show.sizeW ? '' : ' (the document\'s)') + ' (' + firstKey(command('font-size'), macUA()) + ')';
+      const sv = Number.isFinite(v) ? String(v) : '';
+      setProp(inp, 'value', sv); setAttr(inp, 'data-shown', sv);
+      setProp(inp, 'title', 'Font Size: ' + v + 'pt' + (show.sizeW && show.sizeW.cmd !== 'fontsize' ? ' (\\' + show.sizeW.cmd + ')' : show.sizeW ? '' : ' (the document\'s)') + ' (' + firstKey(command('font-size'), macUA()) + ')');
     }
   },
   // back to the page from a box: the selection it had (a box's text took the document's selection)

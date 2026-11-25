@@ -23,6 +23,7 @@ import { register } from '../commands.js';
 import { mk, PREFS, store } from '../ui/dom.js';
 import { spellPlan, occSource, grammarBlocks, lintSource, DICT_NAME } from '../spell/words.js';
 import { SpellClient } from '../spell/client.js';
+import { setMarks } from '../marks.js';
 import { openThesaurus } from '../ui/thespane.js';
 import { spellPaneRefresh } from '../ui/spellpane.js';
 import { openMenu } from '../ui/kit.js';
@@ -217,7 +218,8 @@ export const methods = {
       for (const x of bad) { if (!byF.has(x.f)) byF.set(x.f, []); byF.get(x.f).push([x.s, Math.max(x.e, x.s + 1)]); }
       const ranges = [];
       for (const [f, rs] of byF) { rs.sort((a, b) => a[0] - b[0]); ranges.push(...this.index.domRanges(f, rs)); }
-      if (ranges.length) HL.set('rk-grammar', new window.Highlight(...ranges)); else HL.delete('rk-grammar');
+      // (on the pages near the view: src/marks.js)
+      setMarks(this, 'rk-grammar', ranges);
     }
     spellPaneRefresh(this);
   },

@@ -18,7 +18,7 @@ import * as X from '../picture.js';
 import { mapPos } from '../wrap.js';
 import { atomOfEl } from '../editor.js';
 import { hasPackage, docClass, preambleEnd } from '../preamble.js';
-import { $ } from '../ui/dom.js';
+import { $, setAttr, setProp } from '../ui/dom.js';
 import { openMenu, colorPicker, colorArg, colorNeeds } from '../ui/kit.js';
 import { installHandles } from '../ui/handles.js';
 import { installShapeHandles, editChart } from '../ui/shapes.js';
@@ -533,8 +533,8 @@ export const methods = {
     const inp = document.getElementById('rc-picture-' + which);
     if (!inp) return;
     const h = at === undefined ? this.picHere() : pic(this, at);
-    inp.disabled = !h || !h.P.keyval;
-    if (!h) { inp.value = ''; inp.removeAttribute('aria-valuetext'); return; }
+    setProp(inp, 'disabled', !h || !h.P.keyval);
+    if (!h) { setProp(inp, 'value', ''); setAttr(inp, 'aria-valuetext', null); return; }
     if (document.activeElement === inp) return;
     const S = X.sizeOf(h.src, h.P), lw = this.picLine(h), d = this.picDrawn(h);
     const v = which === 'width' ? S.width : S.height;
@@ -543,9 +543,9 @@ export const methods = {
     if (share) text = fmtNum(share[0] * 100, 1) + '%';
     else if (v && /^\s*[\d.]+\s*(cm|mm|in|pt|bp)\s*$/.test(v)) { const m = /([\d.]+)\s*(\w+)/.exec(v); text = m[1] + ' ' + m[2]; inp.dataset.unit = m[2]; }
     else text = fmtNum((which === 'width' ? d.w : d.h) * 2.54 / 72.27, 2) + ' cm';
-    inp.value = text;
-    inp.setAttribute('aria-valuetext', text);
-    inp.setAttribute('aria-valuenow', String(Math.round((which === 'width' ? d.w : d.h) * 100) / 100));
+    setProp(inp, 'value', text);
+    setAttr(inp, 'aria-valuetext', text);
+    setAttr(inp, 'aria-valuenow', String(Math.round((which === 'width' ? d.w : d.h) * 100) / 100));
     void lw;
   },
   // the dialog's values at once: { width, height, free, angle, crop: { l, b, r, t }, place }

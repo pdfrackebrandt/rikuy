@@ -11,7 +11,7 @@ import * as PS from '../pagesrc.js';
 import { hfOpen, hfInsert } from '../ui/headerfooter.js';
 import { readParts, partIsBlock } from '../quickparts.js';
 import { dialog, numberField } from '../ui/kit.js';
-import { mk } from '../ui/dom.js';
+import { mk, setProp } from '../ui/dom.js';
 import { segOfSpan, boundary } from '../editor.js';
 import { toLinear, linearEdit } from '../unimath.js';
 import { flash } from '../motion.js';
@@ -209,9 +209,9 @@ export const methods = {
     if (!inp || document.activeElement === inp) return;
     const why = hfWhy(this);
     const d = why ? null : hfDist(this, which);
-    inp.disabled = d == null;
-    inp.value = d == null ? '' : fmt(d);
-    inp.title = why || (which === 'top' ? 'The sheet\'s top edge to the header, in cm' : 'The footer to the sheet\'s bottom edge, in cm');
+    setProp(inp, 'disabled', d == null);
+    setProp(inp, 'value', d == null ? '' : fmt(d));
+    setProp(inp, 'title', why || (which === 'top' ? 'The sheet\'s top edge to the header, in cm' : 'The footer to the sheet\'s bottom edge, in cm'));
   },
   hfSetDist(which, cm) {
     const why = hfWhy(this);

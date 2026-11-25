@@ -21,6 +21,7 @@ import { packageOptions, packages as pkgLines, docClass, preambleEnd, stripComme
 import { openMenu, colorPicker, colorArg, colorNeeds } from '../ui/kit.js';
 import { openTablePicker, insertTableDialog, textToTableDialog, tableToTextDialog, sortDialog, propertiesDialog, marginsDialog, deleteCellsDialog, dataFileDialog, bordersDialog, formulaDialog } from '../ui/tablepicker.js';
 import * as FX from '../formula.js';
+import { setProp } from '../ui/dom.js';
 
 const WHY = 'Put the caret in a table cell first.';
 // the table's first row of cells (after a caption row of a longtable)
@@ -964,10 +965,10 @@ export const methods = {
     const inp = document.getElementById(which === 'width' ? 'rc-table-col-width' : 'rc-table-row-height');
     if (!inp || document.activeElement === inp) return;
     const h = here(this, at);
-    inp.disabled = !h;
-    if (!h) { inp.value = ''; return; }
-    if (which === 'height') { const S = X.settingsOf(h.src, h.T); const v = S.arraystretch ? parseFloat(S.arraystretch.value) : 1; inp.value = (Number.isFinite(v) ? v : 1) + '×'; }
-    else { const col = h.T.spec.cols[h.cell.col]; inp.value = col && col.w ? String(col.w).replace(/^\s*([\d.]+)\s*([a-z]+)\s*$/, '$1 $2') : 'Auto'; }
+    setProp(inp, 'disabled', !h);
+    if (!h) { setProp(inp, 'value', ''); return; }
+    if (which === 'height') { const S = X.settingsOf(h.src, h.T); const v = S.arraystretch ? parseFloat(S.arraystretch.value) : 1; setProp(inp, 'value', (Number.isFinite(v) ? v : 1) + '×'); }
+    else { const col = h.T.spec.cols[h.cell.col]; setProp(inp, 'value', col && col.w ? String(col.w).replace(/^\s*([\d.]+)\s*([a-z]+)\s*$/, '$1 $2') : 'Auto'); }
   },
   tableColWidth(w) {
     const v = w == null || w === '' ? null : String(w).replace(/[^0-9.a-z\\]/gi, '').slice(0, 30);

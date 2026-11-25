@@ -123,10 +123,10 @@ export class Renderer {
     const fresh = [];
     for (const mb of model.blocks) {
       const key = prefix + mb.key;
-      // (a list of references is drawn every time; whether a block holds one is in its key, whose
-      // last part is its items' types: read there, a block moved by the incremental build keeps
-      // its items unread, src/model.js movedUnit)
-      const q = mb.key.slice(mb.key.lastIndexOf('\u0000') + 1).split(',').includes('refs') ? null : pool.get(key);
+      // (a list of references is kept as any block: its key holds everything drawn of it, each
+      // entry's words, italics and place in its .bib, src/model.js refsBlock; drawn every time, it
+      // was 81 elements made, measured and placed again at every keystroke of dev/bench/long)
+      const q = pool.get(key);
       if (q && q.length) {
         const b = q.shift();
         b.base = mb.s; b.s = mb.s; b.e = mb.e;
@@ -178,6 +178,8 @@ export class Renderer {
         const a = this.atomOf(m);
         if (a && a.fnIndex != null) item.fnIdx.push(a.fnIndex);
       }
+      // (a caption or a footnote mark whose page a list or the page's numbering reads: App.tocPages)
+      item.pageMark = item.fnIdx.length > 0 || !!item.el.querySelector('[data-cap], sup.a-fn');
       // live figures inside: their boxes take a new height when the widget asks (App.widgetResized)
       const w = item.el.querySelectorAll('.w-live');
       if (w.length) item.widgets = [...w];
@@ -439,6 +441,8 @@ export class Renderer {
         break;
       }
       case 'toc': {
+        // (a block with page numbers to fill in once the pages are laid out: App.tocPages)
+        if (this.B) this.B.pageNums = true;
         el.classList.add('toc');
         el.contentEditable = 'false';
         const h = div('toc-head'); h.textContent = it.head || (this.model.opts.lang === 'de' ? 'Inhaltsverzeichnis' : 'Contents');
@@ -465,6 +469,8 @@ export class Renderer {
         break;
       }
       case 'idx': {
+        // (an index's numbers are the pages of words anywhere: App.tocPages)
+        if (this.B) this.B.pageNums = 'idx';
         // (B9) the index (\printindex) or the endnotes (\printendnotes, \theendnotes): a heading as
         // \section* sets it, then one row an entry; the index's rows in its columns, page numbers
         // filled in once the pages are laid out (src/cmd/refs.js refPages)

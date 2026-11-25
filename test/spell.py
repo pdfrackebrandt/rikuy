@@ -332,6 +332,23 @@ def run():
         print('141 KB paper:', json.dumps(stat), 'main thread plan after the first: %.1f ms' % plan_ms, 'first check to marks: %.0f ms' % wall)
         check('a 141 KB paper is checked off the main thread in under 3 s, its words in the worker', wall < 2530 and stat['worker']['ms'] < 1500, (timed(wall, 2530), {**stat, 'worker': {**stat['worker'], 'ms': timed(stat['worker']['ms'], 1500)}}))
         check('and checked again after an edit in a few ms of the main thread', plan_ms < 40, timed(plan_ms, 40))
+        # the marks are drawn where the view is (src/marks.js keeps only those near it): every
+        # misspelt word on the screen is marked near the end of the paper, scrolled to, and half
+        # way down, gone to by page; and the marks near the top are not kept there any more
+        shown = '''() => { const D = document.getElementById('desk').getBoundingClientRect(), H = CSS.highlights.get('rk-spell'), S = window.rikuy.sp, g = window.rikuy;
+          const on = (r) => { const q = r.getBoundingClientRect(); return q.height > 0 && q.bottom > D.top && q.top < D.bottom; };
+          const want = []; for (const x of S.bad) for (const r of g.index.domRanges(x.f, x.parts)) if (on(r)) want.push(r);
+          const have = H ? [...H] : [];
+          const same = (a, b) => a.startContainer === b.startContainer && a.startOffset === b.startOffset && a.endContainer === b.endContainer && a.endOffset === b.endOffset;
+          return { want: want.length, missing: want.filter((r) => !have.some((h) => same(h, r))).map((r) => r.toString()).slice(0, 5), held: have.length, top: have.filter((r) => r.getBoundingClientRect().bottom < D.top - 3 * D.height).length }; }'''
+        page.evaluate("(() => { const S = window.rikuy.sp, x = S.bad[Math.floor(S.bad.length * 0.9)], r = window.rikuy.index.domRanges(x.f, x.parts)[0]; r.startContainer.parentElement.scrollIntoView({ block: 'center' }); })()"); settle(page, 300)
+        frame(page); settle(page, 200)
+        m = page.evaluate(shown)
+        check('scrolled near the end of a 141 KB paper, every misspelt word on the screen is marked, none kept three screens up', m['want'] > 0 and not m['missing'] and m['top'] == 0 and m['held'] < len(page.evaluate(BAD)), m)
+        page.evaluate("window.rikuy.goToPage ? window.rikuy.goToPage(Math.round(window.rikuy.layout.pages.length / 2)) : document.querySelectorAll('#pages .page')[Math.round(document.querySelectorAll('#pages .page').length / 2)].scrollIntoView()"); settle(page, 300)
+        frame(page); settle(page, 200)
+        m = page.evaluate(shown)
+        check('half way down, gone to by page, its misspelt words on the screen are marked', m['want'] > 0 and not m['missing'], m)
         # the worst case for the worker: 141 KB of prose where nearly every word is another one
         words = [l.split('/')[0] for l in open(os.path.join(ROOT, 'tex/vendor/hunspell/dict/en_US.dic'), encoding='utf8').read().split('\n')[1:]]
         words = [w for w in words if w.isalpha() and w.islower() and 3 < len(w) < 12][::3]

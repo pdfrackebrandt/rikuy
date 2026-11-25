@@ -204,7 +204,9 @@ export const methods = {
     if (!b) return;
     const live = this.hasLive(), what = this.singleFile() ? this.main.split('/').pop() : 'the project as .zip';
     b.classList.toggle('live', live);
-    b.title = (this.zipDirty ? 'Changes since you last downloaded it. ' : '') + 'Download the LaTeX source, ' + what + (live ? ': keeps the live graphs' : '') + ' (F12)';
+    // (written where it changes: the model is new at every keystroke, and this with it)
+    const t = (this.zipDirty ? 'Changes since you last downloaded it. ' : '') + 'Download the LaTeX source, ' + what + (live ? ': keeps the live graphs' : '') + ' (F12)';
+    if (b.title !== t) b.title = t;
   },
 
   // The PDF in one click: the one TeX last made when the text has not changed since, else a

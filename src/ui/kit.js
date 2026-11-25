@@ -7,6 +7,7 @@
 // caret goes back where it was. The pure parts (lengths, colours) are tested in test/kit.test.mjs.
 
 import { keysInText, macUA } from '../keys.js';
+import { setAttr, setProp } from './dom.js';
 
 const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + '</svg>';
 const isOff = (x) => x.disabled || x.getAttribute('aria-disabled') === 'true';
@@ -227,7 +228,8 @@ export function numberField(o) {
   sel.setAttribute('aria-label', o.name + ' unit');
   for (const u of o.units || ['cm', 'mm', 'pt', 'in']) sel.add(new Option(u, u));
   let cur = o.value || { value: 0, unit: (o.units || ['cm'])[0] };
-  const show = () => { inp.value = String(Math.round(cur.value * 1000) / 1000); sel.value = cur.unit; inp.setAttribute('aria-valuenow', String(cur.value)); inp.setAttribute('aria-valuetext', formatLength(cur)); };
+  // (each written where it changes: the ribbon shows the caret's values after every keystroke)
+  const show = () => { setProp(inp, 'value', String(Math.round(cur.value * 1000) / 1000)); setProp(sel, 'value', cur.unit); setAttr(inp, 'aria-valuenow', String(cur.value)); setAttr(inp, 'aria-valuetext', formatLength(cur)); };
   const clamp = (v) => Math.min(o.max ?? Infinity, Math.max(o.min ?? -Infinity, v));
   const commit = (len) => { if (!len) { show(); return; } cur = { value: clamp(len.value), unit: len.unit }; show(); if (o.onChange) o.onChange(cur); };
   inp.addEventListener('keydown', (e) => {

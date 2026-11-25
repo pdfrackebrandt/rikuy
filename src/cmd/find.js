@@ -18,6 +18,7 @@ import { compile, expand, caseLike, hitsIn, hitsInSource, runsWith, blockText, c
 import { headingAt, sectionRange, promoteEdits, swapEdit, moveEdits, newHeading, eolOf, foldItems, foldEntry, matchFold, NAME } from '../outline.js';
 import { absAtom, posFromDom, diff, endsWithControlWord } from '../editor.js';
 import { $, load, store } from '../ui/dom.js';
+import { setMarks } from '../marks.js';
 import { openMenu } from '../ui/kit.js';
 import { openFindDialog, closeFindDialog, findDialogSync } from '../ui/finddialog.js';
 import { docWords, selWords, wordsToCount } from '../ui/wordcount.js';
@@ -170,7 +171,8 @@ export const methods = {
     const fs = this.findState();
     fs.on = false; fs.hits = []; fs.cur = -1; fs.msg = '';
     const HL = window.CSS && CSS.highlights;
-    if (HL) { HL.delete('rk-find'); HL.delete('rk-find-cur'); }
+    setMarks(this, 'rk-find', null);
+    if (HL) HL.delete('rk-find-cur');
     this.findViews();
   },
 
@@ -354,13 +356,14 @@ export const methods = {
     const HL = window.CSS && CSS.highlights;
     if (!HL || !window.Highlight) return;
     const fs = this.fs;
-    if (!fs || !fs.on || !fs.hits.length) { HL.delete('rk-find'); HL.delete('rk-find-cur'); return; }
+    if (!fs || !fs.on || !fs.hits.length) { setMarks(this, 'rk-find', null); HL.delete('rk-find-cur'); return; }
     const byFile = new Map(), all = [];
     // (a formula found has no text of the page's own: the whole of it is marked)
     const whole = (el) => { const r = document.createRange(); r.selectNodeContents(el); return r; };
     fs.hits.slice(0, 5000).forEach((h, k) => { if (k === fs.cur) return; if (h.eq) { if (h.eq.isConnected) all.push(whole(h.eq)); return; } if (!byFile.has(h.f)) byFile.set(h.f, []); byFile.get(h.f).push(...h.parts); });
     for (const [f, rs] of byFile) all.push(...this.index.domRanges(f, joinRanges(rs)));
-    HL.set('rk-find', new window.Highlight(...all));
+    // (every hit on the pages near the view, src/marks.js; the one shown always)
+    setMarks(this, 'rk-find', all);
     const cur = fs.hits[fs.cur];
     if (cur) HL.set('rk-find-cur', new window.Highlight(...(cur.eq ? (cur.eq.isConnected ? [whole(cur.eq)] : []) : this.index.domRanges(cur.f, joinRanges(cur.parts)))));
     else HL.delete('rk-find-cur');

@@ -26,9 +26,10 @@
 
 import { register, onInstall, onInsertText, command } from '../commands.js';
 import { openMenu } from '../ui/kit.js';
-import { $, mk, PREFS, store } from '../ui/dom.js';
+import { $, mk, PREFS, store, setAttr, setProp } from '../ui/dom.js';
 import { spellPlan, occSource, addWordEdit, DICT_NAME, mainLanguage, dictOf, proseRuns, asked } from '../spell/words.js';
 import { SpellClient } from '../spell/client.js';
+import { setMarks } from '../marks.js';
 import { openSpellPane, spellPaneRefresh } from '../ui/spellpane.js';
 import { openWordCount, setLanguageEdits } from '../ui/wordcount.js';
 import { coreCanRun } from '../native.js';
@@ -271,12 +272,14 @@ export const methods = {
     this.spellPaint();
     // (what the page's own thread spent, for the tests and a look in the console)
     S.mainMs = performance.now() - t0;
+    let asked = false;
     for (const [dict, set] of plan.words) {
       if (S.failed.has(dict)) continue;
       let K = S.known.get(dict);
       if (!K) S.known.set(dict, (K = new Map()));
       const ask = [];
       for (const w of set) if (!K.has(w)) ask.push(w);
+      if (ask.length) asked = true;
       for (let k = 0; k < ask.length; k += 20000) {
         const part = ask.slice(k, k + 20000);
         let r;
@@ -290,7 +293,10 @@ export const methods = {
         for (let i = 0; i < part.length; i++) K.set(part[i], r[i] !== '0');
       }
     }
-    if (seq === S.seq) this.spellPaint();
+    // (painted again only where the dictionaries were asked something: with every word known
+    // already, the paint above, a moment ago, drew the same marks, 22 304 words gone over again
+    // on dev/bench/long)
+    if (seq === S.seq && asked) this.spellPaint();
     // (grammar after spelling: an issue on a misspelt word is spelling's)
     if (this.grammarOn && this.grammarOn()) this.grammarSoon();
   },
@@ -335,7 +341,8 @@ export const methods = {
       for (const x of bad) { if (!byF.has(x.f)) byF.set(x.f, []); byF.get(x.f).push(...x.parts); }
       const ranges = [];
       for (const [f, rs] of byF) { rs.sort((a, b) => a[0] - b[0]); ranges.push(...this.index.domRanges(f, rs)); }
-      if (ranges.length) HL.set('rk-spell', new window.Highlight(...ranges)); else HL.delete('rk-spell');
+      // (on the pages near the view: src/marks.js)
+      setMarks(this, 'rk-spell', ranges);
     }
     this.reviewStatus();
     spellPaneRefresh(this);
@@ -863,26 +870,27 @@ export const methods = {
       const d = S && S.plan ? S.plan.dict : ml.name ? dictOf(ml.name, ml.variant) : 'en_US';
       const name = d ? DICT_NAME[d] || 'English (United States)' : ml.name.charAt(0).toUpperCase() + ml.name.slice(1);
       let t, title;
-      if (!d) { t = name; title = 'Proofing language: ' + name + '. Rikuy has no dictionary for it: the browser\'s own spelling marks its words.'; lang.dataset.st = 'off'; }
-      else if (!this.spellOn()) { t = name; title = 'Proofing language: ' + name + '. ' + (this.spellWhyNot() || ''); lang.dataset.st = 'off'; }
+      // (each written where it changes: src/ui/dom.js setAttr)
+      if (!d) { t = name; title = 'Proofing language: ' + name + '. Rikuy has no dictionary for it: the browser\'s own spelling marks its words.'; setAttr(lang, 'data-st', 'off'); }
+      else if (!this.spellOn()) { t = name; title = 'Proofing language: ' + name + '. ' + (this.spellWhyNot() || ''); setAttr(lang, 'data-st', 'off'); }
       else {
         const n = S ? S.bad.length : 0;
         const failed = S && S.failed.size ? ' No dictionary could be loaded for ' + [...S.failed.keys()].map((k) => DICT_NAME[k] || k).join(', ') + '.' : '';
         t = name + (n ? ' · ' + plural(n, 'spelling error', 'spelling errors') : '');
         title = 'Proofing language: ' + name + '. ' + (n ? plural(n, 'word', 'words') + ' the dictionary does not know' : 'No spelling errors') + '. Click for the Spelling pane (F7).' + failed;
-        lang.dataset.st = n ? 'bad' : 'ok';
+        setAttr(lang, 'data-st', n ? 'bad' : 'ok');
       }
       if (lang.textContent !== t) lang.textContent = t;
-      lang.title = title;
-      lang.setAttribute('aria-label', 'Proofing: ' + t);
+      setProp(lang, 'title', title);
+      setAttr(lang, 'aria-label', 'Proofing: ' + t);
     }
     if (tr) {
       const on = this.trackOn();
       const t = 'Track Changes: ' + (on ? 'On' : 'Off');
       if (tr.textContent !== t) tr.textContent = t;
-      tr.title = t + ' (Ctrl+Shift+E). Click to turn it ' + (on ? 'off' : 'on') + '.';
-      tr.setAttribute('aria-pressed', on ? 'true' : 'false');
-      tr.dataset.on = on ? '1' : '';
+      setProp(tr, 'title', t + ' (Ctrl+Shift+E). Click to turn it ' + (on ? 'off' : 'on') + '.');
+      setAttr(tr, 'aria-pressed', on ? 'true' : 'false');
+      setAttr(tr, 'data-on', on ? '1' : '');
     }
   }
 };

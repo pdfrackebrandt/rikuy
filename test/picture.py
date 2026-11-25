@@ -460,6 +460,14 @@ def reviewed(page):
     settle(page, 250)
     page.keyboard.press('Backspace'); settle(page, 250)
     check('H1: a merge in the text while a picture is selected: it is let go, and Backspace deletes no picture', '\\includegraphics[width=0.5\\linewidth]{a.png}' in src(page) and not page.evaluate('!!window.rikuy.armed'), body(page))
+    # (and every other edit not made at the caret: a version restored, a Word file brought back,
+    # spelling's: the layout keeps the page's items in place now, which had dropped the selection)
+    for kind in ('restore', 'word', 'spell'):
+        load_doc(page, DOC); settle(page, 300); sel_pic()(page)
+        page.evaluate("(k) => { const g = window.rikuy, t = g.files.get('main.tex'), i = t.indexOf('Before it'); g.commit([{ f: 'main.tex', s: i, e: i, t: 'Restored words. ' }], null, k); }", kind)
+        settle(page, 250)
+        page.keyboard.press('Backspace'); settle(page, 250)
+        check('H1: an edit of kind ' + kind + ' with the picture selected lets it go, and Backspace deletes no picture', '\\includegraphics[width=0.5\\linewidth]{a.png}' in src(page) and not page.evaluate('!!window.rikuy.armed'), body(page))
     # H3: Font Awesome 4 clashes with fontawesome5; 6 gives \faIcon itself
     for pk, ok_ in (('fontawesome', False), ('fontawesome6', True)):
         d = WRAP('First paragraph here.', '\\usepackage{' + pk + '}\n')

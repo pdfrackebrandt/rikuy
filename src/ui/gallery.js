@@ -9,7 +9,7 @@
 // ribbon's fitting (src/ribbon/tabs.js) says how many tiles there is room for. The methods join
 // App's prototype.
 
-import { $ } from './dom.js';
+import { $, setAttr, setProp } from './dom.js';
 import { openMenu } from './kit.js';
 import { WHY, SLOT_EL } from '../cmd/styles.js';
 import { isEnvStyle, isHeading } from '../styles.js';
@@ -83,12 +83,13 @@ export const methods = {
     for (const o of sel.options) {
       if (o.value.startsWith('__')) continue;
       // (Title on a paragraph where the document has none, R2)
-      if (o.value === 'title') o.hidden = o.disabled = st.v !== 'title' && !st.to.has('title');
-      else if (o.value === '') o.hidden = o.disabled = st.v !== '';
-      else o.disabled = o.value !== st.v && !st.to.has(o.value);
+      // (each written where it changes: src/ui/dom.js setProp)
+      if (o.value === 'title') { const x = st.v !== 'title' && !st.to.has('title'); setProp(o, 'hidden', x); setProp(o, 'disabled', x); }
+      else if (o.value === '') { const x = st.v !== ''; setProp(o, 'hidden', x); setProp(o, 'disabled', x); }
+      else setProp(o, 'disabled', o.value !== st.v && !st.to.has(o.value));
     }
-    sel.value = st.v;
-    sel.disabled = (!at && !code) || !st.to.size;
+    setProp(sel, 'value', st.v);
+    setProp(sel, 'disabled', (!at && !code) || !st.to.size);
     this.paintGallery();
     if (this.paneSync) this.paneSync(at, st);
     // the LaTeX paragraph the caret is in shows so
@@ -139,19 +140,19 @@ export const methods = {
     if ([...row.children].map((b) => b.dataset.slot).join() !== order.join()) for (const s of order) row.append($('#' + SLOT_EL[s]));
     for (const b of row.children) {
       const s = b.dataset.slot, v = val[s] || '', can = !!v && st.on && (st.to.has(v) || (v === st.v && st.to.size > 0));
-      b.dataset.style = v;
-      b.hidden = !view.includes(s);
-      b.setAttribute('aria-pressed', v && v === st.v ? 'true' : 'false');
-      if (can) b.removeAttribute('aria-disabled'); else b.setAttribute('aria-disabled', 'true');
-      b.title = b.dataset.tip + (can || v === st.v ? '' : '\n' + this.whyNot(st, v));
+      setAttr(b, 'data-style', v);
+      setProp(b, 'hidden', !view.includes(s));
+      setAttr(b, 'aria-pressed', v && v === st.v ? 'true' : 'false');
+      setAttr(b, 'aria-disabled', can ? null : 'true');
+      setProp(b, 'title', b.dataset.tip + (can || v === st.v ? '' : '\n' + this.whyNot(st, v)));
     }
     const W = this.rbW;
     if (W) row.style.width = Math.max(...starts.map((k) => list.slice(k, k + n).reduce((sum, s) => sum + (W[s] || 0), 0))) + 2 * (n - 1) + 'px';
     // the arrows only where there is more than one page
     const paged = starts.length > 1;
     if (gal.classList.contains('paged') !== paged) { gal.classList.toggle('paged', paged); if (!this.rbFitting) requestAnimationFrame(() => this.ribbonFit()); }
-    $('#rb-st-up').disabled = !paged || start === starts[0];
-    $('#rb-st-down').disabled = !paged || start === starts[starts.length - 1];
+    setProp($('#rb-st-up'), 'disabled', !paged || start === starts[0]);
+    setProp($('#rb-st-down'), 'disabled', !paged || start === starts[starts.length - 1]);
   },
   whyNot(st, v) {
     if (st.whyTo && st.whyTo[v]) return st.whyTo[v];

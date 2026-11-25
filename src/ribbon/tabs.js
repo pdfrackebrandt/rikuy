@@ -25,7 +25,7 @@ const tipTitle = (c, p) => keyTitle(c, p.name, macUA());
 
 import { LAUNCH, CHECKS, TIPS, groupLayout } from './layout.js';
 import { commands, command, inGroup, places, enabled, pressed, installers } from '../commands.js';
-import { $, mk, store, PREFS } from '../ui/dom.js';
+import { $, mk, store, PREFS, setAttr, setProp } from '../ui/dom.js';
 import { openMenu, splitButton, CARET } from '../ui/kit.js';
 import { measureTiles, installGallery } from '../ui/gallery.js';
 import { gridIcons } from '../ui/icongrid.js';
@@ -385,7 +385,7 @@ export const tabs = {
       let on = false;
       try { on = !!CONTEXTS[T.ctx](this, at); } catch (e) { on = false; }
       const t = $('#rt-' + T.id), o = $('#rb-tabsel').querySelector('option[value="' + T.id + '"]');
-      o.hidden = o.disabled = !on;
+      setProp(o, 'hidden', !on); setProp(o, 'disabled', !on);
       if (t.hidden === !on) continue;
       t.hidden = !on;
       if (!on && this.rbTab === T.id) gone = true;
@@ -395,22 +395,29 @@ export const tabs = {
 
   // What the ribbon shows for where the caret is now: the contextual tabs, the pressed buttons,
   // those that can do nothing here disabled, the gallery's style
-  ribbonSync() {
+  // soon: called a moment after the caret moved (ribbonSoon); while keys are typed the closed tabs'
+  // buttons wait for the typing to pause (the open tab's are brought up to date at once, and a tab
+  // that opens brings its own, selectTab): all 336 of every tab took 9 ms after each keystroke on
+  // dev/bench/long, the open one's 51 a sixth of it. Every other call brings all of them.
+  ribbonSync(soon) {
     const rb = $('#ribbon');
     if (!rb || !this.rbBuilt) return;
+    const lite = soon === true && this.keyEditAt && performance.now() - this.keyEditAt < 1000;
+    clearTimeout(this.rbFullT);
+    if (lite) this.rbFullT = setTimeout(() => { this.rbFullT = 0; this.ribbonSync(); }, 1000);
     this.dropEmpty();
     const at = this.ribbonAt();
     if (at) at.memo = {};
     this.ribbonContexts(at);
-    for (const b of rb.querySelectorAll('.rb-panel button[data-cmd]')) {
+    for (const b of rb.querySelectorAll(lite ? '.rb-panel:not([hidden]) button[data-cmd]' : '.rb-panel button[data-cmd]')) {
       const c = command(b.dataset.cmd);
       if (!c || c.static) continue;
       const off = !enabled(this, c, at);
-      b.disabled = off;
+      setProp(b, 'disabled', off);
       const x = b.nextElementSibling && b.nextElementSibling.classList.contains('rb-x') ? b.nextElementSibling : null;
-      if (x) x.disabled = off && !c.menuWhenOff;
+      if (x) setProp(x, 'disabled', off && !c.menuWhenOff);
       const on = pressed(this, c, at);
-      if (on !== null) b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (on !== null) setAttr(b, 'aria-pressed', on ? 'true' : 'false');
     }
     for (const c of commands()) if (c.sync) { try { c.sync(this, at); } catch (e) { console.error(e); } }
     // (the title reads every file for a live graph: once for each build of the page, not for each move of the caret)
@@ -521,10 +528,15 @@ export const tabs = {
   ribbonRove(to) {
     // (of the controls this width shows: a phone has one Download button, a wider screen the three)
     // (and the boxes a toolbar may hold, the font's and the size's)
-    const every = [...$('#ribbon').querySelectorAll('select, button, input')], all = every.filter((x) => x.offsetParent !== null);
+    // (a closed tab's controls are out of the toolbar's Tab order, as before, found by one query;
+    // every control of every tab read and written after each keystroke took 2 to 3 ms)
+    const rb = $('#ribbon');
+    for (const x of rb.querySelectorAll('.rb-panel[hidden] :is(select, button, input):not([tabindex="-1"])')) x.tabIndex = -1;
+    const every = [...rb.querySelectorAll('select, button, input')].filter((x) => { const p = x.closest('.rb-panel'); return !p || !p.hidden; }), all = every.filter((x) => x.offsetParent !== null);
     if (to) this.rbStop = to;
     const cur = this.rbStop && !isOff(this.rbStop) && all.includes(this.rbStop) ? this.rbStop : all.find((x) => !isOff(x));
-    for (const x of every) x.tabIndex = x === cur ? 0 : -1;
+    // (written where it changes only: a written attribute is a style to work out again)
+    for (const x of every) { const v = x === cur ? '0' : '-1'; if (x.getAttribute('tabindex') !== v) x.tabIndex = +v; }
     return all;
   },
 
@@ -557,7 +569,7 @@ export function installRibbon(app) {
   if (!rb) return;
   // (not while the search box has the focus: the ribbon keeps showing the place on the page)
   // (nor while a box of the ribbon has it, the font's or the size's: typing there is no move on the page)
-  app.ribbonSoon = (() => { let t = 0; return () => { clearTimeout(t); t = setTimeout(() => { const a = document.activeElement; if (!(a && (a.id === 'rk-search' || (a.matches && a.matches('#ribbon input'))))) app.ribbonSync(); }, 60); }; })();
+  app.ribbonSoon = (() => { let t = 0; return () => { clearTimeout(t); t = setTimeout(() => { const a = document.activeElement; if (!(a && (a.id === 'rk-search' || (a.matches && a.matches('#ribbon input'))))) app.ribbonSync(true); }, 60); }; })();
   app.ribbonBuild();
   installGallery(app);
   // A press must not take the caret or the selection off the page: not on a button, and not on

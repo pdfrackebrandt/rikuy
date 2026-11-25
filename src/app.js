@@ -718,9 +718,11 @@ class App {
     this.px = px;
     // (the zoom as a percentage, the one the status bar shows, as Word's does; fitting the width is
     // what a press does, its name)
-    $('#zoomv').textContent = Math.round(px / PX_PER_PT * 100) + '%';
+    // (written when it changes: written at every keystroke, it was the status bar laid out again)
+    const zt = Math.round(px / PX_PER_PT * 100) + '%', zv = $('#zoomv');
+    if (zv.textContent !== zt) zv.textContent = zt;
     // (its name stays "Fit width", what a press does; the zoom it shows is its description)
-    $('#zoomv').setAttribute('aria-description', 'Zoom: ' + $('#zoomv').textContent);
+    if (zv.getAttribute('aria-description') !== 'Zoom: ' + zt) zv.setAttribute('aria-description', 'Zoom: ' + zt);
     // with the text block as wide as the screen, the view starts at the text, not at the margin
     if (this.textFit && changed) requestAnimationFrame(() => { if (this.textFit) this.desk.scrollLeft = Math.max(0, P.ml * px - 6); });
     else if (web && changed) requestAnimationFrame(() => { if (!this.textFit) this.desk.scrollLeft = 0; });
@@ -746,7 +748,7 @@ class App {
     if (this.stale) { this.stale = false; this.root.classList.remove('stale'); this.root.contentEditable = 'true'; }
     this.model = model;
     // chemistry (\ce, \pu): KaTeX's mhchem, fetched the first time a document uses it
-    if (!this.chemReq && window.katex && [...this.files.values()].some((t) => /\\(?:ce|pu|ch)\s*[[{]/.test(t))) {
+    if (!this.chemReq && window.katex && this.chemIn()) {
       this.chemReq = true;
       loadScript(CDN.chem).then(() => { this.renderer.mathCache.clear(); this.forceRender = true; this.rebuild(this.caretNow()); }).catch(() => { /* \ce stays as source */ });
     }
@@ -762,6 +764,31 @@ class App {
     // stands in for it (it was left nowhere, and the next keystroke did nothing)
     if (caret && this.ghost && this.ghost.sticky && document.activeElement === this.root && caret.f === this.ghost.f && caret.p >= this.ghost.pos) this.caretToGhost();
     this.status(performance.now() - t0);
+  }
+
+  // Whether a file holds \ce, \pu or \ch. Each text is read whole once, then only around what an
+  // edit changed (where a command can have come): the whole document searched at every keystroke
+  // took 1 to 2 ms of each key on dev/bench/long.
+  chemIn() {
+    const RX = /\\(?:ce|pu|ch)\s*[[{]/, seen = this.chemSeen || (this.chemSeen = new Map());
+    let hit = false;
+    for (const [n, t] of this.files) {
+      const was = seen.get(n);
+      if (was === t) continue;
+      seen.set(n, t);
+      if (typeof was !== 'string') { if (RX.test(t)) hit = true; continue; }
+      // (the edit: what the two texts share at their start and at their end, compared a block at
+      // a time; the command and its spaces may reach into either side, so a margin goes with it)
+      const m = Math.min(was.length, t.length), C = 4096;
+      let p = 0, q = 0;
+      while (p + C <= m && was.slice(p, p + C) === t.slice(p, p + C)) p += C;
+      while (p < m && was.charCodeAt(p) === t.charCodeAt(p)) p++;
+      while (q + C <= m - p && was.slice(was.length - q - C, was.length - q) === t.slice(t.length - q - C, t.length - q)) q += C;
+      while (q < m - p && was.charCodeAt(was.length - 1 - q) === t.charCodeAt(t.length - 1 - q)) q++;
+      if (RX.test(t.slice(Math.max(0, p - 256), Math.min(t.length, t.length - q + 256)))) hit = true;
+    }
+    for (const n of [...seen.keys()]) if (!this.files.has(n)) seen.delete(n);
+    return hit;
   }
 
   // A float between a run in heading and its paragraph (src/model.js runIns, R2): TeX places the
@@ -1058,6 +1085,20 @@ class App {
   }
 
   tocPages(plan) {
+    // (only where there are page numbers to write: a contents, a list of figures or an index on
+    // the page, or footnotes numbered by the page, now or just before; the page searched for them
+    // at every keystroke of a paper with none)
+    const R = ((this.model && this.model.opts.refs) || {}).fn;
+    if (!this.fnPaged && !(R && R.restart === 'page') && !this.renderer.blocks.some((B) => B.pageNums)) return;
+    // (and only when the pages hold other headings, captions or footnote marks than before, or the
+    // lists were drawn again: with those on the same pages every number is the one written last
+    // time, whatever a keystroke did to the paragraphs between them; an index's numbers are the
+    // pages of words anywhere, so with one every item counts)
+    const lists = this.renderer.blocks.filter((B) => B.pageNums), all = lists.some((B) => B.pageNums === 'idx');
+    const sig = (R ? R.restart + '|' + R.style : '') + '#' + plan.map((pg) => pg.entries.filter((e) => all || e.it.kind === 'h' || e.it.pageMark).map((e) => e.it.uid + ':' + e.a).join(',') + '|' + pg.fns.map((f) => f.uid).join(',')).join(';');
+    const was = this.tocWas;
+    if (was && was.sig === sig && was.lists.length === lists.length && lists.every((B, k) => B === was.lists[k])) return;
+    this.tocWas = { sig, lists };
     // (B9: the lists of figures and tables, the index's page numbers; src/cmd/refs.js)
     this.refPages(plan);
     const tocs = this.root.querySelectorAll('.toc-p:not([data-cap])');
@@ -1071,7 +1112,10 @@ class App {
       const key = (row.dataset.full || (row.querySelector('.toc-n').textContent || '') + (row.querySelector('.toc-t').textContent || '')).replace(/\s+/g, ' ').trim();
       let pg = byText.get(key);
       if (pg == null) for (const [k, v] of byText) if (k.endsWith(row.querySelector('.toc-t').textContent.trim())) { pg = v; break; }
-      t.textContent = pg != null ? String(pg) : '';
+      // (written only when it changed: a text written again is new boxes on the contents' page,
+      // which the browser laid out and painted again at every keystroke)
+      const v = pg != null ? String(pg) : '';
+      if (t.textContent !== v) t.textContent = v;
     }
   }
 
@@ -1082,7 +1126,8 @@ class App {
     this.countStatus(pages, m.words);
     this.problemsSoon();
     this.scriptsSoon();
-    $('#docname').textContent = this.name;
+    const dn = $('#docname');
+    if (dn.textContent !== this.name) dn.textContent = this.name;
     this.noteSaveState();
     this.lastMs = ms;
     this.updateFileTabs();
@@ -1094,8 +1139,12 @@ class App {
     const el = $('#savestate');
     if (!el) return;
     el.hidden = false;
-    el.textContent = kept === false || this.unsaved ? 'Not saved' : 'Saved';
-    el.title = kept === false ? 'This browser could not keep it: File, Save a copy, or a Download, keeps a copy' : this.unsaved ? 'Being kept in this browser' : 'Saved in this browser: it is here at your next visit';
+    // (each written where it changed: the same words written at every keystroke were the title
+    // bar's text laid out and painted again)
+    const t = kept === false || this.unsaved ? 'Not saved' : 'Saved';
+    const ti = kept === false ? 'This browser could not keep it: File, Save a copy, or a Download, keeps a copy' : this.unsaved ? 'Being kept in this browser' : 'Saved in this browser: it is here at your next visit';
+    if (el.textContent !== t) el.textContent = t;
+    if (el.title !== ti) el.title = ti;
   }
 
   // ---- Chinese, Arabic and India's scripts ---------------------------------------
@@ -1354,6 +1403,16 @@ class App {
     const swaps = (blobs || []).map(({ name, blob }) => ({ name, before: this.assetBlobs.get(name) || null, after: blob }));
     if (!edits.length && !swaps.length) { if (caret) this.restoreCaret(caret); return; }
     for (const b of swaps) this.setAsset(b.name, b.after);
+    // (an edit not made at the caret, one with no caret to put back: a coauthor's merge, another
+    // tab's, a Word file brought back, a version restored, a word of spelling's, lets a selected
+    // picture go, as an undo and a redo do (B8 review H1), the caret left where it stood: the
+    // layout no longer takes every item of a page out and back, which had dropped that selection
+    // along with them, src/layout.js placeChildren)
+    if (caret == null && this.armed) {
+      const A = this.armed, s = getSelection(), el = A.el;
+      this.disarm();
+      if (el && el.isConnected && el.parentNode && s.rangeCount && s.getRangeAt(0).intersectsNode(el)) s.collapse(el.parentNode, [...el.parentNode.childNodes].indexOf(el));
+    }
     const cb = this.caretNow() || caret;
     this.removeGhost();
     const before = new Map();
@@ -1387,6 +1446,9 @@ class App {
     // (the blocks shown as LaTeX move with these edits, src/cmd/view.js; typing ends Repeat's turn)
     this.viewMap(byFile, before);
     if (!this.cmdDepth) this.lastAct = null;
+    // (when a key last typed, deleted or split: the ribbon brings its closed tabs up to date once
+    // the typing pauses, src/ribbon/tabs.js ribbonSync)
+    this.keyEditAt = /^(type|enter|del|replace)$/.test(kind || '') ? performance.now() : 0;
     // (a selection the step was made on comes back selected with Undo, as Word's: what was typed
     // over or deleted is selected again, not a caret at its start)
     this.record(before, kind, cb && cb.f != null ? (cb.collapsed === false && !cb.ghost ? { f: cb.f, p: cb.p, selA: cb.a, selB: cb.b } : { f: cb.f, p: cb.p }) : caret, caret, swaps, win);

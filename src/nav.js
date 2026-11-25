@@ -90,10 +90,15 @@ export const nav = {
     this.problems = probs;
     const serious = probs.filter((x) => x.sev !== 'info').length;
     const wb = $('#st-warn');
-    wb.hidden = !probs.length;
-    wb.textContent = serious ? serious + (serious === 1 ? ' problem' : ' problems') : probs.length + (probs.length === 1 ? ' command shown as source' : ' commands shown as source');
-    $('#nt-count').textContent = probs.length ? String(probs.length) : '';
-    $('#nav-dot').hidden = !probs.some((x) => x.sev === 'error');
+    // (each written where it changes: written again a moment after each pause in typing, the
+    // status bar was laid out and painted again for the same words)
+    const wt = serious ? serious + (serious === 1 ? ' problem' : ' problems') : probs.length + (probs.length === 1 ? ' command shown as source' : ' commands shown as source');
+    if (wb.hidden !== !probs.length) wb.hidden = !probs.length;
+    if (wb.textContent !== wt) wb.textContent = wt;
+    const nc = $('#nt-count'), nv = probs.length ? String(probs.length) : '';
+    if (nc.textContent !== nv) nc.textContent = nv;
+    const nd = $('#nav-dot'), err = !probs.some((x) => x.sev === 'error');
+    if (nd.hidden !== err) nd.hidden = err;
     if (this.base && (document.body.classList.contains('nav-on') || this.markupOn())) {
       const n = this.currentChanges().filter((c) => !spacingOnly(c) && !commentOnly(c)).length + this.allComments().length;
       $('#nt-ccount').textContent = n ? String(n) : '';

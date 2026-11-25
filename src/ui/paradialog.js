@@ -8,7 +8,7 @@
 // Layout tab's four paragraph fields (paraField).
 
 import { dialog, accessKeys } from './kit.js';
-import { mk } from './dom.js';
+import { mk, setAttr, setProp } from './dom.js';
 import * as P from '../parasrc.js';
 import { usePackages } from '../preamble.js';
 
@@ -48,9 +48,9 @@ export function paraField(app, id) {
   };
   inp.setValue = (v) => {
     cur = v;
-    inp.value = v == null ? '' : String(v.value);
-    if (v == null) { inp.removeAttribute('aria-valuenow'); inp.removeAttribute('aria-valuetext'); }
-    else { inp.setAttribute('aria-valuenow', String(v.value)); inp.setAttribute('aria-valuetext', v.value + ' ' + unit); }
+    setProp(inp, 'value', v == null ? '' : String(v.value));
+    if (v == null) { setAttr(inp, 'aria-valuenow', null); setAttr(inp, 'aria-valuetext', null); }
+    else { setAttr(inp, 'aria-valuenow', String(v.value)); setAttr(inp, 'aria-valuetext', v.value + ' ' + unit); }
   };
   const commit = (pt) => {
     if (pt == null) { inp.setValue(cur); return; }
