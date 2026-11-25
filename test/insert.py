@@ -1041,7 +1041,71 @@ def hunt(page):
     check('Cover Page, then typing: the letter where the caret was, after the cover', '\\end{titlepage}' in s and 'Hello Zworld.' in s and s.index('\\end{titlepage}') < s.index('Zworld'), s[60:])
 
 
-EXTRA = [hunt, clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]
+def hunt_c(page):
+    """What a Word user met typing (round 3's hunt-c)."""
+    # a straight single quote opening a quotation: LaTeX's opening quote, as Word's smart quotes
+    # make it; it stayed ', and TeX printed a closing quote at both ends
+    load_doc(page, W('Start here.')); click_text(page, 'here', 5)
+    page.keyboard.type(" He said 'yes' and ('no'), it's rock 'n' roll"); settle(page, 300)
+    check("a single quote typed after a space opens a quotation: `yes', an apostrophe stays '", W("Start here. He said `yes' and (`no'), it's rock `n' roll") == src(page), src(page)[40:140])
+    check('and the page draws the opening quote', page.evaluate("[...document.querySelectorAll('#pages span.t')].some((s) => s.textContent.includes('said \u2018yes\u2019'))"))
+    # Word's AutoCorrect: "i" alone is "I" in English, and a sentence of one word gets its capital
+    # (the space after "yes." found the word "yes." and left it)
+    load_doc(page, W('Start here.')); click_text(page, 'here', 5)
+    page.keyboard.type(' so i think. yes. '); settle(page, 300)
+    check('AutoCorrect: "i" becomes "I", "yes." at a sentence\'s start "Yes."', src(page) == W('Start here. So I think. Yes. '), src(page)[40:120])
+    page.keyboard.press('Control+z'); settle(page, 200)
+    check('AutoCorrect: one undo gives back the word as typed', src(page) == W('Start here. So I think. yes. '), src(page)[40:120])
+    de = W('Start here.').replace('\\begin{document}', '\\usepackage[ngerman]{babel}\n\\begin{document}')
+    load_doc(page, de); click_text(page, 'here', 5)
+    page.keyboard.type(' so i '); settle(page, 300)
+    check('AutoCorrect: in a German document "i" stays', 'here. So i ' in src(page), src(page)[60:140])
+    # the text's own language: an Italian passage of an English document keeps its article "i"
+    it = W('So \\foreignlanguage{italian}{vedo ragazzi} here.').replace('\\begin{document}', '\\usepackage[italian,english]{babel}\n\\begin{document}')
+    load_doc(page, it); click_text(page, 'ragazzi', 0); page.keyboard.type('i '); settle(page, 300)
+    check('AutoCorrect: "i" in Italian words of an English document stays', '{vedo i ragazzi}' in src(page), src(page)[60:160])
+    # a note's text is a story of its own: its stop starts no sentence after it, the stop before it does
+    load_doc(page, W('As shown by Smith\\footnote{See Smith (2020).} here. It ends.\\footnote{A note} there.'))
+    click_text(page, 'here', 0); page.keyboard.type('and '); settle(page, 300)
+    click_text(page, 'there', 0); page.keyboard.type('next '); settle(page, 300)
+    check('AutoCorrect: no capital after a note ending with a stop, one after a stop before a note', 'Smith (2020).} and here.' in src(page) and 'A note} Next there.' in src(page), src(page)[40:200])
+    # code's quotes stay straight: a typewriter font prints ` as a grave accent
+    load_doc(page, W('Run \\texttt{print x} now.')); click_text(page, 'print', 5)
+    page.keyboard.type(" 'a' \"b\""); settle(page, 300)
+    check('quotes typed in \\texttt stay straight', '\\texttt{print \'a\' "b" x}' in src(page), src(page)[40:120])
+    # and in every verbatim context: what a ' becomes there, as the page would write it
+    vb = W('A \\verb|v1 x| B \\lstinline{l1 x} C \\url{u1 x} D \\texttt{t1 \\textbf{b} x} E\n\\begin{verbatim}\nvb1 x\n\\end{verbatim}\n\\begin{lstlisting}\nls1 x\n\\end{lstlisting}\nAfter x1 y.')
+    load_doc(page, vb)
+    got = page.evaluate("(ks) => { const g = window.rikuy, s = g.src('main.tex'); return ks.map((k) => g.escapeAt('main.tex', s.indexOf(k) + k.length + 1, \"'\")); }", ['v1', 'l1', 'u1', 'b}', 'vb1', 'ls1', 'x1'])
+    check('a quote in \\verb, \\lstinline, \\url, a group in \\texttt, verbatim and lstlisting stays straight; in the text after them it opens', got == ["'"] * 6 + ['`'], got)
+    # a ' composed by a dead key (US International) in a listing: straight, as typed (it wrote a
+    # backtick into the code)
+    # (the page shows a listing as a block that takes no caret: the composition's place is set
+    # inside it as a script can, the keys composed on the text)
+    ls = W('Text here.\n\n\\begin{lstlisting}\nit x\n\\end{lstlisting}\n\nAfter.')
+    load_doc(page, ls); click_text(page, 'here', 2); settle(page, 100)
+    page.evaluate("() => { const g = window.rikuy, p = g.src('main.tex').indexOf('it x') + 3; g.__caretNow = g.caretNow; g.caretNow = () => ({ f: 'main.tex', p, a: p, b: p, collapsed: true }); }")
+    cdp = page.context.new_cdp_session(page)
+    cdp.send('Input.imeSetComposition', {'text': "'", 'selectionStart': 1, 'selectionEnd': 1})
+    cdp.send('Input.insertText', {'text': "'"}); settle(page, 300)
+    page.evaluate("() => { const g = window.rikuy; g.caretNow = g.__caretNow; delete g.__caretNow; }")
+    check('a dead key\'s \' in lstlisting stays straight', "\nit 'x\n" in src(page), src(page)[40:140])
+    # the blank paragraph's first character goes through the same rule: one Enter in a listing
+    # makes it there, and one at a \texttt's end carries the \texttt (a backtick was written in both)
+    load_doc(page, ls); click_text(page, 'here', 2); settle(page, 100)
+    page.evaluate("() => { const g = window.rikuy, p = g.src('main.tex').indexOf('it x') + 3; g.ghostAt('main.tex', p); }"); settle(page, 100)
+    page.keyboard.type("'"); settle(page, 300)
+    check('the first key of a blank paragraph in a listing: \' straight', "\n'\n" in src(page) and '`' not in src(page), src(page)[40:140])
+    load_doc(page, W('Some \\texttt{code}')); click_text(page, 'code', 4); page.keyboard.press('Enter'); settle(page, 200)
+    page.keyboard.type("'a'"); settle(page, 300)
+    check('Enter at a \\texttt\'s end, then \'a\': straight in the new paragraph\'s \\texttt', "\\texttt{'a'}" in src(page), src(page)[40:140])
+    # the language of an "i" at a \foreignlanguage group's end: the group's
+    it2 = W('Hello \\foreignlanguage{italian}{Ciao} there.').replace('\\begin{document}', '\\usepackage[italian,english]{babel}\n\\begin{document}')
+    load_doc(page, it2); click_text(page, 'Ciao', 4); page.keyboard.type(' i '); settle(page, 300)
+    check('AutoCorrect: "i" typed at the end of Italian words stays', '{Ciao i }' in src(page) or '{Ciao i} ' in src(page), src(page)[60:160])
+
+
+EXTRA = [hunt, hunt_c, clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]
 
 if __name__ == '__main__':
     sys.exit(run())

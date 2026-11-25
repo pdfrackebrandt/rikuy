@@ -104,7 +104,9 @@ export const methods = {
     const ed = this.spellEdit({ w: x.w, f: x.f, s: x.s, e: x.e }, to);
     if (!ed) { this.toast('That word runs across formatting: change it in the source.'); return false; }
     this.closeGroup();
-    this.commit([ed], { f: x.f, p: ed.s + ed.t.length }, 'spell');
+    // (the caret after the new word, as after spelling's Change: after the letters that differ
+    // it stood inside the word, "of impor|t", and the next keys typed went there)
+    this.commit([ed], { f: x.f, p: x.e + ed.t.length - (ed.e - ed.s) }, 'spell');
     this.closeGroup();
     return true;
   },
@@ -254,7 +256,10 @@ export const methods = {
     }
     if (s === e && !t) return false;
     this.closeGroup();
-    this.commit([{ f: x.f, s, e, t: t ? this.escapeAt(x.f, s, t) : '' }], { f: x.f, p: s + t.length }, 'spell');
+    // (the caret after the corrected words: after the characters that differ it could stand inside
+    // a word, "don'|t", and the next keys typed went there)
+    const T = t ? this.escapeAt(x.f, s, t) : '';
+    this.commit([{ f: x.f, s, e, t: T }], { f: x.f, p: Math.max(x.e, e) + T.length - (e - s) }, 'spell');
     this.closeGroup();
     return true;
   },

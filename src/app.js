@@ -274,6 +274,32 @@ function grabsBracket(src, p, ch) {
   return ch === '[' && !star && endsWithControlWord(src, k);
 }
 const crlfOnly = (t) => t.includes('\r\n') && !/(^|[^\r])\n/.test(t);
+// Edits to a file written with \r\n line ends only, their line breaks written as \r\n, and the
+// caret they were made for moved by the \r put in before it. Enter, a blank paragraph's first
+// letter, a paste and the rest write \n: the file came out with both kinds of line end.
+const loneNl = (t) => { let n = 0; for (let i = 0; i < t.length; i++) if (t[i] === '\n' && t[i - 1] !== '\r') n++; return n; };
+function crlfKept(files, edits, caret) {
+  const crlf = new Map();
+  // (an edit that puts a whole file in place of another is another version of it: as it is)
+  const conv = (ed) => { if (!ed.t || !loneNl(ed.t)) return false; const t = files.get(ed.f) ?? ''; if (ed.s === 0 && ed.e === t.length) return false; if (!crlf.has(ed.f)) crlf.set(ed.f, crlfOnly(t)); return crlf.get(ed.f); };
+  if (!edits.some(conv)) return { edits, caret };
+  // where q (a place in the text the edits make as written) is, with the \r added before it
+  const move = (f, q) => {
+    if (!Number.isFinite(q)) return q;
+    let shift = 0, d = 0;
+    for (const ed of edits.filter((x) => x.f === f).sort((x, y) => x.s - y.s)) {
+      const s2 = ed.s + shift;
+      if (conv(ed)) d += q >= s2 + ed.t.length ? loneNl(ed.t) : q > s2 ? loneNl(ed.t.slice(0, q - s2)) : 0;
+      shift += ed.t.length - (ed.e - ed.s);
+    }
+    return q + d;
+  };
+  if (caret && caret.f != null) {
+    caret = { ...caret };
+    for (const k of ['p', 'selA', 'selB']) if (caret[k] != null) caret[k] = move(caret.f, caret[k]);
+  }
+  return { edits: edits.map((ed) => (conv(ed) ? { ...ed, t: ed.t.replace(/\r?\n/g, '\r\n') } : ed)), caret };
+}
 async function copyRich(html, text) {
   try {
     if (navigator.clipboard && window.ClipboardItem) {
@@ -457,7 +483,8 @@ const HIST_BYTES = 2e6;
 // or the line of a \begin{...} (the document, a quote, a theorem with its [title]), a heading or
 // \maketitle; then any comment lines and a \noindent, which belong to the paragraph below them
 // (group 1: the new paragraph goes before them, src/app.js enter)
-const PARA_START = /(?:\n[ \t]*\n|\\begin\s*\{[^{}\n]*\}(?:\[[^\]\n]*\])?[ \t]*\n|\\(?:part|chapter|section|subsection|subsubsection|paragraph)\*?\s*\{[^\n]*\}[ \t]*\n|\\maketitle[ \t]*\n)((?:[ \t]*%[^\n]*\n)*[ \t]*(?:\\noindent(?![A-Za-z])[ \t]*(?:\n[ \t]*)?)?)$/;
+// (\r: a file with Windows line ends, whose blank line is \r\n\r\n)
+const PARA_START = /(?:\n[ \t\r]*\n|\\begin\s*\{[^{}\n]*\}(?:\[[^\]\n]*\])?[ \t\r]*\n|\\(?:part|chapter|section|subsection|subsubsection|paragraph)\*?\s*\{[^\n]*\}[ \t\r]*\n|\\maketitle[ \t\r]*\n)((?:[ \t]*%[^\n]*\n)*[ \t]*(?:\\noindent(?![A-Za-z])[ \t]*(?:\r?\n[ \t]*)?)?)$/;
 // whether the last thing the person did was a key or a press, as html.rk-keys: the focus rings
 // follow it where the code moves the focus (a menu's first item, File's Back), since the
 // browser's own guess, :focus-visible, differs between Chromium's versions there
@@ -1412,6 +1439,10 @@ class App {
     // (src/review.js: none while the page shows the Original; comments only in a comments only link)
     if (this.rvRefuse(edits, kind)) return;
     edits = edits.filter((ed) => { const n = (this.files.get(ed.f) ?? '').length; return ed.s >= 0 && ed.e >= ed.s && ed.e <= n; });
+    // (what is typed, pasted or written by a command: never another version of the text put back,
+    // a version or a commit restored, a coauthor's or another tab's text, a change rejected,
+    // which keep their own bytes)
+    if (!/^(restore|reject|merge|other-tab|api)$/.test(kind || '')) ({ edits, caret } = crlfKept(this.files, edits, caret));
     const swaps = (blobs || []).map(({ name, blob }) => ({ name, before: this.assetBlobs.get(name) || null, after: blob }));
     if (!edits.length && !swaps.length) { if (caret) this.restoreCaret(caret); return; }
     for (const b of swaps) this.setAsset(b.name, b.after);
@@ -1555,6 +1586,8 @@ class App {
     this.compFinish();
     // (nothing stays selected across a change of the text: its offsets would be stale)
     this.disarm();
+    // (Ctrl+Z in the source pane keeps the focus there: srcStepShown)
+    const inPane = !!(this.cm && this.cm.hasFocus());
     // typing in the source pane joins the history only after a pause: take it in first, so
     // Ctrl+Z right after typing undoes that typing instead of wiping it
     if (this.srcRebuild.pending()) this.srcRebuild.flush();
@@ -1577,6 +1610,7 @@ class App {
     const c = h.caretBefore || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].del.length } : null);
     this.rebuild(c);
     this.pushToSource();
+    if (inPane) this.srcStepShown(h, true);
     this.saveSoon();
     this.updateUndoUI();
   }
@@ -1584,6 +1618,7 @@ class App {
     this.typeFlush();
     this.compFinish();
     this.disarm();
+    const inPane = !!(this.cm && this.cm.hasFocus());
     if (this.srcRebuild.pending()) this.srcRebuild.flush();
     this.closePop(true);
     const h = this.redoStack.pop();
@@ -1600,6 +1635,7 @@ class App {
     const c = h.caretAfter || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].ins.length } : null);
     this.rebuild(c);
     this.pushToSource();
+    if (inPane) this.srcStepShown(h, false);
     this.saveSoon();
     this.updateUndoUI();
   }
@@ -2327,7 +2363,7 @@ class App {
     // letters go where Enter left the caret, as Word's; ghostOver)
     if (!range && this.ghostOver()) this.takeBackGhost('back');
     const whole = range ? null : this.wholeDoc();
-    if (whole) { this.replaceBody(whole, escapeTeX(data, ' '), 'replace'); return; }
+    if (whole) { this.replaceBody(whole, this.typedTeX(this.main, whole.s, data, { prev: ' ' }), 'replace'); return; }
     const c = this.caretNow();
     if (!c) return;
     // typed over a selection from one file into another: each file's part goes (crossFileEdits)
@@ -2363,7 +2399,7 @@ class App {
       this.newMath(); return;
     }
     if (data === '\\' && !range && !raw && (c.collapsed || c.ghost)) { this.openPalette(); return; }
-    if (c.ghost) { this.ghostInsert(raw ? data : escapeTeX(data, ' ')); return; }
+    if (c.ghost) { this.ghostInsert(raw ? data : this.typedTeX(this.ghost.f, this.ghost.pos, data, { prev: ' ', wrap: this.ghost.wrap })); return; }
     const f = range ? range.f : c.f;
     let a = range ? range.a : c.a, b = range ? range.b : c.b;
     const edits = this.deletionEdits(f, a, b, true);
@@ -2384,13 +2420,38 @@ class App {
     this.commit(merged, caret, edits.length ? 'replace' : 'type');
   }
 
+  // Whether place at of file f is code, where typed quotes stay straight (a ' wrote a backtick
+  // into the code): \texttt{..}, {\ttfamily ..}, \verb|..|, \lstinline, \mintinline, \url{..},
+  // \path, \href's address, and the environments verbatim, lstlisting, minted, comment and their
+  // kin (the last one begun in the 20 000 characters before, not ended); wrap: the formats a blank
+  // paragraph's words go in (Enter at the end of \texttt{..})
+  codeAt(f, at, wrap) {
+    if (wrap && /\\(?:texttt|ttfamily)(?![A-Za-z])/.test(wrap.open || '')) return true;
+    const src = this.src(f), near = src.slice(Math.max(0, at - 400), at), line = near.slice(near.lastIndexOf('\n') + 1);
+    if (/\\texttt\s*\{(?:[^{}]|\{[^{}]*\})*$|\{\\ttfamily(?![A-Za-z])[^{}]*$/.test(near)
+      || /\\(?:verb|lstinline|path)\*?([^A-Za-z\s{*\[])(?:(?!\1).)*$/.test(line)
+      || /\\(?:lstinline|url|path|nolinkurl|href)\s*(?:\[[^\]]*\])?\{[^}]*$/.test(line)
+      || /\\mintinline\s*(?:\[[^\]]*\])?\{[^}]*\}\s*(?:\{[^}]*|([^\s{])(?:(?!\1).)*)$/.test(line)) return true;
+    let env = null;
+    for (const m of src.slice(Math.max(0, at - 20000), at).matchAll(/\\(begin|end)\s*\{(verbatim\*?|Verbatim\*?|BVerbatim|LVerbatim|lstlisting|minted|comment|tcblisting|filecontents\*?)\}/g)) env = m[1] === 'begin' ? m[2] : env === m[2] ? null : env;
+    return !!env;
+  }
+  // What typed text becomes as LaTeX at place at of file f (its quotes, dashes and specials, as
+  // escapeTeX writes them): the one place every typing path escapes (a key, a composition, the
+  // blank paragraph's first letter, the whole text typed over), so none skips code's straight
+  // quotes. o.prev: the text before where it is not the source's (a new paragraph: ' '); by
+  // default the two characters before, as `` is told from `; o.wrap: as codeAt
+  typedTeX(f, at, data, o = {}) {
+    return escapeTeX(data, o.prev ?? (this.src(f).slice(Math.max(0, at - 2), at) || ' '), { code: this.codeAt(f, at, o.wrap) });
+  }
+
   // Text typed, or written by Replace, at p of file f as the source takes it there. A selection
   // from a paragraph into a LaTeX paragraph or back: the text is written as the place it lands in
   // takes it, as source in the box, escaped in the text; {} after a control word, a bracket kept
   // from being read as the optional argument of the command before it.
   escapeAt(f, at, data) {
     const src = this.src(f), lands = this.texAt(f, at);
-    let t = lands ? data : escapeTeX(data, src[at - 1] || ' ');
+    let t = lands ? data : this.typedTeX(f, at, data);
     if (!lands && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!lands && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
     // (a space after a control word and the space that ends it, as in {\large |} the size box
@@ -3396,8 +3457,8 @@ class App {
     // (Select All, then a word composed, as a phone's keyboard writes every word: it left the first
     // heading's command and blank lines, "\section{Xy}", where a key typed leaves the word alone;
     // a composition given up there leaves an empty body, not empty commands)
-    if (W) { this.compTex = null; this.forceRender = true; this.replaceBody(W, data ? escapeTeX(data, ' ') : '', 'replace'); return; }
-    if (c.ghost) { if (data && this.ghost) this.ghostInsert(this.ghostRaw() ? data : escapeTeX(data, ' ')); else this.relayout(true); return; }
+    if (W) { this.compTex = null; this.forceRender = true; this.replaceBody(W, data ? this.typedTeX(this.main, W.s, data, { prev: ' ' }) : '', 'replace'); return; }
+    if (c.ghost) { if (data && this.ghost) this.ghostInsert(this.ghostRaw() ? data : this.typedTeX(this.ghost.f, this.ghost.pos, data, { prev: ' ', wrap: this.ghost.wrap })); else this.relayout(true); return; }
     // What the composition replaced, where its first change said (a word marked on Android, the
     // caret in it elsewhere): only the characters that differ, at their own source places, so a
     // format or a formula inside the word stays. Where those characters are not all plain text
@@ -3431,11 +3492,10 @@ class App {
     this.compTex = null;
     // (LaTeX shown as it is: the composed word over what it replaced, the caret after it)
     if (T && T.f === c.f) { if (F && F.f === c.f) this.texEdit(T, F.a, F.b, e.data || '', 'type'); else this.texEdit(T, c.a, c.b, data, 'type'); return; }
-    const src = this.src(c.f);
     const edits = c.collapsed ? [] : this.deletionEdits(c.f, c.a, c.b, true);
-    const raw = this.texAt(c.f, c.a);
-    let t = raw ? data : escapeTeX(data, src[c.a - 1] || ' ');
-    if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, c.a)) t = '{}' + t;
+    // (as typing writes it, escapeAt: code's quotes straight, a dead key's ' in lstlisting wrote a
+    // backtick into the code; {} after a control word)
+    const t = this.escapeAt(c.f, c.a, data);
     // the deletions of a replaced selection lie after c.a: they do not move the caret back
     const removedBefore = edits.filter((ed) => ed.e <= c.a).reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
     const removed = edits.reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
@@ -5358,7 +5418,7 @@ class App {
     const pop = this.pop, ta = pop && pop.el.querySelector('#pop-tex, #pop-newtex');
     if (!pop || !ta) {
       // (no formula opened at all: the dollar sign and the key are written as typed)
-      const c2 = this.caretNow(), t = '\\$' + escapeTeX(data, '$');
+      const c2 = this.caretNow(), t = '\\$' + (c2 && !c2.ghost ? this.typedTeX(c2.f, c2.a, data, { prev: '$' }) : '');
       if (c2 && !c2.ghost) this.commit([{ f: c2.f, s: c2.a, e: c2.b, t }], { f: c2.f, p: c2.a + t.length }, 'type');
       return true;
     }
@@ -6070,6 +6130,21 @@ class App {
       b.addEventListener('click', () => this.showSrcFile(n));
       tabs.appendChild(b);
     }
+  }
+
+  // An undo or a redo pressed in the source pane: the focus stays in the pane, its cursor at the
+  // end of what the step put back, in that step's file, as any code editor's Ctrl+Z leaves it.
+  // Putting the page's caret back took the focus to the page, and what was typed next went into
+  // the page at its caret instead of the source.
+  srcStepShown(h, back) {
+    if (!this.cm) return;
+    const shown = this.srcFile || this.main;
+    const d = h.files.find((x) => x.f === shown) || h.files.find((x) => this.files.has(x.f));
+    if (!d) { this.cm.focus(); return; }
+    if (d.f !== shown) this.showSrcFile(d.f);
+    const doc = this.cm.getDoc();
+    doc.setCursor(doc.posFromIndex(d.s + (back ? d.del : d.ins).length));
+    this.cm.focus();
   }
 
   pushToSource() {
