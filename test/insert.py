@@ -1060,6 +1060,19 @@ def hunt_c(page):
     load_doc(page, de); click_text(page, 'here', 5)
     page.keyboard.type(' so i '); settle(page, 300)
     check('AutoCorrect: in a German document "i" stays', 'here. So i ' in src(page), src(page)[60:140])
+    # the text's own language: an Italian passage of an English document keeps its article "i"
+    it = W('So \\foreignlanguage{italian}{vedo ragazzi} here.').replace('\\begin{document}', '\\usepackage[italian,english]{babel}\n\\begin{document}')
+    load_doc(page, it); click_text(page, 'ragazzi', 0); page.keyboard.type('i '); settle(page, 300)
+    check('AutoCorrect: "i" in Italian words of an English document stays', '{vedo i ragazzi}' in src(page), src(page)[60:160])
+    # a note's text is a story of its own: its stop starts no sentence after it, the stop before it does
+    load_doc(page, W('As shown by Smith\\footnote{See Smith (2020).} here. It ends.\\footnote{A note} there.'))
+    click_text(page, 'here', 0); page.keyboard.type('and '); settle(page, 300)
+    click_text(page, 'there', 0); page.keyboard.type('next '); settle(page, 300)
+    check('AutoCorrect: no capital after a note ending with a stop, one after a stop before a note', 'Smith (2020).} and here.' in src(page) and 'A note} Next there.' in src(page), src(page)[40:200])
+    # code's quotes stay straight: a typewriter font prints ` as a grave accent
+    load_doc(page, W('Run \\texttt{print x} now.')); click_text(page, 'print', 5)
+    page.keyboard.type(" 'a' \"b\""); settle(page, 300)
+    check('quotes typed in \\texttt stay straight', '\\texttt{print \'a\' "b" x}' in src(page), src(page)[40:120])
 
 
 EXTRA = [hunt, hunt_c, clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]

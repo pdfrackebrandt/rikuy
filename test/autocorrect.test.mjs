@@ -3,6 +3,7 @@
 // abbreviation, in a word that runs on, or with its switch off.
 import assert from 'node:assert/strict';
 import { correct, borderLine, DEFAULTS } from '../src/autocorrect.js';
+import { escapeTeX } from '../src/editor.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -74,9 +75,17 @@ ok('a one word sentence, a sentence after a group or a note, and "i" in English 
   assert.equal(type('Text.\n\nii.', ' '), 'Text.\n\nii. ');
   assert.equal(type('The end. e.g.', ' '), 'The end. e.g. ');
   assert.equal(type('It was. so.', ' ', { ...DEFAULTS, capitals: false }), 'It was. so. ');
-  // the stop read through what closes after it
+  // the stop read through what closes after it; a note's text is a story of its own: its stop
+  // ends no sentence of the text, and the stop before the note does
   assert.equal(type('\\textbf{The end.} next', ' '), '\\textbf{The end.} Next ');
   assert.equal(type('It ends.\\footnote{A note.} next', ' '), 'It ends.\\footnote{A note.} Next ');
+  assert.equal(type('It ends.\\footnote{A note} next', ' '), 'It ends.\\footnote{A note} Next ');
+  assert.equal(type('As shown by Smith\\footnote{See Smith (2020).} and', ' '), 'As shown by Smith\\footnote{See Smith (2020).} and ');
+  assert.equal(type('We find\\todo{Check this.} that', ' '), 'We find\\todo{Check this.} that ');
+  assert.equal(type('Smith\\thanks{Oxford.} and', ' '), 'Smith\\thanks{Oxford.} and ');
+  assert.equal(type('It ends.\\label{s:a} next', ' '), 'It ends.\\label{s:a} Next ');
+  assert.equal(type('see \\cite{a.b} next', ' '), 'see \\cite{a.b} next ');
+  assert.equal(type('{\\bfseries Done.} next', ' '), '{\\bfseries Done.} Next ');
   assert.equal(type('as \\emph{e.g.} this', ' '), 'as \\emph{e.g.} this ');
   assert.equal(type('He said ``stop.\'\' then', ' '), 'He said ``stop.\'\' Then ');
   // "i" alone, in English only, never in i.e. or after an apostrophe
@@ -87,7 +96,23 @@ ok('a one word sentence, a sentence after a group or a note, and "i" in English 
   assert.equal(type('so i', ' ', { ...en, replace: false }), 'so i ');
   assert.equal(type('as i.e.', ' ', en), 'as i.e. ');
   assert.equal(type("Hawai'i", ' ', en), "Hawai'i ");
+  assert.equal(type('café i', ' ', en), 'café I ');
+  assert.equal(type('xéi', ' ', en), 'xéi ');
+  assert.equal(type('Hawai\u02BBi', ' ', en), 'Hawai\u02BBi ');
   assert.equal(type('\\item i', ')', en), '\\item i)');
+});
+
+ok('smart quotes as typed or pasted: opening after a space, nested ones kept apart, code straight', () => {
+  // typed a key at a time, each after the source's character before it
+  const typed = (s) => { let t = ' '; for (const ch of s) t += escapeTeX(ch, t[t.length - 1]); return t.slice(1); };
+  assert.equal(typed("He said 'yes', it's rock 'n' roll"), "He said `yes', it's rock `n' roll");
+  assert.equal(typed('\'"a"\''), "`{}``a'''");
+  assert.equal(typed('"\'a\'"'), "```a'{}''");
+  assert.equal(escapeTeX('"\'a\'"', ' '), "```a'{}''");
+  assert.equal(escapeTeX('\'"a"\'', ' '), "`{}``a'''");
+  // two straight quotes typed for LaTeX's own closing quote stay ''
+  assert.equal(typed("end''"), "end''");
+  assert.equal(escapeTeX("print 'a' \"b\"", ' ', { code: true }), "print 'a' \"b\"");
 });
 
 ok('ordinals and fractions, off by default', () => {

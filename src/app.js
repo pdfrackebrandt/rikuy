@@ -2414,7 +2414,9 @@ class App {
   // from being read as the optional argument of the command before it.
   escapeAt(f, at, data) {
     const src = this.src(f), lands = this.texAt(f, at);
-    let t = lands ? data : escapeTeX(data, src[at - 1] || ' ');
+    // (in \texttt{..} or {\ttfamily ..}: code, its quotes straight)
+    const code = /\\texttt\s*\{[^{}]*$|\{\\ttfamily(?![A-Za-z])[^{}]*$/.test(src.slice(Math.max(0, at - 400), at));
+    let t = lands ? data : escapeTeX(data, src[at - 1] || ' ', { code });
     if (!lands && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!lands && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
     // (a space after a control word and the space that ends it, as in {\large |} the size box

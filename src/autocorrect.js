@@ -76,7 +76,7 @@ export function correct(src, p, ch, o = DEFAULTS, own = [], except = []) {
   if (o.fractions && FRACTIONS[word] && !/[\w/]/.test(src[ws - 1] || '')) return { s: ws, e: p, t: FRACTIONS[word] };
   // "i" alone is "I" (Word's Replace list), in an English document only (o.english: a function or
   // a value), once a space ends it: never the i of "i.e.", nor one after an apostrophe or a dash
-  if (o.replace !== false && /\s/.test(ch) && /^i[,;:!?]*$/.test(word) && !/[\\'’\w-]/.test(src[ws - 1] || '') && (typeof o.english === 'function' ? o.english() : o.english)) return { s: ws, e: ws + 1, t: 'I' };
+  if (o.replace !== false && /\s/.test(ch) && /^i[,;:!?]*$/.test(word) && !/[\\'’\p{L}\p{M}\p{N}_-]/u.test(src[ws - 1] || '') && (typeof o.english === 'function' ? o.english() : o.english)) return { s: ws, e: ws + 1, t: 'I' };
   // (capitals once a space ends the word: "a)" or "a." at a paragraph's start is a list's marker,
   // which B3's automatic lists read as typed. A word with its stop or comma, "no." or "monday,",
   // is the word before them: it waited for a space that never came right after its letters)
@@ -94,6 +94,33 @@ export function correct(src, p, ch, o = DEFAULTS, own = [], except = []) {
 // paragraph; never after an abbreviation (e.g., i.e., etc.), in a command's argument other than
 // a heading's, or after a number with its point (1.5)
 const ABBR = /(?:^|[\s({])(?:e\.g|i\.e|etc|vs|cf|al|approx|ca|resp|incl|Fig|Eq|Ref|Sec|Dr|Mr|Mrs|Ms|Prof|St|No|vol|pp|ch)\.$/i;
+// The text before k as a reader sees it end, for its stop: read through the quotes, brackets and
+// formatting groups closed after the stop (\textbf{The end.} next, the end.'' Then); a note
+// (\footnote, \thanks, \todo, \marginpar, \endnote) or a \label or \index skipped whole, as its
+// text is a story of its own: "Smith\footnote{See Smith (2020).} and" has no stop, "It
+// ends.\footnote{A note} next" has one. A group of another command's (\cite{..}) is no stop.
+const NOTES = /^(?:footnote|footnotetext|thanks|todo|marginpar|endnote|label|index)$/;
+const FORMATS = /^(?:textbf|textit|emph|textsl|textsc|textup|textmd|textrm|textsf|texttt|textnormal|underline|uline|uwave|sout|enquote|mbox|textbigger|textsmaller)$/;
+function beforeWord(src, k) {
+  let t = src.slice(Math.max(0, k - 600), k);
+  for (let n = 0; n < 40; n++) {
+    if (/['"’”)]$/.test(t)) { t = t.slice(0, -1); continue; }
+    if (!t.endsWith('}') || t.endsWith('\\}')) return t;
+    // the group's opening brace
+    let d = 0, o = -1;
+    for (let i = t.length - 1; i >= 0; i--) {
+      if (t[i - 1] === '\\') continue;
+      if (t[i] === '}') d++;
+      else if (t[i] === '{' && --d === 0) { o = i; break; }
+    }
+    if (o < 0) return t;
+    const head = /\\([A-Za-z]+)\*?(?:\[[^\]]*\])?\s*$/.exec(t.slice(0, o));
+    if (head && NOTES.test(head[1])) { t = t.slice(0, o - head[0].length).replace(/\s+$/, ''); continue; }
+    if (head && !FORMATS.test(head[1])) return t;
+    t = t.slice(0, -1);
+  }
+  return t;
+}
 function sentenceStart(src, s) {
   let k = s;
   while (k > 0 && (src[k - 1] === ' ' || src[k - 1] === '\t')) k--;
@@ -101,9 +128,7 @@ function sentenceStart(src, s) {
   if (/\\(?:section|subsection|subsubsection|chapter|paragraph|caption)\*?(?:\[[^\]]*\])?\{$|\\item$/.test(prev)) return true;
   if (k === s && k > 0 && src[k - 1] !== '\n') return false;
   if (/\n\s*\n\s*$/.test(src.slice(Math.max(0, k - 40), s))) return true;
-  // (the stop read through the quotes, brackets and groups closed after it: \textbf{The end.} or
-  // a note's "\footnote{A note.}" ends a sentence as "the end.'' does)
-  const core = prev.replace(/['"’”)}]+$/, '');
+  const core = beforeWord(src, k);
   if (!/[.!?]$/.test(core) || k === s) return false;
   if (ABBR.test(core) || /\d\.$/.test(core) || /(^|[\s{])[A-Za-z]\.$/.test(core)) return false;
   return true;

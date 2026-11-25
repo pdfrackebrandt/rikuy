@@ -401,18 +401,24 @@ export function withPdfText(pdf, fn, o = {}) {
   try { return fn(); } finally { mathForPdf = was; }
 }
 
+// opts.code: text that is code (\texttt, a Code block's words): its straight quotes stay straight,
+// as a typewriter font prints ` and `` as grave accents
 export function escapeTeX(text, prev = ' ', opts = {}) {
   let out = '';
   let p = prev;
+  // (what was written last: a quote just opened opens the one after it too, ‘“)
+  let w = prev === '`' || prev === "'" ? prev : '';
+  const quotes = !opts.verbatim && !opts.code;
   for (const ch of text) {
     let r = ch;
+    const opening = /[\s([{—–-]/.test(p) || p === '' || w.endsWith('`');
     if (LIGATURES[ch] && !opts.verbatim) r = LIGATURES[ch];
     else if (mathForPdf && TEXT_MATH[ch] && !opts.verbatim && (mathForPdf.greek || !/[\u0370-\u03FF]/.test(ch))) r = '$' + TEXT_MATH[ch] + '$';
-    else if (ch === '"' && !opts.verbatim) r = /[\s([{—–-]/.test(p) || p === '' ? '``' : "''";
-    // (a straight single quote opening a quotation, after a space, a bracket or an opening double
-    // quote: LaTeX's opening quote, as Word's smart quotes make it. Left as ', TeX printed a closing
+    else if (ch === '"' && quotes) r = opening ? '``' : "''";
+    // (a straight single quote opening a quotation, after a space, a bracket or an opening quote:
+    // LaTeX's opening quote, as Word's smart quotes make it. Left as ', TeX printed a closing
     // quote at both ends, ’word’; one after a letter or a digit stays an apostrophe or a prime)
-    else if (ch === "'" && !opts.verbatim && (/[\s([{—–`-]/.test(p) || p === '')) r = '`';
+    else if (ch === "'" && quotes && opening) r = '`';
     else if (ch === '“') r = '``';
     else if (ch === '”') r = "''";
     else if (ch === '‘') r = '`';
@@ -421,8 +427,12 @@ export function escapeTeX(text, prev = ' ', opts = {}) {
     else if (ch === '–') r = '--';
     else if (ch === '\t') r = ' ';
     else if (ESC[ch] !== undefined && !opts.verbatim) r = ESC[ch];
+    // (a double quote right after a single one: TeX reads ``` as “‘ and ''' as ”’, so ‘“ and ’”
+    // get {} between them)
+    if ((r === '``' && /(^|[^`])`$/.test(w)) || (r === "''" && /(^|[^'])'$/.test(w))) r = '{}' + r;
     out += r;
     p = ch;
+    w = r;
   }
   return out;
 }
