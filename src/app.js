@@ -15,7 +15,7 @@ import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
 import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath, oneLineLatex, headingsAsWords } from './paste.js';
-import { chainAt } from './charfmt.js';
+import { chainAt, needsOf, preambleFor, hlTakesColor } from './charfmt.js';
 import { mapPos } from './wrap.js';
 import { findProblems, missingFigures } from './problems.js';
 import { WidgetLayer } from './widget.js';
@@ -242,6 +242,32 @@ function selectionHTML(sel, mathml) {
     if (t) html = '<' + t + '>' + html + '</' + t + '>';
   }
   return '<meta charset="utf-8">' + html.replace(/\u200B/g, '');
+}
+
+// Whether nothing of a line stands before p in its paragraph: a blank line, the text's start, an
+// environment's \begin, an \item, a \\ or \par, a note's or a box's opening brace, with only
+// spaces, \noindent and comment lines after it (a \\ written there stops TeX)
+function noLineBefore(src, p) {
+  const t = src.slice(Math.max(0, p - 600), p).replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, '$1$2').replace(/\\noindent(?![A-Za-z])/g, '');
+  if (!t.trim() && p <= 600) return true;
+  return /(?:\n[ \t\r]*\n|\\begin\s*\{[^{}]*\}(?:\s*\[[^\]]*\]|\s*\{[^{}]*\})*|\\item(?![A-Za-z])(?:\s*\[[^\]]*\])?|\\\\(?:\s*\[[^\]]*\])?|\\par(?![A-Za-z])|\\(?:begin\s*\{document\})|\\(?:footnote|endnote|thanks|footnotetext|parbox(?:\[[^\]]*\])*\{[^{}]*\}|fbox|mbox|centerline)\s*\{)\s*$/.test(t);
+}
+
+// Whether the page draws anything of its paragraph before a point (words, a formula, a mark; a
+// line break alone is none): where it draws nothing, the point is in vertical mode for TeX, after
+// a heading, an environment's end, a \vspace or \maketitle as after a blank line, and a \\ there
+// stops TeX. null where the point is in no paragraph of the page (a footnote's text at its foot).
+function drawnBefore(node, offset) {
+  const el = node && (node.nodeType === 1 ? node : node.parentElement);
+  const it = el && el.closest && el.closest('.it');
+  if (!it) return null;
+  if (it.classList.contains('split-b')) return true;
+  const r = document.createRange();
+  try { r.setStart(it, 0); r.setEnd(node, offset); } catch (e) { return null; }
+  const frag = r.cloneContents();
+  if ([...frag.querySelectorAll('span.t')].some((x) => x.textContent.replace(/[\u200B\s]/g, ''))) return true;
+  if (node.nodeType === 3 && el.closest('span.t') && node.data.slice(0, offset).replace(/[\u200B\s]/g, '')) return true;
+  return !!frag.querySelector('.atom:not(.a-br)');
 }
 
 // How many { are open at position p, counting from the start of its paragraph.
@@ -2494,6 +2520,32 @@ class App {
           this.commit([{ f: y.f, s: y.s, e: y.e, t: '' }], { f: y.f, p: y.s }, 'del');
           return;
         }
+        // A caption whose words were all deleted: Backspace takes the caption itself, as Word's
+        // takes the empty caption paragraph under a picture; Delete there does nothing, as at a
+        // cell's end. The browser's own step went out of the figure: the caret landed on the
+        // picture or the text above it, which the next Backspace deleted, \caption{} staying.
+        // (its \label and the rest of the float stay)
+        // (\captionof and subcaption's \subcaption too, and a \label in its braces, which stays:
+        // \caption{Text\label{..}} with its words deleted is \caption{\label{..}})
+        if (ph.closest('.cap')) {
+          const src = this.src(c.f), from = Math.max(0, c.a - 400), LAB = String.raw`(?:\s|\\label\s*\{[^{}]*\})*`;
+          const open = new RegExp(String.raw`\\(?:caption|subcaption|captionof\s*\{[^{}]*\})\*?\s*(?:\[[^\]]*\]\s*)?\{(` + LAB + ')$').exec(src.slice(from, c.a));
+          const close = new RegExp('^(' + LAB + String.raw`)\}`).exec(src.slice(c.a, c.a + 400));
+          if (!open || !close) return;
+          if (!/Backward/.test(type)) return;
+          let s = from + open.index, e = c.a + close[0].length;
+          const t = (open[1] + close[1]).match(/\\label\s*\{[^{}]*\}/g)?.join('') || '';
+          // (its line too, where nothing else stands on it)
+          const ls = src.lastIndexOf('\n', s - 1) + 1, nl = src.indexOf('\n', e);
+          if (!t && !src.slice(ls, s).trim() && !src.slice(e, nl < 0 ? src.length : nl).trim()) { s = ls; e = nl < 0 ? src.length : nl + 1; }
+          this.commit([{ f: c.f, s, e, t }], { f: c.f, p: s, bias: -1 }, 'del');
+          // (the caret where the caption stood is no place of the page's: the picture before it is
+          // selected, as Word's caret after it, so the next Backspace takes the picture, not a line
+          // end nobody sees)
+          const pic = src.lastIndexOf('\\includegraphics', s), env = src.lastIndexOf('\\begin', s);
+          if (pic >= 0 && pic > env && this.picSelect) this.picSelect({ f: c.f, s: pic });
+          return;
+        }
         // A heading whose words were all deleted: the next Backspace or Delete takes the heading
         // itself. It stayed as a number with nothing after it, and only the source could remove it.
         if (ph.closest('.it.h')) {
@@ -2656,6 +2708,28 @@ class App {
           return;
         }
       }
+      // A paragraph break between formatted words (Enter in bold words splits them
+      // \textbf{bold}\n\n\textbf{word}): Backspace at the second's start or Delete at the first's
+      // end joins the paragraphs, as Word's, each word keeping its formats, and the same formats
+      // either side become one again (\textbf{bold word}), as a plain join, with its space. The
+      // range held the formats' braces, so nothing was deleted and the caret only stepped back:
+      // the paragraphs stayed apart and the next words went into the one above.
+      if (!vr.length && c.collapsed) {
+        const S = this.src(f);
+        let x = a, y = b;
+        const shut = [], opened = [];
+        for (let k = 0, W; k < 20 && S[x] === '}' && (W = chainAt(S, x, x).map((z) => z.W).find((w) => w.ie === x && w.e === x + 1)); k++) { shut.push(W); x = W.e; }
+        for (let k = 0, W; k < 20 && y > x && (W = chainAt(S, y, y).map((z) => z.W).find((w) => w.is === y && w.s >= x)); k++) { opened.push(W); y = W.s; }
+        const mid = S.slice(x, y);
+        if ((shut.length || opened.length) && x <= y && /^\s*$/.test(mid) && /\n[ \t\r]*\n/.test(mid)) {
+          const same = shut.length === opened.length && shut.every((W, i) => S.slice(W.s, W.is) === S.slice(opened[i].s, opened[i].is));
+          const s0 = same ? a : x, e0 = same ? b : y, t = /\s/.test(S[s0 - 1] || ' ') || /\s/.test(S[e0] || ' ') ? '' : ' ';
+          // (the caret where the first paragraph's words end, in their formats: what is typed next
+          // takes the format of the letter before it, as Word's)
+          this.commit([{ f, s: s0, e: e0, t }], { f, p: same ? a + t.length : a, bias: -1 }, 'del');
+          return;
+        }
+      }
       // Nothing of it is on the page, yet it holds a command with an argument (a letter's
       // \date{...} and \subject{...}, a \label, a \vspace): one keystroke would delete what the
       // user cannot see. The caret steps over it instead.
@@ -2791,7 +2865,32 @@ class App {
           const ed = X.edits.find((x) => x.f === X.at.f && x.s === X.at.p);
           if (ed) ed.t += '\n\\item '; else X.edits.push({ f: X.at.f, s: X.at.p, e: X.at.p, t: '\n\\item ' });
           this.commit(X.edits, { f: X.at.f, p: X.at.p + 7, bias: 1 }, 'enter');
-        } else this.commit(X.edits, { ...X.at, bias: -1 }, 'del');
+          return;
+        }
+        // Shift+Enter: the line break at the selection's start, as over a selection in one file,
+        // where the two files' remains meet in one paragraph (an \input in a paragraph, a list or a
+        // theorem). It deleted and wrote no break, the words running on. Where a blank line
+        // already parts them after the deletion, the break is there; not in a heading or a
+        // caption, whose Shift+Enter writes none.
+        if (soft) {
+          const S = this.src(X.at.f), ed = X.edits.find((x) => x.f === X.at.f && x.s === X.at.p);
+          const end = ed ? ed.e : X.at.p, gap = /^\s*/.exec(S.slice(end, end + 400))[0];
+          const se = getSelection().rangeCount ? getSelection().getRangeAt(0).startContainer : null, sel = se && (se.nodeType === 1 ? se : se.parentElement);
+          const ctx = sel && sel.closest && sel.closest('[data-ctx]');
+          // (and none before the other file's remains: an \input's file selected into the
+          // paragraph after it leaves the blank line after \input{..})
+          const apart = X.edits.some((x) => x.f !== X.at.f && /\n[ \t\r]*\n[ \t\r]*$/.test(/\s*$/.exec(this.src(x.f).slice(Math.max(0, x.s - 400), x.s))[0]));
+          // (and none where nothing stands before it on its line, the paragraph's start: a \\ there
+          // stops TeX, "There's no line here to end"; the deletion alone, as the page shows it)
+          const sr = getSelection().getRangeAt(0), before = drawnBefore(sr.startContainer, sr.startOffset);
+          if (!apart && !/\n[ \t\r]*\n/.test(gap) && !(ctx && /^(h|cap|cell)$/.test(ctx.dataset.ctx)) && (before === true || (before === null && !noLineBefore(S, X.at.p)))) {
+            const t = '\\\\' + (/^[ \t]*\r?\n/.test(gap) || !gap.length && end >= S.length ? '' : '\n');
+            if (ed) ed.t += t; else X.edits.push({ f: X.at.f, s: X.at.p, e: X.at.p, t });
+            this.commit(X.edits, { f: X.at.f, p: X.at.p + t.length, bias: 1 }, 'type');
+            return;
+          }
+        }
+        this.commit(X.edits, { ...X.at, bias: -1 }, 'del');
         return;
       }
     }
@@ -2816,7 +2915,14 @@ class App {
     if (soft) {
       if (kind === 'cell') { this.cellEnter(c, edits); return; }
       if (kind === 'h' || kind === 'cap') return;
-      this.commit([...edits, { f, s: p, e: p, t: '\\\\\n' }], { f, p: p + 3, bias: 1 }, 'type');
+      // (where the page draws nothing of the paragraph before the caret, at its start after a
+      // blank line, a heading, an environment's end, a \vspace or \maketitle, a bare \\ stops
+      // TeX, "There's no line here to end": Shift+Enter there is Enter, an empty line on the page;
+      // in a footnote's text, which is no paragraph of the page, \mbox{}\\ there)
+      const sr = sel.rangeCount ? sel.getRangeAt(0) : null, before = sr ? drawnBefore(sr.startContainer, sr.startOffset) : null;
+      if (before === false) { this.enter(false); return; }
+      const t = before === null && noLineBefore(src, p) ? '\\mbox{}\\\\\n' : '\\\\\n';
+      this.commit([...edits, { f, s: p, e: p, t }], { f, p: p + t.length, bias: 1 }, 'type');
       return;
     }
     // Enter at the end of a float's last caption: a paragraph after the float, as Word's Enter at a
@@ -3682,7 +3788,24 @@ class App {
     // closed before the blank line and opened again after it, as Enter splits them; a paste there
     // ran its paragraphs into one line)
     const fw = inArg && c.collapsed && el && el.closest && !el.closest('td, .it.h, .cap') ? (this.formatsBreak ? this.formatsBreak(c.f, at0) : this.wrapBreak(el, c.f, at0)) : null;
-    const fmtOnly = !!fw && braceDepth(src, fw.p) === (fw.close.match(/\}/g) || []).length;
+    // (in a footnote's first paragraph the note's own brace is no format's: a note at the
+    // paragraph's top level holds paragraphs and lists, so only the formats' braces are closed
+    // round them. Counted as a format's, a list or paragraphs pasted into \footnote{..\textbf{..}}
+    // went whole into \textbf's braces, and TeX stopped: "Paragraph ended before \text@command")
+    const inNote = (p, n) => {
+      const st = [];
+      let s0 = src.lastIndexOf('\n\n', p - 1);
+      for (let i = s0 < 0 ? 0 : s0; i < p; i++) {
+        const ch = src[i];
+        if (ch === '\\') { i++; continue; }
+        if (ch === '%') { while (i < p && src[i] !== '\n') i++; continue; }
+        if (ch === '{') st.push(i); else if (ch === '}') st.pop();
+      }
+      return st.length === n + 1 && /\\(?:footnote|footnotetext|endnote)\s*(?:\[[^\]{}]*\]\s*)?$/.test(src.slice(Math.max(0, st[0] - 80), st[0]));
+    };
+    const inFmts = !!fw && braceDepth(src, fw.p) === (fw.close.match(/\}/g) || []).length;
+    const noteFmts = !!fw && !inFmts && !!fw.close && inNote(fw.p, (fw.close.match(/\}/g) || []).length);
+    let fmtOnly = inFmts || noteFmts;
     const inline = inArg || (!whole && !!(el && el.closest && el.closest('td, .it.h, .cap')));
     // (copied LaTeX put in a heading, a table's cell or a caption, whose argument a paragraph
     // break ends, goes in as one line: src/paste.js oneLineLatex. Pasted as it was,
@@ -3692,15 +3815,18 @@ class App {
     if (latex && !whole && el && el.closest && el.closest('td, th, .it.h, .cap, .it.ttl')) latex = oneLineLatex(latex);
     else if (latex && inArg) latex = headingsAsWords(latex);
     const pre = this.src(this.main).split(/\\begin\s*\{document\}/)[0];
-    const o = { prev: src[at0 - 1] || ' ', hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*hyperref/.test(pre), booktabs: /\\usepackage(\[[^\]]*\])?\{[^}]*booktabs/.test(pre), inlineOnly: inline };
+    const o = { prev: src[at0 - 1] || ' ', hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*hyperref/.test(pre), booktabs: /\\usepackage(\[[^\]]*\])?\{[^}]*booktabs/.test(pre), inlineOnly: inline,
+      // (soul's \hl, or the document's own, takes no colour: a pasted highlight is yellow there)
+      hlColor: !!html && /mso-highlight|background/i.test(html) ? hlTakesColor(this.src(this.main), this.preambleOthers()) : true };
     // (a PDF's ligatures as letters; its Greek and symbols as formulas where pdfLaTeX compiles it: escapeTeX)
     const pdfText = !this.textEngine().unicode;
     // (a preamble that sets Greek up for pdfLaTeX's text: Greek pasted there stays letters)
     const greekSet = /\\usepackage\s*\[[^\]]*\b(greek|polutonikogreek|LGR)\b[^\]]*\]\s*\{(babel|fontenc)\}|\\usepackage\s*(\[[^\]]*\])?\s*\{[^}]*\b(textgreek|alphabeta|teubner|greektex|lgrx)\b|\\DeclareUnicodeCharacter\s*\{0?3[9AaBbCc][0-9A-Fa-f]\}|\\newunicodechar\s*\{[\u0370-\u03FF]\}/.test(pre);
     // (flat: on one line, as a heading, a cell or a command's argument takes it)
-    const rich = (flat = inline) => withPdfText(pdfText, () => {
+    // (note: in a footnote's text, where a float or verbatim stops TeX: src/paste.js opts.note)
+    const rich = (flat = inline, note = false) => withPdfText(pdfText, () => {
       if (plainOnly) return textToTeX(plain, o.prev);
-      const q = { ...o, inlineOnly: flat };
+      const q = { ...o, inlineOnly: flat, note };
       let t = '';
       if (html && /<[a-z]/i.test(html)) { try { t = htmlToTeX(html, q); } catch (err) { t = ''; } }
       if (!t.trim()) t = plainToTeX(plain, o.prev, q);
@@ -3719,8 +3845,12 @@ class App {
     // (paragraphs of text alone into formatted words: split there, each in the formats. Anything
     // else, a list, a heading, a table, a display, a comment, stays flattened on the line as before:
     // \uline{..\begin{itemize}..} stopped TeX)
+    // (in a note, copied LaTeX with a float, verbatim or a heading goes the way it went before,
+    // on the line: none of them can stand in a footnote)
+    const noteU = noteFmts && !raw ? (latex ? this.pasteKept(latex, c.f, fw.p) : rich(false, true)) : null;
+    if (noteU != null && /\\begin\s*\{(?:table|figure|verbatim|lstlisting|minted|Verbatim|wrapfigure|sidewaystable)\*?\}|\\(?:verb|lstinline|part|chapter|(?:sub)*section|(?:sub)?paragraph)(?![A-Za-z])/.test(noteU)) fmtOnly = false;
     if (fmtOnly && !raw) {
-      const u = this.pasteInFormats(c.f, fw.p, latex ? this.pasteKept(latex, c.f, fw.p) : rich(false)), parts = u.split(/\s*\n[ \t]*\n\s*/);
+      const u = this.pasteInFormats(c.f, fw.p, noteU != null ? noteU : latex ? this.pasteKept(latex, c.f, fw.p) : rich(false)), parts = u.split(/\s*\n[ \t]*\n\s*/);
       if (parts.length > 1 && this.wrappable && parts.every((x) => this.wrappable(x))) { t = parts.join(fw.close + '\n\n' + fw.open); at = fw.p; }
       else if (parts.length > 1 && this.wrappable) {
         // A part the formats' braces cannot hold (a list, a display, a heading) goes in between
@@ -4342,9 +4472,18 @@ class App {
       for (const p of mathNeeds(x)) need.add(p);
       x.replace(/\\([A-Za-z]+)/g, (q, n) => { if (PACKAGES[n]) need.add(PACKAGES[n]); return q; });
     }
-    if (!need.size) return [];
+    // (and what a pasted strikethrough, colour or highlight needs: ulem, xcolor, the highlighter's
+    // definition, src/paste.js; the Font group's own lines, src/charfmt.js preambleFor)
+    const chars = [];
+    for (const m of String(t).matchAll(/\\(sout|hl|textcolor)(?![A-Za-z])(?:\[([^\]{}]*)\])?(?:\{([^{}]*)\})?/g)) {
+      const n = m[1] === 'sout' ? needsOf('strike', {}) : m[1] === 'hl' ? needsOf('highlight', { cmd: 'hl', opt: m[2] || null }) : needsOf('color', { cmd: 'textcolor', opt: m[2] || null, args: [m[3] || ''] });
+      if (n) chars.push(n);
+    }
+    if (!need.size && !chars.length) return [];
     const f = this.main, src = this.src(f), others = this.preambleOthers();
-    return usePackages(src, [...need].filter((x) => !hasPackage(src, x, undefined, others)), { others }).map((x) => ({ f, ...x }));
+    const add = [...need].filter((x) => !hasPackage(src, x, undefined, others));
+    if (chars.length) return preambleFor(src, [{ pkgs: Object.fromEntries(add.map((x) => [x, null])) }, ...chars], { others }).map((x) => ({ f, ...x }));
+    return usePackages(src, add, { others }).map((x) => ({ f, ...x }));
   }
   ensurePackages(tex, P) {
     // (amssymb's \mathbb and the like too, as the Equation tab adds them: typed in the field they
@@ -7025,10 +7164,13 @@ class App {
       this.forceRender = true;
       // one edit for the figure and its package: one undo takes both out again. Worked out here,
       // after every await above, from the text and the caret as they are now.
-      if (toPlace.length) placed = this.figureEdits(toPlace);
+      if (toPlace.length) placed = this.figureEdits(toPlace, { atCaret: !!opts.atCaret });
       // (a step of its own: two pictures dropped one after the other are two undos)
-      if (placed) { this.closeGroup(); this.commit(placed.edits, placed.caret, 'figure'); this.closeGroup(); }
-      else { this.rebuild(this.caretNow()); this.pushToSource(); }
+      if (placed) {
+        this.closeGroup(); this.commit(placed.edits, placed.caret, 'figure'); this.closeGroup();
+        // (Insert › Picture: the picture selected, as Word's, for Picture Format and its handles)
+        if (placed.pic && opts.atCaret && this.picSelect) this.picSelect(placed.pic);
+      } else { this.rebuild(this.caretNow()); this.pushToSource(); }
       this.updateFileTabs();
       this.saveSoon();
       // an added chapter or figure shows on the page only once the source names it
@@ -7130,11 +7272,37 @@ class App {
   // \includegraphics after the paragraph, list or table the caret is in (inside one, or inside
   // a heading's braces, the block would stop TeX), at the end of the text when there is no
   // caret; and \usepackage{graphicx} when the preamble has none. names are safe (openFiles).
-  figureEdits(names) {
-    const { f, p, pre, post, d } = this.afterBlockPos();
-    const main = this.src(this.main);
+  // o.atCaret (Insert › Picture): where the caret is, as Word inserts a picture, when the caret is
+  // in a paragraph's own text: before the paragraph at its start, after it at its end, and in
+  // its middle on lines of its own between the words (a center environment there ends the line
+  // and the words go on after it, the paragraph not split); in a heading, a cell, a caption, a
+  // footnote, a command's or a format's braces, after the paragraph as ever.
+  figureEdits(names, o = {}) {
     const tex = names.map((n) => '\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{' + n + '}\n\\end{center}').join('\n\n');
-    const edits = [{ f, s: p, e: p, t: pre + tex + post }];
+    let at = null;
+    const c = o.atCaret ? this.caretNow() : null;
+    if (c && !c.ghost && c.collapsed && !c.crossFile) {
+      const n = getSelection().anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement);
+      const it = el && el.closest && !el.closest('td, th, .cap, .fn, .it.h, .it.ttl, .it.tex') ? el.closest('.it.p') : null;
+      const B = it && BLOCKS.get(+it.dataset.b), S = B && B.f === c.f ? this.src(c.f) : null;
+      if (S && c.a >= B.s && c.a <= B.e && braceDepth(S, c.a) === braceDepth(S, B.s)) {
+        let s0 = c.a, e0 = c.a;
+        while (s0 > B.s && /[ \t]/.test(S[s0 - 1])) s0--;
+        while (e0 < B.e && /[ \t]/.test(S[e0])) e0++;
+        if (!S.slice(B.s, s0).replace(/\\noindent(?![A-Za-z])/g, '').trim()) {
+          // (the block's range may begin with the line end before its words; a \noindent stays
+          // with its paragraph, the picture before both)
+          let b0 = B.s; while (b0 < s0 && /\s/.test(S[b0])) b0++;
+          const ni = /\\noindent(?![A-Za-z])\s*$/.exec(S.slice(Math.max(0, b0 - 40), b0));
+          if (ni) b0 -= ni[0].length;
+          let nlB = 0; for (let k = b0 - 1; k >= 0 && /\s/.test(S[k]); k--) if (S[k] === '\n') nlB++;
+          at = { f: c.f, s: b0, e: b0, pre: b0 === 0 ? '' : '\n'.repeat(Math.max(0, 2 - nlB)), post: '\n\n' };
+        } else if (S.slice(e0, B.e).trim()) at = { f: c.f, s: s0, e: e0, pre: '\n', post: '\n' };
+      }
+    }
+    const { f, p, pre, post, d } = at ? { ...at, p: at.s, d: this.model && !this.stale && this.model.main === this.main ? this.model.docBody : null } : this.afterBlockPos();
+    const main = this.src(this.main);
+    const edits = [{ f, s: p, e: at ? at.e : p, t: pre + tex + post }];
     let shift = 0;
     // graphicx once, after the last \usepackage line, as a package for an equation's symbol is
     // added (src/preamble.js); graphics, loaded by hand, does as well
@@ -7146,7 +7314,8 @@ class App {
       for (const x of add) edits.push({ f: this.main, ...x });
       if (f === this.main) shift = add.reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
     }
-    return { edits, caret: { f, p: p + shift + pre.length + tex.length, bias: -1 } };
+    // (pic: where the first picture's \includegraphics stands once written, to select it)
+    return { edits, caret: { f, p: p + shift + pre.length + tex.length, bias: -1 }, pic: { f, s: p + shift + pre.length + '\\begin{center}\n'.length } };
   }
 
   addAsset(name, blob) {
@@ -7568,7 +7737,10 @@ class App {
     if (!key || !p0 || !(p0.w1 > 0)) return;
     const w = p0.w1 * 72.27 / 72, h = p0.h1 * 72.27 / 72, old = this.pdfSheet;
     this.pdfSheet = { key, w, h };
-    if (this.model && (!old || old.key !== key || Math.abs(old.w - w) > 0.5 || Math.abs(old.h - h) > 0.5)) this.layoutPass();
+    // (by relayout, which keeps the page's selection: the pass alone moved the text's nodes into
+    // new pages, and a selection made while TeX ran collapsed to the document's start, where
+    // Ctrl+B or KeyTips' Bold then wrote \textbf{})
+    if (this.model && (!old || old.key !== key || Math.abs(old.w - w) > 0.5 || Math.abs(old.h - h) > 0.5)) this.relayout();
   }
 
   async compilePdf(opts = {}) {

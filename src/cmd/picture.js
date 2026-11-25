@@ -211,7 +211,7 @@ onInstall((app) => {
     app.ribbonBack();
     const said = no.length ? no.slice(0, 3).join(', ') + (no.length > 3 ? ' and ' + (no.length - 3) + ' more' : '') + (no.length === 1 ? ' is' : ' are') + ' no picture and ' + (no.length === 1 ? 'was' : 'were') + ' left out: Picture takes PNG, JPEG and PDF files. Open takes the rest.' : '';
     if (!fs.length) { if (said) app.toast(said, 9000); return; }
-    app.openFiles(fs).then(() => { if (said) app.toast($('#toast span').textContent + ' ' + said, 10000); });
+    app.openFiles(fs, undefined, { atCaret: true }).then(() => { if (said) app.toast($('#toast span').textContent + ' ' + said, 10000); });
   });
   installHandles(app);
   installShapeHandles(app);
@@ -570,7 +570,8 @@ export const methods = {
       const errs = [];
       if (o.width != null || o.height != null) { const e = step((t, p) => X.setSize(t, p, txt(o.width), o.free ? txt(o.height) : o.width == null ? txt(o.height) : null, !!o.free)); if (e) errs.push(e); }
       if (o.angle != null) { const e = step((t, p) => X.rotate(t, p, o.angle - X.angleOf(t, p))); if (e) errs.push(e); }
-      if (o.crop) { const e = step((t, p) => X.setCrop(t, p, o.crop)); if (e) errs.push(e); }
+      // (a crop alone keeps the picture's scale, as Word's; with a size given, the size is the one asked)
+      if (o.crop) { const e = step((t, p) => (o.width == null && o.height == null ? X.cropKeepScale(t, p, o.crop, this.picNaturalNow(h)) : X.setCrop(t, p, o.crop))); if (e) errs.push(e); }
       if (o.place) { const e = step((t, p) => X.setPosition(t, p, o.place, { ...this.picContext({ src: t, P: p }), lw })); if (e) errs.push(e); }
       if (errs.length) return errs[0];
       if (s === src) return { edits: [] };
@@ -584,7 +585,7 @@ export const methods = {
   // ---- crop ---------------------------------------------------------------------------------------
   picCrop(c) {
     if (!c || !['l', 'b', 'r', 't'].every((k) => Number.isFinite(+c[k]) && +c[k] >= 0 && +c[k] < 1e5)) { this.toast('Crop: four lengths from the edges, 0 or more.'); return false; }
-    return this.picOp((src, Q) => X.setCrop(src, Q, { l: +c.l, b: +c.b, r: +c.r, t: +c.t }));
+    return this.picOp((src, Q, h) => X.cropKeepScale(src, Q, { l: +c.l, b: +c.b, r: +c.r, t: +c.t }, this.picNaturalNow(h)));
   },
   picCropMode() {
     if (this.picCropping) return this.picCropEnd(true);

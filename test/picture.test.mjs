@@ -75,6 +75,26 @@ ok('crop: trim and clip in cm, read back in bp, off again byte for byte; viewpor
   assert.equal(run(vp, (s, P) => X.setCrop(s, P, { l: 0, b: 0, r: 0, t: 0 })), CENTER.replace('[width=0.8\\linewidth]', ''));
 });
 
+// (round 3) Crop keeps the picture's scale, as Word's: the width or height given shrinks with the part cut
+ok('crop keeps the scale: the size keys follow the part kept, Remove Crop gives the bytes back', () => {
+  const nat = { w: 200, h: 100 };
+  const t = run(CENTER, (s, P) => X.cropKeepScale(s, P, { l: 25, b: 0, r: 25, t: 0 }, nat));
+  assert.equal(t, CENTER.replace('width=0.8\\linewidth', 'width=0.6\\linewidth,trim=0.88cm 0 0.88cm 0,clip'));
+  assert.equal(run(t, (s, P) => X.cropKeepScale(s, P, { l: 0, b: 0, r: 0, t: 0 }, nat)), CENTER);
+  // (a 300 by 200 picture at 150 dpi, 1 cm off the left and the top: 0.5 comes back as 0.5)
+  const half = CENTER.replace('0.8\\linewidth', '0.5\\linewidth'), n2 = { w: 144, h: 96 };
+  const h1 = run(half, (s, P) => X.cropKeepScale(s, P, { l: 72 / 2.54, b: 0, r: 0, t: 72 / 2.54 }, n2));
+  assert.equal(h1, half.replace('width=0.5\\linewidth', 'width=0.4016\\linewidth,trim=1cm 0 0 1cm,clip'));
+  assert.equal(run(h1, (s, P) => X.cropKeepScale(s, P, { l: 0, b: 0, r: 0, t: 0 }, n2)), half);
+  // a width and a height: each by its own side's share; a scale, a macro's width or no size: the crop alone
+  const wh = CENTER.replace('width=0.8\\linewidth', 'width=4cm,height=2cm');
+  assert.equal(run(wh, (s, P) => X.cropKeepScale(s, P, { l: 0, b: 0, r: 0, t: 50 }, nat)), CENTER.replace('width=0.8\\linewidth', 'width=4cm,height=1cm,trim=0 0 0 1.76cm,clip'));
+  for (const k of ['scale=0.5', 'width=\\mywidth']) {
+    const d = CENTER.replace('width=0.8\\linewidth', k);
+    assert.equal(run(d, (s, P) => X.cropKeepScale(s, P, { l: 25, b: 0, r: 25, t: 0 }, nat)), run(d, (s, P) => X.setCrop(s, P, { l: 25, b: 0, r: 25, t: 0 })));
+  }
+});
+
 ok('rotate by quarter turns, back to no angle; a hand written \\rotatebox turned in its own argument', () => {
   const l = run(CENTER, (t, P) => X.rotate(t, P, 90));
   assert.equal(l, CENTER.replace('0.8\\linewidth]', '0.8\\linewidth,angle=90]'));

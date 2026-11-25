@@ -147,14 +147,97 @@ try:
             s = src(page)
             check('review %s: %r' % (name, want), s == W2(want, pre), s[s.find('\\begin{document}') + 17:][:120])
             made.append((name, s))
+        # (round 3) paragraphs and a list pasted into a bold word in a footnote's text: the note holds
+        # them, so only \\textbf is closed round them. The note's brace was counted as a format's,
+        # everything went inside \\textbf{..}, and pdfLaTeX stopped ("Paragraph ended before \\text@command")
+        FN = 'Text\\footnote{See \\textbf{boldword} here.} after.'
+        FNW = 'Text\\footnote{See \\textbf{boldIntro.}\n\n\\begin{itemize}\n  \\item one\nITEMS\\end{itemize}\n\n\\textbf{After.word} here.} after.'
+        for name, html, plain, latex, want in (('LaTeX', None, 'Intro.\n\none\n\nAfter.', 'Intro.\n\n\\begin{itemize}\n  \\item one\n\\end{itemize}\n\nAfter.', FNW.replace('ITEMS', '')),
+                                               ('HTML', '<p>Intro.</p><ul><li>one</li><li>two</li></ul><p>After.</p>', 'Intro.\none\ntwo\nAfter.', None, FNW.replace('ITEMS', '  \\item two\n')),
+                                               # (review of round 3: a table or code there is no float and no verbatim, which stop TeX in a note)
+                                               ('a table in HTML', '<p>Intro.</p><table><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></table><p>After.</p>', 'Intro.\na\tb\nc\td\nAfter.', None,
+                                                'Text\\footnote{See \\textbf{boldIntro.}\n\n\\begin{tabular}{ll}\n\\hline\na & b \\\\\nc & d \\\\\n\\hline\n\\end{tabular}\n\n\\textbf{After.word} here.} after.'),
+                                               ('code in HTML', '<p>Intro.</p><pre>x = 1\ny = 2</pre><p>After.</p>', 'Intro.\nx = 1\ny = 2\nAfter.', None,
+                                                'Text\\footnote{See \\textbf{boldIntro.}\n\n\\textbf{\\texttt{x = 1}\\\\\n\\texttt{y = 2}}\n\n\\textbf{After.word} here.} after.')):
+            load_doc(page, W2(FN)); click_text(page, 'boldword', 4)
+            if latex: page.evaluate(LTX, [plain, latex])
+            else: page.evaluate(PASTE, [html, plain])
+            settle(page, 250)
+            s = src(page)
+            check('r3 %s paragraphs and a list into \\textbf in a footnote: the format closed round them, inside the note' % name, s == W2(want), repr(s[s.find('Text'):][:200]))
+            made.append(('r3 %s list into \\textbf in a footnote' % name, s))
         if os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist', 'tex', 'tree.wasm')):
             page.set_default_timeout(600000)
             for name, t in made:
-                r = page.evaluate('async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile(); return r.ok; }', t)
+                # (and no error of TeX's: a PDF is made after one too, in nonstop mode)
+                r = page.evaluate('async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile(); return r.ok && !r.problems.some((p) => p.severity === "error"); }', t)
                 check('review %s compiles' % name, r, t[t.find('begin{document}'):][:160])
             page.set_default_timeout(30000)
         else:
             print('SKIP the compiles of the review cases: no TeX tree in dist')
+        # (round 3) strikethrough, a font colour and the highlighter pasted from Word, Google Docs or a
+        # page come as the Font group writes them, with the preamble's lines in the same step; a colour
+        # or a background over most of the text is the page's ink and paper, not a mark (they were dropped)
+        BODY = lambda d: d[d.find('\\begin{document}') + 17:d.find('\n\\end{document}')]
+        KD = '<span class="katex-display"><span class="katex"><span class="katex-mathml"><math><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x=1</annotation></semantics></math></span></span></span>'
+        PRE = lambda d: d[:d.find('\\begin{document}')]
+        r3 = []
+        for name, html, plain, want, pkgs in (
+                ('Word\'s strikethrough', "<p class=MsoNormal>Some <s>old</s> text.<o:p></o:p></p>", 'Some old text.', 'Alpha para. Some \\sout{old} text.', ['\\usepackage[normalem]{ulem}']),
+                ('Word\'s font colour', "<p class=MsoNormal>The <span style='color:#C00000'>red words</span> and the plain words after them.</p>", 'x',
+                 'Alpha para. The \\textcolor[HTML]{C00000}{red words} and the plain words after them.', ['\\usepackage{xcolor}']),
+                ('Word\'s highlighter', "<p class=MsoNormal>A <span style='background:yellow;mso-highlight:yellow'>marked</span> word and <span style='background:lime;mso-highlight:lime'>green</span>.</p>", 'x',
+                 'Alpha para. A \\hl{marked} word and \\hl[green]{green}.', ['\\usepackage[normalem]{ulem}', '\\usepackage{xcolor}', '\\DeclareRobustCommand{\\hl}[1][yellow]']),
+                ('Google Docs\' runs', '<b style="font-weight:normal;" id="docs-internal-guid-1"><p dir="ltr"><span style="color:#000000;background-color:transparent;">Plain and </span><span style="color:#000000;background-color:transparent;text-decoration:line-through;">struck</span><span style="color:#ff0000;background-color:#ffff00;"> red on yellow</span><span style="color:#000000;background-color:transparent;"> then the rest of it.</span></p></b>', 'x',
+                 'Alpha para. Plain and \\sout{struck} \\textcolor[HTML]{FF0000}{\\hl{red on yellow}} then the rest of it.', ['\\usepackage[normalem]{ulem}', '\\usepackage{xcolor}']),
+                ('a page\'s grey ink and white paper', '<span style="color: rgb(32, 33, 36); background-color: rgb(255, 255, 255);">Words from a page, <span style="color: rgb(26, 13, 171);">one blue</span> in them.</span>', 'x',
+                 'Alpha para. Words from a page, \\textcolor[HTML]{1A0DAB}{one blue} in them.', ['\\usepackage{xcolor}']),
+                ('a struck line break', "<p class=MsoNormal><s>one<br>two</s></p>", 'x', 'Alpha para. \\sout{one}\n\n\\sout{two}', ['\\usepackage[normalem]{ulem}']),
+                # (a heading's colour is its style's: \\section draws it as headings are)
+                ('a coloured heading', "<h2><span style='color:#2F5496'>Title</span></h2><p>Some words in it here, and more of them.</p>", 'x', 'Alpha para. \\section{Title}\n\nSome words in it here, and more of them.', ['!xcolor']),
+                # (review of round 3: a mark round blocks goes on their words, never round them:
+                # \\sout{\\begin{itemize}..}, \\sout{\\section{..}} and \\hl{..\\[..\\]..} stopped TeX)
+                ('a struck list', '<del><p>gone</p><ul><li>one</li></ul></del>', 'x', 'Alpha para. \\sout{gone}\n\n\\begin{itemize}\n  \\item \\sout{one}\n\\end{itemize}', ['\\usepackage[normalem]{ulem}']),
+                ('a struck heading', '<del><h2>Gone</h2></del>', 'x', 'Alpha para. \\section{\\sout{Gone}}', ['\\usepackage[normalem]{ulem}']),
+                ('a highlighted display', "<p><span style='background:yellow;mso-highlight:yellow'>E " + KD + " ok</span></p>", 'x', 'Alpha para. \\hl{E}\n\\[\nx=1\n\\]\n\\hl{ok}', ['\\usepackage[normalem]{ulem}']),
+                # (a hued mark on all of what was copied is no ink: a red phrase copied alone from Word,
+                # a phrase Google Docs highlights; a grey one, and near white paper, are the page's)
+                ('a red phrase alone from Word', "<p class=MsoNormal><span style='color:#C00000'>red words</span></p>", 'x', 'Alpha para. \\textcolor[HTML]{C00000}{red words}', ['\\usepackage{xcolor}']),
+                ('a highlighted phrase alone from Google Docs', '<b id="docs-internal-guid-1" style="font-weight:normal"><p><span style="background-color:#ffff00;color:#000000">marked words</span></p></b>', 'x', 'Alpha para. \\hl{marked words}', ['\\usepackage[normalem]{ulem}']),
+                ('grey words on a code box\'s paper', '<span style="color: rgb(32, 33, 36); background-color: rgb(246, 248, 250);">All grey words</span>', 'x', 'Alpha para. All grey words', ['!xcolor', '!ulem'])):
+            load_doc(page, W2('Alpha para.')); click_text(page, 'Alpha para.', 11); page.keyboard.type(' '); settle(page, 100)
+            page.evaluate(PASTE, [html, plain]); settle(page, 250)
+            s = src(page)
+            check('r3 paste %s: %r' % (name, want), BODY(s) == want, repr(BODY(s)))
+            check('r3 paste %s: the preamble gets %s' % (name, ', '.join(pkgs)), all((k[1:] not in PRE(s)) if k[0] == '!' else (k in PRE(s)) for k in pkgs) and PRE(s).count('ulem') <= 1, repr(PRE(s)))
+            page.keyboard.press('Control+z'); settle(page, 150)
+            check('r3 undo after paste %s: one step' % name, src(page) == W2('Alpha para. '), repr(src(page)))
+            r3.append((name, s))
+        # (soul's \\hl takes no colour: a green highlight pasted there is \\hl alone, and no definition comes)
+        SOUL = '\\usepackage{soul}\n'
+        load_doc(page, W2('Alpha para.', SOUL)); click_text(page, 'Alpha para.', 11)
+        page.evaluate(PASTE, ["<span style='background:lime;mso-highlight:lime'>green</span>", 'green']); settle(page, 250)
+        check('r3 paste a green highlight where soul defines \\hl: \\hl{..}, no definition', BODY(src(page)) == 'Alpha para.\\hl{green}' and 'DeclareRobustCommand' not in src(page), repr(src(page)))
+        # (review of round 3: soul's \\hl holds words alone; a colour or \\sout in it stopped TeX: it goes inside them)
+        for name, html, want in (('a colour in a highlight', "<p>x <span style='background:yellow;mso-highlight:yellow'>a <span style='color:#FF0000'>b</span></span> y</p>", 'Alpha para.x \\hl{a} \\textcolor[HTML]{FF0000}{\\hl{b}} y'),
+                                 # (soul's \\hl of several words in \\sout stops TeX, "Leaders not followed by proper glue", and \\sout in \\hl too: a word at a time)
+                                 ('struck and highlighted', '<b id="docs-internal-guid-1" style="font-weight:normal"><p><span style="background-color:#ffff00;text-decoration:line-through">just these words</span><span> plain words</span></p></b>', 'Alpha para.\\sout{\\hl{just}} \\sout{\\hl{these}} \\sout{\\hl{words}} plain words'),
+                                 ('a highlight in a struck run', "<p><del>gone <span style='background:yellow;mso-highlight:yellow'>two words</span> end</del></p>", 'Alpha para.\\sout{gone} \\sout{\\hl{two}} \\sout{\\hl{words}} \\sout{end}'),
+                                 # (every space TeX sees stays outside: a no-break space gave \\sout{\\hl{x~y}}, which stopped TeX; a formula, \\% and a link's words too)
+                                 ('a struck and highlighted run with ~, punctuation, an apostrophe, a formula, % and links',
+                                  "<p><span style='background:yellow;mso-highlight:yellow;text-decoration:line-through'>Its&nbsp;cost, it's 50% of <span class=\"katex\"><span class=\"katex-mathml\"><math><semantics><mrow><mi>x</mi></mrow><annotation encoding=\"application/x-tex\">x^2</annotation></semantics></math></span></span> (see <a href='https://a.b/c'>https://a.b/c</a> and <a href='https://a.b'>the site</a>).</span></p>",
+                                  lambda b: all(k in b for k in ('\\sout{\\hl{Its}}~\\sout{\\hl{cost,}}', "\\sout{\\hl{it's}}", '\\sout{\\hl{50\\%}}', '$x^2$', '\\url{https://a.b/c}', '\\href{https://a.b}{\\sout{\\hl{the}} \\sout{\\hl{site}}}')) and 'x~' not in b.replace('\\sout{\\hl{Its}}~', ''))):
+            load_doc(page, W2('Alpha para.', SOUL + '\\usepackage{xcolor}\n\\usepackage{hyperref}\n')); click_text(page, 'Alpha para.', 11)
+            page.evaluate(PASTE, [html, 'x']); settle(page, 250)
+            check('r3 soul: %s keeps \\hl innermost' % name, want(BODY(src(page))) if callable(want) else BODY(src(page)) == want, repr(BODY(src(page))))
+            r3.append(('soul: ' + name, src(page)))
+        if os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist', 'tex', 'tree.wasm')):
+            page.set_default_timeout(600000)
+            for name, t in r3:
+                # (and no error of TeX's: a PDF is made after one too, in nonstop mode)
+                r = page.evaluate('async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile(); return r.ok && !r.problems.some((p) => p.severity === "error"); }', t)
+                check('r3 paste %s compiles' % name, r, t[:300])
+            page.set_default_timeout(30000)
         load_doc(page, base)
         # Ctrl+Shift+V pastes plain text
         click_text(page, 'Click anywhere in this paragraph', 0)

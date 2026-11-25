@@ -124,6 +124,25 @@ await ok('a footnote edited in Word patches the footnote', async () => {
   assert.equal(plan.files.get('main.tex'), src.replace('See the appendix.', 'See the online appendix.'));
 });
 
+// (round 3) a footnote's second paragraph is a paragraph of Word's note: it went as a line break
+await ok('a footnote of two paragraphs goes as two of Word\'s paragraphs, and comes back', async () => {
+  for (const body of ['Text.\\footnote{First para.\n\nSecond para.} More.\n', 'Text.\\footnote{First para.\\par Second para.} More.\n', 'Text.\\footnote{First para.\n\nSecond \\textbf{para}.\n\n} More.\n']) {
+    const src = doc(body);
+    const files = new Map([['main.tex', src]]);
+    const E = exportFiles(files);
+    const fx = text(unzip(E.docx).get('word/footnotes.xml'));
+    const note = fx.slice(fx.lastIndexOf('<w:footnote ', fx.indexOf('First para.')), fx.indexOf('</w:footnote>', fx.indexOf('First para.')));
+    assert.equal((note.match(/<w:p[ >]/g) || []).length, 2, 'two paragraphs in the note: ' + note);
+    assert.ok(!/<w:br\/>/.test(note), 'no line break in the note: ' + note);
+    await roundTrip(src, (d) => d, src);
+    const plan = importInto(edit(E.docx, rep('Second', 'The second'), 'word/footnotes.xml'), files);
+    assert.equal(plan.files.get('main.tex'), src.replace('Second', 'The second'));
+  }
+  // (a break inside bold in a note: Word's paragraph cannot end there, two line breaks; unchanged back)
+  const src = doc('Text.\\footnote{A \\textbf{bold\\par word} here.} More.\n');
+  await roundTrip(src, (d) => d, src);
+});
+
 await ok('a citation is generated text: edited in Word it is not applied, but noted as a comment', async () => {
   const src = doc('As \\citet{knuth1984} shows, it works.\n\n\\bibliographystyle{plainnat}\n\\bibliography{refs}\n');
   const files = new Map([['main.tex', src], ['refs.bib', BIB]]);
