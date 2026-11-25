@@ -490,8 +490,16 @@ export const methods = {
     // (the words selected again where the edits moved them, as Word leaves them: the caret went to
     // their old end, which a babel line put in above moved back into the text before them, inside
     // \begin{document} where they were its first words, and what was typed next went in there)
-    const at = (q, inside) => q + r.edits.filter((x) => x.f === c.f && (x.e < q || (x.e === q && (x.s < q || inside)))).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
-    this.commit(r.edits, c ? { f: c.f, selA: at(c.a, true), selB: at(c.b, false) } : null, 'language');
+    const at = (f, q, inside) => q + r.edits.filter((x) => x.f === f && (x.e < q || (x.e === q && (x.s < q || inside)))).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
+    let caret = c ? { f: c.f, selA: at(c.f, c.a, true), selB: at(c.f, c.b, false) } : null;
+    if (!c) {
+      // (the document's language: the caret where it was in the text, moved by the line put in
+      // above it. The page, drawn again in the new language, lost it, and what was typed next
+      // went in at the first paragraph's start)
+      const k = this.caretNow(), P = k && k.f != null && !k.ghost ? (k.collapsed ? { f: k.f, p: k.p } : { f: k.f, selA: k.a, selB: k.b }) : this.lastPagePos;
+      if (P && P.f != null && this.files.has(P.f)) caret = P.selA != null ? { f: P.f, selA: at(P.f, P.selA, false), selB: at(P.f, P.selB, false) } : { f: P.f, p: at(P.f, P.p, false) };
+    }
+    this.commit(r.edits, caret, 'language');
     this.closeGroup();
   },
 

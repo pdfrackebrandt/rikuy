@@ -451,6 +451,13 @@ def r5(p):
     check('Language on selected words: the source as written, the words still selected', src(page) == want and page.evaluate('getSelection().toString()') == 'Das ist gut', (src(page), page.evaluate('getSelection().toString()')))
     page.keyboard.press('ArrowRight'); page.keyboard.type('!'); settle(page, 200)
     check('and a key after them goes after them', src(page) == want.replace('gut}', 'gut!}'), src(page)[40:])
+    # Review › Language for the document: the caret stays in its word (the page drawn again in the
+    # new language lost it, and the next key went at the first paragraph's start)
+    load_doc(page, doc2); click_text(page, 'here', 2); settle(page, 200)
+    page.click('#rv-lang'); settle(page, 250)
+    page.get_by_role('menuitemradio', name='German (Germany)').click(); settle(page, 300)
+    page.keyboard.type('!'); settle(page, 200)
+    check('Language for the document: babel\'s line, and a key typed then goes where the caret was', src(page) == doc2.replace('\\begin{document}', '\\usepackage[ngerman]{babel}\n\\begin{document}').replace('here', 'he!re'), src(page)[40:])
     check('R5: no page errors', not errors, errors[:5])
     browser.close()
 
