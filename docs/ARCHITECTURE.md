@@ -1439,10 +1439,11 @@ keystroke reads one paragraph again. `languageSpans` parses only a file that swi
 word its dictionary; `mainLanguage` reads babel's last language or polyglossia's. The words each
 dictionary is asked are the distinct ones the page's cache does not know yet; `spellPaint` marks
 the rest with a CSS highlight (`rk-spell`), never in the page's text, through `setMarks`
-(`src/marks.js`), which gives the highlight only the ranges on the pages within a screen of the
-view (Chromium paints again every text node a highlight's range is in after each change of the
-page, wherever it is) and writes it only when they changed; grammar's and Find's marks go the
-same way. The document's own words are
+(`src/marks.js`), which gives the highlight only the ranges in the page's items (paragraphs,
+headings, floats, footnotes) within a screen of the view, by an IntersectionObserver on them
+(Chromium paints again every text node a highlight's range is in after each change of the page,
+wherever it is; items, not pages, as Web Layout and Mobile View are one sheet) and writes it only
+when they changed; grammar's and Find's marks go the same way. The document's own words are
 `% rikuy: words …` lines (Add to Dictionary writes them, `addWordEdit`) and cspell's lines.
 
 Track Changes is a switch on the review base (`src/review.js`): changes are always the difference
