@@ -382,10 +382,13 @@ export const methods = {
       // (words selected in one paragraph are a selection too, as Word's Apply to: Selected text:
       // the whole document went into two columns; not in a twocolumn class, which multicol does
       // not work in)
-      const r = this.pageBlocks(at), B = r && PS.bodyRange(src);
-      // (paragraphs of the text only: a selection in the title wrote \begin{multicols} into the
-      // preamble; in a float or a table's float nothing can be wrapped, and only the package went in)
-      const W = B && r.s >= B.s && r.e <= B.e ? PS.wrapMulticols(src, r.s, r.e, n) : [];
+      const r = this.pageBlocks(at, { mid: true });
+      // (anything of the document's text but the title block and floats: a selection in the title
+      // wrote \begin{multicols} into the preamble; in a float or a table's float nothing can be
+      // wrapped, and only the package went in)
+      const d0 = src.search(/\\begin\s*\{document\}/), d1 = src.indexOf('\\end{document}');
+      const title = r && (/\\maketitle(?![A-Za-z@])/.test(src.slice(r.s, r.e)) || [...src.matchAll(/\\begin\s*\{abstract\}[\s\S]*?\\end\s*\{abstract\}/g)].some((m) => m.index < r.e && r.s < m.index + m[0].length));
+      const W = r && d0 >= 0 && r.s > d0 && (d1 < 0 || r.e <= d1) && !title ? PS.wrapMulticols(src, r.s, r.e, n) : [];
       if (!W.length) { this.toast('Columns go around whole paragraphs of the text (not the title, a footnote, a figure or a table): select paragraphs there.', 6000); return false; }
       // (around the paragraphs first, the package after: the paragraphs' places are the text's of now)
       steps.unshift((t) => PS.wrapMulticols(t, r.s, r.e, n));
@@ -414,7 +417,8 @@ export const methods = {
     return this.pageEdit(PS.landscapeEdits(this.src(this.main), P.r.s, P.r.e, { others: this.preambleOthers() }), 'page-land');
   },
   // the blocks a selection covers, as [s, e) of whole lines of the main file
-  pageBlocks(at) {
+  // (o.mid: a block may start inside its line, after a heading; the wrap then starts there)
+  pageBlocks(at, o = {}) {
     const sel = getSelection();
     if (!sel.rangeCount) return null;
     const r = sel.getRangeAt(0);
@@ -428,10 +432,19 @@ export const methods = {
     // \begin{document}, whose line is not the block's, and the first paragraph was refused)
     let a0 = A.s;
     while (a0 < Z.e && /\s/.test(src[a0])) a0++;
-    const s = src.lastIndexOf('\n', a0 - 1) + 1;
+    let s = src.lastIndexOf('\n', a0 - 1) + 1;
     let e = Z.e;
     while (e > s && /\s/.test(src[e - 1])) e--;
-    return /\S/.test(src.slice(s, a0)) ? null : { s, e };
+    const pre = src.slice(s, a0);
+    if (!/\S/.test(pre)) return { s, e };
+    // (what opens the paragraph on its line, \noindent, a skip or a \label, goes with it; after
+    // anything else, a heading's \section{A}\label{s}, from the paragraph's own words: those were
+    // refused, where Columns had made the whole document two column)
+    if (/^\s*(?:(?:\\(?:noindent|indent|par|(?:small|med|big)skip)(?![A-Za-z@])|\\label\s*\{[^{}]*\})\s*)+$/.test(pre)) return { s, e };
+    if (!o.mid) return null;
+    const lab = /^\\label\s*\{[^{}]*\}\s*/.exec(src.slice(a0, e));
+    s = a0 + (lab ? lab[0].length : 0);
+    return s < e ? { s, e } : null;
   },
 
   // A break of a kind (src/pagesrc.js's BREAKS) at the caret: inside a paragraph between its two

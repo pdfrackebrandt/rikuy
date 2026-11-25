@@ -938,6 +938,21 @@ def hunt(page):
     page.get_by_role('menuitemradio', name='Two').click(); settle(page, 300)
     check('Columns › Two on words of the first paragraph: multicols around it', src(page) == DOC('\\usepackage{multicol}\n', '\\begin{multicols}{2}\nFirst paragraph here with words.\n\\end{multicols}\n\nSecond paragraph of the text.'), src(page)[:220])
 
+    # (review V2) a paragraph a \\noindent, a skip or a heading's \\label opens, after a list or a
+    # display: multicols around it (the first three were refused; main made the document two column)
+    for name, body, want in (('after \\section{A}\\label{s}', '\\section{A}\\label{s}\nSecond words here.\n\nThird para.', '\\section{A}\\label{s}\n\\begin{multicols}{2}\nSecond words here.\n\\end{multicols}\n\nThird para.'),
+                             ('starting \\noindent', 'First para.\n\n\\noindent Second words here.\n\nThird para.', 'First para.\n\n\\begin{multicols}{2}\n\\noindent Second words here.\n\\end{multicols}\n\nThird para.'),
+                             ('starting \\medskip', 'First para.\n\n\\medskip Second words here.\n\nThird para.', 'First para.\n\n\\begin{multicols}{2}\n\\medskip Second words here.\n\\end{multicols}\n\nThird para.'),
+                             ('after a list', '\\begin{itemize}\n\\item One.\n\\end{itemize}\nSecond words here.\n\nThird para.', '\\begin{itemize}\n\\item One.\n\\end{itemize}\n\\begin{multicols}{2}\nSecond words here.\n\\end{multicols}\n\nThird para.'),
+                             ('after a display', 'First para.\n\\[ x = 1 \\]\nSecond words here.\n\nThird para.', 'First para.\n\\[ x = 1 \\]\n\\begin{multicols}{2}\nSecond words here.\n\\end{multicols}\n\nThird para.')):
+        d = DOC(body=body)
+        load_doc(page, d); open_tab(page, 'Layout'); place(page, 'words here')
+        page.get_by_role('button', name='Columns', exact=True).click(); settle(page, 200)
+        page.get_by_role('menuitemradio', name='Two').click(); settle(page, 300)
+        ok = src(page) == DOC('\\usepackage{multicol}\n', want)
+        page.evaluate('rikuy.undo()'); settle(page, 150)
+        check('Columns › Two on words of a paragraph ' + name + ': multicols around it, one undo back', ok and src(page) == d, src(page)[:240])
+
 
 def run():
     names = sys.argv[1:]
