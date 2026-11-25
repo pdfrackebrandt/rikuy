@@ -180,10 +180,12 @@ register(
     when: (app, at) => can(app, at) && app.paraBabel(), whyNot: (app, at) => (can(app, at) ? 'Needs babel or polyglossia in the preamble, whose hyphenrules environment sets it.' : why(app, at)), on: (app, at) => app.paraFlag(at, 'nohyph'), run: (app, args, at) => app.paraToggle('nohyph', args, at) },
   { id: 'horizontal-line', name: 'Horizontal Line', title: 'Horizontal Line: a rule across the text after this paragraph, a paragraph of its own (\\noindent\\rule{\\linewidth}{0.4pt})', synonyms: ['Horizontal rule', 'Rule', 'Divider', 'hrule'],
     when: can, whyNot: why, run: (app, args, at) => app.paraHR(at) },
-  { id: 'rtl-paragraph', name: 'Right-to-Left Text Direction', title: 'This paragraph runs from the right (otherlanguage with the document\'s right to left language; bidi\'s RTL)', synonyms: ['Right to left', 'RTL', 'Arabic paragraph', 'Hebrew paragraph'],
+  { id: 'rtl-paragraph', name: 'Right-to-Left Text Direction', title: 'This paragraph runs from the right (otherlanguage with the document\'s right to left language; bidi\'s RTL) (Ctrl+Right Shift)', synonyms: ['Right to left', 'RTL', 'Arabic paragraph', 'Hebrew paragraph'],
+    keysElsewhere: ['Ctrl+Right Shift'], mac: { 'Ctrl+Right Shift': false },
     when: (app, at) => can(app, at) && !!app.paraDirs().rtl, whyNot: (app, at) => (can(app, at) ? 'The document sets up no right to left language: type Arabic or Hebrew text, and Rikuy offers its set up.' : why(app, at)), kind: 'toggle',
     on: (app, at) => (can(app, at) && app.paraDirs().rtl ? app.paraDirNow(at) === 'rtl' : null), run: (app, args, at) => app.paraDirection('rtl', at) },
-  { id: 'ltr-paragraph', name: 'Left-to-Right Text Direction', title: 'This paragraph runs from the left (otherlanguage with the document\'s left to right language; bidi\'s LTR)', synonyms: ['Left to right', 'LTR'],
+  { id: 'ltr-paragraph', name: 'Left-to-Right Text Direction', title: 'This paragraph runs from the left (otherlanguage with the document\'s left to right language; bidi\'s LTR) (Ctrl+Left Shift)', synonyms: ['Left to right', 'LTR'],
+    keysElsewhere: ['Ctrl+Left Shift'], mac: { 'Ctrl+Left Shift': false },
     when: (app, at) => can(app, at) && !!app.paraDirs().rtl, whyNot: (app, at) => (can(app, at) ? 'The document sets up no right to left language: every paragraph runs from the left.' : why(app, at)), kind: 'toggle',
     on: (app, at) => (can(app, at) && app.paraDirs().rtl ? app.paraDirNow(at) === 'ltr' : null), run: (app, args, at) => app.paraDirection('ltr', at) },
   { id: 'tab-leader', name: 'Tabs', title: 'Tabs…: stops at positions (LaTeX\'s tabbing), and a stop at the right margin with a leader of dots, a line or none (\\dotfill, \\hrulefill, \\hfill), at the caret', synonyms: ['Tab stops', 'Leader', 'Dot leader', 'dotfill', 'hfill', 'tabbing', 'Set tab stop'],
@@ -223,6 +225,24 @@ onInstall((app) => {
     const a = c.collapsed ? c.p : c.a, b = c.collapsed ? c.p : c.b, t = '\\\\' + eolAt(app.src(c.f), a);
     app.commit([{ f: c.f, s: a, e: b, t }], { f: c.f, p: a + t.length, bias: 1 }, 'insert');
   }, true);
+});
+// Word's Ctrl+Right Shift and Ctrl+Left Shift: the paragraph runs from the right, or from the
+// left, where the document sets up a right to left language. The chord is Ctrl held and one Shift
+// pressed and let go with no other key between; which Shift, by its place on the keyboard. (Not
+// on a Mac, whose Word has no such keys; nor while an input method composes.)
+onInstall((app) => {
+  if (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) return;
+  let side = 0;
+  app.root.addEventListener('keydown', (e) => {
+    side = e.key === 'Shift' && e.ctrlKey && !e.altKey && !e.metaKey && !e.repeat && !e.isComposing && (e.location === 1 || e.location === 2) ? e.location : e.key === 'Shift' && e.repeat ? side : 0;
+  });
+  app.root.addEventListener('keyup', (e) => {
+    const was = side;
+    side = 0;
+    if (e.key !== 'Shift' || e.location !== was || !e.ctrlKey || e.altKey || e.metaKey || app.composing) return;
+    const id = was === 2 ? 'rtl-paragraph' : 'ltr-paragraph', at = app.ribbonAt();
+    if (command(id) && command(id).when(app, at)) app.runCommand(id, null, at);
+  });
 });
 
 export const methods = {

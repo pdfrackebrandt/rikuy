@@ -1252,11 +1252,31 @@ def ime_keys(page):
     check('and Shift+Enter after it does', src(page) == base.replace('这是正文', '这是\\\\\n正文'), src(page)[-90:])
 
 
+def direction_keys(page):
+    """Round 3: Word's Ctrl+Right Shift and Ctrl+Left Shift turn the paragraph right to left and
+    left to right (Ctrl held, one Shift pressed and let go); Ctrl+Shift with an arrow selects words
+    and turns nothing."""
+    load_doc(page, EDIT_DOC)
+    base = src(page)
+    click_text(page, 'ثانية هنا', 2)
+    chord = lambda side: (page.keyboard.down('Control'), page.keyboard.down(side), page.keyboard.up(side), page.keyboard.up('Control'), page.wait_for_timeout(250))
+    chord('ShiftLeft')
+    dirs = page.evaluate('() => [...document.querySelectorAll("#pages .it")].map((e) => e.getAttribute("dir"))')
+    check('Ctrl+Left Shift: the paragraph runs from the left (otherlanguage with english)', src(page) == base.replace('فقرة ثانية هنا.', '\\begin{otherlanguage}{english}\nفقرة ثانية هنا.\n\\end{otherlanguage}') and dirs[-1] == 'ltr', [src(page)[-110:], dirs])
+    chord('ShiftRight')
+    check('Ctrl+Right Shift: from the right again, the source as it was', src(page) == base, src(page)[-110:])
+    page.keyboard.press('Control+Shift+ArrowLeft'); page.wait_for_timeout(150)
+    page.keyboard.down('Control'); page.keyboard.down('ShiftLeft'); page.keyboard.press('ArrowLeft'); page.keyboard.up('ShiftLeft'); page.keyboard.up('Control'); page.wait_for_timeout(250)
+    check('Ctrl+Shift with an arrow between turns nothing', src(page) == base, src(page)[-110:])
+    tip = page.evaluate('() => window.rikuy.api.commands().filter((c) => c.id === "rtl-paragraph" || c.id === "ltr-paragraph").map((c) => c.keys.join())')
+    check('the two commands name their keys', sorted(tip) == ['Ctrl+Left Shift', 'Ctrl+Right Shift'], tip)
+
+
 only = set(sys.argv[1:])
 try:
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (rendering, wrappers, editing, ime_keys, long_rtl, fonts):
+        for f in (rendering, wrappers, editing, ime_keys, direction_keys, long_rtl, fonts):
             if not only or f.__name__ in only: f(page)
         for f in (india, marks_after_syntax, five, notice):
             if only and f.__name__ not in only: continue
