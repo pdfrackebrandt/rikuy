@@ -2736,7 +2736,29 @@ class App {
           const ed = X.edits.find((x) => x.f === X.at.f && x.s === X.at.p);
           if (ed) ed.t += '\n\\item '; else X.edits.push({ f: X.at.f, s: X.at.p, e: X.at.p, t: '\n\\item ' });
           this.commit(X.edits, { f: X.at.f, p: X.at.p + 7, bias: 1 }, 'enter');
-        } else this.commit(X.edits, { ...X.at, bias: -1 }, 'del');
+          return;
+        }
+        // Shift+Enter: the line break at the selection's start, as over a selection in one file,
+        // where the two files' remains meet in one paragraph (an \input in a paragraph, a list or a
+        // theorem). It deleted and wrote no break, the words running on. Where a blank line
+        // already parts them after the deletion, the break is there; not in a heading or a
+        // caption, whose Shift+Enter writes none.
+        if (soft) {
+          const S = this.src(X.at.f), ed = X.edits.find((x) => x.f === X.at.f && x.s === X.at.p);
+          const end = ed ? ed.e : X.at.p, gap = /^\s*/.exec(S.slice(end, end + 400))[0];
+          const se = getSelection().rangeCount ? getSelection().getRangeAt(0).startContainer : null, sel = se && (se.nodeType === 1 ? se : se.parentElement);
+          const ctx = sel && sel.closest && sel.closest('[data-ctx]');
+          // (and none before the other file's remains: an \input's file selected into the
+          // paragraph after it leaves the blank line after \input{..})
+          const apart = X.edits.some((x) => x.f !== X.at.f && /\n[ \t\r]*\n[ \t\r]*$/.test(/\s*$/.exec(this.src(x.f).slice(Math.max(0, x.s - 400), x.s))[0]));
+          if (!apart && !/\n[ \t\r]*\n/.test(gap) && !(ctx && /^(h|cap|cell)$/.test(ctx.dataset.ctx))) {
+            const t = '\\\\' + (/^[ \t]*\r?\n/.test(gap) || !gap.length && end >= S.length ? '' : '\n');
+            if (ed) ed.t += t; else X.edits.push({ f: X.at.f, s: X.at.p, e: X.at.p, t });
+            this.commit(X.edits, { f: X.at.f, p: X.at.p + t.length, bias: 1 }, 'type');
+            return;
+          }
+        }
+        this.commit(X.edits, { ...X.at, bias: -1 }, 'del');
         return;
       }
     }

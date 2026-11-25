@@ -337,6 +337,24 @@ def cross_files():
         page.keyboard.press('Control+z')
         settle(page, 200)
         check('cross files: and one undo brings both files back', all(src(page, f) == L[f] for f in L), {f: src(page, f) for f in L})
+        # (round 3) Shift+Enter there: the selection goes and a line break \\ stands at its start where
+        # the two files' remains meet in one paragraph, in one step; it deleted and wrote no break,
+        # the words running on. Where a blank line already parts them, the deletion alone.
+        P = {'main.tex': '\\documentclass{article}\n\\begin{document}\nSome words here \\input{part} and more.\n\\end{document}\n', 'part.tex': 'inner text of part'}
+        R = {'main.tex': '\\documentclass{article}\n\\begin{document}\nMain para.\n\n\\input{one}\n\nLast words here.\n\\end{document}\n', 'one.tex': 'First input file text.\n'}
+        for G, a, want, label in ((L, ['One alpha', 4, 'Two beta', 4], {'main.tex': L['main.tex'].replace('One alpha\n', 'One \\\\\n'), 'items.tex': L['items.tex'].replace('\\item Two ', '')}, 'into an \\input inside a list'),
+                                  (P, ['Some words', 5, 'inner text', 6], {'main.tex': P['main.tex'].replace('Some words here', 'Some \\\\\n'), 'part.tex': 'text of part'}, 'into an \\input in a paragraph'),
+                                  (R, ['First input', 6, 'Last words', 5], {'main.tex': R['main.tex'].replace('Last ', ''), 'one.tex': 'First \n'}, 'from an \\input\'s file into the paragraph after it (a blank line parts them)')):
+            load_doc(page, G)
+            page.evaluate(SEL, a)
+            settle(page)
+            page.keyboard.press('Shift+Enter')
+            settle(page, 200)
+            got = {f: src(page, f) for f in G}
+            check('cross files: Shift+Enter over a selection %s: each file\'s part goes, a line break where they meet' % label, got == want, got)
+            page.keyboard.press('Control+z')
+            settle(page, 200)
+            check('cross files: and one undo brings both files back (%s)' % label, all(src(page, f) == G[f] for f in G), {f: src(page, f) for f in G})
         # (review W1) from a heading's first letter: the heading goes whole, no \section{} left
         H = {'main.tex': '\\documentclass{article}\n\\begin{document}\n\\section{Intro}\nMain para one.\n\n\\input{a}\n\\end{document}\n', 'a.tex': 'A first.\n\nA second.\n'}
         load_doc(page, H)
