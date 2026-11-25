@@ -193,6 +193,35 @@ def show_latex(page):
     check('another document opened: nothing shown as LaTeX', ev(page, "document.querySelectorAll('.it.tex.texview').length") == 0)
 
 
+SRC_DOC = WRAP('Alpha beta gamma.\n\nDelta epsilon zeta.')
+
+
+def pane_at(page, line, ch):
+    ev(page, "([l, c]) => { const cm = window.rikuy.cm; cm.focus(); cm.setCursor({ line: l, ch: c }); }", [line, ch])
+
+
+def source_pane(page):
+    """The LaTeX source pane beside the page used as a code editor (round 3's hunt)."""
+    load_doc(page, SRC_DOC)
+    if not ev(page, "document.body.classList.contains('src-on')"):
+        page.click('#b-src')
+    until(page, '() => !!window.rikuy.cm'); settle(page, 300, full=True)
+    # Ctrl+Z in the pane keeps the focus there: the page's caret put back took it, and the next
+    # keys typed went into the page
+    pane_at(page, 2, 17)
+    page.keyboard.type(' Eta'); settle(page, 400, full=True, after=['srcRebuild'])
+    page.keyboard.press('Control+z'); settle(page, 300, full=True)
+    check('Ctrl+Z in the source pane undoes there and keeps the focus in the pane', src(page) == SRC_DOC and ev(page, 'window.rikuy.cm.hasFocus()'), ev(page, 'document.activeElement.className'))
+    page.keyboard.type('Q'); settle(page, 400, full=True, after=['srcRebuild'])
+    s = src(page)
+    check('and the next key typed goes into the source at the undone place', s == SRC_DOC.replace('gamma.', 'gamma.Q') and ev(page, 'window.rikuy.cm.getValue()') == s, s[40:90])
+    page.keyboard.press('Control+z'); page.keyboard.press('Control+y'); settle(page, 300, full=True)
+    check('Ctrl+Y there too: redone, the cursor after it, the focus kept', src(page) == SRC_DOC.replace('gamma.', 'gamma.Q') and ev(page, 'window.rikuy.cm.hasFocus()')
+          and ev(page, 'JSON.stringify(window.rikuy.cm.getCursor())') == '{"line":2,"ch":18,"sticky":null}', ev(page, 'JSON.stringify(window.rikuy.cm.getCursor())'))
+    page.keyboard.press('Control+z'); settle(page, 300, full=True)
+    page.click('#b-src'); settle(page, 300, full=True)
+
+
 def view_tab(page):
     load_doc(page, LONG)
     page.get_by_role('tab', name='View', exact=True).click(); settle(page, 300, full=True)
@@ -538,7 +567,7 @@ with sync_playwright() as p:
     want = sys.argv[1:]
     browser, page, errors = open_page(p, 1366, 800)
     until(page, FONTS); settle(page, 200, full=True)
-    for name, fn in (('views', views), ('show_latex', show_latex), ('view_tab', view_tab), ('repeat_undo', repeat_undo), ('help_tab', help_tab), ('review', review), ('web', web), ('ruler', ruler), ('r5_ruler', r5_ruler)):
+    for name, fn in (('views', views), ('show_latex', show_latex), ('source_pane', source_pane), ('view_tab', view_tab), ('repeat_undo', repeat_undo), ('help_tab', help_tab), ('review', review), ('web', web), ('ruler', ruler), ('r5_ruler', r5_ruler)):
         if want and name not in want:
             continue
         try: fn(page)

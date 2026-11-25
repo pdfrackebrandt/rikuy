@@ -1543,6 +1543,8 @@ class App {
     this.compFinish();
     // (nothing stays selected across a change of the text: its offsets would be stale)
     this.disarm();
+    // (Ctrl+Z in the source pane keeps the focus there: srcStepShown)
+    const inPane = !!(this.cm && this.cm.hasFocus());
     // typing in the source pane joins the history only after a pause: take it in first, so
     // Ctrl+Z right after typing undoes that typing instead of wiping it
     if (this.srcRebuild.pending()) this.srcRebuild.flush();
@@ -1565,6 +1567,7 @@ class App {
     const c = h.caretBefore || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].del.length } : null);
     this.rebuild(c);
     this.pushToSource();
+    if (inPane) this.srcStepShown(h, true);
     this.saveSoon();
     this.updateUndoUI();
   }
@@ -1572,6 +1575,7 @@ class App {
     this.typeFlush();
     this.compFinish();
     this.disarm();
+    const inPane = !!(this.cm && this.cm.hasFocus());
     if (this.srcRebuild.pending()) this.srcRebuild.flush();
     this.closePop(true);
     const h = this.redoStack.pop();
@@ -1588,6 +1592,7 @@ class App {
     const c = h.caretAfter || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].ins.length } : null);
     this.rebuild(c);
     this.pushToSource();
+    if (inPane) this.srcStepShown(h, false);
     this.saveSoon();
     this.updateUndoUI();
   }
@@ -6054,6 +6059,21 @@ class App {
       b.addEventListener('click', () => this.showSrcFile(n));
       tabs.appendChild(b);
     }
+  }
+
+  // An undo or a redo pressed in the source pane: the focus stays in the pane, its cursor at the
+  // end of what the step put back, in that step's file, as any code editor's Ctrl+Z leaves it.
+  // Putting the page's caret back took the focus to the page, and what was typed next went into
+  // the page at its caret instead of the source.
+  srcStepShown(h, back) {
+    if (!this.cm) return;
+    const shown = this.srcFile || this.main;
+    const d = h.files.find((x) => x.f === shown) || h.files.find((x) => this.files.has(x.f));
+    if (!d) { this.cm.focus(); return; }
+    if (d.f !== shown) this.showSrcFile(d.f);
+    const doc = this.cm.getDoc();
+    doc.setCursor(doc.posFromIndex(d.s + (back ? d.del : d.ins).length));
+    this.cm.focus();
   }
 
   pushToSource() {
