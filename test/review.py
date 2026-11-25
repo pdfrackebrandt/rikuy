@@ -307,7 +307,9 @@ def r2_review(p):
     fresh(page, WRAP('Text here.\n% comment (Ana): note\n more.\n\nNext.')); click_text(page, 'more.', 5)
     for k in range(6): page.keyboard.press('Backspace'); settle(page, 150)
     check('r2_review: a word after a comment line deleted letter by letter, then one more Backspace: the comment stays', '% comment (Ana): note\n' in src(page) and 'Text here.' in src(page), repr(src(page)[40:]))
-    check('r2_review: the review pane still finds the comment', 'note' in str(page.evaluate("JSON.stringify(window.rikuy.allComments())")), page.evaluate("JSON.stringify(window.rikuy.allComments())")[:200])
+    cs = page.evaluate("window.rikuy.allComments().map((c) => ({ s: c.s, text: c.body }))")
+    check('r2_review: the review pane still finds the comment, its line where it was, on its own line',
+          len(cs) == 1 and cs[0]['text'] == 'note' and src(page)[cs[0]['s']:].startswith('% comment (Ana): note\n') and src(page)[cs[0]['s'] - 1] == '\n' and src(page)[:cs[0]['s']].endswith('Text here.%\n'), (cs, repr(src(page)[40:])))
     check('r2_review: no page errors', not errors, errors[:3])
     browser.close()
 
