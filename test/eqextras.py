@@ -3,7 +3,7 @@ Shift+Enter rows, wrapping a selection, pasting with delimiters, Copy for Word, 
 comma in German documents, chemistry with \\ce."""
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, until, open_page, check, results, src, SHOTS, load_doc
+from browser import settle, until, open_page, check, results, src, SHOTS, load_doc, place, select_between
 from playwright.sync_api import sync_playwright
 
 with sync_playwright() as p:
@@ -131,6 +131,23 @@ with sync_playwright() as p:
     cut = page.evaluate("window.__copied['text/plain']")
     check('copied or cut from a formula in the line, the plain text is $...$', got == '$\\frac{a}{b}$' and cut == '$\\frac{a}{b}$', (got, cut))
     k.press('Escape'); settle(page, 300)
+
+    # Ctrl+C over words, a formula in the line and a display: the plain text has each formula as its
+    # LaTeX with its delimiters, as Word gives an equation's linear form; it had the letters of their
+    # drawings, one line each (x 2 + b a), which the source pane or another program then got
+    cur = page.evaluate("window.rikuy.files.get('main.tex')")
+    load_doc(page, '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nLet $x^2+\\frac{a}{b}$ be a value.\n\\[\ny = \\sqrt{z}\n\\]\nAfter that here.\n\\end{document}\n')
+    page.evaluate("window.__copied = {}")
+    place(page, lambda pg: select_between(pg, 'Let', 0, 'After that', 5))
+    k.press('Control+c'); settle(page, 150)
+    got = page.evaluate("window.__copied['text/plain']")
+    check('copied from the page, the plain text has each formula as its LaTeX', got == 'Let $x^2+\\frac{a}{b}$ be a value.\n\\[\ny = \\sqrt{z}\n\\]\nAfter', got)
+    page.evaluate("window.__copied = {}")
+    place(page, lambda pg: select_between(pg, 'Let', 4, 'be a', 2))
+    k.press('Control+c'); settle(page, 150)
+    got = page.evaluate("window.__copied['text/plain']")
+    check('and a formula with a word after it: $...$ and the word', got == '$x^2+\\frac{a}{b}$ be', got)
+    load_doc(page, cur)
 
     # display: Shift+Enter makes a new row
     page.evaluate("document.querySelectorAll('.it.dm')[1].scrollIntoView({block:'center'})")

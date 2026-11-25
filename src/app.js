@@ -156,6 +156,43 @@ function focusField(mf) {
     if (sink) sink.focus({ preventScroll: true });
   } catch (e) { /* ignore */ }
 }
+// The selection as plain text, each formula in it as its LaTeX with its delimiters ($…$, \\[ … \\],
+// its environment), as Word gives an equation's linear form: the letters of its drawing (x 2 + b a
+// for $x^2+\\frac{a}{b}$, the KaTeX lines one by one) were what another program or the source pane
+// got. Paragraphs on lines of their own, a table's cells by tabs, as the selection's own text has
+// them. latexOf(el): a formula element's source. Without a formula, the selection's own text.
+function selectionPlain(sel, root, latexOf) {
+  const own = () => sel.toString().replace(/\u200B/g, '');
+  if (!sel.rangeCount) return '';
+  const r = sel.getRangeAt(0), MATH = '.a-math[data-a], .dm[data-a]';
+  if (![...root.querySelectorAll(MATH)].some((el) => r.intersectsNode(el))) return own();
+  const SKIP = '[aria-hidden="true"], .lbl-num, .pg-foot, .fn-mark-hidden, script, style';
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, { acceptNode: (n) => (r.intersectsNode(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT) });
+  let out = '', skip = null, at = null;
+  const add = (node, t) => {
+    if (!t) return;
+    const el = node.nodeType === 1 ? node : node.parentElement;
+    const it = el.closest('.it'), td = el.closest('td, th'), tr = td && td.parentElement;
+    if (at && out) out += at.tr && tr && at.tr === tr && at.td !== td ? '\t' : at.it !== it || at.tr !== tr ? '\n' : '';
+    at = { it, td, tr };
+    out += t;
+  };
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    if (skip && skip.contains(n)) continue;
+    skip = null;
+    if (n.nodeType === 1) {
+      if (n.matches(MATH)) { const t = latexOf(n); if (t == null) return own(); add(n, t.trim()); skip = n; continue; }
+      if (n.matches(SKIP)) { skip = n; continue; }
+      if (n.tagName === 'BR') { out += '\n'; continue; }
+      continue;
+    }
+    let t = n.data;
+    if (n === r.endContainer) t = t.slice(0, r.endOffset);
+    if (n === r.startContainer) t = t.slice(r.startOffset);
+    add(n, t);
+  }
+  return out.replace(/\u200B/g, '');
+}
 // The selection as clean HTML for Word, Google Docs and mail: bold and italics as tags,
 // math as MathML (Word turns it into live equations), page furniture dropped.
 function selectionHTML(sel, mathml) {
@@ -3206,7 +3243,7 @@ class App {
     if (!c || c.collapsed) return;
     e.preventDefault();
     const latex = this.copyLatex(c);
-    const plain = getSelection().toString().replace(/\u200B/g, '');
+    const plain = selectionPlain(getSelection(), this.root, (el) => { const i = atomOfEl(el); return i && i.s != null ? this.src(i.f).slice(i.s, i.e) : null; });
     e.clipboardData.setData('text/plain', plain);
     try { e.clipboardData.setData('text/x-galley-latex', latex); } catch (err) { /* ignore */ }
     try { e.clipboardData.setData('text/html', selectionHTML(getSelection(), (el) => this.mathML(el))); } catch (err) { /* plain text still works */ }
