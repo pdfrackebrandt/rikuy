@@ -2078,6 +2078,9 @@ class App {
     // (from one list item's words into another's: src/cmd/lists.js listSpan)
     const items = this.listSpan(f, a, b);
     if (items) return items;
+    // (from a paragraph into a list item, or out of one past the list: src/cmd/lists.js listSelEdits)
+    const across = sel && this.listSelEdits ? this.listSelEdits(f, a, b) : null;
+    if (across) return across;
     const vr = visibleRanges(this.renderer.blocks, f, a, b);
     if (!sel) return vr.map(([s, e]) => ({ f, s, e, t: '' }));
     // A selection whose ends cannot go as LaTeX (it starts in a heading's words, or ends in a

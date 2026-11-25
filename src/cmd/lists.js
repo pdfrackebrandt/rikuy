@@ -445,6 +445,68 @@ export const methods = {
     if (a < head(x.L.items[x.k]) || b < head(z.L.items[z.k])) return null;
     return [{ f, s: a, e: b, t: '' }];
   },
+  // A selection from outside a list into one of its items, or from an item out past the list's
+  // end (a drag, Shift+Down, Ctrl+Shift+End): as Word's, the two ends' words meet in one
+  // paragraph, which keeps the first one's style (the paragraph's, or the item's), and the items
+  // it held whole go with their bullets; from the very start of the first block's words it held
+  // that block whole, and the second keeps its own (the item stays an item, the paragraph a
+  // paragraph). Only the words went before: the items it held stayed as empty bullets, and the
+  // two ends' words stayed apart. Edits for deletionEdits, the place where the words meet at a
+  // (what is typed or pasted goes there), or null where the old way stays (comments, a nested
+  // item, two lists, what a heading's or an environment's braces hold).
+  listSelEdits(f, a, b) {
+    const src = this.src(f), NL = /\r\n/.test(src) ? '\r\n' : '\n';
+    if (a >= b || hasComment(src.slice(a, b))) return null;
+    const blocks = this.renderer.blocks.filter((B) => B.f === f);
+    const blockAt = (p) => { let X = null; for (const B of blocks) if (B.s <= p && p <= B.e && (!X || B.s > X.s)) X = B; return X; };
+    const A0 = blockAt(a), Z0 = blockAt(b);
+    if (!A0 || !Z0 || A0 === Z0) return null;
+    // (the top level item that holds p: false in a nested one, null outside any list)
+    const itemAt = (B, p) => { const ch = chainAt(readLists(src, B.s, B.e, this.model && this.model.userSigs), p); return !ch.length ? null : ch.length > 1 ? false : ch[0]; };
+    const x = itemAt(A0, a), z = itemAt(Z0, b);
+    if (x === false || z === false || !!x === !!z) return null;
+    const I = x || z, L = I.L;
+    if (!L.editable || !L.closed || L.kind === 'desc' || L.parent) return null;
+    const safe = (s, e) => s <= e && isBalanced(src, s, e) && !/\\(?:begin|end)\s*\{document\}|\\(?:maketitle|bibliography)\b/.test(src.slice(s, e));
+    // (no visible text: only commands, their braces and spaces)
+    const bare = (t) => !/[^\s{}]/.test(t.replace(/\\[A-Za-z@]+\*?/g, ''));
+    const tx = (it) => textStart(src, it), last = L.items[L.items.length - 1];
+    if (z) {
+      // from block P before the list into item k
+      const it = z.L.items[z.k];
+      if (it.lists.length || b > it.e || b < tx(it) || L.s < a || !isBalanced(src, tx(it), b)) return null;
+      const open = src.slice(L.s, L.items[0].s);
+      if (bare(src.slice(A0.s, a))) {
+        // P held whole: the item keeps its bullet, the list going on with it
+        // (the spaces before P's first character stay, the list opening after them)
+        let ps = A0.s;
+        while (ps < a && /\s/.test(src[ps])) ps++;
+        let ws = ps;
+        while (ws > 0 && /\s/.test(src[ws - 1])) ws--;
+        if (!safe(ps, L.s)) return null;
+        const out = [{ f, s: ws, e: ps, t: src.slice(ws, ps) + open + src.slice(it.s, tx(it)) }];
+        if (a > ps) out.push({ f, s: ps, e: a, t: '' });
+        out.push({ f, s: a, e: b, t: '' });
+        return out;
+      }
+      if (!safe(a, L.s)) return null;
+      const next = L.items[z.k + 1];
+      return [{ f, s: a, e: b, t: '' }, next ? { f, s: it.e, e: next.s, t: NL + NL + open } : { f, s: it.e, e: L.e, t: '' }];
+    }
+    // from item k out of the list into block Q after it
+    const it = L.items[x.k];
+    if (Z0.s < L.e || a < it.s || !safe(L.e, b) || !isBalanced(src, Math.max(a, tx(it)), L.es)) return null;
+    if (a <= tx(it)) {
+      // the item held whole from its words' start: Q keeps its style, the items before stay a list
+      const prev = L.items[x.k - 1];
+      return prev ? [{ f, s: prev.e, e: a, t: src.slice(last.e, L.e) + src.slice(L.e, Z0.s) }, { f, s: a, e: b, t: '' }] : [{ f, s: L.s, e: a, t: '' }, { f, s: a, e: b, t: '' }];
+    }
+    // Q's words join the item, and the list ends after them
+    let qe = Z0.e;
+    while (qe > b && /\s/.test(src[qe - 1])) qe--;
+    if (!isBalanced(src, b, qe) || /\\(?:begin|end|item|part|chapter|(?:sub)*section|(?:sub)?paragraph)\b/.test(src.slice(b, qe))) return null;
+    return [{ f, s: a, e: b, t: '' }, { f, s: qe, e: qe, t: src.slice(last.e, L.e) }];
+  },
   // whether list L (from s to e) is a block of the page of its own: the empty paragraph Enter shows
   // stands between blocks, and one inside a theorem, a quote or a minipage would have none to stand
   // by (enter in src/app.js asks too)
