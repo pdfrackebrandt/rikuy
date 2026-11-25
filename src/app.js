@@ -3792,7 +3792,7 @@ class App {
     if (!P) return;
     const it = P.anchor && P.anchor.closest ? P.anchor.closest('.it') : null;
     const rtl = P.rtl != null ? P.rtl : !!(it && getComputedStyle(it).direction === 'rtl');
-    if (rtl && how !== 'tab') d = d === 'forward' ? 'backward' : 'forward';
+    if (rtl && how !== 'tab' && how !== 'line') d = d === 'forward' ? 'backward' : 'forward';
     P.leftBy = d;
     P.extend = how === 'extend';
     this.closePop();
@@ -3824,11 +3824,21 @@ class App {
     }
     P.el.remove();
     this.closeGroup();
+    // (a display left by an arrow: the caret at the start of the text after it, or at the end of
+    // the text before it for Left and Up, as Word's; the blank line after it, or before it, only
+    // where no text stands there, as a display that ends the document or one beside another)
+    let beside = null;
+    if (!silent && P.display && P.leftBy && !P.extend && P.returnCaret && P.returnCaret.p != null && P.anchorPos && !P.removed) {
+      const f0 = P.anchorPos.f, t = this.src(f0), p0 = P.returnCaret.p, fwd = P.leftBy === 'forward';
+      const q = fwd ? p0 + /^\s*/.exec(t.slice(p0, p0 + 400))[0].length : p0 - /\s*$/.exec(t.slice(Math.max(0, p0 - 400), p0))[0].length;
+      beside = { f: f0, p: q, bias: fwd ? 1 : -1 };
+    }
     if (!silent && P.returnCaret) {
-      this.restoreCaret(P.returnCaret);
+      this.restoreCaret(beside || P.returnCaret);
       if (P.returnCaret.extendBy) try { getSelection().modify('extend', P.returnCaret.extendBy, 'character'); } catch (e) { /* the formula alone stays selected */ }
     }
-    if (!silent && P.display && P.returnCaret && !P.removed && !P.dollarClosed && !P.midLine) this.caretAfterDisplay(P.returnCaret);
+    if (beside) { const c = this.caretNow(); if (!c || c.ghost || !c.collapsed || c.f !== beside.f || c.p !== beside.p) beside = null; }
+    if (!silent && P.display && P.returnCaret && !P.removed && !P.dollarClosed && !P.midLine && !beside && !P.extend) this.caretAfterDisplay(P.returnCaret);
     // Opened from a blank paragraph and closed with nothing made, or a document that so far
     // holds only what the popover made (a first formula) and has no text to put the caret in:
     // the caret goes to the blank paragraph, so typing goes on
@@ -4211,16 +4221,18 @@ class App {
       else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) { e.preventDefault(); e.stopImmediatePropagation(); pull(); opts.onEnter(); }
     }, true);
     // Right at a formula's end, Left at its start: the caret leaves it, as Word's does; the words
-    // typed next went into the formula, their spaces lost ($ihasincome$). Only in a formula in the
-    // line: in a display the arrows stay in it.
+    // typed next went into the formula, their spaces lost ($ihasincome$). A display is left so too,
+    // and by Down from its last row and Up from its first, as Word's arrows leave an equation of
+    // its own line (they stayed in it, and only Esc or a click got out).
     if (opts.onMoveOut) {
       // The keys that leave a formula: Right and Left (with Shift, the selection goes on out of it,
       // as Word's), and Tab at its end, which Word takes as leaving forward. Shift+Tab goes on to
-      // the LaTeX box. MathLive sends move-out for all of them, Tab's leap and Shift+Tab's too.
+      // the LaTeX box. MathLive sends move-out for all of them, Tab's leap and Shift+Tab's too, and
+      // for Up and Down where there is no row above or below (upward, downward).
       let key = null;
       mf.addEventListener('keydown', (e) => {
         const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
-        key = plain && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') ? (e.shiftKey ? 'extend' : 'arrow') : plain && e.key === 'Tab' && !e.shiftKey ? 'tab' : null;
+        key = plain && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') ? (e.shiftKey ? 'extend' : 'arrow') : plain && !e.shiftKey && opts.display && (e.key === 'ArrowUp' || e.key === 'ArrowDown') ? 'line' : plain && e.key === 'Tab' && !e.shiftKey ? 'tab' : null;
         // (Shift with an arrow at the field's edge sends no move-out: MathLive keeps the selection in)
         if (key === 'extend' && !wt.active() && mf.mode !== 'latex') {
           let at = -1, last = -2;
@@ -4230,8 +4242,10 @@ class App {
         }
       }, true);
       mf.addEventListener('move-out', (e) => {
-        const d = e.detail && e.detail.direction, how = key;
-        if (!how || (d !== 'forward' && d !== 'backward') || (how === 'tab' && d !== 'forward') || wt.active() || mf.mode === 'latex') return;
+        const how = key, d0 = e.detail && e.detail.direction;
+        // (Up leaves a display backward, Down forward; a row above or below takes them first)
+        const d = how === 'line' ? { upward: 'backward', downward: 'forward' }[d0] : d0 === 'forward' || d0 === 'backward' ? d0 : null;
+        if (!how || !d || (how === 'tab' && d !== 'forward') || wt.active() || mf.mode === 'latex') return;
         e.preventDefault();
         pull();
         // (after MathLive is done with the key: the field torn down inside its handling threw
@@ -4478,7 +4492,7 @@ class App {
         if (display || this.pop.dollarClose) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; }
         this.closePop();
       },
-      onMoveOut: display ? null : (d, how) => { if (stay()) return; push.flush(); this.leaveMath(d, how); },
+      onMoveOut: (d, how) => { if (stay()) return; push.flush(); this.leaveMath(d, how); },
       onEscape: () => { push.flush(); this.closePop(); }
     });
   }

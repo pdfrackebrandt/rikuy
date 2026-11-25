@@ -136,6 +136,34 @@ try:
         s6 = src(page)
         check('words typed on a new line above a display: no blank line before the display', 'beta.\n\nNew\n\\begin{equation}' in s6, s6[s6.find('beta'):][:60])
 
+        # --- arrows leave a display as Word's leave an equation on its own line: Right at its end
+        # and Down from its last row to the text after it, Left at its start and Up from its first
+        # row to the text before it (they stayed in the field, and only Esc or a click got out)
+        DISP = '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nBefore words here.\n\\begin{equation}\nx + y = z\n\\end{equation}\nAfter words here.\n\\end{document}\n'
+        ROWS = DISP.replace('equation}\nx + y = z', 'align}\na &= b \\\\\nc &= d').replace('end{equation}', 'end{align}')
+        for name, doc, keys, want in (('Right at its end', DISP, ['ArrowRight'], 'end{equation}\nQAfter'), ('Down', DISP, ['ArrowDown'], 'end{equation}\nQAfter'),
+                                      ('Left at its start', DISP, ['Home', 'ArrowLeft'], 'here.Q\n\\begin'), ('Up', DISP, ['ArrowUp'], 'here.Q\n\\begin'),
+                                      ('Down from an align\'s last row', ROWS, ['ArrowDown'], 'end{align}\nQAfter'),
+                                      ('Up from its last row, then from its first', ROWS, ['ArrowUp', 'ArrowUp'], 'here.Q\n\\begin')):
+            load_doc(page, doc)
+            page.click('.it.dm >> nth=0'); page.wait_for_selector('#pop-field', timeout=8000); settle(page, 300)
+            for k in keys: page.keyboard.press(k); settle(page, 120, full=True)
+            gone = page.evaluate("!document.getElementById('pop-field')")
+            page.keyboard.type('Q'); settle(page, 300, full=True)
+            s7 = src(page)
+            check('a display left by %s: the next letter in the text beside it, the display as it was' % name, gone and want in s7 and s7.replace('Q', '', 1) == doc, s7[s7.find('Before'):s7.find('\\end{document}')])
+        load_doc(page, ROWS)
+        page.click('.it.dm >> nth=0'); page.wait_for_selector('#pop-field', timeout=8000); settle(page, 300)
+        page.keyboard.press('ArrowUp'); settle(page, 120, full=True)
+        check('Up from an align\'s last row goes to the row above, inside the field', page.evaluate("!!document.getElementById('pop-field')"))
+        page.keyboard.press('Escape'); settle(page, 200, full=True)
+        load_doc(page, DISP.replace('After words here.\n', ''))
+        page.click('.it.dm >> nth=0'); page.wait_for_selector('#pop-field', timeout=8000); settle(page, 300)
+        page.keyboard.press('ArrowRight'); settle(page, 120, full=True)
+        page.keyboard.type('Q'); settle(page, 300, full=True)
+        s7 = src(page)
+        check('Right out of a display that ends the document: a new line after it takes the letter', '\\end{equation}\nQ' in s7 and 'x + y = z' in s7, s7[-60:])
+
         # --- dark mode look
         check('no console errors', not errors, errors[:5])
         browser.close()
