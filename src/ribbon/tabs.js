@@ -665,10 +665,18 @@ export function installRibbon(app) {
   // a phone's list of the tabs (it takes the focus while open; the place on the page is kept)
   const sel = $('#rb-tabsel');
   const keep = () => { const s = getSelection(); if (s.rangeCount && app.root.contains(s.anchorNode)) app.rbRange = s.getRangeAt(0).cloneRange(); };
-  sel.addEventListener('pointerdown', keep);
+  // (a tab chosen by a finger or the mouse: the focus back on the page at its place, as Word's
+  // ribbon leaves the caret in the document; the list kept it, and on a phone the on-screen
+  // keyboard went down. Chosen by the keys, the list keeps it for the next arrow.)
+  let pressed = false;
+  sel.addEventListener('pointerdown', () => { pressed = true; keep(); });
   sel.addEventListener('focus', keep);
-  sel.addEventListener('change', () => { app.selectTab(sel.value); sel.focus(); });
-  sel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); app.ribbonBack(); } });
+  sel.addEventListener('change', () => {
+    app.selectTab(sel.value);
+    const r = app.rbRange;
+    if (pressed && r && app.root.contains(r.startContainer)) { pressed = false; app.ribbonBack(); } else sel.focus();
+  });
+  sel.addEventListener('keydown', (e) => { pressed = false; if (e.key === 'Escape') { e.preventDefault(); app.ribbonBack(); } });
   $('#rb-collapse').addEventListener('mousedown', (e) => e.preventDefault());
   $('#rb-collapse').addEventListener('click', () => app.toggleRibbon());
   if (app.prefs && app.prefs.ribbon) app.toggleRibbon(true);
