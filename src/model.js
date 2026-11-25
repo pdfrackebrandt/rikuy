@@ -3228,7 +3228,8 @@ class Builder {
       switch (nd.t) {
         case 'text': this.text(nd, ctx, acc); break;
         // (a blank line in a footnote: a paragraph of its own, drawn as a break, see footnote below)
-        case 'par': if (this.fnPar) { acc.flush(); out.push(this.atom(ctx, { k: 'br', s: nd.s, e: nd.e })); } else acc.ch(' ', nd.s, nd.e); break;
+        // (par: a paragraph of its own, which Word gets as one: src/wordast.js)
+        case 'par': if (this.fnPar) { acc.flush(); out.push(this.atom(ctx, { k: 'br', s: nd.s, e: nd.e, par: true })); } else acc.ch(' ', nd.s, nd.e); break;
         case 'comment': acc.flush(); break;
         case 'special': {
           if (nd.ch === '~') acc.ch(' ', nd.s, nd.e);
@@ -3366,7 +3367,7 @@ class Builder {
     if (name === '\\' || name === 'newline' || name === 'linebreak' || (this.fnPar && (name === 'par' || name === 'endgraf'))) {
       acc.flush();
       if (this.inTable) return false;
-      out.push(this.atom(ctx, { k: 'br', s: nd.s, e: nd.e }));
+      out.push(this.atom(ctx, { k: 'br', s: nd.s, e: nd.e, ...(name === 'par' || name === 'endgraf' ? { par: true } : {}) }));
       return false;
     }
     const turn = this.dirCmd(nd, ctx);
