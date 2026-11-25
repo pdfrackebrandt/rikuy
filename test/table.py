@@ -311,7 +311,7 @@ def cell_edges(page):
     s = src(page)
     check('and pasted over: the words where it starts', '\\midrule\none pasted words &  \\\\\nthree' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
     for name, ks, want in (('cut, then a letter', ['Control+x', 'type:Q'], '\\midrule\none Q &  \\\\\nthree'),
-                           ('Shift+Enter, then a letter', ['Shift+Enter', 'type:Q'], '\\midrule\none \\newline Q &  \\\\\nthree'),
+                           ('Shift+Enter, then a letter', ['Shift+Enter', 'type:Q'], '\\midrule\n\\makecell[lt]{one\\\\Q}  &  \\\\\nthree'),
                            ('Alt+=, y, Esc', ['Alt+Equal', 'type:y', 'Escape'], 'Head & Other \\\\\n\\midrule\none $y$ &  \\\\\nthree')):
         s = keys(mid, ks, words)
         check('the same selection, %s: what it writes at the selection\'s start, every row\'s \\\\ kept' % name, want in s, s[s.find('\\toprule'):s.find('\\bottomrule')])
@@ -320,6 +320,50 @@ def cell_edges(page):
     grid = WRAP(GRID)
     s = keys(lambda: click_text(page, 'three', 0), ['Backspace'], grid)
     check('an \\hline table too: Backspace at a row\'s start keeps \\\\ \\hline', s == grid, s[s.find('\\hline'):s.find('\\end{tabular}')])
+
+
+def cell_lines(page):
+    """Enter and Shift+Enter in a cell: a new line in the cell, as Word's (Enter did nothing; Shift+Enter
+    wrote \\newline, which TeX ignores in an l, c or r column). An l, c or r column's cell becomes one
+    \\makecell, \\usepackage{makecell} once, \\\\ between its lines; a paragraph column takes \\newline."""
+    def keys(needle, k, ks, doc=DOC):
+        load_doc(page, doc); click_text(page, needle, k)
+        for x in ks:
+            if x.startswith('type:'): page.keyboard.type(x[5:])
+            else: page.keyboard.press(x)
+            settle(page, 60)
+        settle(page, 150)
+        s = src(page)
+        return s, s[s.find('\\midrule'):s.find('\\bottomrule')]
+    lines = lambda needle: page.evaluate("(n) => { const t = [...document.querySelectorAll('#pages td')].find((x) => x.textContent.includes(n)); return t ? t.innerText.split('\\n') : null; }", needle)
+    words = DOC.replace('one & two', 'one more & two')
+    s, b = keys('one more', 8, ['Enter', 'type:Line'], words)
+    check('Enter at a cell\'s end: a second line in the cell, the words typed there, makecell loaded once', '\\midrule\n\\makecell[lt]{one more\\\\Line} & two \\\\' in b and s.count('\\usepackage{makecell}') == 1 and s.index('\\usepackage{makecell}') < s.index('\\begin{document}'), b)
+    check('and the page draws the cell as two lines', lines('Line') == ['one more', 'Line'], lines('Line'))
+    page.keyboard.press('Control+z'); settle(page, 150)
+    page.keyboard.press('Control+z'); settle(page, 150)
+    check('undo takes the typing, then the new line and its package: the document as it was', src(page) == words, src(page)[:200])
+    s, b = keys('one more', 4, ['Enter', 'type:Q'], words)
+    check('Enter between a cell\'s words: the words after the caret on the second line', '\\makecell[lt]{one \\\\Qmore} & two' in b and lines('Qmore') == ['one', 'Qmore'], [b, lines('Qmore')])
+    s, b = keys('one more', 8, ['Enter', 'Enter', 'type:Q'], words)
+    check('Enter twice: a third line, in the same \\makecell', '\\makecell[lt]{one more\\\\\\\\Q} & two' in b and b.count('makecell') == 1, b)
+    s, b = keys('one more', 4, ['Enter', 'Backspace', 'type:Q'], words)
+    check('Enter then Backspace: one line again, the letter where the caret was', '{one Qmore}' in b and lines('Qmore') == ['one Qmore'], [b, lines('Qmore')])
+    s, b = keys('four', 4, ['Shift+Enter', 'type:Q'], DOC.replace('{ll}', '{lc}'))
+    check('Shift+Enter in a c column: the same, centred as its column', 'three & \\makecell[ct]{four\\\\Q} \\\\' in b, b)
+    s, b = keys('one more', 8, ['Enter', 'type:[x]'], words)
+    check('a [ typed at the new line\'s start is no argument of the \\\\', '\\makecell[lt]{one more\\\\{[}x]}' in b or '\\makecell[lt]{one more\\\\{}[x]}' in b, b)
+    s, b = keys('one more', 4, ['Enter', 'type:Q'], words.replace('{ll}', '{p{3cm}l}'))
+    check('Enter in a paragraph column: \\newline, which TeX breaks the line at; no package', '\\midrule\none \\newline Qmore & two' in b and 'makecell' not in s and lines('Qmore') == ['one', 'Qmore'], [b, lines('Qmore')])
+    s, b = keys('one more', 8, ['Enter', 'type:Q'], words.replace(PRE, PRE + '\\usepackage{makecell}\n'))
+    check('makecell loaded already: not twice', s.count('{makecell}') == 1 and '{one more\\\\Q}' in b, s[:200])
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        load_doc(page, words); click_text(page, 'one more', 4); page.keyboard.press('Enter'); settle(page, 100)
+        page.keyboard.type('second'); settle(page, 300)
+        click_text(page, 'four', 4); page.keyboard.press('Shift+Enter'); settle(page, 100); page.keyboard.type('fifth'); settle(page, 300)
+        r = pdf_of(page, src(page))
+        t = r['text']
+        check('compiled in the page: the cells\' lines in the PDF, each on a line of its own', r['ok'] and not r['problems'] and re.search(r'one\s*\n', t) and re.search(r'four\s*\n', t) and 'second' in t and 'fifth' in t, {'ok': r['ok'], 'problems': r['problems'], 'text': t[:300]})
 
 
 def updown(page):
@@ -953,7 +997,7 @@ def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         names = sys.argv[1:]
-        for f in (inserting, tabs_and_trips, keys_and_select, cell_edges, updown, formula_cells, paste_cells, caption_enter, caret_after_ops, the_rest, drawing, reviewed, verified, compiled, r3_tables):
+        for f in (inserting, tabs_and_trips, keys_and_select, cell_edges, cell_lines, updown, formula_cells, paste_cells, caption_enter, caret_after_ops, the_rest, drawing, reviewed, verified, compiled, r3_tables):
             if names and f.__name__ not in names:
                 continue
             try: f(page)

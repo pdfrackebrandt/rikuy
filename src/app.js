@@ -2429,7 +2429,7 @@ class App {
     let edits = c.collapsed ? [] : this.deletionEdits(f, c.a, c.b, true);
     const p = c.a;
     if (soft) {
-      if (kind === 'cell') { this.commit([...edits, { f, s: p, e: p, t: '\\newline ' }], { f, p: p + 9 }, 'type'); return; }
+      if (kind === 'cell') { this.cellEnter(c, edits); return; }
       if (kind === 'h' || kind === 'cap') return;
       this.commit([...edits, { f, s: p, e: p, t: '\\\\\n' }], { f, p: p + 3, bias: 1 }, 'type');
       return;
@@ -2443,7 +2443,8 @@ class App {
       if (c.collapsed && B && B.e > p && B.e - p < 2000 && /^(?:\s|\\label\s*\{[^{}]*\}|%[^\n]*\n)*\}(?:\s|\}|\\label\s*\{[^{}]*\}|%[^\n]*\n)*(?:\\end\s*\{[^{}]+\}\s*)+$/.test(src.slice(p, B.e))) { this.showGhost(itemEl, f, B.e); this.enterAct(); }
       return;
     }
-    if (kind === 'cell') return;
+    // (Enter in a cell: a new line in it, as Word's; it did nothing)
+    if (kind === 'cell') { this.cellEnter(c, edits); return; }
     const itemEl = el.closest('.it');
     if (kind === 'ttl') {
       // Enter in the title, an author or the date starts the text below them, after \maketitle

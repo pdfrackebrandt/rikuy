@@ -503,6 +503,40 @@ export const cellText = (src, c) => (c.empty ? '' : src.slice(c.mc ? (c.mr ? c.m
 // where those words stand in the source: [s, e] (s === e in an empty cell)
 export const cellWords = (c) => (c.empty ? [c.ks, c.ks] : [c.mc ? (c.mr ? c.mr.textS : c.mc.textS) : c.mr ? c.mr.textS : c.ks, c.mc ? (c.mr ? c.mr.textE : c.mc.textE) : c.mr ? c.mr.textE : c.ce]);
 
+// A new line in the cell at p, as Word's Enter and Shift+Enter in a cell (Enter did nothing, and
+// Shift+Enter wrote \newline, which TeX ignores in an l, c or r column): in a paragraph column (p,
+// m, b, X) \newline, where TeX breaks the cell's lines; in an l, c or r column, which sets one line,
+// the cell's words in makecell's \makecell, aligned as the column and from the top as Word's cells
+// are, \\ between its lines (inside its braces \\ ends no row). { edits, p (the caret after them,
+// in the text they make), packages }, { error } where a cell takes no lines (a number column, an
+// array in a formula), or null where p is in no cell.
+export function cellBreak(src, T, p) {
+  if (T.name === 'array') return { error: 'A cell of a formula\'s array holds one line.' };
+  const A = cellAt(T, p);
+  if (!A) return null;
+  const c = A.cell, [a, b] = cellWords(c), q = Math.max(a, Math.min(b, p));
+  let col = T.spec.cols[c.col];
+  if (c.mc) { const sp = parseSpec(src, c.mc.specS, c.mc.specE); if (sp && sp.cols[0]) col = sp.cols[0]; }
+  if (col && NUMBER_COLS.has(col.letter)) return { error: 'A number column holds one line a cell.' };
+  const h = colAlign(col);
+  if (h === 'p') return { edits: [{ s: q, e: q, t: '\\newline ' }], p: q + 9, packages: [] };
+  // (no space after the \\: Backspace takes the \\ alone, and a space left there stood between
+  // the words; {} where a [ or a * follows, which \\ would take as its own)
+  const brkAt = (x, z) => '\\\\' + (/^\s*[[*]/.test(src.slice(x, z)) ? '{}' : '');
+  // (a cell that is one \makecell already: a line more inside its braces)
+  const m = /^\\makecell\s*(?:\[[^\]{}]*\]\s*)?\{/.exec(src.slice(a, b));
+  if (m && groupEnd(src, a + m[0].length - 1, b) === b) {
+    const r = Math.max(a + m[0].length, Math.min(b - 1, q)), t = brkAt(r, b - 1);
+    return { edits: [{ s: r, e: r, t }], p: r + t.length, packages: ['makecell'] };
+  }
+  const brk = brkAt(q, b);
+  const open = '\\makecell[' + h + 't]{';
+  // (one edit for each place: two inserts at one place come out in no sure order)
+  const at = (x, t) => ({ s: x, e: x, t });
+  const edits = a === b ? [at(a, open + brk + '}')] : q === a ? [at(a, open + brk), at(b, '}')] : q === b ? [at(a, open), at(b, brk + '}')] : [at(a, open), at(q, brk), at(b, '}')];
+  return { edits, p: q + open.length + brk.length, packages: ['makecell'] };
+}
+
 // [a, b] of a table's body reaching over a cell's edge: { T, A, Z } (the cells at its two ends),
 // else null. (The & and \\ a deletion over an edge took joined two cells, or two rows, into one.)
 function overCells(src, a, b) {
