@@ -1030,5 +1030,9 @@ export function installWordTyping(mf, opts) {
     if (!at || !at.arr.parent || at.arr.parent.type !== 'root') return null;
     try { const cl = at.arr.getCell(at.r, at.c); return { r: at.r, c: at.c, pre: mf.getValue(at.model.offsetOf(cl[0]), mf.position, 'latex') }; } catch (e) { return null; }
   };
-  return { active: () => buf != null || arg != null, newRow, toCell, cellOf, reposition: () => { if (buf != null) place(); }, destroy: () => { chip.remove(); } };
+  // (whether the caret stands in the field's own line, not inside a fraction, a root or a script)
+  const atTop = () => {
+    try { const model = mf._mathfield.model, a = model.at(mf.position); return !a || a === model.root || a.parent === model.root; } catch (e) { return false; }
+  };
+  return { active: () => buf != null || arg != null, newRow, toCell, cellOf, atTop, reposition: () => { if (buf != null) place(); }, destroy: () => { chip.remove(); } };
 }

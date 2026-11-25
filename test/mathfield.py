@@ -189,6 +189,62 @@ try:
         page.keyboard.press('Control+z'); settle(page, 300, full=True)
         check('one undo takes the & and the align back to the equation', src(page) == DISP, src(page)[60:160])
 
+        # (review of the two above. An & is written only where TeX takes it: not past the columns its
+        # environment has, alignat{n} 2n, eqnarray 3 ("Extra & on this line"); not in a display of
+        # one line that holds cases or split, whose & are theirs (the display became an align, the &
+        # after \end{cases}); not inside a fraction (it went to the formula's start). Arrows out of
+        # a display land on a line of their own after a comment (what was typed went into it), a
+        # heading or a list, and before a heading or an \item (it went into the item before).)
+        TEX = os.path.isfile(os.path.join(os.environ.get('RIKUY_DIST') or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'dist'), 'tex', 'tree.wasm'))
+        def compiles(doc):
+            page.set_default_timeout(600000)
+            r = page.evaluate('async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile(); return { ok: r.ok, problems: (r.problems || []).filter((x) => x.severity === "error").map((x) => x.message).slice(0, 3) }; }', doc)
+            page.set_default_timeout(30000)
+            return r
+        GO = """(v) => { const mf = document.getElementById('pop-field'); const M = mf._mathfield.model; let best = -1;
+          for (let i = 0; i <= M.lastOffset; i++) { const a = M.at(i); if (a && a.value === v) best = i; } if (best >= 0) mf.position = best; return best; }"""
+        W = lambda body: '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nBefore words here.\n' + body + '\nAfter words here.\n\\end{document}\n'
+        def field_keys(doc, keys):
+            load_doc(page, doc)
+            page.click('.it.dm >> nth=0'); page.wait_for_selector('#pop-field', timeout=8000); settle(page, 300)
+            for k in keys:
+                if k.startswith('@'): page.evaluate(GO, k[1:])
+                elif len(k) == 1: page.keyboard.type(k)
+                else: page.keyboard.press(k)
+                settle(page, 120, full=True)
+            page.keyboard.press('Escape'); settle(page, 300, full=True)
+            return src(page)
+        for name, doc, keys in (('alignat{1}\'s last column', W('\\begin{alignat}{1}\n  a &= b \\\\\n  c &= d\n\\end{alignat}'), ['&']),
+                                ('eqnarray\'s third column', W('\\begin{eqnarray}\n  a &=& b \\\\\n  c &=& d\n\\end{eqnarray}'), ['&']),
+                                ('the last column of cases in an equation', W('\\begin{equation}\n  f = \\begin{cases} 1 & x \\\\ 0 & y \\end{cases}\n\\end{equation}'), ['ArrowLeft', '&']),
+                                ('an equation that holds cases, at its end', W('\\begin{equation}\n  f = \\begin{cases} 1 & x \\\\ 0 & y \\end{cases}\n\\end{equation}'), ['&']),
+                                ('a split\'s last cell', W('\\begin{equation}\n\\begin{split}\n  a &= b \\\\\n  c &= d\n\\end{split}\n\\end{equation}'), ['ArrowLeft', '&']),
+                                ('a fraction', W('\\[\n  \\frac{a}{b} + c\n\\]'), ['@a', '&'])):
+            s8 = field_keys(doc, keys)
+            check('& in %s: nothing written, the display as it was' % name, s8 == doc, s8[s8.find('here.'):s8.find('After')])
+        doc = W('\\begin{alignat}{2}\n  a &= b \\\\\n  c &= d\n\\end{alignat}')
+        s8 = field_keys(doc, ['&', 'Q'])
+        check('& in alignat{2}\'s second column: its third column, the letter there', '  c &= d&Q\n\\end{alignat}' in s8, s8[s8.find('here.'):s8.find('After')])
+        if TEX:
+            r = compiles(s8)
+            check('and that alignat compiles in the page', r['ok'] and not r['problems'], r)
+        P = lambda body: '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n' + body + '\n\\end{document}\n'
+        for name, doc, keys, want in (('Up after a line ending in a comment', P('Before words. % c\n\\[x=y\\]\nAfter.'), ['ArrowUp'], 'Before words. % c\nQ\n\\[x=y\\]'),
+                                      ('Left after a line ending in a comment', P('Before words. % c\n\\[x=y\\]\nAfter.'), ['Home', 'ArrowLeft'], 'Before words. % c\nQ\n\\[x=y\\]'),
+                                      ('Up after a heading', P('\\section{Intro}\n\\[x=y\\]\nAfter.'), ['ArrowUp'], '\\section{Intro}\nQ\n\\[x=y\\]'),
+                                      ('Up after a list', P('\\begin{itemize}\n\\item One\n\\end{itemize}\n\\[x=y\\]\nAfter.'), ['ArrowUp'], '\\end{itemize}\nQ\n\\[x=y\\]'),
+                                      ('Down before a heading', P('Before.\n\\[x=y\\]\n\\section{Next}\nWords.'), ['ArrowDown'], '\\[x=y\\]\nQ\n\\section{Next}'),
+                                      ('Down before an \\item', P('\\begin{itemize}\n\\item One\n\\[x=y\\]\n\\item Two\n\\end{itemize}'), ['ArrowDown'], '\\[x=y\\]Q\n\\item Two')):
+            load_doc(page, doc)
+            page.click('.it.dm >> nth=0'); page.wait_for_selector('#pop-field', timeout=8000); settle(page, 300)
+            for k in keys: page.keyboard.press(k); settle(page, 120, full=True)
+            page.keyboard.type('Q'); settle(page, 300, full=True)
+            s9 = src(page)
+            check('%s out of a display: the letter on a line of its own, outside the comment, the heading, the item before' % name, want in s9 and s9.replace('Q', '', 1).replace('\n\n', '\n') == doc.replace('\n\n', '\n'), s9[s9.find('{document}') + 11:s9.find('\\end{document}')])
+            if TEX and name.startswith('Up after a heading'):
+                r = compiles(s9)
+                check('and it compiles in the page', r['ok'] and not r['problems'], r)
+
         # --- dark mode look
         check('no console errors', not errors, errors[:5])
         browser.close()

@@ -122,6 +122,27 @@ with sync_playwright() as p:
     check('rows pasted mid row into an align: at the caret, the row split there, every line indented', got[0] == '  a &= b \\\\\n  c &= \\\\\n  x &= y \\\\\n  z &= w \\\\\n  d', got[0])
     check('one row pasted mid row: at the caret, its & kept, the row one row', got[1] == '  a &= b \\\\\n  c &=x &= y d', got[1])
     check('alignat\'s && pasted into a gather: no & left', '&' not in got[2] and '  x = y' in got[2], got[2])
+    # (review: one row goes into the caret's row only where the row then has no more columns than
+    # its equation takes: alignat{1} 2, eqnarray 3; else it is a row of its own, as before, where
+    # c &=x &= y d stopped TeX, "Extra & on this line". A paste at the start of the row after
+    # \\[2pt] goes after the [2pt], which went after it and printed.)
+    GO = """(v) => { const mf = document.getElementById('pop-field'); const M = mf._mathfield.model; let best = -1;
+      for (let i = 0; i <= M.lastOffset; i++) { const a = M.at(i); if (a && a.value === v) best = i; } if (best >= 0) mf.position = best; return best; }"""
+    got = []
+    for doc, own, go in ((ALG.replace('align}', 'alignat}{1}', 1).replace('\\end{align}', '\\end{alignat}'), '$x &= y$', None),
+                         (ALG.replace('align}', 'eqnarray}').replace('&=', '&=&'), '$x &=& y$', None),
+                         (ALG.replace('a &= b \\\\\n', 'a &= b \\\\[2pt]\n'), '$x &= y$', 'c')):
+        load_doc(page, doc)
+        page.locator('.it.dm').nth(0).click()
+        page.wait_for_selector('#pop-field', timeout=10000); settle(page, 300)
+        if go: page.evaluate(GO, go)
+        k.press('ArrowLeft'); settle(page, 100)
+        page.evaluate(PASTE, [' x ', own]); settle(page, 400, full=True)
+        got.append(ta())
+        k.press('Escape'); settle(page, 300)
+    check('one row pasted mid row into alignat{1}: a row of its own (two & in the row stopped TeX)', got[0] == '  a &= b \\\\\n  c &= \\\\\n  x &= y \\\\\n  d', got[0])
+    check('and into eqnarray: a row of its own', got[1] == '  a &=& b \\\\\n  c &=& \\\\\n  x &=& y \\\\\n  d', got[1])
+    check('a paste at the start of the row after \\\\[2pt]: after the [2pt], which stays the row break\'s', '\\\\[2pt]\n  x &= yc &= d' in got[2], got[2])
     load_doc(page, keep)
     open_inline()
     # paste into the LaTeX box
