@@ -27,8 +27,12 @@ export function coreReady() { return !!X; }
 // the empty module below with a CompileError and logs nothing, where the fetch of the core would
 // log a refused request. The hosts Rikuy runs on allow both or neither.
 const EMPTY = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]);
+// (asked once: the page's policy, which decides it, stays as the page loaded it; compiling a
+// module at every ask took 0.6 ms of each paint of spelling's marks, which asks through spellOn)
+let canRun;
 export function coreCanRun() {
-  try { return typeof WebAssembly === 'object' && !!new WebAssembly.Module(EMPTY); } catch (e) { return false; }
+  if (canRun === undefined) { try { canRun = typeof WebAssembly === 'object' && !!new WebAssembly.Module(EMPTY); } catch (e) { canRun = false; } }
+  return canRun;
 }
 
 // bytes: the module (a Uint8Array or ArrayBuffer). Resolves to true when the core runs.

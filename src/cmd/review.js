@@ -272,12 +272,14 @@ export const methods = {
     this.spellPaint();
     // (what the page's own thread spent, for the tests and a look in the console)
     S.mainMs = performance.now() - t0;
+    let asked = false;
     for (const [dict, set] of plan.words) {
       if (S.failed.has(dict)) continue;
       let K = S.known.get(dict);
       if (!K) S.known.set(dict, (K = new Map()));
       const ask = [];
       for (const w of set) if (!K.has(w)) ask.push(w);
+      if (ask.length) asked = true;
       for (let k = 0; k < ask.length; k += 20000) {
         const part = ask.slice(k, k + 20000);
         let r;
@@ -291,7 +293,10 @@ export const methods = {
         for (let i = 0; i < part.length; i++) K.set(part[i], r[i] !== '0');
       }
     }
-    if (seq === S.seq) this.spellPaint();
+    // (painted again only where the dictionaries were asked something: with every word known
+    // already, the paint above, a moment ago, drew the same marks, 22 304 words gone over again
+    // on dev/bench/long)
+    if (seq === S.seq && asked) this.spellPaint();
     // (grammar after spelling: an issue on a misspelt word is spelling's)
     if (this.grammarOn && this.grammarOn()) this.grammarSoon();
   },
