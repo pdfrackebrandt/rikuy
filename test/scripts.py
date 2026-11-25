@@ -1222,21 +1222,106 @@ def small_and_dark(p):
         browser.close()
 
 
+def ime_keys(page):
+    """Round 3: while an input method composes, Enter, Escape, Tab and the arrows are its own (take
+    its choice, drop it, go through its candidates), as in Word: Escape closed Find and Replace with
+    the word half typed and left a footnote, Shift+Enter broke the line. Chromium gives such a key
+    to the page with isComposing set (a Mac's input methods name the key)."""
+    key = '''([sel, key, shift]) => { const e = new KeyboardEvent('keydown', { key, shiftKey: !!shift, isComposing: true, bubbles: true, cancelable: true, composed: true });
+      document.querySelector(sel).dispatchEvent(e); return e.defaultPrevented; }'''
+    load_doc(page, ZH_DOC)
+    zh = src(page)
+    click_text(page, '这是中文文字', 2)
+    page.keyboard.press('Control+h'); page.wait_for_timeout(300)
+    page.focus('#fr-q'); page.keyboard.type('zhong'); page.wait_for_timeout(100)
+    page.evaluate(key, ['#fr-q', 'Escape', False]); page.wait_for_timeout(200)
+    check('Escape while an input method composes in Find what leaves Find and Replace open', page.evaluate('() => !document.getElementById("fr").hidden'))
+    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    check('and Escape after it closes it', page.evaluate('() => document.getElementById("fr").hidden'))
+    load_doc(page, doc('\\usepackage[scheme=plain]{ctex}', '这是正文。\\footnote{脚注的文字}后面。'))
+    base = src(page)
+    click_text(page, '脚注的文字', 2)
+    c0 = caret(page)
+    page.evaluate(key, ['#pages', 'Escape', False]); page.wait_for_timeout(150)
+    check('Escape while composing in a footnote leaves the caret in it', caret(page) == c0, [c0, caret(page)])
+    click_text(page, '脚注的文字', 5)
+    c0 = caret(page)
+    page.evaluate(key, ['#pages', 'ArrowRight', False]); page.wait_for_timeout(150)
+    check('and so does Right at its end', caret(page) == c0, [c0, caret(page)])
+    # (Safari: the key that takes or drops a choice comes just after the composition, keyCode 229)
+    k229 = '''([sel, key]) => { const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, composed: true }); Object.defineProperty(e, 'keyCode', { get: () => 229 });
+      document.querySelector(sel).dispatchEvent(e); }'''
+    c0 = caret(page)
+    page.evaluate(k229, ['#pages', 'Escape']); page.wait_for_timeout(150)
+    check('Escape with keyCode 229 (Safari) leaves the footnote alone too', caret(page) == c0, [c0, caret(page)])
+    click_text(page, '这是正文', 2)
+    page.evaluate(key, ['#pages', 'Enter', True]); page.wait_for_timeout(200)
+    check('Shift+Enter while composing breaks no line', src(page) == base, src(page)[-80:])
+    page.keyboard.press('Shift+Enter'); page.wait_for_timeout(200)
+    check('and Shift+Enter after it does', src(page) == base.replace('这是正文', '这是\\\\\n正文'), src(page)[-90:])
+
+
+def direction_keys(page):
+    """Round 3: Word's Ctrl+Right Shift and Ctrl+Left Shift turn the paragraph right to left and
+    left to right (Ctrl held, one Shift pressed and let go); Ctrl+Shift with an arrow selects words
+    and turns nothing."""
+    load_doc(page, EDIT_DOC)
+    base = src(page)
+    click_text(page, 'ثانية هنا', 2)
+    chord = lambda side: (page.keyboard.down('Control'), page.keyboard.down(side), page.keyboard.up(side), page.keyboard.up('Control'), page.wait_for_timeout(250))
+    chord('ShiftLeft')
+    dirs = page.evaluate('() => [...document.querySelectorAll("#pages .it")].map((e) => e.getAttribute("dir"))')
+    check('Ctrl+Left Shift: the paragraph runs from the left (otherlanguage with english)', src(page) == base.replace('فقرة ثانية هنا.', '\\begin{otherlanguage}{english}\nفقرة ثانية هنا.\n\\end{otherlanguage}') and dirs[-1] == 'ltr', [src(page)[-110:], dirs])
+    chord('ShiftRight')
+    check('Ctrl+Right Shift: from the right again, the source as it was', src(page) == base, src(page)[-110:])
+    page.keyboard.press('Control+Shift+ArrowLeft'); page.wait_for_timeout(150)
+    page.keyboard.down('Control'); page.keyboard.down('ShiftLeft'); page.keyboard.press('ArrowLeft'); page.keyboard.up('ShiftLeft'); page.keyboard.up('Control'); page.wait_for_timeout(250)
+    check('Ctrl+Shift with an arrow between turns nothing', src(page) == base, src(page)[-110:])
+    # (review: Ctrl+Shift+E, Track Changes, and Ctrl+Shift+8, Show marks, taken by the chord table
+    # before the page hears them, with Shift let go before the letter)
+    for letter in ('KeyE', 'Digit8'):
+        page.keyboard.down('Control'); page.keyboard.down('ShiftLeft'); page.keyboard.down(letter); page.keyboard.up('ShiftLeft'); page.keyboard.up(letter); page.keyboard.up('Control'); page.wait_for_timeout(250)
+        page.keyboard.down('Control'); page.keyboard.down('ShiftLeft'); page.keyboard.down(letter); page.keyboard.up('ShiftLeft'); page.keyboard.up(letter); page.keyboard.up('Control'); page.wait_for_timeout(250)
+    check('Ctrl+Shift+E and Ctrl+Shift+8 with Shift let go first turn nothing', 'otherlanguage' not in src(page), src(page)[-110:])
+    tip = page.evaluate('() => window.rikuy.api.commands().filter((c) => c.id === "rtl-paragraph" || c.id === "ltr-paragraph").map((c) => c.keys.join())')
+    check('the two commands name their keys', sorted(tip) == ['Ctrl+Left Shift', 'Ctrl+Right Shift'], tip)
+
+
+def page_lang(page):
+    """Round 3: the page's lang is the document's language, as the web names it, so a screen
+    reader reads an Arabic, Hebrew, Chinese or Japanese page in that language's voice: every page
+    was said to be English but a German, Spanish or French one. It follows an edit of the preamble."""
+    lang = lambda: page.evaluate('() => { const t = document.querySelector("#pages span.t"); const l = t && t.closest("[lang]"); return l && l.getAttribute("lang"); }')
+    seen = {}
+    for k, d in (('ar', EDIT_DOC), ('zh', ZH_DOC), ('he', doc('\\usepackage{polyglossia}\n\\setmainlanguage{hebrew}', 'שלום עולם.')),
+                 ('ja', doc('\\usepackage{luatexja}', 'これは日本語です。')), ('ko', doc('\\usepackage{kotex}', '한국어 문장.')), ('en', PLAIN)):
+        load_doc(page, d)
+        seen[k] = lang()
+    load_doc(page, doc('\\usepackage{CJKutf8}', 'An English paper by \\begin{CJK}{UTF8}{gbsn}王小明\\end{CJK} and others, about prices and wages.'))
+    seen['en, CJKutf8 for a name'] = lang()
+    seen['en'] = seen.pop('en')
+    check('the page names the document\'s language: Arabic, Chinese, Hebrew, Japanese, Korean, English; an English paper with one Chinese name stays English', all(v == k[:2] for k, v in seen.items()), seen)
+    load_doc(page, PLAIN)
+    base = src(page)
+    i = base.index('\\usepackage{amsmath}')
+    page.evaluate('([i, text]) => window.rikuy.api.editSource({ file: "main.tex", start: i, end: i, text })', [i, AR_PRE.split('\n\\babelfont')[0] + '\n'])
+    page.wait_for_timeout(300)
+    check('and follows the preamble when its main language changes', lang() == 'ar', [lang(), src(page)[:140]])
+
+
+only = set(sys.argv[1:])
 try:
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        rendering(page)
-        wrappers(page)
-        editing(page)
-        long_rtl(page)
-        fonts(page)
-        india(p, page)
-        marks_after_syntax(page)
-        five(p, page)
-        notice(p, page)
+        for f in (rendering, wrappers, editing, ime_keys, direction_keys, page_lang, long_rtl, fonts):
+            if not only or f.__name__ in only: f(page)
+        for f in (india, marks_after_syntax, five, notice):
+            if only and f.__name__ not in only: continue
+            if f is marks_after_syntax: f(page)
+            else: f(p, page)
         check('no console errors', not errors, errors[:5])
         browser.close()
-        small_and_dark(p)
+        if not only or 'small_and_dark' in only: small_and_dark(p)
 except Exception as e:
     # a run that stops part way has failed, whatever the checks before it said
     traceback.print_exc()

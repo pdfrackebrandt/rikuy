@@ -211,9 +211,27 @@ class Work {
   commit(caret, kind = 'insert') {
     const ed = this.edits();
     if (!ed.length) return false;
+    // (no place named: the caret stays where it stood, moved by the edits, when the page or the
+    // ribbon has the keys. A step that drew the page again, natbib added with the bibliography or
+    // its title changed, lost it: it fell to the page's start, where the next word typed went, or
+    // to nowhere. A dialog keeps its focus and gives the caret back as it closes. The view stays
+    // where it was, as Word's: the caret may be far from what changed, the bibliography's title
+    // set from the bibliography with the caret pages above. A selection keeps its direction.)
+    const A = this.app, a = document.activeElement;
+    let kept = null;
+    if (caret == null && (a === A.root || (a && a.closest && a.closest('#ribbon, #rb-top')))) {
+      const c = A.caretNow();
+      if (c && c.f != null && !c.ghost && !c.crossFile && A.files.has(c.f)) {
+        const s = getSelection(), back = !c.collapsed && s.rangeCount && (() => { const r = document.createRange(); r.setStart(s.anchorNode, s.anchorOffset); r.setEnd(s.focusNode, s.focusOffset); return r.collapsed; })();
+        const x = this.map(c.f, c.a, 1), y = this.map(c.f, c.b, -1);
+        caret = c.collapsed !== false ? { f: c.f, p: this.map(c.f, c.p, -1) } : { f: c.f, p: this.map(c.f, c.p, -1), selA: back ? y : x, selB: back ? x : y };
+        kept = A.desk ? [A.desk.scrollTop, A.desk.scrollLeft] : null;
+      }
+    }
     this.app.closeGroup();
     this.app.removeGhost();
     this.app.commit(ed, caret, kind);
+    if (kept) { A.desk.scrollTop = kept[0]; A.desk.scrollLeft = kept[1]; }
     this.app.closeGroup();
     return true;
   }

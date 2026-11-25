@@ -1524,6 +1524,23 @@ def ios_autocorrect(page, w):
     check(f'and the caret after the word it wrote ({w})', 'here theQ.' in src(page), [l for l in src(page).splitlines() if 'Second' in l])
 
 
+def box_tab(page, w):
+    """Round 3: in an endnote's box (Ctrl+Alt+D), a LaTeX box, Tab and Shift+Tab go round its
+    field and buttons, as in a dialog: past Done the focus fell to the page's body and the next
+    keys typed nothing. The field keeps the focus as the box opens."""
+    load_doc(page, DOC)
+    click_text(page, 'Second paragraph', 3)
+    page.keyboard.press('Control+Alt+d'); settle(page, 300)
+    first = page.evaluate("document.activeElement.id")
+    seen = []
+    for k in ['Tab'] * 4 + ['Shift+Tab'] * 4:
+        page.keyboard.press(k); settle(page, 30)
+        seen.append(page.evaluate("(() => { const a = document.activeElement; return a.closest('.pop-en') ? (a.id || a.textContent.trim()) : a === document.body ? 'BODY' : 'out:' + (a.id || a.tagName); })()"))
+    check(f'Tab and Shift+Tab go round an endnote\'s box ({w})', first == 'pop-endnote' and all(x and not x.startswith('out') and x != 'BODY' for x in seen) and 'pop-endnote' in seen[:4], [first, seen])
+    page.keyboard.type('n'); settle(page, 100)
+    page.keyboard.press('Escape'); settle(page, 200)
+
+
 PARTS = {'android_input': (android_input, [(390, False), (360, True)]),
          'keyboard_caret': (keyboard_caret, [(390, False), (360, True)]),
          'desktop_input': (desktop_input, [(1366, False)]),
@@ -1559,7 +1576,8 @@ PARTS = {'android_input': (android_input, [(390, False), (360, True)]),
          'dialogs': (dialogs_give_the_caret_back, [(1400, False), (1400, True)]),
          'phone_dialogs': (phone_dialogs, [(390, False), (360, True)]),
          'tab_picker': (tab_picker, [(390, False), (360, True)]),
-         'ios_autocorrect': (ios_autocorrect, [(390, False)])}
+         'ios_autocorrect': (ios_autocorrect, [(390, False)]),
+         'box_tab': (box_tab, [(1366, False)])}
 
 
 # the parts that meet a phone's own default, Mobile View (the others open in Print Layout, as the suites written for it do)

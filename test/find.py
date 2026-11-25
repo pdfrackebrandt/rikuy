@@ -703,13 +703,56 @@ def hunt(page):
     page.keyboard.press('Escape'); settle(page, 150)
 
 
+def rtl_marks(page):
+    """Round 3: Word's Find in Arabic and Hebrew, its options as they start: a word typed without
+    its short vowels finds it vocalized, stretched by a kashida, or with its alef's hamza; Match
+    diacritics, Match kashida and Match alef hamza (shown where the document has such text) make
+    each exact. Replace All found 2 of 3 in a vocalized line before."""
+    doc = WRAP('\u0643\u064e\u062a\u064e\u0628\u064e \u0627\u0644\u062f\u0631\u0633. \u0643\u062a\u0628 \u0623\u062d\u0645\u062f. \u0643\u0640\u0640\u062a\u0628 \u0627\u062d\u0645\u062f. \u05e9\u05b8\u05c1\u05dc\u05d5\u05b9\u05dd \u05e9\u05dc\u05d5\u05dd.',
+               '\\usepackage[english, bidi=basic]{babel}\n\\babelprovide[import, main]{arabic}\n')
+    load_doc(page, doc)
+    click_text(page, '\u0627\u0644\u062f\u0631\u0633', 1)
+    page.keyboard.press('Control+h'); settle(page, 300)
+    shown = page.evaluate("() => [...document.querySelectorAll('#fr .fr-o')].filter((l) => !l.hidden).map((l) => l.textContent.trim())")
+    check('the Arabic options show in a document with Arabic text', all(n in shown for n in ('Match kashida', 'Match diacritics', 'Match alef hamza')), shown)
+    find_set(page, '\u0643\u062a\u0628'); settle(page, 200)
+    check('a word without its vowels finds it vocalized and stretched by a kashida: 3 of 3', len(hits(page)) == 3, summary(page))
+    page.get_by_label('Match diacritics').check(); settle(page, 200)
+    n_d = len(hits(page))
+    page.get_by_label('Match diacritics').uncheck(); page.get_by_label('Match kashida').check(); settle(page, 200)
+    n_k = len(hits(page))
+    page.get_by_label('Match kashida').uncheck(); settle(page, 200)
+    check('Match diacritics leaves out the vocalized one, Match kashida the stretched one', n_d == 2 and n_k == 2, (n_d, n_k))
+    find_set(page, '\u0627\u062d\u0645\u062f'); settle(page, 200)
+    n_a = len(hits(page))
+    page.get_by_label('Match alef hamza').check(); settle(page, 200)
+    check('a plain alef finds the alef with a hamza too, unless Match alef hamza', n_a == 2 and len(hits(page)) == 1, (n_a, len(hits(page))))
+    page.get_by_label('Match alef hamza').uncheck(); settle(page, 100)
+    find_set(page, '\u05e9\u05dc\u05d5\u05dd'); settle(page, 200)
+    check('Hebrew without its points finds the pointed word', len(hits(page)) == 2, summary(page))
+    find_set(page, '\u0643\u062a\u0628'); settle(page, 200)
+    replace_all(page, '\u0642\u0631\u0623')
+    got = src(page)
+    check('Replace All replaces the vocalized word whole, with its vowels, as one undo', got.count('\u0642\u0631\u0623') == 3 and '\u0643\u064e' not in got and '\u0640' not in got, got[got.find('\\begin{document}'):][:120])
+    page.evaluate('() => window.rikuy.undo()'); settle(page, 200)
+    check('undo gives the source back byte for byte', src(page) == doc)
+    page.keyboard.press('Escape'); settle(page, 150)
+    load_doc(page, WRAP('Plain English words.'))
+    click_text(page, 'English', 1)
+    page.evaluate("() => window.rikuy.findSet({ q: 'words' })")
+    page.keyboard.press('Control+h'); settle(page, 300)
+    shown = page.evaluate("() => [...document.querySelectorAll('#fr .fr-o')].filter((l) => !l.hidden).map((l) => l.textContent.trim())")
+    check('and none of them in a document without such text', 'Match diacritics' not in shown and 'Match case' in shown, shown)
+    page.keyboard.press('Escape'); settle(page, 150)
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         # (the page lays its pages out again 200 ms after the last of its fonts came, app.js's
         # loadingdone: that drops the caret's place, which Enter's first hit is counted from)
         until(page, "() => document.fonts.status === 'loaded'"); settle(page, 200, full=True)
-        for f in (ctrl_f, dialog, in_selection_and_source, review, go_to, select_and_words, para_marks, kinds, r5_review, hunt, pdf_check):
+        for f in (ctrl_f, dialog, in_selection_and_source, review, go_to, select_and_words, para_marks, kinds, r5_review, hunt, rtl_marks, pdf_check):
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
@@ -720,11 +763,11 @@ def run():
 
 
 if __name__ == '__main__':
-    if sys.argv[1:] == ['hunt']:
+    if sys.argv[1:] in (['hunt'], ['rtl_marks']):
         with sync_playwright() as p:
             browser, page, errors = open_page(p)
             until(page, "() => document.fonts.status === 'loaded'"); settle(page, 200, full=True)
-            hunt(page)
+            {'hunt': hunt, 'rtl_marks': rtl_marks}[sys.argv[1]](page)
             check('no page errors', not errors, errors[:4])
         bad = [r for r in results if not r[1]]
         print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))

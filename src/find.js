@@ -78,6 +78,20 @@ function lit(c) {
   if (c === "'" || c === '‘' || c === '’') return "['‘’]";
   return esc(c);
 }
+// Word's Find in Arabic and Hebrew text, its options off as they start: the short vowels and other
+// marks (Arabic's harakat, Hebrew's points and cantillation) are passed over in the text and in
+// the query, a kashida (the tatweel that stretches a word) in the text too, and an alef with a
+// hamza or a madda is found by a plain alef and the other way round. A vocalized text (a verse,
+// a schoolbook) hid its words from a search typed without vowels. Checked, each matches exactly.
+const RTL_MARKS = '\\u0610-\\u061A\\u064B-\\u065F\\u0670\\u06D6-\\u06DC\\u06DF-\\u06E4\\u06E7\\u06E8\\u06EA-\\u06ED\\u0591-\\u05BD\\u05BF\\u05C1\\u05C2\\u05C4\\u05C5\\u05C7';
+const IS_MARK = new RegExp('[' + RTL_MARKS + ']', 'u');
+const RTL_LETTER = /[ؠ-يٮ-ۓەۮ-ۿא-תׯ-ײ]/u;
+const ALEFS = '[\\u0627\\u0622\\u0623\\u0625\\u0671]';
+function rtlLoose(c, o, kashida) {
+  if (!RTL_LETTER.test(c)) return null;
+  const tail = (o.matchDiacritics ? '' : RTL_MARKS) + (o.matchKashida || kashida ? '' : '\\u0640');
+  return (!o.matchAlefHamza && /[اآأإٱ]/u.test(c) ? ALEFS : esc(c)) + (tail ? '[' + tail + ']*' : '');
+}
 
 // Word's wildcards (Use wildcards): ? one character, * any run (as few as can be), @ one or more
 // of what stands before, {n,m} (or {n;m}) a count, [abc] [a-z] [!x] a set, < > a word's start and
@@ -161,12 +175,18 @@ export function compile(q, o = {}) {
     else if (o.wildcards) src = wildcards(q, pm).src;
     else {
       src = '';
+      // (a kashida typed in the query is matched as typed, as Word's is)
+      const kashida = q.includes('ـ');
       // (literal: a formula's LaTeX, where x^p and A^t are what they say, not Word's codes)
       for (let i = 0; i < q.length; i++) {
         if (!o.literal && q[i] === '^' && q[i + 1] === 'p') { src += pm; i++; continue; }
         if (!o.literal && q[i] === '^' && i + 1 < q.length && CARET[q[i + 1]]) { src += CARET[q[++i]]; continue; }
-        src += lit(q[i]);
+        if (!o.literal && !o.matchDiacritics && IS_MARK.test(q[i])) continue;
+        const loose = o.literal ? null : rtlLoose(q[i], o, kashida);
+        src += loose || lit(q[i]);
       }
+      // (a query of marks alone is looked for as typed)
+      if (!src) for (const c of q) src += lit(c);
     }
   } catch (e) { return { error: e.message }; }
   if (o.wholeWord) src = '(?<!' + WORD + ')(?:' + src + ')(?!' + WORD + ')';
