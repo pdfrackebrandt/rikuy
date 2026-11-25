@@ -52,7 +52,17 @@ export async function lintText(text, dialect = 0) {
     if (SPELLING.test(kind)) continue;
     const sp = l.span();
     const s = sp.start, e = sp.end;
-    const sugg = l.suggestions().slice(0, 6).map((x) => ({ kind: ['replace', 'remove', 'insert'][x.kind()] || 'replace', text: x.get_replacement_text() }));
+    // (a capital letter alone, "A introduction": Harper matches its case as all capitals, "AN",
+    // where the words after it are not; Word gives "An". A suggestion Harper gives twice, once.)
+    const word = text.slice(s, e), next = /^\s*(\S*)/.exec(text.slice(e))[1];
+    const caps = /^\p{Lu}$/u.test(word) && !/^\p{Lu}{2,}$/u.test(next);
+    const sugg = [];
+    for (const x of l.suggestions().slice(0, 6)) {
+      const k = ['replace', 'remove', 'insert'][x.kind()] || 'replace';
+      let t = x.get_replacement_text();
+      if (caps && /^\p{Lu}{2,}$/u.test(t)) t = t[0] + t.slice(1).toLowerCase();
+      if (!sugg.some((y) => y.kind === k && y.text === t)) sugg.push({ kind: k, text: t });
+    }
     out.push({ s, e, kind, msg: l.message(), sugg });
     if (out.length >= 2000) break;
   }

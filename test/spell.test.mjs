@@ -227,6 +227,16 @@ fs.rmSync(tmp, { recursive: true, force: true });
     assert.ok(L.find((l) => t.slice(l.s, l.e) === 'go').sugg.some((x) => x.text === 'goes'));
     assert.ok(!L.some((l) => /^Spelling$/.test(l.kind)), 'no spelling: Hunspell\'s');
   });
+  const t2 = 'A introduction to it. Their is a problem. A APPLE A DAY.';
+  const L2 = await lintText(t2);
+  group('Harper\'s suggestions as Word gives them: "A introduction" to "An", never "AN" (but AN in capitals), none twice', () => {
+    const at = (w, i = 0) => L2.filter((l) => t2.slice(l.s, l.e) === w)[i];
+    assert.deepStrictEqual(at('A').sugg.map((x) => x.text), ['An'], JSON.stringify(L2));
+    const caps = L2.find((l) => l.s === t2.indexOf('A APPLE'));
+    assert.ok(!caps || caps.sugg.every((x) => x.text === x.text.toUpperCase()), JSON.stringify(caps));
+    for (const l of L2) assert.strictEqual(new Set(l.sugg.map((x) => x.kind + x.text)).size, l.sugg.length, JSON.stringify(l.sugg));
+    assert.ok(at('Their') && at('Their').sugg.length >= 1);
+  });
 }
 
 // ---- the corpus: nothing of LaTeX is ever a word ----
