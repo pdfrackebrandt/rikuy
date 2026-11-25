@@ -680,6 +680,24 @@ def hunt(page):
     page.evaluate("(() => { const g = window.rikuy, s = g.files.get(g.main), at = s.indexOf('Gamma'); g.closeGroup(); g.commit([{ f: g.main, s: at, e: at, t: 'cat ' }], null, 'type'); g.closeGroup(); })()"); settle(page, 300, full=True)
     page.evaluate('window.rikuy.findRun(); window.rikuy.findViews()'); settle(page, 100)
     check('hunt: after Replace All, an edit of the page ends what it said: the search\'s own count, 4 results, not a stale left', a == 'Replaced 3 places.' and summary(page) == '4 results', (a, summary(page)))
+    # (round 2) typed fast, as a Word user types: Find what, Tab, Replace with, Enter, Enter. The
+    # search typing set going came 180 ms later and started again from nothing: the first Enter
+    # showed nothing, the second showed the first, only the third replaced; Alt+A the same
+    load_doc(page, tri)
+    d.get_by_label('Find what', exact=True).fill('')
+    settle(page, 250, full=True)
+    d.get_by_label('Find what', exact=True).focus()
+    page.keyboard.type('cat'); page.keyboard.press('Tab'); page.keyboard.press('Control+a'); page.keyboard.type('dog')
+    page.keyboard.press('Enter'); page.keyboard.press('Enter')
+    settle(page, 300, full=True)
+    check('hunt: Find what, Tab, Replace with, Enter twice at a typist\'s speed: the first shows the first result, the second replaces it', src(page) == tri.replace('Alpha cat', 'Alpha dog'), src(page)[40:110])
+    load_doc(page, tri)
+    d.get_by_label('Find what', exact=True).fill('')
+    settle(page, 250, full=True)
+    d.get_by_label('Find what', exact=True).focus()
+    page.keyboard.type('cat'); page.keyboard.press('Tab'); page.keyboard.press('Control+a'); page.keyboard.type('dog'); page.keyboard.press('Alt+a')
+    settle(page, 300, full=True)
+    check('hunt: and Alt+A at once replaces all three', src(page) == tri.replace('cat', 'dog'), src(page)[40:110])
     page.keyboard.press('Escape'); settle(page, 150)
 
 

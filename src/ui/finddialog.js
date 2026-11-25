@@ -136,24 +136,28 @@ function build(app) {
   });
   let qt = 0;
   q.i.addEventListener('input', () => { clearTimeout(qt); qt = setTimeout(() => app.findSet({ q: q.i.value }), 180); });
+  // What is typed in Find what is searched for at once by a key or a button that uses it: the
+  // search the typing set going comes 180 ms later, and run after the key it started the search
+  // again from nothing. Typed fast, Find what, Tab, Replace with, Enter: the first Enter replaced
+  // nothing and showed nothing (it searched for what Find what held before), Alt+A the same.
+  const sync = () => { clearTimeout(qt); if (app.findState().q !== q.i.value) app.findSet({ q: q.i.value }); };
   q.i.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    clearTimeout(qt);
-    if (app.findState().q !== q.i.value) app.findSet({ q: q.i.value });
+    sync();
     app.findGo(e.shiftKey ? -1 : 1);
   });
   r.i.addEventListener('input', () => { app.findState().rep = r.i.value; });
-  r.i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); app.findState().rep = r.i.value; app.replaceOne(); } });
+  r.i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); app.findState().rep = r.i.value; sync(); app.replaceOne(); } });
   for (const [k] of OPTS) O[k].addEventListener('change', () => {
     const o = { [k]: O[k].checked };
     if (k === 'insel' && O[k].checked && !app.findState().sel) { O[k].checked = false; return; }
     app.findSet({ o });
   });
-  bNext.addEventListener('click', () => { if (app.findState().q !== q.i.value) app.findSet({ q: q.i.value }); app.findGo(1); });
-  bPrev.addEventListener('click', () => { if (app.findState().q !== q.i.value) app.findSet({ q: q.i.value }); app.findGo(-1); });
-  bRep.addEventListener('click', () => { const fs = app.findState(); fs.rep = r.i.value; if (fs.q !== q.i.value) app.findSet({ q: q.i.value }); app.replaceOne(); });
-  bAll.addEventListener('click', () => { const fs = app.findState(); fs.rep = r.i.value; if (fs.q !== q.i.value) app.findSet({ q: q.i.value }); app.replaceAll(); });
+  bNext.addEventListener('click', () => { sync(); app.findGo(1); });
+  bPrev.addEventListener('click', () => { sync(); app.findGo(-1); });
+  bRep.addEventListener('click', () => { app.findState().rep = r.i.value; sync(); app.replaceOne(); });
+  bAll.addEventListener('click', () => { app.findState().rep = r.i.value; sync(); app.replaceAll(); });
   bNoFmt.addEventListener('click', () => app.findSet({ o: { fmt: 0 } }));
   bFmt.addEventListener('click', () => {
     const fs = app.findState();
