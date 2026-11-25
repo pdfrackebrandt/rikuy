@@ -190,6 +190,18 @@ with sync_playwright() as p:
         page.wait_for_timeout(300)
     s = page.evaluate("window.rikuy.files.get('main.tex')")
     check('a press on a problem in the preamble, then a letter: nothing typed into the preamble', bool(pre) and 'Z' not in s[:s.index('\\begin{document}')], (pre, s[:120]))
+    # (review V1) a problem on a markup line inside a block (a table's column letters): the caret
+    # drawn in the first cell is where a letter goes, not before \begin{tabular}
+    page.evaluate("""async () => { const g = window.rikuy; g.files.set('main.tex', '\\\\documentclass{article}\\n\\\\begin{document}\\nText.\\n\\n\\\\begin{tabular}{lx}\\nAone & Bone \\\\\\\\\\n\\\\end{tabular}\\n\\nAfter.\\n\\\\end{document}\\n'); g.forceRender = true; g.rebuild(); await g.api.compile(); }""")
+    page.wait_for_function("[...document.querySelectorAll('.prob.tex')].some((e) => /array arg/.test(e.textContent))", timeout=10000)
+    rows = page.locator('.prob.tex')
+    k = [i for i in range(rows.count()) if 'array arg' in rows.nth(i).inner_text()]
+    rows.nth(k[0]).click()
+    page.wait_for_timeout(300)
+    page.keyboard.type('Z')
+    page.wait_for_timeout(300)
+    s = page.evaluate("window.rikuy.files.get('main.tex')")
+    check('a press on a problem at a table\'s column letters, then a letter: it goes into the first cell, where the caret shows', 'ZAone & Bone' in s, s[30:110])
     page.evaluate("(k) => { const g = window.rikuy; g.files.set('main.tex', k); g.forceRender = true; g.rebuild(); }", keep)
     # a brace left open: TeX reads on to the file's end and names no line (or the \input's): the
     # problem is put where the words it took as the argument begin
