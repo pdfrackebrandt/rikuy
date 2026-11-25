@@ -357,6 +357,32 @@ def cell_lines(page):
     check('Enter in a paragraph column: \\newline, which TeX breaks the line at; no package', '\\midrule\none \\newline Qmore & two' in b and 'makecell' not in s and lines('Qmore') == ['one', 'Qmore'], [b, lines('Qmore')])
     s, b = keys('one more', 8, ['Enter', 'type:Q'], words.replace(PRE, PRE + '\\usepackage{makecell}\n'))
     check('makecell loaded already: not twice', s.count('{makecell}') == 1 and '{one more\\\\Q}' in b, s[:200])
+    # (review: what each writes compiles. At a paragraph cell's start or in an empty one a line to end
+    # first, \mbox{}: \newline there stopped TeX, "There's no line here to end". Inside \textbf{…}
+    # or a \makecell's bold words the group closes before the \\ and opens again after it: a \\
+    # inside it stopped TeX, "Missing } inserted"; Word's bold goes on in the next line.)
+    pcol = words.replace('{ll}', '{p{3cm}l}')
+    s, b = keys('one more', 0, ['Enter', 'type:Q'], pcol)
+    check('Enter at a paragraph cell\'s start: an empty first line, \\mbox{}\\newline, the words on the second', '\\midrule\n\\mbox{}\\newline Qone more & two' in b and [x.replace('\u200b', '') for x in lines('Qone')] == ['', 'Qone more'], [b, lines('Qone')])
+    empty = pcol.replace('three & four', ' & four')
+    load_doc(page, empty); at_src(page, ' & four', 0); page.keyboard.press('Enter'); settle(page, 100); page.keyboard.type('Q'); settle(page, 200)
+    b = src(page)[src(page).find('\\midrule'):src(page).find('\\bottomrule')]
+    check('Enter in an empty paragraph cell: \\mbox{}\\newline too', '\\mbox{}\\newline Q' in b and b.count('&') == 2, b)
+    bold = words.replace('one more', '\\textbf{Head word}')
+    s, b = keys('Head word', 4, ['Enter', 'type:Q'], bold)
+    check('Enter inside bold words of an l cell: the bold closed before the \\\\ and opened again after it', '\\makecell[lt]{\\textbf{Head}\\\\\\textbf{Q word}} & two' in b and lines('Q word') == ['Head', 'Q word'], [b, lines('Q word')])
+    made = words.replace('one more', '\\makecell{\\textbf{x y}}').replace(PRE, PRE + '\\usepackage{makecell}\n')
+    s, b = keys('x y', 1, ['Enter', 'type:Q'], made)
+    check('and inside a \\makecell\'s bold words', '\\makecell{\\textbf{x}\\\\\\textbf{Q y}} & two' in b, b)
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        mixed = pcol.replace('three & four', '\\textbf{Head word} & four').replace('{p{3cm}l}', '{p{3cm}l}', 1)
+        load_doc(page, mixed.replace('\\end{table}', '\\end{table}\n\n\\begin{tabular}{p{2cm}l}\n & x \\\\\n\\end{tabular}', 1))
+        click_text(page, 'one more', 0); page.keyboard.press('Enter'); settle(page, 100); page.keyboard.type('first'); settle(page, 200)
+        click_text(page, 'Head word', 4); page.keyboard.press('Enter'); settle(page, 100); page.keyboard.type('bolded'); settle(page, 200)
+        at_src(page, ' & x', 0); page.keyboard.press('Enter'); settle(page, 100); page.keyboard.type('emptied'); settle(page, 300)
+        s = src(page)
+        r = pdf_of(page, s)
+        check('compiled in the page: Enter at a paragraph cell\'s start, in an empty one, inside bold words; no error', r['ok'] and not r['problems'] and all(w in r['text'] for w in ('first', 'bolded', 'emptied')) and s.count('\\mbox{}\\newline') == 2, {'ok': r['ok'], 'problems': r['problems'], 'text': r['text'][:200], 'src': s[s.find('\\midrule'):][:300]})
     if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
         load_doc(page, words); click_text(page, 'one more', 4); page.keyboard.press('Enter'); settle(page, 100)
         page.keyboard.type('second'); settle(page, 300)

@@ -519,22 +519,69 @@ export function cellBreak(src, T, p) {
   if (c.mc) { const sp = parseSpec(src, c.mc.specS, c.mc.specE); if (sp && sp.cols[0]) col = sp.cols[0]; }
   if (col && NUMBER_COLS.has(col.letter)) return { error: 'A number column holds one line a cell.' };
   const h = colAlign(col);
-  if (h === 'p') return { edits: [{ s: q, e: q, t: '\\newline ' }], p: q + 9, packages: [] };
+  if (h === 'p') {
+    // (with no words before it in the cell a line to end first, an empty one, as Word's: \newline
+    // there stopped TeX, "There's no line here to end")
+    const t = (src.slice(a, q).replace(/\\[A-Za-z]+\*?|[{}\s]/g, '') ? '' : '\\mbox{}') + '\\newline ';
+    return { edits: [{ s: q, e: q, t }], p: q + t.length, packages: [] };
+  }
   // (no space after the \\: Backspace takes the \\ alone, and a space left there stood between
-  // the words; {} where a [ or a * follows, which \\ would take as its own)
-  const brkAt = (x, z) => '\\\\' + (/^\s*[[*]/.test(src.slice(x, z)) ? '{}' : '');
+  // the words; {} where a [ or a * follows, which \\ would take as its own. Inside \textbf{…} or
+  // {\bfseries …} the groups close before it and open again after it, the words after it as they
+  // were: a \\ inside a group stopped TeX, "Missing } inserted", where Word's bold goes on.)
+  const brkAt = (x, z, from) => {
+    const g = openGroups(src, from, x);
+    return g.length ? '}'.repeat(g.length) + '\\\\' + g.join('') : '\\\\' + (/^\s*[[*]/.test(src.slice(x, z)) ? '{}' : '');
+  };
   // (a cell that is one \makecell already: a line more inside its braces)
   const m = /^\\makecell\s*(?:\[[^\]{}]*\]\s*)?\{/.exec(src.slice(a, b));
   if (m && groupEnd(src, a + m[0].length - 1, b) === b) {
-    const r = Math.max(a + m[0].length, Math.min(b - 1, q)), t = brkAt(r, b - 1);
+    const r = Math.max(a + m[0].length, Math.min(b - 1, q)), t = brkAt(r, b - 1, a + m[0].length);
     return { edits: [{ s: r, e: r, t }], p: r + t.length, packages: ['makecell'] };
   }
-  const brk = brkAt(q, b);
+  const brk = brkAt(q, b, a);
   const open = '\\makecell[' + h + 't]{';
   // (one edit for each place: two inserts at one place come out in no sure order)
   const at = (x, t) => ({ s: x, e: x, t });
   const edits = a === b ? [at(a, open + brk + '}')] : q === a ? [at(a, open + brk), at(b, '}')] : q === b ? [at(a, open), at(b, brk + '}')] : [at(a, open), at(q, brk), at(b, '}')];
   return { edits, p: q + open.length + brk.length, packages: ['makecell'] };
+}
+
+// The groups still open at q of those opened from a: what opens each again, outermost first: its
+// command with what stands between it and the brace (\textbf{, \textcolor{red}{), or a bare { with
+// the declarations right after it ({\bfseries ). (Comments passed over; an escaped brace is none.)
+function openGroups(src, a, q) {
+  const st = [];
+  for (let i = a; i < q; i++) {
+    const ch = src[i];
+    if (ch === '\\') { i++; continue; }
+    if (ch === '%') { const n = src.indexOf('\n', i); if (n < 0 || n >= q) break; i = n; continue; }
+    if (ch === '{') st.push(i);
+    else if (ch === '}') st.pop();
+  }
+  const openOf = (z) => {
+    const close = src[z], open = close === '}' ? '{' : '[';
+    for (let i = z, d = 0; i >= a; i--) {
+      if (src[i - 1] === '\\') continue;
+      if (src[i] === close) d++;
+      else if (src[i] === open && --d === 0) return i;
+    }
+    return -1;
+  };
+  return st.map((i) => {
+    let j = i;
+    for (let n = 0; n < 8; n++) {
+      let k = j;
+      while (k > a && /\s/.test(src[k - 1])) k--;
+      if (src[k - 1] !== '}' && src[k - 1] !== ']') break;
+      const o = openOf(k - 1);
+      if (o < 0) break;
+      j = o;
+    }
+    const cmd = /\\[A-Za-z]+\*?\s*$/.exec(src.slice(Math.max(a, j - 60), j));
+    if (cmd) return src.slice(j - cmd[0].length, i + 1);
+    return '{' + /^(?:\s*\\[A-Za-z]+\*?(?:\s*\{[^{}]*\})?)*\s*/.exec(src.slice(i + 1, q))[0];
+  });
 }
 
 // [a, b] of a table's body reaching over a cell's edge: { T, A, Z } (the cells at its two ends),
@@ -894,7 +941,8 @@ export function deleteRows(src, T, r0, r1, col = null) {
   let q = p;
   const k = col == null ? null : data.find((x) => x > r1) ?? [...data].reverse().find((x) => x < r0);
   const at = k != null ? cellOfCol(T.rows[k], col) : null;
-  if (at) { const w = cellWords(at.cell)[0]; q = edits.reduce((x, d) => (d.e <= w ? x + d.t.length - (d.e - d.s) : x), w); }
+  // (an insert at the words' start, a \multirow's text moved down, comes after the caret)
+  if (at) { const w = cellWords(at.cell)[0]; q = edits.reduce((x, d) => (d.e < w || (d.e === w && d.s < w) ? x + d.t.length - (d.e - d.s) : x), w); }
   return { edits: edits.sort((x, y) => x.s - y.s), p: q };
 }
 
