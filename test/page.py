@@ -846,12 +846,136 @@ def r1_page_pdf(page):
     check('R1: line numbers beside the first paragraph, none beside the suppressed one', any(n == '1' and t.startswith('First') for n, t in nums) and not any(t.startswith('Unnumbered') for n, t in nums), nums[:6])
 
 
+def hunt(page):
+    """What a Word user met (round 2's hunt)."""
+    # Backspace or Delete next to a page break takes the break alone, as Word's do: the paragraphs
+    # either side stay two (they were joined, "words.Second"), the words a break cut stay apart
+    # ("Firstparagraph"), a blank page goes whole, a heading after a break keeps its command
+    cases = (('First paragraph here with words.\n\n\\newpage\n\nSecond paragraph of the text.', ('words.', 6), 'Delete', BODY),
+             ('First paragraph here with words.\n\n\\newpage\n\nSecond paragraph of the text.', ('Second', 0), 'Backspace', BODY),
+             ('First\n\\newpage\nparagraph here with words.\n\nSecond paragraph of the text.', ('paragraph here', 0), 'Backspace', 'First\nparagraph here with words.\n\nSecond paragraph of the text.'),
+             ('First paragraph here with words.\n\n\\newpage\n\\null\n\\newpage\nSecond paragraph of the text.', ('Second', 0), 'Backspace', 'First paragraph here with words.\n\nSecond paragraph of the text.'),
+             ('First paragraph here with words.\n\n\\clearpage\n\\section{Two}\nSecond paragraph of the text.', ('Two', 0), 'Backspace', 'First paragraph here with words.\n\n\\section{Two}\nSecond paragraph of the text.'))
+    for body, at, key, want in cases:
+        load_doc(page, DOC(body=body)); click_text(page, *at)
+        page.keyboard.press(key); settle(page, 200)
+        check(key + ' next to a page break takes the break alone: ' + repr(body[25:60]), src(page) == DOC(body=want) and page.evaluate('document.querySelectorAll("#pages > .page").length') == 1, src(page)[40:160])
+        page.keyboard.type('Z'); settle(page, 150)
+        check('  and the caret stays where it was (' + key + ')', ('Z' + at[0] if key == 'Backspace' else at[0] + 'Z') in src(page), src(page)[40:160])
+        page.evaluate('rikuy.undo()'); page.evaluate('rikuy.undo()'); settle(page, 150)
+        check('  two undos give the bytes back', src(page) == DOC(body=body))
+
+    # The fields left open behind a caret put back in the text (Document info's menu closed by two
+    # Escapes leaves them so): Edit header then notes the caret where it is now, not the place the
+    # fields first noted ("FiZrst", after main's ribbon kept the second Escape)
+    load_doc(page, DOC()); click_text(page, 'First', 2)
+    page.evaluate('rikuy.pageHFOpen("head")'); settle(page, 300)
+    page.get_by_role('tabpanel', name='Header & Footer').get_by_role('button', name='Document info', exact=True).click(); settle(page, 200)
+    page.keyboard.press('Escape'); page.keyboard.press('Escape'); settle(page, 200)
+    load_doc(page, DOC()); click_text(page, 'paragraph of', 0)
+    open_tab(page, 'Insert')
+    page.get_by_role('button', name='Header', exact=True).click(); settle(page, 200)
+    page.get_by_role('menuitem', name='Edit header').click(); settle(page, 300)
+    page.keyboard.type('My Title'); settle(page, 500, full=True)
+    page.keyboard.press('Escape'); settle(page, 300)
+    page.keyboard.type('Z'); settle(page, 200)
+    check('header fields left open behind the text, then Edit header, Escape: the caret where it was put last', 'Second Zparagraph of' in src(page), src(page)[-120:])
+    if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()'); settle(page, 150)
+    # Escape or Close Header and Footer puts the caret back where it was in the text, as Word's: the
+    # header written rebuilt the page with no caret, and what was typed next went to the text's start
+    for close in ('Escape', 'Close'):
+        load_doc(page, DOC()); click_text(page, 'paragraph of', 0)
+        open_tab(page, 'Insert')
+        page.get_by_role('button', name='Header', exact=True).click(); settle(page, 200)
+        page.get_by_role('menuitem', name='Edit header').click(); settle(page, 300)
+        page.keyboard.type('My Title'); settle(page, 500, full=True)
+        if close == 'Escape': page.keyboard.press('Escape')
+        else: page.get_by_role('button', name='Close header and footer', exact=True).click()
+        settle(page, 300)
+        page.keyboard.type('Z'); settle(page, 200)
+        check('header typed, then ' + close + ': the caret back in the text where it was', '\\fancyhead[L]{My Title}' in src(page) and 'Second Zparagraph of' in src(page), src(page)[-120:])
+
+    # Columns › Two with one paragraph's words selected: that paragraph in two columns, as Word's
+    # Apply to: Selected text (the whole document went into twocolumn)
+    d = DOC()
+    load_doc(page, d); place(page, ('Second', 'text.')); open_tab(page, 'Layout')
+    page.get_by_role('button', name='Columns', exact=True).click(); settle(page, 200)
+    page.get_by_role('menuitemradio', name='Two').click(); settle(page, 300)
+    check('Columns › Two on one selected paragraph: multicols around it, the class untouched', src(page) == DOC('\\usepackage{multicol}\n', 'First paragraph here with words.\n\n\\begin{multicols}{2}\nSecond paragraph of the text.\n\\end{multicols}'), src(page)[:220])
+    page.evaluate('rikuy.undo()'); settle(page, 150)
+    check('  one undo gives the bytes back', src(page) == d)
+
+    # A ribbon menu's item that changes nothing (Page number › Bottom center where the class puts it
+    # there already) gives the keys back to the page, as Word's: they stayed on the button and the
+    # next letters typed went nowhere
+    load_doc(page, DOC()); click_text(page, 'paragraph of', 0); open_tab(page, 'Insert')
+    page.get_by_role('button', name='Page number', exact=True).click(); settle(page, 200)
+    page.get_by_role('menuitem', name='Bottom center').click(); settle(page, 300)
+    page.keyboard.type('Z'); settle(page, 200)
+    check('Page number › Bottom center on a page that has it, then typing: the letter goes to the caret', 'Second Zparagraph of' in src(page), src(page)[-90:])
+
+    # (review B2, S1) Columns › Two on a selection outside the text's paragraphs: refused with a
+    # reason, nothing written (the title's wrote \\begin{multicols} into the preamble; a float's
+    # wrote the package alone)
+    for name, d, words in (('the title', DOC('\\title{My Title}\n\\author{Me}\n', '\\maketitle\n\n' + BODY), 'Title'),
+                           ('a figure\'s caption', DOC(body='First paragraph here with words.\n\n\\begin{figure}[h]\n\\centering\nX\n\\caption{A caption here}\n\\end{figure}\n\nSecond paragraph of the text.'), 'caption'),
+                           ('a table float', DOC(body='First paragraph here with words.\n\n\\begin{table}[h]\n\\begin{tabular}{ll}\nalpha & beta\\\\\n\\end{tabular}\n\\end{table}\n\nSecond paragraph of the text.'), 'alpha')):
+        load_doc(page, d); open_tab(page, 'Layout'); place(page, words)
+        sel = page.evaluate('() => getSelection().toString()')
+        page.get_by_role('button', name='Columns', exact=True).click(); settle(page, 200)
+        page.get_by_role('menuitemradio', name='Two').click(); settle(page, 300)
+        check('Columns › Two on words of ' + name + ': refused, the source unchanged, the reason said', sel == words and src(page) == d and 'paragraphs of the text' in page.evaluate("document.getElementById('toast').textContent"), (sel, src(page)[:200]))
+    # (review S2) the header opened by a double click in the top margin: Escape gives the caret back
+    # where it was before the first press (that press had moved it to the text's start)
+    load_doc(page, DOC()); click_text(page, 'paragraph of', 0)
+    x, y = page.evaluate('() => { const r = document.querySelector("#pages .page .pb").getBoundingClientRect(); return [r.left + 60, r.top - 30]; }')
+    page.mouse.dblclick(x, y); settle(page, 400)
+    page.keyboard.type('My Title'); settle(page, 500, full=True)
+    page.keyboard.press('Escape'); settle(page, 300)
+    page.keyboard.type('Z'); settle(page, 200)
+    check('header by double click, typed, Escape: the caret back where it was', '\\fancyhead[L]{My Title}' in src(page) and 'Second Zparagraph of' in src(page), src(page)[-120:])
+    # (review S3, nits) a comment beside a page break stays and the paragraphs stay two; a break's
+    # optional argument and empty braces go with it
+    for body, want in (('First words.\n\n\\newpage % break here\n\nSecond words.', 'First words.\n\n% break here\n\nSecond words.'),
+                       ('First words.\n\n\\newpage\n% ----\n\nSecond words.', 'First words.\n\n% ----\n\nSecond words.'),
+                       ('First words\n\\newpage % c\nsecond words.', 'First words\n% c\nsecond words.'),
+                       ('First words.\n\n\\pagebreak [4]\n\nSecond words.', 'First words.\n\nSecond words.'),
+                       ('First words.\n\n\\newpage{}\n\nSecond words.', 'First words.\n\nSecond words.')):
+        load_doc(page, DOC(body=body)); click_text(page, 'econd words' if 'Second' in body else 'second', 0)
+        page.keyboard.press('Home'); settle(page, 100)
+        page.keyboard.press('Backspace'); settle(page, 200)
+        check('Backspace after a page break: ' + repr(body[14:40]), src(page) == DOC(body=want), src(page)[40:160])
+
+    # (review V1) words of the text's first paragraph, right after \\begin{document}: multicols
+    # around it (refused: the block started at the line end after \\begin{document})
+    d = DOC()
+    load_doc(page, d); open_tab(page, 'Layout'); place(page, 'here with')
+    page.get_by_role('button', name='Columns', exact=True).click(); settle(page, 200)
+    page.get_by_role('menuitemradio', name='Two').click(); settle(page, 300)
+    check('Columns › Two on words of the first paragraph: multicols around it', src(page) == DOC('\\usepackage{multicol}\n', '\\begin{multicols}{2}\nFirst paragraph here with words.\n\\end{multicols}\n\nSecond paragraph of the text.'), src(page)[:220])
+
+    # (review V2) a paragraph a \\noindent, a skip or a heading's \\label opens, after a list or a
+    # display: multicols around it (the first three were refused; main made the document two column)
+    for name, body, want in (('after \\section{A}\\label{s}', '\\section{A}\\label{s}\nSecond words here.\n\nThird para.', '\\section{A}\\label{s}\n\\begin{multicols}{2}\nSecond words here.\n\\end{multicols}\n\nThird para.'),
+                             ('starting \\noindent', 'First para.\n\n\\noindent Second words here.\n\nThird para.', 'First para.\n\n\\begin{multicols}{2}\n\\noindent Second words here.\n\\end{multicols}\n\nThird para.'),
+                             ('starting \\medskip', 'First para.\n\n\\medskip Second words here.\n\nThird para.', 'First para.\n\n\\begin{multicols}{2}\n\\medskip Second words here.\n\\end{multicols}\n\nThird para.'),
+                             ('after a list', '\\begin{itemize}\n\\item One.\n\\end{itemize}\nSecond words here.\n\nThird para.', '\\begin{itemize}\n\\item One.\n\\end{itemize}\n\\begin{multicols}{2}\nSecond words here.\n\\end{multicols}\n\nThird para.'),
+                             ('after a display', 'First para.\n\\[ x = 1 \\]\nSecond words here.\n\nThird para.', 'First para.\n\\[ x = 1 \\]\n\\begin{multicols}{2}\nSecond words here.\n\\end{multicols}\n\nThird para.')):
+        d = DOC(body=body)
+        load_doc(page, d); open_tab(page, 'Layout'); place(page, 'words here')
+        page.get_by_role('button', name='Columns', exact=True).click(); settle(page, 200)
+        page.get_by_role('menuitemradio', name='Two').click(); settle(page, 300)
+        ok = src(page) == DOC('\\usepackage{multicol}\n', want)
+        page.evaluate('rikuy.undo()'); settle(page, 150)
+        check('Columns › Two on words of a paragraph ' + name + ': multicols around it, one undo back', ok and src(page) == d, src(page)[:240])
+
+
 def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         for f in (margins_size_orientation, breaks, columns, line_numbers_and_more, header_footer, background, page_setup_dialog, agents_and_keys,
-                  r1_marks_and_lines, r1_docinfo, r1_background, r1_landscape, r1_review, long_document, compile_pdf, verifier_pdf, r1_page_pdf):
+                  r1_marks_and_lines, r1_docinfo, r1_background, r1_landscape, r1_review, long_document, compile_pdf, verifier_pdf, r1_page_pdf, hunt):
             if names and f.__name__ not in names: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
