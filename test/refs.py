@@ -127,14 +127,15 @@ def toc(page):
 
 
 def toc_follows(page):
-    """The contents' and the list of figures' page numbers follow a heading and a figure that
+    """The contents' and the list of figures' page numbers follow a heading and a figure (its caption,
+    not the list's row, which carries the caption's key too) that
     Enter pushes to the next page, and typing that moves neither leaves them (App.tocPages reads
     the pages again only where a heading, a caption or a footnote mark moved)"""
     fill = '\n\n'.join('Words of a paragraph that fills the page, number %d, long enough to take two lines or three of the column as it goes on and on.' % k for k in range(14))
     doc = D('\\tableofcontents\n\\listoffigures\n\n\\section{First}\n' + fill + '\n\n\\section{Second}\nLast words.\n\n\\begin{figure}[h]\n\\centering\nX\n\\caption{Moved}\n\\end{figure}\n\nAfter it.')
     load_doc(page, doc); settle(page, 300)
     where = '''() => { const pages = [...document.querySelectorAll('#pages .page')]; const at = (el) => el ? pages.indexOf(el.closest('.page')) + 1 : 0;
-      const h = [...document.querySelectorAll('#pages .it.h')].find((x) => x.textContent.includes('Second')), cap = [...document.querySelectorAll('#pages [data-cap]')].find((x) => x.closest('.flow'));
+      const h = [...document.querySelectorAll('#pages .it.h')].find((x) => x.textContent.includes('Second')), cap = [...document.querySelectorAll('#pages [data-cap]:not(.toc-p)')].find((x) => x.closest('.flow'));
       const row = (sel, t) => { const r = [...document.querySelectorAll(sel)].find((x) => x.textContent.includes(t)); return r ? r.querySelector('.toc-p').textContent : null; };
       return { heading: at(h), figure: at(cap), toc: row('.toc .toc-e', 'Second'), lof: row('.toc .toc-e', 'Moved') }; }'''
     w0 = page.evaluate(where)

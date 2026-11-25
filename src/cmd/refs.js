@@ -12,6 +12,7 @@
 
 import { register, command } from '../commands.js';
 import { BLOCKS } from '../render.js';
+import { fmtNum } from '../layout.js';
 import { styOfEl, atomOfEl, escapeTeX } from '../editor.js';
 import { usePackages, provides, preambleEnd, stripComments, hasPackage } from '../preamble.js';
 import { applyEdits } from '../styles.js';
@@ -809,17 +810,22 @@ export const methods = {
     this.fnPerPage();
     if (!caps.length && !ixs.length) return;
     const capPage = new Map();
-    plan.forEach((pg, k) => {
+    // (a caption's page as the page prints its number: i, ii in a book's front matter; the list's
+    // own rows carry the caption's key too, and are not where it stands)
+    plan.forEach((pg) => {
       for (const e of pg.entries) {
         const it = e.it;
         if (!it || !it.el) continue;
-        if (caps.length) for (const c of it.el.querySelectorAll('[data-cap]')) if (!capPage.has(c.dataset.cap)) capPage.set(c.dataset.cap, k + 1);
+        if (caps.length) for (const c of it.el.querySelectorAll('[data-cap]:not(.toc-p)')) if (!capPage.has(c.dataset.cap)) capPage.set(c.dataset.cap, fmtNum(pg.num, pg.fmt));
       }
     });
     for (const c of caps) { const v = capPage.has(c.dataset.cap) ? String(capPage.get(c.dataset.cap)) : ''; if (c.textContent !== v) c.textContent = v; }
     // (an entry's page: the page holding the words just before it, a paragraph cut over two pages
     // giving each part its own; blocks by file, searched by halves: review M9, L12)
     const pageNo = new Map([...this.root.querySelectorAll('.page')].map((p, k) => [p, k + 1]));
+    // (the pages are counted along the document, for their order and their ranges; each is written as
+    // the page prints its number, which makeindex writes: iii in a book's front matter, 1 again after)
+    const printed = (n) => (plan[n - 1] && Number.isFinite(plan[n - 1].num) ? fmtNum(plan[n - 1].num, plan[n - 1].fmt) : String(n));
     const byF = new Map();
     for (const B of this.renderer.blocks) { if (!byF.has(B.f)) byF.set(B.f, []); byF.get(B.f).push(B); }
     for (const L of byF.values()) L.sort((a, b) => a.s - b.s);
@@ -875,7 +881,7 @@ export const methods = {
       for (const [k, p] of list.entries()) {
         x.append(right && k === 0 ? '' : ', ');
         const tag = /^(textbf|bfseries)$/.test(p.fmt) ? 'b' : /^(textit|emph|itshape)$/.test(p.fmt) ? 'i' : 'span';
-        const el = document.createElement(tag); el.textContent = p.t; x.append(el);
+        const el = document.createElement(tag); el.textContent = String(p.t).replace(/\d+/g, (d) => printed(+d)); x.append(el);
       }
     }
   },

@@ -55,6 +55,7 @@ const ws = (t, i) => { while (i < t.length && (t[i] === ' ' || t[i] === '\t' || 
 // The wrapper that starts at s: \cmd[opt]{arg}…{body} or {\decl body}, or null; want (a Set of
 // names) leaves out every other before its end is looked for, which is what costs; ends (a Map
 // from where a group opens to its end) the ends a caller found already
+const OVERLAY_SPEC = /^<[^<>{}\n]{1,40}>/;
 export function parseAt(src, s, want, ends) {
   const end = (i) => (ends && ends.has(i) ? ends.get(i) : closeOf(src, i));
   if (src[s] === '{') {
@@ -67,6 +68,8 @@ export function parseAt(src, s, want, ends) {
   const m = /^\\([A-Za-z]+)(?![A-Za-z])/.exec(src.slice(s, s + 80));
   if (!m || (want && !want.has(m[1]))) return null;
   let i = ws(src, s + m[0].length), opt = null;
+  // (beamer's overlay specification, \textbf<3>{bold}: part of the opener, the words in its braces)
+  if (src[i] === '<') { const ov = OVERLAY_SPEC.exec(src.slice(i, i + 42)); if (ov) i = ws(src, i + ov[0].length); }
   const args = [];
   if (src[i] === '[') { const z = closeOf(src, i); if (z < 0) return null; opt = src.slice(i + 1, z - 1); i = ws(src, z); }
   for (let n = LEAD[m[1]] || 0; n > 0; n--) {
@@ -177,6 +180,8 @@ export function enclosing(src, a, b, names) {
       j = o - 1;
       while (j >= stop && /[ \t\n]/.test(src[j])) j--;
     }
+    // (and back over a beamer overlay specification right after the command's name, \textbf<3>{)
+    if (src[j] === '>') { const lt = src.lastIndexOf('<', j); if (lt > stop && OVERLAY_SPEC.test(src.slice(lt, j + 1)) && /[A-Za-z]/.test(src[lt - 1])) j = lt - 1; }
     const cm = /\\([A-Za-z]+)$/.exec(src.slice(Math.max(stop, j - 60), j + 1));
     if (cm && want.has(cm[1]) && !m[j + 1 - cm[0].length - stop]) {
       W = parseAt(src, j + 1 - cm[0].length, want, ends);
