@@ -98,12 +98,15 @@ def arrows(page):
     k.press('Shift+Tab'); settle(page, 150)
     check('arrows: Shift+Tab in a new formula reaches its LaTeX box', focus_id(page) == 'pop-newtex', focus_id(page))
     k.press('Escape'); settle(page, 200)
-    # a display keeps its arrows
+    # a display is left by Right at its end too, as Word's arrows leave an equation of its own line
+    # (it once kept its arrows; mathfield.py has the rest: Left, Up, Down, an align's rows)
     load_doc(page, DOC.replace('Second paragraph.', '\\[\n  a+b\n\\]'))
     page.locator('#pages .katex-display').first.click(); page.wait_for_selector('#pop-field', timeout=10000); settle(page, 300)
     page.evaluate("(() => { const mf = document.getElementById('pop-field'); mf.focus(); mf.executeCommand('moveToMathfieldEnd'); })()")
-    k.press('ArrowRight'); settle(page, 200)
-    check('arrows: a display formula stays open at Right', page.evaluate("!!document.querySelector('#pop-field')"))
+    k.press('ArrowRight'); settle(page, 200, full=True)
+    gone = page.evaluate("!document.querySelector('#pop-field')")
+    k.type('Q'); settle(page, 250, full=True)
+    check('arrows: Right at a display formula\'s end leaves it, the next letter after it', gone and '\\]\nQ' in src(page) and 'a+b' in src(page), src(page)[-60:])
     k.press('Escape'); settle(page, 200)
 
 
