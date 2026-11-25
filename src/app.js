@@ -4063,8 +4063,10 @@ class App {
     // (a press there keeps the page's focus, and Check accessibility or AutoCorrect Options then
     // left the keys typing into the page under them); its first control, not Close, and under a
     // finger never a text field (the on-screen keyboard would cover the dialog). Tab and Shift+Tab
-    // go round inside it: past Close they had walked out into the bar and the page.
-    if (/(^| )pop-(dlg|share|comment)( |$)/.test(p.className)) {
+    // go round inside it: past Close they had walked out into the bar and the page. (So they do in
+    // a LaTeX box, an endnote's: past Done the focus fell to the page's body, where keys did
+    // nothing; its own field keeps the focus as it opens, on a phone too.)
+    if (/(^| )pop-(dlg|share|comment|raw)( |$)/.test(p.className)) {
       p.addEventListener('keydown', (e) => {
         if (e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
         const all = popFocusables(p);
@@ -4072,6 +4074,8 @@ class App {
         const i = all.indexOf(document.activeElement);
         if (e.shiftKey ? i <= 0 : i === all.length - 1 || i < 0) { e.preventDefault(); all[e.shiftKey ? all.length - 1 : 0].focus(); }
       });
+    }
+    if (/(^| )pop-(dlg|share|comment)( |$)/.test(p.className)) {
       requestAnimationFrame(() => requestAnimationFrame(() => {
         if (!this.pop || this.pop.el !== p || !p.isConnected) return;
         const coarse = matchMedia('(pointer: coarse)').matches, text = (x) => x.matches('input:not([type]), input[type="text"], input[type="search"], input[type="number"], textarea, [contenteditable]');
