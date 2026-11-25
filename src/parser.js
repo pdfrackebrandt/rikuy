@@ -41,6 +41,8 @@ export const SIG = own({
   textcolor: 'omm', color: 'om', colorbox: 'omm', fcolorbox: 'ommm', pagecolor: 'om', definecolor: 'mmm',
   multicolumn: 'mmm', cellcolor: 'om', rowcolor: 'om', columncolor: 'om', rowcolors: 'ommm', arrayrulecolor: 'om', multirow: 'omomom', cline: 'm', cmidrule: 'opm', addlinespace: 'o',
   hypersetup: 'm', geometry: 'm', linespread: 'm', setstretch: 'm', pagestyle: 'm', thispagestyle: 'm',
+  // beamer's (their overlay specifications are spaces to the parser: src/model.js maskOverlays)
+  only: 'm', uncover: 'm', visible: 'm', invisible: 'm', alert: 'm', structure: 'm', frametitle: 'om', framesubtitle: 'm',
   pagenumbering: 'm', makebox: 'oom', framebox: 'oom', raisebox: 'moom', parbox: 'ooomm', scalebox: 'mom',
   resizebox: 'mmm', rotatebox: 'omm', phantom: 'm', hphantom: 'm', vphantom: 'm', intertext: 'm',
   newline: '', linebreak: 'o', pagebreak: 'o', nopagebreak: 'o', centerline: 'm',

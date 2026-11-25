@@ -27,6 +27,8 @@ const STY = {
   sout: 'so', xout: 'so', hl: 'hl', textsuperscript: 'sup', textsubscript: 'sub', mbox: 'nb', text: 'rm',
   fbox: 'fbox', MakeUppercase: 'upper', uppercase: 'upper', MakeLowercase: 'lower', lowercase: 'lower',
   textcircled: 'circ', centerline: 'rm', foreignlanguage: '', textls: 'ls', ensure: '', phantom: 'ph', hphantom: 'ph',
+  // beamer's: the words of every slide drawn at once, as its handout prints them
+  only: '', uncover: '', visible: '', invisible: '', alert: '', structure: '',
   // ulem's dashed and dotted lines; the double strikethrough the Font group defines (src/cmd/font.js)
   dashuline: 'uld', dotuline: 'ulo', culine: 'ul', dsout: 'so2', ruby: 'ruby',
   // graphicx's mirror (B8: a picture flipped by Flip Horizontal)
@@ -98,7 +100,7 @@ const INVIS = new Set([
   'SetKwInOut', 'algnewcommand', 'floatname', 'restylefloat', 'newfloat', 'DeclareCaptionFormat', 'setuptoc',
   'counterwithin', 'counterwithout', 'renewenvironment', 'newcolumntype', 'arraystretch', 'tabcolsep', 'renewcommand',
   'textwidth', 'linewidth', 'columnwidth', 'paperwidth', 'paperheight', 'textheight', 'baselineskip', 'parindent',
-  'parskip', 'columnsep', 'columnseprule', 'tableofcontents', 'listoffigures', 'listoftables', 'pause', 'titlepage',
+  'parskip', 'columnsep', 'columnseprule', 'tableofcontents', 'listoffigures', 'listoftables', 'pause', 'onslide', 'titlepage',
   'columnbreak', 'twocolumn', 'onecolumn', 'fi', 'else', 'ifpdf', 'newcount', 'newif', 'printglossaries', 'printglossary',
   'usetkzobj', 'psset', 'schemestart', 'schemestop', 'setatomsep', 'setchemfig', 'definesubmol', 'tikzstyle', 'pgfkeys', 'pgfmathsetmacro', 'pgfmathdeclarefunction', 'pgfdeclarelayer', 'pgfsetlayers',
   'usepgfplotslibrary', 'newglossaryentry', 'loadglsentries', 'makeglossaries', 'DTLloaddb', 'DTLloadrawdb', 'lstdefinestyle', 'colorlet',
@@ -758,10 +760,23 @@ const PARSE_CACHE = new Map();
 // (B2) the parse the model made of a file's text, for the paragraph commands (src/parasrc.js
 // unitOf): read again at every move of the caret, a long text would be parsed each time
 export function parsedText(t) { for (const v of PARSE_CACHE.values()) if (v.text === t) return v.nodes; return null; }
+// beamer's overlay specifications after a command or an environment's name (\only<2>{..},
+// \textbf<3>{..}, \frametitle<1>{..}, \begin{frame}<1-2>[t]) say on which slides a thing shows;
+// the page draws every slide's text at once, so they are read as spaces of the same length: the
+// tree's offsets stay the source's, the specification is no text of the page, and \textbf<3>{b}
+// takes {b} as TeX does (its argument was "<" and "3>b" ran on as text). \item's own are read by
+// the list (Builder.list), with the [label] after them.
+const BEAMER_DOC = /\\documentclass\s*(?:\[[^\]]*\]\s*)?\{beamer\}/;
+const OVERLAY = /(\\(?:only|uncover|visible|invisible|alert|structure|onslide|pause|frametitle|framesubtitle|textbf|textit|emph|textsl|textsc|texttt|textrm|textsf|textmd|textup|color|textcolor|includegraphics|alt|temporal|action|hyperlink|underline|framezoom)|\\begin\s*\{(?:frame|block|alertblock|exampleblock|itemize|enumerate|description|onlyenv|uncoverenv|visibleenv|invisibleenv|altenv|actionenv|overprint)\})(<[^<>{}\n]{1,40}>)/g;
+export function maskOverlays(t) {
+  if (!BEAMER_DOC.test(t.slice(0, 20000)) || t.indexOf('>') < 0) return t;
+  return t.replace(OVERLAY, (m, cmd, spec) => cmd + ' '.repeat(spec.length));
+}
+
 function parseCached(name, t, userSigs, sigKey) {
   const hit = PARSE_CACHE.get(name);
   if (hit && hit.text === t && hit.sig === sigKey) return hit.nodes;
-  const nodes = parse(t, { userSigs });
+  const nodes = parse(maskOverlays(t), { userSigs });
   PARSE_CACHE.set(name, { text: t, sig: sigKey, nodes });
   return nodes;
 }

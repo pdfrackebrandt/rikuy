@@ -1404,6 +1404,26 @@ def r3_fontspec(page):
             check('R3 fontspec: compiles with %s and prints the words' % eng, r['ok'] and not r['errors'] and 'Heros words' in r['text'], (r['errors'], r['text'][:120]))
 
 
+def r3_beamer(page):
+    """Round 3's hunt: beamer's overlay specifications are no text of the page. \\alert<2>{world}
+    drew "<2>" before the word, \\textbf<3>{bold} a bold "<" and "3>bold" in the text's weight,
+    \\begin{frame}<1-2>[t] its "<1-2>[t]"; now the words of every slide are drawn as they read,
+    typing edits inside the right braces, \\item<+->[a)] keeps its label; with dist/tex it compiles"""
+    doc = ('\\documentclass{beamer}\n\\begin{document}\n\\begin{frame}<1-2>[t]{Slide}\nHello \\alert<2>{world} and \\textbf<3>{bold}.\n'
+           '\\uncover<2->{Later} \\onslide<3> on.\n\\begin{itemize}\n\\item<+->[a)] Lab\n\\item<2-> Two\n\\end{itemize}\n\\end{frame}\n\\end{document}\n')
+    load_doc(page, doc)
+    got = page.evaluate("[...document.querySelectorAll('#pages .it')].map((x) => x.textContent.replace(/\\s+/g, ' ').trim()).filter(Boolean)")
+    check('R3 beamer: the slide\'s words drawn without their overlay specifications', any(t.endswith('Hello world and bold. Later on.') for t in got) and not any('<' in t or '[t]' in t for t in got), got)
+    check('R3 beamer: \\textbf<3>{bold} draws "bold" in bold', page.evaluate("[...document.querySelectorAll('#pages .y-bf')].map((x) => x.textContent)") == ['bold'], page.evaluate("[...document.querySelectorAll('#pages .y-bf')].map((x) => x.textContent)"))
+    check('R3 beamer: \\item<+->[a)] keeps its label', any(t.startswith('a)') for t in got), got)
+    click_text(page, 'bold', 2); page.keyboard.type('X'); wait_src(page, 'boXld')
+    click_text(page, 'world', 5); page.keyboard.type('s'); wait_src(page, 'worlds')
+    check('R3 beamer: typing in them edits inside their braces, the specifications kept', 'Hello \\alert<2>{worlds} and \\textbf<3>{boXld}.' in src(page), src(page)[40:120])
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        r = pdf_text(page, doc)
+        check('R3 beamer: the deck compiles, two slides (<1-2>) with the words the page draws', r['ok'] and not r['errors'] and r['text'].count('\f') == 2 and 'Hello world and bold. Later' in re.sub(r'\s+', ' ', r['text']), (r['errors'], r['text'][-200:]))
+
+
 def r2_phone(p):
     """R2 on a phone, by taps: Code taken off from the style list, a paragraph made Author from it,
     the Rename Style dialog fitting with 44 px controls; screenshots"""
@@ -1572,7 +1592,7 @@ def r2_heading_join(page):
 
 def run():
     with sync_playwright() as p:
-        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter, block_join, item_heading, style_why, review_joins, r2_heading_join, r3_fontspec)
+        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter, block_join, item_heading, style_why, review_joins, r2_heading_join, r3_fontspec, r3_beamer)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style)
         # (names given on the command line run those alone)
