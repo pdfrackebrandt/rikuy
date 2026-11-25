@@ -171,6 +171,10 @@ with sync_playwright() as p:
     page.wait_for_timeout(300)
     fl = page.evaluate("(document.querySelector('.it.flash') || {}).textContent || ''")
     check('a $ left open: the problem names its paragraph\'s line and words, and a press shows that paragraph', probs[:1] == [['sec/one.tex', 3, 'Missing $ inserted. (at Second $paragraph of input.)']] and fl.startswith('Second'), (probs, fl))
+    # (and puts the caret there, on the page, as a heading's press in the Navigation pane does:
+    # what is typed next to fix it goes there)
+    at = page.evaluate("() => { const c = window.rikuy.caretNow(); return c && [document.activeElement.id, c.f, window.rikuy.files.get(c.f).slice(c.p, c.p + 7)]; }")
+    check('a press on the problem puts the caret at its line on the page', at == ['pages', 'sec/one.tex', 'Second '], at)
     # a brace left open: TeX reads on to the file's end and names no line (or the \input's): the
     # problem is put where the words it took as the argument begin
     page.evaluate("""async () => { const g = window.rikuy; g.files.set('sec/one.tex', 'First input file text.\\n\\nSecond \\\\emph{paragraph of\\ninput.\\n\\nThird one.\\n'); g.forceRender = true; g.rebuild(); await g.api.compile(); }""")

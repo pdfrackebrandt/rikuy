@@ -136,7 +136,14 @@ export const nav = {
         const msg = document.createElement('span'); msg.textContent = x.msg;
         const where = document.createElement('span'); where.className = 'where'; where.textContent = x.f + (x.line ? ':' + x.line : '');
         b.append(dot, msg, where);
-        b.addEventListener('click', () => { this.goTo(x.f, x.p); if (window.innerWidth <= 860) this.toggleNav(false); });
+        // (the caret goes there too, as a heading's or a Go To target's press puts it: the place
+        // was only shown, and what was typed next to fix it went nowhere. A finger's tap brings
+        // no keyboard up)
+        b.addEventListener('click', () => {
+          if (!matchMedia('(pointer: coarse)').matches) this.restoreCaret({ f: x.f, p: x.p, bias: 1 }, true);
+          this.goTo(x.f, x.p);
+          if (window.innerWidth <= 860) this.toggleNav(false);
+        });
         body.appendChild(b);
       }
       return;
