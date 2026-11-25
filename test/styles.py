@@ -1497,9 +1497,35 @@ def review_joins(page):
     check('review_joins: Backspace at the paragraph under a heading with its \\label joins it, the label kept once', src(page) == A('\\section{Head Body.}\\label{s}\n\nNext.'), src(page)[40:])
 
 
+def r2_heading_join(page):
+    """(round 2) Backspace at the start of the paragraph under a heading did nothing where the
+    paragraph opened with \\textbf{ or \\noindent, had a comment, or the heading's \\label stood on a
+    line of its own: Word joins the paragraph into the heading. What a heading cannot hold (a
+    footnote) stays out of it, and Backspace says why instead of doing nothing."""
+    for name, a, b in (
+            ('opening with bold', '\\section{Head}\n\\textbf{Body} text.\n\nNext.', '\\section{Head \\textbf{Body} text.}\n\nNext.'),
+            ('after \\noindent', '\\section{Head}\n\\noindent Body text.\n\nNext.', '\\section{Head Body text.}\n\nNext.'),
+            ('with a comment in it', '\\section{Head}\nBody text % c\nmore.\n\nNext.', '\\section{Head Body text % c\nmore.}\n\nNext.'),
+            ('ending in a comment', '\\section{Head}\nBody text. % c\n\nNext.', '\\section{Head Body text. % c\n}\n\nNext.'),
+            ('under a \\label on its own line', '\\section{Head}\n\\label{s}\n\nBody text.\n\nNext.', '\\section{Head Body text.}\n\\label{s}\n\nNext.')):
+        load_doc(page, A(a)); click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 200)
+        check('r2_heading_join: Backspace at a paragraph %s under a heading joins it into the heading' % name, src(page) == A(b), src(page)[40:])
+        page.keyboard.type('X'); settle(page, 200)
+        check('r2_heading_join: the caret where they meet (%s)' % name, 'Head X' in src(page) or 'Head \\textbf{XBody' in src(page) or 'Head X\\textbf' in src(page), src(page)[40:])
+    C = A('\\section{Head}\r\n\\noindent Body text.\r\n\r\nNext.').replace('\n', '\r\n').replace('\r\r', '\r')
+    load_doc(page, C); click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    check('r2_heading_join: and in a file with CRLF line ends', src(page) == C.replace('{Head}\r\n\\noindent Body text.', '{Head Body text.}'), repr(src(page)[40:]))
+    load_doc(page, A('\\section{Head \\emph{end}}\nBody text.\n\nNext.')); click_text(page, 'end', 3); page.keyboard.press('Delete'); settle(page, 200)
+    check('r2_heading_join: Delete at a heading ending in \\emph joins the paragraph under it', src(page) == A('\\section{Head \\emph{end} Body text.}\n\nNext.'), src(page)[40:])
+    F = A('\\section{Head}\nBody\\footnote{N.} text.\n\nNext.')
+    load_doc(page, F); click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 200)
+    toast = page.evaluate("(document.querySelector('.toast') || {}).textContent || ''")
+    check('r2_heading_join: a paragraph with a footnote stays out of the heading, and Backspace says why', src(page) == F and 'footnote' in toast, toast)
+
+
 def run():
     with sync_playwright() as p:
-        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter, block_join, item_heading, style_why, review_joins)
+        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter, block_join, item_heading, style_why, review_joins, r2_heading_join)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style)
         # (names given on the command line run those alone)
