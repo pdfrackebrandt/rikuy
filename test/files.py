@@ -355,6 +355,26 @@ def cross_files():
             page.keyboard.press('Control+z')
             settle(page, 200)
             check('cross files: and one undo brings both files back (%s)' % label, all(src(page, f) == G[f] for f in G), {f: src(page, f) for f in G})
+        # (review of round 3) from a paragraph's start a \\ stands where nothing comes before it on its
+        # line, which stops TeX ("There's no line here to end"): the deletion alone there. In one file,
+        # Shift+Enter at a paragraph's start writes \mbox{}\\, an empty line as Word's
+        T = os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist', 'tex', 'tree.wasm'))
+        ONE = '\\documentclass{article}\n\\begin{document}\nAlpha para.\n\nBeta words.\n\\end{document}\n'
+        for G, a, want, label in ((P, ['Some words', 0, 'inner text', 6], {'main.tex': P['main.tex'].replace('Some words here', ''), 'part.tex': 'text of part'}, 'from a paragraph\'s start into an \\input file'),
+                                  ({'main.tex': ONE}, ('Beta', 0), {'main.tex': ONE.replace('Beta', '\\mbox{}\\\\\nBeta')}, 'at a paragraph\'s start in one file')):
+            load_doc(page, G)
+            if isinstance(a, list): page.evaluate(SEL, a)
+            else: click_text(page, *a)
+            settle(page)
+            page.keyboard.press('Shift+Enter')
+            settle(page, 200)
+            got = {f: src(page, f) for f in G}
+            check('Shift+Enter %s: no bare \\\\ where nothing stands before it' % label, got == want, got)
+            if T:
+                page.set_default_timeout(600000)
+                r = page.evaluate('async () => { const r = await window.rikuy.api.compile(); return [r.ok, r.problems.filter((p) => p.severity === "error").map((p) => p.message)]; }')
+                page.set_default_timeout(30000)
+                check('Shift+Enter %s: compiles, no TeX error' % label, r[0] and not r[1], r)
         # (review W1) from a heading's first letter: the heading goes whole, no \section{} left
         H = {'main.tex': '\\documentclass{article}\n\\begin{document}\n\\section{Intro}\nMain para one.\n\n\\input{a}\n\\end{document}\n', 'a.tex': 'A first.\n\nA second.\n'}
         load_doc(page, H)

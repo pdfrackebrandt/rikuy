@@ -405,7 +405,16 @@ def captions(page):
         check('r3 Backspace in an empty caption (%s) takes the caption, its line, nothing else' % name, src(page) == D(body.replace('\\caption{X}\n', '')), repr(src(page)[40:180]))
         page.keyboard.press('Control+z'); settle(page, 150)
         # (the deletions are one step, as Word's run of Backspaces: the caption comes back with its word)
-        check('r3 undo gives the caption back (%s)' % name, src(page) in (D(body), D(body.replace('{X}', '{}'))), repr(src(page)[40:180]))
+        check('r3 undo gives the caption back with its word (%s)' % name, src(page) == D(body), repr(src(page)[40:180]))
+    # (review of round 3) a caption whose words went keeps its \label in its braces, \caption{\label{..}}:
+    # Backspace takes the caption and leaves the label (the key did nothing, for good); \captionof too
+    for name, body, gone in (('with its label inside', 'Above words.\n\n\\begin{figure}[htbp]\n\\centering\nPICTURE\n\\caption{X\\label{fig:x}}\n\\end{figure}\n\nBelow.', 'PICTURE\n\\label{fig:x}\n'),
+                             ('\\captionof', 'Above words.\n\n\\begin{center}\nPICTURE\n\\captionof{figure}{X}\n\\end{center}\n\nBelow.', 'PICTURE\n')):
+        load_doc(page, D(body, '\\usepackage{caption}\n')); click_text(page, 'X', 1)
+        page.keyboard.press('Backspace'); settle(page, 150)
+        page.keyboard.press('Backspace'); settle(page, 150)
+        s = src(page)
+        check('r3 Backspace in an emptied caption %s takes the caption, nothing else' % name, s == D(body, '\\usepackage{caption}\n').replace(body[body.find('PICTURE'):body.find('\\end{', body.find('PICTURE'))], gone), repr(s[s.find('Above'):][:160]))
 
 
 # ---- cross references -----------------------------------------------------------------------------------

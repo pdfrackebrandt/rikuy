@@ -244,6 +244,15 @@ function selectionHTML(sel, mathml) {
   return '<meta charset="utf-8">' + html.replace(/\u200B/g, '');
 }
 
+// Whether nothing of a line stands before p in its paragraph: a blank line, the text's start, an
+// environment's \begin, an \item, a \\ or \par, a note's or a box's opening brace, with only
+// spaces, \noindent and comment lines after it (a \\ written there stops TeX)
+function noLineBefore(src, p) {
+  const t = src.slice(Math.max(0, p - 600), p).replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, '$1$2').replace(/\\noindent(?![A-Za-z])/g, '');
+  if (!t.trim() && p <= 600) return true;
+  return /(?:\n[ \t\r]*\n|\\begin\s*\{[^{}]*\}(?:\s*\[[^\]]*\]|\s*\{[^{}]*\})*|\\item(?![A-Za-z])(?:\s*\[[^\]]*\])?|\\\\(?:\s*\[[^\]]*\])?|\\par(?![A-Za-z])|\\(?:begin\s*\{document\})|\\(?:footnote|endnote|thanks|footnotetext|parbox(?:\[[^\]]*\])*\{[^{}]*\}|fbox|mbox|centerline)\s*\{)\s*$/.test(t);
+}
+
 // How many { are open at position p, counting from the start of its paragraph.
 function braceDepth(src, p) {
   let s = src.lastIndexOf('\n\n', p - 1);
@@ -2426,17 +2435,25 @@ class App {
         // cell's end. The browser's own step went out of the figure: the caret landed on the
         // picture or the text above it, which the next Backspace deleted, \caption{} staying.
         // (its \label and the rest of the float stay)
+        // (\captionof and subcaption's \subcaption too, and a \label in its braces, which stays:
+        // \caption{Text\label{..}} with its words deleted is \caption{\label{..}})
         if (ph.closest('.cap')) {
-          const src = this.src(c.f), from = Math.max(0, c.a - 400);
-          const open = /\\caption\*?\s*(?:\[[^\]]*\]\s*)?\{\s*$/.exec(src.slice(from, c.a));
-          const close = /^\s*\}/.exec(src.slice(c.a, c.a + 400));
+          const src = this.src(c.f), from = Math.max(0, c.a - 400), LAB = String.raw`(?:\s|\\label\s*\{[^{}]*\})*`;
+          const open = new RegExp(String.raw`\\(?:caption|subcaption|captionof\s*\{[^{}]*\})\*?\s*(?:\[[^\]]*\]\s*)?\{(` + LAB + ')$').exec(src.slice(from, c.a));
+          const close = new RegExp('^(' + LAB + String.raw`)\}`).exec(src.slice(c.a, c.a + 400));
           if (!open || !close) return;
           if (!/Backward/.test(type)) return;
           let s = from + open.index, e = c.a + close[0].length;
+          const t = (open[1] + close[1]).match(/\\label\s*\{[^{}]*\}/g)?.join('') || '';
           // (its line too, where nothing else stands on it)
           const ls = src.lastIndexOf('\n', s - 1) + 1, nl = src.indexOf('\n', e);
-          if (!src.slice(ls, s).trim() && !src.slice(e, nl < 0 ? src.length : nl).trim()) { s = ls; e = nl < 0 ? src.length : nl + 1; }
-          this.commit([{ f: c.f, s, e, t: '' }], { f: c.f, p: s, bias: -1 }, 'del');
+          if (!t && !src.slice(ls, s).trim() && !src.slice(e, nl < 0 ? src.length : nl).trim()) { s = ls; e = nl < 0 ? src.length : nl + 1; }
+          this.commit([{ f: c.f, s, e, t }], { f: c.f, p: s, bias: -1 }, 'del');
+          // (the caret where the caption stood is no place of the page's: the picture before it is
+          // selected, as Word's caret after it, so the next Backspace takes the picture, not a line
+          // end nobody sees)
+          const pic = src.lastIndexOf('\\includegraphics', s), env = src.lastIndexOf('\\begin', s);
+          if (pic >= 0 && pic > env && this.picSelect) this.picSelect({ f: c.f, s: pic });
           return;
         }
         // A heading whose words were all deleted: the next Backspace or Delete takes the heading
@@ -2773,7 +2790,9 @@ class App {
           // (and none before the other file's remains: an \input's file selected into the
           // paragraph after it leaves the blank line after \input{..})
           const apart = X.edits.some((x) => x.f !== X.at.f && /\n[ \t\r]*\n[ \t\r]*$/.test(/\s*$/.exec(this.src(x.f).slice(Math.max(0, x.s - 400), x.s))[0]));
-          if (!apart && !/\n[ \t\r]*\n/.test(gap) && !(ctx && /^(h|cap|cell)$/.test(ctx.dataset.ctx))) {
+          // (and none where nothing stands before it on its line, the paragraph's start: a \\ there
+          // stops TeX, "There's no line here to end"; the deletion alone, as the page shows it)
+          if (!apart && !/\n[ \t\r]*\n/.test(gap) && !(ctx && /^(h|cap|cell)$/.test(ctx.dataset.ctx)) && !noLineBefore(S, X.at.p)) {
             const t = '\\\\' + (/^[ \t]*\r?\n/.test(gap) || !gap.length && end >= S.length ? '' : '\n');
             if (ed) ed.t += t; else X.edits.push({ f: X.at.f, s: X.at.p, e: X.at.p, t });
             this.commit(X.edits, { f: X.at.f, p: X.at.p + t.length, bias: 1 }, 'type');
@@ -2805,7 +2824,10 @@ class App {
     if (soft) {
       if (kind === 'cell') { this.cellEnter(c, edits); return; }
       if (kind === 'h' || kind === 'cap') return;
-      this.commit([...edits, { f, s: p, e: p, t: '\\\\\n' }], { f, p: p + 3, bias: 1 }, 'type');
+      // (at a paragraph's start a bare \\ stops TeX, "There's no line here to end": an empty
+      // line there is \mbox{}\\, as Word's Shift+Enter there makes one)
+      const t = noLineBefore(src, p) ? '\\mbox{}\\\\\n' : '\\\\\n';
+      this.commit([...edits, { f, s: p, e: p, t }], { f, p: p + t.length, bias: 1 }, 'type');
       return;
     }
     // Enter at the end of a float's last caption: a paragraph after the float, as Word's Enter at a
@@ -3687,7 +3709,9 @@ class App {
       }
       return st.length === n + 1 && /\\(?:footnote|footnotetext|endnote)\s*(?:\[[^\]{}]*\]\s*)?$/.test(src.slice(Math.max(0, st[0] - 80), st[0]));
     };
-    const fmtOnly = !!fw && (braceDepth(src, fw.p) === (fw.close.match(/\}/g) || []).length || (!!fw.close && inNote(fw.p, (fw.close.match(/\}/g) || []).length)));
+    const inFmts = !!fw && braceDepth(src, fw.p) === (fw.close.match(/\}/g) || []).length;
+    const noteFmts = !!fw && !inFmts && !!fw.close && inNote(fw.p, (fw.close.match(/\}/g) || []).length);
+    let fmtOnly = inFmts || noteFmts;
     const inline = inArg || (!whole && !!(el && el.closest && el.closest('td, .it.h, .cap')));
     // (copied LaTeX put in a heading, a table's cell or a caption, whose argument a paragraph
     // break ends, goes in as one line: src/paste.js oneLineLatex. Pasted as it was,
@@ -3705,9 +3729,10 @@ class App {
     // (a preamble that sets Greek up for pdfLaTeX's text: Greek pasted there stays letters)
     const greekSet = /\\usepackage\s*\[[^\]]*\b(greek|polutonikogreek|LGR)\b[^\]]*\]\s*\{(babel|fontenc)\}|\\usepackage\s*(\[[^\]]*\])?\s*\{[^}]*\b(textgreek|alphabeta|teubner|greektex|lgrx)\b|\\DeclareUnicodeCharacter\s*\{0?3[9AaBbCc][0-9A-Fa-f]\}|\\newunicodechar\s*\{[\u0370-\u03FF]\}/.test(pre);
     // (flat: on one line, as a heading, a cell or a command's argument takes it)
-    const rich = (flat = inline) => withPdfText(pdfText, () => {
+    // (note: in a footnote's text, where a float or verbatim stops TeX: src/paste.js opts.note)
+    const rich = (flat = inline, note = false) => withPdfText(pdfText, () => {
       if (plainOnly) return textToTeX(plain, o.prev);
-      const q = { ...o, inlineOnly: flat };
+      const q = { ...o, inlineOnly: flat, note };
       let t = '';
       if (html && /<[a-z]/i.test(html)) { try { t = htmlToTeX(html, q); } catch (err) { t = ''; } }
       if (!t.trim()) t = plainToTeX(plain, o.prev, q);
@@ -3726,8 +3751,12 @@ class App {
     // (paragraphs of text alone into formatted words: split there, each in the formats. Anything
     // else, a list, a heading, a table, a display, a comment, stays flattened on the line as before:
     // \uline{..\begin{itemize}..} stopped TeX)
+    // (in a note, copied LaTeX with a float, verbatim or a heading goes the way it went before,
+    // on the line: none of them can stand in a footnote)
+    const noteU = noteFmts && !raw ? (latex ? this.pasteKept(latex, c.f, fw.p) : rich(false, true)) : null;
+    if (noteU != null && /\\begin\s*\{(?:table|figure|verbatim|lstlisting|minted|Verbatim|wrapfigure|sidewaystable)\*?\}|\\(?:verb|lstinline|part|chapter|(?:sub)*section|(?:sub)?paragraph)(?![A-Za-z])/.test(noteU)) fmtOnly = false;
     if (fmtOnly && !raw) {
-      const u = this.pasteInFormats(c.f, fw.p, latex ? this.pasteKept(latex, c.f, fw.p) : rich(false)), parts = u.split(/\s*\n[ \t]*\n\s*/);
+      const u = this.pasteInFormats(c.f, fw.p, noteU != null ? noteU : latex ? this.pasteKept(latex, c.f, fw.p) : rich(false)), parts = u.split(/\s*\n[ \t]*\n\s*/);
       if (parts.length > 1 && this.wrappable && parts.every((x) => this.wrappable(x))) { t = parts.join(fw.close + '\n\n' + fw.open); at = fw.p; }
       else if (parts.length > 1 && this.wrappable) {
         // A part the formats' braces cannot hold (a list, a display, a heading) goes in between
@@ -7024,10 +7053,11 @@ class App {
       // after every await above, from the text and the caret as they are now.
       if (toPlace.length) placed = this.figureEdits(toPlace, { atCaret: !!opts.atCaret });
       // (a step of its own: two pictures dropped one after the other are two undos)
-      if (placed) { this.closeGroup(); this.commit(placed.edits, placed.caret, 'figure'); this.closeGroup(); }
-      // (Insert › Picture: the picture selected, as Word's, for Picture Format and its handles)
-      if (placed && placed.pic && opts.atCaret && this.picSelect) this.picSelect(placed.pic);
-      else { this.rebuild(this.caretNow()); this.pushToSource(); }
+      if (placed) {
+        this.closeGroup(); this.commit(placed.edits, placed.caret, 'figure'); this.closeGroup();
+        // (Insert › Picture: the picture selected, as Word's, for Picture Format and its handles)
+        if (placed.pic && opts.atCaret && this.picSelect) this.picSelect(placed.pic);
+      } else { this.rebuild(this.caretNow()); this.pushToSource(); }
       this.updateFileTabs();
       this.saveSoon();
       // an added chapter or figure shows on the page only once the source names it
@@ -7146,9 +7176,12 @@ class App {
         let s0 = c.a, e0 = c.a;
         while (s0 > B.s && /[ \t]/.test(S[s0 - 1])) s0--;
         while (e0 < B.e && /[ \t]/.test(S[e0])) e0++;
-        if (!S.slice(B.s, s0).trim()) {
-          // (the block's range may begin with the line end before its words)
+        if (!S.slice(B.s, s0).replace(/\\noindent(?![A-Za-z])/g, '').trim()) {
+          // (the block's range may begin with the line end before its words; a \noindent stays
+          // with its paragraph, the picture before both)
           let b0 = B.s; while (b0 < s0 && /\s/.test(S[b0])) b0++;
+          const ni = /\\noindent(?![A-Za-z])\s*$/.exec(S.slice(Math.max(0, b0 - 40), b0));
+          if (ni) b0 -= ni[0].length;
           let nlB = 0; for (let k = b0 - 1; k >= 0 && /\s/.test(S[k]); k--) if (S[k] === '\n') nlB++;
           at = { f: c.f, s: b0, e: b0, pre: b0 === 0 ? '' : '\n'.repeat(Math.max(0, 2 - nlB)), post: '\n\n' };
         } else if (S.slice(e0, B.e).trim()) at = { f: c.f, s: s0, e: e0, pre: '\n', post: '\n' };

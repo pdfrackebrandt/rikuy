@@ -1099,6 +1099,13 @@ def r3_insert(page):
         check('r3 Insert Picture %s: the picture selected, Picture Format open' % label, page.evaluate("!!(window.rikuy.armed && window.rikuy.armed.kind === 'img' && document.querySelector('#pages .a-img.sel'))"), page.evaluate("window.rikuy.armed && window.rikuy.armed.kind"))
         page.evaluate('window.rikuy.undo()'); settle(page, 150)
         check('r3 one undo takes it out (%s)' % label, src(page) == D, body(page))
+    # (review of round 3) at a \noindent paragraph's start: before the paragraph, \noindent kept with it
+    N = D.replace('Alpha beta', '\\noindent Alpha beta')
+    load_doc(page, N); click_text(page, 'Alpha', 0)
+    page.set_input_files('#picinput', tmp)
+    until(page, "() => window.rikuy.files.get('main.tex').includes('cat.png')")
+    settle(page, 200)
+    check('r3 Insert Picture at a \\noindent paragraph\'s start: before it, \\noindent with its words', src(page) == N.replace('\\section{Head}\n', '\\section{Head}\n\n' + PIC + '\n\n'), body(page))
 
 
 def run():
