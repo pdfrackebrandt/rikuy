@@ -67,6 +67,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 sys.path.insert(0, os.path.join(ROOT, 'test'))
 if os.path.isdir('/opt/pw-browsers'): os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
 import pages
+import browser  # noqa: F401  (hands wait_for_function's expressions over as functions: the page's policy has no eval)
 try:
     import brotli
 except ImportError:
@@ -187,6 +188,10 @@ class H(pages.H):
             return self.put(rec, 308, b'', 'text/plain', path, [('Location', '/')])
         rel = 'index.html' if path == '/' else path.lstrip('/')
         f = os.path.normpath(os.path.join(root, rel))
+        # a page file x.html answered at x, as Pages does (the widget document: the service
+        # worker's install asks for it there, and a 404 would fail the install, so that no repeat
+        # visit was ever served by the worker)
+        if os.path.commonpath([root, f]) == root and not os.path.isfile(f) and os.path.isfile(f + '.html'): f += '.html'
         if os.path.commonpath([root, f]) != root or not os.path.isfile(f):
             nf = os.path.join(root, '404.html')
             return self.put(rec, 404, open(nf, 'rb').read() if os.path.isfile(nf) else b'Not found', 'text/html; charset=utf-8', path)

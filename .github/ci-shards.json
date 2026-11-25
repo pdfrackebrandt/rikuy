@@ -24,6 +24,7 @@
   "word_fixture.py": {"why": "a helper: writes test/fixtures/word-*.docx, which npm test reads"},
   "word_lo.py": {"why": "a helper: word.py's LibreOffice side, where LibreOffice is installed"},
   "stress.py": {"why": "holds keystroke times to limits a shared runner may miss: run by hand"},
+  "loadbench.py": {"why": "a benchmark, one build against another: run by hand or through suite.yml (AGENTS.md)"},
   "scripts.py": {"why": "not in CI before the shards either (AGENTS.md: run by hand for direction, the page's fonts or scripts.js); adding it is its own change"},
   "corpus_browser.py": {"why": "needs the LaTeX-examples corpus: run by hand (AGENTS.md)"},
   "editor_corpus.py": {"why": "every scripted edit on the corpus, an hour: run by hand (AGENTS.md)"}
