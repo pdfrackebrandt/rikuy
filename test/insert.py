@@ -1090,6 +1090,15 @@ def hunt_c(page):
     cdp.send('Input.insertText', {'text': "'"}); settle(page, 300)
     page.evaluate("() => { const g = window.rikuy; g.caretNow = g.__caretNow; delete g.__caretNow; }")
     check('a dead key\'s \' in lstlisting stays straight', "\nit 'x\n" in src(page), src(page)[40:140])
+    # the blank paragraph's first character goes through the same rule: one Enter in a listing
+    # makes it there, and one at a \texttt's end carries the \texttt (a backtick was written in both)
+    load_doc(page, ls); click_text(page, 'here', 2); settle(page, 100)
+    page.evaluate("() => { const g = window.rikuy, p = g.src('main.tex').indexOf('it x') + 3; g.ghostAt('main.tex', p); }"); settle(page, 100)
+    page.keyboard.type("'"); settle(page, 300)
+    check('the first key of a blank paragraph in a listing: \' straight', "\n'\n" in src(page) and '`' not in src(page), src(page)[40:140])
+    load_doc(page, W('Some \\texttt{code}')); click_text(page, 'code', 4); page.keyboard.press('Enter'); settle(page, 200)
+    page.keyboard.type("'a'"); settle(page, 300)
+    check('Enter at a \\texttt\'s end, then \'a\': straight in the new paragraph\'s \\texttt', "\\texttt{'a'}" in src(page), src(page)[40:140])
     # the language of an "i" at a \foreignlanguage group's end: the group's
     it2 = W('Hello \\foreignlanguage{italian}{Ciao} there.').replace('\\begin{document}', '\\usepackage[italian,english]{babel}\n\\begin{document}')
     load_doc(page, it2); click_text(page, 'Ciao', 4); page.keyboard.type(' i '); settle(page, 300)

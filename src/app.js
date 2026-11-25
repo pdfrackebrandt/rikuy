@@ -2351,7 +2351,7 @@ class App {
     // letters go where Enter left the caret, as Word's; ghostOver)
     if (!range && this.ghostOver()) this.takeBackGhost('back');
     const whole = range ? null : this.wholeDoc();
-    if (whole) { this.replaceBody(whole, escapeTeX(data, ' '), 'replace'); return; }
+    if (whole) { this.replaceBody(whole, this.typedTeX(this.main, whole.s, data, { prev: ' ' }), 'replace'); return; }
     const c = this.caretNow();
     if (!c) return;
     // typed over a selection from one file into another: each file's part goes (crossFileEdits)
@@ -2387,7 +2387,7 @@ class App {
       this.newMath(); return;
     }
     if (data === '\\' && !range && !raw && (c.collapsed || c.ghost)) { this.openPalette(); return; }
-    if (c.ghost) { this.ghostInsert(raw ? data : escapeTeX(data, ' ')); return; }
+    if (c.ghost) { this.ghostInsert(raw ? data : this.typedTeX(this.ghost.f, this.ghost.pos, data, { prev: ' ', wrap: this.ghost.wrap })); return; }
     const f = range ? range.f : c.f;
     let a = range ? range.a : c.a, b = range ? range.b : c.b;
     const edits = this.deletionEdits(f, a, b, true);
@@ -2408,28 +2408,38 @@ class App {
     this.commit(merged, caret, edits.length ? 'replace' : 'type');
   }
 
+  // Whether place at of file f is code, where typed quotes stay straight (a ' wrote a backtick
+  // into the code): \texttt{..}, {\ttfamily ..}, \verb|..|, \lstinline, \mintinline, \url{..},
+  // \path, \href's address, and the environments verbatim, lstlisting, minted, comment and their
+  // kin (the last one begun in the 20 000 characters before, not ended); wrap: the formats a blank
+  // paragraph's words go in (Enter at the end of \texttt{..})
+  codeAt(f, at, wrap) {
+    if (wrap && /\\(?:texttt|ttfamily)(?![A-Za-z])/.test(wrap.open || '')) return true;
+    const src = this.src(f), near = src.slice(Math.max(0, at - 400), at), line = near.slice(near.lastIndexOf('\n') + 1);
+    if (/\\texttt\s*\{(?:[^{}]|\{[^{}]*\})*$|\{\\ttfamily(?![A-Za-z])[^{}]*$/.test(near)
+      || /\\(?:verb|lstinline|path)\*?([^A-Za-z\s{*\[])(?:(?!\1).)*$/.test(line)
+      || /\\(?:lstinline|url|path|nolinkurl|href)\s*(?:\[[^\]]*\])?\{[^}]*$/.test(line)
+      || /\\mintinline\s*(?:\[[^\]]*\])?\{[^}]*\}\s*(?:\{[^}]*|([^\s{])(?:(?!\1).)*)$/.test(line)) return true;
+    let env = null;
+    for (const m of src.slice(Math.max(0, at - 20000), at).matchAll(/\\(begin|end)\s*\{(verbatim\*?|Verbatim\*?|BVerbatim|LVerbatim|lstlisting|minted|comment|tcblisting|filecontents\*?)\}/g)) env = m[1] === 'begin' ? m[2] : env === m[2] ? null : env;
+    return !!env;
+  }
+  // What typed text becomes as LaTeX at place at of file f (its quotes, dashes and specials, as
+  // escapeTeX writes them): the one place every typing path escapes (a key, a composition, the
+  // blank paragraph's first letter, the whole text typed over), so none skips code's straight
+  // quotes. o.prev: the text before where it is not the source's (a new paragraph: ' '); by
+  // default the two characters before, as `` is told from `; o.wrap: as codeAt
+  typedTeX(f, at, data, o = {}) {
+    return escapeTeX(data, o.prev ?? (this.src(f).slice(Math.max(0, at - 2), at) || ' '), { code: this.codeAt(f, at, o.wrap) });
+  }
+
   // Text typed, or written by Replace, at p of file f as the source takes it there. A selection
   // from a paragraph into a LaTeX paragraph or back: the text is written as the place it lands in
   // takes it, as source in the box, escaped in the text; {} after a control word, a bracket kept
   // from being read as the optional argument of the command before it.
   escapeAt(f, at, data) {
     const src = this.src(f), lands = this.texAt(f, at);
-    // Code, its quotes straight (a ' typed there wrote a backtick into the code): \texttt{..},
-    // {\ttfamily ..}, \verb|..|, \lstinline, \mintinline, \url{..}, \path, \href's address, and
-    // the environments verbatim, lstlisting, minted, comment and their kin (the last one begun
-    // in the 20 000 characters before, not ended)
-    const near = src.slice(Math.max(0, at - 400), at), line = near.slice(near.lastIndexOf('\n') + 1);
-    let code = /\\texttt\s*\{(?:[^{}]|\{[^{}]*\})*$|\{\\ttfamily(?![A-Za-z])[^{}]*$/.test(near)
-      || /\\(?:verb|lstinline|path)\*?([^A-Za-z\s{*\[])(?:(?!\1).)*$/.test(line)
-      || /\\(?:lstinline|url|path|nolinkurl|href)\s*(?:\[[^\]]*\])?\{[^}]*$/.test(line)
-      || /\\mintinline\s*(?:\[[^\]]*\])?\{[^}]*\}\s*(?:\{[^}]*|([^\s{])(?:(?!\1).)*)$/.test(line);
-    if (!code && !lands) {
-      let env = null;
-      for (const m of src.slice(Math.max(0, at - 20000), at).matchAll(/\\(begin|end)\s*\{(verbatim\*?|Verbatim\*?|BVerbatim|LVerbatim|lstlisting|minted|comment|tcblisting|filecontents\*?)\}/g)) env = m[1] === 'begin' ? m[2] : env === m[2] ? null : env;
-      code = !!env;
-    }
-    // (the two characters before: ``, a double quote just opened, is told from `, a single one)
-    let t = lands ? data : escapeTeX(data, src.slice(Math.max(0, at - 2), at) || ' ', { code });
+    let t = lands ? data : this.typedTeX(f, at, data);
     if (!lands && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!lands && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
     // (a space after a control word and the space that ends it, as in {\large |} the size box
@@ -3435,8 +3445,8 @@ class App {
     // (Select All, then a word composed, as a phone's keyboard writes every word: it left the first
     // heading's command and blank lines, "\section{Xy}", where a key typed leaves the word alone;
     // a composition given up there leaves an empty body, not empty commands)
-    if (W) { this.compTex = null; this.forceRender = true; this.replaceBody(W, data ? escapeTeX(data, ' ') : '', 'replace'); return; }
-    if (c.ghost) { if (data && this.ghost) this.ghostInsert(this.ghostRaw() ? data : escapeTeX(data, ' ')); else this.relayout(true); return; }
+    if (W) { this.compTex = null; this.forceRender = true; this.replaceBody(W, data ? this.typedTeX(this.main, W.s, data, { prev: ' ' }) : '', 'replace'); return; }
+    if (c.ghost) { if (data && this.ghost) this.ghostInsert(this.ghostRaw() ? data : this.typedTeX(this.ghost.f, this.ghost.pos, data, { prev: ' ', wrap: this.ghost.wrap })); else this.relayout(true); return; }
     // What the composition replaced, where its first change said (a word marked on Android, the
     // caret in it elsewhere): only the characters that differ, at their own source places, so a
     // format or a formula inside the word stays. Where those characters are not all plain text
@@ -5392,7 +5402,7 @@ class App {
     const pop = this.pop, ta = pop && pop.el.querySelector('#pop-tex, #pop-newtex');
     if (!pop || !ta) {
       // (no formula opened at all: the dollar sign and the key are written as typed)
-      const c2 = this.caretNow(), t = '\\$' + escapeTeX(data, '$');
+      const c2 = this.caretNow(), t = '\\$' + (c2 && !c2.ghost ? this.typedTeX(c2.f, c2.a, data, { prev: '$' }) : '');
       if (c2 && !c2.ghost) this.commit([{ f: c2.f, s: c2.a, e: c2.b, t }], { f: c2.f, p: c2.a + t.length }, 'type');
       return true;
     }
