@@ -970,12 +970,52 @@ def hunt(page):
         check('Columns › Two on words of a paragraph ' + name + ': multicols around it, one undo back', ok and src(page) == d, src(page)[:240])
 
 
+R3_REPORT = ('\\documentclass{report}\n\\begin{document}\n\\title{Report Title}\\author{An Author}\\maketitle\n\\tableofcontents\n\\listoffigures\n\\chapter{Intro}\nText one.\n'
+             '\\begin{figure}[h]\\centering X\\caption{Fig}\\end{figure}\n\\chapter{Two}\nText two.\n\\appendix\n\\chapter{Extra}\nText three.\n'
+             '\\begin{thebibliography}{9}\n\\bibitem{a} A. Book.\n\\end{thebibliography}\n\\end{document}\n')
+R3_MATTER = ('\\documentclass{%s}\n\\begin{document}\n\\frontmatter\n\\tableofcontents\n\\chapter{Preface}\nPreface words.\n\\mainmatter\n\\chapter{One}\nText one.\n\\section{Sec}\nMore.\n'
+             '\\chapter{Two}\nText two.\n\\backmatter\n\\begin{thebibliography}{9}\n\\bibitem{a} A. Book.\n\\end{thebibliography}\n\\end{document}\n')
+R3_BOOK = ('\\documentclass{book}\n\\begin{document}\n\\frontmatter\n\\chapter{Preface}\nPreface text here.\n\\tableofcontents\n\\mainmatter\n\\chapter{Introduction}\n'
+           'First chapter text.\n\n\\section{Background}\nSection text.\n\\appendix\n\\chapter{Proofs}\nAppendix text.\n\\backmatter\n\\chapter{Notes}\nBack text.\n\\end{document}\n')
+
+
+def r3_matter(page):
+    """Round 3's hunt: a report's and a book's pages as TeX sets them. A \\title and \\author written
+    in the text before \\maketitle make the title page (it was not drawn at all); the contents, the
+    list of figures and the bibliography each start a page, as \\chapter* does; \\frontmatter numbers
+    its pages i, ii and \\mainmatter 1 again (each on an odd page of a book), and the contents give
+    the numbers the pages print; with dist/tex every page starts with the words TeX starts it with"""
+    PAGES = "[...document.querySelectorAll('#pages > .page')].map((p) => [p.querySelector('.flow').textContent.replace(/\\s+/g, ' ').trim(), ((p.querySelector('.hd').hidden ? '' : p.querySelector('.hd').textContent) + ' ' + (p.querySelector('.ft').hidden ? '' : p.querySelector('.ft').textContent)).trim()])"
+    TOC = "[...document.querySelectorAll('.toc-p')].map((x) => x.textContent)"
+    for text, firsts, nums, toc in ((R3_REPORT, ['Report Title', 'Contents', 'List of Figures', 'Chapter 1', 'Chapter 2', 'Appendix A', 'Bibliography'], ['', '1', '2', '3', '4', '5', '6'], ['3', '4', '5', '3']),
+                                    (R3_BOOK, ['Preface', '', 'Contents', '', 'Chapter 1', '', 'Appendix A', '', 'Notes'], ['i', 'ii', 'iii', 'iv', '1', '2', '3', '4', '5'], ['i', '1', '1', '3', '5']),
+                                    # (memoir's and KOMA-Script's blank pages have no head and no number; KOMA's
+                                    # chapters no "Chapter" before their number)
+                                    (R3_MATTER % 'memoir', ['Contents', '', 'Preface', '', 'Chapter 1', '', 'Chapter 2', '', 'Bibliography'], ['i', '', 'iii', '', '1', '', '3', '', '5'], ['', 'iii', '1', '1', '3']),
+                                    (R3_MATTER % 'scrbook', ['Contents', '', 'Preface', '', '1One', '', '2Two', '', 'Bibliography'], ['i', '', 'iii', '', '1', '', '3', '', '5'], ['iii', '1', '1', '3'])):
+        # (the contents are read from the build before, as TeX reads the .toc: built twice)
+        load_doc(page, text); load_doc(page, text); settle(page, 300)
+        got = page.evaluate(PAGES)
+        kind = re.search(r'\{(\w+)\}', text).group(1)
+        check('R3 matter: the %s is %d pages, each starting as TeX starts it' % (kind, len(firsts)), len(got) == len(firsts) and all(g[0].startswith(f) for g, f in zip(got, firsts)), [g[0][:30] for g in got])
+        check('R3 matter: the %s\'s pages print TeX\'s numbers' % kind, [re.sub(r'[^ivx0-9]', ' ', g[1]).split()[:1] for g in got] == [[n] if n else [] for n in nums], [g[1] for g in got])
+        check('R3 matter: the %s\'s contents and lists give the numbers the pages print' % kind, page.evaluate(TOC) == toc, page.evaluate(TOC))
+        if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+            c = compile_doc(page, text)
+            tex = [' '.join(t.split()) for t in c['txt'] if t.strip() or True][:len(c['pdf'].pages) if c['pdf'] else 0]
+            bad = [(k, f) for k, f in enumerate(firsts) if k < len(tex) and f.replace(' ', '') not in tex[k].replace(' ', '')]
+            check('R3 matter: TeX\'s PDF of the %s has as many pages, each starting with the same words' % kind, c['ok'] and len(tex) == len(firsts) and not bad, (len(tex), bad[:3]))
+    # typing in the title written in the text edits its \title
+    load_doc(page, R3_REPORT); click_text(page, 'Report Title', 6); page.keyboard.type('X'); settle(page, 200)
+    check('R3 matter: typing in a title written in the text edits its \\title', '\\title{ReportX Title}' in src(page), src(page)[40:110])
+
+
 def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         for f in (margins_size_orientation, breaks, columns, line_numbers_and_more, header_footer, background, page_setup_dialog, agents_and_keys,
-                  r1_marks_and_lines, r1_docinfo, r1_background, r1_landscape, r1_review, long_document, compile_pdf, verifier_pdf, r1_page_pdf, hunt):
+                  r1_marks_and_lines, r1_docinfo, r1_background, r1_landscape, r1_review, long_document, compile_pdf, verifier_pdf, r1_page_pdf, hunt, r3_matter):
             if names and f.__name__ not in names: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])

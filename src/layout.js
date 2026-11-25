@@ -474,12 +474,15 @@ export class Layout {
       }
     };
     // \cleardoublepage in a two sided document: the next page is odd, with a blank one before it
-    const blankPage = () => {
-      const b = { entries: [], fns: [], used: 0, fnH: 0, marks: [], blank: true };
+    const blankPage = (empty) => {
+      const b = { entries: [], fns: [], used: 0, fnH: 0, marks: empty ? [{ thisStyle: 'empty' }] : [], blank: true };
       number(b);
       pages.push(b);
     };
-    const toOdd = () => { if (two && !(cnt.num % 2)) blankPage(); };
+    // (memoir's and KOMA-Script's \cleardoublepage leave the blank page with no head and no number,
+    // the cleared style and cleardoublepage=empty; the standard classes' keep the page's style)
+    const O = this.opts || {}, cleared = /^(memoir|scrbook|scrreprt)$/.test(O.cls) && !/\bcleardoublepage\s*=\s*(current|plain|headings|myheadings)/.test((O.refs && O.refs.clsOpts) || '');
+    const toOdd = () => { if (two && !(cnt.num % 2)) blankPage(cleared); };
     // \ifodd\value{page}\hbox{}\clearpage\fi: on a page of the other parity, that page ends (an
     // empty one is left blank), so the text goes on on the next
     const parity = (want) => {

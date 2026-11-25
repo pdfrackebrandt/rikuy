@@ -1797,11 +1797,18 @@ class Builder {
           para.push(nd);
           continue;
         }
+        // \title, \author and \date in the text, as many write them just before \maketitle: TeX
+        // prints what they last said, so they count from here on as the preamble's do
+        if ((name === 'title' || name === 'author' || name === 'date' || name === 'subtitle') && !paraShows()) {
+          this.meta[name] = { nd, ctx, a: name === 'date' ? nd.args[0] : name === 'subtitle' ? nd.args.find((x) => x && x.nodes) || null : nd.args[1], body: true };
+          para.push(nd);
+          continue;
+        }
         if (name === 'maketitle') {
           flushPara();
           if (env.top) this.sig = [];
           this.use('d' + this.dir);
-          const u = this.titleBlock(nd, ctx);
+          const u = this.titleBlock(nd, ctx, env.top ? units : null);
           if (u) units.push(u);
           // a title page of its own (report, book and KOMA's, or the titlepage option): the text
           // starts on the next page, numbered 1 again in a one sided document, as the titlepage
@@ -1817,6 +1824,8 @@ class Builder {
           flushPara();
           if (env.top) this.sig = [];
           const entries = this.tocEntries();
+          // (a chapter of its own in a report, a book and their like, \chapter*{Contents}: a new page)
+          if (this.opts.chapters) units.push(this.chapterBreak(ctx.f, nd.s));
           this.inToc('toc', nd, this.opts.lang === 'de' ? 'Inhaltsverzeichnis' : 'Contents');
           this.use(JSON.stringify(entries.map((h) => [h.num, h.text, h.level])));
           // (its direction is the text's where it stands: drawn again when a \selectlanguage before it changes)
@@ -1834,6 +1843,7 @@ class Builder {
           this.use(JSON.stringify(entries.map((h) => [h.num, h.text])));
           this.use('d' + this.dir);
           const head = kind === 'figure' ? (de ? 'Abbildungsverzeichnis' : 'List of Figures') : (de ? 'Tabellenverzeichnis' : 'List of Tables');
+          if (this.opts.chapters) units.push(this.chapterBreak(ctx.f, nd.s));
           this.inToc(kind === 'figure' ? 'lof' : 'lot', nd, head);
           units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'toc', head, lof: kind, entries, chapters: !!this.opts.chapters, dir: this.dirOf() }], fns: [], sig: this.sig.join('\u0001'), volatile: false });
           afterHeading = false;
@@ -1925,6 +1935,12 @@ class Builder {
         // a book's front and back matter: chapters there have no number; \mainmatter numbers them
         if (name === 'frontmatter' || name === 'mainmatter' || name === 'backmatter') {
           flushPara(); this.front = name !== 'mainmatter';
+          // (each starts a page, an odd one in a two sided book; the front matter is numbered i, ii,
+          // and the main matter 1 again, as \pagenumbering does: only the classes that have them)
+          if (this.opts.chapters) {
+            units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'pagebreak', odd: name !== 'backmatter' || !!this.opts.openright }], fns: [], sig: 'cb' });
+            if (name !== 'backmatter') units.push({ f: ctx.f, s: nd.e, e: nd.e, items: [{ type: 'pagemark', mark: { numbering: name === 'frontmatter' ? 'roman' : 'arabic' } }], fns: [], sig: 'pm' + name });
+          }
           // (memoir's \mainmatter numbers down to maxsecnumdepth again, whatever secnumdepth was)
           if (name === 'mainmatter' && this.opts.cls === 'memoir') { this.opts.secnumdepth = this.opts.maxsecnumdepth ?? 2; this.use('mm' + this.opts.secnumdepth); }
           continue;
@@ -1933,6 +1949,7 @@ class Builder {
           flushPara();
           if (env.top) this.sig = [];
           if (name === 'bibliography') for (const b of this.argText(ctx, nd.args[0]).split(',')) this.bibFiles.push(b.trim());
+          if (this.bibChapter(nd, ctx)) units.push(this.chapterBreak(ctx.f, nd.s));
           { const u = this.refsBlock(nd, ctx); units.push(u); this.inToc('bib', nd, u.items[0].head); }
           continue;
         }
@@ -2071,7 +2088,11 @@ class Builder {
     const sh = nd.args[1] && nd.args[0] && nd.args[0].nodes ? this.inl(nd.args[0].nodes, ctx, []) : null;
     this.headings.push({ level, num, text, parts: this.tocParts(sh || inl), tocText: sh ? this.plain(sh) : text, star, f: ctx.f, s: nd.s, e: nd.e });
     const de = this.opts.lang === 'de';
-    const chapLabel = level === 0 && this.opts.chapters && !front ? (this.appendix ? (de ? 'Anhang' : 'Appendix') : (de ? 'Kapitel' : 'Chapter')) : level === -1 && num ? (de ? 'Teil' : 'Part') : null;
+    // (KOMA-Script prints "1 Title" with no "Chapter" before it unless chapterprefix, and appendixprefix
+    // for an appendix, say so)
+    const ko = this.opts.koma ? (this.opts.refs && this.opts.refs.clsOpts) || '' : null, on = (k) => new RegExp('\\b' + k + '\\s*(=\\s*(true|on|yes)\\b|(?=\\s*(,|$)))').test(ko);
+    const prefix = ko == null || (this.appendix && /\bappendixprefix\b/.test(ko) ? on('appendixprefix') : on('chapterprefix'));
+    const chapLabel = level === 0 && this.opts.chapters && !front && prefix ? (this.appendix ? (de ? 'Anhang' : 'Appendix') : (de ? 'Kapitel' : 'Chapter')) : level === -1 && num ? (de ? 'Teil' : 'Part') : null;
     // the look the preamble gives this heading (titlesec, KOMA-Script), where it is not LaTeX's own
     if (look) this.use('L' + JSON.stringify(look));
     const it = { type: 'h', level, num, inl, star, f: ctx.f, ctx: 'h', s: nd.s, e: nd.e, chapLabel, dir: this.dirOf() };
@@ -2122,13 +2143,34 @@ class Builder {
     return s;
   }
 
-  titleBlock(nd, ctx) {
+  // the page break before a chapter, which \chapter* gives the contents, the lists and the
+  // bibliography too (to an odd page where chapters open on the right)
+  chapterBreak(f, at) {
+    return { f, s: at, e: at, items: [{ type: 'pagebreak', odd: !!this.opts.openright, chapter: true }], fns: [], sig: 'cb' };
+  }
+  // whether a bibliography is a chapter of its own: in a class with chapters, unless biblatex's
+  // heading or KOMA-Script's bibliography=leveldown make it a section
+  bibChapter(nd, ctx) {
+    const O = this.opts;
+    if (!O.chapters) return false;
+    if (nd.name === 'printbibliography' && nd.args[0] && /\bheading\s*=\s*(none|sub)/.test(this.argText(ctx, nd.args[0]) || '')) return false;
+    if (O.koma && /\bbibliography\s*=\s*leveldown/.test((O.refs && O.refs.clsOpts) || '')) return false;
+    return true;
+  }
+
+  titleBlock(nd, ctx, units) {
     const m = this.meta;
     if (!m.title && !m.author) return null;
     const fns = [];
     const ranges = [];
-    // a \title in a preamble file of its own (\input{preamble}) is not a range of this file
-    const at = (x) => { if (x.ctx.f === ctx.f) ranges.push([x.nd.s, x.nd.e]); };
+    // a \title in a preamble file of its own (\input{preamble}) is not a range of this file; one in
+    // the text is the block's only where nothing drawn stands between it and \maketitle (the
+    // block's range would hold another's)
+    const at = (x) => {
+      if (x.ctx.f !== ctx.f) return;
+      if (x.body && (!units || x.nd.s > nd.s || units.some((u) => u.f === ctx.f && u.e > x.nd.s))) return;
+      ranges.push([x.nd.s, x.nd.e]);
+    };
     let title = [], authors = [], date = null, subtitle = null;
     this.thanksMode = true;
     if (m.title && m.title.a) {
@@ -2381,7 +2423,12 @@ class Builder {
       const t = this.tabular(nd, ctx);
       return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind: 'inline', parts: [t], f: ctx.f }], fns: t.fns || [] };
     }
-    if (name === 'thebibliography') return this.theBib(nd, ctx);
+    if (name === 'thebibliography') {
+      const u = this.theBib(nd, ctx);
+      // (\chapter*{Bibliography} in a report or a book: a page of its own)
+      if (u && this.bibChapter(nd, ctx)) u.items.unshift({ type: 'pagebreak', odd: !!this.opts.openright, chapter: true });
+      return u;
+    }
     if (name === 'tabbing' && !nd.raw && nd.nodes) return this.tabbing(nd, ctx, env);
     if (/^multicols\*?$/.test(name) && !nd.raw && nd.nodes) {
       // multicols: its paragraphs set in columns on the page (src/layout.js), balanced unless
