@@ -8,6 +8,7 @@
 // document a place is the odd or the even pages', the page's own.
 
 import { mk } from './dom.js';
+import { mapPos } from '../wrap.js';
 
 const POS = ['L', 'C', 'R'], NAMES = ['left', 'center', 'right'];
 
@@ -51,6 +52,10 @@ function slotsOf(app, k, where) {
 
 export function hfOpen(app, where, o = {}) {
   if (!app.model || !app.layout.pages.length) return false;
+  // (where the caret stood in the text, given back by Escape and Close as Word's: each place
+  // written rebuilt the page with no caret, and typing after Escape went to the text's start)
+  const c0 = app.hf ? null : app.caretNow();
+  const back = app.hf ? app.hf.back : c0 && !c0.ghost && c0.f != null ? { f: c0.f, p: c0.a, bias: -1 } : null;
   hfClose(app, false);
   let k = Math.min(app.layout.pages.length - 1, o.page != null && o.page >= 0 ? o.page : pageInView(app));
   // (R1) a landscape page's header runs down its side: the fields go over the nearest upright page's
@@ -92,7 +97,7 @@ export function hfOpen(app, where, o = {}) {
   document.body.appendChild(box);
   P.el.classList.add('hf-' + where);
   app.root.classList.add('hf-on');
-  app.hf = { where, k, side, inputs, el: box, P, last: inputs[POS.indexOf(o.slot || 'L')] || inputs[0] };
+  app.hf = { where, k, side, inputs, el: box, P, last: inputs[POS.indexOf(o.slot || 'L')] || inputs[0], back };
   const place = () => hfPlace(app);
   app.hf.place = place;
   app.desk.addEventListener('scroll', place, { passive: true });
@@ -159,6 +164,7 @@ function hfWrite(app, where, i, inp) {
   if (!edits.length) return true;
   // (each run of typing in one place is one step of history: record joins them)
   app.commit(edits.map((x) => ({ f: app.main, ...x })), null, 'hf-' + place);
+  if (H.back && H.back.f === app.main) H.back = { ...H.back, p: mapPos(edits, H.back.p) };
   hfPlace(app);
   return true;
 }
@@ -213,7 +219,11 @@ export function hfClose(app, back) {
   app.root.classList.remove('hf-on');
   app.closeGroup();
   app.ribbonSync();
-  if (back) { app.root.focus({ preventScroll: true }); if (app.ribbonBack) app.ribbonBack(); }
+  if (back) {
+    app.root.focus({ preventScroll: true });
+    if (H.back && app.files.has(H.back.f) && H.back.p <= app.src(H.back.f).length) app.restoreCaret(H.back, true);
+    else if (app.ribbonBack) app.ribbonBack();
+  }
   return true;
 }
 

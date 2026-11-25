@@ -865,6 +865,20 @@ def hunt(page):
         page.evaluate('rikuy.undo()'); page.evaluate('rikuy.undo()'); settle(page, 150)
         check('  two undos give the bytes back', src(page) == DOC(body=body))
 
+    # Escape or Close Header and Footer puts the caret back where it was in the text, as Word's: the
+    # header written rebuilt the page with no caret, and what was typed next went to the text's start
+    for close in ('Escape', 'Close'):
+        load_doc(page, DOC()); click_text(page, 'paragraph of', 0)
+        open_tab(page, 'Insert')
+        page.get_by_role('button', name='Header', exact=True).click(); settle(page, 200)
+        page.get_by_role('menuitem', name='Edit header').click(); settle(page, 300)
+        page.keyboard.type('My Title'); settle(page, 500, full=True)
+        if close == 'Escape': page.keyboard.press('Escape')
+        else: page.get_by_role('button', name='Close header and footer', exact=True).click()
+        settle(page, 300)
+        page.keyboard.type('Z'); settle(page, 200)
+        check('header typed, then ' + close + ': the caret back in the text where it was', '\\fancyhead[L]{My Title}' in src(page) and 'Second Zparagraph of' in src(page), src(page)[-120:])
+
 
 def run():
     names = sys.argv[1:]
