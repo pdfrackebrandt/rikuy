@@ -353,6 +353,15 @@ export const methods = {
     }
     // Delete at the end of the item's words (a comment after them on their line: the next words go
     // on a line of their own after it, or the comment would take them)
+    // (before a list nested in the item, right after its words: that list's first item's words
+    // come up, as Word's Delete brings the next paragraph up whatever its level; it did nothing)
+    if (it.lists.length && p >= head) {
+      const C = it.lists[0], first = C.items[0];
+      if (!first || !C.editable || /\S/.test(src.slice(p, C.s)) || hasComment(src.slice(head, p)) || first.lists.length) return false;
+      const fw = src.slice(textStart(src, first), first.e), t = fw ? (words ? ' ' : '') + labelWords(src, first) + fw : '';
+      const out = C.items.length > 1 ? [{ s: p, e: p, t }, { s: first.s, e: C.items[1].s, t: '' }] : [{ s: p, e: C.e, t }];
+      return this.listCommit(f, out, [], { f, p, bias: -1 });
+    }
     const rest = src.slice(p, Math.max(p, it.e)), cm = /^[ \t]*%[^\n]*$/.test(rest);
     if (it.lists.length || p < head || (/\S/.test(rest) && !cm)) return false;
     if (k + 1 < L.items.length) {
@@ -361,7 +370,28 @@ export const methods = {
       const t = nw ? (cm ? NL + (indentAt(src, next.s) ?? '') : words ? ' ' : '') + labelWords(src, next) : '';
       return this.listCommit(f, [{ s: it.e, e: nw ? textStart(src, next) : lineRest(src, next.e), t }], [], { f, p, bias: -1 });
     }
-    return I.chain.length === 1 ? this.listJoinPara(L, it, f, src, p, null) : false;
+    // At the end of a nested list's last item: the next item up the chain comes up into it (the
+    // nested list the last thing in its item), or the paragraph after the outermost list. Delete
+    // did nothing there.
+    for (let j = I.chain.length - 1; j > 0; j--) {
+      const { L: Lj } = I.chain[j], up = I.chain[j - 1], P = up.L.items[up.k];
+      if (!up.L.editable || /\S/.test(src.slice(Lj.e, P.e))) return false;
+      const next = up.L.items[up.k + 1];
+      if (!next) continue;
+      if (next.lists.length) return false;
+      const nw = src.slice(textStart(src, next), next.e);
+      const t = nw ? (cm ? NL + (indentAt(src, it.s) ?? '') : words ? ' ' : '') + labelWords(src, next) + nw : '';
+      return this.listCommit(f, [...(t ? [{ s: it.e, e: it.e, t }] : []), { s: P.e, e: next.e, t: '' }], [], { f, p, bias: -1 });
+    }
+    return this.listJoinPara(I.chain[0].L, it, f, src, p, null);
+  },
+  // the item a list's words end in: its last item, or that item's own nested list's last, where
+  // the nested list is the last thing in it; null where words or a list come after a nested list
+  lastLeaf(src, L) {
+    const it = L.items[L.items.length - 1];
+    if (!it || !it.lists.length) return it || null;
+    const C = it.lists[it.lists.length - 1];
+    return C.editable && C.closed && !/\S/.test(src.slice(C.e, it.e)) ? this.lastLeaf(src, C) : null;
   },
   // Backspace at the start of the block right after a list (a paragraph, a heading, a quote or a
   // theorem of one paragraph): its words join the list's last item
@@ -375,8 +405,9 @@ export const methods = {
     for (const B of this.renderer.blocks) if (B.f === f && B.s < end && B.e >= end && (!Y || B.s > Y.s)) Y = B;
     const L = Y && allLists(readLists(src, Y.s, Y.e, this.model && this.model.userSigs)).find((x) => x.e === end);
     if (!L || L.parent || !L.editable || !L.closed || !L.items.length) return false;
-    const it = L.items[L.items.length - 1];
-    if (it.lists.length) return false;
+    // (a last item with a list nested at its end: the words join that list's last item; it did nothing)
+    const it = this.lastLeaf(src, L);
+    if (!it) return false;
     return this.listJoinPara(L, it, f, src, null, X);
   },
   // what of block B can join a list item: a paragraph's words, a heading's, a quote's or a

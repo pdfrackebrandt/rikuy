@@ -987,6 +987,28 @@ def r2_selections(page):
     check('r2_selections: with CRLF line ends', src(page) == WRAP('Alo second\n\n' + E + '\\item Three third\n\\end{enumerate}\n\nOmega words.').replace('\n', '\r\n'), repr(src(page)[40:]))
 
 
+def r2_nested(page):
+    """(round 2) Delete at the end of a nested list's last item, or at the end of an item's words
+    before the list nested in it, and Backspace at the paragraph after a list ending in a nested
+    one: the next paragraph's words come up, as Word's whatever their level. Each did nothing."""
+    N = WRAP('\\begin{itemize}\n  \\item One\n  \\begin{enumerate}\n    \\item Alef\n    \\item Bet\n  \\end{enumerate}\n  \\item Two\n\\end{itemize}\n\nAfter.')
+    M = WRAP('\\begin{itemize}\n  \\item One\n  \\begin{enumerate}\n    \\item Alef\n    \\item Bet\n  \\end{enumerate}\n\\end{itemize}\n\nAfter.')
+    for name, d, at, k, want in (
+            ('Delete at the last nested item\'s end brings the next item up into it', N, ('Bet', 3), 'Delete', N.replace('Bet\n  \\end{enumerate}\n  \\item Two', 'Bet Two\n  \\end{enumerate}')),
+            ('Delete before a nested list brings its first item up', N, ('One', 3), 'Delete', N.replace('One\n  \\begin{enumerate}\n    \\item Alef\n', 'One Alef\n  \\begin{enumerate}\n')),
+            ('Delete at the last nested item\'s end, the list\'s last: the paragraph after joins it', M, ('Bet', 3), 'Delete', M.replace('Bet\n  \\end{enumerate}\n\\end{itemize}\n\nAfter.', 'Bet After.\n  \\end{enumerate}\n\\end{itemize}')),
+            ('Backspace at the paragraph after it does the same', M, ('After', 0), 'Backspace', M.replace('Bet\n  \\end{enumerate}\n\\end{itemize}\n\nAfter.', 'Bet After.\n  \\end{enumerate}\n\\end{itemize}'))):
+        load_doc(page, d); click_text(page, *at); key(page, k)
+        check('r2_nested: ' + name, src(page) == want, src(page)[40:])
+        page.keyboard.type('X'); settle(page, 200)
+        check('r2_nested: the caret where they met (%s %s)' % (at[0], k), ('BetX' if k == 'Delete' and at[0] == 'Bet' else 'OneX' if at[0] == 'One' else 'Bet XAfter') in src(page), src(page)[40:])
+        key(page, 'Control+z'); key(page, 'Control+z')
+        check('r2_nested: undo gives the lists back (%s %s)' % (at[0], k), src(page) == d, src(page)[40:])
+    C = N.replace('\n', '\r\n')
+    load_doc(page, C); click_text(page, 'One', 3); key(page, 'Delete')
+    check('r2_nested: with CRLF line ends', src(page) == C.replace('One\r\n  \\begin{enumerate}\r\n    \\item Alef\r\n', 'One Alef\r\n  \\begin{enumerate}\r\n'), repr(src(page)[40:]))
+
+
 def r2_phone(p, w, h, dark=False):
     """Picture Bullet and Adjust List Indents on a phone: from the bullet library's menu by taps,
     the dialogs on the screen with 44 px controls, no sideways scroll; screenshots"""
@@ -1025,7 +1047,7 @@ def run_all():
     want = lambda n: not only or n in only
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf, label_caret, item_edges, empty_items, item_spans, join_after_list, item_paste, review_edges, r2_selections):
+        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf, label_caret, item_edges, empty_items, item_spans, join_after_list, item_paste, review_edges, r2_selections, r2_nested):
             if not want(f.__name__): continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
