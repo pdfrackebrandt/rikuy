@@ -975,6 +975,10 @@ R3_REPORT = ('\\documentclass{report}\n\\begin{document}\n\\title{Report Title}\
              '\\begin{thebibliography}{9}\n\\bibitem{a} A. Book.\n\\end{thebibliography}\n\\end{document}\n')
 R3_MATTER = ('\\documentclass{%s}\n\\begin{document}\n\\frontmatter\n\\tableofcontents\n\\chapter{Preface}\nPreface words.\n\\mainmatter\n\\chapter{One}\nText one.\n\\section{Sec}\nMore.\n'
              '\\chapter{Two}\nText two.\n\\backmatter\n\\begin{thebibliography}{9}\n\\bibitem{a} A. Book.\n\\end{thebibliography}\n\\end{document}\n')
+# (with a list of figures after the contents, and a figure in chapter One)
+R3_LOF = R3_MATTER.replace('\\tableofcontents\n', '\\tableofcontents\n\\listoffigures\n').replace('Text one.\n', 'Text one.\n\\begin{figure}[h]\\centering X\\caption{Fig}\\end{figure}\n')
+R3_MEMOIR = ('\\documentclass[oneside]{memoir}\n\\begin{document}\nFront words.\n\\tableofcontents\n\\listoffigures\n\\chapter{One}\nText one.\n'
+             '\\begin{figure}[h]\\centering X\\caption{Fig}\\end{figure}\n\\chapter{Two}\nText two.\n\\end{document}\n')
 R3_BOOK = ('\\documentclass{book}\n\\begin{document}\n\\frontmatter\n\\chapter{Preface}\nPreface text here.\n\\tableofcontents\n\\mainmatter\n\\chapter{Introduction}\n'
            'First chapter text.\n\n\\section{Background}\nSection text.\n\\appendix\n\\chapter{Proofs}\nAppendix text.\n\\backmatter\n\\chapter{Notes}\nBack text.\n\\end{document}\n')
 
@@ -1014,11 +1018,19 @@ def r3_matter(page):
                                     # chapters no "Chapter" before their number; memoir lists its contents in them)
                                     (R3_MATTER % 'memoir', ['Contents', '', 'Preface', '', 'Chapter 1', '', 'Chapter 2', '', 'Bibliography'], f('i', '', 'iii', '', '1', '', '3', '', '5'), ['i', 'iii', '1', '1', '3']),
                                     (R3_MATTER % 'scrbook', ['Contents', '', 'Preface', '', '1One', '', '2Two', '', 'Bibliography'], f('i', '', 'iii', '', '1', '', '3', '', '5'), ['iii', '1', '1', '3']),
-                                    (R3_MATTER.replace('\\begin{document}', '\\KOMAoptions{chapterprefix=true}\n\\begin{document}') % 'scrbook', ['Contents', '', 'Preface', '', 'Chapter 1', '', 'Chapter 2', '', 'Bibliography'], f('i', '', 'iii', '', '1', '', '3', '', '5'), ['iii', '1', '1', '3'])):
+                                    (R3_MATTER.replace('\\begin{document}', '\\KOMAoptions{chapterprefix=true}\n\\begin{document}') % 'scrbook', ['Contents', '', 'Preface', '', 'Chapter 1', '', 'Chapter 2', '', 'Bibliography'], f('i', '', 'iii', '', '1', '', '3', '', '5'), ['iii', '1', '1', '3']),
+                                    # (memoir's contents and lists start no page: \chapterheadstart is space; its
+                                    # bibliography does, a \chapter*)
+                                    (R3_MEMOIR, ['Front words.', 'Chapter 1', 'Chapter 2'], f('1', '2', '3'), ['1', '1', '2', '3', '2']),
+                                    (R3_LOF % 'memoir', ['Contents', '', 'Preface', '', 'Chapter 1', '', 'Chapter 2', '', 'Bibliography'], f('i', '', 'iii', '', '1', '', '3', '', '5'), ['i', 'i', 'iii', '1', '1', '3', '1']),
+                                    # (KOMA-Script's \mainmatter clears to an odd page with open=any too; its lists
+                                    # start a page, an odd one with open=right)
+                                    (R3_LOF.replace('{%s}', '[open=any]{%s}') % 'scrbook', ['Contents', 'List of Figures', 'Preface', '', '1One', '2Two', 'Bibliography'], f('i', 'ii', 'iii', '', '1', '2', '3'), ['iii', '1', '1', '2', '1']),
+                                    (R3_LOF.replace('{%s}', '[open=right]{%s}') % 'scrbook', ['Contents', '', 'List of Figures', '', 'Preface', '', '1One', '', '2Two', '', 'Bibliography'], f('i', '', 'iii', '', 'v', '', '1', '', '3', '', '5'), ['v', '1', '1', '3', '1'])):
         # (the contents are read from the build before, as TeX reads the .toc: built twice)
         load_doc(page, text); load_doc(page, text); settle(page, 300)
         got = page.evaluate(PAGES)
-        kind = re.search(r'\{(\w+)\}', text).group(1) + (' with \\KOMAoptions' if 'KOMAoptions' in text else '')
+        kind = re.search(r'(\[[^\]]*\])?\{(\w+)\}', text).group(0) + (' with \\KOMAoptions' if 'KOMAoptions' in text else '') + (' and a list of figures' if '\\listoffigures' in text else '')
         check('R3 matter: the %s is %d pages, each starting as TeX starts it' % (kind, len(firsts)), len(got) == len(firsts) and all(g[0].startswith(x) for g, x in zip(got, firsts)), [g[0][:30] for g in got])
         check('R3 matter: the %s\'s pages print TeX\'s numbers, each in the head or the foot as TeX does' % kind, [side(g[1], g[2]) for g in got] == nums, [side(g[1], g[2]) for g in got])
         check('R3 matter: the %s\'s contents and lists give the numbers the pages print' % kind, page.evaluate(TOC) == toc, page.evaluate(TOC))

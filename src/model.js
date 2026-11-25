@@ -1868,7 +1868,7 @@ class Builder {
           if (env.top) this.sig = [];
           const entries = this.tocEntries();
           // (a chapter of its own in a report, a book and their like, \chapter*{Contents}: a new page)
-          if (this.opts.chapters) units.push(this.chapterBreak(ctx.f, nd.s));
+          if (this.opts.chapters) units.push(this.chapterBreak(ctx.f, nd.s, true));
           this.inToc('toc', nd, this.opts.lang === 'de' ? 'Inhaltsverzeichnis' : 'Contents');
           this.use(JSON.stringify(entries.map((h) => [h.num, h.text, h.level])));
           // (its direction is the text's where it stands: drawn again when a \selectlanguage before it changes)
@@ -1886,7 +1886,7 @@ class Builder {
           this.use(JSON.stringify(entries.map((h) => [h.num, h.text])));
           this.use('d' + this.dir);
           const head = kind === 'figure' ? (de ? 'Abbildungsverzeichnis' : 'List of Figures') : (de ? 'Tabellenverzeichnis' : 'List of Tables');
-          if (this.opts.chapters) units.push(this.chapterBreak(ctx.f, nd.s));
+          if (this.opts.chapters) units.push(this.chapterBreak(ctx.f, nd.s, true));
           this.inToc(kind === 'figure' ? 'lof' : 'lot', nd, head);
           units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'toc', head, lof: kind, entries, chapters: !!this.opts.chapters, dir: this.dirOf() }], fns: [], sig: this.sig.join('\u0001'), volatile: false });
           afterHeading = false;
@@ -1981,9 +1981,9 @@ class Builder {
           // (each starts a page, an odd one in a two sided book; the front matter is numbered i, ii,
           // and the main matter 1 again, as \pagenumbering does: only the classes that have them)
           if (this.opts.chapters) {
-            // (book.cls and memoir clear to an odd page for the front and main matter whatever
-            // openany says; KOMA-Script only where chapters open on the right)
-            units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'pagebreak', odd: (name !== 'backmatter' && !this.opts.koma) || !!this.opts.openright }], fns: [], sig: 'cb' });
+            // (book.cls, memoir and KOMA-Script clear to an odd page for the front and main matter
+            // whatever openany or open=any say)
+            units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'pagebreak', odd: name !== 'backmatter' || !!this.opts.openright }], fns: [], sig: 'cb' });
             if (name !== 'backmatter') units.push({ f: ctx.f, s: nd.e, e: nd.e, items: [{ type: 'pagemark', mark: { numbering: name === 'frontmatter' ? 'roman' : 'arabic' } }], fns: [], sig: 'pm' + name });
           }
           // (memoir's \mainmatter numbers down to maxsecnumdepth again, whatever secnumdepth was)
@@ -2192,8 +2192,10 @@ class Builder {
 
   // the page break before a chapter, which \chapter* gives the contents, the lists and the
   // bibliography too (to an odd page where chapters open on the right)
-  chapterBreak(f, at) {
-    return { f, s: at, e: at, items: this.chapterStart(), fns: [], sig: 'cbp' };
+  chapterBreak(f, at, list = false) {
+    // (memoir's contents and lists start with \chapterheadstart, space and no new page: on the page
+    // they are on, which they make plain; its bibliography is a \chapter* as the others')
+    return { f, s: at, e: at, items: list && this.opts.cls === 'memoir' ? this.chapterStart().slice(1) : this.chapterStart(), fns: [], sig: 'cbp' };
   }
   // (and its first page in the plain style, the number at the foot, as \chapter* sets it)
   chapterStart() {
