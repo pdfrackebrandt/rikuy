@@ -847,8 +847,10 @@ servers), is unchanged, and the artifact build (`RIKUY_SHARE` set) compiles `src
   `build.mjs`; `rikuy.html` carries the same bytes inline): the browser compiles it on another
   thread while it downloads and keeps the compiled code for the next visit (the service worker's
   install keeps it, and Chromium compiles a script kept there at once), which it does for no inline
-  script; a repeat visit draws the document about 400 ms sooner on a desktop. The page is
-  0.35 MB (80 KB compressed). The app's script, the fifteen faces that `loadFonts()` waits for
+  script. On a GitHub runner (`test/loadbench.py open long`, 8 runs each) a repeat visit draws the
+  sample 389 to 275 ms from the start, the editor ready 466 to 339 ms, a 100 page document 720
+  to 599 ms; a first visit on the cable line 1039 to 984 ms. The page is 0.35 MB (80 KB
+  compressed). The app's script, the fifteen faces that `loadFonts()` waits for
   before the first layout (`FIRST_FONTS` in `build.mjs`: the two lists are one) and KaTeX's
   script are asked for by `<link rel="preload">` at the top of the body, so they travel beside
   the page. The service worker is registered once the
