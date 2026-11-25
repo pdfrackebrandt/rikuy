@@ -23,6 +23,8 @@ const piece = (open, close) => ({ open, close });
 // "Environment theorem undefined" on one put in a document without it)
 const env = (k, d, order) => ({ id: 'insert-' + k, name: d, synonyms: [k], run: (app) => app.insertFromPalette(k), palette: { k, d, order, t: piece('\n\n\\begin{' + k + '}\n', '\n\\end{' + k + '}\n\n'), block: true, needs: (app) => app.styleNeeds(k) } });
 const sel = (app, at) => !!at && !at.c.ghost && !at.c.collapsed;
+// a menu button's menu, at its button where the row shows it, else at the page
+const buttonMenu = (app, id) => { const b = document.getElementById('rc-' + id); openMenu(app, b && b.offsetParent ? b : app.root, app.commandMenu(command(id)), { label: command(id).name }); return true; };
 
 // ---- interactive graphs ---------------------------------------------------------------------
 
@@ -508,7 +510,9 @@ register(
         loc({ weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear(), pad(d.getHours()) + ':' + pad(d.getMinutes())];
       return [{ name: 'Update automatically (\\today)', title: 'The date TeX prints each time it runs, in the document\'s language (Alt+Shift+D)', keys: firstKey(command('insert-date'), macUA()), command: 'insert-date' }, null,
         ...fixed.map((t) => ({ name: t, title: 'As text: it stays this date', run: () => app.insertTeX(app.escapeTyped(t)) }))];
-    } },
+    },
+    // (its menu at its button: with no run the button, the search box and a folded group did nothing)
+    run: (app) => buttonMenu(app, 'date-time') },
   tex('insert-date', 'Date', '\\today{}', { keys: ['Alt+Shift+D'], mac: { 'Alt+Shift+D': 'Control+Shift+D' }, title: 'Today\'s date, updated each time TeX runs (\\today) (Alt+Shift+D)', synonyms: ['Today', 'Insert date'] }),
   { id: 'insert-time', name: 'Time', title: 'The time now, as text (Alt+Shift+T)', keys: ['Alt+Shift+T'], mac: { 'Alt+Shift+T': 'Control+Shift+T' }, synonyms: ['Insert time', 'Clock'], when: (app, at) => !!at && !app.armed, whyNot: () => PASTE_WHY,
     run: (app) => { const d = new Date(); return app.insertTeX(pad(d.getHours()) + ':' + pad(d.getMinutes())); } }
@@ -519,7 +523,8 @@ register(
   // (Object: in Insert's Text group, as Word's, its menu the two kinds a LaTeX project can take)
   { id: 'object', name: 'Object', label: 'Object', kind: 'menu', synonyms: ['Insert object', 'Insert file'], tab: 'insert', group: 'text', order: 80,
     icon: '<path d="M5 2.5h6.5L15 6v11.5H5z"/><path d="M11.5 2.5V6H15M8 10h4M8 13h4"/>', title: 'Text from a .tex file (\\input) or a PDF\'s pages (\\includepdf)',
-    when: (app) => !!app.model && !app.stale, menuItems: () => [{ name: 'Text from file', title: 'A .tex file, read here by \\input', command: 'text-from-file' }, { name: 'PDF pages', title: 'Every page of a PDF (pdfpages)', command: 'insert-pdf' }] },
+    when: (app) => !!app.model && !app.stale, menuItems: () => [{ name: 'Text from file', title: 'A .tex file, read here by \\input', command: 'text-from-file' }, { name: 'PDF pages', title: 'Every page of a PDF (pdfpages)', command: 'insert-pdf' }],
+    run: (app) => buttonMenu(app, 'object') },
   { id: 'text-from-file', name: 'Text from file', synonyms: ['Insert file', 'input', 'include', 'Chapter'],
     icon: '<path d="M5 2.5h6.5L15 6v11.5H5z"/><path d="M11.5 2.5V6H15M8 10h4M8 13h4"/>',
     title: 'A .tex file joins the project and \\input{name} reads it here', when: (app) => !!app.model && !app.stale, run: (app) => app.pickFile('.tex,.ltx,.txt', (f) => app.textFromFile(f)) },

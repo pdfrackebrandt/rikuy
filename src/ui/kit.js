@@ -110,7 +110,15 @@ export function openMenu(app, at, items, o = {}) {
     } else a.addEventListener('focus', () => say(''));
     // (a press keeps the caret on the page; the keyboard's Enter comes as a click)
     a.addEventListener('mousedown', (e) => e.preventDefault());
-    a.addEventListener('click', () => { if (isOff(a)) { if (it.why) say(it.why); return; } app.closePop(true); if (it.run) it.run(); });
+    a.addEventListener('click', () => {
+      if (isOff(a)) { if (it.why) say(it.why); return; }
+      app.closePop(true);
+      if (it.run) it.run();
+      // (a ribbon button's menu gives the keys back to the page, as Word's: an item that changed
+      // nothing, the page number already at the foot, left them on the button, and what was
+      // typed next went nowhere)
+      if (anchor && !app.pop && document.activeElement === anchor && anchor.closest('#ribbon') && app.ribbonBack) app.ribbonBack();
+    });
     p.append(a);
   }
   if (p.lastChild && p.lastChild.getAttribute('role') === 'separator') p.lastChild.remove();

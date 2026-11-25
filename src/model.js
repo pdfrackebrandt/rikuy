@@ -2259,7 +2259,9 @@ class Builder {
       if (cap) {
         const k = this.argText(ctx, cap.args[0]).trim();
         if (k === 'figure' || k === 'table') {
-          const r = this.floatBlock(nd, ctx, env, k, name === 'center' ? null : name === 'flushleft' ? 'left' : 'right');
+          // (center's parts centred: null took the class's float default, the left margin, once
+          // that default stopped being centred, and a caption added moved the picture left)
+          const r = this.floatBlock(nd, ctx, env, k, name === 'center' ? 'center' : name === 'flushleft' ? 'left' : 'right');
           for (const it of r.items) if (it.type === 'float') { it.placement = 'H'; if (env.depth) it.depth = env.depth; }
           return r;
         }

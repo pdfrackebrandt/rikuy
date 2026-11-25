@@ -976,12 +976,100 @@ def r3_phones(p):
         br.close()
 
 
+# ---- what a Word user met (round 2's hunt) -------------------------------------------------------
+
+def hunt(page):
+    # A picture deleted out of its center leaves an empty paragraph; Backspace or Delete there takes
+    # it away, as Word's take an empty paragraph. The empty environment stayed for good: Backspace
+    # only moved the caret up, Delete down, and a blank line went from inside it unseen.
+    for key, caret in (('Backspace', 'delta.'), ('Delete', 'After')):
+        load_doc(page, DOC); settle(page, 300)
+        sel_pic()(page)
+        page.keyboard.press('Delete'); settle(page, 200)
+        if key == 'Backspace':
+            ph = page.evaluate("() => { const n = getSelection().anchorNode; return !!(n && (n.nodeType === 1 ? n : n.parentElement).closest('span.t.ph')); }")
+            check('the picture deleted, the caret shows in the empty paragraph it leaves (it showed at the next paragraph while typing went there)', ph)
+        page.keyboard.press(key); settle(page, 200)
+        want = DOC.replace(CENTER(), 'Before it here.\n\nAfter it here.')
+        at = page.evaluate('() => window.rikuy.caretNow().a')
+        check('a picture deleted, then ' + key + ' in the empty paragraph left: the empty center goes, the caret ' + ('above' if key == 'Backspace' else 'below'), src(page) == want and at == want.index('Before it here.') + (15 if key == 'Backspace' else 17), (src(page)[60:], at))
+        page.keyboard.press('Control+z'); settle(page, 150); page.keyboard.press('Control+z'); settle(page, 150)
+        check('two undos give the picture back (' + key + ')', src(page) == DOC, src(page)[60:])
+    # (the two sides stay two paragraphs where no blank line stood between; CRLF kept; a theorem's
+    # empty body is no empty paragraph of this kind)
+    for d, w in (('A.\n\\begin{center}\n\\end{center}\nB.', 'A.\n\nB.'), ('A.\r\n\r\n\\begin{flushright}\r\n\\end{flushright}\r\n\r\nB.', 'A.\r\n\r\nB.')):
+        load_doc(page, WRAP(d, '')); settle(page, 200)
+        page.evaluate("() => { const s = document.querySelector('#pages span.t.ph'); const r = document.createRange(); r.setStart(s.firstChild, 0); r.collapse(true); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }")
+        settle(page, 150)
+        page.keyboard.press('Backspace'); settle(page, 200)
+        check('Backspace in an empty environment keeps the paragraphs around it apart: ' + repr(d), src(page) == WRAP(w, ''), src(page)[40:])
+
+    # Insert Caption on a centred picture: the picture stays centred, as TeX keeps it in its center
+    # (the page drew the center with a \captionof as a float at the class's default, the left margin)
+    load_doc(page, DOC); until(page, DRAWN); settle(page, 300)
+    x0 = page.locator('#pages .a-img').bounding_box()['x']
+    sel_pic()(page)
+    page.get_by_role('button', name='Insert Caption', exact=True).click(); settle(page, 300)
+    page.keyboard.type('Red'); settle(page, 200)
+    until(page, DRAWN); settle(page, 100)
+    x1 = page.locator('#pages .a-img').bounding_box()['x']
+    check('Insert Caption leaves the centred picture where it was (centred, as TeX prints it)', '\\captionof{figure}{Red}' in src(page) and abs(x1 - x0) < 1, (x0, x1))
+
+    # A picture copied in a browser (Copy Image) or in Word comes with its <img> tag as HTML beside
+    # its file: pasted, it is placed as a picture alone is (nothing came: the HTML paste dropped it)
+    B64 = base64.b64encode(png(40, 30)).decode()
+    for html in ('<meta charset="utf-8"><img src="https://example.com/cat.png" alt="A cat">', '<html><head><style>p { margin: 0 }</style></head><body><!--StartFragment--><img src="file:///C:/x.png"><!--EndFragment--></body></html>'):
+        load_doc(page, DOC); settle(page, 200)
+        click_text(page, 'After', 0)
+        page.evaluate("""([b64, html]) => { const u = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); const dt = new DataTransfer(); dt.items.add(new File([u], 'image.png', { type: 'image/png' })); dt.setData('text/html', html);
+          document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }""", [B64, html])
+        until(page, '() => (window.rikuy.files.get("main.tex").match(/includegraphics/g) || []).length === 2')
+        check('a picture pasted with its <img> tag as HTML is placed: ' + html[:30], src(page).count('\\includegraphics') == 2 and re.search(r'\{pasted-[a-z0-9]+\.png\}', src(page)) is not None, src(page)[60:])
+
+    # A figure's picture deleted: the caret shows at the caption's start, and what is typed goes
+    # there (it went to the line above the caption, unseen)
+    fig = WRAP('Before it here.\n\n\\begin{figure}[h]\n\\centering\n\\includegraphics[width=0.5\\linewidth]{a.png}\n\\caption{Cap}\n\\end{figure}\n\nAfter it here.')
+    load_doc(page, fig); settle(page, 300)
+    sel_pic()(page)
+    page.keyboard.press('Delete'); settle(page, 200)
+    page.keyboard.type('Z'); settle(page, 200)
+    check('a figure\'s picture deleted, then typing: the letter where the caret shows, the caption\'s start', '\\caption{ZCap}' in src(page) and '\\includegraphics' not in src(page), src(page)[60:])
+
+    # (review B1) an object in the line deleted keeps the place typing goes to as before: a run of
+    # spaces drawn as one and a paragraph's end (the figure rule above dropped it for every object:
+    # "See  Zhere", the next paragraph typed into)
+    inl = lambda b: WRAP(b, '\\usepackage{graphicx}\n\\usepackage{amsmath}\n')
+    after_math = "() => { const a = document.querySelector('#pages .a-math'); const r = document.createRange(); r.setStartAfter(a); r.collapse(true); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }"
+    for d, how, keys, want in (('See $x^2$ here now.', 'math', [], 'See Z here now.'), ('See it here $x^2$\n\nNext one.', 'math', [], 'See it here Z\n\nNext one.'),
+                               ('Before \\includegraphics[width=1cm]{a.png} it here.', 'pic', [], 'Before Z it here.'), ('Before \\includegraphics[width=1cm]{a.png} it here.', 'pic', ['Delete'], 'Before Zit here.'),
+                               ('Before \\includegraphics[width=1cm]{a.png} it here.', 'pic', ['Backspace'], 'BeforeZ it here.'), ('Before it here \\includegraphics[width=1cm]{a.png}\n\nAfter it here.', 'pic', ['Backspace'], 'Before it hereZ\n\nAfter it here.')):
+        load_doc(page, inl(d)); settle(page, 300)
+        if how == 'math':
+            page.evaluate(after_math); settle(page, 150)
+            page.keyboard.press('Backspace'); settle(page, 150); page.keyboard.press('Backspace'); settle(page, 200)
+        else:
+            sel_pic()(page); page.keyboard.press('Delete'); settle(page, 200)
+        for k in keys: page.keyboard.press(k); settle(page, 150)
+        page.keyboard.type('Z'); settle(page, 200)
+        check('an object in the line deleted, ' + ' '.join(keys) + ' Z: ' + repr(d[:30]), src(page) == inl(want), src(page)[80:])
+    # (review S4) a float's picture deleted with nothing else in the float: the float goes (it stayed,
+    # drawn nowhere); a center of its own in a float with a caption goes with the picture
+    for d, want in (('Before it here.\n\n\\begin{figure}[h]\n\\centering\n\\includegraphics[width=0.3\\linewidth]{a.png}\n\\label{fig:x}\n\\end{figure}\n\nAfter it here.', 'Before it here.\n\nAfter it here.'),
+                    ('Before it here.\n\\begin{figure}[h]\n\\includegraphics[width=0.3\\linewidth]{a.png}\n\\end{figure}\nAfter it here.', 'Before it here.\nAfter it here.'),
+                    ('Before it here.\n\n\\begin{figure}[h]\n\\begin{center}\n\\includegraphics[width=0.3\\linewidth]{a.png}\n\\end{center}\n\\caption{Cap}\n\\end{figure}\n\nAfter it here.', 'Before it here.\n\n\\begin{figure}[h]\n\\caption{Cap}\n\\end{figure}\n\nAfter it here.')):
+        load_doc(page, WRAP(d)); settle(page, 300)
+        sel_pic()(page); page.keyboard.press('Delete'); settle(page, 200)
+        ok = src(page) == WRAP(want)
+        page.keyboard.press('Control+z'); settle(page, 200)
+        check('a float\'s only picture deleted takes what is left empty with it, one undo back: ' + repr(d[17:60]), ok and src(page) == WRAP(d), want)
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         asset(page)
         names = sys.argv[1:]
-        for f in (selecting, trips, sizing, tools, drawing, objects, reviewed, compiled, r3_objects, r3_review, r3_compiled):
+        for f in (selecting, trips, sizing, tools, drawing, objects, reviewed, compiled, r3_objects, r3_review, r3_compiled, hunt):
             if names and f.__name__ not in names:
                 continue
             try: f(page)
