@@ -65,9 +65,10 @@ def stats(v):
 
 
 def table(title, rows, builds):
-    """rows: [(measure, {build: [values]})]"""
-    print('\n' + title)
-    print('  %-26s' % 'measure' + ''.join('%22s' % ('%s median p95' % b) for b in builds) + '%10s' % 'change')
+    """rows: [(measure, {build: [values]})]. Each line starts RESULT, which dev/suite_runs.py keeps
+    in a runner's log and summary (it shows nothing else of a run that passed)."""
+    print('\nRESULT ' + title)
+    print('RESULT   %-26s' % 'measure' + ''.join('%22s' % ('%s median p95' % b) for b in builds) + '%10s' % 'change')
     for name, by in rows:
         cells, meds = '', []
         for b in builds:
@@ -75,7 +76,7 @@ def table(title, rows, builds):
             meds.append(m)
             cells += '%22s' % ('-' if m is None else '%.0f %.0f' % (m, p))
         ch = '%+.0f%%' % (100 * (meds[1] - meds[0]) / meds[0]) if len(meds) == 2 and meds[0] and meds[1] is not None else ''
-        print('  %-26s' % name + cells + '%10s' % ch)
+        print('RESULT   %-26s' % name + cells + '%10s' % ch)
 
 
 def order(r, n):
@@ -233,7 +234,7 @@ def main():
         for part in PARTS:
             out += {'open': part_open, 'long': part_long, 'pdf': part_pdf, 'scroll': part_scroll}[part](p, builds, dists)
     json.dump({'dists': dists, 'runs': out}, open(OUT, 'w'))
-    for f in failures: print('FAILED', f)
+    for f in failures: print('RESULT FAILED', f)
     n = len(out)
     print('\n%d runs, %d failed' % (n, len(failures)))
     sys.exit(1 if failures else 0)
