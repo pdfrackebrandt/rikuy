@@ -1183,6 +1183,16 @@ def r2_bare_switch(page):
         check('r2_bare_switch: one undo (%s)' % name, src(page) == WRAP(doc), src(page)[60:160])
     load_doc(page, WRAP('Plain \\textmd{x \\bfseries y} and z.')); click_text(page, 'and', 1); page.keyboard.press('Control+b'); settle(page, 200)
     check('r2_bare_switch: a \\bfseries closed in a group before the caret is no bold at it', '\\textbf{and}' in src(page), src(page)[60:160])
+    # (review of round 2) a switch's scope ends at a table's cell, a formula and an optional
+    # argument: Bold there is bold, not \\textmd
+    for name, doc, word in (('a body row under a \\bfseries header row', '\\begin{tabular}{ll}\n\\bfseries Name & \\bfseries Value \\\\\nalpha & beta \\\\\n\\end{tabular}', 'beta'),
+                            ('the same row\'s first cell', '\\begin{tabular}{ll}\n\\bfseries Name & \\bfseries Value \\\\\nalpha & beta \\\\\n\\end{tabular}', 'alpha'),
+                            ('words after $\\bf v$', 'Vector $\\bf v$ plain words.', 'words'),
+                            ('words after \\item[\\bf Term]', '\\begin{description}\n\\item[\\bf Term] plain words.\n\\end{description}', 'words')):
+        load_doc(page, WRAP(doc)); click_text(page, word, 2); page.keyboard.press('Control+b'); settle(page, 200)
+        check('r2_bare_switch: Ctrl+B in %s makes it bold' % name, '\\textbf{%s}' % word in src(page) and 'textmd' not in src(page), src(page)[60:200])
+    load_doc(page, WRAP('Vector $\\it v$ plain words.')); click_text(page, 'words', 2); page.keyboard.press('Control+i'); settle(page, 200)
+    check('r2_bare_switch: Ctrl+I after $\\it v$ makes the word italic', '\\emph{words}' in src(page) and 'textup' not in src(page), src(page)[60:200])
     load_doc(page, WRAP('{\\bfseries bold words here.}\n\nNext.')); click_text(page, 'words here', 6); page.keyboard.press('Control+b'); settle(page, 200); page.keyboard.type('XY'); settle(page, 200)
     check('r2_bare_switch: and a {\\bfseries ..} group is split at the caret as before', src(page) == WRAP('{\\bfseries bold words }XY{\\bfseries{}here.}\n\nNext.'), src(page)[60:160])
 

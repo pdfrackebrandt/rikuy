@@ -537,6 +537,7 @@ export function toggle(src, a, b, group, o = {}) {
 // "Plain \bfseries bold words" or \begin{center}\bfseries ... has, and every group inside that
 // scope (a table's cell in it) but the argument of the opposite (up: \textmd{..}). The group that
 // opens with one, {\bfseries ..}, is a wrapper around() finds. write: the kind's opposite.
+const ALIGN = /^(?:tabular\*?|tabularx|tabulary|longtable\*?|array|tabu|supertabular|xtabular|tabbing|align\*?|alignat\*?|flalign\*?|gather\*?|eqnarray\*?|[pbvBV]?matrix|cases|split|aligned|gathered)$/;
 const BARE = {
   bold: { on: /^\\(?:bfseries|bf)(?![A-Za-z])/, off: /^\\(?:mdseries|normalfont|rm)(?![A-Za-z])/, up: /\\(?:textmd|textnormal)\s*$/, write: 'textmd' },
   italic: { on: /^\\(?:itshape|it|slshape|sl)(?![A-Za-z])/, off: /^\\(?:upshape|normalfont|rm)(?![A-Za-z])/, up: /\\(?:textup|textnormal)\s*$/, write: 'textup' }
@@ -547,27 +548,40 @@ export function bareOn(src, p, group) {
   const z = Math.max(0, p - 20000);
   // (comments as spaces, so a brace or a switch in one counts for nothing)
   const t = src.slice(z, p).replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, (m, x, y) => x + y + ' '.repeat(m.length - x.length - y.length));
-  let d = 0, env = 0;
+  // A switch's scope also ends where TeX's own groups end: a table's cell (&), a formula ($..$,
+  // \(..\), \[..\]) and an optional argument (\item[\bf Term]): a \bfseries header row or $\bf v$
+  // made the words after them bold here, and Bold wrote \textmd. A \\ is a row's end only in an
+  // alignment (row: the switch found before one counts once the environment round it is no table).
+  let d = 0, env = 0, bk = 0, math = false, row = false, found = false;
   for (let k = t.length - 1; k >= 0; k--) {
     const c = t[k];
-    if (c !== '{' && c !== '}' && c !== '\\') continue;
+    if (c !== '{' && c !== '}' && c !== '\\' && c !== '$' && c !== '&' && c !== '[' && c !== ']') continue;
     let n = 0;
     for (let j = k - 1; j >= 0 && t[j] === '\\'; j--) n++;
     if (n % 2) continue;
     // (a group closed before p is passed over whole; one p is in, left at its start: a switch
     // before it is in force inside it too, so the scan goes on outwards, to the document's start)
     if (c === '}') d++;
-    else if (c === '{') { if (d) d--; else if (B.up.test(t.slice(Math.max(0, k - 16), k))) return false; }
-    else if (!d) {
+    else if (c === '{') { if (d) d--; else if (found) return true; else if (B.up.test(t.slice(Math.max(0, k - 16), k))) return false; }
+    else if (d) continue;
+    else if (c === '$') { if (t[k - 1] === '$') k--; if (!env) math = !math; }
+    else if (env || math) { if (c === '\\') { const r = t.slice(k, k + 24); if (/^\\end\s*\{/.test(r)) env++; else if (/^\\begin\s*\{/.test(r) && env) env--; else if (!env && /^\\[([]/.test(r)) math = false; } }
+    else if (c === '&') return false;
+    else if (c === ']') bk++;
+    else if (c === '[') { if (bk) bk--; }
+    else {
       const r = t.slice(k, k + 24);
       if (/^\\end\s*\{/.test(r)) env++;
-      else if (/^\\begin\s*\{\s*document\s*\}/.test(r)) return false;
-      else if (/^\\begin\s*\{/.test(r)) { if (env) env--; }
-      else if (!env && B.off.test(r)) return false;
-      else if (!env && B.on.test(r)) return true;
+      else if (/^\\begin\s*\{\s*document\s*\}/.test(r)) return found;
+      else if (/^\\begin\s*\{/.test(r)) { if (found) return !ALIGN.test((/^\\begin\s*\{([^{}]*)\}/.exec(r) || [])[1] || ''); }
+      else if (/^\\[)\]]/.test(r)) math = true;
+      else if (/^\\\\|^\\(?:cr|tabularnewline)(?![A-Za-z])/.test(r)) row = true;
+      else if (bk || found) continue;
+      else if (B.off.test(r)) return false;
+      else if (B.on.test(r)) { if (!row) return true; found = true; }
     }
   }
-  return false;
+  return found;
 }
 
 // whether every part of the selection has the kind (a caret: whether it is in a wrapper of it)
