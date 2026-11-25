@@ -2036,6 +2036,55 @@ class App {
     return { f: A.f, a: Math.min(A.p, B.p), b: Math.max(A.p, B.p) };
   }
 
+  // A selection from one file of the project into another (the main file's words into an \input
+  // file's, a drag or Shift+Down over the place it is input): each file loses the part of it the
+  // selection holds, as Word deletes what is selected, and the \input between them stays unless
+  // it is wholly inside. caretNow() reads such a selection as a caret at its start: Delete took
+  // from there to the paragraph's end with the \input and every file after it out of the
+  // document, Backspace the letter before the selection, and typing went in before it, the
+  // selection kept. Null where its ends are not places of the page: the callers then do what
+  // they did before (typing goes in at the start; nothing is deleted).
+  crossFileEdits(r) {
+    // (a selection from the page's text into the footnotes at its foot ends where the page's text
+    // ends, as caretNow() reads it: their words come earlier in the source)
+    const up = (n, q) => { const e = n && (n.nodeType === 1 ? n : n.parentElement); return e && e.closest ? e.closest(q) : null; };
+    const fs = up(r.startContainer, '.fns'), fe = up(r.endContainer, '.fns'), ns = up(r.startContainer, '.fn');
+    r = r.cloneRange();
+    if (ns && up(r.endContainer, '.fn') !== ns) r.setEnd(ns, ns.childNodes.length);
+    else if (fe && fe !== fs) r.setEnd(fe, 0);
+    else if (fs && fe !== fs) r.setEnd(fs, fs.childNodes.length);
+    const A = posFromDom(r.startContainer, r.startOffset, this.root);
+    const Z = posFromDom(r.endContainer, r.endOffset, this.root, true);
+    if (!A || !Z || A.ghost || Z.ghost || A.f === Z.f) return null;
+    // Each file's part: from its first place in the selection to its last, read from the text
+    // the selection holds. (Not from the page's blocks: an \input inside a list, a theorem or a
+    // table puts two files' words in one block, and such a selection took nothing.)
+    const span = new Map([[A.f, [A.p, A.p]]]);
+    const add = (q) => { if (!q || q.ghost) return; const x = span.get(q.f); if (x) { x[0] = Math.min(x[0], q.p); x[1] = Math.max(x[1], q.p); } else span.set(q.f, [q.p, q.p]); };
+    const box = r.commonAncestorContainer.nodeType === 1 ? r.commonAncestorContainer : r.commonAncestorContainer.parentNode;
+    const tw = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+      if (!n.data.length || !r.intersectsNode(n)) continue;
+      add(posFromDom(n, n === r.startContainer ? r.startOffset : 0, this.root));
+      add(posFromDom(n, n === r.endContainer ? r.endOffset : n.data.length, this.root, true));
+    }
+    add(Z);
+    span.get(A.f)[0] = A.p;
+    span.get(Z.f)[1] = Z.p;
+    // (a file's part that begins at a heading's or a paragraph's first letter and goes past its
+    // end takes the whole of it, as within one file: its words alone went, and an empty numbered
+    // \section{} stayed)
+    const BL = this.renderer.blocks;
+    for (const [f, S] of span) {
+      const B = BL.find((b) => b.f === f && b.s < S[0] && S[0] < b.e);
+      if (B && B.e <= S[1] && !visibleRanges(BL, f, B.s, S[0]).length) S[0] = B.s;
+    }
+    const S0 = span.get(A.f);
+    const edits = [];
+    for (const [f, [s, e]] of span) if (e > s) edits.push(...this.deletionEdits(f, s, e, true));
+    return { edits, at: { f: A.f, p: S0[0] } };
+  }
+
   // Build deletion edits for [a,b) in f without breaking markup. sel: [a, b) is a selection made
   // on the page (typed over, deleted, cut, pasted over), not what one key takes at the caret.
   deletionEdits(f, a, b, sel) {
@@ -2078,6 +2127,9 @@ class App {
     // (from one list item's words into another's: src/cmd/lists.js listSpan)
     const items = this.listSpan(f, a, b);
     if (items) return items;
+    // (from a paragraph into a list item, or out of one past the list: src/cmd/lists.js listSelEdits)
+    const across = sel && this.listSelEdits ? this.listSelEdits(f, a, b) : null;
+    if (across) return across;
     const vr = visibleRanges(this.renderer.blocks, f, a, b);
     if (!sel) return vr.map(([s, e]) => ({ f, s, e, t: '' }));
     // A selection whose ends cannot go as LaTeX (it starts in a heading's words, or ends in a
@@ -2141,6 +2193,15 @@ class App {
     if (whole) { this.replaceBody(whole, escapeTeX(data, ' '), 'replace'); return; }
     const c = this.caretNow();
     if (!c) return;
+    // typed over a selection from one file into another: each file's part goes (crossFileEdits)
+    // and the letters go where it began (where it cannot tell the parts, in at its start, as before)
+    const X = c.crossFile && !range ? this.crossFileEdits(getSelection().getRangeAt(0)) : null;
+    if (X) {
+      const t = this.escapeAt(X.at.f, X.at.p, data), ed = X.edits.find((x) => x.f === X.at.f && x.s === X.at.p);
+      if (ed) ed.t += t; else X.edits.push({ f: X.at.f, s: X.at.p, e: X.at.p, t });
+      this.commit(X.edits, { f: X.at.f, p: X.at.p + t.length, bias: -1 }, 'replace');
+      return;
+    }
     // in a LaTeX paragraph, or a line or a paragraph to come in LaTeX, what is typed is the source
     const T = c.ghost ? null : this.texHere();
     if (T && c.f === T.f) { const r = range && range.f === T.f ? range : c; this.texEdit(T, r.a, r.b, data, c.collapsed && !range ? 'type' : 'replace'); return; }
@@ -2214,6 +2275,8 @@ class App {
     const whole = this.wholeDoc();
     if (whole) { this.replaceBody(whole, '', 'del'); return; }
     if (!c) return;
+    // (a selection from one file into another: crossFileEdits)
+    if (c.crossFile) { const X = this.crossFileEdits(getSelection().getRangeAt(0)); if (X && X.edits.length) this.commit(X.edits, { ...X.at, bias: -1 }, 'del'); return; }
     const T = this.texHere();
     if (T && c.f === T.f && this.texDelete(T, c, type, ranges)) return;
     // (Backspace at a list item's start, Delete at its end, as Word's: src/cmd/lists.js listDelete)
@@ -2336,7 +2399,41 @@ class App {
       // "Press Backspace again")
       if (atom) { this.arm({ ...atom, key: /Backward/.test(type) ? 'Backspace' : 'Delete' }); return; }
     }
-    const edits = this.deletionEdits(f, a, b, !c.collapsed);
+    let edits = this.deletionEdits(f, a, b, !c.collapsed);
+    // One key that takes the line end, or a \\ line break, next to a review comment's line or a
+    // comment ("here.\n% comment (Ana): note\n more.", Backspace at "more."): the words meet, and
+    // the comments stay, each on a line of its own, the line before them ended with % so TeX sets
+    // no space there. The comment line was joined onto the text line ("here.% comment"), which the
+    // review pane no longer reads as a comment, or deleted with the line ends round it.
+    let kept = false;
+    if (c.collapsed && edits.length === 1 && edits[0].s === a && edits[0].e === b && !edits[0].t) {
+      const S = this.src(f), line = (p) => S.slice(S.lastIndexOf('\n', p - 1) + 1, p), blankAfter = (p) => { const z = S.indexOf('\n', p + 1); return !S.slice(p + 1, z < 0 ? S.length : z).trim(); };
+      // (the run of spaces, line ends and whole comment lines the deleted characters stand in, never
+      // over a blank line: a paragraph break is no part of it)
+      let s0 = a, e0 = b;
+      for (let g = 0; g < 400 && s0 > 0; g++) {
+        const ch = S[s0 - 1];
+        if (ch === ' ' || ch === '\t' || ch === '\r') s0--;
+        else if (ch === '\n') { if (!line(s0 - 1).trim()) break; s0--; }
+        else if (/^[ \t]*%/.test(line(s0))) s0 -= line(s0).length;
+        else break;
+      }
+      for (let g = 0; g < 400 && e0 < S.length; g++) {
+        const ch = S[e0];
+        if (ch === ' ' || ch === '\t' || ch === '\r') e0++;
+        else if (ch === '\n') { if (blankAfter(e0)) break; e0++; }
+        else if (!line(e0).trim() && ch === '%') { const z = S.indexOf('\n', e0); e0 = z < 0 ? S.length : z; }
+        else break;
+      }
+      const X = S.slice(s0, e0), CM = /(^|[^\\])((?:\\\\)*)%([^\n]*)/g, cms = [];
+      const rest = X.replace(CM, (m, x, y, z) => { if (z.replace(/\r$/, '').trim()) cms.push('%' + z.replace(/\r$/, '')); return x + y; });
+      // (a comment takes its own line end: the blank line TeX would see is read without them)
+      if (cms.length && /^\s*(?:\\\\\s*)?$/.test(rest) && !/\n[ \t\r]*\n/.test(X.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*(\r?\n)?/g, '$1$2'))) {
+        const NL = /\r\n/.test(S) ? '\r\n' : '\n';
+        edits = [{ f, s: s0, e: e0, t: (s0 === 0 || S[s0 - 1] === '\n' ? '' : '%' + NL) + cms.join(NL) + NL }];
+        a = s0; kept = true;
+      }
+    }
     if (!edits.length) {
       const p = /Backward/.test(type) || !c.collapsed ? a : b;
       this.restoreCaret({ f, p, bias: /Backward/.test(type) ? -1 : 1 });
@@ -2345,7 +2442,8 @@ class App {
     const removedBefore = edits.filter((ed) => ed.e <= a).reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
     let p = a - removedBefore;
     const first = edits[0];
-    if (first.s >= a) p = first.s + first.t.length;
+    // (the caret where the words meet, before the comments kept)
+    if (first.s >= a && !kept) p = first.s + first.t.length;
     this.commit(edits, { f, p, bias: -1 }, 'del');
     // (an empty \textbf{} left where the deleted words were: gone once the caret leaves it untyped)
     if (this.watchDeleted) this.watchDeleted(f, p);
@@ -2410,6 +2508,24 @@ class App {
   enter(soft) {
     const c = this.caretNow();
     if (!c) return;
+    // (over a selection from one file into another: what it holds goes, crossFileEdits. Mostly
+    // the two files' remains are two paragraphs already, the break Enter makes; from one list
+    // item into another file's, whose \item went with it, a new \item is the break: the two items
+    // were left as one. It went in at the selection's start, the selection kept)
+    if (c.crossFile) {
+      const X = this.crossFileEdits(getSelection().getRangeAt(0));
+      if (X && X.edits.length) {
+        const pre = this.src(X.at.f).slice(Math.max(0, X.at.p - 4000), X.at.p), k = pre.search(/\\item(?![A-Za-z])(?![^]*\\item(?![A-Za-z]))/);
+        const inItem = k >= 0 && !/\n[ \t]*\n|\\(?:begin|end)\s*\{/.test(pre.slice(k));
+        const tookItem = X.edits.some((ed) => ed.f !== X.at.f && /\\item(?![A-Za-z])/.test(this.src(ed.f).slice(ed.s, ed.e)));
+        if (!soft && inItem && tookItem) {
+          const ed = X.edits.find((x) => x.f === X.at.f && x.s === X.at.p);
+          if (ed) ed.t += '\n\\item '; else X.edits.push({ f: X.at.f, s: X.at.p, e: X.at.p, t: '\n\\item ' });
+          this.commit(X.edits, { f: X.at.f, p: X.at.p + 7, bias: 1 }, 'enter');
+        } else this.commit(X.edits, { ...X.at, bias: -1 }, 'del');
+        return;
+      }
+    }
     // (a second Enter on the line after a display: a new paragraph there)
     if (c.ghost && this.ghost.line && !this.ghost.pend) { this.ghost.line = false; this.ghost.el.classList.add('ind'); return; }
     // A second Enter where the first left the caret at a paragraph's start: a second empty
@@ -3202,6 +3318,17 @@ class App {
   }
   onCopy(e, cut) {
     const c = this.caretNow();
+    // (cut from one file into another: the words as they read, and each file's part goes,
+    // crossFileEdits; the browser's own cut took from the start to the paragraph's end and every
+    // file after it)
+    if (c && c.crossFile && cut) {
+      const X = this.crossFileEdits(getSelection().getRangeAt(0));
+      e.preventDefault();
+      if (!X) return;
+      e.clipboardData.setData('text/plain', getSelection().toString().replace(/\u200B/g, ''));
+      if (X.edits.length) this.commit(X.edits, { ...X.at, bias: -1 }, 'cut');
+      return;
+    }
     if (!c || c.collapsed) return;
     e.preventDefault();
     const latex = this.copyLatex(c);
@@ -3224,6 +3351,10 @@ class App {
     // (a paste from the Edit menu comes with no key: the letters waiting go in before it)
     this.typeFlush();
     e.preventDefault();
+    // (over a selection from one file into another: what it holds goes first, crossFileEdits,
+    // and the paste goes where it began; it went in at the start, the selection kept)
+    const cf = this.caretNow();
+    if (cf && cf.crossFile && e.clipboardData) { const X = this.crossFileEdits(getSelection().getRangeAt(0)); if (X && X.edits.length) this.commit(X.edits, { ...X.at, bias: -1 }, 'del'); }
     const dt = e.clipboardData;
     if (!dt) return;
     const plain = dt.getData('text/plain') || '';
@@ -3306,6 +3437,23 @@ class App {
     if (fmtOnly && !raw) {
       const u = this.pasteInFormats(c.f, fw.p, latex ? this.pasteKept(latex, c.f, fw.p) : rich(false)), parts = u.split(/\s*\n[ \t]*\n\s*/);
       if (parts.length > 1 && this.wrappable && parts.every((x) => this.wrappable(x))) { t = parts.join(fw.close + '\n\n' + fw.open); at = fw.p; }
+      else if (parts.length > 1 && this.wrappable) {
+        // A part the formats' braces cannot hold (a list, a display, a heading) goes in between
+        // them, the formats closed before it and opened again after it; a comment stays in, what
+        // follows it on a line of its own. They went in whole, and \textbf{..} or \uline{..}
+        // with a paragraph break or a list in it stopped TeX. An empty part (the paste began or
+        // ended with a blank line) is the paragraph break alone: it was lost.
+        // (\verb and the like hold a % that is no comment, and no format's argument can hold them)
+        const cm = /(^|[^\\])(\\\\)*%[^\n]*$/, holds = (x) => !x.trim() || (!/\\(?:verb|Verb|lstinline|mintinline)(?![A-Za-z])/.test(x) && this.wrappable(x.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, '$1$2')));
+        let out = '', inside = true;
+        parts.forEach((x, i) => {
+          const w = holds(x);
+          out += (i ? (inside ? fw.close : '') + '\n\n' + (w ? fw.open : '') : w ? '' : fw.close) + x + (cm.test(x.replace(/\\(?:verb|Verb|lstinline|mintinline)\*?([^A-Za-z\s{*])[^\n]*?\1/g, '')) ? '\n' : '');
+          inside = w;
+        });
+        t = out + (inside ? '' : '\n\n' + fw.open);
+        at = fw.p;
+      }
     }
     if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!raw && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
@@ -6914,6 +7062,12 @@ class App {
   fromPdf(file, line) {
     const f = this.fromTexPath(file);
     if (!f) return;
+    // TeX gives a paragraph's lines the line where the paragraph ended: the blank line after it.
+    // Gone to as it is, that place is between two paragraphs, and the page showed the next thing
+    // of that file instead (with an \input after the paragraph, the paragraph after the input's
+    // text). A blank line stands for the text above it.
+    const L = this.src(f).split('\n');
+    while (line > 1 && L[line - 1] != null && !L[line - 1].trim()) line--;
     // in the PDF view the page is not there to go to: the place is kept for going back to it
     if (this.viewPdfClick && this.viewPdfClick(f, line)) return;
     this.goTo(f, lineStart(this.src(f), line));
@@ -7037,10 +7191,29 @@ class App {
       for (const p of res.missing || []) issues.unshift({ sev: 'warn', file: null, line: null, msg: 'Shell escape: ' + p + ' cannot run in the browser, so what it makes is missing' });
       if (untrusted) this.noteRestricted(issues);
       for (const r of res.runs) if (r.cmd !== 'tex' && r.cmd !== 'shell' && r.code) issues.unshift({ sev: r.cmd === 'biber' ? 'warn' : 'error', file: null, line: null, msg: (r.cmd === 'bibtex' ? 'BibTeX: ' : '') + (r.log.split('\n').find((l) => /error|warning|I couldn't|I found no/i.test(l)) || r.log.split('\n')[0] || 'failed').trim() });
+      // TeX notes what a paragraph's end finds wrong (a $ not closed, an argument not ended) at
+      // the blank line that ends it: the paragraph above is where the mistake is. Named as it
+      // came, the problem showed no words of it, and a press on it went to the paragraph after.
+      const linesOf = new Map();
       this.texIssues = issues.map((x) => {
         const known = x.file && this.fromTexPath(x.file);
-        const f = known || this.main;
-        const line = known ? x.line : null;
+        let f = known || this.main;
+        let line = known ? x.line : null;
+        if (line) {
+          if (!linesOf.has(f)) linesOf.set(f, this.src(f).split('\n'));
+          const L = linesOf.get(f);
+          while (line > 1 && L[line - 1] != null && !L[line - 1].trim()) line--;
+        }
+        // (a brace left open: its place is where the words TeX took as the argument begin, where
+        // they are found once in the project's .tex files: TeX named no line, or the line of the
+        // \input whose file it is in; src/tex.js parseTeXLog)
+        if (x.runaway) {
+          const w = /^\{?([^\\{}$%&#^_~]*)/.exec(x.runaway)[1].trim().split(/\s+/).slice(0, 5).filter(Boolean);
+          const re = w.join('').length >= 4 ? new RegExp(w.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'), 'g') : null;
+          const hits = [];
+          if (re) for (const [n, S] of this.files) if (/\.(tex|ltx)$/i.test(n)) for (const m of S.matchAll(re)) hits.push([n, m.index]);
+          if (hits.length === 1) { f = hits[0][0]; line = this.src(f).slice(0, hits[0][1]).split('\n').length; }
+        }
         const p = line ? lineStart(this.src(f), line) : 0;
         return { sev: x.sev, f, p, line, msg: issueText(x, line ? this.src(f).slice(p).split('\n', 1)[0] : ''), key: 'tex:' + x.msg, tex: true };
       });

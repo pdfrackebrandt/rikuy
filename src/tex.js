@@ -223,13 +223,21 @@ export function parseTeXLog(log) {
       }
       if (/^(LaTeX|Package \S+) Error: /.test(msg) && !/\.$/.test(msg) && lines[i + 1] && /^\S/.test(lines[i + 1]) && !fileLine.test(lines[i + 1])) msg += ' ' + lines[i + 1].trim();
       const inTree = m[1].startsWith('/');
-      out.push({ sev: 'error', file: inTree ? here() : m[1], line: inTree ? null : +m[2], msg: msg.replace(/\s+/g, ' ').trim(), ctx: inTree ? '' : ctx });
+      const x = { sev: 'error', file: inTree ? here() : m[1], line: inTree ? null : +m[2], msg: msg.replace(/\s+/g, ' ').trim(), ctx: inTree ? '' : ctx };
+      // (a brace left open in an \input file: TeX names the line that input it; runaway below)
+      if (lines[i - 2] === 'Runaway argument?' && lines[i - 1].trim()) { x.ctx = lines[i - 1]; x.runaway = lines[i - 1]; }
+      out.push(x);
       continue;
     }
     if (/^!/.test(l)) {
       const c = lines.slice(i + 1, i + 10).map((x) => /^l\.(\d+)/.exec(x)).find(Boolean);
       const f = here();
-      out.push({ sev: 'error', file: f, line: c && f ? +c[1] : null, msg: l.replace(/^!\s*/, '').trim() });
+      const x = { sev: 'error', file: f, line: c && f ? +c[1] : null, msg: l.replace(/^!\s*/, '').trim() };
+      // A brace left open: TeX read on to the file's end and names no line, only the text it took
+      // as the argument, printed under "Runaway argument?". That text is where the brace is
+      // (Problems finds its line, src/app.js); the error had no place to go to.
+      if (!c && lines[i - 2] === 'Runaway argument?' && lines[i - 1].trim()) { x.ctx = lines[i - 1]; x.runaway = lines[i - 1]; }
+      out.push(x);
       continue;
     }
     m = /^(?:LaTeX|Package (\S+)) Warning: (.*)$/.exec(l);

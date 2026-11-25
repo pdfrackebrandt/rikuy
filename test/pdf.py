@@ -140,6 +140,77 @@ with sync_playwright() as p:
     dl = d.value
     check('download gives a .pdf', dl.suggested_filename.endswith('.pdf'), dl.suggested_filename)
     page.screenshot(path=SHOTS + '/pdf-pane-2.png')
+
+    # SyncTeX gives a one line paragraph the blank line after it: clicked in the PDF, the page went
+    # to the next thing of that file, past an \input's text ("Main text here." showed "Last words")
+    page.evaluate("""() => { const g = window.rikuy; g.files = new Map([['main.tex', '\\\\documentclass{article}\\n\\\\begin{document}\\n\\\\section{Intro}\\nMain text here.\\n\\n\\\\input{sec/one}\\n\\nLast words $x^2$ and more.\\n\\\\end{document}\\n'],
+      ['sec/one.tex', 'First input file text.\\n\\nSecond paragraph of input.\\n']]); g.main = 'main.tex'; g.hist = []; g.redoStack = []; g.forceRender = true; g.rebuild(); }""")
+    page.evaluate('async () => { await window.rikuy.api.compile(); }')
+    page.wait_for_timeout(800)
+    page.evaluate("() => { const v = window.rikuy.pdfView, o = v.opts.onClickSource; v.opts.onClickSource = (f, l) => { window.__hit = [f, l]; o(f, l); }; }")
+    went = {}
+    for w in ['Main text here.', 'First input file text.', 'Last words']:
+        xy = page.evaluate("""async (w) => { const lib = await import(new URL('tex/pdf.min.mjs', location.href).href);
+          const doc = await lib.getDocument({ data: new Uint8Array(window.rikuy.lastPdf.slice(0)) }).promise; const pg = await doc.getPage(1);
+          const vp = pg.getViewport({ scale: 1 }), it = (await pg.getTextContent()).items.find((i) => i.str.includes(w.split(' ')[0]));
+          return it ? [it.transform[4] / vp.width, 1 - it.transform[5] / vp.height] : null; }""", w)
+        box = page.evaluate("""(() => { const p = document.querySelector('.pdf-page[data-page="1"]'); p.scrollIntoView(); const r = p.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()""")
+        page.evaluate("document.querySelectorAll('.flash').forEach((e) => e.classList.remove('flash'))")
+        page.mouse.click(box[0] + box[2] * xy[0] + 8, box[1] + box[3] * xy[1] - 3)
+        page.wait_for_timeout(400)
+        went[w] = (page.evaluate("(document.querySelector('.it.flash') || {}).textContent || ''"), page.evaluate('window.__hit'))
+    check('clicking a paragraph in the PDF shows that paragraph on the page, an \\input after it or not', all(went[w][0].startswith(w) for w in went), went)
+    # a $ not closed is found at the blank line that ends its paragraph: the problem names the
+    # paragraph's line and words, and a press on it shows that paragraph, not the next one
+    page.evaluate("""async () => { const g = window.rikuy; g.files.set('sec/one.tex', 'First input file text.\\n\\nSecond $paragraph of input.\\n\\nThird one.\\n'); g.forceRender = true; g.rebuild(); await g.api.compile(); }""")
+    probs = page.evaluate("window.rikuy.texIssues.filter((x) => x.sev === 'error').map((x) => [x.f, x.line, x.msg])")
+    page.click('#pdf-msg')
+    page.wait_for_timeout(300)
+    page.evaluate("document.querySelectorAll('.flash').forEach((e) => e.classList.remove('flash'))")
+    page.locator('.prob.tex').first.click()
+    page.wait_for_timeout(300)
+    fl = page.evaluate("(document.querySelector('.it.flash') || {}).textContent || ''")
+    check('a $ left open: the problem names its paragraph\'s line and words, and a press shows that paragraph', probs[:1] == [['sec/one.tex', 3, 'Missing $ inserted. (at Second $paragraph of input.)']] and fl.startswith('Second'), (probs, fl))
+    # (and puts the caret there, on the page, as a heading's press in the Navigation pane does:
+    # what is typed next to fix it goes there)
+    at = page.evaluate("() => { const c = window.rikuy.caretNow(); return c && [document.activeElement.id, c.f, window.rikuy.files.get(c.f).slice(c.p, c.p + 7)]; }")
+    check('a press on the problem puts the caret at its line on the page', at == ['pages', 'sec/one.tex', 'Second '], at)
+    # (review B1) a problem with no place on the page (the preamble's, the fatal error's at no
+    # line) leaves the caret where it was: the caret drawn on the first paragraph typed into the
+    # preamble, or before \documentclass
+    keep = page.evaluate("window.rikuy.files.get('main.tex')")
+    page.evaluate("""async () => { const g = window.rikuy; g.files.set('main.tex', g.files.get('main.tex').replace('\\\\begin{document}', '\\\\undefinedpre\\n\\\\begin{document}')); g.forceRender = true; g.rebuild(); await g.api.compile(); }""")
+    page.wait_for_function("[...document.querySelectorAll('.prob.tex')].some((e) => e.textContent.includes('undefinedpre'))", timeout=10000)
+    rows = page.locator('.prob.tex')
+    pre = [i for i in range(rows.count()) if 'undefinedpre' in rows.nth(i).inner_text()]
+    if pre:
+        rows.nth(pre[0]).click()
+        page.wait_for_timeout(300)
+        page.keyboard.type('Z')
+        page.wait_for_timeout(300)
+    s = page.evaluate("window.rikuy.files.get('main.tex')")
+    check('a press on a problem in the preamble, then a letter: nothing typed into the preamble', bool(pre) and 'Z' not in s[:s.index('\\begin{document}')], (pre, s[:120]))
+    # (review V1) a problem on a markup line inside a block (a table's column letters): the caret
+    # drawn in the first cell is where a letter goes, not before \begin{tabular}
+    page.evaluate("""async () => { const g = window.rikuy; g.files.set('main.tex', '\\\\documentclass{article}\\n\\\\begin{document}\\nText.\\n\\n\\\\begin{tabular}{lx}\\nAone & Bone \\\\\\\\\\n\\\\end{tabular}\\n\\nAfter.\\n\\\\end{document}\\n'); g.forceRender = true; g.rebuild(); await g.api.compile(); }""")
+    page.wait_for_function("[...document.querySelectorAll('.prob.tex')].some((e) => /array arg/.test(e.textContent))", timeout=10000)
+    rows = page.locator('.prob.tex')
+    k = [i for i in range(rows.count()) if 'array arg' in rows.nth(i).inner_text()]
+    rows.nth(k[0]).click()
+    page.wait_for_timeout(300)
+    page.keyboard.type('Z')
+    page.wait_for_timeout(300)
+    s = page.evaluate("window.rikuy.files.get('main.tex')")
+    check('a press on a problem at a table\'s column letters, then a letter: it goes into the first cell, where the caret shows', 'ZAone & Bone' in s, s[30:110])
+    page.evaluate("(k) => { const g = window.rikuy; g.files.set('main.tex', k); g.forceRender = true; g.rebuild(); }", keep)
+    # a brace left open: TeX reads on to the file's end and names no line (or the \input's): the
+    # problem is put where the words it took as the argument begin
+    page.evaluate("""async () => { const g = window.rikuy; g.files.set('sec/one.tex', 'First input file text.\\n\\nSecond \\\\emph{paragraph of\\ninput.\\n\\nThird one.\\n'); g.forceRender = true; g.rebuild(); await g.api.compile(); }""")
+    probs = page.evaluate("window.rikuy.texIssues.filter((x) => x.sev === 'error').map((x) => [x.f, x.line, x.msg])")
+    check('a brace left open in an \\input file: the problem is at the line where it opens, its words shown', probs[:1] == [['sec/one.tex', 3, 'File ended while scanning use of \\emph . (at {paragraph of input. \\par Third one.)']], probs)
+    page.evaluate("""async () => { const g = window.rikuy; g.files.set('sec/one.tex', 'Fine.\\n'); g.files.set('main.tex', g.files.get('main.tex').replace('Last words', 'Last \\\\textbf{words')); g.forceRender = true; g.rebuild(); await g.api.compile(); }""")
+    probs = page.evaluate("window.rikuy.texIssues.filter((x) => x.sev === 'error').map((x) => [x.f, x.line])")
+    check('and in the main file, where TeX names no line at all', probs[:1] == [['main.tex', 8]], probs)
     print('errors:', errors[:5])
     check('no page errors', not errors, errors[:5])
     b.close()

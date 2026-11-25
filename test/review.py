@@ -268,6 +268,52 @@ def hunt(p):
     browser.close()
 
 
+def r2_review(p):
+    """(round 2) What a Word user met in Review after round 1, each failing before its fix."""
+    browser, page, errors = open_page(p, width=1366, height=900)
+    # Enter in the middle of a word with Track Changes on, then Reject at the caret: the paragraph
+    # break alone goes. The words' diff listed "para words." taken out and "ra words." put in, with
+    # the break in neither: Reject took the second and the rest of the paragraph was lost.
+    D = WRAP('Alpha para words.\n\nOmega words here.\n\nThird para.\n\nFourth line here.')
+    fresh(page, D)
+    page.evaluate("window.rikuy.setTracking(true)")
+    click_text(page, 'Fourth line', 7); page.keyboard.type('new '); settle(page, 200)
+    click_text(page, 'para words', 2); page.keyboard.press('Enter'); settle(page, 300, full=True)
+    check('r2_review: Enter in a word with Track Changes on is one change, the paragraph break',
+          page.evaluate("window.rikuy.realChanges().map((c) => c.b)")[0] == '\n\n', page.evaluate("window.rikuy.realChanges().map((c) => [c.a, c.b])"))
+    page.evaluate("window.rikuy.rejectHere()"); settle(page, 300, full=True)
+    check('r2_review: Reject at the caret after it takes the break back, the words whole, the other change kept',
+          src(page) == D.replace('Fourth line', 'Fourth new line'), repr(src(page)[40:]))
+    fresh(page, D)
+    page.evaluate("window.rikuy.setTracking(true)")
+    click_text(page, 'Omega', 0); page.keyboard.press('Backspace'); settle(page, 300, full=True)
+    j = src(page)
+    page.evaluate("window.rikuy.rejectHere()"); settle(page, 300, full=True)
+    check('r2_review: Backspace joining two paragraphs, then Reject: the paragraphs apart again', j != D and src(page) == D, repr(j[40:90]) + ' / ' + repr(src(page)[40:90]))
+    # Backspace at the words after a review comment's line, or after a \\\\ and a comment: the words
+    # meet and the comment keeps its own line. It was joined onto the text line ("here.% comment"),
+    # where the pane no longer reads it, or deleted with the line ends round it.
+    for name, doc, at, want in (
+            ('the line after a review comment', 'Text here.\n% comment (Ana): note\n more.\n\nNext.', ('more.', 0), 'Text here.%\n% comment (Ana): note\nmore.\n\nNext.'),
+            ('a line break and a comment', 'Line\\\\% note\n more.\n\nNext.', ('more.', 0), 'Line%\n% note\nmore.\n\nNext.'),
+            ('a line break before a comment line', 'Line\\\\\n% comment (Bo): Shorter?\nmore.\n\nNext.', ('more.', 0), 'Line%\n% comment (Bo): Shorter?\nmore.\n\nNext.')):
+        for crlf in (False, True):
+            d = WRAP(doc).replace('\n', '\r\n') if crlf else WRAP(doc)
+            fresh(page, d); click_text(page, *at); page.keyboard.press('Backspace'); settle(page, 250)
+            w = WRAP(want).replace('\n', '\r\n') if crlf else WRAP(want)
+            check('r2_review: Backspace at %s%s: the words meet, the comment on its own line' % (name, ' (CRLF)' if crlf else ''), src(page) == w, repr(src(page)[40:]))
+        page.keyboard.type('X'); settle(page, 200)
+        check('r2_review: the caret where the words met (%s)' % name, src(page) == WRAP(want).replace('\n', '\r\n').replace('%\r\n%', 'X%\r\n%', 1), repr(src(page)[40:]))
+    fresh(page, WRAP('Text here.\n% comment (Ana): note\n more.\n\nNext.')); click_text(page, 'more.', 5)
+    for k in range(6): page.keyboard.press('Backspace'); settle(page, 150)
+    check('r2_review: a word after a comment line deleted letter by letter, then one more Backspace: the comment stays', '% comment (Ana): note\n' in src(page) and 'Text here.' in src(page), repr(src(page)[40:]))
+    cs = page.evaluate("window.rikuy.allComments().map((c) => ({ s: c.s, text: c.body }))")
+    check('r2_review: the review pane still finds the comment, its line where it was, on its own line',
+          len(cs) == 1 and cs[0]['text'] == 'note' and src(page)[cs[0]['s']:].startswith('% comment (Ana): note\n') and src(page)[cs[0]['s'] - 1] == '\n' and src(page)[:cs[0]['s']].endswith('Text here.%\n'), (cs, repr(src(page)[40:])))
+    check('r2_review: no page errors', not errors, errors[:3])
+    browser.close()
+
+
 def run():
     with sync_playwright() as p:
         hunt(p)
@@ -587,6 +633,7 @@ def run():
             browser.close()
 
         r4(p)
+        r2_review(p)
 
     bad = [r for r in results if not r[1]]
     print(f"{len(results) - len(bad)}/{len(results)} passed")
@@ -594,9 +641,9 @@ def run():
 
 
 if __name__ == '__main__':
-    if sys.argv[1:] in (['r4'], ['hunt']):
+    if sys.argv[1:] in (['r4'], ['hunt'], ['r2_review']):
         with sync_playwright() as p:
-            (r4 if sys.argv[1] == 'r4' else hunt)(p)
+            {'r4': r4, 'hunt': hunt, 'r2_review': r2_review}[sys.argv[1]](p)
         bad = [r for r in results if not r[1]]
         print(f"{len(results) - len(bad)}/{len(results)} passed")
         sys.exit(1 if bad else 0)

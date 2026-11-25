@@ -200,10 +200,14 @@ export function plainToTeX(text, prev, opts = {}) {
     p = ' ';
   }
   const out = tidyParas(outParas.map((x) => x.trim()).join('\n\n'));
-  // a space at either end of plain text is part of the sentence it lands in: keep it
-  const lead = /^[ \t]/.test(t) && out && !/^\\(begin|section|subsection)/.test(out) ? ' ' : '';
-  const trail = /[ \t]$/.test(t) && out && !/\\end\{[^}]*\}$/.test(out) ? ' ' : '';
-  return lead + out + trail;
+  // a space at either end of plain text is part of the sentence it lands in: keep it. A blank line
+  // there is a paragraph break where the text lands, as Word's paste of "\n\nNew words" at a
+  // paragraph's end starts a new paragraph (it was dropped, and the words ran on in the paragraph
+  // above); a lone line end there is a space, as one inside the text is.
+  const leadPar = /^[ \t]*\n[ \t]*\n/.test(t) && out ? '\n\n' : '', trailPar = /\n[ \t]*\n[ \t]*$/.test(t) && out ? '\n\n' : '';
+  const lead = !leadPar && /^\s/.test(t) && out && !/^\\(begin|section|subsection)/.test(out) ? ' ' : '';
+  const trail = !trailPar && /\s$/.test(t) && out && !/\\end\{[^}]*\}$/.test(out) ? ' ' : '';
+  return leadPar + lead + out + trail + trailPar;
 }
 function mdList(lines, env, re) {
   const items = [];

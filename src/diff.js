@@ -107,6 +107,39 @@ export function changes(a, b, f) {
 // the changes of one hunk, as changes() lists them
 export function hunkChanges(h, f) {
   const out = [];
+  // One run of characters put in or taken out with a line end in it (Enter in the middle of a word,
+  // or Backspace joining two paragraphs): that run, as Word marks the paragraph mark. The words'
+  // diff saw "para" and "pa", "ra" as other words and listed a deletion and an insertion with the
+  // paragraph break between them in neither, so Reject at the caret after Enter took back half of
+  // it and lost the rest of the paragraph.
+  let pre = 0;
+  const n = Math.min(h.a.length, h.b.length);
+  while (pre < n && h.a.charCodeAt(pre) === h.b.charCodeAt(pre)) pre++;
+  let suf = 0;
+  while (suf < n - pre && h.a.charCodeAt(h.a.length - 1 - suf) === h.b.charCodeAt(h.b.length - 1 - suf)) suf++;
+  // (not inside a surrogate pair or a control word's letters: the run then starts at the word's start)
+  // (only a run with a line end in it, Enter's or a join's: a letter typed in a word stays a word
+  // replaced, which absorbText reads to keep an edit inside a waiting change part of it)
+  const pure = pre + suf === n && h.a !== h.b && /\n/.test((h.a.length > h.b.length ? h.a : h.b).slice(pre, pre + Math.abs(h.a.length - h.b.length)));
+  if (pure) {
+    // (the run may slide where its ends repeat, "one two three" less "two " or " two" or "wo t":
+    // it goes where its edges best meet the words round it, a space or a line end, the last of the
+    // best as diff-match-patch's semantic clean up places it)
+    const L = h.a.length > h.b.length ? h.a : h.b, k = L.length - n;
+    while (pre > 0 && L[pre - 1] === L[pre + k - 1]) pre--;
+    const edge = (x, y) => (!x || !y ? 6 : /\n/.test(x) && /\n/.test(y) ? 5 : /\n/.test(x + y) ? 4 : /\s/.test(x + y) ? (/[.!?;:,]/.test(x) || /[.!?;:,]/.test(y) ? 3 : 2) : /[^\p{L}\p{N}]/u.test(x + y) ? 1 : 0);
+    let best = -1, at = pre;
+    for (let q = pre; q + k <= L.length; q++) {
+      if (q > pre && L[q - 1] !== L[q + k - 1]) break;
+      const sc = edge(L[q - 1], L[q]) + edge(L[q + k - 1], L[q + k]);
+      if (sc >= best) { best = sc; at = q; }
+    }
+    pre = at;
+  }
+  if (pure && !/[\uD800-\uDBFF]$/.test(h.a.slice(0, pre)) && !/\\[A-Za-z]*$/.test(h.a.slice(0, pre))) {
+    const d = Math.abs(h.a.length - h.b.length), a = h.a.length > h.b.length ? h.a.slice(pre, pre + d) : '', b = h.b.length > h.a.length ? h.b.slice(pre, pre + d) : '', bs = h.bs + pre;
+    return [{ f, as: h.as + pre, ae: h.as + pre + a.length, bs, be: bs + b.length, a, b, line: h.line + nl(h.a.slice(0, pre)), parts: [a ? ['-', a, bs] : ['+', b, bs]] }];
+  }
   const ops = wordDiff(h.a, h.b);
   let ap = h.as, bp = h.bs, line = h.line;
   let cur = null, pend = null;
