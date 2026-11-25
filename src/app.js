@@ -7101,12 +7101,22 @@ class App {
       const linesOf = new Map();
       this.texIssues = issues.map((x) => {
         const known = x.file && this.fromTexPath(x.file);
-        const f = known || this.main;
+        let f = known || this.main;
         let line = known ? x.line : null;
         if (line) {
           if (!linesOf.has(f)) linesOf.set(f, this.src(f).split('\n'));
           const L = linesOf.get(f);
           while (line > 1 && L[line - 1] != null && !L[line - 1].trim()) line--;
+        }
+        // (a brace left open: its place is where the words TeX took as the argument begin, where
+        // they are found once in the project's .tex files: TeX named no line, or the line of the
+        // \input whose file it is in; src/tex.js parseTeXLog)
+        if (x.runaway) {
+          const w = /^\{?([^\\{}$%&#^_~]*)/.exec(x.runaway)[1].trim().split(/\s+/).slice(0, 5).filter(Boolean);
+          const re = w.join('').length >= 4 ? new RegExp(w.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'), 'g') : null;
+          const hits = [];
+          if (re) for (const [n, S] of this.files) if (/\.(tex|ltx)$/i.test(n)) for (const m of S.matchAll(re)) hits.push([n, m.index]);
+          if (hits.length === 1) { f = hits[0][0]; line = this.src(f).slice(0, hits[0][1]).split('\n').length; }
         }
         const p = line ? lineStart(this.src(f), line) : 0;
         return { sev: x.sev, f, p, line, msg: issueText(x, line ? this.src(f).slice(p).split('\n', 1)[0] : ''), key: 'tex:' + x.msg, tex: true };

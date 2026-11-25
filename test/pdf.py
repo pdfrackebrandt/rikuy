@@ -171,6 +171,14 @@ with sync_playwright() as p:
     page.wait_for_timeout(300)
     fl = page.evaluate("(document.querySelector('.it.flash') || {}).textContent || ''")
     check('a $ left open: the problem names its paragraph\'s line and words, and a press shows that paragraph', probs[:1] == [['sec/one.tex', 3, 'Missing $ inserted. (at Second $paragraph of input.)']] and fl.startswith('Second'), (probs, fl))
+    # a brace left open: TeX reads on to the file's end and names no line (or the \input's): the
+    # problem is put where the words it took as the argument begin
+    page.evaluate("""async () => { const g = window.rikuy; g.files.set('sec/one.tex', 'First input file text.\\n\\nSecond \\\\emph{paragraph of\\ninput.\\n\\nThird one.\\n'); g.forceRender = true; g.rebuild(); await g.api.compile(); }""")
+    probs = page.evaluate("window.rikuy.texIssues.filter((x) => x.sev === 'error').map((x) => [x.f, x.line, x.msg])")
+    check('a brace left open in an \\input file: the problem is at the line where it opens, its words shown', probs[:1] == [['sec/one.tex', 3, 'File ended while scanning use of \\emph . (at {paragraph of input. \\par Third one.)']], probs)
+    page.evaluate("""async () => { const g = window.rikuy; g.files.set('sec/one.tex', 'Fine.\\n'); g.files.set('main.tex', g.files.get('main.tex').replace('Last words', 'Last \\\\textbf{words')); g.forceRender = true; g.rebuild(); await g.api.compile(); }""")
+    probs = page.evaluate("window.rikuy.texIssues.filter((x) => x.sev === 'error').map((x) => [x.f, x.line])")
+    check('and in the main file, where TeX names no line at all', probs[:1] == [['main.tex', 8]], probs)
     print('errors:', errors[:5])
     check('no page errors', not errors, errors[:5])
     b.close()
