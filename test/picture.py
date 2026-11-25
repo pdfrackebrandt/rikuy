@@ -1004,6 +1004,17 @@ def hunt(page):
         page.keyboard.press('Backspace'); settle(page, 200)
         check('Backspace in an empty environment keeps the paragraphs around it apart: ' + repr(d), src(page) == WRAP(w, ''), src(page)[40:])
 
+    # Insert Caption on a centred picture: the picture stays centred, as TeX keeps it in its center
+    # (the page drew the center with a \captionof as a float at the class's default, the left margin)
+    load_doc(page, DOC); until(page, DRAWN); settle(page, 300)
+    x0 = page.locator('#pages .a-img').bounding_box()['x']
+    sel_pic()(page)
+    page.get_by_role('button', name='Insert Caption', exact=True).click(); settle(page, 300)
+    page.keyboard.type('Red'); settle(page, 200)
+    until(page, DRAWN); settle(page, 100)
+    x1 = page.locator('#pages .a-img').bounding_box()['x']
+    check('Insert Caption leaves the centred picture where it was (centred, as TeX prints it)', '\\captionof{figure}{Red}' in src(page) and abs(x1 - x0) < 1, (x0, x1))
+
 
 def run():
     with sync_playwright() as p:
