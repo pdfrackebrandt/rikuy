@@ -1403,11 +1403,12 @@ class App {
     const swaps = (blobs || []).map(({ name, blob }) => ({ name, before: this.assetBlobs.get(name) || null, after: blob }));
     if (!edits.length && !swaps.length) { if (caret) this.restoreCaret(caret); return; }
     for (const b of swaps) this.setAsset(b.name, b.after);
-    // (an edit from elsewhere, a coauthor's merge or another tab's, lets a selected picture go, as
-    // an undo and a redo do (B8 review H1), the caret left where it stood: the layout no longer
-    // takes every item of a page out and back, which had dropped that selection along with them,
-    // src/layout.js placeChildren)
-    if ((kind === 'merge' || kind === 'other-tab') && this.armed) {
+    // (an edit not made at the caret, one with no caret to put back: a coauthor's merge, another
+    // tab's, a Word file brought back, a version restored, a word of spelling's, lets a selected
+    // picture go, as an undo and a redo do (B8 review H1), the caret left where it stood: the
+    // layout no longer takes every item of a page out and back, which had dropped that selection
+    // along with them, src/layout.js placeChildren)
+    if (caret == null && this.armed) {
       const A = this.armed, s = getSelection(), el = A.el;
       this.disarm();
       if (el && el.isConnected && el.parentNode && s.rangeCount && s.getRangeAt(0).intersectsNode(el)) s.collapse(el.parentNode, [...el.parentNode.childNodes].indexOf(el));
