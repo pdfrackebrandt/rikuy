@@ -140,6 +140,26 @@ with sync_playwright() as p:
     dl = d.value
     check('download gives a .pdf', dl.suggested_filename.endswith('.pdf'), dl.suggested_filename)
     page.screenshot(path=SHOTS + '/pdf-pane-2.png')
+
+    # SyncTeX gives a one line paragraph the blank line after it: clicked in the PDF, the page went
+    # to the next thing of that file, past an \input's text ("Main text here." showed "Last words")
+    page.evaluate("""() => { const g = window.rikuy; g.files = new Map([['main.tex', '\\\\documentclass{article}\\n\\\\begin{document}\\n\\\\section{Intro}\\nMain text here.\\n\\n\\\\input{sec/one}\\n\\nLast words $x^2$ and more.\\n\\\\end{document}\\n'],
+      ['sec/one.tex', 'First input file text.\\n\\nSecond paragraph of input.\\n']]); g.main = 'main.tex'; g.hist = []; g.redoStack = []; g.forceRender = true; g.rebuild(); }""")
+    page.evaluate('async () => { await window.rikuy.api.compile(); }')
+    page.wait_for_timeout(800)
+    page.evaluate("() => { const v = window.rikuy.pdfView, o = v.opts.onClickSource; v.opts.onClickSource = (f, l) => { window.__hit = [f, l]; o(f, l); }; }")
+    went = {}
+    for w in ['Main text here.', 'First input file text.', 'Last words']:
+        xy = page.evaluate("""async (w) => { const lib = await import(new URL('tex/pdf.min.mjs', location.href).href);
+          const doc = await lib.getDocument({ data: new Uint8Array(window.rikuy.lastPdf.slice(0)) }).promise; const pg = await doc.getPage(1);
+          const vp = pg.getViewport({ scale: 1 }), it = (await pg.getTextContent()).items.find((i) => i.str.includes(w.split(' ')[0]));
+          return it ? [it.transform[4] / vp.width, 1 - it.transform[5] / vp.height] : null; }""", w)
+        box = page.evaluate("""(() => { const p = document.querySelector('.pdf-page[data-page="1"]'); p.scrollIntoView(); const r = p.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()""")
+        page.evaluate("document.querySelectorAll('.flash').forEach((e) => e.classList.remove('flash'))")
+        page.mouse.click(box[0] + box[2] * xy[0] + 8, box[1] + box[3] * xy[1] - 3)
+        page.wait_for_timeout(400)
+        went[w] = (page.evaluate("(document.querySelector('.it.flash') || {}).textContent || ''"), page.evaluate('window.__hit'))
+    check('clicking a paragraph in the PDF shows that paragraph on the page, an \\input after it or not', all(went[w][0].startswith(w) for w in went), went)
     print('errors:', errors[:5])
     check('no page errors', not errors, errors[:5])
     b.close()

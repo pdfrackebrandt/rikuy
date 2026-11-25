@@ -6966,6 +6966,12 @@ class App {
   fromPdf(file, line) {
     const f = this.fromTexPath(file);
     if (!f) return;
+    // TeX gives a paragraph's lines the line where the paragraph ended: the blank line after it.
+    // Gone to as it is, that place is between two paragraphs, and the page showed the next thing
+    // of that file instead (with an \input after the paragraph, the paragraph after the input's
+    // text). A blank line stands for the text above it.
+    const L = this.src(f).split('\n');
+    while (line > 1 && L[line - 1] != null && !L[line - 1].trim()) line--;
     // in the PDF view the page is not there to go to: the place is kept for going back to it
     if (this.viewPdfClick && this.viewPdfClick(f, line)) return;
     this.goTo(f, lineStart(this.src(f), line));
