@@ -30,8 +30,10 @@ def sw_info(d):
 
 
 def variant(name, mark):
-    """dist/ as a later deployment would ship it: git.js and the TeX worker's engine.js changed,
-    the version stamped again (build/app.mjs). TeX packs are linked, not copied."""
+    """dist/ as a later deployment would ship it: git.js, the TeX worker's engine.js and the app's
+    own script changed (that one renamed by its new hash and named so in index.html, as build.mjs
+    names it, with window.__rkBundle set to mark), the version stamped again (build/app.mjs). TeX
+    packs are linked, not copied."""
     d = os.path.join(work, name)
     for dp, dns, fns in os.walk(DIST):
         rel = os.path.relpath(dp, DIST)
@@ -42,6 +44,15 @@ def variant(name, mark):
             else: shutil.copyfile(src, dst)
     for f in ('git.js', 'tex/engine.js'):
         with open(os.path.join(d, f), 'a', encoding='utf8') as fh: fh.write('\n// ' + mark + '\n')
+    old = [f for f in os.listdir(d) if re.match(r'^app-[0-9a-f]{16}\.js$', f)][0]
+    body = open(os.path.join(d, old), 'rb').read() + ('\n;window.__rkBundle = %s;\n' % json.dumps(mark)).encode()
+    new = 'app-' + hashlib.sha256(body).hexdigest()[:16] + '.js'
+    os.remove(os.path.join(d, old))
+    open(os.path.join(d, new), 'wb').write(body)
+    ix = os.path.join(d, 'index.html')
+    page = open(ix, encoding='utf8').read()
+    assert page.count(old) == 2, 'index.html names its script once in a preload and once in its tag'
+    open(ix, 'w', encoding='utf8').write(page.replace(old, new))
     subprocess.run(['node', os.path.join(ROOT, 'build', 'app.mjs'), d], check=True, stdout=subprocess.DEVNULL)
     return d
 
@@ -62,6 +73,22 @@ def tree_version(d):
     name = leb()
     i += name
     return json.loads(gzip.decompress(b[i:])).get('v') or ''
+
+
+# The app's own script (build.mjs APP_JS) as the page names it: whether the service worker kept it
+# (rikuy-immutable) and whether the page's copy came through the worker (resource timing's
+# workerStart). An offline start the HTTP cache alone could make proves nothing of the worker: the
+# offline steps clear that cache first (CLEAR).
+APP_KEPT = """async () => { const s = document.querySelector('script[src^="app-"]'), name = s && s.getAttribute('src');
+  const url = name && new URL(name, location.href).href, e = url && performance.getEntriesByName(url)[0];
+  const kept = url ? !!(await (await caches.open('rikuy-immutable')).match(url)) : false;
+  return { name, kept, viaWorker: !!(e && e.workerStart > 0) }; }"""
+
+
+def clear_http_cache(ctx, page):
+    s = ctx.new_cdp_session(page)
+    s.send('Network.clearBrowserCache')
+    s.detach()
 
 
 def ready(page, timeout=30000):
@@ -122,6 +149,9 @@ def main():
         check('the TeX worker\'s scripts are asked for under the page\'s version', ('/_v/' + va + '/tex/') in both['base'], both['base'])
         imm = page.evaluate('caches.open("rikuy-immutable").then(c => c.keys()).then(k => k.map(r => r.url))')
         nfonts = len(os.listdir(os.path.join(DIST, 'fonts')))
+        ak = page.evaluate(APP_KEPT)
+        APP_A = ak['name']
+        check('install kept the app\'s own script (%s), named by its hash, apart from the version' % ak['name'], ak['kept'] and re.match(r'^app-[0-9a-f]{16}\.js$', ak['name'] or ''), ak)
         check('install kept the fonts (%d, 5 of them the Latin Extended cut), named by their hash, apart from the version' % nfonts,
               nfonts > 30 and sum('/fonts/' in u for u in imm) == nfonts and sum('/fonts/ibm-plex-' in u and '-latin-ext-' in u for u in imm) == 5, imm)
         tnames = [f for f in os.listdir(DIST) if re.match(r'^texnames-[0-9a-f]{16}\.txt$', f)]
@@ -137,8 +167,9 @@ def main():
           ready: performance.getEntriesByType('resource').filter((e) => /\\/sw\\.js$/.test(e.name)).length })''')
         fpre = [u for a, u in head['pre'] if a == 'font']
         page.wait_for_timeout(3500)
-        check('the hosted page carries no font as data:; its head asks for KaTeX and the 15 faces the first layout waits for, and each is used',
-              not head['data'] and len(fpre) == 15 and ['script', '/lib/katex.min.js'] in head['pre'] and len(head['pre']) == 16 and not unused, (head['pre'], unused))
+        check('the hosted page carries no font as data:; its head asks for the app\'s script (app-<hash>.js), KaTeX and the 15 faces the first layout waits for, and each is used',
+              not head['data'] and len(fpre) == 15 and ['script', '/lib/katex.min.js'] in head['pre'] and any(a == 'script' and re.match(r'^/app-[0-9a-f]{16}\.js$', u) for a, u in head['pre'])
+              and len(head['pre']) == 17 and not unused, (head['pre'], unused))
         check('the page fetches the faces it draws with and no others (Paper Modern Sans, most of KaTeX\'s)', set(fpre) <= set(head['got']) and len(set(head['got'])) < nfonts - 10
               and not any('sans-serif' in u for u in head['got']), sorted(set(head['got']) - set(fpre)))
 
@@ -296,6 +327,14 @@ def main():
               page.evaluate("() => [...document.querySelectorAll('#wlayer iframe')].map((f) => f.src)"))
         page.evaluate('([fs, main]) => { const g = window.rikuy; g.files = new Map(fs); g.main = main; g.rebuild(); }', keep)
         page.wait_for_timeout(300)
+        # the same offline start with the browser's HTTP cache emptied (after the live figure, whose
+        # document only that cache holds): the page and its script come from the worker alone
+        clear_http_cache(ctx, page)
+        page.reload()
+        ready(page)
+        ak = page.evaluate(APP_KEPT)
+        check('offline, with the browser\'s HTTP cache emptied, the page starts and its script comes from the service worker\'s copy',
+              ak['kept'] and ak['viaWorker'] and page.evaluate("document.querySelectorAll('#pages .katex').length") == nmath, ak)
         page.evaluate('window.rikuy.runCommand("create-style")')
         page.wait_for_function('window.rikuy.texNamesState() !== "loading"', timeout=10000)
         check('offline, Create a Style gets LaTeX\'s names from the kept copy', page.evaluate('window.rikuy.texNamesState()') == 'ready' and page.get_by_role('dialog', name='Create a Style').count() == 1, page.evaluate('window.rikuy.texNamesState()'))
@@ -315,6 +354,41 @@ def main():
         bdir = variant('b', 'version B')
         vb = sw_info(bdir)['v']
         srv = pages.start(PORT, bdir)
+        # ---- the app's script does not come (a fresh browser, version B served) ---------
+        # (a first visit whose line dropped after the page, or a page of one deployment asking for
+        # the script of the one before: build.mjs BOOT_GUARD, the page's one inline script)
+        fctx = b.new_context()
+        fp = fctx.new_page()
+        ferr = []
+        fp.on('pageerror', lambda e: ferr.append('PAGEERROR ' + str(e)))
+        fp.on('console', lambda m: ferr.append(m.text) if m.type == 'error' and 'Failed to load resource' not in m.text else None)
+        APPJS = re.compile(r'.*/app-[0-9a-f]{16}\.js$')
+        fp.route(APPJS, lambda r: r.abort())
+        fp.goto(URL)
+        try: fp.wait_for_selector('#boot.failed button', timeout=15000)
+        except Exception: pass  # (the check below says what the page showed instead)
+        said = fp.evaluate('''() => { const b = document.getElementById('boot'), r = b.getBoundingClientRect(), k = b.querySelector('button');
+          return { text: b.innerText, role: b.getAttribute('role'), shown: !b.hidden && r.height > 100, button: !!k && k.getBoundingClientRect().width > 20 && k.getBoundingClientRect().height > 15, app: !!window.rikuy }; }''')
+        check('the app\'s script not loading: the page says so in words and offers Reload, with nothing refused by its policy',
+              'could not load' in said['text'] and said['role'] == 'alert' and said['shown'] and said['button'] and fp.get_by_role('button', name='Reload').count() == 1 and not said['app'] and not ferr, (said, ferr))
+        # on a phone: the line and the button inside the screen, the button a 44 px target
+        mctx = b.new_context(viewport={'width': 390, 'height': 844}, has_touch=True, is_mobile=True, device_scale_factor=1)
+        mp = mctx.new_page()
+        mp.route(APPJS, lambda r: r.abort())
+        mp.goto(URL)
+        try: mp.wait_for_selector('#boot.failed button', timeout=15000)
+        except Exception: pass
+        box = mp.evaluate('''() => { const k = document.querySelector('#boot.failed button'), p = document.querySelector('#boot.failed p'); if (!k || !p) return null;
+          const r = k.getBoundingClientRect(), t = p.getBoundingClientRect(); return { w: r.width, h: r.height, inside: r.left >= 0 && r.right <= innerWidth && t.left >= 0 && t.right <= innerWidth && r.bottom <= innerHeight }; }''')
+        check('on a phone the line and the Reload button stay inside the screen, the button a 44 px target', box and box['w'] >= 44 and box['h'] >= 44 and box['inside'], box)
+        mctx.close()
+        fp.unroute(APPJS)
+        if said['button']: fp.get_by_role('button', name='Reload').click()
+        else: fp.reload()
+        ready(fp)
+        check('and Reload loads the app once the script comes', fp.evaluate('!!window.rikuy && !document.getElementById("boot").classList.contains("failed")') and not ferr, ferr)
+        fctx.close()
+
         ctx.set_offline(False)
         page.reload()
         ready(page)
@@ -346,6 +420,20 @@ def main():
         both = page.evaluate(ENGINE_BOTH)
         check('after the click the page reloads as the new version, its worker\'s scripts too', both['page'].strip().endswith('// version B') and both['worker'] == both['page'], both)
         check('and what was typed is still there', 'Still typing. Offline proof.' in page.evaluate('window.rikuy.files.get("main.tex")'))
+        check('the new version runs its own script (another app-<hash>.js)', page.evaluate('window.__rkBundle') == 'version B', page.evaluate('window.__rkBundle || null'))
+        # the updated app opened again without a network: the page and its new script from what the
+        # worker kept (the new script among the content addressed files, rikuy-immutable)
+        clear_http_cache(ctx, page)
+        ctx.set_offline(True)
+        p3 = ctx.new_page()
+        p3.goto(URL)
+        ready(p3)
+        ak = p3.evaluate(APP_KEPT)
+        check('offline, the updated app starts again with its new script, from the worker\'s copy (the HTTP cache emptied)',
+              version(p3) == vb and p3.evaluate('window.__rkBundle') == 'version B' and p3.evaluate('document.querySelectorAll(".page .it").length') > 3 and ak['kept'] and ak['viaWorker'] and ak['name'] != APP_A,
+              (version(p3), p3.evaluate('window.__rkBundle || null'), ak))
+        p3.close()
+        ctx.set_offline(False)
         page2.wait_for_selector('#st-update', state='visible', timeout=10000)
         both2 = page2.evaluate(ENGINE_BOTH)
         check('the second tab, left on the old version, still gets the old version\'s scripts', version(page2) == va and not both2['page'].strip().endswith('version B') and both2['worker'] == both2['page'] and 'ERR' not in both2['worker'], both2)
@@ -366,7 +454,8 @@ def main():
         page.goto(URL)
         ready(page)
         both = page.evaluate(ENGINE_BOTH)
-        check('the next open starts the newer version, page and worker scripts alike', version(page) == vc and both['page'].strip().endswith('// version C') and both['worker'] == both['page'], (version(page), both))
+        check('the next open starts the newer version, page and worker scripts alike', version(page) == vc and both['page'].strip().endswith('// version C') and both['worker'] == both['page']
+              and page.evaluate('window.__rkBundle') == 'version C', (version(page), both, page.evaluate('window.__rkBundle || null')))
         left = page.evaluate('caches.keys()')
         check('the cache of the version before the last is dropped', ('rikuy-v-' + va) not in left and ('rikuy-v-' + vc) in left, left)
         check('no page errors', not errors, errors[:3])

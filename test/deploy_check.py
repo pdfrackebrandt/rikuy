@@ -10,7 +10,7 @@ llms.txt, llms-full.txt, robots.txt and sitemap.xml, and no other file, are open
 UTF-8 text. And the hosted page as a program reads it before any script runs (appPage): its
 language, its title in the head, its schema.org data, the plain lines its body opens with.
 Run by npm test; needs node (to write the headers and the page) and no browser."""
-import atexit, os, shutil, subprocess, sys, tempfile
+import atexit, base64, hashlib, os, re, shutil, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, 'dev'))
@@ -63,7 +63,7 @@ H = lambda path: {k.lower(): v for k, v in pages.headers_for(d, path)}
 pol = lambda s: {x.split()[0]: x.split()[1:] for x in s.split(';') if x.strip()}
 hosted = pol(H('/')['content-security-policy'])
 # every directive pinned: a change to the policy is a change to this list, made on purpose
-ok('the hosted policy: scripts are the site\'s files, the page\'s one inline script by its hash, WebAssembly and blob: (Pyodide), nothing else',
+ok('the hosted policy: scripts are the site\'s files, the inline scripts named by their hashes, WebAssembly and blob: (Pyodide), nothing else',
    hosted == {'default-src': ["'self'"], 'script-src': ["'self'", "'sha256-" + HASH + "'", "'wasm-unsafe-eval'", 'blob:'], 'style-src': ["'self'", "'unsafe-inline'"],
               'img-src': ["'self'", 'data:', 'blob:'], 'font-src': ["'self'", 'data:', 'blob:'], 'media-src': ["'self'", 'data:', 'blob:'], 'connect-src': ["'self'", 'blob:'],
               'worker-src': ["'self'", 'blob:'], 'manifest-src': ["'self'"], 'form-action': ["'self'"], 'frame-src': ["'self'"],
@@ -85,7 +85,13 @@ ok('and no other file loses the page\'s policy or its framing rule', all(H(p).ge
 for p in ('/tex/p-0123456789abcdef.wasm', '/tex/w-0123456789abcdef.wasm', '/tex/t-0123456789abcdef.wasm', '/tex/b-0123456789abcdef.wasm', '/fonts/ibm-plex-sans-latin-ext-400-0123456789abcdef.woff2', '/core/rikuy-core-0123456789abcdef.wasm', '/texnames-0123456789abcdef.txt'):
     ok('content addressed files are cached for a year as immutable, by one rule: ' + p, H(p).get('cache-control') == 'public, max-age=31536000, immutable', H(p))
 for p in ('/', '/index.html'):
-    ok('the page is revalidated on every request, and no one between may change it (its script runs by its hash): ' + p, H(p).get('cache-control') == 'no-cache, no-transform', H(p))
+    ok('the page is revalidated on every request, and no one between may change it (its guard runs by its hash): ' + p, H(p).get('cache-control') == 'no-cache, no-transform', H(p))
+# the app's script, app-<hash>.js (build.mjs APP_JS): named by its hash, so kept for good, and like
+# the page changed by no one on the way; under the page's own policy and framing rule
+a = H('/app-0123456789abcdef.js')
+ok('the app\'s script is cached for a year as immutable, with no-transform, by one rule, under the page\'s policy',
+   a.get('cache-control') == 'public, max-age=31536000, immutable, no-transform' and a.get('content-security-policy', '').startswith("default-src 'self'") and a.get('x-content-type-options') == 'nosniff', a)
+ok('and no other file at the top gets that rule', 'cache-control' not in H('/app.js') and 'cache-control' not in H('/git.js'), (H('/app.js'), H('/git.js')))
 for p in ('/sw.js', '/manifest.webmanifest'):
     ok('revalidated on every request: ' + p, H(p).get('cache-control') == 'no-cache', H(p))
 ok('scripts bound to the version keep Pages\' default caching', 'cache-control' not in H('/tex/engine.js') and 'cache-control' not in H('/tex/tree.wasm'), H('/tex/engine.js'))
@@ -149,12 +155,25 @@ probe = '<script type="application/ld+json">{"a":1}</script><script src="lib/k.j
 ok('the build hashes the inline scripts that run (a classic one, a module), as this file counts them, and not data or a loaded script', len(ph) == 2 and ph == serve.inline_hashes(probe), (ph, serve.inline_hashes(probe)))
 ok('a script the HTML parser would change (a CR) is refused, not given a wrong hash', cr == 'refused', cr)
 ok('the schema.org data needs no hash: it is data, which no policy runs', phtml == [], phtml)
-# and a built dist/, where there is one: its policy names exactly the scripts its index.html runs
+# and a built dist/, where there is one: its policy names exactly two inline scripts, the app's
+# bundle, which rikuy.html runs inline (the copy the browser tests run under this policy) and
+# index.html loads as a file beside it, app-<hash>.js, of the same bytes (build.mjs APP_JS), and
+# index.html's one inline script, the guard that says so when that file does not load (BOOT_GUARD)
 DIST = os.path.join(ROOT, 'dist')
 if os.path.isfile(os.path.join(DIST, '_headers')) and os.path.isfile(os.path.join(DIST, 'index.html')):
     built = pol(dict((k.lower(), v) for k, v in pages.headers_for(DIST, '/'))['content-security-policy'])
-    want = ["'sha256-%s'" % h for h in serve.inline_hashes(open(os.path.join(DIST, 'index.html'), encoding='utf8').read())]
-    ok('dist/_headers names the hash of every script dist/index.html runs, and no other', [x for x in built['script-src'] if x.startswith("'sha256-")] == want and len(want) == 1, (built['script-src'], want))
+    index = open(os.path.join(DIST, 'index.html'), encoding='utf8').read()
+    bundle = ["'sha256-%s'" % h for h in serve.inline_hashes(open(os.path.join(DIST, 'rikuy.html'), encoding='utf8').read())]
+    guard = ["'sha256-%s'" % h for h in serve.inline_hashes(index)]
+    ok('dist/_headers names the hash of the bundle rikuy.html runs and of index.html\'s guard, and no other',
+       [x for x in built['script-src'] if x.startswith("'sha256-")] == bundle + guard and len(bundle) == 1 and len(guard) == 1, (built['script-src'], bundle, guard))
+    inl = re.findall(r'<script>([\s\S]*?)</script>', index)
+    ok('index.html\'s one inline script is the guard: small, and it answers only the app\'s script failing to load',
+       len(inl) == 1 and len(inl[0]) < 1024 and "addEventListener('error'" in inl[0] and 'app-[0-9a-f]{16}' in inl[0] and 'location.reload()' in inl[0], inl[:1])
+    app = re.findall(r'<script src="(app-[0-9a-f]{16}\.js)"></script>', index)
+    body = open(os.path.join(DIST, app[0]), 'rb').read() if len(app) == 1 and os.path.isfile(os.path.join(DIST, app[0])) else b''
+    ok('dist/index.html loads the app as app-<hash>.js after its guard: the bytes the policy names, its name the start of their SHA-256',
+       len(app) == 1 and index.index('<script>') < index.index('<script src="' + app[0]) and bundle == ["'sha256-%s'" % base64.b64encode(hashlib.sha256(body).digest()).decode()] and hashlib.sha256(body).hexdigest().startswith(app[0][4:20]), app)
     shells = [f for f in os.listdir(DIST) if f.startswith('widget-') and f.endswith('.html')]
     rule = subprocess.run(['node', '--input-type=module', '-e', "import { WIDGET_RULE } from './build/app.mjs'; process.stdout.write(WIDGET_RULE)"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
     ok('dist/ has its widget document, named by the hash of it and its headers\' rule (a change to either is a new address, past every browser\'s cache)',
@@ -164,13 +183,16 @@ if os.path.isfile(os.path.join(DIST, '_headers')) and os.path.isfile(os.path.joi
 # wrong there fails at once; the domain is asked again until it serves this build, within a bound;
 # an address that does not resolve is one more try of that poll, and fails at its end, never passes
 import http.server, threading, time
-from serve import inline_hashes
 LIVE = tempfile.mkdtemp(prefix='rikuy-live-')
 atexit.register(shutil.rmtree, LIVE, True)
 SHELL = 'widget-0123456789abcdef'
 open(os.path.join(LIVE, SHELL + '.html'), 'w').write('<p>widget</p>')
-def page(v):
-    return '<!doctype html><html><head><meta name="rikuy-app" content="%s"><script>go()</script></head></html>' % v
+APPJS = 'app-0123456789abcdef.js'
+open(os.path.join(LIVE, APPJS), 'w').write('go()')
+H64 = lambda b: base64.b64encode(hashlib.sha256(b).digest()).decode()
+APPHASH, GUARDHASH = H64(b'go()'), H64(b'guard()')
+def page(v, rewritten=False):
+    return '<!doctype html><html><head><meta name="rikuy-app" content="%s">%s</head><body><script>guard()</script><script src="%s"></script></body></html>' % (v, '<script>x()</script>' if rewritten else '', APPJS)
 open(os.path.join(LIVE, 'index.html'), 'w').write(page('aaaaaaaaaaaaaaaa'))
 def server(state):
     class H(http.server.BaseHTTPRequestHandler):
@@ -180,9 +202,13 @@ def server(state):
             if p == '/' and state.get('moved'):
                 st, hs = 301, {'Location': state['moved']}
             elif p == '/':
-                doc = page(state['version'])
+                doc = page(state['version'], state.get('rewritten'))
                 st, body = 200, doc.encode()
-                hs = {'Content-Security-Policy': "script-src 'self' 'sha256-%s'" % inline_hashes(doc)[0], 'Cache-Control': 'no-cache, no-transform', 'Strict-Transport-Security': 'max-age=31536000'}
+                hs = {'Content-Security-Policy': "script-src 'self' 'sha256-%s' 'sha256-%s'" % (state.get('named', APPHASH), GUARDHASH), 'Cache-Control': 'no-cache, no-transform', 'Strict-Transport-Security': 'max-age=31536000'}
+            elif p == '/' + APPJS and state.get('app') != 'gone':
+                st, body = 200, b'go(); x()' if state.get('app') == 'bytes' else b'go()'
+                hs = {'Content-Type': 'text/plain' if state.get('app') == 'type' else 'text/javascript',
+                      'Cache-Control': 'public, max-age=31536000' + ('' if state.get('app') == 'mutable' else ', immutable') + ('' if state.get('app') == 'transform' else ', no-transform')}
             elif p == '/' + SHELL:
                 st, body = 200, open(os.path.join(LIVE, SHELL + '.html'), 'rb').read()
                 hs = {'Content-Security-Policy': "script-src 'unsafe-inline'; frame-ancestors 'self'"} if state['widget'] else {'Content-Security-Policy': "frame-ancestors 'none'", 'X-Frame-Options': 'DENY'}
@@ -220,6 +246,21 @@ own['widget'] = False
 code, out, took = live(EDGE, OWN)
 ok('live check: the deployment\'s own address answering wrongly fails at once, the domain never asked', code == 1 and 'not as this build should' in out and "widget document's headers" in out and EDGE not in out and took < 2, out)
 own['widget'] = True
+# (an inline script added on the way, as Email Address Obfuscation adds one: the page is not this build's)
+own['rewritten'] = True
+code, out, took = live(EDGE, OWN)
+ok('live check: a page that runs an inline script it was not built with fails at once', code == 1 and 'something rewrote the page' in out and EDGE not in out and took < 2, out)
+own['rewritten'] = False
+# (the app's script as the page names it: gone, as after a deployment that replaced it; other
+# bytes; another type, which nosniff stops; changeable on the way; or not the one the policy names)
+for k, v, why in (('app', 'gone', 'answers 404'), ('app', 'bytes', "not this build's bytes"), ('app', 'type', "served as 'text/plain'"),
+                  ('app', 'transform', 'lacks Cache-Control: immutable, no-transform'), ('app', 'mutable', 'lacks Cache-Control: immutable, no-transform'),
+                  ('named', GUARDHASH, "not the app's script by its hash")):
+    own[k] = v
+    code, out, took = live(EDGE, OWN)
+    ok('live check: the app\'s script %s fails at once (%s)' % ({'gone': 'missing', 'bytes': 'with other bytes', 'type': 'of another type', 'transform': 'without no-transform', 'mutable': 'not kept as immutable', GUARDHASH: 'not named by the policy'}[v], why),
+       code == 1 and why in out and EDGE not in out and took < 2, out)
+    del own[k]
 edge['version'] = 'cccccccccccccccc'
 code, out, took = live(EDGE, OWN, within=2)
 ok('live check: a domain that never serves this build fails at the bound, with its last answer', code == 1 and 'within 2 s' in out and 'want aaaaaaaaaaaaaaaa' in out.splitlines()[-1] and 1.5 < took < 6, out)

@@ -119,7 +119,10 @@ export function appPage(OUT, html, skeleton, firstFonts = []) {
   // at the top of the body, after the lines for programs that read the page (2 kB of file
   // names would push those out of the first 4 kB), which is as early for a browser.
   const katex = /<script src="(https:\/\/cdn\.jsdelivr\.net\/npm\/katex@[^"]+\/katex\.min\.js)" integrity="([^"]+)" crossorigin="anonymous">/.exec(html);
-  const first = (katex ? '<link rel="preload" as="script" href="lib/katex.min.js" integrity="' + katex[2] + '" crossorigin="anonymous">' : '')
+  // (the app's own script, build.mjs APP_JS, first: nothing is drawn before it has run)
+  const app = /<script src="(app-[0-9a-f]{16}\.js)"><\/script>/.exec(html);
+  const first = (app ? '<link rel="preload" as="script" href="' + app[1] + '">' : '')
+    + (katex ? '<link rel="preload" as="script" href="lib/katex.min.js" integrity="' + katex[2] + '" crossorigin="anonymous">' : '')
     + firstFonts.map((f) => '<link rel="preload" as="font" type="font/woff2" href="' + f + '" crossorigin>').join('');
   const head = '<title>' + esc(TITLE) + '</title>'
     + '<meta name="rikuy-app" content="' + ZERO + '"' + (/^[0-9a-f]{16}$/.test(tree) ? ' data-tree="' + tree + '"' : '') + '>'
@@ -199,8 +202,12 @@ export function appFiles(OUT) {
   fs.mkdirSync(O('icons'), { recursive: true });
   for (const f of fs.readdirSync(R('build/icons')).filter((n) => n.endsWith('.png'))) fs.copyFileSync(R('build/icons/' + f), O('icons/' + f));
   fs.writeFileSync(O('manifest.webmanifest'), JSON.stringify(manifest(), null, 1) + '\n');
-  // (index.html is written by now, with the script whose hash the policy names)
-  fs.writeFileSync(O('_headers'), headers(pageHashes(fs.readFileSync(O('index.html'), 'utf8'))));
+  // (index.html and rikuy.html are written by now. The policy names the app's bundle by its hash
+  // as rikuy.html carries it inline, the copy the browser tests run under this policy, and
+  // index.html's one inline script, the guard that says so when the app's script does not load
+  // (build.mjs BOOT_GUARD); index.html loads the bundle as a file, app-<hash>.js, which 'self'
+  // allows)
+  fs.writeFileSync(O('_headers'), headers([...new Set([...pageHashes(fs.readFileSync(O('rikuy.html'), 'utf8')), ...pageHashes(fs.readFileSync(O('index.html'), 'utf8'))])]));
   fs.writeFileSync(O('404.html'), NOT_FOUND);
   fs.writeFileSync(O('robots.txt'), robots());
   fs.writeFileSync(O('sitemap.xml'), sitemap());
@@ -976,9 +983,13 @@ export function cleanApp(OUT) {
 // bootstrap (src/tex.js, src/word.js, src/spell/client.js), so they run under it too.
 //
 // script-src runs no text that is not a file of this site, and no eval:
-//   'self'                the page's files: lib/, the workers (tex/engine.js, spell/, word/), git.js
-//   'sha256-...'          the page's one inline script, the app's bundle, by its hash (pageHashes,
-//                         computed from the built index.html: a change of one byte needs a build);
+//   'self'                the page's files: the app's bundle (app-<hash>.js), lib/, the workers
+//                         (tex/engine.js, spell/, word/), git.js
+//   'sha256-...'          two inline scripts by their hashes (pageHashes, computed from the built
+//                         pages: a change of one byte needs a build): the app's bundle as
+//                         rikuy.html carries it inline (the browser tests run that copy under this
+//                         policy; index.html loads the same bytes as app-<hash>.js), and index.html's
+//                         guard, which says so when that file does not load (build.mjs BOOT_GUARD);
 //                         index.html's other script element is schema.org data, which runs nothing
 //   'wasm-unsafe-eval'    compiling WebAssembly, and nothing else: TeX and its programs, Pyodide,
 //                         pdf.js, pandoc, Hunspell, Harper and the editor's native core are all
@@ -1077,10 +1088,11 @@ export function headers(hashes) {
     // there, from PR 81 on, the hosted widget document kept the page's policy and X-Frame-Options,
     // and no live figure ran: dev/live_check.py failed every deployment since)
     + WIDGET_RULE
-    // (the page runs only if its inline script is byte for byte the one whose hash the policy
-    // names: no-transform asks Cloudflare's edge, and anything between, to change none of it,
-    // e.g. Email Address Obfuscation, which a zone has on by default; deploy.yml checks the live
-    // page against its policy after each deployment, dev/live_check.py)
+    // (the page runs no inline script but its guard, whose hash the policy names, and its script
+    // only from the site: no-transform asks Cloudflare's edge, and anything between, to change
+    // none of it, e.g. Email Address Obfuscation, which a zone has on by default and which adds an
+    // inline script that would not run; deploy.yml checks the live page and its app-<hash>.js
+    // against the policy after each deployment, dev/live_check.py)
     + ['/', '/index.html'].map((p) => rule(p, 'Cache-Control: ' + NO_CACHE + ', no-transform')).join('')
     + ['/sw.js', '/manifest.webmanifest'].map((p) => rule(p, 'Cache-Control: ' + NO_CACHE)).join('')
     // What agents and crawlers fetch, and only that: readable from a script on any site (they
@@ -1089,7 +1101,10 @@ export function headers(hashes) {
     // (text/plain, which a browser shows; it would save a text/markdown file instead of showing it)
     + [['/llms.txt', 'text/plain'], ['/llms-full.txt', 'text/plain'], ['/robots.txt', 'text/plain'], ['/sitemap.xml', 'application/xml']]
       .map(([p, t]) => rule(p, 'Access-Control-Allow-Origin: *', 'Content-Type: ' + t + '; charset=utf-8')).join('')
-    + ['/tex/p-*', '/tex/t-*', '/tex/b-*', '/tex/w-*', '/tex/m-*', '/fonts/*', '/word/pandoc-*', '/core/*', '/spell/*', '/texnames-*'].map((p) => rule(p, 'Cache-Control: ' + FOREVER)).join('');
+    + ['/tex/p-*', '/tex/t-*', '/tex/b-*', '/tex/w-*', '/tex/m-*', '/fonts/*', '/word/pandoc-*', '/core/*', '/spell/*', '/texnames-*'].map((p) => rule(p, 'Cache-Control: ' + FOREVER)).join('')
+    // the app's script, named by its hash (build.mjs APP_JS): the page's code, so, like the page,
+    // changed by nothing on the way
+    + rule('/app-*', 'Cache-Control: ' + FOREVER + ', no-transform');
 }
 
 // Without a 404.html, Pages answers a missing file with index.html and 200 (it takes the site for

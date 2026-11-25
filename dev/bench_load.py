@@ -67,6 +67,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 sys.path.insert(0, os.path.join(ROOT, 'test'))
 if os.path.isdir('/opt/pw-browsers'): os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
 import pages
+import browser  # noqa: F401  (hands wait_for_function's expressions over as functions: the page's policy has no eval)
 try:
     import brotli
 except ImportError:
@@ -187,6 +188,10 @@ class H(pages.H):
             return self.put(rec, 308, b'', 'text/plain', path, [('Location', '/')])
         rel = 'index.html' if path == '/' else path.lstrip('/')
         f = os.path.normpath(os.path.join(root, rel))
+        # a page file x.html answered at x, as Pages does (the widget document: the service
+        # worker's install asks for it there, and a 404 would fail the install, so that no repeat
+        # visit was ever served by the worker)
+        if os.path.commonpath([root, f]) == root and not os.path.isfile(f) and os.path.isfile(f + '.html'): f += '.html'
         if os.path.commonpath([root, f]) != root or not os.path.isfile(f):
             nf = os.path.join(root, '404.html')
             return self.put(rec, 404, open(nf, 'rb').read() if os.path.isfile(nf) else b'Not found', 'text/html; charset=utf-8', path)
@@ -310,8 +315,11 @@ def one(p, srv, url, prof, scenario, profile_dir, args, doc=None):
         t.update(B['t'])
         origin = B['origin']
         # the visit left to finish: the service worker in charge, nothing in flight for --quiet seconds
-        try: page.wait_for_function('!navigator.serviceWorker || navigator.serviceWorker.controller !== null', timeout=180000)
-        except Exception: pass
+        # (an installed app's page whose worker never took control, as when its install failed on
+        # a file the server did not answer: a failed run, or its repeat visit would measure the
+        # HTTP cache and say nothing)
+        try: page.wait_for_function('!document.querySelector(\'meta[name="rikuy-app"]\') || !navigator.serviceWorker || navigator.serviceWorker.controller !== null', timeout=180000)
+        except Exception: B['failed'] = B['failed'] or 'no service worker took control of the page within 180 s (its install failed?)'
         until = time.time() + 180
         while time.time() < until:
             with srv.log.lock: quiet = srv.log.flying == 0 and time.time() - srv.log.last > args.quiet

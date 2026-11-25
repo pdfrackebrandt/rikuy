@@ -91,8 +91,10 @@ as its canonical one.
   without `.html` with its own policy, and `/git` passes git's request and refuses an IP address.
   Deploys run one at a time, in order.
 - **What Pages serves**: `_headers` (written by `build/app.mjs`): the page's Content-Security-
-  Policy (the one the browser tests run under: scripts only from the site and the page's one
-  inline script by its SHA-256, which the build computes from `index.html`; WebAssembly but no
+  Policy (the one the browser tests run under: scripts only from the site and the app's bundle
+  inline by its SHA-256, which the build computes from `rikuy.html`, the copy the tests run;
+  `index.html` loads the same bytes as `app-<hash>.js`, and its one inline script, the guard that
+  says so when that file does not load (`BOOT_GUARD` in `build.mjs`), by its SHA-256 too; WebAssembly but no
   eval; no outside source, git included (it goes through `/git`, below); `frame-ancestors
   'none'`), and for `widget-<hash>.html`, the document
   live figures run in, the widgets' own policy in its place (`frame-ancestors 'self'`, no
@@ -100,9 +102,10 @@ as its canonical one.
   alone: no `includeSubDomains`, no preload), `nosniff`, `Referrer-Policy: no-referrer`, a Permissions-Policy turning off cameras,
   microphones, location and the like; TeX packs, engine chunks, programs and fonts (named by their
   hash) cached for a year as immutable; the page, `sw.js` and the manifest revalidated on every
-  request, the page with `no-transform` (it runs only if its inline script is byte for byte the
-  one whose hash its policy names, so nothing on the way, Email Address Obfuscation included,
-  may rewrite it). `404.html` keeps Pages from answering a missing file with the page.
+  request, the page with `no-transform` (an inline script added on the way, as Email Address
+  Obfuscation adds one, would not run, and nothing may rewrite the page); `app-<hash>.js`, the
+  app's script, cached for a year as immutable and with `no-transform` too.
+  `404.html` keeps Pages from answering a missing file with the page.
 - **The git proxy, `/git`**: a Pages Function, `functions/git/[[path]].js` (the code is
   `src/gitproxy.js`), which `wrangler pages deploy` finds beside `dist/` and deploys with it. A
   browser cannot speak git to GitHub or GitLab itself (they send no CORS headers), so the Git

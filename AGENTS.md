@@ -89,6 +89,7 @@ a command fails, trust the code and fix this file.
 | serve `dist/` as Cloudflare Pages serves the hosted app (`index.html` as the page, `_headers`) | `npm run serve:app` (port 8791) | |
 | check a built `dist/` against Cloudflare Pages' limits (deploy.yml runs it) | `python3 dev/pages_check.py dist` | 1 s |
 | how fast it loads over a network: first visit, repeat visit, first PDF, bytes, requests and the waterfall, on a server that compresses and caches as Pages does and shapes the line (needs `pip install brotli`, or `--codec gzip`) | `taskset -c 1 python3 dev/bench_load.py --profiles cable,phone --waterfall` (its header says what each number is) | 40 min for all of it; `--profiles cable --scenarios cold,warm --runs 1`: 1 min |
+| loading, one build against another, runs in turn: the first and the repeat visit on a cable and a phone line (`open`), the repeat visit of a 100 page document (`long`), the first PDF with Preview pressed at once (`pdf`, needs `dist/tex`), a 100 page document scrolled by the wheel (`scroll`); medians, 95th percentiles and the change; `base=` and `head=` a built `dist/` or a git ref, built in a worktree (default `origin/main` against `dist/`); a runner runs it: suite.yml with `loadbench.py:open,long` (`base=<sha>` among the parts) | `cd test && taskset -c 1 python3 loadbench.py open long [base=origin/main] [rounds=8]` | 10 min for open and long; pdf 4 |
 | lint the workflows | `actionlint` (CI: `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12`) | 2 s |
 | one feature in the page (projects, files, git, history, paste, PDF, math field, Word style math, equation extras, sharing and comments, stress, live figures, the ribbon, the scripts beyond Latin (direction, fonts, editing, the set up notice), Word files) | `cd test && python3 features.py` (or `files.py`, `git.py`, `history.py`, `paste.py`, `pdf.py`, `preamble.py` (the preamble's format: made, used, refused; needs `dist/tex`), `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py`, `stress.py`, `widgets.py`, `ribbon.py`, `scripts.py`, `word.py`); each says what it checks at the top | under a minute each; `word.py` 2 min (with LibreOffice and `libreoffice-math` installed it also edits in LibreOffice) |
 | build the page without Word, as for the claude.ai copy | `RIKUY_NO_WORD=1 npm run build` | 5 s |
@@ -181,7 +182,8 @@ Pick the checks by what you touched, and run them before you call it done:
   it controls; a test that changes what a server returns must go through it (or a new context).
 - The page runs under a strict Content Security Policy (`build/app.mjs` `policy`; `test/serve.py`
   and `browser.py`'s `open_page` serve it, read from `dist/_headers`): scripts only from the page's own
-  site and the page's one inline script by its hash, WebAssembly but no eval, `connect-src 'self'`
+  site, the app's bundle inline by its hash (`rikuy.html`; `index.html` loads it as `app-<hash>.js`)
+  and `index.html`'s guard by its, WebAssembly but no eval, `connect-src 'self'`
   (the worker, which shares the policy, can fetch only files next to the page; git goes through
   the site's own proxy, `/git`, a Pages Function: `functions/git/[[path]].js`, `src/gitproxy.js`).
   A test whose own servers stand in for hosts passes them to `open_page(connect=[...])`;
