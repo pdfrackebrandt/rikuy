@@ -378,11 +378,15 @@ export const methods = {
       // (the multicols the caret is in: its number, or gone for one column)
       // (first, on the text as the caret knows it)
       steps.unshift((t) => { const X = PS.multicolsAt(t, at.c.a); if (!X) return []; if (n === 1) return PS.unwrapMulticols(t, X); return X.nAt && +t.slice(X.nAt[0], X.nAt[1]) !== n ? [{ s: X.nAt[0], e: X.nAt[1], t: String(n) }] : []; });
-    } else if (at && (at.multi || (at.c && !at.c.collapsed && !at.c.ghost)) && o.scope !== 'document' && n > 1) {
+    } else if (at && (at.multi || (at.c && !at.c.collapsed && !at.c.ghost && !(this.model && this.model.opts.twocolumn))) && o.scope !== 'document' && n > 1) {
       // (words selected in one paragraph are a selection too, as Word's Apply to: Selected text:
-      // the whole document went into two columns)
-      const r = this.pageBlocks(at);
-      if (!r) { this.toast('Columns go around whole paragraphs of the main file: select paragraphs there.'); return false; }
+      // the whole document went into two columns; not in a twocolumn class, which multicol does
+      // not work in)
+      const r = this.pageBlocks(at), B = r && PS.bodyRange(src);
+      // (paragraphs of the text only: a selection in the title wrote \begin{multicols} into the
+      // preamble; in a float or a table's float nothing can be wrapped, and only the package went in)
+      const W = B && r.s >= B.s && r.e <= B.e ? PS.wrapMulticols(src, r.s, r.e, n) : [];
+      if (!W.length) { this.toast('Columns go around whole paragraphs of the text (not the title, a footnote, a figure or a table): select paragraphs there.', 6000); return false; }
       // (around the paragraphs first, the package after: the paragraphs' places are the text's of now)
       steps.unshift((t) => PS.wrapMulticols(t, r.s, r.e, n));
       steps.push((t) => usePackages(t, ['multicol'], { others }));

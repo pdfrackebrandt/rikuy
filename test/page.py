@@ -898,6 +898,37 @@ def hunt(page):
     page.keyboard.type('Z'); settle(page, 200)
     check('Page number › Bottom center on a page that has it, then typing: the letter goes to the caret', 'Second Zparagraph of' in src(page), src(page)[-90:])
 
+    # (review B2, S1) Columns › Two on a selection outside the text's paragraphs: refused with a
+    # reason, nothing written (the title's wrote \\begin{multicols} into the preamble; a float's
+    # wrote the package alone)
+    for name, d, words in (('the title', DOC('\\title{My Title}\n\\author{Me}\n', '\\maketitle\n\n' + BODY), 'Title'),
+                           ('a figure\'s caption', DOC(body='First paragraph here with words.\n\n\\begin{figure}[h]\n\\centering\nX\n\\caption{A caption here}\n\\end{figure}\n\nSecond paragraph of the text.'), 'caption'),
+                           ('a table float', DOC(body='First paragraph here with words.\n\n\\begin{table}[h]\n\\begin{tabular}{ll}\nalpha & beta\\\\\n\\end{tabular}\n\\end{table}\n\nSecond paragraph of the text.'), 'alpha')):
+        load_doc(page, d); place(page, words); open_tab(page, 'Layout')
+        page.get_by_role('button', name='Columns', exact=True).click(); settle(page, 200)
+        page.get_by_role('menuitemradio', name='Two').click(); settle(page, 300)
+        check('Columns › Two on words of ' + name + ': refused, the source unchanged, the reason said', src(page) == d and 'paragraphs of the text' in page.evaluate("document.getElementById('toast').textContent"), src(page)[:200])
+    # (review S2) the header opened by a double click in the top margin: Escape gives the caret back
+    # where it was before the first press (that press had moved it to the text's start)
+    load_doc(page, DOC()); click_text(page, 'paragraph of', 0)
+    x, y = page.evaluate('() => { const r = document.querySelector("#pages .page .pb").getBoundingClientRect(); return [r.left + 60, r.top - 30]; }')
+    page.mouse.dblclick(x, y); settle(page, 400)
+    page.keyboard.type('My Title'); settle(page, 500, full=True)
+    page.keyboard.press('Escape'); settle(page, 300)
+    page.keyboard.type('Z'); settle(page, 200)
+    check('header by double click, typed, Escape: the caret back where it was', '\\fancyhead[L]{My Title}' in src(page) and 'Second Zparagraph of' in src(page), src(page)[-120:])
+    # (review S3, nits) a comment beside a page break stays and the paragraphs stay two; a break's
+    # optional argument and empty braces go with it
+    for body, want in (('First words.\n\n\\newpage % break here\n\nSecond words.', 'First words.\n\n% break here\n\nSecond words.'),
+                       ('First words.\n\n\\newpage\n% ----\n\nSecond words.', 'First words.\n\n% ----\n\nSecond words.'),
+                       ('First words\n\\newpage % c\nsecond words.', 'First words\n% c\nsecond words.'),
+                       ('First words.\n\n\\pagebreak [4]\n\nSecond words.', 'First words.\n\nSecond words.'),
+                       ('First words.\n\n\\newpage{}\n\nSecond words.', 'First words.\n\nSecond words.')):
+        load_doc(page, DOC(body=body)); click_text(page, 'econd words' if 'Second' in body else 'second', 0)
+        page.keyboard.press('Home'); settle(page, 100)
+        page.keyboard.press('Backspace'); settle(page, 200)
+        check('Backspace after a page break: ' + repr(body[14:40]), src(page) == DOC(body=want), src(page)[40:160])
+
 
 def run():
     names = sys.argv[1:]

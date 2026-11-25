@@ -13,6 +13,14 @@ import { mapPos } from '../wrap.js';
 const POS = ['L', 'C', 'R'], NAMES = ['left', 'center', 'right'];
 
 export function installHeaderFooter(app) {
+  // (where the caret stood before a double click's first press in a margin, which moved it to the
+  // text's start: Escape and Close give that place back)
+  let before = null;
+  app.root.addEventListener('mousedown', (e) => {
+    if (app.hf || e.detail !== 1) return;
+    const pg = e.target.closest && e.target.closest('.page'), pb = pg && pg.querySelector('.pb'), r = pb && pb.getBoundingClientRect();
+    before = r && (e.clientY < r.top || e.clientY > r.bottom) ? app.caretNow() : null;
+  }, true);
   app.root.addEventListener('dblclick', (e) => {
     const pg = e.target.closest && e.target.closest('.page');
     if (!pg || app.hf || !pg.querySelector('.pb')) return;
@@ -20,7 +28,7 @@ export function installHeaderFooter(app) {
     const where = e.clientY < pb.top ? 'head' : e.clientY > pb.bottom ? 'foot' : null;
     if (!where) return;
     e.preventDefault();
-    hfOpen(app, where, { page: [...app.root.querySelectorAll(':scope > .page')].indexOf(pg) });
+    hfOpen(app, where, { page: [...app.root.querySelectorAll(':scope > .page')].indexOf(pg), back: before });
   });
   // a press on the text closes them, as in Word
   app.root.addEventListener('mousedown', (e) => { if (app.hf && !e.target.closest('.hfedit')) hfClose(app, false); }, true);
@@ -54,7 +62,7 @@ export function hfOpen(app, where, o = {}) {
   if (!app.model || !app.layout.pages.length) return false;
   // (where the caret stood in the text, given back by Escape and Close as Word's: each place
   // written rebuilt the page with no caret, and typing after Escape went to the text's start)
-  const c0 = app.hf ? null : app.caretNow();
+  const c0 = app.hf ? null : o.back || app.caretNow();
   const back = app.hf ? app.hf.back : c0 && !c0.ghost && c0.f != null ? { f: c0.f, p: c0.a, bias: -1 } : null;
   hfClose(app, false);
   let k = Math.min(app.layout.pages.length - 1, o.page != null && o.page >= 0 ? o.page : pageInView(app));
