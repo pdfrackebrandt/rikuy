@@ -13,7 +13,9 @@ A phone: --phone (390 px with touch, CPU 4 times slower, Mobile View as a phone 
 
   python3 dev/bench_keys.py --against /tmp/dist-main            (another build, e.g. main's)
   python3 dev/bench_keys.py --against-ref origin/main           (built here in a worktree first)
-  [--rounds 6] [--keys 15] [--doc long|sample] [--phone] [--scen plain,cite,enter,back] [--json out.json]
+  [--rounds 6] [--keys 15] [--doc long|sample] [--phone] [--scen plain,cite,enter,back] [--parts] [--json out.json]
+(--parts: then this build's handlers one by one, rikuy.rebuild, layoutPass and the rest, a call's
+time and its count per key; the undo after each place is in them too)
 
 Prints one RESULT line per place and build (dev/suite_runs.py keeps them in the job's summary),
 so the comparison runs on a GitHub runner through suite.yml: suites "../dev/bench_keys.py".
@@ -66,7 +68,12 @@ PROBE = '''() => { const K = window.__k = []; window.__lt = []; window.__et = []
   for (const t of ['keydown', 'keypress', 'beforeinput']) addEventListener(t, mark, true);
   new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__lt.push(e.duration); }).observe({ type: 'longtask' });
   new PerformanceObserver((l) => { for (const e of l.getEntries()) if (e.name === 'keydown' && e.interactionId) window.__et.push(e.duration); }).observe({ type: 'event', durationThreshold: 16 }); }'''
-KEYS_OUT = '''() => window.__k.filter((k) => k.m != null).map((k) => [k.m - k.ts, k.h != null && k.h < k.r0 ? (k.h - k.start) + (k.m - k.r0) : k.m - k.start])'''
+KEYS_OUT = '''() => window.__k.filter((k) => k.m != null).map((k) => [k.m - k.ts, k.h != null && k.h < k.r0 ? (k.h - k.start) + (k.m - k.r0) : k.m - k.start, (k.h != null ? Math.min(k.h, k.r0) : k.r0) - k.start, k.m - k.r0])'''
+# (--parts: after the rounds, this build's handlers timed one by one on 40 more keys of each place)
+PARTS = '''() => { window.__t = {}; const W = (o, k, name) => { const f = o && o[k]; if (!f) return; o[k] = function (...a) { const t0 = performance.now(); try { return f.apply(this, a); } finally { (window.__t[name] = window.__t[name] || []).push(performance.now() - t0); } }; };
+  const g = rikuy; for (const k of ['commit', 'rebuild', 'layoutPass', 'restoreCaret', 'status', 'computePx', 'tocPages', 'ribbonSync', 'spellRun', 'spellPaint', 'refreshNav', 'deleteInput', 'enter']) W(g, k, k);
+  W(g.renderer, 'sync', 'render'); W(g.layout, 'measure', 'measure'); W(g.layout, 'plan', 'plan'); W(g.layout, 'apply', 'apply');
+  const S = Selection.prototype.collapse; Selection.prototype.collapse = function (...a) { const t0 = performance.now(); try { return S.apply(this, a); } finally { (window.__t['selection collapse'] = window.__t['selection collapse'] || []).push(performance.now() - t0); } }; }'''
 CARET = '''(at) => { const sp = [...document.querySelectorAll('#pages span.t')].filter((x) => x.firstChild && x.firstChild.length > 40 && !x.closest('.ttl, .h, .ref, .fn, .cap, li'));
   const s = (at && sp.find((x) => x.textContent.includes(at))) || sp[Math.floor(sp.length / 2)]; const k = at && s.firstChild.data.includes(at) ? s.firstChild.data.indexOf(at) + at.length : Math.min(20, s.firstChild.length);
   const r = document.createRange(); r.setStart(s.firstChild, k); r.collapse(true);
@@ -91,7 +98,7 @@ def q(xs, p):
 with sync_playwright() as p:
     builds = [('this build', HERE)] + ([('against', AGAINST)] if AGAINST else [])
     pages = {name: setup(p, d) for name, d in builds}
-    got = {(n, s): ([], [], [], []) for n, _ in builds for s in SCEN}
+    got = {(n, s): ([], [], [], [], [], []) for n, _ in builds for s in SCEN}
     for r in range(ROUNDS):
         order = list(pages.items()) if r % 2 == 0 else list(pages.items())[::-1]
         for name, (b, page, errors) in order:
@@ -112,17 +119,40 @@ with sync_playwright() as p:
                 ks = page.evaluate(KEYS_OUT)
                 got[(name, s)][0].extend(x[0] for x in ks)
                 got[(name, s)][3].extend(x[1] for x in ks)
+                got[(name, s)][4].extend(x[2] for x in ks)
+                got[(name, s)][5].extend(x[3] for x in ks)
                 for k, v in zip(got[(name, s)][1:3], page.evaluate('[window.__lt, window.__et]')):
                     k.extend(v)
                 page.evaluate('() => { while (rikuy.hist.length) rikuy.undo(); }')
                 page.wait_for_timeout(300)
     out = {'_': {'document': 'dev/bench/' + DOC, 'rounds': ROUNDS, 'keys a place a round': KEYS, 'phone': PHONE, 'against': AGAINST}}
-    for (n, s), (lat, lt, et, work) in got.items():
+    for (n, s), (lat, lt, et, work, hand, frame) in got.items():
         row = {'keys': len(lat), 'median ms': round(statistics.median(lat), 1) if lat else 0, 'p95 ms': q(lat, .95), 'worst ms': round(max(lat), 1) if lat else 0,
                'work median ms': round(statistics.median(work), 1) if work else 0, 'work p95 ms': q(work, .95), 'work worst ms': round(max(work), 1) if work else 0,
+               'handlers median ms': round(statistics.median(hand), 1) if hand else 0, 'handlers p95 ms': q(hand, .95), 'frame median ms': round(statistics.median(frame), 1) if frame else 0, 'frame p95 ms': q(frame, .95),
                'long tasks': len(lt), 'longest task ms': round(max(lt)) if lt else 0, 'event timing p95 ms': q(et, .95) if et else '<16'}
         out.setdefault(s, {})[n] = row
-        print('RESULT %s%s %-6s %-10s to paint: median %6.1f p95 %6.1f worst %6.1f ms | work: median %5.1f p95 %5.1f worst %5.1f ms | long tasks %d (longest %s ms) | event timing p95 %s' % (DOC, ' phone' if PHONE else '', s, n, row['median ms'], row['p95 ms'], row['worst ms'], row['work median ms'], row['work p95 ms'], row['work worst ms'], row['long tasks'], row['longest task ms'], row['event timing p95 ms']), flush=True)
+        print('RESULT %s%s %-6s %-10s to paint: median %6.1f p95 %6.1f worst %6.1f ms | work: median %5.1f p95 %5.1f worst %5.1f ms (handlers %.1f/%.1f, frame %.1f/%.1f) | long tasks %d (longest %s ms) | event timing p95 %s' % (DOC, ' phone' if PHONE else '', s, n, row['median ms'], row['p95 ms'], row['worst ms'], row['work median ms'], row['work p95 ms'], row['work worst ms'], row['handlers median ms'], row['handlers p95 ms'], row['frame median ms'], row['frame p95 ms'], row['long tasks'], row['longest task ms'], row['event timing p95 ms']), flush=True)
+    if '--parts' in sys.argv:
+        b, page, errors = pages['this build']
+        page.bring_to_front()
+        page.evaluate(PARTS)
+        n = 0
+        for s in SCEN:
+            page.evaluate(CARET, AT.get(s))
+            page.wait_for_timeout(300)
+            for i in range(40):
+                if s in ('plain', 'cite'):
+                    page.keyboard.type('abcdefghij klmnopqrst '[i % 22])
+                elif s == 'enter':
+                    page.keyboard.press('Enter' if i % 2 == 0 else 'Backspace')
+                else:
+                    page.keyboard.press('Backspace')
+                page.wait_for_timeout(120)
+            n += 40
+            page.evaluate('() => { while (rikuy.hist.length) rikuy.undo(); }')
+        for k, v in sorted(page.evaluate('window.__t').items(), key=lambda kv: -sum(kv[1])):
+            print('RESULT parts %-18s calls a key %.2f  ms a key %.2f  median %.2f  p95 %.2f' % (k, len(v) / n, sum(v) / n, statistics.median(v), q(v, .95)), flush=True)
     print(json.dumps(out, indent=1))
     if OUT:
         open(OUT, 'w').write(json.dumps(out, indent=1) + '\n')
