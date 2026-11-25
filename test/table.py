@@ -996,6 +996,17 @@ def r3_table_phones(p):
             page.get_by_role('textbox', name='Description', exact=True).fill('Counts')
             tap_click(page, page.get_by_role('button', name='OK', exact=True)); settle(page, 300)
             check('a tap on OK writes the alt line' + tag, '% alt: Counts\n\\begin{tabular}' in src(page), src(page)[60:200])
+            # (Insert › Table's grid of sizes: cells a finger hits, 44 px, as many columns as the
+            # screen holds, all inside it; they were 18 px, four under a fingertip)
+            plain = WRAP('First paragraph here.\n\nSecond paragraph here.', '')
+            load_doc(page, plain); click_text(page, 'Second paragraph', 3)
+            page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label='Insert'); settle(page, 250)
+            tap_click(page, page.locator('#ri-table-x')); settle(page, 300)
+            g = page.evaluate("(() => { const c = [...document.querySelectorAll('.tp-cell')].map((x) => x.getBoundingClientRect()); const p = document.querySelector('.pop-tpick').getBoundingClientRect(); return { n: c.length, small: c.filter((b) => b.width < 44 || b.height < 44).length, out: c.filter((b) => b.left < 0 || b.right > innerWidth || b.bottom > innerHeight).length, pop: [p.left >= 0, p.right <= innerWidth] }; })()")
+            check('the grid of sizes on a phone: 44 px cells, at least three by three, every one inside the screen' + tag, g['n'] >= 9 and not g['small'] and not g['out'] and all(g['pop']), g)
+            tap_click(page, page.locator('#tp-1-2')); settle(page, 300)
+            s = src(page)
+            check('a tap on a cell inserts a table of that size' + tag, '\\begin{tabular}{lll}' in s and s.count(' &  &  \\\\') == 2, s[60:300])
         except Exception as e:
             check('r3_table_phones runs to its end' + tag, False, repr(e)[:300])
         br.close()

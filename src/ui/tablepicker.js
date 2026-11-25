@@ -103,12 +103,17 @@ export function openTablePicker(app, anchor) {
   head.id = 'tp-head';
   const g = mk('div', 'tp-grid');
   g.setAttribute('role', 'grid'); g.setAttribute('aria-label', 'Table size'); g.setAttribute('aria-describedby', 'tp-head'); g.tabIndex = 0;
+  // (on a touch screen, cells a finger hits, 44 px as every target there, as many columns as the
+  // screen holds: the mouse's 18 px cells lay four under a fingertip on a phone)
+  const touch = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
+  const nc = touch ? Math.max(3, Math.min(COLS, Math.floor((window.innerWidth - 36) / 47))) : COLS, nr = touch ? Math.min(ROWS, 6) : ROWS;
+  if (touch) { g.classList.add('tp-touch'); g.style.setProperty('--tp-n', String(nc)); }
   const cells = [];
   let cur = { r: 0, c: 0, on: false };
-  for (let r = 0; r < ROWS; r++) {
+  for (let r = 0; r < nr; r++) {
     const tr = mk('div', 'tp-row');
     tr.setAttribute('role', 'row');
-    for (let c = 0; c < COLS; c++) {
+    for (let c = 0; c < nc; c++) {
       const d = mk('div', 'tp-cell');
       d.setAttribute('role', 'gridcell');
       d.setAttribute('aria-label', 'Table of ' + (r + 1) + ' row' + (r ? 's' : '') + ' and ' + (c + 1) + ' column' + (c ? 's' : ''));
@@ -136,9 +141,9 @@ export function openTablePicker(app, anchor) {
     if (!d) return;
     e.preventDefault(); e.stopPropagation();
     // (the up arrow from the top row goes to the head; the down arrow from the last row to the items)
-    if (k === 'ArrowDown' && cur.on && cur.r === ROWS - 1) { const first = p.querySelector('[role=menuitem]'); if (first) first.focus(); return; }
+    if (k === 'ArrowDown' && cur.on && cur.r === nr - 1) { const first = p.querySelector('[role=menuitem]'); if (first) first.focus(); return; }
     if (!cur.on) { cur = { r: 0, c: 0, on: true }; show(); return; }
-    cur = { r: Math.max(0, Math.min(ROWS - 1, cur.r + d[0])), c: Math.max(0, Math.min(COLS - 1, cur.c + d[1])), on: true };
+    cur = { r: Math.max(0, Math.min(nr - 1, cur.r + d[0])), c: Math.max(0, Math.min(nc - 1, cur.c + d[1])), on: true };
     show();
   });
   g.addEventListener('focus', () => { if (!cur.on) { cur.on = true; show(); } });
