@@ -889,6 +889,15 @@ def hunt(page):
     page.evaluate('rikuy.undo()'); settle(page, 150)
     check('  one undo gives the bytes back', src(page) == d)
 
+    # A ribbon menu's item that changes nothing (Page number › Bottom center where the class puts it
+    # there already) gives the keys back to the page, as Word's: they stayed on the button and the
+    # next letters typed went nowhere
+    load_doc(page, DOC()); click_text(page, 'paragraph of', 0); open_tab(page, 'Insert')
+    page.get_by_role('button', name='Page number', exact=True).click(); settle(page, 200)
+    page.get_by_role('menuitem', name='Bottom center').click(); settle(page, 300)
+    page.keyboard.type('Z'); settle(page, 200)
+    check('Page number › Bottom center on a page that has it, then typing: the letter goes to the caret', 'Second Zparagraph of' in src(page), src(page)[-90:])
+
 
 def run():
     names = sys.argv[1:]
