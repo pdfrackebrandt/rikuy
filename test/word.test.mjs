@@ -905,7 +905,7 @@ await ok('an English Word file with Arabic and Chinese phrases: both set up, the
   assert.equal(rtlDocument(t), false);
   // the whole preamble: the class, the page, the script lines, and the packages the body uses
   assert.deepEqual(preambleOf(t).trim().split('\n').map((l) => l.replace(/^\\usepackage\[letterpaper.*$/, 'GEOMETRY')),
-    ['\\documentclass[11pt]{article}', 'GEOMETRY', BABEL, ...AR, ...ZH, '\\usepackage{amsmath,amssymb}', '\\usepackage{booktabs}']);
+    ['\\documentclass[11pt]{article}', 'GEOMETRY', BABEL, ...AR, ...ZH, '\\usepackage{amsmath,amssymb}', '\\usepackage{booktabs}', '\\setcounter{secnumdepth}{0} % the Word file\'s headings have no numbers']);
   for (const s of ['\nThe Arabic word مرحبا means hello, and 你好 means the same in Chinese.\n', '\nIn Arabic, \\textbf{السلام عليكم ورحمة الله}, written right to left; numbers such as 2024 stay.\n',
     '\n\\begin{otherlanguage}{arabic}\nهذه فقرة كاملة بالعربية داخل مستند إنجليزي.\n\\end{otherlanguage}\n', '\nChinese: 北京、上海 and Peking University (北京大学).\n',
     'hello & مرحبا & 你好 \\\\\nthanks & شكرا & 谢谢 \\\\',
@@ -983,6 +983,22 @@ await ok('section numbers typed into headings are LaTeX\'s own when they are the
   const b = open(tiny(h(1, '1 Introduction') + h(1, '3 Results') + h(1, '2024 in review'), st));
   // (the last heading of a file is a heading too: pandoc alone leaves one that ends the document out)
   assert.ok(b.tex.includes('\\section{1 Introduction}') && b.tex.includes('\\section{3 Results}') && b.tex.includes('\\section{2024 in review}\\label{in-review}\n\n\\end{document}'), b.tex);
+  // (the numbers stay typed: LaTeX numbers nothing beside them, as Word showed one number each)
+  assert.ok(b.tex.includes('\\setcounter{secnumdepth}{0}') && !a.tex.includes('secnumdepth'), b.tex);
+});
+
+await ok('Word\'s headings without numbers open without numbers; numbered by their style or their own list, LaTeX numbers them', () => {
+  const NUM = '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="4"/></w:numPr>';
+  const h = (l, t, own = '') => '<w:p><w:pPr><w:pStyle w:val="Heading' + l + '"/>' + own + '</w:pPr><w:r><w:t>' + t + '</w:t></w:r></w:p>';
+  const st = (ppr) => ({ 'word/styles.xml': '<w:styles ' + NSW + '>' + [1, 2].map((l) => '<w:style w:type="paragraph" w:styleId="Heading' + l + '"><w:name w:val="heading ' + l + '"/>' + (ppr ? '<w:pPr>' + ppr + '</w:pPr>' : '') + '</w:style>').join('') + '</w:styles>' });
+  const body = (own) => h(1, 'Introduction', own) + wp('Text.') + h(2, 'Data', own) + wp('More.');
+  const plain = open(tiny(body(), st()));
+  assert.ok(plain.tex.includes('\\setcounter{secnumdepth}{0}') && plain.tex.includes('\\section{Introduction}') && plain.tex.includes('\\subsection{Data}'), plain.tex);
+  for (const t of [open(tiny(body(), st(NUM))), open(tiny(body(NUM), st()))]) assert.ok(!t.tex.includes('secnumdepth') && t.tex.includes('\\section{Introduction}'), t.tex);
+  // a style's list taken off by the paragraph (numId 0) numbers nothing
+  assert.ok(open(tiny(body('<w:numPr><w:numId w:val="0"/></w:numPr>'), st(NUM))).tex.includes('\\setcounter{secnumdepth}{0}'));
+  // no headings: nothing to say
+  assert.ok(!open(tiny(wp('Only text.'))).tex.includes('secnumdepth'));
 });
 
 await ok('Heading 4 and 5 (\\paragraph, \\subparagraph) and Quotation go to Word as its Heading 4, Heading 5 and a quote, and Word\'s Heading 4 and 5 come back as \\paragraph and \\subparagraph', () => {
@@ -1325,7 +1341,7 @@ await ok('a Word file with a line in each of the other eight scripts of India: a
   // and the one for dandas and joiners
   assert.equal(lines.length, 40);
   setUp(t, lines);
-  assert.deepEqual(preambleOf(t).trim().split('\n').map((l) => l.replace(/^\\usepackage\[letterpaper.*$/, 'GEOMETRY')), ['\\documentclass[11pt]{article}', 'GEOMETRY', ...lines, '\\usepackage{amsmath,amssymb}', '\\usepackage{booktabs}']);
+  assert.deepEqual(preambleOf(t).trim().split('\n').map((l) => l.replace(/^\\usepackage\[letterpaper.*$/, 'GEOMETRY')), ['\\documentclass[11pt]{article}', 'GEOMETRY', ...lines, '\\usepackage{amsmath,amssymb}', '\\usepackage{booktabs}', '\\setcounter{secnumdepth}{0} % the Word file\'s headings have no numbers']);
   for (const s of ['Bengali: \\textbf{বাংলা:} আমি বাংলায় গান গাই, ক্ষমা করবেন। ১২৩', 'Tamil: \\textbf{தமிழ்:} வணக்கம், மிக்க நன்றி. ௧௨௩', 'Telugu: \\textbf{తెలుగు:} నమస్కారం, ధన్యవాదాలు. ౧౨౩',
     'Gujarati: \\textbf{ગુજરાતી:} નમસ્તે, આભાર. ૧૨૩', 'Kannada: \\textbf{ಕನ್ನಡ:} ನಮಸ್ಕಾರ, ಧನ್ಯವಾದಗಳು. ೧೨೩',
     // the joiner that makes Malayalam's older chillu stays
@@ -1552,7 +1568,7 @@ await ok('an English Word file with a line each of Thai, Sinhala, Hebrew, Japane
   assert.equal(lines.length, 23);  // babel's, four a script, the dandas' and joiners', and Korean giving up Chinese characters
   setUp(t, lines);
   assert.equal(rtlDocument(t), false);
-  assert.deepEqual(preambleOf(t).trim().split('\n').map((l) => l.replace(/^\\usepackage\[letterpaper.*$/, 'GEOMETRY')), ['\\documentclass[11pt]{article}', 'GEOMETRY', ...lines, '\\usepackage{amsmath,amssymb}', '\\usepackage{booktabs}']);
+  assert.deepEqual(preambleOf(t).trim().split('\n').map((l) => l.replace(/^\\usepackage\[letterpaper.*$/, 'GEOMETRY')), ['\\documentclass[11pt]{article}', 'GEOMETRY', ...lines, '\\usepackage{amsmath,amssymb}', '\\usepackage{booktabs}', '\\setcounter{secnumdepth}{0} % the Word file\'s headings have no numbers']);
   for (const s of [
     // Thai has no space between its words and none comes between its runs; tone marks and digits as they are
     'Thai: \\textbf{ภาษาไทย}เป็นภาษาราชการของประเทศไทย น\u0e49\u0e33ด\u0e37\u0e48ม ๑๒๓',

@@ -596,7 +596,7 @@ function colorOf(rpr) {
 // style id -> its name as Word files spell it in every language ("heading 1", "toc 2"), the
 // colour of a character style, and the size of the body text in half points
 function styleInfo(parts) {
-  const S = { names: new Map(), colors: new Map(), sz: 0, bidi: new Map(), jc: new Map(), based: new Map(), bidiDefault: false, sp: new Map(), ind: new Map(), noln: new Map(), ddSp: null, ddInd: null, ddJc: '' };
+  const S = { names: new Map(), colors: new Map(), sz: 0, bidi: new Map(), jc: new Map(), based: new Map(), bidiDefault: false, sp: new Map(), ind: new Map(), noln: new Map(), num: new Map(), ddSp: null, ddInd: null, ddJc: '' };
   if (!parts.has('word/styles.xml')) return S;
   let st;
   try { st = find(parseXml(text(parts.get('word/styles.xml'))), 'w:styles'); } catch (e) { return S; }
@@ -620,6 +620,9 @@ function styleInfo(parts) {
       if (ind) S.ind.set(id, ind);
       const nl = onOff(kid(s, 'w:pPr'), 'w:suppressLineNumbers');
       if (nl != null) S.noln.set(id, nl);
+      // (whether the style numbers its paragraphs: a heading style tied to a multilevel list)
+      const np = kid(s, 'w:pPr') && kid(kid(s, 'w:pPr'), 'w:numPr');
+      if (np && kid(np, 'w:numId')) S.num.set(id, val(np, 'w:numId') !== '0');
       if (val(s, 'w:basedOn')) S.based.set(id, val(s, 'w:basedOn'));
       if (s.a['w:default'] === '1') S.normal = id;
     }
@@ -771,7 +774,7 @@ export function rejectBy(parts, names) {
 }
 
 export function premark(parts) {
-  const info = { threads: threads(parts), toc: 0, breaks: 0, colors: new Map(), chars: 0, aligned: 0, rtl: 0, ruby: 0, tracked: 0, charts: 0, art: 0, fields: 0, mathcolor: 0, heads: [], cols: [], page: null, sz: 0, endnotes: false, unread: [] };
+  const info = { threads: threads(parts), toc: 0, breaks: 0, colors: new Map(), chars: 0, aligned: 0, rtl: 0, ruby: 0, tracked: 0, charts: 0, art: 0, fields: 0, mathcolor: 0, heads: [], cols: [], page: null, sz: 0, endnotes: false, unread: [], headings: 0, numbered: 0 };
   const styles = styleInfo(parts);
   info.sz = styles.sz;
   const out = new Map(parts);
@@ -932,6 +935,14 @@ function paraFix(C, p, top) {
   const own = /^(heading|title|subtitle|caption|toc|table of|author|abstract|date|bibliography)/.test(sname) || CODE.test(sname);
   const prpr = kid(ppr, 'w:rPr');
   if (prpr && (kid(prpr, 'w:ins') || kid(prpr, 'w:del') || kid(prpr, 'w:moveFrom') || kid(prpr, 'w:moveTo'))) C.info.tracked++;
+  // Word numbers a heading only where its paragraph or its style is tied to a list; LaTeX numbers
+  // every \section. Counted here so a document whose headings carry no numbers opens without them
+  // (src/wordjobs.js)
+  if (C.body && /^heading [1-9]$/.test(sname)) {
+    const np = ppr && kid(ppr, 'w:numPr');
+    C.info.headings++;
+    if (np && kid(np, 'w:numId') ? val(np, 'w:numId') !== '0' : styled(C, sid, C.styles.num)) C.info.numbered++;
+  }
   const st = { color: !own, link: false, n: 0, hold: false };
   p.c = inlineFix(C, p.c, st);
   const at = () => { const i = p.c.indexOf(ppr); return i < 0 ? 0 : i + 1; };
