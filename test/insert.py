@@ -1049,6 +1049,17 @@ def hunt_c(page):
     page.keyboard.type(" He said 'yes' and ('no'), it's rock 'n' roll"); settle(page, 300)
     check("a single quote typed after a space opens a quotation: `yes', an apostrophe stays '", W("Start here. He said `yes' and (`no'), it's rock `n' roll") == src(page), src(page)[40:140])
     check('and the page draws the opening quote', page.evaluate("[...document.querySelectorAll('#pages span.t')].some((s) => s.textContent.includes('said \u2018yes\u2019'))"))
+    # Word's AutoCorrect: "i" alone is "I" in English, and a sentence of one word gets its capital
+    # (the space after "yes." found the word "yes." and left it)
+    load_doc(page, W('Start here.')); click_text(page, 'here', 5)
+    page.keyboard.type(' so i think. yes. '); settle(page, 300)
+    check('AutoCorrect: "i" becomes "I", "yes." at a sentence\'s start "Yes."', src(page) == W('Start here. So I think. Yes. '), src(page)[40:120])
+    page.keyboard.press('Control+z'); settle(page, 200)
+    check('AutoCorrect: one undo gives back the word as typed', src(page) == W('Start here. So I think. yes. '), src(page)[40:120])
+    de = W('Start here.').replace('\\begin{document}', '\\usepackage[ngerman]{babel}\n\\begin{document}')
+    load_doc(page, de); click_text(page, 'here', 5)
+    page.keyboard.type(' so i '); settle(page, 300)
+    check('AutoCorrect: in a German document "i" stays', 'here. So i ' in src(page), src(page)[60:140])
 
 
 EXTRA = [hunt, hunt_c, clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]

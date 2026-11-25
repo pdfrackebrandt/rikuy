@@ -74,12 +74,18 @@ export function correct(src, p, ch, o = DEFAULTS, own = [], except = []) {
     return { s: ws, e: p, t: n + '\\textsuperscript{' + suf + '}' };
   }
   if (o.fractions && FRACTIONS[word] && !/[\w/]/.test(src[ws - 1] || '')) return { s: ws, e: p, t: FRACTIONS[word] };
+  // "i" alone is "I" (Word's Replace list), in an English document only (o.english: a function or
+  // a value), once a space ends it: never the i of "i.e.", nor one after an apostrophe or a dash
+  if (o.replace !== false && /\s/.test(ch) && /^i[,;:!?]*$/.test(word) && !/[\\'’\w-]/.test(src[ws - 1] || '') && (typeof o.english === 'function' ? o.english() : o.english)) return { s: ws, e: ws + 1, t: 'I' };
   // (capitals once a space ends the word: "a)" or "a." at a paragraph's start is a list's marker,
-  // which B3's automatic lists read as typed)
-  if (/^[A-Za-z]+$/.test(word) && /\s/.test(ch)) {
-    if (o.twoCaps !== false && /^[A-Z]{2}[a-z]{2,}$/.test(word) && !/\\/.test(src[ws - 1] || '') && !except.includes(word) && !EXCEPTIONS.includes(word)) return { s: ws + 1, e: ws + 2, t: word[1].toLowerCase(), kind: 'twoCaps', word };
-    if (o.days !== false && DAYS.includes(word) && !/\\/.test(src[ws - 1] || '')) return { s: ws, e: ws + 1, t: word[0].toUpperCase() };
-    if (o.capitals !== false && /^[a-z]/.test(word) && sentenceStart(src, ws)) return { s: ws, e: ws + 1, t: word[0].toUpperCase() };
+  // which B3's automatic lists read as typed. A word with its stop or comma, "no." or "monday,",
+  // is the word before them: it waited for a space that never came right after its letters)
+  const stop = /^([A-Za-z]+)[.,;:!?]+$/.exec(word);
+  const w = stop && !/^(?:[A-Za-z]|[ivxIVX]{2,5})$/.test(stop[1]) ? stop[1] : word;
+  if (/^[A-Za-z]+$/.test(w) && /\s/.test(ch)) {
+    if (o.twoCaps !== false && /^[A-Z]{2}[a-z]{2,}$/.test(w) && !/\\/.test(src[ws - 1] || '') && !except.includes(w) && !EXCEPTIONS.includes(w)) return { s: ws + 1, e: ws + 2, t: w[1].toLowerCase(), kind: 'twoCaps', word: w };
+    if (o.days !== false && DAYS.includes(w) && !/\\/.test(src[ws - 1] || '')) return { s: ws, e: ws + 1, t: w[0].toUpperCase() };
+    if (o.capitals !== false && /^[a-z]/.test(w) && sentenceStart(src, ws)) return { s: ws, e: ws + 1, t: w[0].toUpperCase() };
   }
   return null;
 }
@@ -87,7 +93,7 @@ export function correct(src, p, ch, o = DEFAULTS, own = [], except = []) {
 // Whether a word at s starts a sentence: after . ! ? and a space, or as the first word of a
 // paragraph; never after an abbreviation (e.g., i.e., etc.), in a command's argument other than
 // a heading's, or after a number with its point (1.5)
-const ABBR = /(?:^|[\s(])(?:e\.g|i\.e|etc|vs|cf|al|approx|ca|resp|incl|Fig|Eq|Ref|Sec|Dr|Mr|Mrs|Ms|Prof|St|No|vol|pp|ch)\.$/i;
+const ABBR = /(?:^|[\s({])(?:e\.g|i\.e|etc|vs|cf|al|approx|ca|resp|incl|Fig|Eq|Ref|Sec|Dr|Mr|Mrs|Ms|Prof|St|No|vol|pp|ch)\.$/i;
 function sentenceStart(src, s) {
   let k = s;
   while (k > 0 && (src[k - 1] === ' ' || src[k - 1] === '\t')) k--;
@@ -95,8 +101,11 @@ function sentenceStart(src, s) {
   if (/\\(?:section|subsection|subsubsection|chapter|paragraph|caption)\*?(?:\[[^\]]*\])?\{$|\\item$/.test(prev)) return true;
   if (k === s && k > 0 && src[k - 1] !== '\n') return false;
   if (/\n\s*\n\s*$/.test(src.slice(Math.max(0, k - 40), s))) return true;
-  if (!/[.!?]['"’”)]*$/.test(prev) || k === s) return false;
-  if (ABBR.test(prev) || /\d\.$/.test(prev) || /(^|\s)[A-Za-z]\.$/.test(prev)) return false;
+  // (the stop read through the quotes, brackets and groups closed after it: \textbf{The end.} or
+  // a note's "\footnote{A note.}" ends a sentence as "the end.'' does)
+  const core = prev.replace(/['"’”)}]+$/, '');
+  if (!/[.!?]$/.test(core) || k === s) return false;
+  if (ABBR.test(core) || /\d\.$/.test(core) || /(^|[\s{])[A-Za-z]\.$/.test(core)) return false;
   return true;
 }
 

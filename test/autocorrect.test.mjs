@@ -63,6 +63,33 @@ ok('capitals: a sentence\'s first letter, TWo INitial CApitals, days; not after 
   assert.equal(type('It works. then', ' ', { ...DEFAULTS, capitals: false }), 'It works. then ');
 });
 
+ok('a one word sentence, a sentence after a group or a note, and "i" in English (round 3)', () => {
+  // the word with its stop or comma, capitalized at the space after them, as Word does at the stop
+  assert.equal(type('The end. no.', ' '), 'The end. No. ');
+  assert.equal(type('It came. yes,', ' '), 'It came. Yes, ');
+  assert.equal(type('It came on monday.', ' '), 'It came on Monday. ');
+  assert.equal(type('a THere.', ' '), 'a There. ');
+  // never a list's marker at a paragraph's start, "a." or "ii.", nor an abbreviation's dots
+  assert.equal(type('Text.\n\nb.', ' '), 'Text.\n\nb. ');
+  assert.equal(type('Text.\n\nii.', ' '), 'Text.\n\nii. ');
+  assert.equal(type('The end. e.g.', ' '), 'The end. e.g. ');
+  assert.equal(type('It was. so.', ' ', { ...DEFAULTS, capitals: false }), 'It was. so. ');
+  // the stop read through what closes after it
+  assert.equal(type('\\textbf{The end.} next', ' '), '\\textbf{The end.} Next ');
+  assert.equal(type('It ends.\\footnote{A note.} next', ' '), 'It ends.\\footnote{A note.} Next ');
+  assert.equal(type('as \\emph{e.g.} this', ' '), 'as \\emph{e.g.} this ');
+  assert.equal(type('He said ``stop.\'\' then', ' '), 'He said ``stop.\'\' Then ');
+  // "i" alone, in English only, never in i.e. or after an apostrophe
+  const en = { ...DEFAULTS, english: () => true };
+  assert.equal(type('so i', ' ', en), 'so I ');
+  assert.equal(type('so i,', ' ', en), 'so I, ');
+  assert.equal(type('so i', ' ', { ...DEFAULTS, english: () => false }), 'so i ');
+  assert.equal(type('so i', ' ', { ...en, replace: false }), 'so i ');
+  assert.equal(type('as i.e.', ' ', en), 'as i.e. ');
+  assert.equal(type("Hawai'i", ' ', en), "Hawai'i ");
+  assert.equal(type('\\item i', ')', en), '\\item i)');
+});
+
 ok('ordinals and fractions, off by default', () => {
   assert.equal(type('the 21st', ' '), 'the 21st ');
   assert.equal(type('the 21st', ' ', { ...DEFAULTS, ordinals: true }), 'the 21\\textsuperscript{st} ');

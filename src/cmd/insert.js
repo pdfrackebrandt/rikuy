@@ -11,6 +11,7 @@ import { mk } from '../ui/dom.js';
 import { firstKey, macUA } from '../keys.js';
 import { SYMBOLS, openSymbols } from '../ui/symbol.js';
 import { correct, borderLine, DEFAULTS as AC_DEFAULTS, REPLACE } from '../autocorrect.js';
+import { mainLanguage, dictOf } from '../spell/words.js';
 import { openGraphDialog } from '../ui/graphdialog.js';
 import { kit as GK, graphHtml, readGraph, isGraph, sameGraph, graphPNG, graphCanvas, graphPGF, pgfMark, specHash, pngWidth, pngMark, TEMPLATES, RIKUY_STY, RIKUY_STY_V10, styDrawsPgf } from '../graph.js';
 import { widgetPath } from '../widget.js';
@@ -574,7 +575,9 @@ onInsertText((app, data, range) => {
     app.savePrefs();
   }
   app.acLast = null;
-  const r = correct(src, p, data, o, (app.prefs.acList || []).filter((x) => Array.isArray(x) && x.length === 2), app.prefs.acExcept || []);
+  // (whether the document is in English, for "i" to "I": read only when that rule asks)
+  const english = () => { const L = mainLanguage(app.src(app.main)), d = L.name ? dictOf(L.name, L.variant) : ''; return d === '' || (!!d && d.startsWith('en')); };
+  const r = correct(src, p, data, { ...o, english }, (app.prefs.acList || []).filter((x) => Array.isArray(x) && x.length === 2), app.prefs.acExcept || []);
   if (!r) return;
   // the character as typing writes it, then the correction: one undo gives back what was typed
   const t = app.escapeAt(c.f, p, data);
