@@ -8,10 +8,21 @@
 // document a place is the odd or the even pages', the page's own.
 
 import { mk } from './dom.js';
+import { mapPos } from '../wrap.js';
 
 const POS = ['L', 'C', 'R'], NAMES = ['left', 'center', 'right'];
 
 export function installHeaderFooter(app) {
+  // (where the caret stood before a double click's first press in a margin, which moved it to the
+  // text's start: Escape and Close give that place back)
+  // (a press counts as the first unless one came just before: a click on the ribbon a moment
+  // earlier made the double click's first press a second one)
+  let before = null;
+  app.root.addEventListener('mousedown', (e) => {
+    if (app.hf || (e.detail > 1 && before && e.timeStamp - before.t < 700)) return;
+    const pg = e.target.closest && e.target.closest('.page'), pb = pg && pg.querySelector('.pb'), r = pb && pb.getBoundingClientRect();
+    before = r && (e.clientY < r.top || e.clientY > r.bottom) ? { c: app.caretNow(), t: e.timeStamp } : null;
+  }, true);
   app.root.addEventListener('dblclick', (e) => {
     const pg = e.target.closest && e.target.closest('.page');
     if (!pg || app.hf || !pg.querySelector('.pb')) return;
@@ -19,7 +30,7 @@ export function installHeaderFooter(app) {
     const where = e.clientY < pb.top ? 'head' : e.clientY > pb.bottom ? 'foot' : null;
     if (!where) return;
     e.preventDefault();
-    hfOpen(app, where, { page: [...app.root.querySelectorAll(':scope > .page')].indexOf(pg) });
+    hfOpen(app, where, { page: [...app.root.querySelectorAll(':scope > .page')].indexOf(pg), back: before && e.timeStamp - before.t < 1500 ? before.c : null });
   });
   // a press on the text closes them, as in Word
   app.root.addEventListener('mousedown', (e) => { if (app.hf && !e.target.closest('.hfedit')) hfClose(app, false); }, true);
@@ -51,6 +62,15 @@ function slotsOf(app, k, where) {
 
 export function hfOpen(app, where, o = {}) {
   if (!app.model || !app.layout.pages.length) return false;
+  // (where the caret stood in the text, given back by Escape and Close as Word's: each place
+  // written rebuilt the page with no caret, and typing after Escape went to the text's start)
+  // (opened again while open, Go to Footer: the place noted first, unless the caret is in the
+  // text now, the fields left open behind it, which is the place then; and only with the text it
+  // is a place of, which the fields' own writes alone change)
+  const kept = (b) => b && app.files.has(b.f) && app.src(b.f) === b.text;
+  const now = app.hf ? app.caretNow() : null;
+  const c0 = app.hf ? (now && !now.ghost ? now : null) : o.back || app.caretNow();
+  const back = c0 && !c0.ghost && c0.f != null ? { f: c0.f, p: c0.a, bias: -1, text: app.src(c0.f) } : app.hf && kept(app.hf.back) ? app.hf.back : null;
   hfClose(app, false);
   let k = Math.min(app.layout.pages.length - 1, o.page != null && o.page >= 0 ? o.page : pageInView(app));
   // (R1) a landscape page's header runs down its side: the fields go over the nearest upright page's
@@ -92,7 +112,7 @@ export function hfOpen(app, where, o = {}) {
   document.body.appendChild(box);
   P.el.classList.add('hf-' + where);
   app.root.classList.add('hf-on');
-  app.hf = { where, k, side, inputs, el: box, P, last: inputs[POS.indexOf(o.slot || 'L')] || inputs[0] };
+  app.hf = { where, k, side, inputs, el: box, P, last: inputs[POS.indexOf(o.slot || 'L')] || inputs[0], back };
   const place = () => hfPlace(app);
   app.hf.place = place;
   app.desk.addEventListener('scroll', place, { passive: true });
@@ -158,7 +178,9 @@ function hfWrite(app, where, i, inp) {
   inp.preSteps = null;
   if (!edits.length) return true;
   // (each run of typing in one place is one step of history: record joins them)
+  const before = app.src(app.main);
   app.commit(edits.map((x) => ({ f: app.main, ...x })), null, 'hf-' + place);
+  if (H.back && H.back.f === app.main && H.back.text === before) H.back = { ...H.back, p: mapPos(edits, H.back.p), text: app.src(app.main) };
   hfPlace(app);
   return true;
 }
@@ -213,7 +235,11 @@ export function hfClose(app, back) {
   app.root.classList.remove('hf-on');
   app.closeGroup();
   app.ribbonSync();
-  if (back) { app.root.focus({ preventScroll: true }); if (app.ribbonBack) app.ribbonBack(); }
+  if (back) {
+    app.root.focus({ preventScroll: true });
+    if (H.back && app.files.has(H.back.f) && app.src(H.back.f) === H.back.text) app.restoreCaret(H.back, true);
+    else if (app.ribbonBack) app.ribbonBack();
+  }
   return true;
 }
 
