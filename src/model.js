@@ -1550,6 +1550,11 @@ class Builder {
     const src = this.files.get(u.f) || '';
     let ie = u.e;
     while (ie > u.s && /\s/.test(src[ie - 1])) ie--;
+    // (spaces at the end of its last line are in the box: a space typed at its end, before the
+    // next word, had no place in it, the caret went to the next paragraph's start, and where that
+    // was shown as LaTeX too the word typed next went in there)
+    const sp = /^[ \t]+(?=\r?\n|$)/.exec(src.slice(ie, ie + 200));
+    if (sp && ie > u.s) ie += sp[0].length;
     // (the box starts at its first character, which is the key: the line break before it is the
     // paragraph's edge, and a line typed before it keeps the key on the block)
     let is = u.s;

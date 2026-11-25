@@ -222,6 +222,23 @@ def source_pane(page):
     page.click('#b-src'); settle(page, 300, full=True)
 
 
+def show_latex_space(page):
+    """A space typed at the end of a block shown as LaTeX, with the next one shown as LaTeX too."""
+    d = WRAP('Alpha \\textbf{beta} gamma.\n\nDelta epsilon.')
+    load_doc(page, d)
+    ev(page, """(() => { const g = window.rikuy, s = g.src('main.tex'); g.restoreCaret({ f: 'main.tex', selA: s.indexOf('beta'), selB: s.indexOf('epsilon') }); })()""")
+    settle(page, 200, full=True)
+    ev(page, "window.rikuy.runCommand('show-latex')"); settle(page, 400, full=True)
+    check('two paragraphs shown as LaTeX', ev(page, "document.querySelectorAll('.it.tex.texview').length") == 2)
+    click_text(page, 'gamma.', 6); settle(page, 200, full=True)
+    page.keyboard.type(' '); settle(page, 300, full=True)
+    page.keyboard.type('w'); settle(page, 300, full=True)
+    check('a space then a letter at the end of the first: both there, none in the next paragraph', src(page) == d.replace('gamma.', 'gamma. w'), src(page)[40:110])
+    box = ev(page, "[...document.querySelectorAll('.it.tex.texview')].map((b) => b.textContent)")
+    check('and the first box shows them', box == ['Alpha \\textbf{beta} gamma. w', 'Delta epsilon.'], box)
+    ev(page, 'window.rikuy.hideLatexViews()'); settle(page, 200, full=True)
+
+
 def view_tab(page):
     load_doc(page, LONG)
     page.get_by_role('tab', name='View', exact=True).click(); settle(page, 300, full=True)
@@ -567,7 +584,7 @@ with sync_playwright() as p:
     want = sys.argv[1:]
     browser, page, errors = open_page(p, 1366, 800)
     until(page, FONTS); settle(page, 200, full=True)
-    for name, fn in (('views', views), ('show_latex', show_latex), ('source_pane', source_pane), ('view_tab', view_tab), ('repeat_undo', repeat_undo), ('help_tab', help_tab), ('review', review), ('web', web), ('ruler', ruler), ('r5_ruler', r5_ruler)):
+    for name, fn in (('views', views), ('show_latex', show_latex), ('source_pane', source_pane), ('show_latex_space', show_latex_space), ('view_tab', view_tab), ('repeat_undo', repeat_undo), ('help_tab', help_tab), ('review', review), ('web', web), ('ruler', ruler), ('r5_ruler', r5_ruler)):
         if want and name not in want:
             continue
         try: fn(page)
