@@ -251,8 +251,19 @@ export const methods = {
     const BS = M.blocks;
     let k0 = -1, k1 = -1;
     for (let k = 0; k < BS.length; k++) { const B = BS[k]; if (B.f !== f || B.e < a || B.s > b) continue; if (k0 < 0) k0 = k; k1 = k; }
+    // (back and fwd below walk from a paragraph through display math and the paragraphs that go
+    // on after it, to the paragraph that ends the chain: the blocks read are those, and the first
+    // other one of this file on each side, within 20. Reading 20 on each side made, after each
+    // keystroke, the items of the 20 blocks after the edit, which the incremental build moves
+    // without making them: src/model.js movedUnit)
+    let lo = k0, hi = k1;
+    const chain = (B) => B.items.length > 0 && B.items.every((x) => x.type === 'math' || (x.type === 'p' && x.cont));
+    if (k0 >= 0) {
+      while (lo > 0 && k0 - lo < 20) { const B = BS[--lo]; if (B.f === f && !chain(B)) break; }
+      while (hi < BS.length - 1 && hi - k1 < 20) { const B = BS[++hi]; if (B.f === f && !chain(B)) break; }
+    }
     const flat = [];
-    if (k0 >= 0) for (let k = Math.max(0, k0 - 20); k <= Math.min(BS.length - 1, k1 + 20); k++) if (BS[k].f === f) for (const it of BS[k].items) flat.push({ it, B: BS[k], k });
+    if (k0 >= 0) for (let k = lo; k <= hi; k++) if (BS[k].f === f) for (const it of BS[k].items) flat.push({ it, B: BS[k], k });
     const para = (x) => !!x && x.it.type === 'p' && x.it.ps != null && x.it.ctx === 'p' && !x.it.lead && !x.it.thmFirst && (!x.it.f || x.it.f === f);
     const back = (i) => { let j = i - 1; while (j >= 0 && flat[j].it.type === 'math') j--; return j < i - 1 && para(flat[j]) ? j : -1; };
     const fwd = (i) => { let j = i + 1; while (j < flat.length && flat[j].it.type === 'math') j++; return j > i + 1 && para(flat[j]) && flat[j].it.cont ? j : -1; };
