@@ -229,13 +229,17 @@ onInstall((app) => {
 // Word's Ctrl+Right Shift and Ctrl+Left Shift: the paragraph runs from the right, or from the
 // left, where the document sets up a right to left language. The chord is Ctrl held and one Shift
 // pressed and let go with no other key between; which Shift, by its place on the keyboard. (Not
-// on a Mac, whose Word has no such keys; nor while an input method composes.)
+// on a Mac, whose Word has no such keys; nor while an input method composes.) Any other key, even
+// one a command takes before the page hears it (Ctrl+Shift+E, Ctrl+Shift+8), or a press ends the
+// chord: heard on the window, ahead of every other listener.
 onInstall((app) => {
   if (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) return;
   let side = 0;
-  app.root.addEventListener('keydown', (e) => {
-    side = e.key === 'Shift' && e.ctrlKey && !e.altKey && !e.metaKey && !e.repeat && !e.isComposing && (e.location === 1 || e.location === 2) ? e.location : e.key === 'Shift' && e.repeat ? side : 0;
-  });
+  addEventListener('keydown', (e) => {
+    if (e.key === 'Shift' && e.repeat) return;
+    side = e.target === app.root && e.key === 'Shift' && e.ctrlKey && !e.altKey && !e.metaKey && !e.isComposing && (e.location === 1 || e.location === 2) ? e.location : 0;
+  }, true);
+  addEventListener('pointerdown', () => { side = 0; }, true);
   app.root.addEventListener('keyup', (e) => {
     const was = side;
     side = 0;

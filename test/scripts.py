@@ -1243,8 +1243,17 @@ def ime_keys(page):
     click_text(page, '脚注的文字', 2)
     c0 = caret(page)
     page.evaluate(key, ['#pages', 'Escape', False]); page.wait_for_timeout(150)
+    check('Escape while composing in a footnote leaves the caret in it', caret(page) == c0, [c0, caret(page)])
+    click_text(page, '脚注的文字', 5)
+    c0 = caret(page)
     page.evaluate(key, ['#pages', 'ArrowRight', False]); page.wait_for_timeout(150)
-    check('Escape and Right while composing in a footnote leave the caret in it', caret(page) == c0, [c0, caret(page)])
+    check('and so does Right at its end', caret(page) == c0, [c0, caret(page)])
+    # (Safari: the key that takes or drops a choice comes just after the composition, keyCode 229)
+    k229 = '''([sel, key]) => { const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, composed: true }); Object.defineProperty(e, 'keyCode', { get: () => 229 });
+      document.querySelector(sel).dispatchEvent(e); }'''
+    c0 = caret(page)
+    page.evaluate(k229, ['#pages', 'Escape']); page.wait_for_timeout(150)
+    check('Escape with keyCode 229 (Safari) leaves the footnote alone too', caret(page) == c0, [c0, caret(page)])
     click_text(page, '这是正文', 2)
     page.evaluate(key, ['#pages', 'Enter', True]); page.wait_for_timeout(200)
     check('Shift+Enter while composing breaks no line', src(page) == base, src(page)[-80:])
@@ -1268,6 +1277,12 @@ def direction_keys(page):
     page.keyboard.press('Control+Shift+ArrowLeft'); page.wait_for_timeout(150)
     page.keyboard.down('Control'); page.keyboard.down('ShiftLeft'); page.keyboard.press('ArrowLeft'); page.keyboard.up('ShiftLeft'); page.keyboard.up('Control'); page.wait_for_timeout(250)
     check('Ctrl+Shift with an arrow between turns nothing', src(page) == base, src(page)[-110:])
+    # (review: Ctrl+Shift+E, Track Changes, and Ctrl+Shift+8, Show marks, taken by the chord table
+    # before the page hears them, with Shift let go before the letter)
+    for letter in ('KeyE', 'Digit8'):
+        page.keyboard.down('Control'); page.keyboard.down('ShiftLeft'); page.keyboard.down(letter); page.keyboard.up('ShiftLeft'); page.keyboard.up(letter); page.keyboard.up('Control'); page.wait_for_timeout(250)
+        page.keyboard.down('Control'); page.keyboard.down('ShiftLeft'); page.keyboard.down(letter); page.keyboard.up('ShiftLeft'); page.keyboard.up(letter); page.keyboard.up('Control'); page.wait_for_timeout(250)
+    check('Ctrl+Shift+E and Ctrl+Shift+8 with Shift let go first turn nothing', 'otherlanguage' not in src(page), src(page)[-110:])
     tip = page.evaluate('() => window.rikuy.api.commands().filter((c) => c.id === "rtl-paragraph" || c.id === "ltr-paragraph").map((c) => c.keys.join())')
     check('the two commands name their keys', sorted(tip) == ['Ctrl+Left Shift', 'Ctrl+Right Shift'], tip)
 
@@ -1282,7 +1297,11 @@ def page_lang(page):
                  ('ja', doc('\\usepackage{luatexja}', 'これは日本語です。')), ('ko', doc('\\usepackage{kotex}', '한국어 문장.')), ('en', PLAIN)):
         load_doc(page, d)
         seen[k] = lang()
-    check('the page names the document\'s language: Arabic, Chinese, Hebrew, Japanese, Korean, English', all(seen[k] == k for k in seen), seen)
+    load_doc(page, doc('\\usepackage{CJKutf8}', 'An English paper by \\begin{CJK}{UTF8}{gbsn}王小明\\end{CJK} and others, about prices and wages.'))
+    seen['en, CJKutf8 for a name'] = lang()
+    seen['en'] = seen.pop('en')
+    check('the page names the document\'s language: Arabic, Chinese, Hebrew, Japanese, Korean, English; an English paper with one Chinese name stays English', all(v == k[:2] for k, v in seen.items()), seen)
+    load_doc(page, PLAIN)
     base = src(page)
     i = base.index('\\usepackage{amsmath}')
     page.evaluate('([i, text]) => window.rikuy.api.editSource({ file: "main.tex", start: i, end: i, text })', [i, AR_PRE.split('\n\\babelfont')[0] + '\n'])

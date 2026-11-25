@@ -185,9 +185,10 @@ export function installKeys(app, mac, runCmd) {
   // The app's handlers acted on them too: Escape closed Find and Replace with the word half typed
   // and left a footnote, Shift+Enter broke the line. None of them hears such a key now, in a field
   // or on the page; the browser still gives it to the input method. (The source pane and a math
-  // field read their own keys.)
+  // field read their own keys. Safari sends the key that takes or drops a choice just after the
+  // composition ends, as keyCode 229, as keys.js's matches() reads it.)
   addEventListener('keydown', (e) => {
-    if (!e.isComposing || !/^(Enter|Escape|Tab|Arrow|Home$|End$|Page)/.test(e.key)) return;
+    if (!(e.isComposing || e.keyCode === 229) || !/^(Enter|Escape|Tab|Arrow|Home$|End$|Page)/.test(e.key)) return;
     const t = e.target;
     if (t && t.closest && t.closest('.CodeMirror, math-field')) return;
     e.stopImmediatePropagation();

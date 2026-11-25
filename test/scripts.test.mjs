@@ -732,17 +732,26 @@ ok('words of the five scripts are counted with their marks', () => {
 });
 
 ok('Round 3: the document\'s language as the web names it, for the page\'s lang', () => {
-  const d = (pre, cls = 'article') => '\\documentclass{' + cls + '}\n' + pre + '\n\\begin{document}\nx\n\\end{document}\n';
-  assert.equal(documentLang(d('\\usepackage[english, bidi=basic]{babel}\n\\babelprovide[import, main]{arabic}')), 'ar');
+  const d = (pre, cls = 'article', body = 'An English paper body with words.') => '\\documentclass{' + cls + '}\n' + pre + '\n\\begin{document}\n' + body + '\n\\end{document}\n';
+  assert.equal(documentLang(d('\\usepackage[english, bidi=basic]{babel}\n\\babelprovide[import, main]{arabic}', 'article', 'نص عربي')), 'ar');
   assert.equal(documentLang(d('\\usepackage{polyglossia}\n\\setmainlanguage{hebrew}')), 'he');
-  assert.equal(documentLang(d('\\usepackage[scheme=plain]{ctex}')), 'zh');
+  assert.equal(documentLang(d('\\usepackage[scheme=plain]{ctex}', 'article', '这是中文的正文。')), 'zh');
   assert.equal(documentLang(d('', 'ctexart')), 'zh');
-  assert.equal(documentLang(d('\\usepackage[english]{babel}\n\\usepackage{xeCJK}')), 'zh', 'babel\'s English beside a Chinese set up');
   assert.equal(documentLang(d('', 'ltjsarticle')), 'ja');
-  assert.equal(documentLang(d('\\usepackage{kotex}')), 'ko');
+  assert.equal(documentLang(d('', 'jsarticle')), 'ja');
+  assert.equal(documentLang(d('', 'bxjsarticle')), 'ja');
+  assert.equal(documentLang(d('', 'xepersian')), 'fa');
+  assert.equal(documentLang(d('\\usepackage{luatexja}', 'article', 'これは日本語の文章です。')), 'ja');
+  assert.equal(documentLang(d('\\usepackage{kotex}', 'article', '한국어 문장입니다 여기.')), 'ko');
+  // (review: a package loaded says nothing; an English paper loads CJKutf8 for one author's name)
+  for (const p of ['CJKutf8', 'xeCJK', 'luatexja', 'kotex']) assert.equal(documentLang(d('\\usepackage{' + p + '}', 'article', 'An English paper by 王小明 and others, about economics.')), '', p);
+  assert.equal(documentLang(d('\\usepackage[english]{babel}\n\\usepackage{xeCJK}')), 'en', 'babel\'s English with English text');
+  assert.equal(documentLang(d('\\usepackage[english]{babel}\n\\usepackage{xeCJK}', 'article', '这是中文的正文，很长的一段。')), 'zh', 'babel\'s English beside Chinese text');
   assert.equal(documentLang(d('\\usepackage[ngerman]{babel}')), 'de');
   assert.equal(documentLang(d('\\usepackage[main=french, english]{babel}')), 'fr');
   assert.equal(documentLang(d('\\usepackage[russian, english]{babel}')), 'en', 'the last named is the main one');
+  assert.equal(documentLang(d('\\usepackage[ar-SA]{babel}')), 'ar-SA', 'a BCP 47 tag among babel\'s options');
+  assert.equal(documentLang(d('', 'article', 'نص عربي بلا إعداد')), 'ar', 'no set up: the text\'s script');
   assert.equal(documentLang(d('% \\usepackage[ngerman]{babel}')), '');
   assert.equal(documentLang(d('')), '');
   assert.equal(documentLang('no preamble here'), '');
