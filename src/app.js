@@ -3650,7 +3650,22 @@ class App {
     // closed before the blank line and opened again after it, as Enter splits them; a paste there
     // ran its paragraphs into one line)
     const fw = inArg && c.collapsed && el && el.closest && !el.closest('td, .it.h, .cap') ? (this.formatsBreak ? this.formatsBreak(c.f, at0) : this.wrapBreak(el, c.f, at0)) : null;
-    const fmtOnly = !!fw && braceDepth(src, fw.p) === (fw.close.match(/\}/g) || []).length;
+    // (in a footnote's first paragraph the note's own brace is no format's: a note at the
+    // paragraph's top level holds paragraphs and lists, so only the formats' braces are closed
+    // round them. Counted as a format's, a list or paragraphs pasted into \footnote{..\textbf{..}}
+    // went whole into \textbf's braces, and TeX stopped: "Paragraph ended before \text@command")
+    const inNote = (p, n) => {
+      const st = [];
+      let s0 = src.lastIndexOf('\n\n', p - 1);
+      for (let i = s0 < 0 ? 0 : s0; i < p; i++) {
+        const ch = src[i];
+        if (ch === '\\') { i++; continue; }
+        if (ch === '%') { while (i < p && src[i] !== '\n') i++; continue; }
+        if (ch === '{') st.push(i); else if (ch === '}') st.pop();
+      }
+      return st.length === n + 1 && /\\(?:footnote|footnotetext|endnote)\s*(?:\[[^\]{}]*\]\s*)?$/.test(src.slice(Math.max(0, st[0] - 80), st[0]));
+    };
+    const fmtOnly = !!fw && (braceDepth(src, fw.p) === (fw.close.match(/\}/g) || []).length || (!!fw.close && inNote(fw.p, (fw.close.match(/\}/g) || []).length)));
     const inline = inArg || (!whole && !!(el && el.closest && el.closest('td, .it.h, .cap')));
     // (copied LaTeX put in a heading, a table's cell or a caption, whose argument a paragraph
     // break ends, goes in as one line: src/paste.js oneLineLatex. Pasted as it was,

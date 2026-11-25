@@ -147,10 +147,25 @@ try:
             s = src(page)
             check('review %s: %r' % (name, want), s == W2(want, pre), s[s.find('\\begin{document}') + 17:][:120])
             made.append((name, s))
+        # (round 3) paragraphs and a list pasted into a bold word in a footnote's text: the note holds
+        # them, so only \\textbf is closed round them. The note's brace was counted as a format's,
+        # everything went inside \\textbf{..}, and pdfLaTeX stopped ("Paragraph ended before \\text@command")
+        FN = 'Text\\footnote{See \\textbf{boldword} here.} after.'
+        FNW = 'Text\\footnote{See \\textbf{boldIntro.}\n\n\\begin{itemize}\n  \\item one\nITEMS\\end{itemize}\n\n\\textbf{After.word} here.} after.'
+        for name, html, plain, latex, want in (('LaTeX', None, 'Intro.\n\none\n\nAfter.', 'Intro.\n\n\\begin{itemize}\n  \\item one\n\\end{itemize}\n\nAfter.', FNW.replace('ITEMS', '')),
+                                               ('HTML', '<p>Intro.</p><ul><li>one</li><li>two</li></ul><p>After.</p>', 'Intro.\none\ntwo\nAfter.', None, FNW.replace('ITEMS', '  \\item two\n'))):
+            load_doc(page, W2(FN)); click_text(page, 'boldword', 4)
+            if latex: page.evaluate(LTX, [plain, latex])
+            else: page.evaluate(PASTE, [html, plain])
+            settle(page, 250)
+            s = src(page)
+            check('r3 %s paragraphs and a list into \\textbf in a footnote: the format closed round them, inside the note' % name, s == W2(want), repr(s[s.find('Text'):][:200]))
+            made.append(('r3 %s list into \\textbf in a footnote' % name, s))
         if os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist', 'tex', 'tree.wasm')):
             page.set_default_timeout(600000)
             for name, t in made:
-                r = page.evaluate('async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile(); return r.ok; }', t)
+                # (and no error of TeX's: a PDF is made after one too, in nonstop mode)
+                r = page.evaluate('async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile(); return r.ok && !r.problems.some((p) => p.severity === "error"); }', t)
                 check('review %s compiles' % name, r, t[t.find('begin{document}'):][:160])
             page.set_default_timeout(30000)
         else:
@@ -188,7 +203,8 @@ try:
         if os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist', 'tex', 'tree.wasm')):
             page.set_default_timeout(600000)
             for name, t in r3:
-                r = page.evaluate('async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile(); return r.ok; }', t)
+                # (and no error of TeX's: a PDF is made after one too, in nonstop mode)
+                r = page.evaluate('async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile(); return r.ok && !r.problems.some((p) => p.severity === "error"); }', t)
                 check('r3 paste %s compiles' % name, r, t[:300])
             page.set_default_timeout(30000)
         load_doc(page, base)
