@@ -625,16 +625,25 @@ export const methods = {
     }
     if (cur.many) { this.setManyStyle(cur, to, c); this.closeGroup(); return; }
     if (cur.item && (isHeading(to) || to === 'part')) return this.itemToHeading(cur.item, to);
-    // a heading on one paragraph of an abstract or a quote of several: that paragraph alone, the
-    // environment split around it (Word styles the paragraph, not its neighbours)
-    if (cur.split && (isHeading(to) || to === 'part')) {
+    // a heading or Normal on one paragraph of an abstract or a quote of several: that paragraph
+    // alone, the environment split around it (Word styles the paragraph, not its neighbours).
+    // Normal took the quote off every paragraph of it.
+    // (a selection over several of its paragraphs: Normal takes the environment off them all)
+    const several = to === 'p' && !c.collapsed && c.f === at.B.f && /\n[ \t]*\r?\n/.test(this.src(c.f).slice(c.a, c.b));
+    if (cur.split && (isHeading(to) || to === 'part' || (to === 'p' && !several))) {
       const f = at.B.f, r = splitEnvEdits(this.src(f), cur.b, to, c.a);
+      // (Normal in an abstract's middle: the abstract goes whole, as before)
+      if (r.why === 'abstract') return this.setBlockStyleWhole(at, cur, to);
       if (r.why) { this.toast(r.why); return; }
       this.commit(r.edits.map((x) => ({ f, ...x })), { f, p: r.p, bias: -1 }, 'block');
       this.closeGroup();
       return;
     }
-    const f = at.B.f, r = restyle(this.src(f), cur.b, to, c.a);
+    return this.setBlockStyleWhole(at, cur, to);
+  },
+  // the block's style by restyle (src/styles.js): an environment of several paragraphs whole
+  setBlockStyleWhole(at, cur, to) {
+    const c = at.c, f = at.B.f, r = restyle(this.src(f), cur.b, to, c.a);
     if (!r) return;
     const needs = this.styleNeeds(to), grow = needs.filter((x) => x.f === f && x.s <= cur.b.s).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
     this.commit([...needs, ...r.edits.map((x) => ({ f, ...x }))], { f, p: r.p + grow, bias: -1 }, 'block');

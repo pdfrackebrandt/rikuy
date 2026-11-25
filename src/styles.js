@@ -196,17 +196,21 @@ export function splitEnvEdits(src, b, to, p) {
   if (k < 0) k = paras.findIndex(([s]) => p < s);
   if (k < 0) k = paras.length - 1;
   const [ps, pe] = paras[k], text = src.slice(ps, pe);
-  if (!text.trim() || NOT_PLAIN.test(text) || text[0] === '%' || /(^|[^\\])%/.test(text)) return { why: 'This paragraph holds more than words: a heading cannot hold it.' };
+  // (Normal: the paragraph leaves the environment as it is, whatever it holds; a heading holds words only)
+  const normal = to === 'p';
+  if (!text.trim() || (!normal && (NOT_PLAIN.test(text) || text[0] === '%' || /(^|[^\\])%/.test(text)))) return { why: 'This paragraph holds more than words: a heading cannot hold it.' };
+  // (an abstract begun again after a paragraph in its middle would print its title twice)
+  if (normal && name === 'abstract' && k > 0 && k < paras.length - 1) return { why: 'abstract' };
   const eol = eolAt(src, b.s);
   // before it: the environment ends where its last paragraph ends, or (it was the first) its
   // \begin line goes
   const head = k > 0 ? { s: paras[k - 1][1], e: ps, t: eol + '\\end{' + name + '}' + eol + eol } : { s: b.s, e: ps, t: '' };
-  const edits = [head, { s: ps, e: ps, t: '\\' + to + '{' }, { s: pe, e: pe, t: '}' }];
+  const edits = normal ? [head] : [head, { s: ps, e: ps, t: '\\' + to + '{' }, { s: pe, e: pe, t: '}' }];
   if (k === paras.length - 1) edits.push({ s: pe, e: b.e, t: '' });
   else if (name === 'abstract' && k > 0) edits.push({ s: pe, e: paras[k + 1][0], t: eol + eol }, { s: b.we, e: b.e, t: '' });
   else edits.push({ s: pe, e: paras[k + 1][0], t: eol + eol + '\\begin{' + name + '}' + eol });
   // the caret where it was in the words, which moved by what went before them
-  const shift = head.t.length - (head.e - head.s) + to.length + 2;
+  const shift = head.t.length - (head.e - head.s) + (normal ? 0 : to.length + 2);
   return { edits, p: Math.min(Math.max(p, ps), pe) + shift };
 }
 
