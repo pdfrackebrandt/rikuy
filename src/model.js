@@ -2100,7 +2100,10 @@ class Builder {
     }
     this.use('B' + head);
     const entries = list.map((r) => ({ label: r.label, runs: r.runs, f: r.e ? r.e.file : null, s: r.e ? r.e.s : 0, e: r.e ? r.e.e : 0, key: r.key }));
-    this.use(JSON.stringify(entries.map((x) => [x.label, x.runs.map((r) => r.t).join('')])));
+    // (everything the page draws of the list is in its signature, so the page keeps a list whose
+    // signature is the same: its runs' italics, and where each entry stands in its .bib, which a
+    // click on it opens; it was drawn again, 81 elements measured and placed, at every keystroke)
+    this.use(JSON.stringify([O.citeStyle === 'numeric', entries.map((x) => [x.label, x.runs.map((r) => [r.t, r.it ? 1 : 0]), x.f, x.s, x.e, x.key])]));
     return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'refs', head, entries, numeric: O.citeStyle === 'numeric' }], fns: [], sig: this.sig.join('\u0001') };
   }
 
