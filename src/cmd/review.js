@@ -385,7 +385,11 @@ export const methods = {
     }
     if (!edits.length) { this.toast('That word runs across formatting: change it in the source.'); return false; }
     this.closeGroup();
-    this.commit(edits, { f: x.f, p: x.s + to.length }, 'spell');
+    // (the caret after the word as it now reads: its end moved by what changed in it and before
+    // it. Its start plus the new word's length fell inside the word where formatting runs through
+    // it, \textbf{wr}ong, or where Change All changed an earlier one too)
+    const end = now.e + edits.filter((d) => d.f === now.f && d.e <= now.e).reduce((n, d) => n + d.t.length - (d.e - d.s), 0);
+    this.commit(edits, { f: x.f, p: end }, 'spell');
     this.closeGroup();
     return true;
   },

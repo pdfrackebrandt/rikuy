@@ -6,7 +6,7 @@ Ignore All, Add to Dictionary (a `% rikuy: words` line, cspell's lines read too)
 Document, Check Spelling as You Type; the dictionary per language (babel, \\selectlanguage,
 \\foreignlanguage); Review › Language for a selection and the document as round trips; the
 Spelling pane (F7) by mouse and keys; the status bar's proofing language; a 141 KB paper's time;
-the phone at 390 and 360 px with touch; the Thesaurus and grammar (R4); screenshots in
+the phone at 390 and 360 px with touch; the Thesaurus and grammar (R4); the caret after a changed word (r5); screenshots in
 $SHOTS/spell-*, thesaurus-* and grammar-*."""
 import os, sys, time, json
 sys.path.insert(0, os.path.dirname(__file__))
@@ -117,6 +117,7 @@ def r4(p):
     check('R4: right click on a grammar issue: Harper\'s message, its correction, Ignore Once', 'Did you mean to repeat this word?' in names and 'is' in names and 'Ignore Once' in names, names)
     page.get_by_role('menuitem', name='is', exact=True).click(); settle(page, 300)
     check('R4: the correction takes out only what differs, one step', src(page) == THES_DOC.replace('it is is clear', 'it is clear'), src(page)[60:140])
+    check('R4: the caret after the corrected words', page.evaluate("window.rikuy.caretNow().a") == THES_DOC.index('it is is') + 5, page.evaluate("window.rikuy.caretNow().a"))
     page.evaluate('window.rikuy.undo()'); settle(page, 200)
     check('R4: and one undo gives it back byte for byte', src(page) == THES_DOC)
     grammar_settle(page)
@@ -407,13 +408,49 @@ def run():
                 check(tag + ': no page errors', not errors, errors[:5])
                 browser.close()
         r4(p)
+        r5(p)
 
     bad = [r for r in results if not r[1]]
     print(f"{len(results) - len(bad)}/{len(results)} passed")
     sys.exit(1 if bad else 0)
 
 
+def right_click_word(page, w):
+    box = page.evaluate("""(w) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(w)); s.scrollIntoView({ block: 'center' });
+      const r = document.createRange(), i = s.textContent.indexOf(w); r.setStart(s.firstChild, i + 1); r.setEnd(s.firstChild, i + 2); const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }""", w)
+    page.mouse.click(box[0], box[1]); settle(page, 100)
+    page.mouse.click(box[0], box[1], button='right'); settle(page, 300)
+
+
+def r5(p):
+    """Round 3's hunt: where the caret stands after a word was changed from the right click menu."""
+    browser, page, errors = open_page(p, width=1366, height=900)
+    doc = '\\documentclass{article}\n\\begin{document}\nAn important result, a \\textbf{wr}onng word.\n\\end{document}\n'
+    load_doc(page, doc); spell_settle(page, 15000)
+    right_click_word(page, 'onng')
+    until(page, "() => !!document.querySelector('.pop-ctx .mi-sugg')", timeout=5000)
+    page.get_by_role('menuitem', name='wrong', exact=True).click(); settle(page, 300)
+    page.keyboard.type('Z'); settle(page, 200)
+    check('a suggestion for a word half bold: the caret after the word, where the next key goes', src(page) == doc.replace('onng', 'ongZ'), src(page)[40:110])
+    if page.evaluate('window.rikuy.thesAvailable()'):
+        load_doc(page, doc); spell_settle(page, 15000)
+        right_click_word(page, 'important')
+        page.get_by_role('menuitem', name='Synonyms').click(); settle(page, 300)
+        until(page, "() => [...document.querySelectorAll('.pop [role=menuitem]')].some((e) => e.textContent === 'all-important')", timeout=20000)
+        page.get_by_role('menuitem', name='all-important', exact=True).first.click(); settle(page, 300)
+        page.keyboard.type('Z'); settle(page, 200)
+        check('a synonym from the right click menu: the caret after the new word, not after the letters that differ', src(page) == doc.replace('important', 'all-importantZ'), src(page)[40:110])
+    check('R5: no page errors', not errors, errors[:5])
+    browser.close()
+
+
 if __name__ == '__main__':
+    if sys.argv[1:] == ['r5']:
+        with sync_playwright() as p:
+            r5(p)
+        bad = [r for r in results if not r[1]]
+        print(f"{len(results) - len(bad)}/{len(results)} passed")
+        sys.exit(1 if bad else 0)
     if sys.argv[1:] == ['r4']:
         with sync_playwright() as p:
             r4(p)
