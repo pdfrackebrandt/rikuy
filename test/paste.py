@@ -99,6 +99,13 @@ try:
             click_text(page, 'plain', 5); page.evaluate(LAST); settle(page, 250)
             s = src(page)
             check('copy %s..%s over a bold word\'s brace, paste: %r' % (sel[0], sel[1], want), s == W(want), s[s.find('\\begin{document}') + 17:][:90])
+        # (round 2) a link whose address holds a % (a URL's %20) copied with the words round it: its
+        # \\href comes too. The % read as a comment made the range unbalanced, and only the words went
+        HREF = '\\usepackage{hyperref}\n'
+        load_doc(page, W('See \\href{http://a.b/%20x}{the link} here.\n\nplain words.').replace('\\begin{document}', HREF + '\\begin{document}'))
+        place(page, ('See', 'here')); page.keyboard.press('Control+c'); settle(page, 150)
+        click_text(page, 'plain', 5); page.evaluate(LAST); settle(page, 250)
+        check('copy words round a link with %20 in its address, paste: the link comes too', 'plainSee \\href{http://a.b/%20x}{the link} here words.' in src(page), repr(src(page)[60:]))
         # the hostile review: a block never goes inside a format's braces. On the blank paragraph after
         # a formatted word (Enter), a list or a heading goes in as it is, italic into italic is italic
         # once, two paragraphs after Ctrl+B are both bold; inside a \\uline word a list or a heading is

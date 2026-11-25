@@ -758,6 +758,14 @@ export function isBalanced(src, a, b) {
         const close = d && !/[\s{[a-zA-Z]/.test(d) ? src.indexOf(d, at + 1) : -1;
         if (close >= 0 && !src.slice(at, close).includes('\n')) { if (close >= b) return false; k = close; continue; }
       }
+      // \url{..}, \href{..} and \path{..} read their address as it is: a % in it (a URL's %20) is
+      // no comment. Read as one, it made every range over a link unbalanced, and Copy put the
+      // link's words alone on the clipboard, its address lost
+      if ((m = /^\\(?:url|href|path)\s*\{/.exec(rest))) {
+        let d = 1, z = k + m[0].length;
+        for (; z < src.length && d && src[z] !== '\n'; z++) { if (src[z] === '\\') { z++; continue; } if (src[z] === '{') d++; else if (src[z] === '}') d--; }
+        if (!d) { if (z > b) return false; k = z - 1; continue; }
+      }
       if ((m = /^\\begin\s*\{([^}]*)\}/.exec(rest))) { envs.push(m[1].trim()); k += m[0].length - 1; continue; }
       if ((m = /^\\end\s*\{([^}]*)\}/.exec(rest))) {
         if (envs.pop() !== m[1].trim()) return false;
