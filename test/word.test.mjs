@@ -999,6 +999,18 @@ await ok('Word\'s headings without numbers open without numbers; numbered by the
   assert.ok(open(tiny(body('<w:numPr><w:numId w:val="0"/></w:numPr>'), st(NUM))).tex.includes('\\setcounter{secnumdepth}{0}'));
   // no headings: nothing to say
   assert.ok(!open(tiny(wp('Only text.'))).tex.includes('secnumdepth'));
+  // (review B3, W6) a style based on Heading 1 is a heading, numbered by its own list; a list's level
+  // naming the heading style numbers it; a level whose format is none numbers nothing
+  const rels = { 'word/_rels/document.xml.rels': '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rS" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rN" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>' };
+  const sty = (extra) => '<w:styles ' + NSW + '>' + [1, 2].map((l) => '<w:style w:type="paragraph" w:styleId="Heading' + l + '"><w:name w:val="heading ' + l + '"/></w:style>').join('') + (extra || '') + '</w:styles>';
+  const numb = (lvl0) => '<w:numbering ' + NSW + '><w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0">' + lvl0 + '</w:lvl></w:abstractNum><w:num w:numId="4"><w:abstractNumId w:val="1"/></w:num></w:numbering>';
+  const mine = '<w:style w:type="paragraph" w:styleId="MyHead"><w:name w:val="My Head"/><w:basedOn w:val="Heading1"/><w:pPr>' + NUM + '</w:pPr></w:style>';
+  const based = open(tiny('<w:p><w:pPr><w:pStyle w:val="MyHead"/></w:pPr><w:r><w:t>Numbered</w:t></w:r></w:p>' + wp('Text.') + h(2, 'Plain'), { ...rels, 'word/styles.xml': sty(mine), 'word/numbering.xml': numb('<w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>') }));
+  assert.ok(/\\section\{Numbered\}/.test(based.tex) && !based.tex.includes('secnumdepth'), based.tex);
+  const linked = open(tiny(body(), { ...rels, 'word/styles.xml': sty(), 'word/numbering.xml': numb('<w:numFmt w:val="decimal"/><w:pStyle w:val="Heading1"/><w:lvlText w:val="%1."/>') }));
+  assert.ok(!linked.tex.includes('secnumdepth'), linked.tex);
+  const none = open(tiny(body(NUM), { ...rels, 'word/styles.xml': sty(), 'word/numbering.xml': numb('<w:numFmt w:val="none"/><w:lvlText w:val=""/>') }));
+  assert.ok(none.tex.includes('\\setcounter{secnumdepth}{0}'), none.tex);
 });
 
 await ok('Heading 4 and 5 (\\paragraph, \\subparagraph) and Quotation go to Word as its Heading 4, Heading 5 and a quote, and Word\'s Heading 4 and 5 come back as \\paragraph and \\subparagraph', () => {
