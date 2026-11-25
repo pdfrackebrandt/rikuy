@@ -1052,12 +1052,33 @@ def fold_sweep(page):
     open_tab(page, 'Home')
 
 
+def focus_kept(page):
+    """Round 3: a button pressed by the keys that its own command disables (Bibliography once
+    there is one; Download PDF while TeX makes it) gives the page the keys and its caret back; a
+    disabled button had dropped the focus on the page's body, where the next keys typed nothing."""
+    doc = WRAP('First paragraph here.\n\nSecond paragraph here.')
+    load_doc(page, doc)
+    click_text(page, 'Second paragraph here.', 22)
+    page.evaluate('() => window.rikuy.selectTab("references")'); settle(page, 150)
+    page.focus('#rc-bibliography'); page.keyboard.press('Enter'); settle(page, 300)
+    state = page.evaluate('() => [document.activeElement.id, document.getElementById("rc-bibliography").disabled]')
+    page.keyboard.type('Z'); settle(page, 200)
+    got = src(page)
+    check('Bibliography by the keys: the page has them back, and typing goes on at the caret', state == ['pages', True] and 'Second paragraph here.Z\n\n\\bibliography' in got, (state, got[40:160]))
+    page.evaluate('() => window.rikuy.selectTab("home")'); settle(page, 150)
+    page.focus('#rb-pdf'); page.keyboard.press('Enter'); settle(page, 200)
+    a = page.evaluate('document.activeElement.id')
+    page.keyboard.type('Y'); settle(page, 200)
+    check('Download PDF by the keys: the page keeps them while TeX runs', a == 'pages' and 'here.ZY' in src(page), (a, src(page)[60:140]))
+    page.evaluate('() => window.rikuy.togglePdf && window.rikuy.togglePdf(false)'); settle(page, 150)
+
+
 def run():
     # (python3 tabs.py widths fold_sweep: those parts alone)
     only = set(sys.argv[1:])
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (mouse_and_keys, contextual, widths, collapse, every_command, keys, search_box, context_menu, kit, round_trips, kept_braces, review_fixes, word_layout, fold_sweep):
+        for f in (mouse_and_keys, contextual, widths, collapse, every_command, keys, search_box, context_menu, kit, round_trips, kept_braces, review_fixes, word_layout, fold_sweep, focus_kept):
             if only and f.__name__ not in only: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])

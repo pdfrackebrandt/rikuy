@@ -404,4 +404,24 @@ ok('Dogfood: Replace without Match case keeps the case of what it replaces, as W
   assert.equal(caseLike('42', 'x'), 'x');
 });
 
+ok('Round 3: Arabic and Hebrew as Word finds them: marks, kashida and alef hamza passed over unless matched', () => {
+  const T = 'كَتَبَ الدرس. كتب. كــتب. أحمد واحمد. שָׁלוֹם שלום. abc';
+  const all = (q, o = {}) => [...T.matchAll(compile(q, o).re)].map((m) => m[0]);
+  assert.deepEqual(all('كتب'), ['كَتَبَ', 'كتب', 'كــتب']);
+  assert.deepEqual(all('كَتَبَ'), ['كَتَبَ', 'كتب', 'كــتب']);
+  assert.deepEqual(all('كتب', { matchDiacritics: true }), ['كتب', 'كــتب']);
+  assert.deepEqual(all('كَتَبَ', { matchDiacritics: true }), ['كَتَبَ']);
+  assert.deepEqual(all('كتب', { matchKashida: true }), ['كَتَبَ', 'كتب']);
+  assert.deepEqual(all('كــتب'), ['كــتب']);
+  assert.deepEqual(all('أحمد'), ['أحمد', 'احمد']);
+  assert.deepEqual(all('احمد', { matchAlefHamza: true }), ['احمد']);
+  assert.deepEqual(all('שלום'), ['שָׁלוֹם', 'שלום']);
+  assert.deepEqual(all('كتب', { wholeWord: true }), ['كَتَبَ', 'كتب', 'كــتب']);
+  assert.deepEqual(all('َ'), ['َ', 'َ', 'َ']);
+  // (a formula's LaTeX, the wildcards and regular expressions keep their own rules)
+  assert.deepEqual(all('كتب', { literal: true }), ['كتب']);
+  assert.deepEqual(all('كتب', { regex: true }), ['كتب']);
+  assert.deepEqual(all('abc'), ['abc']);
+});
+
 console.log('find: ' + n + ' groups of checks passed');

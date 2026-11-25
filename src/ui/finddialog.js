@@ -8,7 +8,13 @@ import { $, mk } from './dom.js';
 import { openMenu, accessKeys } from './kit.js';
 import { FORMATS, FMT } from '../find.js';
 
-const OPTS = [['matchCase', 'Match case'], ['wholeWord', 'Find whole words only'], ['wildcards', 'Use wildcards'], ['regex', 'Use regular expressions'], ['source', 'In LaTeX source'], ['insel', 'In selection']];
+const OPTS = [['matchCase', 'Match case'], ['wholeWord', 'Find whole words only'], ['wildcards', 'Use wildcards'], ['regex', 'Use regular expressions'], ['source', 'In LaTeX source'], ['insel', 'In selection'],
+  ['matchKashida', 'Match kashida'], ['matchDiacritics', 'Match diacritics'], ['matchAlefHamza', 'Match alef hamza']];
+// (Word's options for Arabic and Hebrew text, shown where the document or the query has some, as
+// Word shows them where such a language is set up: src/find.js says what each changes)
+const RTL_OPTS = ['matchKashida', 'matchDiacritics', 'matchAlefHamza'];
+const RTL_TEXT = /[\u0590-\u05FF\u0600-\u06FF]/;
+const rtlHere = (app, q) => RTL_TEXT.test(q || '') || [...app.files.entries()].some(([f, t]) => typeof t === 'string' && /\.(tex|ltx|sty|cls|bib)$/i.test(f) && RTL_TEXT.test(t));
 const WHAT = [['page', 'Page'], ['section', 'Section'], ['footnote', 'Footnote'], ['equation', 'Equation'], ['figure', 'Figure'], ['table', 'Table'], ['comment', 'Comment'], ['label', 'Label']];
 const SPECIAL = [['^p', 'Paragraph mark'], ['^?', 'Any character'], ['^#', 'Any digit'], ['^$', 'Any letter'], ['^w', 'White space'], ['^s', 'Nonbreaking space'], ['^=', 'En dash'], ['^+', 'Em dash'], ['^^', 'Caret character'], ['^&', 'Find what text (in Replace with)']];
 const WILD = [['^p', 'Paragraph mark'], ['?', 'Any character'], ['*', 'Any run of characters'], ['@', 'One or more of the one before'], ['{2,4}', 'From 2 to 4 of the one before'], ['[a-z]', 'One of these characters'], ['[!a-z]', 'Not one of these'], ['<', 'Beginning of a word'], ['>', 'End of a word'], ['()', 'A group, \\1 in Replace with']];
@@ -302,6 +308,8 @@ export function findDialogSync(app) {
   for (const [k] of OPTS) D.O[k].checked = !!fs.o[k];
   D.O.insel.disabled = !fs.sel;
   D.O.insel.parentElement.classList.toggle('off', !fs.sel);
+  const rtl = rtlHere(app, fs.q);
+  for (const k of RTL_OPTS) D.O[k].parentElement.hidden = !rtl && !fs.o[k];
   const src = !!fs.o.source;
   D.bFmt.disabled = src;
   const names = FORMATS.filter((f) => fs.o.fmt & FMT[f.id]).map((f) => f.name);
