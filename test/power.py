@@ -529,9 +529,18 @@ def modes(page):
 
 def keytips(page):
     load_doc(page, MATH)
+    page.evaluate('''() => { window.__log = []; const t0 = performance.now(); const L = (n) => (...a) => { if (!window.__log) return; window.__log.push([Math.round(performance.now() - t0), n, String(getSelection()), JSON.stringify(window.rikuy.caretNow && window.rikuy.caretNow()), new Error().stack.split('\\n').slice(2, 7).join(' < ')]); };
+      for (const m of ['removeAllRanges', 'addRange', 'collapse', 'setBaseAndExtent', 'selectAllChildren', 'extend']) { const o = Selection.prototype[m]; Selection.prototype[m] = function (...a) { L('sel.' + m)(); return o.apply(this, a); }; }
+      const R = window.rikuy; for (const m of ['restoreCaret', 'goToPage', 'goTo', 'rebuild', 'relayout', 'setCaret', 'placeCaret', 'focusPage']) { if (typeof R[m] === 'function') { const o = R[m]; R[m] = function (...a) { L('app.' + m)(); return o.apply(this, a); }; } }
+      document.addEventListener('keydown', (e) => L('key ' + e.key)(), true); document.addEventListener('selectionchange', () => L('selchange')()); }''')
     select_text(page, 'beta')
     for k in ('F10', 'h', '1'): key(page, k, 250)
-    check('keytips: F10, H, 1 makes the selection bold', '\\textbf{beta}' in src(page), src(page)[60:110])
+    ok = '\\textbf{beta}' in src(page)
+    check('keytips: F10, H, 1 makes the selection bold', ok, src(page)[60:110])
+    if not ok:
+        for x in page.evaluate('window.__log'): print('DIAG', x)
+        print('DIAG compiling', page.evaluate('[window.rikuy.compiling, window.rikuy.view, document.activeElement && document.activeElement.id]'))
+    page.evaluate('''() => { window.__log = null; }''')
     load_doc(page, MATH)
     click_text(page, 'beta', 2)
     # (z and a start no KeyTip of Insert's; J and W do since Word's gaps were built)
