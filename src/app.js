@@ -2339,7 +2339,41 @@ class App {
       // "Press Backspace again")
       if (atom) { this.arm({ ...atom, key: /Backward/.test(type) ? 'Backspace' : 'Delete' }); return; }
     }
-    const edits = this.deletionEdits(f, a, b, !c.collapsed);
+    let edits = this.deletionEdits(f, a, b, !c.collapsed);
+    // One key that takes the line end, or a \\ line break, next to a review comment's line or a
+    // comment ("here.\n% comment (Ana): note\n more.", Backspace at "more."): the words meet, and
+    // the comments stay, each on a line of its own, the line before them ended with % so TeX sets
+    // no space there. The comment line was joined onto the text line ("here.% comment"), which the
+    // review pane no longer reads as a comment, or deleted with the line ends round it.
+    let kept = false;
+    if (c.collapsed && edits.length === 1 && edits[0].s === a && edits[0].e === b && !edits[0].t) {
+      const S = this.src(f), line = (p) => S.slice(S.lastIndexOf('\n', p - 1) + 1, p), blankAfter = (p) => { const z = S.indexOf('\n', p + 1); return !S.slice(p + 1, z < 0 ? S.length : z).trim(); };
+      // (the run of spaces, line ends and whole comment lines the deleted characters stand in, never
+      // over a blank line: a paragraph break is no part of it)
+      let s0 = a, e0 = b;
+      for (let g = 0; g < 400 && s0 > 0; g++) {
+        const ch = S[s0 - 1];
+        if (ch === ' ' || ch === '\t' || ch === '\r') s0--;
+        else if (ch === '\n') { if (!line(s0 - 1).trim()) break; s0--; }
+        else if (/^[ \t]*%/.test(line(s0))) s0 -= line(s0).length;
+        else break;
+      }
+      for (let g = 0; g < 400 && e0 < S.length; g++) {
+        const ch = S[e0];
+        if (ch === ' ' || ch === '\t' || ch === '\r') e0++;
+        else if (ch === '\n') { if (blankAfter(e0)) break; e0++; }
+        else if (!line(e0).trim() && ch === '%') { const z = S.indexOf('\n', e0); e0 = z < 0 ? S.length : z; }
+        else break;
+      }
+      const X = S.slice(s0, e0), CM = /(^|[^\\])((?:\\\\)*)%([^\n]*)/g, cms = [];
+      const rest = X.replace(CM, (m, x, y, z) => { if (z.replace(/\r$/, '').trim()) cms.push('%' + z.replace(/\r$/, '')); return x + y; });
+      // (a comment takes its own line end: the blank line TeX would see is read without them)
+      if (cms.length && /^\s*(?:\\\\\s*)?$/.test(rest) && !/\n[ \t\r]*\n/.test(X.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*(\r?\n)?/g, '$1$2'))) {
+        const NL = /\r\n/.test(S) ? '\r\n' : '\n';
+        edits = [{ f, s: s0, e: e0, t: (s0 === 0 || S[s0 - 1] === '\n' ? '' : '%' + NL) + cms.join(NL) + NL }];
+        a = s0; kept = true;
+      }
+    }
     if (!edits.length) {
       const p = /Backward/.test(type) || !c.collapsed ? a : b;
       this.restoreCaret({ f, p, bias: /Backward/.test(type) ? -1 : 1 });
@@ -2348,7 +2382,8 @@ class App {
     const removedBefore = edits.filter((ed) => ed.e <= a).reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
     let p = a - removedBefore;
     const first = edits[0];
-    if (first.s >= a) p = first.s + first.t.length;
+    // (the caret where the words meet, before the comments kept)
+    if (first.s >= a && !kept) p = first.s + first.t.length;
     this.commit(edits, { f, p, bias: -1 }, 'del');
     // (an empty \textbf{} left where the deleted words were: gone once the caret leaves it untyped)
     if (this.watchDeleted) this.watchDeleted(f, p);

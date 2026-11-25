@@ -290,6 +290,24 @@ def r2_review(p):
     j = src(page)
     page.evaluate("window.rikuy.rejectHere()"); settle(page, 300, full=True)
     check('r2_review: Backspace joining two paragraphs, then Reject: the paragraphs apart again', j != D and src(page) == D, repr(j[40:90]) + ' / ' + repr(src(page)[40:90]))
+    # Backspace at the words after a review comment's line, or after a \\\\ and a comment: the words
+    # meet and the comment keeps its own line. It was joined onto the text line ("here.% comment"),
+    # where the pane no longer reads it, or deleted with the line ends round it.
+    for name, doc, at, want in (
+            ('the line after a review comment', 'Text here.\n% comment (Ana): note\n more.\n\nNext.', ('more.', 0), 'Text here.%\n% comment (Ana): note\nmore.\n\nNext.'),
+            ('a line break and a comment', 'Line\\\\% note\n more.\n\nNext.', ('more.', 0), 'Line%\n% note\nmore.\n\nNext.'),
+            ('a line break before a comment line', 'Line\\\\\n% comment (Bo): Shorter?\nmore.\n\nNext.', ('more.', 0), 'Line%\n% comment (Bo): Shorter?\nmore.\n\nNext.')):
+        for crlf in (False, True):
+            d = WRAP(doc).replace('\n', '\r\n') if crlf else WRAP(doc)
+            fresh(page, d); click_text(page, *at); page.keyboard.press('Backspace'); settle(page, 250)
+            w = WRAP(want).replace('\n', '\r\n') if crlf else WRAP(want)
+            check('r2_review: Backspace at %s%s: the words meet, the comment on its own line' % (name, ' (CRLF)' if crlf else ''), src(page) == w, repr(src(page)[40:]))
+        page.keyboard.type('X'); settle(page, 200)
+        check('r2_review: the caret where the words met (%s)' % name, src(page) == WRAP(want).replace('\n', '\r\n').replace('%\r\n%', 'X%\r\n%', 1), repr(src(page)[40:]))
+    fresh(page, WRAP('Text here.\n% comment (Ana): note\n more.\n\nNext.')); click_text(page, 'more.', 5)
+    for k in range(6): page.keyboard.press('Backspace'); settle(page, 150)
+    check('r2_review: a word after a comment line deleted letter by letter, then one more Backspace: the comment stays', '% comment (Ana): note\n' in src(page) and 'Text here.' in src(page), repr(src(page)[40:]))
+    check('r2_review: the review pane still finds the comment', 'note' in str(page.evaluate("JSON.stringify(window.rikuy.allComments())")), page.evaluate("JSON.stringify(window.rikuy.allComments())")[:200])
     check('r2_review: no page errors', not errors, errors[:3])
     browser.close()
 
