@@ -228,11 +228,6 @@ export class CaretIndex {
       if (ph && !(bias < 0 && cands.some((c) => !c.seg.ph && p > c.a))) E = ph;
     }
     if (!E) {
-      // (a place inside a block the page draws as an empty paragraph, the empty center a deleted
-      // picture leaves: that paragraph, where the caret then shows and what is typed goes; it was
-      // shown at the next paragraph's start while typing went into the empty one)
-      const before = arr[last];
-      if (before && before.seg.ph && before.B.f === before.seg.f && p <= before.B.e) return { node: before.span.firstChild, offset: before.len, entry: before };
       const next = arr[last + 1];
       if (next) return { node: next.span.firstChild, offset: 0, entry: next, inexact: true };
       const prev = arr[last];

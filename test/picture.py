@@ -1035,6 +1035,34 @@ def hunt(page):
     page.keyboard.type('Z'); settle(page, 200)
     check('a figure\'s picture deleted, then typing: the letter where the caret shows, the caption\'s start', '\\caption{ZCap}' in src(page) and '\\includegraphics' not in src(page), src(page)[60:])
 
+    # (review B1) an object in the line deleted keeps the place typing goes to as before: a run of
+    # spaces drawn as one and a paragraph's end (the figure rule above dropped it for every object:
+    # "See  Zhere", the next paragraph typed into)
+    inl = lambda b: WRAP(b, '\\usepackage{graphicx}\n\\usepackage{amsmath}\n')
+    after_math = "() => { const a = document.querySelector('#pages .a-math'); const r = document.createRange(); r.setStartAfter(a); r.collapse(true); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }"
+    for d, how, keys, want in (('See $x^2$ here now.', 'math', [], 'See Z here now.'), ('See it here $x^2$\n\nNext one.', 'math', [], 'See it here Z\n\nNext one.'),
+                               ('Before \\includegraphics[width=1cm]{a.png} it here.', 'pic', [], 'Before Z it here.'), ('Before \\includegraphics[width=1cm]{a.png} it here.', 'pic', ['Delete'], 'Before Zit here.'),
+                               ('Before \\includegraphics[width=1cm]{a.png} it here.', 'pic', ['Backspace'], 'BeforeZ it here.'), ('Before it here \\includegraphics[width=1cm]{a.png}\n\nAfter it here.', 'pic', ['Backspace'], 'Before it hereZ\n\nAfter it here.')):
+        load_doc(page, inl(d)); settle(page, 300)
+        if how == 'math':
+            page.evaluate(after_math); settle(page, 150)
+            page.keyboard.press('Backspace'); settle(page, 150); page.keyboard.press('Backspace'); settle(page, 200)
+        else:
+            sel_pic()(page); page.keyboard.press('Delete'); settle(page, 200)
+        for k in keys: page.keyboard.press(k); settle(page, 150)
+        page.keyboard.type('Z'); settle(page, 200)
+        check('an object in the line deleted, ' + ' '.join(keys) + ' Z: ' + repr(d[:30]), src(page) == inl(want), src(page)[80:])
+    # (review S4) a float's picture deleted with nothing else in the float: the float goes (it stayed,
+    # drawn nowhere); a center of its own in a float with a caption goes with the picture
+    for d, want in (('Before it here.\n\n\\begin{figure}[h]\n\\centering\n\\includegraphics[width=0.3\\linewidth]{a.png}\n\\label{fig:x}\n\\end{figure}\n\nAfter it here.', 'Before it here.\n\nAfter it here.'),
+                    ('Before it here.\n\\begin{figure}[h]\n\\includegraphics[width=0.3\\linewidth]{a.png}\n\\end{figure}\nAfter it here.', 'Before it here.\nAfter it here.'),
+                    ('Before it here.\n\n\\begin{figure}[h]\n\\begin{center}\n\\includegraphics[width=0.3\\linewidth]{a.png}\n\\end{center}\n\\caption{Cap}\n\\end{figure}\n\nAfter it here.', 'Before it here.\n\n\\begin{figure}[h]\n\\caption{Cap}\n\\end{figure}\n\nAfter it here.')):
+        load_doc(page, WRAP(d)); settle(page, 300)
+        sel_pic()(page); page.keyboard.press('Delete'); settle(page, 200)
+        ok = src(page) == WRAP(want)
+        page.keyboard.press('Control+z'); settle(page, 200)
+        check('a float\'s only picture deleted takes what is left empty with it, one undo back: ' + repr(d[17:60]), ok and src(page) == WRAP(d), want)
+
 
 def run():
     with sync_playwright() as p:

@@ -1859,15 +1859,30 @@ class App {
       const A = this.armed, sel = getSelection();
       const info = A.el && A.el.isConnected ? atomOfEl(A.el) : null;
       const still = info && info.s != null && sel.rangeCount && sel.getRangeAt(0).intersectsNode(A.el);
+      // (a picture of a float: what it stands in, read while it is still selected)
+      const H = still && A.kind === 'img' && this.picHere ? this.picHere() : null;
       this.disarm();
       if (still) {
         e.preventDefault();
-        this.commit([{ f: info.f, s: info.s, e: info.e, t: '' }], { f: info.f, p: info.s }, 'del-atom');
-        // (where nothing is drawn now, as the line a figure's picture leaves above its caption,
-        // what is typed goes where the caret shows: the caption's start. It went to the line
-        // above, unseen, while the caret blinked in the caption. An empty paragraph left keeps it.)
-        const P = this.pending, ph = P && P.node && P.node.parentElement && P.node.parentElement.closest('span.t.ph');
-        if (P && P.node && !ph) this.pending = null;
+        // (a float's center or the whole float left with nothing in it goes with the picture)
+        const cut = H && this.picDeleteEdit ? this.picDeleteEdit(H, info) : null;
+        if (cut) this.commit([cut.edit], cut.caret, 'del-atom');
+        else this.commit([{ f: info.f, s: info.s, e: info.e, t: '' }], { f: info.f, p: info.s }, 'del-atom');
+        // (a float's picture: the place it leaves above the caption is drawn nowhere, and what is
+        // typed goes where the caret shows, the caption's start; it went to that place, unseen.
+        // Anything else keeps its place, as a run of spaces drawn as one or a paragraph's end.)
+        const P = this.pending, on = P && P.node && P.node.parentElement;
+        if (H && H.P.anc.float && on && on.closest('.flt') && !on.closest('span.t.ph')) this.pending = null;
+        // (a picture alone in its center: the caret in the empty paragraph it leaves, where the
+        // page draws it, what is typed still going where the picture stood; it showed at the next
+        // paragraph's start while typing went into the empty one)
+        else if (!cut) {
+          const S = this.src(info.f), m = /\\begin\s*\{([A-Za-z]+\*?)\}\s*$/.exec(S.slice(Math.max(0, info.s - 80), info.s));
+          if (m && S.slice(info.s, info.s + 80).replace(/^\s*/, '').startsWith('\\end{' + m[1] + '}')) {
+            const r = this.index.find(info.f, info.s - m[0].length + m[0].trimEnd().length, -1), sp = r && r.node && r.node.parentElement;
+            if (sp && sp.closest('span.t.ph')) { getSelection().collapse(r.node, r.offset); this.pending = { f: info.f, p: info.s, node: r.node, offset: r.offset }; }
+          }
+        }
         return;
       }
     }
@@ -2354,13 +2369,49 @@ class App {
       // or the words the break stood between ("betagamma"). The sides stay as they were: two
       // paragraphs where a blank line stood, one (a line end, a space) where none did.
       if (!vr.length) {
-        const S1 = this.src(f), mid = S1.slice(a, b);
-        const m = /\s*\\(?:newpage|clearpage|cleardoublepage|pagebreak)(?![A-Za-z@])(?:\[[0-4]?\])?(?:\s*\\(?:newpage|clearpage|cleardoublepage|pagebreak|null)(?![A-Za-z@])(?:\[[0-4]?\])?)*\s*/.exec(mid);
-        const rest = m ? mid.slice(0, m.index) + mid.slice(m.index + m[0].length) : '';
-        if (m && !mid.includes('%') && !/\\(?:newpage|clearpage|cleardoublepage|pagebreak)(?![A-Za-z@])/.test(rest)) {
-          const NL = /\r\n/.test(S1) ? '\r\n' : '\n', s = a + m.index, e = s + m[0].length;
-          const t = /\n[ \t\r]*\n/.test(m[0]) ? NL + NL : NL, back = /Backward/.test(type);
-          this.commit([{ f, s, e, t }], back ? { f, p: b - (e - s) + t.length, bias: 1 } : { f, p: a, bias: -1 }, 'del');
+        const S1 = this.src(f), mid = S1.slice(a, b), NL = /\r\n/.test(S1) ? '\r\n' : '\n', back = /Backward/.test(type);
+        // (a break's optional argument and empty braces go with it: \pagebreak [4] left "[4]" to print)
+        const TOK = String.raw`\\(?:newpage|clearpage|cleardoublepage|pagebreak|null)(?![A-Za-z@])(?:[ \t]*\[[0-4]?\])?(?:\{\})?`;
+        const isBreak = (x) => !/^\\null/.test(x);
+        const toEdits = () => {
+          // (no comment in the stretch: the run of breaks and the spaces round it, one line end or a
+          // blank line in their place)
+          if (!mid.includes('%')) {
+            const m = new RegExp(String.raw`\s*${TOK}(?:\s*${TOK})*\s*`).exec(mid);
+            if (!m || ![...m[0].matchAll(new RegExp(TOK, 'g'))].some((x) => isBreak(x[0]))) return null;
+            const rest = mid.slice(0, m.index) + mid.slice(m.index + m[0].length);
+            if (new RegExp(TOK).test(rest)) return null;
+            const s = a + m.index;
+            return [{ f, s, e: s + m[0].length, t: /\n[ \t\r]*\n/.test(m[0]) ? NL + NL : NL }];
+          }
+          // (a comment beside it, "\newpage % break here" or a "% ----" line: each break alone goes,
+          // its line too where nothing else is on it; the comments stay. The whole stretch went,
+          // the comment with it, and the paragraphs joined)
+          const out = [];
+          for (const x of mid.matchAll(new RegExp(TOK, 'g'))) {
+            const p = a + x.index, ls = S1.lastIndexOf('\n', p - 1) + 1;
+            if (/(?:^|[^\\])(?:\\\\)*%/.test(S1.slice(ls, p))) continue;
+            out.push({ s: p, e: p + x[0].length, br: isBreak(x[0]) });
+          }
+          if (!out.some((x) => x.br)) return null;
+          const edits = [];
+          for (const x of out) {
+            const ls = S1.lastIndexOf('\n', x.s - 1) + 1, nl = S1.indexOf('\n', x.e), le = nl < 0 ? S1.length : nl;
+            const mine = out.filter((y) => y.s >= ls && y.e <= le);
+            let line = S1.slice(ls, le);
+            for (const y of [...mine].reverse()) line = line.slice(0, y.s - ls) + line.slice(y.e - ls);
+            if (!line.trim()) { if (mine[0] === x) edits.push({ f, s: ls, e: nl < 0 ? le : nl + 1, t: '' }); continue; }
+            let e = x.e;
+            while (e < le && /[ \t]/.test(S1[e])) e++;
+            edits.push({ f, s: x.s, e, t: '' });
+          }
+          return edits;
+        };
+        // (a break inside a command's braces, \afterpage{\clearpage}, is that command's)
+        const E = toEdits();
+        const inside = E && E.some((x) => /\{\s*$/.test(S1.slice(Math.max(0, x.s - 40), x.s)) && /^\s*\}/.test(S1.slice(x.e, x.e + 40)));
+        if (E && E.length && !inside) {
+          this.commit(E, back ? { f, p: mapPos(E, b, 1), bias: 1 } : { f, p: a, bias: -1 }, 'del');
           return;
         }
       }
@@ -3278,8 +3329,20 @@ class App {
     // (a browser's Copy Image, and a picture copied in Word, put the picture's <img> tag beside its
     // file: HTML with a picture and no words is the picture, which the HTML paste dropped, so
     // nothing came)
-    const onlyPic = /<img\b/i.test(html) && !html.replace(/<(style|script|title|head)\b[\s\S]*?<\/\1>|<!--[\s\S]*?-->|<[^>]*>|&nbsp;/gi, '').trim();
-    const imgs = !plain.trim() && (!html || onlyPic) ? [...(dt.files || [])].filter((f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type)) : [];
+    // (read in one pass: a page's copied HTML with openers never closed made a pattern rescan it)
+    const words = (h) => {
+      const L = h.toLowerCase(), re = /<(style|script|title|head)\b/g;
+      let out = '', i = 0;
+      for (let x; (re.lastIndex = i, x = re.exec(L));) {
+        const end = L.indexOf('</' + x[1], x.index), gt = end < 0 ? -1 : L.indexOf('>', end);
+        out += h.slice(i, x.index);
+        if (gt < 0) { out += h.slice(x.index); i = h.length; break; }
+        i = gt + 1;
+      }
+      return (out + h.slice(i)).replace(/<[^<>]*>|&nbsp;/g, '').trim();
+    };
+    const files = [...(dt.files || [])].filter((f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type));
+    const imgs = files.length && !plain.trim() && (!html || (/<img\b/i.test(html) && !words(html))) ? files : [];
     if (imgs.length) { this.openFiles(imgs.map((f, i) => new File([f], 'pasted-' + Date.now().toString(36) + (i ? '-' + i : '') + '.' + f.type.slice(6).replace('jpeg', 'jpg'), { type: f.type })), undefined, { fresh: true }); return; }
     let latex = '';
     try { latex = dt.getData('text/x-galley-latex') || ''; } catch (err) { latex = ''; }
