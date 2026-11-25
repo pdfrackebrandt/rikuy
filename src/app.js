@@ -4206,7 +4206,9 @@ class App {
         if (ch === '%') { const n = v.indexOf('\n', i); i = n < 0 ? v.length : n; continue; }
         if (ch === '\\') {
           if (v[i + 1] === '\\' && !d && !env) {
-            const m = /^\s*\*?\s*(\[[^\][{}]*\])?/.exec(v.slice(i + 2, i + 60)), y = i + 2 + (m && (m[1] || m[0].includes('*')) ? m[0].length : 0);
+            // (its * after any spaces, as \@ifstar reads it; its [length] only right after it or the
+            // *, as amsmath's \new@ifnextchar reads it: a row may start with [u, v])
+            const m = /^(?:\s*\*)?(?:\[[^\][{}]*\])?/.exec(v.slice(i + 2, i + 60)), y = i + 2 + (m ? m[0].length : 0);
             cuts.push([i, y, 1]);
             i = y - 1;
             continue;
@@ -4288,7 +4290,11 @@ class App {
         const v = ta.value, ind = /^[ \t]*/.exec(v.slice(v.lastIndexOf('\n', at - 1) + 1))[0];
         const lines = inner.split('\n'), cut = Math.min(...lines.slice(1).filter((l) => l.trim()).map((l) => /^[ \t]*/.exec(l)[0].length));
         if (lines.length > 1 && Number.isFinite(cut)) inner = lines.map((l, k) => (k && l.trim() ? ind + l.slice(cut) : l)).join('\n');
-        const before = v.slice(0, at).split('\\\\').pop(), after = v.slice(at).split('\\\\')[0];
+        // (the caret's row as the box's row breaks cut it, a \\'s [2pt] or * with the break: split on
+        // \\ alone, the [2pt] was words before the caret, and an empty numbered row came first)
+        let rs = 0, re = v.length;
+        for (const [x, y, row] of cutsOf(v)) { if (!row) continue; if (y <= at) rs = y; else if (x >= at) { re = x; break; } }
+        const before = v.slice(rs, at), after = v.slice(at, re);
         // (one row goes into the caret's row only where the row then has no more columns than its
         // equation takes, alignat{n} 2n, eqnarray 3; else it is a row of its own, as before)
         const fits = !many && rowOf(v, at).amps + cutsOf(inner).filter((x) => !x[2]).length < (opts.cols ? opts.cols() : Infinity);

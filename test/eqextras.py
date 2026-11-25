@@ -143,6 +143,24 @@ with sync_playwright() as p:
     check('one row pasted mid row into alignat{1}: a row of its own (two & in the row stopped TeX)', got[0] == '  a &= b \\\\\n  c &= \\\\\n  x &= y \\\\\n  d', got[0])
     check('and into eqnarray: a row of its own', got[1] == '  a &=& b \\\\\n  c &=& \\\\\n  x &=& y \\\\\n  d', got[1])
     check('a paste at the start of the row after \\\\[2pt]: after the [2pt], which stays the row break\'s', '\\\\[2pt]\n  x &= yc &= d' in got[2], got[2])
+    # (rows pasted there: no empty row first, which TeX numbered; and a row that starts with [u, v]
+    # right after a line break of its own is a row, not the break's spacing, which amsmath reads only
+    # right after \\ or \\*)
+    got = []
+    for doc, own, go, lefts in ((ALG.replace('a &= b \\\\\n', 'a &= b \\\\[2pt]\n'), '\\begin{align}\n  x &= y \\\\\n  z &= w\n\\end{align}', 'c', 1),
+                                (ALG.replace('a &= b \\\\\n', 'a &= b \\\\*\n'), '\\begin{align}\n  x &= y \\\\\n  z &= w\n\\end{align}', 'c', 1),
+                                (ALG.replace('c &= d', '[u, v] &= d'), '$x &= y$', 'd', 3)):
+        load_doc(page, doc)
+        page.locator('.it.dm').nth(0).click()
+        page.wait_for_selector('#pop-field', timeout=10000); settle(page, 300)
+        page.evaluate(GO, go)
+        for _ in range(lefts): k.press('ArrowLeft'); settle(page, 60)
+        page.evaluate(PASTE, [' x ', own]); settle(page, 400, full=True)
+        got.append(ta())
+        k.press('Escape'); settle(page, 300)
+    check('rows pasted at the start of the row after \\\\[2pt]: no empty row before them', got[0] == '  a &= b \\\\[2pt]\n  x &= y \\\\\n  z &= w \\\\\n  c &= d', got[0])
+    check('and after \\\\*', got[1] == '  a &= b \\\\*\n  x &= y \\\\\n  z &= w \\\\\n  c &= d', got[1])
+    check('a paste at the start of a row that starts with [u, v]: before it, the row\'s own words', '\\\\\n  x &= y[u, v] &= d' in got[2], got[2])
     load_doc(page, keep)
     open_inline()
     # paste into the LaTeX box
