@@ -337,6 +337,53 @@ def cross_files():
         page.keyboard.press('Control+z')
         settle(page, 200)
         check('cross files: and one undo brings both files back', all(src(page, f) == L[f] for f in L), {f: src(page, f) for f in L})
+        # (round 3) Shift+Enter there: the selection goes and a line break \\ stands at its start where
+        # the two files' remains meet in one paragraph, in one step; it deleted and wrote no break,
+        # the words running on. Where a blank line already parts them, the deletion alone.
+        P = {'main.tex': '\\documentclass{article}\n\\begin{document}\nSome words here \\input{part} and more.\n\\end{document}\n', 'part.tex': 'inner text of part'}
+        R = {'main.tex': '\\documentclass{article}\n\\begin{document}\nMain para.\n\n\\input{one}\n\nLast words here.\n\\end{document}\n', 'one.tex': 'First input file text.\n'}
+        for G, a, want, label in ((L, ['One alpha', 4, 'Two beta', 4], {'main.tex': L['main.tex'].replace('One alpha\n', 'One \\\\\n'), 'items.tex': L['items.tex'].replace('\\item Two ', '')}, 'into an \\input inside a list'),
+                                  (P, ['Some words', 5, 'inner text', 6], {'main.tex': P['main.tex'].replace('Some words here', 'Some \\\\\n'), 'part.tex': 'text of part'}, 'into an \\input in a paragraph'),
+                                  (R, ['First input', 6, 'Last words', 5], {'main.tex': R['main.tex'].replace('Last ', ''), 'one.tex': 'First \n'}, 'from an \\input\'s file into the paragraph after it (a blank line parts them)')):
+            load_doc(page, G)
+            page.evaluate(SEL, a)
+            settle(page)
+            page.keyboard.press('Shift+Enter')
+            settle(page, 200)
+            got = {f: src(page, f) for f in G}
+            check('cross files: Shift+Enter over a selection %s: each file\'s part goes, a line break where they meet' % label, got == want, got)
+            page.keyboard.press('Control+z')
+            settle(page, 200)
+            check('cross files: and one undo brings both files back (%s)' % label, all(src(page, f) == G[f] for f in G), {f: src(page, f) for f in G})
+        # (review of round 3) from a paragraph's start a \\ stands where nothing comes before it on its
+        # line, which stops TeX ("There's no line here to end"): the deletion alone there. In one file,
+        # Shift+Enter at a paragraph's start writes \mbox{}\\, an empty line as Word's
+        T = os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist', 'tex', 'tree.wasm'))
+        ONE = '\\documentclass{article}\n\\begin{document}\nAlpha para.\n\nBeta words.\n\\end{document}\n'
+        # (review of round 3, verification) decided by what the page draws before the caret in its
+        # paragraph: after a heading, an environment's end, a \vspace or \maketitle as after a blank
+        # line, Shift+Enter is Enter (an empty line on the page), never a bare \\
+        PS = {'main.tex': P['main.tex'].replace('\\begin{document}\n', '\\begin{document}\n\\section{Head}\n'), 'part.tex': P['part.tex']}
+        D1 = lambda b: '\\documentclass{article}\n\\title{T}\\author{A}\n\\begin{document}\n' + b + '\n\\end{document}\n'
+        cases = [(P, ['Some words', 0, 'inner text', 6], {'main.tex': P['main.tex'].replace('Some words here', ''), 'part.tex': 'text of part'}, 'from a paragraph\'s start into an \\input file'),
+                 (PS, ['Some words', 0, 'inner text', 6], {'main.tex': PS['main.tex'].replace('Some words here', ''), 'part.tex': 'text of part'}, 'from a paragraph\'s start after a heading into an \\input file')]
+        for name, body in (('after a blank line', 'Alpha para.\n\nBeta words.'), ('after \\section', '\\section{Head}\\label{s}\nBeta words.'), ('after \\end{itemize}', '\\begin{itemize}\n\\item one\n\\end{itemize}\nBeta words.'),
+                           ('after \\vspace', 'Alpha.\n\n\\vspace{1cm}\nBeta words.'), ('after \\maketitle', '\\maketitle\nBeta words.')):
+            cases.append(({'main.tex': D1(body)}, ('Beta', 0), lambda got, d=D1(body): got['main.tex'].count('\\\\') == d.count('\\\\') and 'Beta words.' in got['main.tex'], 'at a paragraph\'s start ' + name))
+        for G, a, want, label in cases:
+            load_doc(page, G)
+            if isinstance(a, list): page.evaluate(SEL, a)
+            else: click_text(page, *a)
+            settle(page)
+            page.keyboard.press('Shift+Enter')
+            settle(page, 200)
+            got = {f: src(page, f) for f in G}
+            check('Shift+Enter %s: no bare \\\\ where nothing stands before it' % label, want(got) if callable(want) else got == want, got)
+            if T:
+                page.set_default_timeout(600000)
+                r = page.evaluate('async () => { const r = await window.rikuy.api.compile(); return [r.ok, r.problems.filter((p) => p.severity === "error").map((p) => p.message)]; }')
+                page.set_default_timeout(30000)
+                check('Shift+Enter %s: compiles, no TeX error' % label, r[0] and not r[1], r)
         # (review W1) from a heading's first letter: the heading goes whole, no \section{} left
         H = {'main.tex': '\\documentclass{article}\n\\begin{document}\n\\section{Intro}\nMain para one.\n\n\\input{a}\n\\end{document}\n', 'a.tex': 'A first.\n\nA second.\n'}
         load_doc(page, H)

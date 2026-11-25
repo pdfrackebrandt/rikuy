@@ -1710,6 +1710,8 @@ def run():
         browser, page, errors = open_page(p, width=1366, height=900)
         word_typing(page)
         check('no console errors (typing as in Word)', not errors, errors[:5])
+        crlf_enter(page)
+        check('no console errors (Enter in a CRLF file)', not errors, errors[:5])
         browser.close()
 
     bad = [r for r in results if not r[1]]
@@ -1771,6 +1773,29 @@ def enter_kept(page, w):
     got = page.evaluate("window.rikuy.rbRange ? window.rikuy.rbRange.toString() : null")
     check('a relayout with a dialog\'s field focused keeps what the dialog acts on (%d px)' % w, got == 'Second one', got)
     page.keyboard.press('Escape'); settle(page, 200)
+
+
+def crlf_enter(page):
+    """Enter on the page in a file written with Windows line ends (\\r\\n): its line breaks are
+    \\r\\n too, and Enter at a paragraph's start shows the empty paragraph and writes nothing, as in a
+    file with \\n. Enter wrote \\n, and at a paragraph's start a blank line, the file then had both."""
+    D = '\\documentclass{article}\r\n\\begin{document}\r\nAlpha beta gamma.\r\n\r\nDelta epsilon zeta.\r\n\\end{document}\r\n'
+    for name, at, off, keys, want in (('in a paragraph', 'beta', 2, ['Enter', 'X'], 'Alpha be\r\n\r\nXta gamma.'), ('at its end', 'gamma.', 6, ['Enter', 'New'], 'gamma.\r\n\r\nNew\r\n\r\nDelta'),
+                                      ('at its start', 'Delta', 0, ['Enter', 'X'], 'gamma.\r\n\r\nXDelta'), ('at the last one\'s end', 'zeta.', 5, ['Enter', 'Last'], 'zeta.\r\n\r\nLast\r\n\r\n\\end')):
+        load_doc(page, D); click_text(page, at, off)
+        for k in keys:
+            if k == 'Enter': page.keyboard.press('Enter'); settle(page, 100)
+            else: page.keyboard.type(k)
+        settle(page, 300)
+        s = src(page)
+        check('Enter %s of a CRLF file: \\r\\n written, the words where typed' % name, want in s and not re.search(r'(^|[^\r])\n', s), repr(s[40:130]))
+    # another version put back whole (a version or a commit restored, a coauthor's or another tab's
+    # text) keeps its own line ends: only what is typed or written here takes the file's
+    LF = D.replace('\r\n', '\n').replace('gamma', 'GAMMA')
+    for kind in ('restore', 'merge', 'other-tab'):
+        load_doc(page, D)
+        page.evaluate("([t, k]) => window.rikuy.commit([{ f: 'main.tex', s: 0, e: window.rikuy.src('main.tex').length, t }], null, k)", [LF, kind]); settle(page, 200)
+        check('a %s of a version with \\n line ends into a CRLF file: that version\'s bytes' % kind, src(page) == LF, repr(src(page)[40:90]))
 
 
 # A short document with what a paragraph's edges meet: a heading, bold and italic words, an inline

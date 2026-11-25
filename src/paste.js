@@ -4,11 +4,48 @@
 import { escapeTeX } from './editor.js';
 
 const BLOCK = /^(P|DIV|H[1-6]|LI|UL|OL|BLOCKQUOTE|TABLE|TR|PRE|SECTION|ARTICLE|HEADER|FOOTER|FIGURE|DL|DT|DD|CENTER|ADDRESS|HR)$/;
+// what no format's braces may hold: an environment, a display, a heading, an item
+const BLOCKY = /\\begin\s*\{|\\\[|\$\$|\\(?:part|chapter|(?:sub)*section|(?:sub)?paragraph)\*?\s*\{|\\item(?![A-Za-z])/;
 
 function styleOf(el) {
   const st = (el.getAttribute && el.getAttribute('style')) || '';
   const get = (p) => { const m = new RegExp('(?:^|;)\\s*' + p + '\\s*:\\s*([^;]+)', 'i').exec(st); return m ? m[1].trim().toLowerCase() : ''; };
-  return { weight: get('font-weight'), fstyle: get('font-style'), deco: get('text-decoration') || get('text-decoration-line'), valign: get('vertical-align'), family: get('font-family') };
+  return { weight: get('font-weight'), fstyle: get('font-style'), deco: get('text-decoration') || get('text-decoration-line'), valign: get('vertical-align'), family: get('font-family'),
+    color: get('color') || (el.tagName === 'FONT' && el.getAttribute('color')) || '', bg: get('background-color') || get('background'), hl: get('mso-highlight') };
+}
+
+// A CSS colour as six hex digits (null for none, transparent, Word's automatic or a name not known
+// here): what Word, Google Docs and a browser's copy write, #C00000, rgb(192, 0, 0), red, windowtext
+const CSS_NAMES = { black: '000000', windowtext: '000000', white: 'FFFFFF', window: 'FFFFFF', red: 'FF0000', green: '008000', lime: '00FF00', blue: '0000FF', yellow: 'FFFF00',
+  cyan: '00FFFF', aqua: '00FFFF', magenta: 'FF00FF', fuchsia: 'FF00FF', maroon: '800000', navy: '000080', olive: '808000', purple: '800080', teal: '008080', silver: 'C0C0C0',
+  gray: '808080', grey: '808080', orange: 'FFA500', darkblue: '00008B', darkred: '8B0000', darkgreen: '006400', darkcyan: '008B8B', darkmagenta: '8B008B',
+  darkyellow: '808000', darkgray: '808080', lightgray: 'C0C0C0' };
+function hexOf(v) {
+  const c = String(v || '').trim().toLowerCase().replace(/\s*!important$/, '');
+  let m;
+  // (the shorthand background: its colour is its first word, "#FFFF00" of "#FFFF00 none")
+  if (/^#[0-9a-f]+\s/.test(c)) return hexOf(c.split(/\s+/)[0]);
+  if ((m = /^#([0-9a-f]{6})$/.exec(c))) return m[1].toUpperCase();
+  if ((m = /^#([0-9a-f]{3})$/.exec(c))) return m[1].replace(/./g, (x) => x + x).toUpperCase();
+  if ((m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(c))) {
+    if (m[4] !== undefined && +m[4] < 0.5) return null;
+    return [m[1], m[2], m[3]].map((x) => Math.min(255, +x).toString(16).padStart(2, '0')).join('').toUpperCase();
+  }
+  const w = c.split(/\s+/)[0];
+  return Object.hasOwn(CSS_NAMES, w) ? CSS_NAMES[w] : null;
+}
+// Word's highlighter colours (Text Highlight Color, src/cmd/font.js HIGHLIGHTS) by their RGB, and
+// the xcolor colour \hl takes for each: a pasted highlight becomes the nearest of them, as Word's
+// own highlighter has only these (its dark ones as xcolor's mix, as Word import writes them)
+const HL = [['FFFF00', 'yellow'], ['00FF00', 'green'], ['00FFFF', 'cyan'], ['FF00FF', 'magenta'], ['0000FF', 'blue'], ['FF0000', 'red'], ['008080', 'teal'],
+  ['800080', 'violet'], ['808000', 'olive'], ['808080', 'gray'], ['C0C0C0', 'lightgray'], ['000000', 'black'], ['000080', 'rgb,255:red,0;green,0;blue,128'],
+  ['008000', 'rgb,255:red,0;green,128;blue,0'], ['800000', 'rgb,255:red,128;green,0;blue,0']];
+const rgb = (h) => [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+function hlName(hex) {
+  const [r, g, b] = rgb(hex);
+  let best = null, d = Infinity;
+  for (const [h, n] of HL) { const [R, G, B] = rgb(h), e = (r - R) ** 2 + (g - G) ** 2 + (b - B) ** 2; if (e < d) { d = e; best = n; } }
+  return best;
 }
 
 // The TeX behind rendered math on a web page, if the page kept it.
@@ -34,6 +71,58 @@ export function htmlToTeX(html, opts = {}) {
   const body = doc.body;
   for (const x of body.querySelectorAll('style, meta, link, title, o\\:p, xml')) x.remove();
   wordLists(doc);
+  // A grey or black colour, or a grey or white background, over most of the text is the page's
+  // ink or paper (a browser's copy writes its grey text and white or dark paper on every run): no
+  // mark, as Word import drops the document's ink (src/wordjobs.js ink). A colour with a hue is a
+  // mark however much of the copy it covers: a red phrase copied alone from Word, a phrase Google
+  // Docs highlights in yellow, kept (all of a copy in one colour was taken for ink and dropped).
+  // A near white background is the page's paper too (a code box's #f6f8fa). Word's highlighter
+  // (mso-highlight) is always a mark.
+  const inkOf = (key) => {
+    const n = new Map();
+    let all = 0;
+    const walk = doc.createTreeWalker(body, 4);
+    for (let t; (t = walk.nextNode());) {
+      const k = t.nodeValue.replace(/\s+/g, '').length;
+      if (!k) continue;
+      all += k;
+      let c = null;
+      for (let e = t.parentElement; e && e !== body.parentElement && c === null; e = e.parentElement) { const v = styleOf(e)[key]; if (v) c = hexOf(v) || ''; }
+      if (c) n.set(c, (n.get(c) || 0) + k);
+    }
+    return new Set([...n].filter(([c, k]) => k / (all || 1) > 0.5 && grey(c)).map(([c]) => c));
+  };
+  const grey = (c) => { const v = rgb(c); return Math.max(...v) - Math.min(...v) < 48; };
+  const whiteish = (c) => rgb(c).every((v) => v >= 0xF0);
+  const ink = inkOf('color'), paper = inkOf('bg');
+  // the colour, highlight and strikethrough an element itself marks its words with (null: none)
+  const marks = (el, st) => {
+    const col = /^(A|BODY)$/.test(el.tagName) || el.closest('a') ? null : hexOf(st.color);
+    const h = st.hl && st.hl !== 'none' ? hexOf(st.hl) : null, bg = h || hexOf(st.bg);
+    return { color: col && col !== '000000' && !ink.has(col) ? col : null,
+      hl: bg && (h || (!whiteish(bg) && !paper.has(bg))) ? hlName(bg) : null,
+      strike: el.tagName === 'S' || el.tagName === 'STRIKE' || el.tagName === 'DEL' || /line-through/.test(st.deco) };
+  };
+  // the marks' commands, innermost first: \sout, \hl, then \textcolor round them
+  const markCmds = (m) => [...(m.strike ? ['sout'] : []), ...(m.hl ? [m.hl === 'yellow' || opts.hlColor === false ? 'hl' : 'hl[' + m.hl + ']'] : []), ...(m.color ? ['textcolor[HTML]{' + m.color + '}'] : [])];
+  const markText = (r, m) => {
+    // (soul's \hl goes inside \sout, \sout{\hl{word}}: the other way stops TeX)
+    const cmds = markCmds(m), soul = opts.hlColor === false && m.strike && m.hl ? [cmds[1], cmds[0], ...cmds.slice(2)] : cmds;
+    const lead = (/^\s+/.exec(r) || [''])[0], tail = (/\s+$/.exec(r) || [''])[0], on = (x) => { for (const cmd of soul) x = '\\' + cmd + '{' + x + '}'; return x; };
+    // (soul's \hl in \sout: a word at a time, every space TeX sees outside them: a space, ~, a
+    // control space \ , \, and the like; a formula is one word. A piece soul cannot take, a
+    // command with an argument of its own, is left unmarked rather than stop TeX)
+    if (opts.hlColor === false && m.strike && m.hl) {
+      let out = '', word = '';
+      const put = () => { if (word) out += /\\(?:url|href|footnote|verb|cite\w*|ref|label|index)(?![A-Za-z])/.test(word) ? word : on(word); word = ''; };
+      for (const [t] of r.trim().matchAll(/\$[^$]*\$|\s+|~|\\[ ,;:!](?![A-Za-z])|\\(?:quad|qquad|enspace|thinspace)(?![A-Za-z])|\\[A-Za-z]+(?:\{\})?|\\[^A-Za-z]|[^\s~$\\]+|[\s\S]/g)) {
+        if (/^(?:\s+|~|\\[ ,;:!]|\\(?:quad|qquad|enspace|thinspace))$/.test(t)) { put(); out += t; } else word += t;
+      }
+      put();
+      return lead + out + tail;
+    }
+    return lead + on(r.trim()) + tail;
+  };
   let prev = opts.prev || ' ';
   const out = [];
   const emit = (t) => { if (t) { out.push(t); prev = t[t.length - 1]; } };
@@ -48,7 +137,8 @@ export function htmlToTeX(html, opts = {}) {
       const parts = t.split('~');
       // (a part after a no-break space follows a space: a quote there opens, ``q'', where it came out ''q'')
       let r = parts.map((p, i) => { const e = escapeTeX(p, i === 0 ? prev : ' '); if (p) prev = p[p.length - 1]; return e; }).join('~');
-      return r;
+      // (marks a run round it could not take, its words holding a list or a heading: on the words)
+      return ctx.pend && !ctx.pre && r.trim() ? markText(r, ctx.pend) : r;
     }
     if (node.nodeType !== 1) return '';
     const el = node;
@@ -62,7 +152,31 @@ export function htmlToTeX(html, opts = {}) {
     if (tag === 'IMG') return '';
     if (tag === 'SCRIPT' || tag === 'NOSCRIPT' || tag === 'TEMPLATE') return '';
     const st = styleOf(el);
-    let body = kids(el, ctx);
+    // Strikethrough, the highlighter and a font colour (src/charfmt.js writes them: \sout,
+    // \hl[colour], \textcolor[HTML]) go round the run's words where they are only words; a run
+    // holding a list, a heading, a display or a float (a <del> may hold blocks) gives them to the
+    // words inside instead: \sout{\begin{itemize}..} or \hl{..\[..\]..} stopped TeX. soul's \hl
+    // takes words alone (no \textcolor or \sout in it): there it is always on the words.
+    const mk = marks(el, st), O = ctx.on || {}, P = ctx.pend || {};
+    const want = {};
+    if ((mk.strike || P.strike) && !O.strike) want.strike = true;
+    if ((mk.hl || P.hl) && (mk.hl || P.hl) !== O.hl) want.hl = mk.hl || P.hl;
+    if ((mk.color || P.color) && (mk.color || P.color) !== O.color) want.color = mk.color || P.color;
+    let here = ctx.pre ? {} : { ...want };
+    const down = {};
+    // (with soul, a struck run's \sout goes on its words too: soul's \hl of several words in
+    // \sout stops TeX, "Leaders not followed by proper glue", and \sout in \hl does too; each
+    // word struck and highlighted on its own compiles: markText)
+    if (here.hl && opts.hlColor === false) { down.hl = here.hl; delete here.hl; }
+    if (here.strike && opts.hlColor === false) { down.strike = true; delete here.strike; }
+    const p0 = prev;
+    // (a mark given to the words is not on: each run inside passes it on to its own words)
+    let body = kids(el, { ...ctx, on: { ...O, ...here }, pend: Object.keys(down).length ? down : null });
+    if (Object.keys(here).length && BLOCKY.test(body)) {
+      prev = p0;
+      body = kids(el, { ...ctx, on: O, pend: { ...want } });
+      here = {};
+    }
     if (!body.trim()) return body;
     const bold = (tag === 'B' || tag === 'STRONG' || /^(bold|[6-9]00)$/.test(st.weight)) && !/^(normal|[1-4]00)$/.test(st.weight);
     const ital = (tag === 'I' || tag === 'EM' || tag === 'CITE' || st.fstyle === 'italic') && st.fstyle !== 'normal';
@@ -70,13 +184,17 @@ export function htmlToTeX(html, opts = {}) {
     const sup = tag === 'SUP' || st.valign === 'super';
     const sub = tag === 'SUB' || st.valign === 'sub';
     const mono = tag === 'CODE' || tag === 'KBD' || tag === 'TT' || tag === 'SAMP' || /monospace|courier|consolas|menlo/.test(st.family);
-    const wrap = (cmd) => { const lead = (/^\s+/.exec(body) || [''])[0], tail = (/\s+$/.exec(body) || [''])[0]; body = lead + '\\' + cmd + '{' + body.trim() + '}' + tail; };
+    // (each paragraph in its own: a line break, <br>, inside a coloured or struck run made a blank
+    // line inside \textcolor's braces, and TeX stopped there)
+    const wrap = (cmd) => { const lead = (/^\s+/.exec(body) || [''])[0], tail = (/\s+$/.exec(body) || [''])[0]; body = lead + body.trim().split(/(\s*\n\s*\n\s*)/).map((x, i) => (i % 2 ? x : '\\' + cmd + '{' + x + '}')).join('') + tail; };
     if (mono && !ctx.pre) wrap('texttt');
     if (sup) wrap('textsuperscript');
     if (sub) wrap('textsubscript');
     if (under) wrap('underline');
     if (ital && !ctx.ital) wrap('emph');
     if (bold && !ctx.bold) wrap('textbf');
+    // (the preamble's lines for them come with the paste: App.pastePackages. They were dropped.)
+    for (const cmd of markCmds(here)) wrap(cmd);
     if (tag === 'A') {
       const href = el.getAttribute('href') || '';
       if (/^https?:|^mailto:/.test(href)) {
@@ -122,7 +240,8 @@ export function htmlToTeX(html, opts = {}) {
     const body = [rule(0), ...(head ? [lines[0], rule(1), ...lines.slice(1)] : lines), rule(2)];
     const spec = grid[0] && cols ? Array.from({ length: cols }, (_, i) => (grid.slice(head ? 1 : 0).every((r) => !r[i] || /^\s*[-+−]?[\d.,]+%?\s*$/.test(r[i].textContent) || !r[i].textContent.trim()) && grid.length > 1 ? 'r' : 'l')).join('') : 'l';
     const tab = '\\begin{tabular}{' + spec + '}\n' + body.join('\n') + '\n\\end{tabular}';
-    return ctx.inTable || opts.inlineOnly ? tab : '\\begin{table}[h]\n\\centering\n' + tab + '\n\\end{table}';
+    // (in a footnote, opts.note, a float stops TeX: the tabular alone)
+    return ctx.inTable || opts.inlineOnly || opts.note ? tab : '\\begin{table}[h]\n\\centering\n' + tab + '\n\\end{table}';
   };
   const list = (l, ctx) => {
     const env = l.tagName === 'OL' ? 'enumerate' : 'itemize';
@@ -139,11 +258,16 @@ export function htmlToTeX(html, opts = {}) {
     const t = kids(el, ctx).trim();
     if (!t) return '';
     const h = /^H([1-6])$/.exec(tag);
-    if (h && !opts.inlineOnly) {
-      const plain = t.replace(/\\textbf\{([^{}]*)\}/g, '$1');
+    if (h && !opts.inlineOnly && !opts.note) {
+      // (a heading's bold and colour are its style's, not marks: \section draws it as headings are;
+      // soul's \hl stops TeX in a heading's moving argument)
+      let plain = t.replace(/\\textbf\{([^{}]*)\}/g, '$1').replace(/\\textcolor\[HTML\]\{[0-9A-F]{6}\}\{([^{}]*)\}/g, '$1');
+      if (opts.hlColor === false) plain = plain.replace(/\\hl\{([^{}]*)\}/g, '$1');
       return ['\\section', '\\section', '\\subsection', '\\subsubsection', '\\paragraph', '\\paragraph'][+h[1] - 1] + '{' + plain + '}';
     }
     if (tag === 'BLOCKQUOTE') return '\\begin{quote}\n' + t + '\n\\end{quote}';
+    // (verbatim stops TeX in a command's argument, a footnote's: the code's lines in \texttt there)
+    if (tag === 'PRE' && opts.note) return el.textContent.replace(/\n$/, '').split('\n').map((l) => '\\texttt{' + escapeTeX(l, ' ') + '}').join('\\\\\n');
     if (tag === 'PRE') return '\\begin{verbatim}\n' + el.textContent.replace(/\n$/, '') + '\n\\end{verbatim}';
     return t;
   };

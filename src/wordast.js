@@ -731,8 +731,19 @@ class Walker {
         const ai = this.atom({ k: 'fn', f: x.f, s: x.s, e: x.e, is: x.is, ie: x.ie, ro: !!x.ro });
         this.atomText(OBJ, ai);
         if (!fn) return [{ t: 'Superscript', c: [Str(x.num || '')] }];
-        const inl = this.wrap('fn', fn.f, x.is, x.ie, () => this.inl(fn.inl, fns));
-        return [{ t: 'Note', c: [{ t: 'Para', c: inl }] }];
+        // A footnote's paragraphs are paragraphs of Word's note: the first holds the note's anchor,
+        // the rest follow it, which src/docx.js reads back into the same anchor with a blank line
+        // between, as the source has it. They went as line breaks inside one paragraph. (A last
+        // paragraph left empty, Enter at the note's end, is none in Word: not sent.)
+        let kids = fn.inl, k = kids.length;
+        while (k && kids[k - 1].k === 'seg' && kids[k - 1].ph) k--;
+        if (k && kids[k - 1].k === 'br' && kids[k - 1].par) kids = kids.slice(0, k - 1);
+        const inl = this.wrap('fn', fn.f, x.is, x.ie, () => this.inl(kids, fns));
+        const paras = [[]];
+        // (a break inside bold or a link in the note cannot end Word's paragraph there: two line breaks)
+        const deep = (v) => (Array.isArray(v) ? v.flatMap((y) => (y === FN_PAR ? [{ t: 'LineBreak' }, { t: 'LineBreak' }] : [deep(y)])) : v && typeof v === 'object' && v.c !== undefined ? { ...v, c: deep(v.c) } : v);
+        for (const y of inl[0].c[1]) { if (y === FN_PAR) paras.push([]); else paras[paras.length - 1].push(deep(y)); }
+        return [{ t: 'Note', c: paras.map((p, i) => ({ t: 'Para', c: i ? p : [{ t: 'Span', c: [inl[0].c[0], p] }] })) }];
       }
       case 'url': {
         const ai = this.atom({ k: 'url', f: x.f, s: x.s, e: x.e, ro: !!x.ro });
@@ -755,7 +766,9 @@ class Walker {
         const h = w && hk ? imgLength(hk.value) : null;
         return [{ t: 'Image', c: [attr('', [], [...(w ? [['width', w]] : []), ...(h ? [['height', h]] : [])]), alt ? [Str(unescapeAlt(alt.value.replace(/^\{([\s\S]*)\}$/, '$1')))] : [], [file, '']] }];
       }
-      case 'br': { this.ro('\n'); return [{ t: 'LineBreak' }]; }
+      // (a footnote's paragraph break: read back from Word as a blank line, src/docx.js para;
+      // split there into Word's paragraphs by the note, case 'fn')
+      case 'br': if (x.par && this.A && this.A.kind === 'fn') { this.ro('\n\n'); return [FN_PAR]; } this.ro('\n'); return [{ t: 'LineBreak' }];
       case 'verb': { const ai = this.atom({ k: 'verb', f: x.f, s: x.s, e: x.e, ro: !!x.ro }); this.atomText(x.text, ai); return [{ t: 'Code', c: [attr(), x.text] }]; }
       case 'logo': { const ai = this.atom({ k: 'logo', f: x.f, s: x.s, e: x.e, ro: !!x.ro }); const t = x.text === 'LaTeXe' ? 'LaTeX2e' : x.text; this.atomText(t, ai); return [Str(t)]; }
       case 'sp': { this.ro(' '); return [Str(' ')]; }
@@ -928,6 +941,9 @@ function imgWidth(opts) {
 }
 
 // adjacent Str merged, empty ones dropped: pandoc's writer takes them as they are
+// where a footnote's paragraph ends (one object: the note's case looks for it by identity)
+const FN_PAR = { t: 'RawInline', c: ['openxml', ''] };
+
 function merge(inl) {
   const out = [];
   for (const x of inl) {

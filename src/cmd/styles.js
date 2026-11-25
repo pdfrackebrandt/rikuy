@@ -687,7 +687,7 @@ export const methods = {
     const A = this.armed, f = A.f, src = this.src(f), b = st.b;
     const r = restyle(src, b, to, b.ws);
     if (!r) return;
-    const words = src.slice(b.ws, b.we), t = codeText(words, (x) => escapeTeX(x, ' ')), edits = [...r.edits];
+    const words = src.slice(b.ws, b.we), t = codeText(words, (x) => escapeTeX(x, ' ', { code: true })), edits = [...r.edits];
     if (t !== words) edits.push({ s: b.ws, e: b.we, t });
     this.disarm();
     this.closeGroup();

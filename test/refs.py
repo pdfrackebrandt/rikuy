@@ -393,6 +393,29 @@ def captions(page):
     check('\\caption* drawn with no label', 'Unlisted' in texts(page, '.cap') and not any(x.startswith('Figure 2') for x in texts(page, '.cap')), texts(page, '.cap'))
     click_text(page, 'Intro', 1)
     insert_case(page, two, at('Intro', 1), run('list-of-tables'), two.replace('Intro.\n\n', 'Intro.\n\n\\listoftables\n\n'), 'List of Tables')
+    # (round 3) Backspace in a caption whose words are gone takes the caption, as Word's takes the
+    # empty caption paragraph: the caret left the figure, and the next Backspace deleted what was
+    # above it, \caption{} staying. Delete there does nothing.
+    for name, body, word in (('a figure', 'Above words.\n\n\\begin{figure}[htbp]\n\\centering\nPICTURE\n\\caption{X}\n\\label{fig:x}\n\\end{figure}\n\nBelow.', 'PICTURE\n'),
+                             ('a table, its caption above', 'Above words.\n\n\\begin{table}[htbp]\n\\caption{X}\n\\begin{tabular}{l}\na\n\\end{tabular}\n\\end{table}\n\nBelow.', '\\begin{table}[htbp]\n')):
+        load_doc(page, D(body)); click_text(page, 'X', 1)
+        page.keyboard.press('Backspace'); settle(page, 150)
+        page.keyboard.press('Delete'); settle(page, 150)
+        check('r3 Delete in an empty caption (%s) does nothing' % name, src(page) == D(body.replace('{X}', '{}')), repr(src(page)[40:180]))
+        page.keyboard.press('Backspace'); settle(page, 150)
+        check('r3 Backspace in an empty caption (%s) takes the caption, its line, nothing else' % name, src(page) == D(body.replace('\\caption{X}\n', '')), repr(src(page)[40:180]))
+        page.keyboard.press('Control+z'); settle(page, 150)
+        # (the deletions are one step, as Word's run of Backspaces: the caption comes back with its word)
+        check('r3 undo gives the caption back with its word (%s)' % name, src(page) == D(body), repr(src(page)[40:180]))
+    # (review of round 3) a caption whose words went keeps its \label in its braces, \caption{\label{..}}:
+    # Backspace takes the caption and leaves the label (the key did nothing, for good); \captionof too
+    for name, body, gone in (('with its label inside', 'Above words.\n\n\\begin{figure}[htbp]\n\\centering\nPICTURE\n\\caption{X\\label{fig:x}}\n\\end{figure}\n\nBelow.', 'PICTURE\n\\label{fig:x}\n'),
+                             ('\\captionof', 'Above words.\n\n\\begin{center}\nPICTURE\n\\captionof{figure}{X}\n\\end{center}\n\nBelow.', 'PICTURE\n')):
+        load_doc(page, D(body, '\\usepackage{caption}\n')); click_text(page, 'X', 1)
+        page.keyboard.press('Backspace'); settle(page, 150)
+        page.keyboard.press('Backspace'); settle(page, 150)
+        s = src(page)
+        check('r3 Backspace in an emptied caption %s takes the caption, nothing else' % name, s == D(body, '\\usepackage{caption}\n').replace(body[body.find('PICTURE'):body.find('\\end{', body.find('PICTURE'))], gone), repr(s[s.find('Above'):][:160]))
 
 
 # ---- cross references -----------------------------------------------------------------------------------

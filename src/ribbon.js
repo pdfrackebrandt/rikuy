@@ -191,7 +191,12 @@ export const ribbon = {
     if (this.hist.length === w.h0 + n) {
       for (const h of this.hist.splice(w.h0, n).reverse()) for (const d of h.files) { const s = this.files.get(d.f) ?? ''; this.files.set(d.f, s.slice(0, d.s) + d.del + s.slice(d.s + d.ins.length)); }
       const gone = L0 - this.src(w.f).length;
-      const at = c && !c.ghost ? { f: c.f, p: c.f !== w.f ? c.a : Math.max(0, c.a - (c.a >= w.s + w.t.length ? gone : gone - w.t.length)), bias: -1 } : null;
+      // (back: the place the note went in, before the step: a caret in the text moves by what the
+      // step wrote before it alone. The step wrote lines after it too, \printendnotes, which
+      // moved the caret back by their length into the text before: Esc from an endnote's box
+      // put the next words into \begin{document})
+      const at = c && !c.ghost && w.back && c.f === w.f ? { f: c.f, p: Math.max(w.back.p, c.a - (w.s - w.back.p) - (c.a >= w.s + w.t.length ? w.t.length : 0)), bias: -1 }
+        : c && !c.ghost ? { f: c.f, p: c.f !== w.f ? c.a : Math.max(0, c.a - (c.a >= w.s + w.t.length ? gone : gone - w.t.length)), bias: -1 } : null;
       this.redoStack = w.redo0;
       this.rebuild(at);
       this.pushToSource(); this.saveSoon(); this.updateUndoUI();
