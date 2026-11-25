@@ -930,6 +930,14 @@ def hunt(page):
         page.keyboard.press('Backspace'); settle(page, 200)
         check('Backspace after a page break: ' + repr(body[14:40]), src(page) == DOC(body=want), src(page)[40:160])
 
+    # (review V1) words of the text's first paragraph, right after \\begin{document}: multicols
+    # around it (refused: the block started at the line end after \\begin{document})
+    d = DOC()
+    load_doc(page, d); open_tab(page, 'Layout'); place(page, 'here with')
+    page.get_by_role('button', name='Columns', exact=True).click(); settle(page, 200)
+    page.get_by_role('menuitemradio', name='Two').click(); settle(page, 300)
+    check('Columns › Two on words of the first paragraph: multicols around it', src(page) == DOC('\\usepackage{multicol}\n', '\\begin{multicols}{2}\nFirst paragraph here with words.\n\\end{multicols}\n\nSecond paragraph of the text.'), src(page)[:220])
+
 
 def run():
     names = sys.argv[1:]

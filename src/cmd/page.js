@@ -424,10 +424,14 @@ export const methods = {
     const A = blocks.find((B) => B.id === a), Z = blocks.find((B) => B.id === z);
     if (!A || !Z || A.f !== this.main || Z.f !== this.main) return null;
     const src = this.src(this.main);
-    const s = src.lastIndexOf('\n', A.s - 1) + 1;
+    // (from its first character: the text's first block starts at the line end after
+    // \begin{document}, whose line is not the block's, and the first paragraph was refused)
+    let a0 = A.s;
+    while (a0 < Z.e && /\s/.test(src[a0])) a0++;
+    const s = src.lastIndexOf('\n', a0 - 1) + 1;
     let e = Z.e;
     while (e > s && /\s/.test(src[e - 1])) e--;
-    return /\S/.test(src.slice(s, A.s)) ? null : { s, e };
+    return /\S/.test(src.slice(s, a0)) ? null : { s, e };
   },
 
   // A break of a kind (src/pagesrc.js's BREAKS) at the caret: inside a paragraph between its two
