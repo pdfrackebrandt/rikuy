@@ -1015,7 +1015,24 @@ def r3_review(page):
     settle(page, 100)
 
 
-EXTRA = [clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]
+def hunt(page):
+    """What a Word user met (round 2's hunt)."""
+    # Insert's Date & Time and Object are menu buttons whose press opened nothing: they had a menu
+    # and no run, so the ribbon did nothing (and Enter after it split the paragraph)
+    page.get_by_role('tab', name='Insert', exact=True).click(); settle(page, 150)
+    load_doc(page, DOC); click_text(page, 'world', 0)
+    page.get_by_role('button', name='Date & Time', exact=True).click(); settle(page, 300)
+    shown = page.get_by_role('menuitem', name='Update automatically (\\today)')
+    check('Date & Time opens its menu at the button', shown.count() == 1 and shown.is_visible())
+    shown.click(); settle(page, 300)
+    check('and its first item writes \\today at the caret', 'Hello \\today{}world.' in src(page), src(page)[40:120])
+    load_doc(page, DOC); click_text(page, 'world', 0)
+    page.get_by_role('button', name='Object', exact=True).click(); settle(page, 300)
+    check('Object opens its menu: Text from file, PDF pages', all(page.get_by_role('menuitem', name=n, exact=True).is_visible() for n in ('Text from file', 'PDF pages')))
+    page.keyboard.press('Escape'); settle(page, 150)
+
+
+EXTRA = [hunt, clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]
 
 if __name__ == '__main__':
     sys.exit(run())
