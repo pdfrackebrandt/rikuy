@@ -5,7 +5,7 @@ Names in a zip that would leave the project are left out; a file that cannot be 
 page still opens and says the work is not kept."""
 import os, sys, io, zipfile, tempfile, traceback
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import until, settle, open_page, check, results, src, click_text, download
+from browser import until, settle, open_page, check, results, src, click_text, download, load_doc
 from playwright.sync_api import sync_playwright
 
 TMP = os.environ.get('TMPDIR_RIKUY', os.path.join(tempfile.gettempdir(), 'rikuy-files'))
@@ -277,6 +277,51 @@ def marks():
         check('marks: and after another tab deleted the database (W1)', f['key'] == 'evil|main.tex' and restricted(f), f)
         check('no page errors (marks)', not [e for e in errors if 'QuotaExceeded' not in e and 'full' not in e], errors[:5])
         browser.close()
+
+def cross_files():
+    """A selection from one file of the project into another, as a drag or Shift+Down makes over
+    an \\input: Delete, Backspace, typing and Ctrl+X take each file's part of it, as Word takes
+    what is selected; the \\input stays, and one undo brings every file back. (It was read as a
+    caret at its start: Delete took the \\input and \\include and their files out of the document,
+    Backspace a letter before it, and typing went in before it.)"""
+    MAIN = '\\documentclass{article}\n\\begin{document}\n\\section{Intro}\nMain text here.\n\n\\input{sec/one}\n\n\\include{two}\nLast words.\n\\end{document}\n'
+    F = {'main.tex': MAIN, 'sec/one.tex': 'First input file text.\n\nSecond paragraph of input.\n', 'two.tex': '\\section{Two}\nText of two.\n'}
+    SEL = """([t1, o1, t2, o2]) => { const sp = [...document.querySelectorAll('#pages span.t')], a = sp.find((s) => s.textContent.includes(t1)), z = sp.find((s) => s.textContent.includes(t2));
+      const r = document.createRange(); r.setStart(a.firstChild, o1); r.setEnd(z.firstChild, o2); document.getElementById('pages').focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }"""
+    with sync_playwright() as p:
+        browser, page, errors = open_page(p, width=1366, height=900)
+        for key in ['Delete', 'Backspace', 'Z', 'Control+x']:
+            load_doc(page, F)
+            page.evaluate(SEL, ['Main text', 5, 'First input', 6])
+            settle(page)
+            page.keyboard.press(key)
+            settle(page, 200)
+            got = {f: src(page, f) for f in F}
+            want = {'main.tex': MAIN.replace('Main text here.', 'Main ' + ('Z' if key == 'Z' else '')), 'sec/one.tex': F['sec/one.tex'].replace('First ', ''), 'two.tex': F['two.tex']}
+            check('cross files: %s over a selection from the main file into an \\input file takes each file\'s part, the \\input and \\include kept' % key, got == want, got)
+            page.keyboard.press('Control+z')
+            settle(page, 200)
+            check('cross files: one undo after %s brings both files back' % key, all(src(page, f) == F[f] for f in F), {f: src(page, f) for f in F})
+        # from an \input file over an \include into the main file's words after it
+        load_doc(page, F)
+        page.evaluate(SEL, ['Second paragraph', 7, 'Last words', 5])
+        settle(page)
+        page.keyboard.press('Delete')
+        settle(page, 200)
+        got = {f: src(page, f) for f in F}
+        check('cross files: from an \\input file to the main file, the file wholly inside empties and the main file keeps its line ends', got == {'main.tex': MAIN.replace('Last words', 'words'), 'sec/one.tex': 'First input file text.\n\nSecond ', 'two.tex': ''}, got)
+        check('cross files: no page errors', not errors, errors[:3])
+        browser.close()
+
+
+if sys.argv[1:] == ['cross']:
+    try: cross_files()
+    except Exception as e:
+        traceback.print_exc()
+        check('the run reaches its end', False, e)
+    bad = [r for r in results if not r[1]]
+    print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
+    sys.exit(1 if bad else 0)
 
 if sys.argv[1:] == ['marks']:
     try: marks()
@@ -673,6 +718,7 @@ try:
             check('storage %s: no page errors' % label, not errors, errors[:3])
             browser.close()
     marks()
+    cross_files()
 except Exception as e:
     # a run that stops part way has failed, whatever the checks before it said
     traceback.print_exc()

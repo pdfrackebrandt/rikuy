@@ -2036,6 +2036,35 @@ class App {
     return { f: A.f, a: Math.min(A.p, B.p), b: Math.max(A.p, B.p) };
   }
 
+  // A selection from one file of the project into another (the main file's words into an \input
+  // file's, a drag or Shift+Down over the place it is input): each file loses the part of it the
+  // selection holds, as Word deletes what is selected, and the \input between them stays unless
+  // it is wholly inside. caretNow() reads such a selection as a caret at its start: Delete took
+  // from there to the paragraph's end with the \input and every file after it out of the
+  // document, Backspace the letter before the selection, and typing went in before it, the
+  // selection kept. Null where its ends are not in the page's blocks: nothing is taken then.
+  crossFileEdits(r) {
+    const A = posFromDom(r.startContainer, r.startOffset, this.root);
+    const Z = posFromDom(r.endContainer, r.endOffset, this.root, true);
+    if (!A || !Z || A.ghost || Z.ghost || A.f === Z.f) return null;
+    const BL = this.renderer.blocks;
+    const blockOf = (n) => { const e = n && (n.nodeType === 1 ? n : n.parentElement), x = e && e.closest && e.closest('[data-b]'); return x ? BL.findIndex((B) => String(B.id) === x.dataset.b) : -1; };
+    const i = blockOf(r.startContainer), j = blockOf(r.endContainer);
+    if (i < 0 || j < i || BL[i].f !== A.f || BL[j].f !== Z.f) return null;
+    // (each file's part: from its first place in the selection to its last, the blocks between
+    // the two ends whole)
+    const span = new Map();
+    const add = (f, s, e) => { if (e <= s) return; const x = span.get(f); span.set(f, x ? [Math.min(x[0], s), Math.max(x[1], e)] : [s, e]); };
+    // (the end's part from its first visible character: the line end before it stays)
+    const v = visibleRanges(BL, Z.f, BL[j].s, Z.p);
+    add(A.f, A.p, BL[i].e);
+    for (let k = i + 1; k < j; k++) add(BL[k].f, BL[k].s, BL[k].e);
+    add(Z.f, v.length ? v[0][0] : Z.p, Z.p);
+    const edits = [];
+    for (const [f, [s, e]] of span) edits.push(...this.deletionEdits(f, s, e, true));
+    return { edits, at: { f: A.f, p: A.p } };
+  }
+
   // Build deletion edits for [a,b) in f without breaking markup. sel: [a, b) is a selection made
   // on the page (typed over, deleted, cut, pasted over), not what one key takes at the caret.
   deletionEdits(f, a, b, sel) {
@@ -2141,6 +2170,16 @@ class App {
     if (whole) { this.replaceBody(whole, escapeTeX(data, ' '), 'replace'); return; }
     const c = this.caretNow();
     if (!c) return;
+    // typed over a selection from one file into another: each file's part goes (crossFileEdits)
+    // and the letters go where it began
+    if (c.crossFile && !range) {
+      const X = this.crossFileEdits(getSelection().getRangeAt(0));
+      if (!X) return;
+      const t = this.escapeAt(X.at.f, X.at.p, data), ed = X.edits.find((x) => x.f === X.at.f && x.s === X.at.p);
+      if (ed) ed.t += t; else X.edits.push({ f: X.at.f, s: X.at.p, e: X.at.p, t });
+      this.commit(X.edits, { f: X.at.f, p: X.at.p + t.length, bias: -1 }, 'replace');
+      return;
+    }
     // in a LaTeX paragraph, or a line or a paragraph to come in LaTeX, what is typed is the source
     const T = c.ghost ? null : this.texHere();
     if (T && c.f === T.f) { const r = range && range.f === T.f ? range : c; this.texEdit(T, r.a, r.b, data, c.collapsed && !range ? 'type' : 'replace'); return; }
@@ -2214,6 +2253,8 @@ class App {
     const whole = this.wholeDoc();
     if (whole) { this.replaceBody(whole, '', 'del'); return; }
     if (!c) return;
+    // (a selection from one file into another: crossFileEdits)
+    if (c.crossFile) { const X = this.crossFileEdits(getSelection().getRangeAt(0)); if (X && X.edits.length) this.commit(X.edits, { ...X.at, bias: -1 }, 'del'); return; }
     const T = this.texHere();
     if (T && c.f === T.f && this.texDelete(T, c, type, ranges)) return;
     // (Backspace at a list item's start, Delete at its end, as Word's: src/cmd/lists.js listDelete)
@@ -3202,6 +3243,17 @@ class App {
   }
   onCopy(e, cut) {
     const c = this.caretNow();
+    // (cut from one file into another: the words as they read, and each file's part goes,
+    // crossFileEdits; the browser's own cut took from the start to the paragraph's end and every
+    // file after it)
+    if (c && c.crossFile && cut) {
+      const X = this.crossFileEdits(getSelection().getRangeAt(0));
+      e.preventDefault();
+      if (!X) return;
+      e.clipboardData.setData('text/plain', getSelection().toString().replace(/\u200B/g, ''));
+      if (X.edits.length) this.commit(X.edits, { ...X.at, bias: -1 }, 'cut');
+      return;
+    }
     if (!c || c.collapsed) return;
     e.preventDefault();
     const latex = this.copyLatex(c);
