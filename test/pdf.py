@@ -175,6 +175,22 @@ with sync_playwright() as p:
     # what is typed next to fix it goes there)
     at = page.evaluate("() => { const c = window.rikuy.caretNow(); return c && [document.activeElement.id, c.f, window.rikuy.files.get(c.f).slice(c.p, c.p + 7)]; }")
     check('a press on the problem puts the caret at its line on the page', at == ['pages', 'sec/one.tex', 'Second '], at)
+    # (review B1) a problem with no place on the page (the preamble's, the fatal error's at no
+    # line) leaves the caret where it was: the caret drawn on the first paragraph typed into the
+    # preamble, or before \documentclass
+    keep = page.evaluate("window.rikuy.files.get('main.tex')")
+    page.evaluate("""async () => { const g = window.rikuy; g.files.set('main.tex', g.files.get('main.tex').replace('\\\\begin{document}', '\\\\undefinedpre\\n\\\\begin{document}')); g.forceRender = true; g.rebuild(); await g.api.compile(); }""")
+    page.wait_for_function("[...document.querySelectorAll('.prob.tex')].some((e) => e.textContent.includes('undefinedpre'))", timeout=10000)
+    rows = page.locator('.prob.tex')
+    pre = [i for i in range(rows.count()) if 'undefinedpre' in rows.nth(i).inner_text()]
+    if pre:
+        rows.nth(pre[0]).click()
+        page.wait_for_timeout(300)
+        page.keyboard.type('Z')
+        page.wait_for_timeout(300)
+    s = page.evaluate("window.rikuy.files.get('main.tex')")
+    check('a press on a problem in the preamble, then a letter: nothing typed into the preamble', bool(pre) and 'Z' not in s[:s.index('\\begin{document}')], (pre, s[:120]))
+    page.evaluate("(k) => { const g = window.rikuy; g.files.set('main.tex', k); g.forceRender = true; g.rebuild(); }", keep)
     # a brace left open: TeX reads on to the file's end and names no line (or the \input's): the
     # problem is put where the words it took as the argument begin
     page.evaluate("""async () => { const g = window.rikuy; g.files.set('sec/one.tex', 'First input file text.\\n\\nSecond \\\\emph{paragraph of\\ninput.\\n\\nThird one.\\n'); g.forceRender = true; g.rebuild(); await g.api.compile(); }""")

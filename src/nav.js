@@ -137,10 +137,13 @@ export const nav = {
         const where = document.createElement('span'); where.className = 'where'; where.textContent = x.f + (x.line ? ':' + x.line : '');
         b.append(dot, msg, where);
         // (the caret goes there too, as a heading's or a Go To target's press puts it: the place
-        // was only shown, and what was typed next to fix it went nowhere. A finger's tap brings
-        // no keyboard up)
+        // was only shown, and what was typed next to fix it went nowhere. Only a place the page
+        // draws, inside one of its blocks: one in the preamble, before \documentclass (a fatal
+        // error's, BibTeX's) or between blocks has no place on the page, and the caret drawn on the
+        // first paragraph typed into the preamble. A finger's tap brings no keyboard up)
+        const onPage = () => this.renderer.blocks.some((B) => B.f === x.f && B.s <= x.p && x.p < B.e);
         b.addEventListener('click', () => {
-          if (!matchMedia('(pointer: coarse)').matches) this.restoreCaret({ f: x.f, p: x.p, bias: 1 }, true);
+          if (!matchMedia('(pointer: coarse)').matches && onPage()) this.restoreCaret({ f: x.f, p: x.p, bias: 1 }, true);
           this.goTo(x.f, x.p);
           if (window.innerWidth <= 860) this.toggleNav(false);
         });
