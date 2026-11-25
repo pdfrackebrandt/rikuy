@@ -2246,6 +2246,25 @@ class App {
             return;
           }
         }
+        // An environment with nothing left in it (a picture deleted out of its center, a quote
+        // emptied) is drawn as an empty paragraph: Backspace or Delete in it takes the whole
+        // environment away, as Word's take an empty paragraph. It stayed for good: Backspace only
+        // moved the caret to the paragraph above, Delete to the one below, and a blank line or
+        // two went from inside it unseen. (Only a paragraph drawn with nothing but the empty
+        // place: a theorem's label is the user's; the two sides stay two paragraphs.)
+        const it = ph.closest('.it'), EB = it && !it.closest('td') && it.childElementCount === 1 && BLOCKS.get(+it.dataset.b);
+        const S0 = EB && EB.f === c.f ? this.src(c.f) : '';
+        if (S0 && /^\\begin\s*\{([A-Za-z]+\*?)\}\s*\\end\s*\{\1\}$/.test(S0.slice(EB.s, EB.e))) {
+          let s = EB.s, e = EB.e;
+          while (s > 0 && /\s/.test(S0[s - 1])) s--;
+          while (e < S0.length && /\s/.test(S0[e])) e++;
+          const NL = /\r\n/.test(S0) ? '\r\n' : '\n', before = S0.slice(s, EB.s), after = S0.slice(EB.e, e), blank = /\n[ \t\r]*\n/;
+          const edge = /\\begin\s*\{[^{}]*\}$/.test(S0.slice(Math.max(0, s - 80), s)) || /^\\end\b/.test(S0.slice(e, e + 5)) || !s || e >= S0.length;
+          const t = edge ? (before.includes('\n') ? before : after.includes('\n') ? after : NL) : blank.test(before) ? before : blank.test(after) ? after : NL + NL;
+          const back = /Backward/.test(type);
+          this.commit([{ f: c.f, s, e, t }], { f: c.f, p: back ? s : s + t.length, bias: back ? -1 : 1 }, 'del');
+          return;
+        }
       }
       // Inside a run of spaces in the source (a word deleted letter by letter leaves "The
       // paragraph" with two; a space typed at a source line's end, "The \nparagraph"; a control
