@@ -89,6 +89,11 @@ def main():
             ok = r.returncode == 0 and failed in (0, None)
             rows.append((s, i + 1, dt, passed, failed, ok))
             print('%-40s run %d: %6.1f s, %s passed, %s failed%s' % (s, i + 1, dt, passed, failed, '' if ok else '  FAILED'), flush=True)
+            # (a benchmark's numbers, its lines starting RESULT: kept in the summary, dev/bench_keys.py)
+            res = [l for l in out.splitlines() if l.startswith('RESULT ')]
+            if res:
+                print('\n'.join(res), flush=True)
+                notes += ['- `%s` run %d: %s' % (s, i + 1, l[7:]) for l in res]
             if not ok:
                 bad = out
                 break
