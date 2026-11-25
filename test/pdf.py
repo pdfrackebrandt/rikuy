@@ -160,6 +160,17 @@ with sync_playwright() as p:
         page.wait_for_timeout(400)
         went[w] = (page.evaluate("(document.querySelector('.it.flash') || {}).textContent || ''"), page.evaluate('window.__hit'))
     check('clicking a paragraph in the PDF shows that paragraph on the page, an \\input after it or not', all(went[w][0].startswith(w) for w in went), went)
+    # a $ not closed is found at the blank line that ends its paragraph: the problem names the
+    # paragraph's line and words, and a press on it shows that paragraph, not the next one
+    page.evaluate("""async () => { const g = window.rikuy; g.files.set('sec/one.tex', 'First input file text.\\n\\nSecond $paragraph of input.\\n\\nThird one.\\n'); g.forceRender = true; g.rebuild(); await g.api.compile(); }""")
+    probs = page.evaluate("window.rikuy.texIssues.filter((x) => x.sev === 'error').map((x) => [x.f, x.line, x.msg])")
+    page.click('#pdf-msg')
+    page.wait_for_timeout(300)
+    page.evaluate("document.querySelectorAll('.flash').forEach((e) => e.classList.remove('flash'))")
+    page.locator('.prob.tex').first.click()
+    page.wait_for_timeout(300)
+    fl = page.evaluate("(document.querySelector('.it.flash') || {}).textContent || ''")
+    check('a $ left open: the problem names its paragraph\'s line and words, and a press shows that paragraph', probs[:1] == [['sec/one.tex', 3, 'Missing $ inserted. (at Second $paragraph of input.)']] and fl.startswith('Second'), (probs, fl))
     print('errors:', errors[:5])
     check('no page errors', not errors, errors[:5])
     b.close()

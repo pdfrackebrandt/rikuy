@@ -7095,10 +7095,19 @@ class App {
       for (const p of res.missing || []) issues.unshift({ sev: 'warn', file: null, line: null, msg: 'Shell escape: ' + p + ' cannot run in the browser, so what it makes is missing' });
       if (untrusted) this.noteRestricted(issues);
       for (const r of res.runs) if (r.cmd !== 'tex' && r.cmd !== 'shell' && r.code) issues.unshift({ sev: r.cmd === 'biber' ? 'warn' : 'error', file: null, line: null, msg: (r.cmd === 'bibtex' ? 'BibTeX: ' : '') + (r.log.split('\n').find((l) => /error|warning|I couldn't|I found no/i.test(l)) || r.log.split('\n')[0] || 'failed').trim() });
+      // TeX notes what a paragraph's end finds wrong (a $ not closed, an argument not ended) at
+      // the blank line that ends it: the paragraph above is where the mistake is. Named as it
+      // came, the problem showed no words of it, and a press on it went to the paragraph after.
+      const linesOf = new Map();
       this.texIssues = issues.map((x) => {
         const known = x.file && this.fromTexPath(x.file);
         const f = known || this.main;
-        const line = known ? x.line : null;
+        let line = known ? x.line : null;
+        if (line) {
+          if (!linesOf.has(f)) linesOf.set(f, this.src(f).split('\n'));
+          const L = linesOf.get(f);
+          while (line > 1 && L[line - 1] != null && !L[line - 1].trim()) line--;
+        }
         const p = line ? lineStart(this.src(f), line) : 0;
         return { sev: x.sev, f, p, line, msg: issueText(x, line ? this.src(f).slice(p).split('\n', 1)[0] : ''), key: 'tex:' + x.msg, tex: true };
       });
