@@ -218,6 +218,9 @@ export const methods = {
     const fresh = () => !!this.lastPdf && this.lastPdfSig === this.pdfSigNow();
     if (!fresh() || this.compiling) {
       this.pdfBusy = true;
+      // (pressed by the keys: a disabled button drops the focus on the page's body, where the keys
+      // typed nothing until a click; the page takes it back with its caret, as after Word's Export)
+      if (document.activeElement === b && this.ribbonBack) this.ribbonBack();
       // (busy without a longer name: the downloads stay at the row's end over the other groups,
       // and "Making the PDF…" ran over Home's Editing; the PDF pane, open meanwhile, says it)
       b.disabled = true; b.setAttribute('aria-busy', 'true'); b.title = 'Making the PDF…';
