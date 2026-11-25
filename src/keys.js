@@ -180,6 +180,18 @@ const OWN = 'input, textarea, select, math-field, [contenteditable="true"]:not(#
 // The keys on the page, and the app's keys everywhere else (not in a field). Runs before the
 // page's own handlers (App.onKeyDown): a chord taken here goes no further.
 export function installKeys(app, mac, runCmd) {
+  // While an input method composes (Japanese, Chinese, Korean), Enter takes its choice, Escape
+  // drops it, Tab and the arrows go through its candidates: those keys are its own, as in Word.
+  // The app's handlers acted on them too: Escape closed Find and Replace with the word half typed
+  // and left a footnote, Shift+Enter broke the line. None of them hears such a key now, in a field
+  // or on the page; the browser still gives it to the input method. (The source pane and a math
+  // field read their own keys.)
+  addEventListener('keydown', (e) => {
+    if (!e.isComposing || !/^(Enter|Escape|Tab|Arrow|Home$|End$|Page)/.test(e.key)) return;
+    const t = e.target;
+    if (t && t.closest && t.closest('.CodeMirror, math-field')) return;
+    e.stopImmediatePropagation();
+  }, true);
   const go = (e, scope) => {
     if (e.defaultPrevented || app.composing) return;
     // (a quick filter: no modifier and no function or menu key is never a chord here)

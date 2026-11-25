@@ -1222,21 +1222,49 @@ def small_and_dark(p):
         browser.close()
 
 
+def ime_keys(page):
+    """Round 3: while an input method composes, Enter, Escape, Tab and the arrows are its own (take
+    its choice, drop it, go through its candidates), as in Word: Escape closed Find and Replace with
+    the word half typed and left a footnote, Shift+Enter broke the line. Chromium gives such a key
+    to the page with isComposing set (a Mac's input methods name the key)."""
+    key = '''([sel, key, shift]) => { const e = new KeyboardEvent('keydown', { key, shiftKey: !!shift, isComposing: true, bubbles: true, cancelable: true, composed: true });
+      document.querySelector(sel).dispatchEvent(e); return e.defaultPrevented; }'''
+    load_doc(page, ZH_DOC)
+    zh = src(page)
+    click_text(page, '这是中文文字', 2)
+    page.keyboard.press('Control+h'); page.wait_for_timeout(300)
+    page.focus('#fr-q'); page.keyboard.type('zhong'); page.wait_for_timeout(100)
+    page.evaluate(key, ['#fr-q', 'Escape', False]); page.wait_for_timeout(200)
+    check('Escape while an input method composes in Find what leaves Find and Replace open', page.evaluate('() => !document.getElementById("fr").hidden'))
+    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    check('and Escape after it closes it', page.evaluate('() => document.getElementById("fr").hidden'))
+    load_doc(page, doc('\\usepackage[scheme=plain]{ctex}', '这是正文。\\footnote{脚注的文字}后面。'))
+    base = src(page)
+    click_text(page, '脚注的文字', 2)
+    c0 = caret(page)
+    page.evaluate(key, ['#pages', 'Escape', False]); page.wait_for_timeout(150)
+    page.evaluate(key, ['#pages', 'ArrowRight', False]); page.wait_for_timeout(150)
+    check('Escape and Right while composing in a footnote leave the caret in it', caret(page) == c0, [c0, caret(page)])
+    click_text(page, '这是正文', 2)
+    page.evaluate(key, ['#pages', 'Enter', True]); page.wait_for_timeout(200)
+    check('Shift+Enter while composing breaks no line', src(page) == base, src(page)[-80:])
+    page.keyboard.press('Shift+Enter'); page.wait_for_timeout(200)
+    check('and Shift+Enter after it does', src(page) == base.replace('这是正文', '这是\\\\\n正文'), src(page)[-90:])
+
+
+only = set(sys.argv[1:])
 try:
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        rendering(page)
-        wrappers(page)
-        editing(page)
-        long_rtl(page)
-        fonts(page)
-        india(p, page)
-        marks_after_syntax(page)
-        five(p, page)
-        notice(p, page)
+        for f in (rendering, wrappers, editing, ime_keys, long_rtl, fonts):
+            if not only or f.__name__ in only: f(page)
+        for f in (india, marks_after_syntax, five, notice):
+            if only and f.__name__ not in only: continue
+            if f is marks_after_syntax: f(page)
+            else: f(p, page)
         check('no console errors', not errors, errors[:5])
         browser.close()
-        small_and_dark(p)
+        if not only or 'small_and_dark' in only: small_and_dark(p)
 except Exception as e:
     # a run that stops part way has failed, whatever the checks before it said
     traceback.print_exc()
