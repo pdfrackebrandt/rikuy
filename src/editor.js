@@ -409,6 +409,10 @@ export function escapeTeX(text, prev = ' ', opts = {}) {
     if (LIGATURES[ch] && !opts.verbatim) r = LIGATURES[ch];
     else if (mathForPdf && TEXT_MATH[ch] && !opts.verbatim && (mathForPdf.greek || !/[\u0370-\u03FF]/.test(ch))) r = '$' + TEXT_MATH[ch] + '$';
     else if (ch === '"' && !opts.verbatim) r = /[\s([{—–-]/.test(p) || p === '' ? '``' : "''";
+    // (a straight single quote opening a quotation, after a space, a bracket or an opening double
+    // quote: LaTeX's opening quote, as Word's smart quotes make it. Left as ', TeX printed a closing
+    // quote at both ends, ’word’; one after a letter or a digit stays an apostrophe or a prime)
+    else if (ch === "'" && !opts.verbatim && (/[\s([{—–`-]/.test(p) || p === '')) r = '`';
     else if (ch === '“') r = '``';
     else if (ch === '”') r = "''";
     else if (ch === '‘') r = '`';

@@ -1041,7 +1041,17 @@ def hunt(page):
     check('Cover Page, then typing: the letter where the caret was, after the cover', '\\end{titlepage}' in s and 'Hello Zworld.' in s and s.index('\\end{titlepage}') < s.index('Zworld'), s[60:])
 
 
-EXTRA = [hunt, clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]
+def hunt_c(page):
+    """What a Word user met typing (round 3's hunt-c)."""
+    # a straight single quote opening a quotation: LaTeX's opening quote, as Word's smart quotes
+    # make it; it stayed ', and TeX printed a closing quote at both ends
+    load_doc(page, W('Start here.')); click_text(page, 'here', 5)
+    page.keyboard.type(" He said 'yes' and ('no'), it's rock 'n' roll"); settle(page, 300)
+    check("a single quote typed after a space opens a quotation: `yes', an apostrophe stays '", W("Start here. He said `yes' and (`no'), it's rock `n' roll") == src(page), src(page)[40:140])
+    check('and the page draws the opening quote', page.evaluate("[...document.querySelectorAll('#pages span.t')].some((s) => s.textContent.includes('said \u2018yes\u2019'))"))
+
+
+EXTRA = [hunt, hunt_c, clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]
 
 if __name__ == '__main__':
     sys.exit(run())
