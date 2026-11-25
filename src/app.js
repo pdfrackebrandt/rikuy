@@ -681,9 +681,11 @@ class App {
     this.px = px;
     // (the zoom as a percentage, the one the status bar shows, as Word's does; fitting the width is
     // what a press does, its name)
-    $('#zoomv').textContent = Math.round(px / PX_PER_PT * 100) + '%';
+    // (written when it changes: written at every keystroke, it was the status bar laid out again)
+    const zt = Math.round(px / PX_PER_PT * 100) + '%', zv = $('#zoomv');
+    if (zv.textContent !== zt) zv.textContent = zt;
     // (its name stays "Fit width", what a press does; the zoom it shows is its description)
-    $('#zoomv').setAttribute('aria-description', 'Zoom: ' + $('#zoomv').textContent);
+    if (zv.getAttribute('aria-description') !== 'Zoom: ' + zt) zv.setAttribute('aria-description', 'Zoom: ' + zt);
     // with the text block as wide as the screen, the view starts at the text, not at the margin
     if (this.textFit && changed) requestAnimationFrame(() => { if (this.textFit) this.desk.scrollLeft = Math.max(0, P.ml * px - 6); });
     else if (web && changed) requestAnimationFrame(() => { if (!this.textFit) this.desk.scrollLeft = 0; });
@@ -1078,7 +1080,8 @@ class App {
     this.countStatus(pages, m.words);
     this.problemsSoon();
     this.scriptsSoon();
-    $('#docname').textContent = this.name;
+    const dn = $('#docname');
+    if (dn.textContent !== this.name) dn.textContent = this.name;
     this.noteSaveState();
     this.lastMs = ms;
     this.updateFileTabs();
@@ -1090,8 +1093,12 @@ class App {
     const el = $('#savestate');
     if (!el) return;
     el.hidden = false;
-    el.textContent = kept === false || this.unsaved ? 'Not saved' : 'Saved';
-    el.title = kept === false ? 'This browser could not keep it: File, Save a copy, or a Download, keeps a copy' : this.unsaved ? 'Being kept in this browser' : 'Saved in this browser: it is here at your next visit';
+    // (each written where it changed: the same words written at every keystroke were the title
+    // bar's text laid out and painted again)
+    const t = kept === false || this.unsaved ? 'Not saved' : 'Saved';
+    const ti = kept === false ? 'This browser could not keep it: File, Save a copy, or a Download, keeps a copy' : this.unsaved ? 'Being kept in this browser' : 'Saved in this browser: it is here at your next visit';
+    if (el.textContent !== t) el.textContent = t;
+    if (el.title !== ti) el.title = ti;
   }
 
   // ---- Chinese, Arabic and India's scripts ---------------------------------------
