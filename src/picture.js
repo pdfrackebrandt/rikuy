@@ -344,6 +344,43 @@ export function setCrop(src, P, c) {
   return { edits: keyEdits(src, P, ch) };
 }
 
+// Crop as Word crops: the picture keeps its scale, so the part kept is drawn as large as it was
+// and the picture's box shrinks with what is cut (grows with what comes back). graphicx sizes the
+// part kept, so a width or height given grows with each cut part by as much (the kept part was
+// scaled back up to the old width); a scale, or no size at all, keeps the scale by itself. nat: the
+// file's size in bp, as TeX reads it. A size Rikuy cannot read (a macro's) is left as it is.
+export function cropKeepScale(src, P, c, nat) {
+  const r = setCrop(src, P, c);
+  const S = sizeOf(src, P);
+  if (!nat || !(nat.w > 0 && nat.h > 0) || !r.edits || S.by !== 'keys' || (S.width == null && S.height == null)) return r;
+  const was = cropOf(P, nat) || { l: 0, b: 0, r: 0, t: 0 };
+  const now = !c || [c.l, c.b, c.r, c.t].every((v) => Math.abs(v) < 0.5) ? { l: 0, b: 0, r: 0, t: 0 } : c;
+  const fw = (nat.w - now.l - now.r) / (nat.w - was.l - was.r), fh = (nat.h - now.b - now.t) / (nat.h - was.b - was.t);
+  const ch = {};
+  const scaled = (t, f) => {
+    if (!(f > 0) || !Number.isFinite(f)) return null;
+    // (four places, and a value within a thousandth of one with two taken as that one: a crop
+    // and Remove Crop give 0.5\linewidth back, not 0.5001\linewidth)
+    const put = (v) => { const r2 = Math.round(v * 100) / 100; return fmt(Math.abs(v - r2) <= Math.abs(v) * 1e-3 ? r2 : v, 4); };
+    const sh = shareOf(t);
+    if (sh) { const v = put(sh[0] * f); return (v === '1' ? '' : v) + '\\' + sh[1]; }
+    const m = /^([+-]?(?:\d+\.?\d*|\.\d+))\s*(pt|bp|mm|cm|in|pc|em|ex|dd|cc)$/.exec(String(unbrace(t)).trim());
+    return m ? put(parseFloat(m[1]) * f) + m[2] : null;
+  };
+  for (const [k, t, f] of [['width', S.width, fw], [keyOf(P, 'totalheight') != null ? 'totalheight' : 'height', S.height, fh]]) {
+    if (t == null || Math.abs(f - 1) < 1e-9) continue;
+    const v = scaled(t, f);
+    if (v == null) return r;
+    ch[k] = v;
+  }
+  if (!Object.keys(ch).length) return r;
+  // (the size and the crop as one change of the keys: each read from the source as it was)
+  const none = !c || [c.l, c.b, c.r, c.t].every((v) => Math.abs(v) < 0.5);
+  const cm = (bp) => { const v = Math.round(bp * 2.54 / 72 * 100) / 100; return v === 0 ? '0' : fmt(v, 2) + 'cm'; };
+  Object.assign(ch, none ? { trim: null, clip: null, viewport: null } : { trim: [c.l, c.b, c.r, c.t].map(cm).join(' '), clip: true, viewport: null });
+  return { edits: keyEdits(src, P, ch) };
+}
+
 // ---- rotate and flip --------------------------------------------------------------------------------
 export function angleOf(src, P) {
   const R = P.wraps.find((w) => w.kind === 'rot');

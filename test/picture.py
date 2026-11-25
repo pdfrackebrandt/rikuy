@@ -144,7 +144,9 @@ def trips(page):
     hand = WRAP(CENTER().replace('\\begin{center}', '\\begin{figure}[t]\n\\centering').replace('\\end{center}', '\\end{figure}').replace('width=0.5\\linewidth', 'width=0.5\\textwidth'))
     load_doc(page, hand); P(page)
     check('a figure written by hand shows its place: Top of Page checked, Width 50% of the text', pressed(page, 'picture-place-top') is True and page.input_value('#rc-picture-width') == '50%')
-    roundtrip(page, DOC, P, fn('picture-crop', {'l': 72 / 2.54, 'b': 0, 'r': 0, 't': 72 / 2.54}), WRAP(CENTER('width=0.5\\linewidth,trim=1cm 0 0 1cm,clip')), off_command='picture-crop-remove', label='Crop (trim, clip), Remove Crop undoes it')
+    # (round 3: the picture keeps its scale, as Word's: the width shrinks with the part cut; the part
+    # kept was scaled back up to the old width)
+    roundtrip(page, DOC, P, fn('picture-crop', {'l': 72 / 2.54, 'b': 0, 'r': 0, 't': 72 / 2.54}), WRAP(CENTER('width=0.4016\\linewidth,trim=1cm 0 0 1cm,clip')), off_command='picture-crop-remove', label='Crop (trim, clip) keeping the scale, Remove Crop undoes it')
     roundtrip(page, DOC, P, fn('picture-alt', {'text': 'A red & blue box, 50%'}), WRAP(CENTER('width=0.5\\linewidth,alt={A red \\& blue box, 50\\%}')), off_command=fn('picture-alt', {'text': ''}), label='Alt Text')
     roundtrip(page, DOC, P, fn('picture-alt', {'text': '', 'decorative': True}), WRAP(CENTER().replace('\\begin{center}\n', '\\begin{center}\n% alt (decorative)\n')), off_command=fn('picture-alt', {'text': ''}), label='Mark as decorative')
     roundtrip(page, DOC, P, 'picture-lock', lambda t: re.search(r'width=0\.5\\linewidth,height=[\d.]+cm\]', t) is not None, label='Lock Aspect Ratio off writes the height')
@@ -221,6 +223,7 @@ def sizing(page):
 
 def tools(page):
     load_doc(page, DOC); settle(page, 400); sel_pic()(page)
+    h_before = page.evaluate("document.querySelector('#pages .a-img').getBoundingClientRect().height")
     run_cmd(page, 'picture-crop'); settle(page, 200)
     st = page.evaluate("(() => { const c = document.querySelector('.pic-crop'); return c && { bars: c.querySelectorAll('.pc-h').length, on: document.getElementById('rc-picture-crop').getAttribute('aria-pressed') }; })()")
     check('Crop: the whole picture dim, the part kept bright, eight black bars; the button pressed', st and st['bars'] == 8 and st['on'] == 'true', st)
@@ -233,6 +236,8 @@ def tools(page):
     check('dragging the right bar half way in, then Enter: trim=0 0 2.54cm 0,clip (TeX\'s size of the file: 150 dpi)', m and abs(float(m.group(1)) - 2.54) < 0.06, body(page))
     drawn = page.evaluate("(() => { const s = document.querySelector('#pages .a-img'); const r = s.getBoundingClientRect(); return { box: s.classList.contains('a-box'), clip: !!s.querySelector('.pic-in.clip'), ratio: r.width / r.height }; })()")
     check('the page draws the cropped picture: its box half as wide for the same height (graphicx\'s box), the rest cut off', drawn['box'] and drawn['clip'] and abs(drawn['ratio'] - 0.75) < 0.03, drawn)
+    h_after = page.evaluate("document.querySelector('#pages .a-img').getBoundingClientRect().height")
+    check('r3 Crop keeps the scale, as Word\'s: the picture as tall as before, width=0.25\\linewidth', abs(h_after - h_before) < 2 and 'width=0.25\\linewidth,trim=' in src(page), (h_before, h_after, body(page)))
     page.evaluate('window.rikuy.undo()'); settle(page, 200); sel_pic()(page)
     run_cmd(page, 'picture-crop'); page.keyboard.press('Escape'); settle(page, 200)
     check('Escape leaves Crop with nothing written', src(page) == DOC and not page.evaluate("!!document.querySelector('.pic-crop')"))
