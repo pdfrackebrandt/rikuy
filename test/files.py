@@ -325,6 +325,18 @@ def cross_files():
                 got = {f: src(page, f) for f in G}
                 exp = want if key == 'X' else {f: t.replace('X', '') if f == 'main.tex' else t for f, t in want.items()}
                 check('cross files: %s over a selection into an \\input inside %s takes each file\'s part' % (key, 'a list' if G is L else 'a theorem'), got == exp, got)
+        # (review V3) Enter there breaks the two items' remains apart again with a new \item, in one
+        # step: they were left as one item, "One beta"
+        load_doc(page, L)
+        page.evaluate(SEL, ['One alpha', 4, 'Two beta', 4])
+        settle(page)
+        page.keyboard.press('Enter')
+        settle(page, 200)
+        got = {f: src(page, f) for f in L}
+        check('cross files: Enter over a selection into an \\input inside a list leaves two items', got == {'main.tex': L['main.tex'].replace('One alpha\n', 'One \n\\item \n'), 'items.tex': L['items.tex'].replace('\\item Two ', '')}, got)
+        page.keyboard.press('Control+z')
+        settle(page, 200)
+        check('cross files: and one undo brings both files back', all(src(page, f) == L[f] for f in L), {f: src(page, f) for f in L})
         # (review W1) from a heading's first letter: the heading goes whole, no \section{} left
         H = {'main.tex': '\\documentclass{article}\n\\begin{document}\n\\section{Intro}\nMain para one.\n\n\\input{a}\n\\end{document}\n', 'a.tex': 'A first.\n\nA second.\n'}
         load_doc(page, H)

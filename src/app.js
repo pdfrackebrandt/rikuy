@@ -2470,10 +2470,24 @@ class App {
   enter(soft) {
     const c = this.caretNow();
     if (!c) return;
-    // (over a selection from one file into another: what it holds goes, crossFileEdits; the two
-    // files' remains are two paragraphs already, the break Enter makes. It went in at the
-    // selection's start, the selection kept)
-    if (c.crossFile) { const X = this.crossFileEdits(getSelection().getRangeAt(0)); if (X && X.edits.length) { this.commit(X.edits, { ...X.at, bias: -1 }, 'del'); return; } }
+    // (over a selection from one file into another: what it holds goes, crossFileEdits. Mostly
+    // the two files' remains are two paragraphs already, the break Enter makes; from one list
+    // item into another file's, whose \item went with it, a new \item is the break: the two items
+    // were left as one. It went in at the selection's start, the selection kept)
+    if (c.crossFile) {
+      const X = this.crossFileEdits(getSelection().getRangeAt(0));
+      if (X && X.edits.length) {
+        const pre = this.src(X.at.f).slice(Math.max(0, X.at.p - 4000), X.at.p), k = pre.search(/\\item(?![A-Za-z])(?![^]*\\item(?![A-Za-z]))/);
+        const inItem = k >= 0 && !/\n[ \t]*\n|\\(?:begin|end)\s*\{/.test(pre.slice(k));
+        const tookItem = X.edits.some((ed) => ed.f !== X.at.f && /\\item(?![A-Za-z])/.test(this.src(ed.f).slice(ed.s, ed.e)));
+        if (!soft && inItem && tookItem) {
+          const ed = X.edits.find((x) => x.f === X.at.f && x.s === X.at.p);
+          if (ed) ed.t += '\n\\item '; else X.edits.push({ f: X.at.f, s: X.at.p, e: X.at.p, t: '\n\\item ' });
+          this.commit(X.edits, { f: X.at.f, p: X.at.p + 7, bias: 1 }, 'enter');
+        } else this.commit(X.edits, { ...X.at, bias: -1 }, 'del');
+        return;
+      }
+    }
     // (a second Enter on the line after a display: a new paragraph there)
     if (c.ghost && this.ghost.line && !this.ghost.pend) { this.ghost.line = false; this.ghost.el.classList.add('ind'); return; }
     // A second Enter where the first left the caret at a paragraph's start: a second empty
