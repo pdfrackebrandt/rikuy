@@ -3270,7 +3270,11 @@ class App {
     // a .docx copied in the file manager and pasted here opens as Open would open it
     const docx = [...(dt.files || [])].find((f) => isDocx(f));
     if (docx) { this.openDocx(docx); return; }
-    const imgs = !plain && !html ? [...(dt.files || [])].filter((f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type)) : [];
+    // (a browser's Copy Image, and a picture copied in Word, put the picture's <img> tag beside its
+    // file: HTML with a picture and no words is the picture, which the HTML paste dropped, so
+    // nothing came)
+    const onlyPic = /<img\b/i.test(html) && !html.replace(/<(style|script|title|head)\b[\s\S]*?<\/\1>|<!--[\s\S]*?-->|<[^>]*>|&nbsp;/gi, '').trim();
+    const imgs = !plain.trim() && (!html || onlyPic) ? [...(dt.files || [])].filter((f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type)) : [];
     if (imgs.length) { this.openFiles(imgs.map((f, i) => new File([f], 'pasted-' + Date.now().toString(36) + (i ? '-' + i : '') + '.' + f.type.slice(6).replace('jpeg', 'jpg'), { type: f.type })), undefined, { fresh: true }); return; }
     let latex = '';
     try { latex = dt.getData('text/x-galley-latex') || ''; } catch (err) { latex = ''; }

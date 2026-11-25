@@ -1015,6 +1015,17 @@ def hunt(page):
     x1 = page.locator('#pages .a-img').bounding_box()['x']
     check('Insert Caption leaves the centred picture where it was (centred, as TeX prints it)', '\\captionof{figure}{Red}' in src(page) and abs(x1 - x0) < 1, (x0, x1))
 
+    # A picture copied in a browser (Copy Image) or in Word comes with its <img> tag as HTML beside
+    # its file: pasted, it is placed as a picture alone is (nothing came: the HTML paste dropped it)
+    B64 = base64.b64encode(png(40, 30)).decode()
+    for html in ('<meta charset="utf-8"><img src="https://example.com/cat.png" alt="A cat">', '<html><head><style>p { margin: 0 }</style></head><body><!--StartFragment--><img src="file:///C:/x.png"><!--EndFragment--></body></html>'):
+        load_doc(page, DOC); settle(page, 200)
+        click_text(page, 'After', 0)
+        page.evaluate("""([b64, html]) => { const u = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); const dt = new DataTransfer(); dt.items.add(new File([u], 'image.png', { type: 'image/png' })); dt.setData('text/html', html);
+          document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }""", [B64, html])
+        until(page, '() => (window.rikuy.files.get("main.tex").match(/includegraphics/g) || []).length === 2')
+        check('a picture pasted with its <img> tag as HTML is placed: ' + html[:30], src(page).count('\\includegraphics') == 2 and re.search(r'\{pasted-[a-z0-9]+\.png\}', src(page)) is not None, src(page)[60:])
+
 
 def run():
     with sync_playwright() as p:
