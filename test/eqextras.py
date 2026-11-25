@@ -105,6 +105,23 @@ with sync_playwright() as p:
     rows = ta()
     check('rows pasted into a gather come without their &', '&' not in rows and 'a = b' in rows and 'c = d' in rows, rows[-80:])
     k.press('Escape'); settle(page, 300)
+    # (into the middle of an align's row: the rows at the caret, the row split there and every new
+    # line indented as the rows are; the paste went to the align's end, the field's place in the
+    # rows never found in the box, and the row after the rows lost its indent. One row goes in at
+    # the caret, the row staying one; each & of && dropped in a gather, where the second stayed)
+    ALG = '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nText.\n\\begin{align}\n  a &= b \\\\\n  c &= d\n\\end{align}\nMore.\n\\end{document}\n'
+    got = []
+    for doc, own in ((ALG, '\\begin{align}\n  x &= y \\\\\n  z &= w\n\\end{align}'), (ALG, '$x &= y$'), (ALG.replace('align}', 'gather}').replace('&', ''), '\\begin{alignat}{2}\n  x &= y && z &= w \\\\\n  u &= v && s &= t\n\\end{alignat}')):
+        load_doc(page, doc)
+        page.locator('.it.dm').nth(0).click()
+        page.wait_for_selector('#pop-field', timeout=10000); settle(page, 300)
+        if '&' in doc: k.press('ArrowLeft'); settle(page, 100)
+        page.evaluate(PASTE, [' x ', own]); settle(page, 400, full=True)
+        got.append(ta())
+        k.press('Escape'); settle(page, 300)
+    check('rows pasted mid row into an align: at the caret, the row split there, every line indented', got[0] == '  a &= b \\\\\n  c &= \\\\\n  x &= y \\\\\n  z &= w \\\\\n  d', got[0])
+    check('one row pasted mid row: at the caret, its & kept, the row one row', got[1] == '  a &= b \\\\\n  c &=x &= y d', got[1])
+    check('alignat\'s && pasted into a gather: no & left', '&' not in got[2] and '  x = y' in got[2], got[2])
     load_doc(page, keep)
     open_inline()
     # paste into the LaTeX box

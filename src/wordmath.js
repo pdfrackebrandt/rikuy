@@ -1023,5 +1023,12 @@ export function installWordTyping(mf, opts) {
       return !!arr && goCell({ arr, model }, r, c);
     } catch (e) { return false; }
   };
-  return { active: () => buf != null || arg != null, newRow, toCell, reposition: () => { if (buf != null) place(); }, destroy: () => { chip.remove(); } };
+  // (the caret's cell of the field's own rows: its row, its column, and the LaTeX of the cell up to
+  // the caret; null outside them)
+  const cellOf = () => {
+    const at = cellAt();
+    if (!at || !at.arr.parent || at.arr.parent.type !== 'root') return null;
+    try { const cl = at.arr.getCell(at.r, at.c); return { r: at.r, c: at.c, pre: mf.getValue(at.model.offsetOf(cl[0]), mf.position, 'latex') }; } catch (e) { return null; }
+  };
+  return { active: () => buf != null || arg != null, newRow, toCell, cellOf, reposition: () => { if (buf != null) place(); }, destroy: () => { chip.remove(); } };
 }
