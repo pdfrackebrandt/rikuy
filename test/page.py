@@ -879,6 +879,16 @@ def hunt(page):
         page.keyboard.type('Z'); settle(page, 200)
         check('header typed, then ' + close + ': the caret back in the text where it was', '\\fancyhead[L]{My Title}' in src(page) and 'Second Zparagraph of' in src(page), src(page)[-120:])
 
+    # Columns › Two with one paragraph's words selected: that paragraph in two columns, as Word's
+    # Apply to: Selected text (the whole document went into twocolumn)
+    d = DOC()
+    load_doc(page, d); place(page, ('Second', 'text.')); open_tab(page, 'Layout')
+    page.get_by_role('button', name='Columns', exact=True).click(); settle(page, 200)
+    page.get_by_role('menuitemradio', name='Two').click(); settle(page, 300)
+    check('Columns › Two on one selected paragraph: multicols around it, the class untouched', src(page) == DOC('\\usepackage{multicol}\n', 'First paragraph here with words.\n\n\\begin{multicols}{2}\nSecond paragraph of the text.\n\\end{multicols}'), src(page)[:220])
+    page.evaluate('rikuy.undo()'); settle(page, 150)
+    check('  one undo gives the bytes back', src(page) == d)
+
 
 def run():
     names = sys.argv[1:]

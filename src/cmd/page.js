@@ -378,7 +378,9 @@ export const methods = {
       // (the multicols the caret is in: its number, or gone for one column)
       // (first, on the text as the caret knows it)
       steps.unshift((t) => { const X = PS.multicolsAt(t, at.c.a); if (!X) return []; if (n === 1) return PS.unwrapMulticols(t, X); return X.nAt && +t.slice(X.nAt[0], X.nAt[1]) !== n ? [{ s: X.nAt[0], e: X.nAt[1], t: String(n) }] : []; });
-    } else if (at && at.multi && o.scope !== 'document' && n > 1) {
+    } else if (at && (at.multi || (at.c && !at.c.collapsed && !at.c.ghost)) && o.scope !== 'document' && n > 1) {
+      // (words selected in one paragraph are a selection too, as Word's Apply to: Selected text:
+      // the whole document went into two columns)
       const r = this.pageBlocks(at);
       if (!r) { this.toast('Columns go around whole paragraphs of the main file: select paragraphs there.'); return false; }
       // (around the paragraphs first, the package after: the paragraphs' places are the text's of now)
