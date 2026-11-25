@@ -795,7 +795,7 @@ export class Layout {
       }
       // (the space above a multicols band, and below it before what follows)
       this.bandGaps(pg, els);
-      P.flow.replaceChildren(...els);
+      placeChildren(P.flow, els);
       if (pg.fns.length) { P.fns.hidden = false; P.fns.replaceChildren(P.rule, ...pg.fns.map((f) => f.el)); }
       else { P.fns.hidden = true; P.fns.replaceChildren(); }
       P.entries = pg.entries;
@@ -1141,6 +1141,21 @@ export class Layout {
 }
 
 const NO_MARKS = { left: '', right: '' };
+// A page's flow made to hold els in order, its children that stay left where they are: a
+// replaceChildren took every paragraph of the page out and put it back for one that changed,
+// and the browser made each one's boxes again (a page of dev/bench/long laid out whole on every
+// keystroke). Those not in els go; the rest are in els' order already but where an item moved
+// or came, which goes in before the child standing at its place.
+function placeChildren(parent, els) {
+  const keep = new Set(els);
+  for (let n = parent.firstChild; n;) { const next = n.nextSibling; if (!keep.has(n)) n.remove(); n = next; }
+  let cur = parent.firstChild;
+  for (const el of els) {
+    if (cur === el) { cur = cur.nextSibling; continue; }
+    parent.insertBefore(el, cur);
+  }
+  while (cur) { const next = cur.nextSibling; cur.remove(); cur = next; }
+}
 // (R1) The lines of a tabbing, in order: a line with \= (a \kill line, often) sets the stops where
 // its fields end, each as wide as its text with its trailing space, as TeX measures them; a line
 // after it has each field start at its stop (a field wider than its stop's room runs over the

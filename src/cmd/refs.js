@@ -816,7 +816,7 @@ export const methods = {
         if (caps.length) for (const c of it.el.querySelectorAll('[data-cap]')) if (!capPage.has(c.dataset.cap)) capPage.set(c.dataset.cap, k + 1);
       }
     });
-    for (const c of caps) c.textContent = capPage.has(c.dataset.cap) ? String(capPage.get(c.dataset.cap)) : '';
+    for (const c of caps) { const v = capPage.has(c.dataset.cap) ? String(capPage.get(c.dataset.cap)) : ''; if (c.textContent !== v) c.textContent = v; }
     // (an entry's page: the page holding the words just before it, a paragraph cut over two pages
     // giving each part its own; blocks by file, searched by halves: review M9, L12)
     const pageNo = new Map([...this.root.querySelectorAll('.page')].map((p, k) => [p, k + 1]));
@@ -891,8 +891,9 @@ export const methods = {
     const fmt = (n) => (style === 'roman' ? roman(n) : style === 'Roman' ? roman(n).toUpperCase() : style === 'alph' ? String.fromCharCode(96 + n) : style === 'Alph' ? String.fromCharCode(64 + n) : style === 'fnsymbol' ? ['*', '\u2020', '\u2021', '\u00a7', '\u00b6', '\u2016', '**', '\u2020\u2020', '\u2021\u2021'][n - 1] || String(n) : String(n));
     for (const pg of this.root.querySelectorAll('.page')) {
       const marks = pg.querySelectorAll('sup.a-fn:not(.fn-th)'), notes = pg.querySelectorAll('.fn:not(.fn-th) .fnn');
-      marks.forEach((m, k) => { if (m.dataset.n0 == null) m.dataset.n0 = m.textContent; m.textContent = fmt(k + 1); });
-      notes.forEach((m, k) => { if (m.dataset.n0 == null) m.dataset.n0 = m.textContent; m.textContent = fmt(k + 1); });
+      // (a number written only where it changed: written again, it was new boxes on every page)
+      marks.forEach((m, k) => { if (m.dataset.n0 == null) m.dataset.n0 = m.textContent; const v = fmt(k + 1); if (m.textContent !== v) m.textContent = v; });
+      notes.forEach((m, k) => { if (m.dataset.n0 == null) m.dataset.n0 = m.textContent; const v = fmt(k + 1); if (m.textContent !== v) m.textContent = v; });
     }
   },
 

@@ -1034,7 +1034,10 @@ class App {
       const key = (row.dataset.full || (row.querySelector('.toc-n').textContent || '') + (row.querySelector('.toc-t').textContent || '')).replace(/\s+/g, ' ').trim();
       let pg = byText.get(key);
       if (pg == null) for (const [k, v] of byText) if (k.endsWith(row.querySelector('.toc-t').textContent.trim())) { pg = v; break; }
-      t.textContent = pg != null ? String(pg) : '';
+      // (written only when it changed: a text written again is new boxes on the contents' page,
+      // which the browser laid out and painted again at every keystroke)
+      const v = pg != null ? String(pg) : '';
+      if (t.textContent !== v) t.textContent = v;
     }
   }
 
