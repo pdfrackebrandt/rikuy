@@ -1382,6 +1382,64 @@ def r2_compile(page):
     check('KOMA-Script\'s \\subtitle compiles and prints under the title', k['ok'] and not k['errors'] and 'Koma sub' in k['text'], (k['errors'], k['text'][:200]))
 
 
+def r3_fontspec(page):
+    """Round 3's hunt: a XeLaTeX or LuaLaTeX document's own font switches, fontspec's
+    \\newfontfamily\\headfont{TeX Gyre Heros}: {\\headfont words} drew a chip of an unknown command
+    "\\headfont" before the words; now the words are drawn in that font's look, typing and Ctrl+B
+    in them edit the words inside the group, one undo goes back; with dist/tex it compiles"""
+    for pre in ('\\newfontfamily\\headfont{TeX Gyre Heros}[Scale=0.9]\n', '\\newfontfamily{\\headfont}[Scale=0.9]{TeX Gyre Heros}\n'):
+        doc = '% !TeX program = xelatex\n\\documentclass{article}\n\\usepackage{fontspec}\n\\setmainfont{TeX Gyre Pagella}\n' + pre + '\\begin{document}\nPlain start {\\headfont Heros words} back to main.\n\\end{document}\n'
+        load_doc(page, doc)
+        got = page.evaluate("""() => { const p = document.querySelector('#pages .it.p'), s = [...p.querySelectorAll('span.t')].find((x) => x.textContent.includes('Heros'));
+          return [p.textContent.replace(/\\s+/g, ' ').trim(), s ? getComputedStyle(s).fontFamily : '']; }""")
+        check('R3 fontspec: {\\headfont words} draws its words alone, in the family\'s look (%s)' % pre.split('{')[0].strip(), got[0] == 'Plain start Heros words back to main.' and 'Heros' in got[1], got[0][:80] + ' | ' + got[1][:40])
+        click_text(page, 'Heros words', 5); page.keyboard.type('X'); wait_src(page, 'HerosX')
+        check('R3 fontspec: typing in them edits the words in the group', 'Plain start {\\headfont HerosX words} back' in src(page), src(page)[-70:])
+        check('R3 fontspec: one undo goes back byte for byte', undo_is(page, doc))
+        select_text(page, 'words'); page.keyboard.press('Control+b'); wait_src(page, 'textbf')
+        check('R3 fontspec: Ctrl+B on a word of the group bolds it inside the group', '{\\headfont Heros \\textbf{words}} back' in src(page), src(page)[-70:])
+    # (\headfont{words} after.: the braces are a group, the switch holds on after it, as TeX reads it)
+    load_doc(page, doc.replace('{\\headfont Heros words} back', '\\headfont{Heros words} back'))
+    got = page.evaluate("[...document.querySelectorAll('#pages .y')].map((x) => x.className.includes('ff-sans') + ':' + x.textContent.replace(/\\s+/g, ' ').trim())")
+    check('R3 fontspec: \\headfont{words} after: words and what follows in the family\'s look, no chip', got == ['true:Heros words back to main.'], got)
+    click_text(page, 'Heros words', 5); page.keyboard.type('X'); wait_src(page, 'HerosX')
+    check('R3 fontspec: and typing in them edits inside the braces', '\\headfont{HerosX words} back' in src(page), src(page)[-60:])
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        for eng in ('xelatex', 'lualatex'):
+            r = pdf_text(page, doc.replace('xelatex', eng))
+            check('R3 fontspec: compiles with %s and prints the words' % eng, r['ok'] and not r['errors'] and 'Heros words' in r['text'], (r['errors'], r['text'][:120]))
+
+
+def r3_beamer(page):
+    """Round 3's hunt: beamer's overlay specifications are no text of the page. \\alert<2>{world}
+    drew "<2>" before the word, \\textbf<3>{bold} a bold "<" and "3>bold" in the text's weight,
+    \\begin{frame}<1-2>[t] its "<1-2>[t]"; now the words of every slide are drawn as they read,
+    typing edits inside the right braces, \\item<+->[a)] keeps its label; with dist/tex it compiles"""
+    doc = ('\\documentclass{beamer}\n\\begin{document}\n\\begin{frame}<1-2>[t]{Slide}\nHello \\alert<2>{world} and \\textbf<3>{bold}.\n'
+           '\\uncover<2->{Later} \\onslide<3> on.\n\\begin{itemize}\n\\item<+->[a)] Lab\n\\item<2-> Two\n\\end{itemize}\n\\end{frame}\n\\end{document}\n')
+    load_doc(page, doc)
+    got = page.evaluate("[...document.querySelectorAll('#pages .it')].map((x) => x.textContent.replace(/\\s+/g, ' ').trim()).filter(Boolean)")
+    check('R3 beamer: the slide\'s words drawn without their overlay specifications', any(t.endswith('Hello world and bold. Later on.') for t in got) and not any('<' in t or '[t]' in t for t in got), got)
+    check('R3 beamer: \\textbf<3>{bold} draws "bold" in bold', page.evaluate("[...document.querySelectorAll('#pages .y-bf')].map((x) => x.textContent)") == ['bold'], page.evaluate("[...document.querySelectorAll('#pages .y-bf')].map((x) => x.textContent)"))
+    check('R3 beamer: \\item<+->[a)] keeps its label', any(t.startswith('a)') for t in got), got)
+    click_text(page, 'bold', 2); page.keyboard.type('X'); wait_src(page, 'boXld')
+    click_text(page, 'world', 5); page.keyboard.type('s'); wait_src(page, 'worlds')
+    check('R3 beamer: typing in them edits inside their braces, the specifications kept', 'Hello \\alert<2>{worlds} and \\textbf<3>{boXld}.' in src(page), src(page)[40:120])
+    # Ctrl+B on a word bold by \textbf<3>{..} takes the bold off, as on any bold word
+    load_doc(page, doc); select_text(page, 'bold'); page.keyboard.press('Control+b'); wait_src(page, 'and bold.')
+    check('R3 beamer: Ctrl+B on the word \\textbf<3>{bold} draws bold takes the bold off', 'Hello \\alert<2>{world} and bold.' in src(page), src(page)[40:110])
+    # an environment's specification (no argument read there) and a theorem's, and a file \input
+    # into the deck, read so too
+    blk = ('\\documentclass{beamer}\n\\begin{document}\n\\begin{frame}\n\\begin{block}<2->{Block Title}\nIn block.\n\\end{block}\n'
+           '\\begin{theorem}<3->[Name]\nThm.\n\\end{theorem}\n\\input{part}\n\\end{frame}\n\\end{document}\n')
+    load_doc(page, {'main.tex': blk, 'part.tex': 'From \\alert<2>{part} file.\n'})
+    got = page.evaluate("[...document.querySelectorAll('#pages .it')].map((x) => x.textContent.replace(/\\s+/g, ' ').trim()).filter(Boolean)")
+    check('R3 beamer: \\begin{block}<2->, \\begin{theorem}<3->[Name] and an \\input file\'s \\alert<2> drawn without their specifications', not any('<' in t for t in got) and any('Theorem 1 (Name)' in t for t in got) and any('From part file.' in t for t in got), got)
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        r = pdf_text(page, doc)
+        check('R3 beamer: the deck compiles, two slides (<1-2>) with the words the page draws', r['ok'] and not r['errors'] and r['text'].count('\f') == 2 and 'Hello world and bold. Later' in re.sub(r'\s+', ' ', r['text']), (r['errors'], r['text'][-200:]))
+
+
 def r2_phone(p):
     """R2 on a phone, by taps: Code taken off from the style list, a paragraph made Author from it,
     the Rename Style dialog fitting with 44 px controls; screenshots"""
@@ -1550,7 +1608,7 @@ def r2_heading_join(page):
 
 def run():
     with sync_playwright() as p:
-        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter, block_join, item_heading, style_why, review_joins, r2_heading_join)
+        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review, heading_enter, block_join, item_heading, style_why, review_joins, r2_heading_join, r3_fontspec, r3_beamer)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style)
         # (names given on the command line run those alone)

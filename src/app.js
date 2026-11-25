@@ -2,7 +2,7 @@
 import { siInMath } from './siunitx.js';
 import { buildModel, INCR } from './model.js';
 import { Renderer, BLOCKS, esc, widgetCss } from './render.js';
-import { Layout, geometry } from './layout.js';
+import { Layout, geometry, fmtNum } from './layout.js';
 import {
   posFromDom, CaretIndex, segOfSpan, atomOfEl, styOfEl, visibleRanges, escapeTeX, textToTeX, withPdfText,
   endsWithControlWord, isBalanced, diff, stepStart, stepJoin, boundary, clusterEdge, sourceEdge, backspaceUnits
@@ -1104,7 +1104,17 @@ class App {
     const tocs = this.root.querySelectorAll('.toc-p:not([data-cap])');
     if (!tocs.length) return;
     const where = [];
-    plan.forEach((pg, k) => { for (const e of pg.entries) if (e.it.kind === 'h' && e.a === 0) where.push({ el: e.it.el, page: k + 1 }); });
+    // (the number the page prints, as TeX writes it in the .toc: i, ii in a book's front matter,
+    // 1 again from its main matter)
+    // (and the contents', the lists' and the bibliography's own heads, which memoir and tocbibind
+    // list in the contents: "Contents  i")
+    plan.forEach((pg) => {
+      for (const e of pg.entries) {
+        if (e.a !== 0) continue;
+        const el = e.it.kind === 'h' ? e.it.el : e.it.toc ? e.it.el.querySelector('.toc-head') : e.it.el && e.it.el.classList.contains('refs-h') ? e.it.el : null;
+        if (el) where.push({ el, page: fmtNum(pg.num, pg.fmt) });
+      }
+    });
     const byText = new Map();
     for (const w of where) byText.set(w.el.textContent.replace(/\s+/g, ' ').trim(), w.page);
     for (const t of tocs) {

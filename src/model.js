@@ -27,6 +27,8 @@ const STY = {
   sout: 'so', xout: 'so', hl: 'hl', textsuperscript: 'sup', textsubscript: 'sub', mbox: 'nb', text: 'rm',
   fbox: 'fbox', MakeUppercase: 'upper', uppercase: 'upper', MakeLowercase: 'lower', lowercase: 'lower',
   textcircled: 'circ', centerline: 'rm', foreignlanguage: '', textls: 'ls', ensure: '', phantom: 'ph', hphantom: 'ph',
+  // beamer's: the words of every slide drawn at once, as its handout prints them
+  only: '', uncover: '', visible: '', invisible: '', alert: '', structure: '',
   // ulem's dashed and dotted lines; the double strikethrough the Font group defines (src/cmd/font.js)
   dashuline: 'uld', dotuline: 'ulo', culine: 'ul', dsout: 'so2', ruby: 'ruby',
   // graphicx's mirror (B8: a picture flipped by Flip Horizontal)
@@ -98,7 +100,7 @@ const INVIS = new Set([
   'SetKwInOut', 'algnewcommand', 'floatname', 'restylefloat', 'newfloat', 'DeclareCaptionFormat', 'setuptoc',
   'counterwithin', 'counterwithout', 'renewenvironment', 'newcolumntype', 'arraystretch', 'tabcolsep', 'renewcommand',
   'textwidth', 'linewidth', 'columnwidth', 'paperwidth', 'paperheight', 'textheight', 'baselineskip', 'parindent',
-  'parskip', 'columnsep', 'columnseprule', 'tableofcontents', 'listoffigures', 'listoftables', 'pause', 'titlepage',
+  'parskip', 'columnsep', 'columnseprule', 'tableofcontents', 'listoffigures', 'listoftables', 'pause', 'onslide', 'titlepage',
   'columnbreak', 'twocolumn', 'onecolumn', 'fi', 'else', 'ifpdf', 'newcount', 'newif', 'printglossaries', 'printglossary',
   'usetkzobj', 'psset', 'schemestart', 'schemestop', 'setatomsep', 'setchemfig', 'definesubmol', 'tikzstyle', 'pgfkeys', 'pgfmathsetmacro', 'pgfmathdeclarefunction', 'pgfdeclarelayer', 'pgfsetlayers',
   'usepgfplotslibrary', 'newglossaryentry', 'loadglsentries', 'makeglossaries', 'DTLloaddb', 'DTLloadrawdb', 'lstdefinestyle', 'colorlet',
@@ -758,11 +760,44 @@ const PARSE_CACHE = new Map();
 // (B2) the parse the model made of a file's text, for the paragraph commands (src/parasrc.js
 // unitOf): read again at every move of the caret, a long text would be parsed each time
 export function parsedText(t) { for (const v of PARSE_CACHE.values()) if (v.text === t) return v.nodes; return null; }
-function parseCached(name, t, userSigs, sigKey) {
+// beamer's overlay specifications after a command or an environment's name (\only<2>{..},
+// \textbf<3>{..}, \frametitle<1>{..}, \begin{frame}<1-2>[t]) say on which slides a thing shows;
+// the page draws every slide's text at once, so they are read as spaces of the same length: the
+// tree's offsets stay the source's, the specification is no text of the page, and \textbf<3>{b}
+// takes {b} as TeX does (its argument was "<" and "3>b" ran on as text). Where the spaces fall in
+// the text (after \begin{block}, which reads no argument there) the text starts after them, as it
+// is drawn from the source. \item's own are read by the list (Builder.list), with the [label]
+// after them. A file \input into a deck is read so too (beamer: the class the main file read).
+const BEAMER_DOC = /\\documentclass\s*(?:\[[^\]]*\]\s*)?\{beamer\}/;
+const OVERLAY = /(\\(?:only|uncover|visible|invisible|alert|structure|onslide|pause|frametitle|framesubtitle|textbf|textit|emph|textsl|textsc|texttt|textrm|textsf|textmd|textup|color|textcolor|includegraphics|alt|temporal|action|hyperlink|underline|framezoom)|\\begin\s*\{(?:frame|block|alertblock|exampleblock|itemize|enumerate|description|onlyenv|uncoverenv|visibleenv|invisibleenv|altenv|actionenv|overprint|theorem|lemma|corollary|definition|definitions|example|examples|fact|proof)\})(<[^<>{}\n]{1,40}>)/g;
+export function maskOverlays(t, beamer, ranges) {
+  if (!(beamer || BEAMER_DOC.test(t.slice(0, 20000))) || t.indexOf('>') < 0) return t;
+  return t.replace(OVERLAY, (m, cmd, spec, at) => { if (ranges) ranges.push([at + cmd.length, at + m.length]); return cmd + ' '.repeat(spec.length); });
+}
+// the text nodes that start in a masked specification start after it (and go where nothing is left)
+function trimMasked(nodes, ranges) {
+  const walk = (ns) => {
+    for (let i = 0; i < ns.length; i++) {
+      const n = ns[i];
+      if (n.t === 'text') {
+        const r = ranges.find((x) => n.s >= x[0] && n.s < x[1]);
+        if (r) { if (r[1] >= n.e) { ns.splice(i, 1); i--; } else ns[i] = { ...n, s: r[1] }; }
+        continue;
+      }
+      if (n.nodes) walk(n.nodes);
+      if (n.args) for (const a of n.args) if (a && a.nodes) walk(a.nodes);
+    }
+  };
+  walk(nodes);
+  return nodes;
+}
+
+function parseCached(name, t, userSigs, sigKey, beamer = false) {
   const hit = PARSE_CACHE.get(name);
-  if (hit && hit.text === t && hit.sig === sigKey) return hit.nodes;
-  const nodes = parse(t, { userSigs });
-  PARSE_CACHE.set(name, { text: t, sig: sigKey, nodes });
+  if (hit && hit.text === t && hit.sig === sigKey && hit.beamer === beamer) return hit.nodes;
+  const ranges = [], masked = maskOverlays(t, beamer, ranges);
+  const nodes = ranges.length ? trimMasked(parse(masked, { userSigs }), ranges) : parse(masked, { userSigs });
+  PARSE_CACHE.set(name, { text: t, sig: sigKey, nodes, beamer });
   return nodes;
 }
 
@@ -886,7 +921,8 @@ class Builder {
     if (this.parsed.has(name)) return this.parsed.get(name);
     const t = this.files.get(name) || '';
     const sigKey = this.userSigKey || (this.userSigKey = JSON.stringify(this.userSigs));
-    const nodes = parseCached(name, t, this.userSigs, sigKey);
+    // (a file \input into a beamer deck is the deck's: its overlay specifications are read so too)
+    const nodes = parseCached(name, t, this.userSigs, sigKey, name !== this.project.main && this.opts.cls === 'beamer');
     this.parsed.set(name, nodes);
     return nodes;
   }
@@ -932,6 +968,13 @@ class Builder {
     if (ctx.f === this.project.main) {
       const R = refsSetup(ctx.src, O.chapters);
       O.refs = R;
+      // (KOMA-Script's options, the class's and \KOMAoptions{}'s in the preamble: chapterprefix,
+      // open=any, cleardoublepage=, bibliography=; src/layout.js reads them too)
+      if (O.koma) {
+        O.komaOpts = (R.clsOpts || '') + ',' + [...ctx.src.slice(0, this.docBody ? this.docBody.at : ctx.src.length).replace(/(^|[^\\])%.*$/gm, '$1').matchAll(/\\KOMAoptions\s*\{([^{}]*)\}/g)].map((m) => m[1]).join(',');
+        const op = /\bopen\s*=\s*(any|right|left)\b/g;
+        for (let m; (m = op.exec(O.komaOpts));) O.openright = m[1] !== 'any';
+      }
       if (R.tocdepth != null) O.tocdepth = R.tocdepth;
       O.fnStyle = R.fn.style; O.enStyle = R.en.style;
       if (R.fn.start > 1) this.c.footnote = R.fn.start - 1;
@@ -1797,11 +1840,18 @@ class Builder {
           para.push(nd);
           continue;
         }
+        // \title, \author and \date in the text, as many write them just before \maketitle: TeX
+        // prints what they last said, so they count from here on as the preamble's do
+        if ((name === 'title' || name === 'author' || name === 'date' || name === 'subtitle') && !paraShows()) {
+          this.meta[name] = { nd, ctx, a: name === 'date' ? nd.args[0] : name === 'subtitle' ? nd.args.find((x) => x && x.nodes) || null : nd.args[1], body: true };
+          para.push(nd);
+          continue;
+        }
         if (name === 'maketitle') {
           flushPara();
           if (env.top) this.sig = [];
           this.use('d' + this.dir);
-          const u = this.titleBlock(nd, ctx);
+          const u = this.titleBlock(nd, ctx, env.top ? units : null);
           if (u) units.push(u);
           // a title page of its own (report, book and KOMA's, or the titlepage option): the text
           // starts on the next page, numbered 1 again in a one sided document, as the titlepage
@@ -1817,6 +1867,8 @@ class Builder {
           flushPara();
           if (env.top) this.sig = [];
           const entries = this.tocEntries();
+          // (a chapter of its own in a report, a book and their like, \chapter*{Contents}: a new page)
+          if (this.opts.chapters) units.push(this.chapterBreak(ctx.f, nd.s, true));
           this.inToc('toc', nd, this.opts.lang === 'de' ? 'Inhaltsverzeichnis' : 'Contents');
           this.use(JSON.stringify(entries.map((h) => [h.num, h.text, h.level])));
           // (its direction is the text's where it stands: drawn again when a \selectlanguage before it changes)
@@ -1834,6 +1886,7 @@ class Builder {
           this.use(JSON.stringify(entries.map((h) => [h.num, h.text])));
           this.use('d' + this.dir);
           const head = kind === 'figure' ? (de ? 'Abbildungsverzeichnis' : 'List of Figures') : (de ? 'Tabellenverzeichnis' : 'List of Tables');
+          if (this.opts.chapters) units.push(this.chapterBreak(ctx.f, nd.s, true));
           this.inToc(kind === 'figure' ? 'lof' : 'lot', nd, head);
           units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'toc', head, lof: kind, entries, chapters: !!this.opts.chapters, dir: this.dirOf() }], fns: [], sig: this.sig.join('\u0001'), volatile: false });
           afterHeading = false;
@@ -1925,6 +1978,14 @@ class Builder {
         // a book's front and back matter: chapters there have no number; \mainmatter numbers them
         if (name === 'frontmatter' || name === 'mainmatter' || name === 'backmatter') {
           flushPara(); this.front = name !== 'mainmatter';
+          // (each starts a page, an odd one in a two sided book; the front matter is numbered i, ii,
+          // and the main matter 1 again, as \pagenumbering does: only the classes that have them)
+          if (this.opts.chapters) {
+            // (book.cls, memoir and KOMA-Script clear to an odd page for the front and main matter
+            // whatever openany or open=any say)
+            units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'pagebreak', odd: name !== 'backmatter' || !!this.opts.openright }], fns: [], sig: 'cb' });
+            if (name !== 'backmatter') units.push({ f: ctx.f, s: nd.e, e: nd.e, items: [{ type: 'pagemark', mark: { numbering: name === 'frontmatter' ? 'roman' : 'arabic' } }], fns: [], sig: 'pm' + name });
+          }
           // (memoir's \mainmatter numbers down to maxsecnumdepth again, whatever secnumdepth was)
           if (name === 'mainmatter' && this.opts.cls === 'memoir') { this.opts.secnumdepth = this.opts.maxsecnumdepth ?? 2; this.use('mm' + this.opts.secnumdepth); }
           continue;
@@ -1933,6 +1994,7 @@ class Builder {
           flushPara();
           if (env.top) this.sig = [];
           if (name === 'bibliography') for (const b of this.argText(ctx, nd.args[0]).split(',')) this.bibFiles.push(b.trim());
+          if (this.bibChapter(nd, ctx)) units.push(this.chapterBreak(ctx.f, nd.s));
           { const u = this.refsBlock(nd, ctx); units.push(u); this.inToc('bib', nd, u.items[0].head); }
           continue;
         }
@@ -2071,7 +2133,13 @@ class Builder {
     const sh = nd.args[1] && nd.args[0] && nd.args[0].nodes ? this.inl(nd.args[0].nodes, ctx, []) : null;
     this.headings.push({ level, num, text, parts: this.tocParts(sh || inl), tocText: sh ? this.plain(sh) : text, star, f: ctx.f, s: nd.s, e: nd.e });
     const de = this.opts.lang === 'de';
-    const chapLabel = level === 0 && this.opts.chapters && !front ? (this.appendix ? (de ? 'Anhang' : 'Appendix') : (de ? 'Kapitel' : 'Chapter')) : level === -1 && num ? (de ? 'Teil' : 'Part') : null;
+    // (KOMA-Script prints "1 Title" with no "Chapter" before it unless chapterprefix, and appendixprefix
+    // for an appendix, say so)
+    const ko = this.opts.koma ? this.opts.komaOpts || '' : null, on = (k) => { let v = false; for (const m of ko.matchAll(new RegExp('\\b' + k + '\\s*(?:=\\s*(\\w+))?\\s*(?=,|$)', 'g'))) v = !m[1] || /^(true|on|yes)$/.test(m[1]); return v; };
+    // (the last of the options counts, as \KOMAoptions after the class sets it again; a two line
+    // chapter heading has its prefix line too)
+    const prefix = ko == null || (this.appendix && /\bappendixprefix\b/.test(ko) ? on('appendixprefix') : on('chapterprefix') || /\bheadings\s*=\s*twolinechapter\b/.test(ko));
+    const chapLabel = level === 0 && this.opts.chapters && !front && prefix ? (this.appendix ? (de ? 'Anhang' : 'Appendix') : (de ? 'Kapitel' : 'Chapter')) : level === -1 && num ? (de ? 'Teil' : 'Part') : null;
     // the look the preamble gives this heading (titlesec, KOMA-Script), where it is not LaTeX's own
     if (look) this.use('L' + JSON.stringify(look));
     const it = { type: 'h', level, num, inl, star, f: ctx.f, ctx: 'h', s: nd.s, e: nd.e, chapLabel, dir: this.dirOf() };
@@ -2122,13 +2190,40 @@ class Builder {
     return s;
   }
 
-  titleBlock(nd, ctx) {
+  // the page break before a chapter, which \chapter* gives the contents, the lists and the
+  // bibliography too (to an odd page where chapters open on the right)
+  chapterBreak(f, at, list = false) {
+    // (memoir's contents and lists start with \chapterheadstart, space and no new page: on the page
+    // they are on, which they make plain; its bibliography is a \chapter* as the others')
+    return { f, s: at, e: at, items: list && this.opts.cls === 'memoir' ? this.chapterStart().slice(1) : this.chapterStart(), fns: [], sig: 'cbp' };
+  }
+  // (and its first page in the plain style, the number at the foot, as \chapter* sets it)
+  chapterStart() {
+    return [{ type: 'pagebreak', odd: !!this.opts.openright, chapter: true }, { type: 'pagemark', mark: { thisStyle: 'plain' } }];
+  }
+  // whether a bibliography is a chapter of its own: in a class with chapters, unless biblatex's
+  // heading or KOMA-Script's bibliography=leveldown make it a section
+  bibChapter(nd, ctx) {
+    const O = this.opts;
+    if (!O.chapters) return false;
+    if (nd.name === 'printbibliography' && nd.args[0] && /\bheading\s*=\s*(none|sub)/.test(this.argText(ctx, nd.args[0]) || '')) return false;
+    if (O.koma && /\bbibliography\s*=\s*leveldown/.test(O.komaOpts || '')) return false;
+    return true;
+  }
+
+  titleBlock(nd, ctx, units) {
     const m = this.meta;
     if (!m.title && !m.author) return null;
     const fns = [];
     const ranges = [];
-    // a \title in a preamble file of its own (\input{preamble}) is not a range of this file
-    const at = (x) => { if (x.ctx.f === ctx.f) ranges.push([x.nd.s, x.nd.e]); };
+    // a \title in a preamble file of its own (\input{preamble}) is not a range of this file; one in
+    // the text is the block's only where nothing drawn stands between it and \maketitle (the
+    // block's range would hold another's)
+    const at = (x) => {
+      if (x.ctx.f !== ctx.f) return;
+      if (x.body && (!units || x.nd.s > nd.s || units.some((u) => u.f === ctx.f && u.e > x.nd.s))) return;
+      ranges.push([x.nd.s, x.nd.e]);
+    };
     let title = [], authors = [], date = null, subtitle = null;
     this.thanksMode = true;
     if (m.title && m.title.a) {
@@ -2154,6 +2249,9 @@ class Builder {
       if (m.date.a) { date = this.inl(m.date.a.nodes, m.date.ctx, fns); trimInl(date); at(m.date); }
     } else date = [{ k: 'chr', text: today(this.opts.lang) }];
     this.thanksMode = false;
+    // (what it draws is part of its signature: a \title away from \maketitle is outside the
+    // block's range, and the page kept the drawing of the title as it was before a keystroke)
+    for (const x of [m.title, m.subtitle, m.author, m.date]) if (x && x.a) this.use('T' + x.ctx.src.slice(x.a.s, x.a.e));
     const s = Math.min(nd.s, ...ranges.map((r) => r[0]));
     const e = Math.max(nd.e, ...ranges.map((r) => r[1]));
     return { f: ctx.f, s, e, items: [{ type: 'title', title, ...(subtitle && subtitle.length ? { subtitle } : {}), authors, date, f: ctx.f, dir: this.dirOf() }], fns, sig: (this.sig || []).join('\u0001') };
@@ -2381,7 +2479,12 @@ class Builder {
       const t = this.tabular(nd, ctx);
       return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind: 'inline', parts: [t], f: ctx.f }], fns: t.fns || [] };
     }
-    if (name === 'thebibliography') return this.theBib(nd, ctx);
+    if (name === 'thebibliography') {
+      const u = this.theBib(nd, ctx);
+      // (\chapter*{Bibliography} in a report or a book: a page of its own)
+      if (u && this.bibChapter(nd, ctx)) u.items.unshift(...this.chapterStart());
+      return u;
+    }
     if (name === 'tabbing' && !nd.raw && nd.nodes) return this.tabbing(nd, ctx, env);
     if (/^multicols\*?$/.test(name) && !nd.raw && nd.nodes) {
       // multicols: its paragraphs set in columns on the page (src/layout.js), balanced unless
@@ -2560,6 +2663,16 @@ class Builder {
     return { type: 'p', inl: [{ k: 'seg', f: ctx.f, t: '​', map: [pos, pos], ph: true }], indent: false, cls: cls || '', ctx: 'p', f: ctx.f, dir: this.dirOf() };
   }
 
+  // the font switches fontspec's \newfontfamily, \newfontface and their like define in the
+  // preamble, with the page's look for each font (read once): { name: look }
+  fontFamilies() {
+    if (this.fontFams) return this.fontFams;
+    this.fontFams = new Map();
+    const t = (this.files && this.project && this.files.get(this.project.main)) || '', end = this.docBody ? this.docBody.at : Math.min(t.length, 200000);
+    const re = /\\(?:re)?(?:new|set|provide)fontfamily\s*\{?\s*\\([A-Za-z@]+)\s*\}?\s*(?:\[[^\]]*\]\s*)?\{([^{}]*)\}|\\newfontface\s*\{?\s*\\([A-Za-z@]+)\s*\}?\s*(?:\[[^\]]*\]\s*)?\{([^{}]*)\}/g;
+    for (const m of t.slice(0, end).replace(/(^|[^\\])%.*$/gm, '$1').matchAll(re)) this.fontFams.set(m[1] || m[3], fontLook(m[2] || m[4]));
+    return this.fontFams;
+  }
   // beamer numbers its captions only with \setbeamertemplate{caption}[numbered] (read once)
   beamerNumbered() {
     if (this.beamerNum == null) { const t = (this.files && this.project && this.files.get(this.project.main)) || ''; this.beamerNum = /\\setbeamertemplate\s*\{caption\}\s*\[numbered\]/.test(t.slice(0, 200000)); }
@@ -3413,6 +3526,19 @@ class Builder {
       const kids = this.inl(nodes.slice(k + 1), ctx, fns);
       if (name === 'fontsize') { const pt = parseFloat(A(0)); out.push({ k: 'sty', st: 'fs', fs: pt > 0 && pt < 400 ? pt : null, kids, f: ctx.f, decl: true }); }
       else { const look = fontLook(A(name === 'fontspec' ? 1 : 0)); out.push({ k: 'sty', st: look ? 'ff-' + look : 'ff', kids, f: ctx.f, decl: true }); }
+      return true;
+    }
+    // a family fontspec's \newfontfamily\headfont{TeX Gyre Heros} named (XeLaTeX and LuaLaTeX
+    // documents): {\headfont words} switches the font for the rest of the group, as \fontspec does,
+    // not a command the page does not know
+    // (\headfont{words} too: the braces are a group of the text, not an argument, as TeX reads them)
+    if (this.fontFamilies().has(name) && nd.args.every((a) => a && a.nodes && !a.o)) {
+      acc.flush();
+      const kids = [];
+      for (const a of nd.args) this.inl(a.nodes, ctx, fns, kids);
+      this.inl(nodes.slice(k + 1), ctx, fns, kids);
+      const look = this.fontFamilies().get(name);
+      out.push({ k: 'sty', st: look ? 'ff-' + look : 'ff', kids, f: ctx.f, decl: true });
       return true;
     }
     // ruby (luatexja-ruby, the ruby package): the reading above its base, as the title the page shows
