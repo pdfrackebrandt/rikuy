@@ -73,6 +73,17 @@ try:
             check('paste LaTeX ' + name + ': no paragraph break or block inside the format\'s braces', s == W(want).replace('\\begin{document}\n\\usepackage{ulem}', '\\usepackage{ulem}\n\\begin{document}\n'), repr(s[s.find('Some'):][:120]))
             page.keyboard.press('Control+z'); settle(page, 150)
             check('undo after LaTeX ' + name, src(page) == d)
+        # (round 2) plain text that begins with a blank line, pasted at a paragraph's end, starts a
+        # paragraph of its own, as Word's: the blank line was dropped and the words ran on ("para.New")
+        for name, plain, at, want in (('a blank line first, at a paragraph\'s end', '\n\nNew words.', ('Alpha para.', 11), 'Alpha para.\n\nNew words.\n\nOmega.'),
+                                      ('CRLF', '\r\n\r\nNew words.', ('Alpha para.', 11), 'Alpha para.\n\nNew words.\n\nOmega.'),
+                                      ('a blank line last, at a paragraph\'s start', 'New words.\n\n', ('Alpha para.', 0), 'New words.\n\nAlpha para.\n\nOmega.'),
+                                      ('a lone line end first: a space', '\nNew words.', ('Alpha para.', 11), 'Alpha para. New words.\n\nOmega.')):
+            load_doc(page, W('Alpha para.\n\nOmega.')); click_text(page, *at)
+            page.evaluate(PASTE, [None, plain]); settle(page, 250)
+            check('paste plain text with %s: its paragraph break kept' % name, src(page) == W(want), repr(src(page)[40:]))
+        page.keyboard.type('X'); settle(page, 200)
+        check('the caret after the pasted words', src(page) == W('Alpha para. New words.X\n\nOmega.'), repr(src(page)[40:]))
         # words copied from a bold word into plain ones keep the bold of the bold part (they went
         # as the visible words alone, plain); inside \\emph the outer format comes too
         from browser import place
