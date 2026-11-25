@@ -487,7 +487,11 @@ export const methods = {
     const r = setLanguageEdits(this, d, c);
     if (!r || !r.edits.length) { this.toast(r && r.why ? r.why : 'Nothing to change.'); return; }
     this.closeGroup();
-    this.commit(r.edits, c ? { f: c.f, p: c.b } : null, 'language');
+    // (the words selected again where the edits moved them, as Word leaves them: the caret went to
+    // their old end, which a babel line put in above moved back into the text before them, inside
+    // \begin{document} where they were its first words, and what was typed next went in there)
+    const at = (q, inside) => q + r.edits.filter((x) => x.f === c.f && (x.e < q || (x.e === q && (x.s < q || inside)))).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
+    this.commit(r.edits, c ? { f: c.f, selA: at(c.a, true), selB: at(c.b, false) } : null, 'language');
     this.closeGroup();
   },
 

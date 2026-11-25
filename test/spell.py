@@ -440,6 +440,17 @@ def r5(p):
         page.get_by_role('menuitem', name='all-important', exact=True).first.click(); settle(page, 300)
         page.keyboard.type('Z'); settle(page, 200)
         check('a synonym from the right click menu: the caret after the new word, not after the letters that differ', src(page) == doc.replace('important', 'all-importantZ'), src(page)[40:110])
+    # Review › Language on selected words, with babel's line to come: the words stay selected (the
+    # caret went to their old end, moved by that line into \begin{document}, and typing went there)
+    doc2 = '\\documentclass{article}\n\\begin{document}\nHe said Das ist gut here.\n\\end{document}\n'
+    load_doc(page, doc2); select_text(page, 'Das ist gut'); settle(page, 200)
+    page.get_by_role('tablist', name='Ribbon', exact=True).get_by_role('tab', name='Review', exact=True).click(); settle(page, 200)
+    page.click('#rv-lang'); settle(page, 250)
+    page.get_by_role('menuitemcheckbox', name='German (Germany)').click(); settle(page, 300)
+    want = doc2.replace('\\begin{document}', '\\usepackage[ngerman,english]{babel}\n\\begin{document}').replace('Das ist gut', '\\foreignlanguage{ngerman}{Das ist gut}')
+    check('Language on selected words: the source as written, the words still selected', src(page) == want and page.evaluate('getSelection().toString()') == 'Das ist gut', (src(page), page.evaluate('getSelection().toString()')))
+    page.keyboard.press('ArrowRight'); page.keyboard.type('!'); settle(page, 200)
+    check('and a key after them goes after them', src(page) == want.replace('gut}', 'gut!}'), src(page)[40:])
     check('R5: no page errors', not errors, errors[:5])
     browser.close()
 
