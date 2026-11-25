@@ -513,6 +513,10 @@ export function toggle(src, a, b, group, o = {}) {
     const r = clearKinds(src, a, b, [group]);
     return r.error ? { error: 'split' } : { ...r, on: false };
   }
+  // (bold by a bare \bfseries earlier in its group, no wrapper to take off: the words, or what is
+  // typed at the caret, get the kind's opposite, \textmd, as Word turns bold off there. Bold went
+  // on again, which changed nothing, and what was typed next came out bold)
+  if (!o.force && !o.w && BARE[group] && bareOn(src, a, group) && (a === b || bareOn(src, b, group))) return wrapIn(src, a, b, group, { cmd: BARE[group].write });
   const w = o.w || { cmd: GROUPS[group].write };
   if (o.other) {
     const X = around(src, a, b, o.other);
@@ -528,6 +532,44 @@ export function toggle(src, a, b, group, o = {}) {
   if (c.error) return { error: 'split' };
   return wrapIn(c.text, c.a, c.b, group, w);
 }
+// A switch of a kind in force at p with no group of its own: \bfseries (or \bf, \itshape, ...)
+// earlier in the group or environment p is in, not undone after it (\mdseries, \normalfont), as
+// "Plain \bfseries bold words" or \begin{center}\bfseries ... has, and every group inside that
+// scope (a table's cell in it) but the argument of the opposite (up: \textmd{..}). The group that
+// opens with one, {\bfseries ..}, is a wrapper around() finds. write: the kind's opposite.
+const BARE = {
+  bold: { on: /^\\(?:bfseries|bf)(?![A-Za-z])/, off: /^\\(?:mdseries|normalfont|rm)(?![A-Za-z])/, up: /\\(?:textmd|textnormal)\s*$/, write: 'textmd' },
+  italic: { on: /^\\(?:itshape|it|slshape|sl)(?![A-Za-z])/, off: /^\\(?:upshape|normalfont|rm)(?![A-Za-z])/, up: /\\(?:textup|textnormal)\s*$/, write: 'textup' }
+};
+export function bareOn(src, p, group) {
+  const B = BARE[group];
+  if (!B) return false;
+  const z = Math.max(0, p - 20000);
+  // (comments as spaces, so a brace or a switch in one counts for nothing)
+  const t = src.slice(z, p).replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, (m, x, y) => x + y + ' '.repeat(m.length - x.length - y.length));
+  let d = 0, env = 0;
+  for (let k = t.length - 1; k >= 0; k--) {
+    const c = t[k];
+    if (c !== '{' && c !== '}' && c !== '\\') continue;
+    let n = 0;
+    for (let j = k - 1; j >= 0 && t[j] === '\\'; j--) n++;
+    if (n % 2) continue;
+    // (a group closed before p is passed over whole; one p is in, left at its start: a switch
+    // before it is in force inside it too, so the scan goes on outwards, to the document's start)
+    if (c === '}') d++;
+    else if (c === '{') { if (d) d--; else if (B.up.test(t.slice(Math.max(0, k - 16), k))) return false; }
+    else if (!d) {
+      const r = t.slice(k, k + 24);
+      if (/^\\end\s*\{/.test(r)) env++;
+      else if (/^\\begin\s*\{\s*document\s*\}/.test(r)) return false;
+      else if (/^\\begin\s*\{/.test(r)) { if (env) env--; }
+      else if (!env && B.off.test(r)) return false;
+      else if (!env && B.on.test(r)) return true;
+    }
+  }
+  return false;
+}
+
 // whether every part of the selection has the kind (a caret: whether it is in a wrapper of it)
 // (max: the parts read at most. A button's look reads 400, and says off past them; a toggle, which
 // reads once, reads 4000 (half a second), so Bold again over a long document or table takes its

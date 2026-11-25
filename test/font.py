@@ -1166,9 +1166,30 @@ def phones(p):
         browser.close()
 
 
+def r2_bare_switch(page):
+    """(round 2) Bold by a bare \\bfseries (no group of its own: "Plain \\bfseries bold", the switch
+    at an environment's start): Ctrl+B at a caret or on selected words turns bold off there, as
+    Word's, with \\textmd. It wrote \\textbf, which changed nothing, and what was typed next came
+    out bold; Ctrl+B again in it turns bold back on."""
+    for name, doc in (('mid paragraph', 'Plain words \\bfseries bold words here.\n\nNext.'), ('at a center\'s start', '\\begin{center}\\bfseries bold words here.\\end{center}')):
+        load_doc(page, WRAP(doc)); click_text(page, 'words here', 6); page.keyboard.press('Control+b'); settle(page, 200)
+        page.keyboard.type('XY'); settle(page, 200)
+        check('r2_bare_switch: Ctrl+B in words bold by a bare \\bfseries (%s), then typing: the letters not bold' % name, src(page) == WRAP(doc.replace('words here', 'words \\textmd{XY}here')), src(page)[60:160])
+        w = page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('XY')); return s && +getComputedStyle(s).fontWeight; })()")
+        check('r2_bare_switch: the page draws them upright weight (%s)' % name, w is not None and w < 600, w)
+        load_doc(page, WRAP(doc)); select_text(page, 'bold words'); page.keyboard.press('Control+b'); settle(page, 200)
+        check('r2_bare_switch: Ctrl+B on selected words there takes their bold off (%s)' % name, src(page) == WRAP(doc.replace('bold words', '\\textmd{bold words}')), src(page)[60:160])
+        page.keyboard.press('Control+z'); settle(page, 150)
+        check('r2_bare_switch: one undo (%s)' % name, src(page) == WRAP(doc), src(page)[60:160])
+    load_doc(page, WRAP('Plain \\textmd{x \\bfseries y} and z.')); click_text(page, 'and', 1); page.keyboard.press('Control+b'); settle(page, 200)
+    check('r2_bare_switch: a \\bfseries closed in a group before the caret is no bold at it', '\\textbf{and}' in src(page), src(page)[60:160])
+    load_doc(page, WRAP('{\\bfseries bold words here.}\n\nNext.')); click_text(page, 'words here', 6); page.keyboard.press('Control+b'); settle(page, 200); page.keyboard.type('XY'); settle(page, 200)
+    check('r2_bare_switch: and a {\\bfseries ..} group is split at the caret as before', src(page) == WRAP('{\\bfseries bold words }XY{\\bfseries{}here.}\n\nNext.'), src(page)[60:160])
+
+
 def run():
     with sync_playwright() as p:
-        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, caret_formats, word_formats, switch_space, deleted_formats, between_words, review3, phones, compiles, r2_compiles)
+        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, enter_formats, blank_formats, caret_formats, word_formats, switch_space, deleted_formats, between_words, review3, r2_bare_switch, phones, compiles, r2_compiles)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             if fn is phones:
                 phones(p)
