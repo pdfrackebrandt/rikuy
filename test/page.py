@@ -904,10 +904,11 @@ def hunt(page):
     for name, d, words in (('the title', DOC('\\title{My Title}\n\\author{Me}\n', '\\maketitle\n\n' + BODY), 'Title'),
                            ('a figure\'s caption', DOC(body='First paragraph here with words.\n\n\\begin{figure}[h]\n\\centering\nX\n\\caption{A caption here}\n\\end{figure}\n\nSecond paragraph of the text.'), 'caption'),
                            ('a table float', DOC(body='First paragraph here with words.\n\n\\begin{table}[h]\n\\begin{tabular}{ll}\nalpha & beta\\\\\n\\end{tabular}\n\\end{table}\n\nSecond paragraph of the text.'), 'alpha')):
-        load_doc(page, d); place(page, words); open_tab(page, 'Layout')
+        load_doc(page, d); open_tab(page, 'Layout'); place(page, words)
+        sel = page.evaluate('() => getSelection().toString()')
         page.get_by_role('button', name='Columns', exact=True).click(); settle(page, 200)
         page.get_by_role('menuitemradio', name='Two').click(); settle(page, 300)
-        check('Columns › Two on words of ' + name + ': refused, the source unchanged, the reason said', src(page) == d and 'paragraphs of the text' in page.evaluate("document.getElementById('toast').textContent"), src(page)[:200])
+        check('Columns › Two on words of ' + name + ': refused, the source unchanged, the reason said', sel == words and src(page) == d and 'paragraphs of the text' in page.evaluate("document.getElementById('toast').textContent"), (sel, src(page)[:200]))
     # (review S2) the header opened by a double click in the top margin: Escape gives the caret back
     # where it was before the first press (that press had moved it to the text's start)
     load_doc(page, DOC()); click_text(page, 'paragraph of', 0)

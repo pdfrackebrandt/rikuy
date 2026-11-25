@@ -15,11 +15,13 @@ const POS = ['L', 'C', 'R'], NAMES = ['left', 'center', 'right'];
 export function installHeaderFooter(app) {
   // (where the caret stood before a double click's first press in a margin, which moved it to the
   // text's start: Escape and Close give that place back)
+  // (a press counts as the first unless one came just before: a click on the ribbon a moment
+  // earlier made the double click's first press a second one)
   let before = null;
   app.root.addEventListener('mousedown', (e) => {
-    if (app.hf || e.detail !== 1) return;
+    if (app.hf || (e.detail > 1 && before && e.timeStamp - before.t < 700)) return;
     const pg = e.target.closest && e.target.closest('.page'), pb = pg && pg.querySelector('.pb'), r = pb && pb.getBoundingClientRect();
-    before = r && (e.clientY < r.top || e.clientY > r.bottom) ? app.caretNow() : null;
+    before = r && (e.clientY < r.top || e.clientY > r.bottom) ? { c: app.caretNow(), t: e.timeStamp } : null;
   }, true);
   app.root.addEventListener('dblclick', (e) => {
     const pg = e.target.closest && e.target.closest('.page');
@@ -28,7 +30,7 @@ export function installHeaderFooter(app) {
     const where = e.clientY < pb.top ? 'head' : e.clientY > pb.bottom ? 'foot' : null;
     if (!where) return;
     e.preventDefault();
-    hfOpen(app, where, { page: [...app.root.querySelectorAll(':scope > .page')].indexOf(pg), back: before });
+    hfOpen(app, where, { page: [...app.root.querySelectorAll(':scope > .page')].indexOf(pg), back: before && e.timeStamp - before.t < 1500 ? before.c : null });
   });
   // a press on the text closes them, as in Word
   app.root.addEventListener('mousedown', (e) => { if (app.hf && !e.target.closest('.hfedit')) hfClose(app, false); }, true);
