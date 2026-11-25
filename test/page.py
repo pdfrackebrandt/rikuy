@@ -846,12 +846,32 @@ def r1_page_pdf(page):
     check('R1: line numbers beside the first paragraph, none beside the suppressed one', any(n == '1' and t.startswith('First') for n, t in nums) and not any(t.startswith('Unnumbered') for n, t in nums), nums[:6])
 
 
+def hunt(page):
+    """What a Word user met (round 2's hunt)."""
+    # Backspace or Delete next to a page break takes the break alone, as Word's do: the paragraphs
+    # either side stay two (they were joined, "words.Second"), the words a break cut stay apart
+    # ("Firstparagraph"), a blank page goes whole, a heading after a break keeps its command
+    cases = (('First paragraph here with words.\n\n\\newpage\n\nSecond paragraph of the text.', ('words.', 6), 'Delete', BODY),
+             ('First paragraph here with words.\n\n\\newpage\n\nSecond paragraph of the text.', ('Second', 0), 'Backspace', BODY),
+             ('First\n\\newpage\nparagraph here with words.\n\nSecond paragraph of the text.', ('paragraph here', 0), 'Backspace', 'First\nparagraph here with words.\n\nSecond paragraph of the text.'),
+             ('First paragraph here with words.\n\n\\newpage\n\\null\n\\newpage\nSecond paragraph of the text.', ('Second', 0), 'Backspace', 'First paragraph here with words.\n\nSecond paragraph of the text.'),
+             ('First paragraph here with words.\n\n\\clearpage\n\\section{Two}\nSecond paragraph of the text.', ('Two', 0), 'Backspace', 'First paragraph here with words.\n\n\\section{Two}\nSecond paragraph of the text.'))
+    for body, at, key, want in cases:
+        load_doc(page, DOC(body=body)); click_text(page, *at)
+        page.keyboard.press(key); settle(page, 200)
+        check(key + ' next to a page break takes the break alone: ' + repr(body[25:60]), src(page) == DOC(body=want) and page.evaluate('document.querySelectorAll("#pages > .page").length') == 1, src(page)[40:160])
+        page.keyboard.type('Z'); settle(page, 150)
+        check('  and the caret stays where it was (' + key + ')', ('Z' + at[0] if key == 'Backspace' else at[0] + 'Z') in src(page), src(page)[40:160])
+        page.evaluate('rikuy.undo()'); page.evaluate('rikuy.undo()'); settle(page, 150)
+        check('  two undos give the bytes back', src(page) == DOC(body=body))
+
+
 def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         for f in (margins_size_orientation, breaks, columns, line_numbers_and_more, header_footer, background, page_setup_dialog, agents_and_keys,
-                  r1_marks_and_lines, r1_docinfo, r1_background, r1_landscape, r1_review, long_document, compile_pdf, verifier_pdf, r1_page_pdf):
+                  r1_marks_and_lines, r1_docinfo, r1_background, r1_landscape, r1_review, long_document, compile_pdf, verifier_pdf, r1_page_pdf, hunt):
             if names and f.__name__ not in names: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])

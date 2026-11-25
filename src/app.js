@@ -2343,6 +2343,22 @@ class App {
         if (/Backward/.test(type)) a = vr[vr.length - 1][0]; else b = vr[0][1];
         vr = visibleRanges(this.renderer.blocks, f, a, b);
       }
+      // A page break (Insert's Page Break or Blank Page, Ctrl+Enter, \newpage by hand) between the
+      // caret and the text before or after it: Backspace or Delete takes the break alone, as
+      // Word's do. The whole stretch went, joining the paragraphs either side ("delta.Second")
+      // or the words the break stood between ("betagamma"). The sides stay as they were: two
+      // paragraphs where a blank line stood, one (a line end, a space) where none did.
+      if (!vr.length) {
+        const S1 = this.src(f), mid = S1.slice(a, b);
+        const m = /\s*\\(?:newpage|clearpage|cleardoublepage|pagebreak)(?![A-Za-z@])(?:\[[0-4]?\])?(?:\s*\\(?:newpage|clearpage|cleardoublepage|pagebreak|null)(?![A-Za-z@])(?:\[[0-4]?\])?)*\s*/.exec(mid);
+        const rest = m ? mid.slice(0, m.index) + mid.slice(m.index + m[0].length) : '';
+        if (m && !mid.includes('%') && !/\\(?:newpage|clearpage|cleardoublepage|pagebreak)(?![A-Za-z@])/.test(rest)) {
+          const NL = /\r\n/.test(S1) ? '\r\n' : '\n', s = a + m.index, e = s + m[0].length;
+          const t = /\n[ \t\r]*\n/.test(m[0]) ? NL + NL : NL, back = /Backward/.test(type);
+          this.commit([{ f, s, e, t }], back ? { f, p: b - (e - s) + t.length, bias: 1 } : { f, p: a, bias: -1 }, 'del');
+          return;
+        }
+      }
       // Nothing of it is on the page, yet it holds a command with an argument (a letter's
       // \date{...} and \subject{...}, a \label, a \vspace): one keystroke would delete what the
       // user cannot see. The caret steps over it instead.
