@@ -164,6 +164,31 @@ try:
         s7 = src(page)
         check('Right out of a display that ends the document: a new line after it takes the letter', '\\end{equation}\nQ' in s7 and 'x + y = z' in s7, s7[-60:])
 
+        # --- & typed in a display: an alignment point at the caret, as Word's & in an equation; a
+        # display of one line becomes an align (align* for \\[ … \\]), as Ctrl+Enter makes it. It
+        # wrote \\&, a printed ampersand; in an align's last column it did nothing
+        STAR = DISP.replace('\\begin{equation}', '\\[').replace('\\end{equation}', '\\]')
+        GATHER = DISP.replace('equation}', 'gather}')
+        for name, doc, keys, want in (('an equation', DISP, ['&', 'Q'], '\\begin{align}\nx + y = z&Q\n\\end{align}'),
+                                      ('\\[ \\], mid formula', STAR, ['Home', 'ArrowRight', 'ArrowRight', 'ArrowRight', '&', 'Q'], '\\begin{align*}\nx + y &Q= z\n\\end{align*}'),
+                                      ('an align\'s last column', ROWS, ['&', 'Q'], 'c &= d&Q\n\\end{align}'),
+                                      ('a gather (no columns: nothing written)', GATHER, ['&'], '\\begin{gather}\nx + y = z\n\\end{gather}')):
+            load_doc(page, doc)
+            page.click('.it.dm >> nth=0'); page.wait_for_selector('#pop-field', timeout=8000); settle(page, 300)
+            for k in keys:
+                if len(k) == 1: page.keyboard.type(k)
+                else: page.keyboard.press(k)
+                settle(page, 120, full=True)
+            page.keyboard.press('Escape'); settle(page, 300, full=True)
+            s8 = src(page)
+            check('& in %s: an alignment point where the caret was, the letter after it in its cell, never \\&' % name, want in s8 and '\\&' not in s8, s8[s8.find('here.'):s8.find('After')])
+        page.keyboard.press('Control+z'); settle(page, 300, full=True)
+        load_doc(page, DISP)
+        page.click('.it.dm >> nth=0'); page.wait_for_selector('#pop-field', timeout=8000); settle(page, 300)
+        page.keyboard.type('&'); settle(page, 120, full=True); page.keyboard.press('Escape'); settle(page, 300, full=True)
+        page.keyboard.press('Control+z'); settle(page, 300, full=True)
+        check('one undo takes the & and the align back to the equation', src(page) == DISP, src(page)[60:160])
+
         # --- dark mode look
         check('no console errors', not errors, errors[:5])
         browser.close()

@@ -927,8 +927,13 @@ export function installWordTyping(mf, opts) {
         recognize();
         const here = cellAt();
         if (here && here.c + 1 < here.arr.colCount) goCell(here, here.r, here.c + 1);
+        // (the last column of a display's own rows: an alignment point more there, onAmp; it did nothing)
+        else if (here && opts.onAmp && here.arr.parent && here.arr.parent.type === 'root') opts.onAmp();
         return;
       }
+      // An & in a display outside any rows: an alignment point at the caret, as Word's & in an
+      // equation, the display made one of rows (onAmp); MathLive wrote \&, a printed ampersand
+      if (opts.onAmp) { stop(); recognize(); opts.onAmp(); return; }
     }
     const trigger = k === ' ' || k === 'Enter' || k === 'Tab' || (k.length === 1 && !/[A-Za-z]/.test(k));
     const converted = trigger && recognize();
@@ -1011,5 +1016,12 @@ export function installWordTyping(mf, opts) {
   }, true);
   mf.addEventListener('pointerdown', () => { groups = []; typedBox = new WeakSet(); }, true);
   mf.addEventListener('blur', () => { if (buf != null) cancel(); if (arg) argDone(); });
-  return { active: () => buf != null || arg != null, newRow, reposition: () => { if (buf != null) place(); }, destroy: () => { chip.remove(); } };
+  // (the caret to the start of cell c of row r of the field's own rows, the array at its top)
+  const toCell = (r, c) => {
+    try {
+      const model = mf._mathfield.model, arr = (model.root.body || []).find((a) => a && typeof a.getCell === 'function');
+      return !!arr && goCell({ arr, model }, r, c);
+    } catch (e) { return false; }
+  };
+  return { active: () => buf != null || arg != null, newRow, toCell, reposition: () => { if (buf != null) place(); }, destroy: () => { chip.remove(); } };
 }

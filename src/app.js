@@ -4187,6 +4187,24 @@ class App {
       macros: () => plain,
       dialect: () => D,
       onNewRowOutside: opts.onNewRowOutside,
+      // (& in a display: an alignment point at the caret, written in the LaTeX box there; a display
+      // of one line made one of rows first, opts.onAmp, as Ctrl+Enter makes it; inside an
+      // environment the box holds, as split or aligned, only the &)
+      onAmp: opts.onAmp ? () => {
+        pull();
+        let at = ta.value.length;
+        try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (ta.value.startsWith(pre)) at = pre.length; } catch (e) { /* at the end */ }
+        const head = ta.value.slice(0, at), opens = [...head.matchAll(/\\begin\s*\{/g)], inner = opens.length > (head.match(/\\end\s*\{/g) || []).length;
+        const was = ta.value;
+        if (!inner && !opts.onAmp()) return;
+        if (ta.value !== was) return;
+        ta.setRangeText('&', at, at, 'end');
+        ta.dispatchEvent(new Event('input'));
+        // (the caret after it: the cell it starts, counted in the rows it stands in)
+        const rows = (inner ? head.slice(opens[opens.length - 1].index) : head).split('\\\\');
+        fieldFocus();
+        wt.toCell(rows.length - 1, (rows[rows.length - 1].match(/(?<!\\)&/g) || []).length + 1);
+      } : null,
       renderTex: (t) => this.renderer.katex(t, false).html,
       decimalComma,
       baseDepth: () => (st.multi ? 1 : 0),
@@ -4494,6 +4512,12 @@ class App {
         this.closePop();
       },
       onMoveOut: (d, how) => { if (stay()) return; push.flush(); this.leaveMath(d, how); },
+      // (& typed in a display of one line: made one of rows, as Ctrl+Enter does, for its alignment
+      // point; gather and multline have no columns)
+      onAmp: display ? () => {
+        if (/^(gather|multline)\*?$/.test(String((this.pop && this.pop.env) || info.a.env))) { this.toast('Gather and Multline have no alignment points: pick Align in the menu.'); return false; }
+        return toRows();
+      } : null,
       onEscape: () => { push.flush(); this.closePop(); }
     });
   }
