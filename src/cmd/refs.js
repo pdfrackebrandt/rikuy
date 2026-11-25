@@ -387,6 +387,7 @@ export const methods = {
     const sp = this.refsSpot(at);
     if (!sp) return false;
     const w = new Work(this), R = this.model.opts.refs || {};
+    const mark = { h0: this.hist.length, redo0: this.redoStack };
     const text = '\\endnote{' + (args && args.text ? escapeTeX(String(args.text)) : '') + '}';
     const m = w.mark(sp.f, sp.p, -1);
     w.apply(sp.f, [{ s: sp.p, e: sp.p, t: sp.pre + text }]);
@@ -398,6 +399,10 @@ export const methods = {
     const s = m.p + sp.pre.length;
     w.commit({ f: sp.f, p: s + text.length, bias: 1 });
     if (args && args.text) return true;
+    // An endnote left empty (its box closed with nothing typed, Esc) is taken out again with its
+    // package and \printendnotes, as an empty footnote is (src/ribbon.js dropEmpty): it stayed, a
+    // bare number in the text and an empty note at the end
+    if (this.src(sp.f).slice(s, s + text.length) === text) this.rbEmpty = { f: sp.f, s, t: text, ...mark, back: { f: sp.f, p: sp.p, bias: -1 } };
     const el = this.findAtomEl({ f: sp.f, s, kind: 'en' });
     if (el) { const info = atomOfEl(el); if (info) this.openEndnote(el, info); }
     return true;
