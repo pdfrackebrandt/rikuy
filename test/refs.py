@@ -1065,7 +1065,29 @@ def r4compiled(page):
         check('R4 ' + engine + ': a citation with a | prints it, under hyperref (review L2)', 'Bar | Case' in T and 'hyperxindexformat' not in T, T[-300:])
         check('R4 ' + engine + ': the endnote mark is i, the index\'s page at the right after dots', bool(re.search(r'cat ?(\. ?){3,}\d', T)) and bool(re.search(r'\bi\b', T)), T[-400:])
 
-SECTIONS = {'review': review, 'verify': verify, 'cached': cached, 'toc': toc, 'notes': notes, 'sources': sources, 'captions': captions, 'xrefs': xrefs, 'index': index, 'links': links, 'r4': r4refs}
+def caret_kept(page):
+    """Round 3: a command that names no place for the caret leaves it where it stood. Insert
+    Bibliography, which adds natbib and so draws the page again, put it at the page's start, and the
+    next word typed went into the first paragraph; the bibliography's title left none at all."""
+    doc = D('First paragraph here.\n\nSecond paragraph here.')
+    load_doc(page, doc)
+    click_text(page, 'Second paragraph here.', 22)
+    cmd(page, 'bibliography')
+    page.keyboard.type('Z')
+    settle(page, 200)
+    got = src(page)
+    check('Insert Bibliography: the caret stays at the end of its paragraph, where typing goes on', 'Second paragraph here.Z\n\n\\bibliographystyle{plainnat}' in got and 'ZFirst' not in got, got[40:160])
+    with_bib = D('First paragraph here.\n\nSecond paragraph here.\n\n\\bibliographystyle{plain}\n\\bibliography{refs}')
+    load_doc(page, {'main.tex': with_bib, 'refs.bib': '@article{a, title={T}, author={A}, year={2000}, journal={J}}\n'})
+    click_text(page, 'Second paragraph here.', 6)
+    cmd(page, 'bibliography-title', {'title': 'References'})
+    page.keyboard.type('Z')
+    settle(page, 200)
+    got = src(page)
+    check('the bibliography\'s title set: typing goes on at the caret', 'SecondZ paragraph' in got and '\\refname' in got, got[:240])
+
+
+SECTIONS = {'review': review, 'verify': verify, 'cached': cached, 'toc': toc, 'notes': notes, 'sources': sources, 'captions': captions, 'xrefs': xrefs, 'index': index, 'links': links, 'r4': r4refs, 'caret_kept': caret_kept}
 
 def main():
     want = sys.argv[1:]

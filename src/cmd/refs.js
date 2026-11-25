@@ -210,6 +210,17 @@ class Work {
   commit(caret, kind = 'insert') {
     const ed = this.edits();
     if (!ed.length) return false;
+    // (no place named: the caret stays where it stood, moved by the edits, when the page or the
+    // ribbon has the keys. A step that drew the page again, natbib added with the bibliography or
+    // its title changed, lost it: it fell to the page's start, where the next word typed went, or
+    // to nowhere. A dialog keeps its focus and gives the caret back as it closes.)
+    const A = this.app, a = document.activeElement;
+    if (caret == null && (a === A.root || (a && a.closest && a.closest('#ribbon, #rb-top')))) {
+      const c = A.caretNow();
+      if (c && c.f != null && !c.ghost && !c.crossFile && A.files.has(c.f)) {
+        caret = c.collapsed !== false ? { f: c.f, p: this.map(c.f, c.p, -1) } : { f: c.f, p: this.map(c.f, c.p, -1), selA: this.map(c.f, c.a, 1), selB: this.map(c.f, c.b, -1) };
+      }
+    }
     this.app.closeGroup();
     this.app.removeGhost();
     this.app.commit(ed, caret, kind);
