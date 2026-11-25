@@ -104,9 +104,10 @@ export function openTablePicker(app, anchor) {
   const g = mk('div', 'tp-grid');
   g.setAttribute('role', 'grid'); g.setAttribute('aria-label', 'Table size'); g.setAttribute('aria-describedby', 'tp-head'); g.tabIndex = 0;
   // (on a touch screen, cells a finger hits, 44 px as every target there, as many columns as the
-  // screen holds: the mouse's 18 px cells lay four under a fingertip on a phone)
+  // screen holds and rows as half its height does, a tablet's eight: the mouse's 18 px cells lay
+  // four under a fingertip on a phone)
   const touch = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
-  const nc = touch ? Math.max(3, Math.min(COLS, Math.floor((window.innerWidth - 36) / 47))) : COLS, nr = touch ? Math.min(ROWS, 6) : ROWS;
+  const nc = touch ? Math.max(3, Math.min(COLS, Math.floor((window.innerWidth - 36) / 47))) : COLS, nr = touch ? Math.max(3, Math.min(ROWS, Math.floor(window.innerHeight / 2 / 47))) : ROWS;
   if (touch) { g.classList.add('tp-touch'); g.style.setProperty('--tp-n', String(nc)); }
   const cells = [];
   let cur = { r: 0, c: 0, on: false };
