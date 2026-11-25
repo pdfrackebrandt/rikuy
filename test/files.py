@@ -309,7 +309,47 @@ def cross_files():
         page.keyboard.press('Delete')
         settle(page, 200)
         got = {f: src(page, f) for f in F}
-        check('cross files: from an \\input file to the main file, the file wholly inside empties and the main file keeps its line ends', got == {'main.tex': MAIN.replace('Last words', 'words'), 'sec/one.tex': 'First input file text.\n\nSecond ', 'two.tex': ''}, got)
+        check('cross files: from an \\input file to the main file, the file wholly inside empties and the main file keeps its line ends', got == {'main.tex': MAIN.replace('Last words', 'words'), 'sec/one.tex': 'First input file text.\n\nSecond \n', 'two.tex': '\n'}, got)
+        # (review B2) the \input inside a list or a theorem: its words and the main file's are one
+        # block of the page; typed letters were dropped there, and Delete and Ctrl+X did nothing
+        L = {'main.tex': '\\documentclass{article}\n\\begin{document}\nIntro words.\n\\begin{itemize}\n\\item One alpha\n\\input{items}\n\\end{itemize}\nEnd.\n\\end{document}\n', 'items.tex': '\\item Two beta\n\\item Three gamma\n'}
+        TH = {'main.tex': '\\documentclass{article}\n\\usepackage{amsthm}\n\\newtheorem{theorem}{Theorem}\n\\begin{document}\nIntro words.\n\\begin{theorem}\nMain claim here.\n\n\\input{thm}\n\\end{theorem}\nEnd.\n\\end{document}\n', 'thm.tex': 'Inner text of input.\n'}
+        for G, t1, o1, t2, o2, want in [(L, 'One alpha', 4, 'Two beta', 4, {'main.tex': L['main.tex'].replace('One alpha', 'One X'), 'items.tex': L['items.tex'].replace('\\item Two ', '')}),
+                                        (TH, 'Main claim', 5, 'Inner text', 6, {'main.tex': TH['main.tex'].replace('Main claim here.', 'Main X'), 'thm.tex': 'text of input.\n'})]:
+            for key in ['X', 'Delete']:
+                load_doc(page, G)
+                page.evaluate(SEL, [t1, o1, t2, o2])
+                settle(page)
+                page.keyboard.press(key)
+                settle(page, 200)
+                got = {f: src(page, f) for f in G}
+                exp = want if key == 'X' else {f: t.replace('X', '') if f == 'main.tex' else t for f, t in want.items()}
+                check('cross files: %s over a selection into an \\input inside %s takes each file\'s part' % (key, 'a list' if G is L else 'a theorem'), got == exp, got)
+        # (review W1) from a heading's first letter: the heading goes whole, no \section{} left
+        H = {'main.tex': '\\documentclass{article}\n\\begin{document}\n\\section{Intro}\nMain para one.\n\n\\input{a}\n\\end{document}\n', 'a.tex': 'A first.\n\nA second.\n'}
+        load_doc(page, H)
+        page.evaluate(SEL, ['Intro', 0, 'A first', 2])
+        settle(page)
+        page.keyboard.press('Delete')
+        settle(page, 200)
+        got = {f: src(page, f) for f in H}
+        check('cross files: from a heading\'s first letter into an \\input file, the heading goes whole', got == {'main.tex': H['main.tex'].replace('\\section{Intro}\nMain para one.', ''), 'a.tex': 'first.\n\nA second.\n'}, got)
+        # (review W3) Enter over it takes what it holds (the remains are two paragraphs already)
+        load_doc(page, F)
+        page.evaluate(SEL, ['Main text', 5, 'First input', 6])
+        settle(page)
+        page.keyboard.press('Enter')
+        settle(page, 200)
+        got = {f: src(page, f) for f in F}
+        check('cross files: Enter over it takes each file\'s part', got == {'main.tex': MAIN.replace('Main text here.', 'Main '), 'sec/one.tex': F['sec/one.tex'].replace('First ', ''), 'two.tex': F['two.tex']}, got)
+        # (and a paste over it goes where it began, in place of what it held)
+        load_doc(page, F)
+        page.evaluate(SEL, ['Main text', 5, 'First input', 6])
+        settle(page)
+        page.evaluate("() => { const dt = new DataTransfer(); dt.setData('text/plain', 'PASTED'); document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }")
+        settle(page, 200)
+        got = {f: src(page, f) for f in F}
+        check('cross files: a paste over it replaces each file\'s part', got == {'main.tex': MAIN.replace('Main text here.', 'Main PASTED'), 'sec/one.tex': F['sec/one.tex'].replace('First ', ''), 'two.tex': F['two.tex']}, got)
         check('cross files: no page errors', not errors, errors[:3])
         browser.close()
 

@@ -2042,27 +2042,47 @@ class App {
   // it is wholly inside. caretNow() reads such a selection as a caret at its start: Delete took
   // from there to the paragraph's end with the \input and every file after it out of the
   // document, Backspace the letter before the selection, and typing went in before it, the
-  // selection kept. Null where its ends are not in the page's blocks: nothing is taken then.
+  // selection kept. Null where its ends are not places of the page: the callers then do what
+  // they did before (typing goes in at the start; nothing is deleted).
   crossFileEdits(r) {
+    // (a selection from the page's text into the footnotes at its foot ends where the page's text
+    // ends, as caretNow() reads it: their words come earlier in the source)
+    const up = (n, q) => { const e = n && (n.nodeType === 1 ? n : n.parentElement); return e && e.closest ? e.closest(q) : null; };
+    const fs = up(r.startContainer, '.fns'), fe = up(r.endContainer, '.fns'), ns = up(r.startContainer, '.fn');
+    r = r.cloneRange();
+    if (ns && up(r.endContainer, '.fn') !== ns) r.setEnd(ns, ns.childNodes.length);
+    else if (fe && fe !== fs) r.setEnd(fe, 0);
+    else if (fs && fe !== fs) r.setEnd(fs, fs.childNodes.length);
     const A = posFromDom(r.startContainer, r.startOffset, this.root);
     const Z = posFromDom(r.endContainer, r.endOffset, this.root, true);
     if (!A || !Z || A.ghost || Z.ghost || A.f === Z.f) return null;
+    // Each file's part: from its first place in the selection to its last, read from the text
+    // the selection holds. (Not from the page's blocks: an \input inside a list, a theorem or a
+    // table puts two files' words in one block, and such a selection took nothing.)
+    const span = new Map([[A.f, [A.p, A.p]]]);
+    const add = (q) => { if (!q || q.ghost) return; const x = span.get(q.f); if (x) { x[0] = Math.min(x[0], q.p); x[1] = Math.max(x[1], q.p); } else span.set(q.f, [q.p, q.p]); };
+    const box = r.commonAncestorContainer.nodeType === 1 ? r.commonAncestorContainer : r.commonAncestorContainer.parentNode;
+    const tw = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+      if (!n.data.length || !r.intersectsNode(n)) continue;
+      add(posFromDom(n, n === r.startContainer ? r.startOffset : 0, this.root));
+      add(posFromDom(n, n === r.endContainer ? r.endOffset : n.data.length, this.root, true));
+    }
+    add(Z);
+    span.get(A.f)[0] = A.p;
+    span.get(Z.f)[1] = Z.p;
+    // (a file's part that begins at a heading's or a paragraph's first letter and goes past its
+    // end takes the whole of it, as within one file: its words alone went, and an empty numbered
+    // \section{} stayed)
     const BL = this.renderer.blocks;
-    const blockOf = (n) => { const e = n && (n.nodeType === 1 ? n : n.parentElement), x = e && e.closest && e.closest('[data-b]'); return x ? BL.findIndex((B) => String(B.id) === x.dataset.b) : -1; };
-    const i = blockOf(r.startContainer), j = blockOf(r.endContainer);
-    if (i < 0 || j < i || BL[i].f !== A.f || BL[j].f !== Z.f) return null;
-    // (each file's part: from its first place in the selection to its last, the blocks between
-    // the two ends whole)
-    const span = new Map();
-    const add = (f, s, e) => { if (e <= s) return; const x = span.get(f); span.set(f, x ? [Math.min(x[0], s), Math.max(x[1], e)] : [s, e]); };
-    // (the end's part from its first visible character: the line end before it stays)
-    const v = visibleRanges(BL, Z.f, BL[j].s, Z.p);
-    add(A.f, A.p, BL[i].e);
-    for (let k = i + 1; k < j; k++) add(BL[k].f, BL[k].s, BL[k].e);
-    add(Z.f, v.length ? v[0][0] : Z.p, Z.p);
+    for (const [f, S] of span) {
+      const B = BL.find((b) => b.f === f && b.s < S[0] && S[0] < b.e);
+      if (B && B.e <= S[1] && !visibleRanges(BL, f, B.s, S[0]).length) S[0] = B.s;
+    }
+    const S0 = span.get(A.f);
     const edits = [];
-    for (const [f, [s, e]] of span) edits.push(...this.deletionEdits(f, s, e, true));
-    return { edits, at: { f: A.f, p: A.p } };
+    for (const [f, [s, e]] of span) if (e > s) edits.push(...this.deletionEdits(f, s, e, true));
+    return { edits, at: { f: A.f, p: S0[0] } };
   }
 
   // Build deletion edits for [a,b) in f without breaking markup. sel: [a, b) is a selection made
@@ -2171,10 +2191,9 @@ class App {
     const c = this.caretNow();
     if (!c) return;
     // typed over a selection from one file into another: each file's part goes (crossFileEdits)
-    // and the letters go where it began
-    if (c.crossFile && !range) {
-      const X = this.crossFileEdits(getSelection().getRangeAt(0));
-      if (!X) return;
+    // and the letters go where it began (where it cannot tell the parts, in at its start, as before)
+    const X = c.crossFile && !range ? this.crossFileEdits(getSelection().getRangeAt(0)) : null;
+    if (X) {
       const t = this.escapeAt(X.at.f, X.at.p, data), ed = X.edits.find((x) => x.f === X.at.f && x.s === X.at.p);
       if (ed) ed.t += t; else X.edits.push({ f: X.at.f, s: X.at.p, e: X.at.p, t });
       this.commit(X.edits, { f: X.at.f, p: X.at.p + t.length, bias: -1 }, 'replace');
@@ -2451,6 +2470,10 @@ class App {
   enter(soft) {
     const c = this.caretNow();
     if (!c) return;
+    // (over a selection from one file into another: what it holds goes, crossFileEdits; the two
+    // files' remains are two paragraphs already, the break Enter makes. It went in at the
+    // selection's start, the selection kept)
+    if (c.crossFile) { const X = this.crossFileEdits(getSelection().getRangeAt(0)); if (X && X.edits.length) { this.commit(X.edits, { ...X.at, bias: -1 }, 'del'); return; } }
     // (a second Enter on the line after a display: a new paragraph there)
     if (c.ghost && this.ghost.line && !this.ghost.pend) { this.ghost.line = false; this.ghost.el.classList.add('ind'); return; }
     // A second Enter where the first left the caret at a paragraph's start: a second empty
@@ -3276,6 +3299,10 @@ class App {
     // (a paste from the Edit menu comes with no key: the letters waiting go in before it)
     this.typeFlush();
     e.preventDefault();
+    // (over a selection from one file into another: what it holds goes first, crossFileEdits,
+    // and the paste goes where it began; it went in at the start, the selection kept)
+    const cf = this.caretNow();
+    if (cf && cf.crossFile && e.clipboardData) { const X = this.crossFileEdits(getSelection().getRangeAt(0)); if (X && X.edits.length) this.commit(X.edits, { ...X.at, bias: -1 }, 'del'); }
     const dt = e.clipboardData;
     if (!dt) return;
     const plain = dt.getData('text/plain') || '';
