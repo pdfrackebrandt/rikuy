@@ -548,6 +548,16 @@ def keytips(page):
     select_text(page, 'beta')
     for k in ('F10', 'h', '1'): key(page, k, 250)
     check('keytips: F10, H, 1 makes the selection bold', '\\textbf{beta}' in src(page), src(page)[60:110])
+    # (round 3) the same while TeX's PDF comes in with a sheet the page did not assume (a runner's
+    # slow compile ends after the selection): the pages laid out again kept no selection, and
+    # \\textbf{} went at the document's start
+    load_doc(page, MATH)
+    select_text(page, 'beta')
+    page.evaluate('''() => { const R = window.rikuy, mk = R.model.opts.page && R.model.opts.page.mediaKey, was = R.pdfView, ps = R.pdfSheet;
+      R.pdfView = { pages: [{ w1: 595.28, h1: 841.89 }] }; R.pdfSheet = null; try { R.takePdfSheet(mk); } finally { R.pdfView = was; } }''')
+    for k in ('F10', 'h', '1'): key(page, k, 250)
+    check('keytips: F10, H, 1 makes the selection bold after the PDF\'s sheet laid the pages out again', '\\textbf{beta}' in src(page), src(page)[60:110])
+    page.evaluate('() => { window.rikuy.pdfSheet = null; window.rikuy.relayout(true); }')
     load_doc(page, MATH)
     click_text(page, 'beta', 2)
     # (z and a start no KeyTip of Insert's; J and W do since Word's gaps were built)

@@ -7506,7 +7506,10 @@ class App {
     if (!key || !p0 || !(p0.w1 > 0)) return;
     const w = p0.w1 * 72.27 / 72, h = p0.h1 * 72.27 / 72, old = this.pdfSheet;
     this.pdfSheet = { key, w, h };
-    if (this.model && (!old || old.key !== key || Math.abs(old.w - w) > 0.5 || Math.abs(old.h - h) > 0.5)) this.layoutPass();
+    // (by relayout, which keeps the page's selection: the pass alone moved the text's nodes into
+    // new pages, and a selection made while TeX ran collapsed to the document's start, where
+    // Ctrl+B or KeyTips' Bold then wrote \textbf{})
+    if (this.model && (!old || old.key !== key || Math.abs(old.w - w) > 0.5 || Math.abs(old.h - h) > 0.5)) this.relayout();
   }
 
   async compilePdf(opts = {}) {
