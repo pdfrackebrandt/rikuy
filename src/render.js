@@ -439,6 +439,8 @@ export class Renderer {
         break;
       }
       case 'toc': {
+        // (a block with page numbers to fill in once the pages are laid out: App.tocPages)
+        if (this.B) this.B.pageNums = true;
         el.classList.add('toc');
         el.contentEditable = 'false';
         const h = div('toc-head'); h.textContent = it.head || (this.model.opts.lang === 'de' ? 'Inhaltsverzeichnis' : 'Contents');
@@ -465,6 +467,7 @@ export class Renderer {
         break;
       }
       case 'idx': {
+        if (this.B) this.B.pageNums = true;
         // (B9) the index (\printindex) or the endnotes (\printendnotes, \theendnotes): a heading as
         // \section* sets it, then one row an entry; the index's rows in its columns, page numbers
         // filled in once the pages are laid out (src/cmd/refs.js refPages)

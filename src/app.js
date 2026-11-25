@@ -1046,6 +1046,11 @@ class App {
   }
 
   tocPages(plan) {
+    // (only where there are page numbers to write: a contents, a list of figures or an index on
+    // the page, or footnotes numbered by the page, now or just before; the page searched for them
+    // at every keystroke of a paper with none)
+    const R = ((this.model && this.model.opts.refs) || {}).fn;
+    if (!this.fnPaged && !(R && R.restart === 'page') && !this.renderer.blocks.some((B) => B.pageNums)) return;
     // (B9: the lists of figures and tables, the index's page numbers; src/cmd/refs.js)
     this.refPages(plan);
     const tocs = this.root.querySelectorAll('.toc-p:not([data-cap])');

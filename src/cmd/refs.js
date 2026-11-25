@@ -886,7 +886,9 @@ export const methods = {
     const R = ((this.model && this.model.opts.refs) || {}).fn || {}, per = R.restart === 'page';
     // (\thanks' marks are the title's, not the footnotes': left as they are, review V4)
     const all = this.root.querySelectorAll('sup.a-fn:not(.fn-th), .fn:not(.fn-th) .fnn');
-    if (!per) { for (const x of all) if (x.dataset.n0 != null) { x.textContent = x.dataset.n0; delete x.dataset.n0; } return; }
+    if (!per) { for (const x of all) if (x.dataset.n0 != null) { x.textContent = x.dataset.n0; delete x.dataset.n0; } this.fnPaged = false; return; }
+    // (App.tocPages comes here again while this has numbers to give back)
+    this.fnPaged = true;
     const style = R.style;
     const fmt = (n) => (style === 'roman' ? roman(n) : style === 'Roman' ? roman(n).toUpperCase() : style === 'alph' ? String.fromCharCode(96 + n) : style === 'Alph' ? String.fromCharCode(64 + n) : style === 'fnsymbol' ? ['*', '\u2020', '\u2021', '\u00a7', '\u00b6', '\u2016', '**', '\u2020\u2020', '\u2021\u2021'][n - 1] || String(n) : String(n));
     for (const pg of this.root.querySelectorAll('.page')) {
