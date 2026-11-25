@@ -1993,6 +1993,12 @@ class App {
           const tr = e.getTargetRanges()[0];
           if (tr) range = this.rangeToSrc(tr);
         }
+        // (an insertText aimed at a word while the selection is a caret: iOS's autocorrect, "teh"
+        // made "the" in one insert; it went in at the caret, "tehthe")
+        if (t === 'insertText' && e.getTargetRanges) {
+          const tr = e.getTargetRanges()[0], s = getSelection();
+          if (tr && !tr.collapsed && s.rangeCount && s.isCollapsed) range = this.rangeToSrc(tr);
+        }
         if (!range && t === 'insertText' && this.typeQueueable(data)) { this.typeQueue(data); break; }
         this.typeFlush();
         this.typeIn(data, range);
