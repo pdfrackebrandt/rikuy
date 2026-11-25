@@ -274,6 +274,31 @@ function grabsBracket(src, p, ch) {
   return ch === '[' && !star && endsWithControlWord(src, k);
 }
 const crlfOnly = (t) => t.includes('\r\n') && !/(^|[^\r])\n/.test(t);
+// Edits to a file written with \r\n line ends only, their line breaks written as \r\n, and the
+// caret they were made for moved by the \r put in before it. Enter, a blank paragraph's first
+// letter, a paste and the rest write \n: the file came out with both kinds of line end.
+const loneNl = (t) => { let n = 0; for (let i = 0; i < t.length; i++) if (t[i] === '\n' && t[i - 1] !== '\r') n++; return n; };
+function crlfKept(files, edits, caret) {
+  const crlf = new Map();
+  const conv = (ed) => { if (!ed.t || !loneNl(ed.t)) return false; if (!crlf.has(ed.f)) crlf.set(ed.f, crlfOnly(files.get(ed.f) ?? '')); return crlf.get(ed.f); };
+  if (!edits.some(conv)) return { edits, caret };
+  // where q (a place in the text the edits make as written) is, with the \r added before it
+  const move = (f, q) => {
+    if (!Number.isFinite(q)) return q;
+    let shift = 0, d = 0;
+    for (const ed of edits.filter((x) => x.f === f).sort((x, y) => x.s - y.s)) {
+      const s2 = ed.s + shift;
+      if (conv(ed)) d += q >= s2 + ed.t.length ? loneNl(ed.t) : q > s2 ? loneNl(ed.t.slice(0, q - s2)) : 0;
+      shift += ed.t.length - (ed.e - ed.s);
+    }
+    return q + d;
+  };
+  if (caret && caret.f != null) {
+    caret = { ...caret };
+    for (const k of ['p', 'selA', 'selB']) if (caret[k] != null) caret[k] = move(caret.f, caret[k]);
+  }
+  return { edits: edits.map((ed) => (conv(ed) ? { ...ed, t: ed.t.replace(/\r?\n/g, '\r\n') } : ed)), caret };
+}
 async function copyRich(html, text) {
   try {
     if (navigator.clipboard && window.ClipboardItem) {
@@ -457,7 +482,8 @@ const HIST_BYTES = 2e6;
 // or the line of a \begin{...} (the document, a quote, a theorem with its [title]), a heading or
 // \maketitle; then any comment lines and a \noindent, which belong to the paragraph below them
 // (group 1: the new paragraph goes before them, src/app.js enter)
-const PARA_START = /(?:\n[ \t]*\n|\\begin\s*\{[^{}\n]*\}(?:\[[^\]\n]*\])?[ \t]*\n|\\(?:part|chapter|section|subsection|subsubsection|paragraph)\*?\s*\{[^\n]*\}[ \t]*\n|\\maketitle[ \t]*\n)((?:[ \t]*%[^\n]*\n)*[ \t]*(?:\\noindent(?![A-Za-z])[ \t]*(?:\n[ \t]*)?)?)$/;
+// (\r: a file with Windows line ends, whose blank line is \r\n\r\n)
+const PARA_START = /(?:\n[ \t\r]*\n|\\begin\s*\{[^{}\n]*\}(?:\[[^\]\n]*\])?[ \t\r]*\n|\\(?:part|chapter|section|subsection|subsubsection|paragraph)\*?\s*\{[^\n]*\}[ \t\r]*\n|\\maketitle[ \t\r]*\n)((?:[ \t]*%[^\n]*\n)*[ \t]*(?:\\noindent(?![A-Za-z])[ \t]*(?:\r?\n[ \t]*)?)?)$/;
 // whether the last thing the person did was a key or a press, as html.rk-keys: the focus rings
 // follow it where the code moves the focus (a menu's first item, File's Back), since the
 // browser's own guess, :focus-visible, differs between Chromium's versions there
@@ -1400,6 +1426,7 @@ class App {
     // (src/review.js: none while the page shows the Original; comments only in a comments only link)
     if (this.rvRefuse(edits, kind)) return;
     edits = edits.filter((ed) => { const n = (this.files.get(ed.f) ?? '').length; return ed.s >= 0 && ed.e >= ed.s && ed.e <= n; });
+    ({ edits, caret } = crlfKept(this.files, edits, caret));
     const swaps = (blobs || []).map(({ name, blob }) => ({ name, before: this.assetBlobs.get(name) || null, after: blob }));
     if (!edits.length && !swaps.length) { if (caret) this.restoreCaret(caret); return; }
     for (const b of swaps) this.setAsset(b.name, b.after);
