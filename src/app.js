@@ -280,7 +280,8 @@ const crlfOnly = (t) => t.includes('\r\n') && !/(^|[^\r])\n/.test(t);
 const loneNl = (t) => { let n = 0; for (let i = 0; i < t.length; i++) if (t[i] === '\n' && t[i - 1] !== '\r') n++; return n; };
 function crlfKept(files, edits, caret) {
   const crlf = new Map();
-  const conv = (ed) => { if (!ed.t || !loneNl(ed.t)) return false; if (!crlf.has(ed.f)) crlf.set(ed.f, crlfOnly(files.get(ed.f) ?? '')); return crlf.get(ed.f); };
+  // (an edit that puts a whole file in place of another is another version of it: as it is)
+  const conv = (ed) => { if (!ed.t || !loneNl(ed.t)) return false; const t = files.get(ed.f) ?? ''; if (ed.s === 0 && ed.e === t.length) return false; if (!crlf.has(ed.f)) crlf.set(ed.f, crlfOnly(t)); return crlf.get(ed.f); };
   if (!edits.some(conv)) return { edits, caret };
   // where q (a place in the text the edits make as written) is, with the \r added before it
   const move = (f, q) => {
@@ -1426,7 +1427,10 @@ class App {
     // (src/review.js: none while the page shows the Original; comments only in a comments only link)
     if (this.rvRefuse(edits, kind)) return;
     edits = edits.filter((ed) => { const n = (this.files.get(ed.f) ?? '').length; return ed.s >= 0 && ed.e >= ed.s && ed.e <= n; });
-    ({ edits, caret } = crlfKept(this.files, edits, caret));
+    // (what is typed, pasted or written by a command: never another version of the text put back,
+    // a version or a commit restored, a coauthor's or another tab's text, a change rejected,
+    // which keep their own bytes)
+    if (!/^(restore|reject|merge|other-tab|api)$/.test(kind || '')) ({ edits, caret } = crlfKept(this.files, edits, caret));
     const swaps = (blobs || []).map(({ name, blob }) => ({ name, before: this.assetBlobs.get(name) || null, after: blob }));
     if (!edits.length && !swaps.length) { if (caret) this.restoreCaret(caret); return; }
     for (const b of swaps) this.setAsset(b.name, b.after);

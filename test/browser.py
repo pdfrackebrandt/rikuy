@@ -1789,6 +1789,13 @@ def crlf_enter(page):
         settle(page, 300)
         s = src(page)
         check('Enter %s of a CRLF file: \\r\\n written, the words where typed' % name, want in s and not re.search(r'(^|[^\r])\n', s), repr(s[40:130]))
+    # another version put back whole (a version or a commit restored, a coauthor's or another tab's
+    # text) keeps its own line ends: only what is typed or written here takes the file's
+    LF = D.replace('\r\n', '\n').replace('gamma', 'GAMMA')
+    for kind in ('restore', 'merge', 'other-tab'):
+        load_doc(page, D)
+        page.evaluate("([t, k]) => window.rikuy.commit([{ f: 'main.tex', s: 0, e: window.rikuy.src('main.tex').length, t }], null, k)", [LF, kind]); settle(page, 200)
+        check('a %s of a version with \\n line ends into a CRLF file: that version\'s bytes' % kind, src(page) == LF, repr(src(page)[40:90]))
 
 
 # A short document with what a paragraph's edges meet: a heading, bold and italic words, an inline
