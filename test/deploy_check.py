@@ -172,13 +172,15 @@ if os.path.isfile(os.path.join(DIST, '_headers')) and os.path.isfile(os.path.joi
 # wrong there fails at once; the domain is asked again until it serves this build, within a bound;
 # an address that does not resolve is one more try of that poll, and fails at its end, never passes
 import http.server, threading, time
-from serve import inline_hashes
 LIVE = tempfile.mkdtemp(prefix='rikuy-live-')
 atexit.register(shutil.rmtree, LIVE, True)
 SHELL = 'widget-0123456789abcdef'
 open(os.path.join(LIVE, SHELL + '.html'), 'w').write('<p>widget</p>')
-def page(v):
-    return '<!doctype html><html><head><meta name="rikuy-app" content="%s"><script>go()</script></head></html>' % v
+APPJS = 'app-0123456789abcdef.js'
+open(os.path.join(LIVE, APPJS), 'w').write('go()')
+APPHASH = base64.b64encode(hashlib.sha256(b'go()').digest()).decode()
+def page(v, rewritten=False):
+    return '<!doctype html><html><head><meta name="rikuy-app" content="%s">%s</head><body><script src="%s"></script></body></html>' % (v, '<script>x()</script>' if rewritten else '', APPJS)
 open(os.path.join(LIVE, 'index.html'), 'w').write(page('aaaaaaaaaaaaaaaa'))
 def server(state):
     class H(http.server.BaseHTTPRequestHandler):
@@ -188,9 +190,12 @@ def server(state):
             if p == '/' and state.get('moved'):
                 st, hs = 301, {'Location': state['moved']}
             elif p == '/':
-                doc = page(state['version'])
+                doc = page(state['version'], state.get('rewritten'))
                 st, body = 200, doc.encode()
-                hs = {'Content-Security-Policy': "script-src 'self' 'sha256-%s'" % inline_hashes(doc)[0], 'Cache-Control': 'no-cache, no-transform', 'Strict-Transport-Security': 'max-age=31536000'}
+                hs = {'Content-Security-Policy': "script-src 'self' 'sha256-%s'" % APPHASH, 'Cache-Control': 'no-cache, no-transform', 'Strict-Transport-Security': 'max-age=31536000'}
+            elif p == '/' + APPJS:
+                st, body = 200, b'go()'
+                hs = {'Cache-Control': 'public, max-age=31536000, immutable, no-transform'}
             elif p == '/' + SHELL:
                 st, body = 200, open(os.path.join(LIVE, SHELL + '.html'), 'rb').read()
                 hs = {'Content-Security-Policy': "script-src 'unsafe-inline'; frame-ancestors 'self'"} if state['widget'] else {'Content-Security-Policy': "frame-ancestors 'none'", 'X-Frame-Options': 'DENY'}
@@ -228,6 +233,11 @@ own['widget'] = False
 code, out, took = live(EDGE, OWN)
 ok('live check: the deployment\'s own address answering wrongly fails at once, the domain never asked', code == 1 and 'not as this build should' in out and "widget document's headers" in out and EDGE not in out and took < 2, out)
 own['widget'] = True
+# (an inline script added on the way, as Email Address Obfuscation adds one: the page is not this build's)
+own['rewritten'] = True
+code, out, took = live(EDGE, OWN)
+ok('live check: a page that runs an inline script it was not built with fails at once', code == 1 and 'something rewrote the page' in out and EDGE not in out and took < 2, out)
+own['rewritten'] = False
 edge['version'] = 'cccccccccccccccc'
 code, out, took = live(EDGE, OWN, within=2)
 ok('live check: a domain that never serves this build fails at the bound, with its last answer', code == 1 and 'within 2 s' in out and 'want aaaaaaaaaaaaaaaa' in out.splitlines()[-1] and 1.5 < took < 6, out)
