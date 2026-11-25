@@ -1077,12 +1077,36 @@ def hunt(page):
         check('a float\'s only picture deleted takes what is left empty with it, one undo back: ' + repr(d[17:60]), ok and src(page) == WRAP(d), want)
 
 
+# (round 3) Insert › Picture puts the picture where the caret is and selects it, as Word's: it went
+# after the paragraph, unselected. In a paragraph's middle, on lines of its own between the words;
+# at its start before it, at its end after it; in a heading after the heading, as before.
+def r3_insert(page):
+    import tempfile
+    tmp = os.path.join(tempfile.mkdtemp(), 'cat.png')
+    with open(tmp, 'wb') as fh: fh.write(PNG)
+    D = '\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\n\\section{Head}\nAlpha beta gamma.\n\nNext words.\n\\end{document}\n'
+    PIC = '\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{cat.png}\n\\end{center}'
+    for at, want, label in ((('beta', 4), D.replace('Alpha beta gamma.', 'Alpha beta\n' + PIC + '\ngamma.'), 'in a paragraph\'s middle: between its words, on lines of its own'),
+                            (('Alpha', 0), D.replace('\\section{Head}\n', '\\section{Head}\n\n' + PIC + '\n\n'), 'at a paragraph\'s start: before it'),
+                            (('gamma.', 6), D.replace('gamma.\n', 'gamma.\n\n' + PIC + '\n'), 'at a paragraph\'s end: after it'),
+                            (('Head', 2), D.replace('\\section{Head}\n', '\\section{Head}\n\n' + PIC + '\n\n'), 'in a heading: after the heading')):
+        load_doc(page, D); click_text(page, *at)
+        h0 = page.evaluate('window.rikuy.hist.length')
+        page.set_input_files('#picinput', tmp)
+        until(page, "() => window.rikuy.files.get('main.tex').includes('cat.png')")
+        settle(page, 200)
+        check('r3 Insert Picture %s, as one step' % label, src(page) == want and page.evaluate('window.rikuy.hist.length') == h0 + 1, body(page))
+        check('r3 Insert Picture %s: the picture selected, Picture Format open' % label, page.evaluate("!!(window.rikuy.armed && window.rikuy.armed.kind === 'img' && document.querySelector('#pages .a-img.sel'))"), page.evaluate("window.rikuy.armed && window.rikuy.armed.kind"))
+        page.evaluate('window.rikuy.undo()'); settle(page, 150)
+        check('r3 one undo takes it out (%s)' % label, src(page) == D, body(page))
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         asset(page)
         names = sys.argv[1:]
-        for f in (selecting, trips, sizing, tools, drawing, objects, reviewed, compiled, r3_objects, r3_review, r3_compiled, hunt):
+        for f in (selecting, trips, sizing, tools, drawing, objects, reviewed, compiled, r3_objects, r3_review, r3_compiled, hunt, r3_insert):
             if names and f.__name__ not in names:
                 continue
             try: f(page)

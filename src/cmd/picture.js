@@ -211,7 +211,7 @@ onInstall((app) => {
     app.ribbonBack();
     const said = no.length ? no.slice(0, 3).join(', ') + (no.length > 3 ? ' and ' + (no.length - 3) + ' more' : '') + (no.length === 1 ? ' is' : ' are') + ' no picture and ' + (no.length === 1 ? 'was' : 'were') + ' left out: Picture takes PNG, JPEG and PDF files. Open takes the rest.' : '';
     if (!fs.length) { if (said) app.toast(said, 9000); return; }
-    app.openFiles(fs).then(() => { if (said) app.toast($('#toast span').textContent + ' ' + said, 10000); });
+    app.openFiles(fs, undefined, { atCaret: true }).then(() => { if (said) app.toast($('#toast span').textContent + ' ' + said, 10000); });
   });
   installHandles(app);
   installShapeHandles(app);

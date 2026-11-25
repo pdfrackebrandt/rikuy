@@ -6963,9 +6963,11 @@ class App {
       this.forceRender = true;
       // one edit for the figure and its package: one undo takes both out again. Worked out here,
       // after every await above, from the text and the caret as they are now.
-      if (toPlace.length) placed = this.figureEdits(toPlace);
+      if (toPlace.length) placed = this.figureEdits(toPlace, { atCaret: !!opts.atCaret });
       // (a step of its own: two pictures dropped one after the other are two undos)
       if (placed) { this.closeGroup(); this.commit(placed.edits, placed.caret, 'figure'); this.closeGroup(); }
+      // (Insert › Picture: the picture selected, as Word's, for Picture Format and its handles)
+      if (placed && placed.pic && opts.atCaret && this.picSelect) this.picSelect(placed.pic);
       else { this.rebuild(this.caretNow()); this.pushToSource(); }
       this.updateFileTabs();
       this.saveSoon();
@@ -7068,11 +7070,34 @@ class App {
   // \includegraphics after the paragraph, list or table the caret is in (inside one, or inside
   // a heading's braces, the block would stop TeX), at the end of the text when there is no
   // caret; and \usepackage{graphicx} when the preamble has none. names are safe (openFiles).
-  figureEdits(names) {
-    const { f, p, pre, post, d } = this.afterBlockPos();
-    const main = this.src(this.main);
+  // o.atCaret (Insert › Picture): where the caret is, as Word inserts a picture, when the caret is
+  // in a paragraph's own text: before the paragraph at its start, after it at its end, and in
+  // its middle on lines of its own between the words (a center environment there ends the line
+  // and the words go on after it, the paragraph not split); in a heading, a cell, a caption, a
+  // footnote, a command's or a format's braces, after the paragraph as ever.
+  figureEdits(names, o = {}) {
     const tex = names.map((n) => '\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{' + n + '}\n\\end{center}').join('\n\n');
-    const edits = [{ f, s: p, e: p, t: pre + tex + post }];
+    let at = null;
+    const c = o.atCaret ? this.caretNow() : null;
+    if (c && !c.ghost && c.collapsed && !c.crossFile) {
+      const n = getSelection().anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement);
+      const it = el && el.closest && !el.closest('td, th, .cap, .fn, .it.h, .it.ttl, .it.tex') ? el.closest('.it.p') : null;
+      const B = it && BLOCKS.get(+it.dataset.b), S = B && B.f === c.f ? this.src(c.f) : null;
+      if (S && c.a >= B.s && c.a <= B.e && braceDepth(S, c.a) === braceDepth(S, B.s)) {
+        let s0 = c.a, e0 = c.a;
+        while (s0 > B.s && /[ \t]/.test(S[s0 - 1])) s0--;
+        while (e0 < B.e && /[ \t]/.test(S[e0])) e0++;
+        if (!S.slice(B.s, s0).trim()) {
+          // (the block's range may begin with the line end before its words)
+          let b0 = B.s; while (b0 < s0 && /\s/.test(S[b0])) b0++;
+          let nlB = 0; for (let k = b0 - 1; k >= 0 && /\s/.test(S[k]); k--) if (S[k] === '\n') nlB++;
+          at = { f: c.f, s: b0, e: b0, pre: b0 === 0 ? '' : '\n'.repeat(Math.max(0, 2 - nlB)), post: '\n\n' };
+        } else if (S.slice(e0, B.e).trim()) at = { f: c.f, s: s0, e: e0, pre: '\n', post: '\n' };
+      }
+    }
+    const { f, p, pre, post, d } = at ? { ...at, p: at.s, d: this.model && !this.stale && this.model.main === this.main ? this.model.docBody : null } : this.afterBlockPos();
+    const main = this.src(this.main);
+    const edits = [{ f, s: p, e: at ? at.e : p, t: pre + tex + post }];
     let shift = 0;
     // graphicx once, after the last \usepackage line, as a package for an equation's symbol is
     // added (src/preamble.js); graphics, loaded by hand, does as well
@@ -7084,7 +7109,8 @@ class App {
       for (const x of add) edits.push({ f: this.main, ...x });
       if (f === this.main) shift = add.reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
     }
-    return { edits, caret: { f, p: p + shift + pre.length + tex.length, bias: -1 } };
+    // (pic: where the first picture's \includegraphics stands once written, to select it)
+    return { edits, caret: { f, p: p + shift + pre.length + tex.length, bias: -1 }, pic: { f, s: p + shift + pre.length + '\\begin{center}\n'.length } };
   }
 
   addAsset(name, blob) {
