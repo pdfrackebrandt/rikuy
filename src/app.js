@@ -1053,6 +1053,15 @@ class App {
     // at every keystroke of a paper with none)
     const R = ((this.model && this.model.opts.refs) || {}).fn;
     if (!this.fnPaged && !(R && R.restart === 'page') && !this.renderer.blocks.some((B) => B.pageNums)) return;
+    // (and only when the pages hold other headings, captions or footnote marks than before, or the
+    // lists were drawn again: with those on the same pages every number is the one written last
+    // time, whatever a keystroke did to the paragraphs between them; an index's numbers are the
+    // pages of words anywhere, so with one every item counts)
+    const lists = this.renderer.blocks.filter((B) => B.pageNums), all = lists.some((B) => B.pageNums === 'idx');
+    const sig = (R ? R.restart + '|' + R.style : '') + '#' + plan.map((pg) => pg.entries.filter((e) => all || e.it.kind === 'h' || e.it.pageMark).map((e) => e.it.uid + ':' + e.a).join(',') + '|' + pg.fns.map((f) => f.uid).join(',')).join(';');
+    const was = this.tocWas;
+    if (was && was.sig === sig && was.lists.length === lists.length && lists.every((B, k) => B === was.lists[k])) return;
+    this.tocWas = { sig, lists };
     // (B9: the lists of figures and tables, the index's page numbers; src/cmd/refs.js)
     this.refPages(plan);
     const tocs = this.root.querySelectorAll('.toc-p:not([data-cap])');

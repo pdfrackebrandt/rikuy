@@ -123,6 +123,34 @@ def toc(page):
     dlg.get_by_label('Short title').fill('Intro & more'); dlg.get_by_role('button', name='OK').click(); settle(page, 300)
     check('the dialog writes the short title, escaped', '\\section[Intro \\& more]{Intro}' in src(page), src(page)[60:140])
 
+    toc_follows(page)
+
+
+def toc_follows(page):
+    """The contents' and the list of figures' page numbers follow a heading and a figure that
+    Enter pushes to the next page, and typing that moves neither leaves them (App.tocPages reads
+    the pages again only where a heading, a caption or a footnote mark moved)"""
+    fill = '\n\n'.join('Words of a paragraph that fills the page, number %d, long enough to take two lines or three of the column as it goes on and on.' % k for k in range(14))
+    doc = D('\\tableofcontents\n\\listoffigures\n\n\\section{First}\n' + fill + '\n\n\\section{Second}\nLast words.\n\n\\begin{figure}[h]\n\\centering\nX\n\\caption{Moved}\n\\end{figure}\n\nAfter it.')
+    load_doc(page, doc); settle(page, 300)
+    where = '''() => { const pages = [...document.querySelectorAll('#pages .page')]; const at = (el) => el ? pages.indexOf(el.closest('.page')) + 1 : 0;
+      const h = [...document.querySelectorAll('#pages .it.h')].find((x) => x.textContent.includes('Second')), cap = [...document.querySelectorAll('#pages [data-cap]')].find((x) => x.closest('.flow'));
+      const row = (sel, t) => { const r = [...document.querySelectorAll(sel)].find((x) => x.textContent.includes(t)); return r ? r.querySelector('.toc-p').textContent : null; };
+      return { heading: at(h), figure: at(cap), toc: row('.toc .toc-e', 'Second'), lof: row('.toc .toc-e', 'Moved') }; }'''
+    w0 = page.evaluate(where)
+    click_text(page, 'number 3,', 4)
+    for ch in 'more words':
+        page.keyboard.type(ch)
+    settle(page, 300)
+    w1 = page.evaluate(where)
+    check('typing that moves no heading leaves the contents\' and the list of figures\' page numbers as they were, and right', w1 == w0 and w0['toc'] == str(w0['heading']) and w0['lof'] == str(w0['figure']), (w0, w1))
+    n = 0
+    while page.evaluate(where)['heading'] == w0['heading'] and n < 40:
+        page.keyboard.press('Enter'); page.keyboard.type('x'); n += 1
+    settle(page, 300)
+    w2 = page.evaluate(where)
+    check('Enter that pushes a heading and a figure to the next page: the contents and the list of figures say the new pages', w2['heading'] > w0['heading'] and w2['toc'] == str(w2['heading']) and w2['lof'] == str(w2['figure']), (w0, w2, n))
+
 
 # ---- footnotes and endnotes --------------------------------------------------------------------------
 def notes(page):

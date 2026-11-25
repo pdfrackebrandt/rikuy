@@ -178,6 +178,8 @@ export class Renderer {
         const a = this.atomOf(m);
         if (a && a.fnIndex != null) item.fnIdx.push(a.fnIndex);
       }
+      // (a caption or a footnote mark whose page a list or the page's numbering reads: App.tocPages)
+      item.pageMark = item.fnIdx.length > 0 || !!item.el.querySelector('[data-cap], sup.a-fn');
       // live figures inside: their boxes take a new height when the widget asks (App.widgetResized)
       const w = item.el.querySelectorAll('.w-live');
       if (w.length) item.widgets = [...w];
@@ -467,7 +469,8 @@ export class Renderer {
         break;
       }
       case 'idx': {
-        if (this.B) this.B.pageNums = true;
+        // (an index's numbers are the pages of words anywhere: App.tocPages)
+        if (this.B) this.B.pageNums = 'idx';
         // (B9) the index (\printindex) or the endnotes (\printendnotes, \theendnotes): a heading as
         // \section* sets it, then one row an entry; the index's rows in its columns, page numbers
         // filled in once the pages are laid out (src/cmd/refs.js refPages)
