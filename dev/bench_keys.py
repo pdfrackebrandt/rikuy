@@ -17,6 +17,8 @@ A phone: --phone (390 px with touch, CPU 4 times slower, Mobile View as a phone 
 (--trace: a devtools trace of 20 keys of each place on this build, the page's main thread per
 key by kind of work: handlers, style, layout, paint, commit; and where the forced layouts came from)
 (--motion: animations and the animated caret on, as a person has them; the tests' default is off)
+(--human: keys 40 to 400 ms apart, so the ribbon's, spelling's and Find's work falls on keys now
+and then; --find WORD: Find's hits marked while typing)
 (--parts: then this build's handlers one by one, rikuy.rebuild, layoutPass and the rest, a call's
 time and its count per key; the undo after each place is in them too)
 
@@ -32,6 +34,17 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 arg = lambda k, d: sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d
 ROUNDS, KEYS, DOC, OUT = int(arg('--rounds', 6)), int(arg('--keys', 15)), arg('--doc', 'long'), arg('--json', None)
 PHONE = '--phone' in sys.argv
+# The time between keys. 120 ms by default, one key after another's work is done: the ribbon's sync
+# (60 ms after a key), spelling's run (250 ms after) and Find's (220 ms) fall in the gaps and are
+# no key's time to paint (--parts times them). --human: gaps drawn from 40 to 400 ms, the same
+# sequence for every build, so that work lands now and then while a key waits, as with a person.
+# --find WORD: Find on, its hits marked, while typing.
+HUMAN, FIND = '--human' in sys.argv, arg('--find', None)
+def gap(i):
+    if not HUMAN:
+        return 120
+    x = (i * 2654435761 + 12345) % 4294967296 / 4294967296
+    return int(40 + 360 * x)
 SCEN = arg('--scen', 'plain,cite,enter,back').split(',')
 HERE = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
 
@@ -74,7 +87,7 @@ PROBE = '''() => { const K = window.__k = []; window.__lt = []; window.__et = []
 KEYS_OUT = '''() => window.__k.filter((k) => k.m != null).map((k) => [k.m - k.ts, k.h != null && k.h < k.r0 ? (k.h - k.start) + (k.m - k.r0) : k.m - k.start, (k.h != null ? Math.min(k.h, k.r0) : k.r0) - k.start, k.m - k.r0])'''
 # (--parts: after the rounds, this build's handlers timed one by one on 40 more keys of each place)
 PARTS = '''() => { window.__t = {}; const W = (o, k, name) => { const f = o && o[k]; if (!f) return; o[k] = function (...a) { const t0 = performance.now(); try { return f.apply(this, a); } finally { (window.__t[name] = window.__t[name] || []).push(performance.now() - t0); } }; };
-  const g = rikuy; for (const k of ['commit', 'rebuild', 'layoutPass', 'restoreCaret', 'status', 'computePx', 'tocPages', 'ribbonSync', 'spellRun', 'spellPaint', 'refreshNav', 'deleteInput', 'enter']) W(g, k, k);
+  const g = rikuy; for (const k of ['commit', 'rebuild', 'layoutPass', 'restoreCaret', 'status', 'computePx', 'tocPages', 'ribbonSync', 'spellRun', 'spellPaint', 'findRun', 'findPaint', 'grammarPaint', 'refreshNav', 'deleteInput', 'enter']) W(g, k, k);
   W(g.renderer, 'sync', 'render'); W(g.layout, 'measure', 'measure'); W(g.layout, 'plan', 'plan'); W(g.layout, 'apply', 'apply');
   const S = Selection.prototype.collapse; Selection.prototype.collapse = function (...a) { const t0 = performance.now(); try { return S.apply(this, a); } finally { (window.__t['selection collapse'] = window.__t['selection collapse'] || []).push(performance.now() - t0); } }; }'''
 CARET = '''(at) => { const sp = [...document.querySelectorAll('#pages span.t')].filter((x) => x.firstChild && x.firstChild.length > 40 && !x.closest('.ttl, .h, .ref, .fn, .cap, li'));
@@ -107,6 +120,8 @@ with sync_playwright() as p:
         for name, (b, page, errors) in order:
             page.bring_to_front()
             for s in SCEN:
+                if FIND:
+                    page.evaluate('(q) => window.rikuy.findSet({ q })', FIND)
                 page.evaluate(CARET, AT.get(s))
                 page.wait_for_timeout(400)
                 page.evaluate('window.__k.length = 0; window.__lt = []; window.__et = []')
@@ -117,7 +132,7 @@ with sync_playwright() as p:
                         page.keyboard.press('Enter' if i % 2 == 0 else 'Backspace')
                     else:
                         page.keyboard.press('Backspace')
-                    page.wait_for_timeout(120)
+                    page.wait_for_timeout(gap(r * KEYS + i))
                 page.wait_for_timeout(500)
                 ks = page.evaluate(KEYS_OUT)
                 got[(name, s)][0].extend(x[0] for x in ks)
@@ -128,14 +143,14 @@ with sync_playwright() as p:
                     k.extend(v)
                 page.evaluate('() => { while (rikuy.hist.length) rikuy.undo(); }')
                 page.wait_for_timeout(300)
-    out = {'_': {'document': 'dev/bench/' + DOC, 'rounds': ROUNDS, 'keys a place a round': KEYS, 'phone': PHONE, 'against': AGAINST}}
+    out = {'_': {'document': 'dev/bench/' + DOC, 'rounds': ROUNDS, 'keys a place a round': KEYS, 'phone': PHONE, 'against': AGAINST, 'gaps': 'human, 40 to 400 ms' if HUMAN else '120 ms', 'find': FIND}}
     for (n, s), (lat, lt, et, work, hand, frame) in got.items():
         row = {'keys': len(lat), 'median ms': round(statistics.median(lat), 1) if lat else 0, 'p95 ms': q(lat, .95), 'worst ms': round(max(lat), 1) if lat else 0,
                'work median ms': round(statistics.median(work), 1) if work else 0, 'work p95 ms': q(work, .95), 'work worst ms': round(max(work), 1) if work else 0,
                'handlers median ms': round(statistics.median(hand), 1) if hand else 0, 'handlers p95 ms': q(hand, .95), 'frame median ms': round(statistics.median(frame), 1) if frame else 0, 'frame p95 ms': q(frame, .95),
                'long tasks': len(lt), 'longest task ms': round(max(lt)) if lt else 0, 'event timing p95 ms': q(et, .95) if et else '<16'}
         out.setdefault(s, {})[n] = row
-        print('RESULT %s%s %-6s %-10s to paint: median %6.1f p95 %6.1f worst %6.1f ms | work: median %5.1f p95 %5.1f worst %5.1f ms (handlers %.1f/%.1f, frame %.1f/%.1f) | long tasks %d (longest %s ms) | event timing p95 %s' % (DOC, ' phone' if PHONE else '', s, n, row['median ms'], row['p95 ms'], row['worst ms'], row['work median ms'], row['work p95 ms'], row['work worst ms'], row['handlers median ms'], row['handlers p95 ms'], row['frame median ms'], row['frame p95 ms'], row['long tasks'], row['longest task ms'], row['event timing p95 ms']), flush=True)
+        print('RESULT %s%s%s%s %-6s %-10s to paint: median %6.1f p95 %6.1f worst %6.1f ms | work: median %5.1f p95 %5.1f worst %5.1f ms (handlers %.1f/%.1f, frame %.1f/%.1f) | long tasks %d (longest %s ms) | event timing p95 %s' % (DOC, ' phone' if PHONE else '', ' human' if HUMAN else '', ' find' if FIND else '', s, n, row['median ms'], row['p95 ms'], row['worst ms'], row['work median ms'], row['work p95 ms'], row['work worst ms'], row['handlers median ms'], row['handlers p95 ms'], row['frame median ms'], row['frame p95 ms'], row['long tasks'], row['longest task ms'], row['event timing p95 ms']), flush=True)
     if '--trace' in sys.argv:
         # (a devtools trace of 20 keys of each place on this build: the renderer's main thread per
         # key, by kind of work, and where each forced layout came from)
@@ -192,6 +207,8 @@ with sync_playwright() as p:
         page.evaluate(PARTS)
         n = 0
         for s in SCEN:
+            if FIND:
+                page.evaluate('(q) => window.rikuy.findSet({ q })', FIND)
             page.evaluate(CARET, AT.get(s))
             page.wait_for_timeout(300)
             for i in range(40):
@@ -201,7 +218,7 @@ with sync_playwright() as p:
                     page.keyboard.press('Enter' if i % 2 == 0 else 'Backspace')
                 else:
                     page.keyboard.press('Backspace')
-                page.wait_for_timeout(120)
+                page.wait_for_timeout(gap(n + i))
             n += 40
             page.evaluate('() => { while (rikuy.hist.length) rikuy.undo(); }')
         for k, v in sorted(page.evaluate('window.__t').items(), key=lambda kv: -sum(kv[1])):
