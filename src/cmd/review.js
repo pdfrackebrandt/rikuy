@@ -29,6 +29,7 @@ import { openMenu } from '../ui/kit.js';
 import { $, mk, PREFS, store } from '../ui/dom.js';
 import { spellPlan, occSource, addWordEdit, DICT_NAME, mainLanguage, dictOf, proseRuns, asked } from '../spell/words.js';
 import { SpellClient } from '../spell/client.js';
+import { setMarks } from '../marks.js';
 import { openSpellPane, spellPaneRefresh } from '../ui/spellpane.js';
 import { openWordCount, setLanguageEdits } from '../ui/wordcount.js';
 import { coreCanRun } from '../native.js';
@@ -335,7 +336,8 @@ export const methods = {
       for (const x of bad) { if (!byF.has(x.f)) byF.set(x.f, []); byF.get(x.f).push(...x.parts); }
       const ranges = [];
       for (const [f, rs] of byF) { rs.sort((a, b) => a[0] - b[0]); ranges.push(...this.index.domRanges(f, rs)); }
-      if (ranges.length) HL.set('rk-spell', new window.Highlight(...ranges)); else HL.delete('rk-spell');
+      // (on the pages near the view: src/marks.js)
+      setMarks(this, 'rk-spell', ranges);
     }
     this.reviewStatus();
     spellPaneRefresh(this);
