@@ -16,6 +16,7 @@ A phone: --phone (390 px with touch, CPU 4 times slower, Mobile View as a phone 
   [--rounds 6] [--keys 15] [--doc long|sample] [--phone] [--scen plain,cite,enter,back] [--parts] [--trace] [--json out.json]
 (--trace: a devtools trace of 20 keys of each place on this build, the page's main thread per
 key by kind of work: handlers, style, layout, paint, commit; and where the forced layouts came from)
+(--motion: animations and the animated caret on, as a person has them; the tests' default is off)
 (--parts: then this build's handlers one by one, rikuy.rebuild, layoutPass and the rest, a call's
 time and its count per key; the undo after each place is in them too)
 
@@ -84,7 +85,7 @@ CARET = '''(at) => { const sp = [...document.querySelectorAll('#pages span.t')].
 
 def setup(p, dist):
     os.environ['RIKUY_DIST'] = dist
-    b, page, errors = open_page(p, 390 if PHONE else 1400, 844 if PHONE else 1000, touch=PHONE, layout='mobile' if PHONE else 'print')
+    b, page, errors = open_page(p, 390 if PHONE else 1400, 844 if PHONE else 1000, touch=PHONE, layout='mobile' if PHONE else 'print', motion=True if '--motion' in sys.argv else None)
     cdp = page.context.new_cdp_session(page)
     cdp.send('Emulation.setCPUThrottlingRate', {'rate': 4 if PHONE else 1})
     load_doc(page, files)

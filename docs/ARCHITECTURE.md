@@ -169,7 +169,13 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 - **Layout.** `App.layoutPass()`: `Layout.measure` (new items measured once in hidden `#mhost`;
   one whose picture had not loaded is measured again when it has: `it.late`, `Layout.invalidate`),
   `Layout.plan` (pure pagination, footnotes, line splits), `Layout.apply` (rewrites only pages
-  whose signature changed). Also on this path: `src/bib.js`, `src/siunitx.js`, `src/problems.js`.
+  whose signature changed, and in those moves only the items that came or moved: `placeChildren`
+  leaves the rest where they are, so the browser keeps their boxes). Also on this path:
+  `src/bib.js`, `src/siunitx.js`, `src/problems.js`. After a keystroke nothing else may write to
+  the page what it holds already: the ribbon's and the status bar's syncs go through `setAttr`
+  and `setProp` (`src/ui/dom.js`), `App.tocPages` returns while no heading, caption or footnote
+  mark has moved, and every such write is a style, a paint and a frame for nothing
+  (`dev/bench_keys.py --trace` shows a key's frames).
 - **The page's set up.** `geometry(opts)` (`src/layout.js`) works out the paper (`paperSize`:
   by name, given, turned for landscape) and the text block as geometry does when the preamble
   loads it (`opts.geo`, its keys merged by `Builder.geometry`) or as the standard classes do,
@@ -1432,7 +1438,11 @@ keystroke reads one paragraph again. `languageSpans` parses only a file that swi
 (babel's `\selectlanguage`, `otherlanguage`, `\foreignlanguage`, polyglossia's) and gives each
 word its dictionary; `mainLanguage` reads babel's last language or polyglossia's. The words each
 dictionary is asked are the distinct ones the page's cache does not know yet; `spellPaint` marks
-the rest with a CSS highlight (`rk-spell`), never in the page's text. The document's own words are
+the rest with a CSS highlight (`rk-spell`), never in the page's text, through `setMarks`
+(`src/marks.js`), which gives the highlight only the ranges on the pages within a screen of the
+view (Chromium paints again every text node a highlight's range is in after each change of the
+page, wherever it is) and writes it only when they changed; grammar's and Find's marks go the
+same way. The document's own words are
 `% rikuy: words …` lines (Add to Dictionary writes them, `addWordEdit`) and cspell's lines.
 
 Track Changes is a switch on the review base (`src/review.js`): changes are always the difference
