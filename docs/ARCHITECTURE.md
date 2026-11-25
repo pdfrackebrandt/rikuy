@@ -842,11 +842,16 @@ servers), is unchanged, and the artifact build (`RIKUY_SHARE` set) compiles `src
   nothing, a write to the store it began before stays open, and a read behind that write would
   never come back; the pack then comes from the network or the HTTP cache.
 - **Loading.** `index.html` has its fonts as files (`fonts/`, 37 of them, named by hash, cached
-  for good and kept by the service worker), not as `data:` like `rikuy.html`: the page is 0.6 MB
-  instead of 1.9 (0.2 instead of 1.2 compressed), and a visit fetches the faces it draws with.
-  The fifteen that `loadFonts()` waits for before the first layout (`FIRST_FONTS` in `build.mjs`:
-  the two lists are one) and KaTeX's script are asked for by `<link rel="preload">` at the top
-  of the body, so they travel beside the page. The service worker is registered once the
+  for good and kept by the service worker), not as `data:` like `rikuy.html`, and a visit
+  fetches the faces it draws with. Its script too is a file, `app-<hash>.js` (`APP_JS` in
+  `build.mjs`; `rikuy.html` carries the same bytes inline): the browser compiles it on another
+  thread while it downloads and keeps the compiled code for the next visit (the service worker's
+  install keeps it, and Chromium compiles a script kept there at once), which it does for no inline
+  script; a repeat visit draws the document about 400 ms sooner on a desktop. The page is
+  0.35 MB (80 KB compressed). The app's script, the fifteen faces that `loadFonts()` waits for
+  before the first layout (`FIRST_FONTS` in `build.mjs`: the two lists are one) and KaTeX's
+  script are asked for by `<link rel="preload">` at the top of the body, so they travel beside
+  the page. The service worker is registered once the
   document is on the page (`app.ready`), so that its install, some seventy files, does not
   share the line with them; on a first visit a second later, and not while a compile begun by
   then runs, so that it is not in the way of the engine either. The PDF viewer's scripts are

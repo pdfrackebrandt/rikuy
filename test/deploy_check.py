@@ -10,7 +10,7 @@ llms.txt, llms-full.txt, robots.txt and sitemap.xml, and no other file, are open
 UTF-8 text. And the hosted page as a program reads it before any script runs (appPage): its
 language, its title in the head, its schema.org data, the plain lines its body opens with.
 Run by npm test; needs node (to write the headers and the page) and no browser."""
-import atexit, os, shutil, subprocess, sys, tempfile
+import atexit, base64, hashlib, os, re, shutil, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, 'dev'))
@@ -149,12 +149,20 @@ probe = '<script type="application/ld+json">{"a":1}</script><script src="lib/k.j
 ok('the build hashes the inline scripts that run (a classic one, a module), as this file counts them, and not data or a loaded script', len(ph) == 2 and ph == serve.inline_hashes(probe), (ph, serve.inline_hashes(probe)))
 ok('a script the HTML parser would change (a CR) is refused, not given a wrong hash', cr == 'refused', cr)
 ok('the schema.org data needs no hash: it is data, which no policy runs', phtml == [], phtml)
-# and a built dist/, where there is one: its policy names exactly the scripts its index.html runs
+# and a built dist/, where there is one: its policy names exactly the app's bundle, which
+# rikuy.html runs inline (the copy the browser tests run under this policy) and index.html loads as
+# a file beside it, app-<hash>.js, of the same bytes (build.mjs APP_JS); index.html runs no inline
+# script
 DIST = os.path.join(ROOT, 'dist')
 if os.path.isfile(os.path.join(DIST, '_headers')) and os.path.isfile(os.path.join(DIST, 'index.html')):
     built = pol(dict((k.lower(), v) for k, v in pages.headers_for(DIST, '/'))['content-security-policy'])
-    want = ["'sha256-%s'" % h for h in serve.inline_hashes(open(os.path.join(DIST, 'index.html'), encoding='utf8').read())]
-    ok('dist/_headers names the hash of every script dist/index.html runs, and no other', [x for x in built['script-src'] if x.startswith("'sha256-")] == want and len(want) == 1, (built['script-src'], want))
+    index = open(os.path.join(DIST, 'index.html'), encoding='utf8').read()
+    want = ["'sha256-%s'" % h for h in serve.inline_hashes(open(os.path.join(DIST, 'rikuy.html'), encoding='utf8').read())]
+    ok('dist/_headers names the hash of the script rikuy.html runs, and no other', [x for x in built['script-src'] if x.startswith("'sha256-")] == want and len(want) == 1, (built['script-src'], want))
+    app = re.findall(r'<script src="(app-[0-9a-f]{16}\.js)"></script>', index)
+    body = open(os.path.join(DIST, app[0]), 'rb').read() if len(app) == 1 and os.path.isfile(os.path.join(DIST, app[0])) else b''
+    ok('dist/index.html runs no inline script, and loads the app as app-<hash>.js: the bytes the policy names, its name the start of their SHA-256',
+       serve.inline_hashes(index) == [] and len(app) == 1 and want == ["'sha256-%s'" % base64.b64encode(hashlib.sha256(body).digest()).decode()] and hashlib.sha256(body).hexdigest().startswith(app[0][4:20]), (serve.inline_hashes(index), app))
     shells = [f for f in os.listdir(DIST) if f.startswith('widget-') and f.endswith('.html')]
     rule = subprocess.run(['node', '--input-type=module', '-e', "import { WIDGET_RULE } from './build/app.mjs'; process.stdout.write(WIDGET_RULE)"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
     ok('dist/ has its widget document, named by the hash of it and its headers\' rule (a change to either is a new address, past every browser\'s cache)',

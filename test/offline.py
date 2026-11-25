@@ -137,8 +137,9 @@ def main():
           ready: performance.getEntriesByType('resource').filter((e) => /\\/sw\\.js$/.test(e.name)).length })''')
         fpre = [u for a, u in head['pre'] if a == 'font']
         page.wait_for_timeout(3500)
-        check('the hosted page carries no font as data:; its head asks for KaTeX and the 15 faces the first layout waits for, and each is used',
-              not head['data'] and len(fpre) == 15 and ['script', '/lib/katex.min.js'] in head['pre'] and len(head['pre']) == 16 and not unused, (head['pre'], unused))
+        check('the hosted page carries no font as data:; its head asks for the app\'s script (app-<hash>.js), KaTeX and the 15 faces the first layout waits for, and each is used',
+              not head['data'] and len(fpre) == 15 and ['script', '/lib/katex.min.js'] in head['pre'] and any(a == 'script' and re.match(r'^/app-[0-9a-f]{16}\.js$', u) for a, u in head['pre'])
+              and len(head['pre']) == 17 and not unused, (head['pre'], unused))
         check('the page fetches the faces it draws with and no others (Paper Modern Sans, most of KaTeX\'s)', set(fpre) <= set(head['got']) and len(set(head['got'])) < nfonts - 10
               and not any('sans-serif' in u for u in head['got']), sorted(set(head['got']) - set(fpre)))
 

@@ -215,6 +215,22 @@ const SKELETON = '<!doctype html><html><head><meta charset=utf8><meta name=viewp
 // the icons, and it takes KaTeX from lib/ (build/app.mjs); finishApp stamps the version at the end
 // it also takes every font from fonts/ rather than inside the page
 let appHtml = html;
+// The app's bundle as a file beside the page, named by its hash (cached for good and kept by the
+// service worker as content addressed), in the place of the same text inline: a browser compiles a
+// script file on another thread while it downloads, where an inline one is read by the page's own
+// parser and compiled on the main thread before anything runs (200 ms of a first visit on a
+// desktop, more on a phone), and it keeps that file's compiled code for the next visit, which it
+// never does for an inline script. The bytes are those rikuy.html carries inline, so the policy's
+// hash (taken from there, build/app.mjs) still names them. Only the installed app's page: the
+// artifact is one file.
+const APP_JS = APP ? 'app-' + crypto.createHash('sha256').update(js).digest('hex').slice(0, 16) + '.js' : null;
+for (const f of fs.existsSync(OUT) ? fs.readdirSync(OUT) : []) if (/^app-[0-9a-f]{16}\.js$/.test(f) && f !== APP_JS) fs.rmSync(O(f));
+if (APP) {
+  const tag = '<script>' + js + '</script>';
+  if (appHtml.split(tag).length !== 2) throw new Error('src/template.html: the app\'s script is not there once to take out of index.html');
+  appHtml = appHtml.replace(tag, () => '<script src="' + APP_JS + '"></script>');
+  fs.writeFileSync(O(APP_JS), js);
+}
 if (APP) {
   fs.rmSync(O('fonts'), { recursive: true, force: true });
   fs.mkdirSync(O('fonts'), { recursive: true });
