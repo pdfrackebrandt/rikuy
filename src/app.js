@@ -3470,11 +3470,10 @@ class App {
     this.compTex = null;
     // (LaTeX shown as it is: the composed word over what it replaced, the caret after it)
     if (T && T.f === c.f) { if (F && F.f === c.f) this.texEdit(T, F.a, F.b, e.data || '', 'type'); else this.texEdit(T, c.a, c.b, data, 'type'); return; }
-    const src = this.src(c.f);
     const edits = c.collapsed ? [] : this.deletionEdits(c.f, c.a, c.b, true);
-    const raw = this.texAt(c.f, c.a);
-    let t = raw ? data : escapeTeX(data, src[c.a - 1] || ' ');
-    if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, c.a)) t = '{}' + t;
+    // (as typing writes it, escapeAt: code's quotes straight, a dead key's ' in lstlisting wrote a
+    // backtick into the code; {} after a control word)
+    const t = this.escapeAt(c.f, c.a, data);
     // the deletions of a replaced selection lie after c.a: they do not move the caret back
     const removedBefore = edits.filter((ed) => ed.e <= c.a).reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
     const removed = edits.reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);

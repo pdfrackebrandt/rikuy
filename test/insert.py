@@ -1078,6 +1078,18 @@ def hunt_c(page):
     load_doc(page, vb)
     got = page.evaluate("(ks) => { const g = window.rikuy, s = g.src('main.tex'); return ks.map((k) => g.escapeAt('main.tex', s.indexOf(k) + k.length + 1, \"'\")); }", ['v1', 'l1', 'u1', 'b}', 'vb1', 'ls1', 'x1'])
     check('a quote in \\verb, \\lstinline, \\url, a group in \\texttt, verbatim and lstlisting stays straight; in the text after them it opens', got == ["'"] * 6 + ['`'], got)
+    # a ' composed by a dead key (US International) in a listing: straight, as typed (it wrote a
+    # backtick into the code)
+    # (the page shows a listing as a block that takes no caret: the composition's place is set
+    # inside it as a script can, the keys composed on the text)
+    ls = W('Text here.\n\n\\begin{lstlisting}\nit x\n\\end{lstlisting}\n\nAfter.')
+    load_doc(page, ls); click_text(page, 'here', 2); settle(page, 100)
+    page.evaluate("() => { const g = window.rikuy, p = g.src('main.tex').indexOf('it x') + 3; g.__caretNow = g.caretNow; g.caretNow = () => ({ f: 'main.tex', p, a: p, b: p, collapsed: true }); }")
+    cdp = page.context.new_cdp_session(page)
+    cdp.send('Input.imeSetComposition', {'text': "'", 'selectionStart': 1, 'selectionEnd': 1})
+    cdp.send('Input.insertText', {'text': "'"}); settle(page, 300)
+    page.evaluate("() => { const g = window.rikuy; g.caretNow = g.__caretNow; delete g.__caretNow; }")
+    check('a dead key\'s \' in lstlisting stays straight', "\nit 'x\n" in src(page), src(page)[40:140])
     # the language of an "i" at a \foreignlanguage group's end: the group's
     it2 = W('Hello \\foreignlanguage{italian}{Ciao} there.').replace('\\begin{document}', '\\usepackage[italian,english]{babel}\n\\begin{document}')
     load_doc(page, it2); click_text(page, 'Ciao', 4); page.keyboard.type(' i '); settle(page, 300)
