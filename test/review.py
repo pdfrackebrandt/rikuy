@@ -268,6 +268,32 @@ def hunt(p):
     browser.close()
 
 
+def r2_review(p):
+    """(round 2) What a Word user met in Review after round 1, each failing before its fix."""
+    browser, page, errors = open_page(p, width=1366, height=900)
+    # Enter in the middle of a word with Track Changes on, then Reject at the caret: the paragraph
+    # break alone goes. The words' diff listed "para words." taken out and "ra words." put in, with
+    # the break in neither: Reject took the second and the rest of the paragraph was lost.
+    D = WRAP('Alpha para words.\n\nOmega words here.\n\nThird para.\n\nFourth line here.')
+    fresh(page, D)
+    page.evaluate("window.rikuy.setTracking(true)")
+    click_text(page, 'Fourth line', 7); page.keyboard.type('new '); settle(page, 200)
+    click_text(page, 'para words', 2); page.keyboard.press('Enter'); settle(page, 300, full=True)
+    check('r2_review: Enter in a word with Track Changes on is one change, the paragraph break',
+          page.evaluate("window.rikuy.realChanges().map((c) => c.b)")[0] == '\n\n', page.evaluate("window.rikuy.realChanges().map((c) => [c.a, c.b])"))
+    page.evaluate("window.rikuy.rejectHere()"); settle(page, 300, full=True)
+    check('r2_review: Reject at the caret after it takes the break back, the words whole, the other change kept',
+          src(page) == D.replace('Fourth line', 'Fourth new line'), repr(src(page)[40:]))
+    fresh(page, D)
+    page.evaluate("window.rikuy.setTracking(true)")
+    click_text(page, 'Omega', 0); page.keyboard.press('Backspace'); settle(page, 300, full=True)
+    j = src(page)
+    page.evaluate("window.rikuy.rejectHere()"); settle(page, 300, full=True)
+    check('r2_review: Backspace joining two paragraphs, then Reject: the paragraphs apart again', j != D and src(page) == D, repr(j[40:90]) + ' / ' + repr(src(page)[40:90]))
+    check('r2_review: no page errors', not errors, errors[:3])
+    browser.close()
+
+
 def run():
     with sync_playwright() as p:
         hunt(p)
@@ -587,6 +613,7 @@ def run():
             browser.close()
 
         r4(p)
+        r2_review(p)
 
     bad = [r for r in results if not r[1]]
     print(f"{len(results) - len(bad)}/{len(results)} passed")
@@ -594,9 +621,9 @@ def run():
 
 
 if __name__ == '__main__':
-    if sys.argv[1:] in (['r4'], ['hunt']):
+    if sys.argv[1:] in (['r4'], ['hunt'], ['r2_review']):
         with sync_playwright() as p:
-            (r4 if sys.argv[1] == 'r4' else hunt)(p)
+            {'r4': r4, 'hunt': hunt, 'r2_review': r2_review}[sys.argv[1]](p)
         bad = [r for r in results if not r[1]]
         print(f"{len(results) - len(bad)}/{len(results)} passed")
         sys.exit(1 if bad else 0)
