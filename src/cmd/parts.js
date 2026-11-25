@@ -12,6 +12,7 @@ import { readParts, partName, partNeeds, partIsBlock, wholeGroups, MAX_PARTS, MA
 import { preambleFor } from '../charfmt.js';
 import { CONTROLS, controlTex, formEdits } from '../forms.js';
 import { hasPackage } from '../preamble.js';
+import { mapPos } from '../wrap.js';
 
 export const methods = {};
 const WHY_CARET = 'Put the caret in the text first.';
@@ -61,9 +62,15 @@ Object.assign(methods, {
     if (r.error) { this.toast(r.error, 6000); return false; }
     const pk = r.packages.length ? this.packageEdits(r.packages) : [];
     const shift = pk.filter((x) => x.f === f && x.s <= r.at).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
+    // (the caret stays where it was in the text, as Word's: it went to the cover's start, before
+    // \begin{titlepage}, where what was typed next made a page of its own before the cover)
+    const c0 = this.caretNow(), all = [...r.edits, ...pk.filter((x) => x.f === f)];
+    const keep = c0 && !c0.ghost && c0.collapsed && c0.f === f && !all.some((x) => x.s < c0.a && c0.a < x.e) ? { f, p: mapPos(all, c0.a, 1), bias: 1 } : null;
+    // (with no caret in the text: after the cover, where the text starts)
+    const E = r.edits[0];
     this.closeGroup();
     this.removeGhost();
-    this.commit([...r.edits.map((x) => ({ f, ...x })), ...pk], { f, p: r.at + shift, bias: 1 }, 'insert');
+    this.commit([...r.edits.map((x) => ({ f, ...x })), ...pk], keep || { f, p: E.s + E.t.length + shift, bias: 1 }, 'insert');
     this.closeGroup();
     this.goToCover();
     return true;

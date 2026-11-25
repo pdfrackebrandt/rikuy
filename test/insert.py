@@ -1030,6 +1030,15 @@ def hunt(page):
     page.get_by_role('button', name='Object', exact=True).click(); settle(page, 300)
     check('Object opens its menu: Text from file, PDF pages', all(page.get_by_role('menuitem', name=n, exact=True).is_visible() for n in ('Text from file', 'PDF pages')))
     page.keyboard.press('Escape'); settle(page, 150)
+    # Cover Page leaves the caret where it was in the text: it went before \\begin{titlepage}, and
+    # what was typed next made a page of its own before the cover
+    d = DOC.replace('\\begin{document}', '\\title{My Paper}\n\\begin{document}')
+    load_doc(page, d); click_text(page, 'world', 0)
+    page.get_by_role('button', name='Cover Page', exact=True).click(); settle(page, 300)
+    page.get_by_role('menuitemradio', name='Plain').click(); settle(page, 300)
+    page.keyboard.type('Z'); settle(page, 200)
+    s = src(page)
+    check('Cover Page, then typing: the letter where the caret was, after the cover', '\\end{titlepage}' in s and 'Hello Zworld.' in s and s.index('\\end{titlepage}') < s.index('Zworld'), s[60:])
 
 
 EXTRA = [hunt, clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]
