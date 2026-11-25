@@ -405,16 +405,19 @@ export function withPdfText(pdf, fn, o = {}) {
 // as a typewriter font prints ` and `` as grave accents
 export function escapeTeX(text, prev = ' ', opts = {}) {
   let out = '';
-  let p = prev;
-  // (what was written last: a quote just opened opens the one after it too, ‘“)
-  let w = prev === '`' || prev === "'" ? prev : '';
+  // (prev: the character before, or the two before it, as `` is told from `)
+  let p = prev ? prev[prev.length - 1] : '';
+  // (what was written last: a quote just opened opens the one after it too, ‘“ and “‘; after “
+  // a double quote closes it, “”)
+  let w = /[`']*$/.exec(prev || '')[0];
   const quotes = !opts.verbatim && !opts.code;
   for (const ch of text) {
     let r = ch;
-    const opening = /[\s([{—–-]/.test(p) || p === '' || w.endsWith('`');
+    const base = /[\s([{—–-]/.test(p) || p === '';
+    const opening = base || w.endsWith('`'), openingD = base || /(^|[^`])`$/.test(w);
     if (LIGATURES[ch] && !opts.verbatim) r = LIGATURES[ch];
     else if (mathForPdf && TEXT_MATH[ch] && !opts.verbatim && (mathForPdf.greek || !/[\u0370-\u03FF]/.test(ch))) r = '$' + TEXT_MATH[ch] + '$';
-    else if (ch === '"' && quotes) r = opening ? '``' : "''";
+    else if (ch === '"' && quotes) r = openingD ? '``' : "''";
     // (a straight single quote opening a quotation, after a space, a bracket or an opening quote:
     // LaTeX's opening quote, as Word's smart quotes make it. Left as ', TeX printed a closing
     // quote at both ends, ’word’; one after a letter or a digit stays an apostrophe or a prime)

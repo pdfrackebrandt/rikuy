@@ -578,8 +578,9 @@ onInsertText((app, data, range) => {
   // (whether the text at the caret is in English, for "i" to "I": its own language where babel or
   // polyglossia switches there (an Italian quote's "i" is an article), else the document's;
   // read only when that rule asks)
-  const english = () => {
-    const here = langAt(languageSpans(src), p), L = mainLanguage(app.src(app.main));
+  // (q: the word's start; at a \foreignlanguage group's end the caret is past its span)
+  const english = (q = p) => {
+    const here = langAt(languageSpans(src), q), L = mainLanguage(app.src(app.main));
     const d = here ? dictOf(here) : L.name ? dictOf(L.name, L.variant) : '';
     return d === '' || (!!d && d.startsWith('en'));
   };

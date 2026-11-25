@@ -104,7 +104,11 @@ ok('a one word sentence, a sentence after a group or a note, and "i" in English 
 
 ok('smart quotes as typed or pasted: opening after a space, nested ones kept apart, code straight', () => {
   // typed a key at a time, each after the source's character before it
-  const typed = (s) => { let t = ' '; for (const ch of s) t += escapeTeX(ch, t[t.length - 1]); return t.slice(1); };
+  // (typed a key at a time: the page hands over the two characters before the caret)
+  const typed = (s) => { let t = ' '; for (const ch of s) t += escapeTeX(ch, t.slice(-2)); return t.slice(1); };
+  // two straight double quotes: “”, as Word makes them (the second read the first as a single one)
+  assert.equal(typed('say ""'), "say ``''");
+  assert.equal(escapeTeX('say ""', ' '), "say ``''");
   assert.equal(typed("He said 'yes', it's rock 'n' roll"), "He said `yes', it's rock `n' roll");
   assert.equal(typed('\'"a"\''), "`{}``a'''");
   assert.equal(typed('"\'a\'"'), "```a'{}''");

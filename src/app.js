@@ -2414,9 +2414,22 @@ class App {
   // from being read as the optional argument of the command before it.
   escapeAt(f, at, data) {
     const src = this.src(f), lands = this.texAt(f, at);
-    // (in \texttt{..} or {\ttfamily ..}: code, its quotes straight)
-    const code = /\\texttt\s*\{[^{}]*$|\{\\ttfamily(?![A-Za-z])[^{}]*$/.test(src.slice(Math.max(0, at - 400), at));
-    let t = lands ? data : escapeTeX(data, src[at - 1] || ' ', { code });
+    // Code, its quotes straight (a ' typed there wrote a backtick into the code): \texttt{..},
+    // {\ttfamily ..}, \verb|..|, \lstinline, \mintinline, \url{..}, \path, \href's address, and
+    // the environments verbatim, lstlisting, minted, comment and their kin (the last one begun
+    // in the 20 000 characters before, not ended)
+    const near = src.slice(Math.max(0, at - 400), at), line = near.slice(near.lastIndexOf('\n') + 1);
+    let code = /\\texttt\s*\{(?:[^{}]|\{[^{}]*\})*$|\{\\ttfamily(?![A-Za-z])[^{}]*$/.test(near)
+      || /\\(?:verb|lstinline|path)\*?([^A-Za-z\s{*\[])(?:(?!\1).)*$/.test(line)
+      || /\\(?:lstinline|url|path|nolinkurl|href)\s*(?:\[[^\]]*\])?\{[^}]*$/.test(line)
+      || /\\mintinline\s*(?:\[[^\]]*\])?\{[^}]*\}\s*(?:\{[^}]*|([^\s{])(?:(?!\1).)*)$/.test(line);
+    if (!code && !lands) {
+      let env = null;
+      for (const m of src.slice(Math.max(0, at - 20000), at).matchAll(/\\(begin|end)\s*\{(verbatim\*?|Verbatim\*?|BVerbatim|LVerbatim|lstlisting|minted|comment|tcblisting|filecontents\*?)\}/g)) env = m[1] === 'begin' ? m[2] : env === m[2] ? null : env;
+      code = !!env;
+    }
+    // (the two characters before: ``, a double quote just opened, is told from `, a single one)
+    let t = lands ? data : escapeTeX(data, src.slice(Math.max(0, at - 2), at) || ' ', { code });
     if (!lands && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!lands && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
     // (a space after a control word and the space that ends it, as in {\large |} the size box

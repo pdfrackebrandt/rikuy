@@ -74,9 +74,9 @@ export function correct(src, p, ch, o = DEFAULTS, own = [], except = []) {
     return { s: ws, e: p, t: n + '\\textsuperscript{' + suf + '}' };
   }
   if (o.fractions && FRACTIONS[word] && !/[\w/]/.test(src[ws - 1] || '')) return { s: ws, e: p, t: FRACTIONS[word] };
-  // "i" alone is "I" (Word's Replace list), in an English document only (o.english: a function or
-  // a value), once a space ends it: never the i of "i.e.", nor one after an apostrophe or a dash
-  if (o.replace !== false && /\s/.test(ch) && /^i[,;:!?]*$/.test(word) && !/[\\'’\p{L}\p{M}\p{N}_-]/u.test(src[ws - 1] || '') && (typeof o.english === 'function' ? o.english() : o.english)) return { s: ws, e: ws + 1, t: 'I' };
+  // "i" alone is "I" (Word's Replace list), in English text only (o.english: a value, or a
+  // function of the word's start), once a space ends it: never the i of "i.e.", nor one after an apostrophe or a dash
+  if (o.replace !== false && /\s/.test(ch) && /^i[,;:!?]*$/.test(word) && !/[\\'’\p{L}\p{M}\p{N}_-]/u.test(src[ws - 1] || '') && (typeof o.english === 'function' ? o.english(ws) : o.english)) return { s: ws, e: ws + 1, t: 'I' };
   // (capitals once a space ends the word: "a)" or "a." at a paragraph's start is a list's marker,
   // which B3's automatic lists read as typed. A word with its stop or comma, "no." or "monday,",
   // is the word before them: it waited for a space that never came right after its letters)

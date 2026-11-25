@@ -323,7 +323,8 @@ export const word = {
     this.closePop(true);
     this.closeGroup();
     const edits = [];
-    for (const [f, t] of plan.files) edits.push({ f, s: 0, e: (this.files.get(f) ?? '').length, t });
+    // (a file with \r\n line ends only keeps them: what Word added comes with \n)
+    for (const [f, t] of plan.files) { const cur = this.files.get(f) ?? '', crlf = cur.includes('\r\n') && !/(^|[^\r])\n/.test(cur); edits.push({ f, s: 0, e: cur.length, t: crlf ? t.replace(/\r?\n/g, '\r\n') : t }); }
     this.markFromLink(who, this.name, this.main, 'word');
     this.commit(edits, null, 'word');
     this.closeGroup();

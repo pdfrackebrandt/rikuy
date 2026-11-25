@@ -1073,6 +1073,15 @@ def hunt_c(page):
     load_doc(page, W('Run \\texttt{print x} now.')); click_text(page, 'print', 5)
     page.keyboard.type(" 'a' \"b\""); settle(page, 300)
     check('quotes typed in \\texttt stay straight', '\\texttt{print \'a\' "b" x}' in src(page), src(page)[40:120])
+    # and in every verbatim context: what a ' becomes there, as the page would write it
+    vb = W('A \\verb|v1 x| B \\lstinline{l1 x} C \\url{u1 x} D \\texttt{t1 \\textbf{b} x} E\n\\begin{verbatim}\nvb1 x\n\\end{verbatim}\n\\begin{lstlisting}\nls1 x\n\\end{lstlisting}\nAfter x1 y.')
+    load_doc(page, vb)
+    got = page.evaluate("(ks) => { const g = window.rikuy, s = g.src('main.tex'); return ks.map((k) => g.escapeAt('main.tex', s.indexOf(k) + k.length + 1, \"'\")); }", ['v1', 'l1', 'u1', 'b}', 'vb1', 'ls1', 'x1'])
+    check('a quote in \\verb, \\lstinline, \\url, a group in \\texttt, verbatim and lstlisting stays straight; in the text after them it opens', got == ["'"] * 6 + ['`'], got)
+    # the language of an "i" at a \foreignlanguage group's end: the group's
+    it2 = W('Hello \\foreignlanguage{italian}{Ciao} there.').replace('\\begin{document}', '\\usepackage[italian,english]{babel}\n\\begin{document}')
+    load_doc(page, it2); click_text(page, 'Ciao', 4); page.keyboard.type(' i '); settle(page, 300)
+    check('AutoCorrect: "i" typed at the end of Italian words stays', '{Ciao i }' in src(page) or '{Ciao i} ' in src(page), src(page)[60:160])
 
 
 EXTRA = [hunt, hunt_c, clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]
