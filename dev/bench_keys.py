@@ -141,12 +141,13 @@ with sync_playwright() as p:
         b, page, errors = pages['this build']
         page.bring_to_front()
         cdp = page.context.new_cdp_session(page)
+        evs, done = [], []
+        cdp.on('Tracing.dataCollected', lambda e: evs.extend(e['value']))
+        cdp.on('Tracing.tracingComplete', lambda e: done.append(1))
         for s in SCEN:
             page.evaluate(CARET, AT.get(s))
             page.wait_for_timeout(400)
-            evs, done = [], []
-            cdp.on('Tracing.dataCollected', lambda e: evs.extend(e['value']))
-            cdp.on('Tracing.tracingComplete', lambda e: done.append(1))
+            evs.clear(); done.clear()
             cdp.send('Tracing.start', {'categories': 'devtools.timeline,disabled-by-default-devtools.timeline,disabled-by-default-devtools.timeline.stack', 'transferMode': 'ReportEvents'})
             for i in range(20):
                 if s in ('plain', 'cite'):
