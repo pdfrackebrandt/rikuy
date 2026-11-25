@@ -315,8 +315,11 @@ def one(p, srv, url, prof, scenario, profile_dir, args, doc=None):
         t.update(B['t'])
         origin = B['origin']
         # the visit left to finish: the service worker in charge, nothing in flight for --quiet seconds
-        try: page.wait_for_function('!navigator.serviceWorker || navigator.serviceWorker.controller !== null', timeout=180000)
-        except Exception: pass
+        # (an installed app's page whose worker never took control, as when its install failed on
+        # a file the server did not answer: a failed run, or its repeat visit would measure the
+        # HTTP cache and say nothing)
+        try: page.wait_for_function('!document.querySelector(\'meta[name="rikuy-app"]\') || !navigator.serviceWorker || navigator.serviceWorker.controller !== null', timeout=180000)
+        except Exception: B['failed'] = B['failed'] or 'no service worker took control of the page within 180 s (its install failed?)'
         until = time.time() + 180
         while time.time() < until:
             with srv.log.lock: quiet = srv.log.flying == 0 and time.time() - srv.log.last > args.quiet

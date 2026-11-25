@@ -22,7 +22,7 @@ Arguments: parts (default open,long), and
 Prints, per part and measure, each build's median and 95th percentile and the change of the
 median; the JSON of every run goes to $LOADBENCH_OUT (default /tmp/loadbench.json). Exits 1 when
 a run failed or a page had an error."""
-import json, os, shutil, statistics, subprocess, sys, tempfile, time, types
+import atexit, json, os, shutil, statistics, subprocess, sys, tempfile, time, types
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
@@ -44,6 +44,8 @@ def built(spec, label):
         return os.path.abspath(spec)
     work = tempfile.mkdtemp(prefix='loadbench-' + label + '-')
     src, out = os.path.join(work, 'src'), os.path.join(work, 'dist')
+    # (the worktree and the build go when the run ends: a build with dist/tex copied is 300 MB)
+    atexit.register(lambda: (subprocess.run(['git', 'worktree', 'remove', '--force', src], cwd=ROOT, capture_output=True), shutil.rmtree(work, ignore_errors=True)))
     run = lambda *a, **k: subprocess.run(list(a), check=True, **k)
     # (a commit by its hash is fetched as it is: GitHub serves any commit of the repository)
     if subprocess.run(['git', 'rev-parse', '--verify', '-q', spec + '^{commit}'], cwd=ROOT, capture_output=True).returncode != 0:
