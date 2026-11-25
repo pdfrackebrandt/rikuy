@@ -865,6 +865,22 @@ def hunt(page):
         page.evaluate('rikuy.undo()'); page.evaluate('rikuy.undo()'); settle(page, 150)
         check('  two undos give the bytes back', src(page) == DOC(body=body))
 
+    # The fields left open behind a caret put back in the text (Document info's menu closed by two
+    # Escapes leaves them so): Edit header then notes the caret where it is now, not the place the
+    # fields first noted ("FiZrst", after main's ribbon kept the second Escape)
+    load_doc(page, DOC()); click_text(page, 'First', 2)
+    page.evaluate('rikuy.pageHFOpen("head")'); settle(page, 300)
+    page.get_by_role('tabpanel', name='Header & Footer').get_by_role('button', name='Document info', exact=True).click(); settle(page, 200)
+    page.keyboard.press('Escape'); page.keyboard.press('Escape'); settle(page, 200)
+    load_doc(page, DOC()); click_text(page, 'paragraph of', 0)
+    open_tab(page, 'Insert')
+    page.get_by_role('button', name='Header', exact=True).click(); settle(page, 200)
+    page.get_by_role('menuitem', name='Edit header').click(); settle(page, 300)
+    page.keyboard.type('My Title'); settle(page, 500, full=True)
+    page.keyboard.press('Escape'); settle(page, 300)
+    page.keyboard.type('Z'); settle(page, 200)
+    check('header fields left open behind the text, then Edit header, Escape: the caret where it was put last', 'Second Zparagraph of' in src(page), src(page)[-120:])
+    if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()'); settle(page, 150)
     # Escape or Close Header and Footer puts the caret back where it was in the text, as Word's: the
     # header written rebuilt the page with no caret, and what was typed next went to the text's start
     for close in ('Escape', 'Close'):

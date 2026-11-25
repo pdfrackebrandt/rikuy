@@ -64,8 +64,13 @@ export function hfOpen(app, where, o = {}) {
   if (!app.model || !app.layout.pages.length) return false;
   // (where the caret stood in the text, given back by Escape and Close as Word's: each place
   // written rebuilt the page with no caret, and typing after Escape went to the text's start)
-  const c0 = app.hf ? null : o.back || app.caretNow();
-  const back = app.hf ? app.hf.back : c0 && !c0.ghost && c0.f != null ? { f: c0.f, p: c0.a, bias: -1 } : null;
+  // (opened again while open, Go to Footer: the place noted first, unless the caret is in the
+  // text now, the fields left open behind it, which is the place then; and only with the text it
+  // is a place of, which the fields' own writes alone change)
+  const kept = (b) => b && app.files.has(b.f) && app.src(b.f) === b.text;
+  const now = app.hf ? app.caretNow() : null;
+  const c0 = app.hf ? (now && !now.ghost ? now : null) : o.back || app.caretNow();
+  const back = c0 && !c0.ghost && c0.f != null ? { f: c0.f, p: c0.a, bias: -1, text: app.src(c0.f) } : app.hf && kept(app.hf.back) ? app.hf.back : null;
   hfClose(app, false);
   let k = Math.min(app.layout.pages.length - 1, o.page != null && o.page >= 0 ? o.page : pageInView(app));
   // (R1) a landscape page's header runs down its side: the fields go over the nearest upright page's
@@ -173,8 +178,9 @@ function hfWrite(app, where, i, inp) {
   inp.preSteps = null;
   if (!edits.length) return true;
   // (each run of typing in one place is one step of history: record joins them)
+  const before = app.src(app.main);
   app.commit(edits.map((x) => ({ f: app.main, ...x })), null, 'hf-' + place);
-  if (H.back && H.back.f === app.main) H.back = { ...H.back, p: mapPos(edits, H.back.p) };
+  if (H.back && H.back.f === app.main && H.back.text === before) H.back = { ...H.back, p: mapPos(edits, H.back.p), text: app.src(app.main) };
   hfPlace(app);
   return true;
 }
@@ -231,7 +237,7 @@ export function hfClose(app, back) {
   app.ribbonSync();
   if (back) {
     app.root.focus({ preventScroll: true });
-    if (H.back && app.files.has(H.back.f) && H.back.p <= app.src(H.back.f).length) app.restoreCaret(H.back, true);
+    if (H.back && app.files.has(H.back.f) && app.src(H.back.f) === H.back.text) app.restoreCaret(H.back, true);
     else if (app.ribbonBack) app.ribbonBack();
   }
   return true;
