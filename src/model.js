@@ -539,6 +539,20 @@ export function sameModels(a, b) {
   return true;
 }
 
+// Whether an edit of a text ([p, p + del) of old made [p, p + ins) of now) leaves the user's
+// command signatures (scanUserSigs) as they were: plain characters in and out, and no keyword of
+// a definition within 80 characters of it and of the spaces around it, in either text
+const SIG_CHARS = /[\\{}#[\]]/, SIG_WORDS = /def|newcommand|newenvironment|DocumentEnvironment/;
+function sigsKept(old, now, p, del, ins) {
+  if (SIG_CHARS.test(old.slice(p, p + del)) || SIG_CHARS.test(now.slice(p, p + ins))) return false;
+  const near = (t, a, b) => {
+    for (let k = 0; a > 0 && k < 4096 && /\s/.test(t[a - 1]); k++) a--;
+    for (let k = 0; b < t.length && k < 4096 && /\s/.test(t[b]); k++) b++;
+    return t.slice(Math.max(0, a - 80), Math.min(t.length, b + 80));
+  };
+  return !SIG_WORDS.test(near(old, p, p + del)) && !SIG_WORDS.test(near(now, p, p + ins));
+}
+
 const UNKNOWN = 'Unknown command. Click to edit its source.';
 function incremental(project, hint) {
   const H = hint._incr;
@@ -591,9 +605,15 @@ function incremental(project, hint) {
   if (!olds.every(plainUnit)) return null;
   const U = { s: olds[0].s, e: olds[olds.length - 1].e }, it = olds[0].items[0];
   // the two parse trees: the same nodes before the paragraphs, the same moved by d after them
-  const userSigs = {};
-  for (const [n, t] of files) if (!WIDGET_FILE.test(n)) scanUserSigs(t, userSigs);
-  if (JSON.stringify(userSigs) !== H.sigKey) return null;
+  // (the last build's, where the edit cannot have changed one: what it took out and put in holds
+  // no brace, backslash, # or bracket, and no definition's keyword stands in or near it, old or
+  // new; scanning every file again took 0.3 to 0.7 ms of each key on dev/bench/long)
+  let userSigs = H.userSigs && sigsKept(old, now, p, del, del + d) ? H.userSigs : null;
+  if (!userSigs) {
+    userSigs = {};
+    for (const [n, t] of files) if (!WIDGET_FILE.test(n)) scanUserSigs(t, userSigs);
+    if (JSON.stringify(userSigs) !== H.sigKey) return null;
+  }
   const nodes = parseCached(f, now, userSigs, H.sigKey);
   const docO = H.tree.find((n) => n.t === 'env' && n.name === 'document'), docN = nodes.find((n) => n.t === 'env' && n.name === 'document');
   if (!docO || !docN || docN.s !== docO.s || docN.be !== docO.be || docN.es !== docO.es + d || docN.e !== docO.e + d) return null;
@@ -682,7 +702,7 @@ function incremental(project, hint) {
     if (hint.ixAt != null && hint.ixFile === f && hint.ixAt >= U.e) r.ixAt = hint.ixAt + d;
     if (hint.docBody) r.docBody = { ...hint.docBody, e: hint.docBody.e + d };
   }
-  Object.defineProperty(r, '_incr', { value: { main: f, files: new Map(files), tree: nodes, sigKey: H.sigKey, failed, keys: H.keys, bibItems: H.bibItems, refIndex: B._refIndex || H.refIndex } });
+  Object.defineProperty(r, '_incr', { value: { main: f, files: new Map(files), tree: nodes, sigKey: H.sigKey, userSigs, failed, keys: H.keys, bibItems: H.bibItems, refIndex: B._refIndex || H.refIndex } });
   return r;
 }
 
@@ -3862,7 +3882,7 @@ class Builder {
     };
     // what the next keystroke's incremental build compares against (not part of the model)
     // (with the \bibitem list a citation reads, which the model does not carry)
-    if (this.parsed && this.parsed.has(this.project.main)) Object.defineProperty(r, '_incr', { value: { main: this.project.main, files: new Map(this.files), tree: this.parsed.get(this.project.main), sigKey: this.userSigKey, keys: Object.keys(r), bibItems: this.bibItems || null } });
+    if (this.parsed && this.parsed.has(this.project.main)) Object.defineProperty(r, '_incr', { value: { main: this.project.main, files: new Map(this.files), tree: this.parsed.get(this.project.main), sigKey: this.userSigKey, userSigs: this.userSigs, keys: Object.keys(r), bibItems: this.bibItems || null } });
     return r;
   }
 }
