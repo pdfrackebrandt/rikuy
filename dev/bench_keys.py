@@ -13,7 +13,9 @@ A phone: --phone (390 px with touch, CPU 4 times slower, Mobile View as a phone 
 
   python3 dev/bench_keys.py --against /tmp/dist-main            (another build, e.g. main's)
   python3 dev/bench_keys.py --against-ref origin/main           (built here in a worktree first)
-  [--rounds 6] [--keys 15] [--doc long|sample] [--phone] [--scen plain,cite,enter,back] [--parts] [--json out.json]
+  [--rounds 6] [--keys 15] [--doc long|sample] [--phone] [--scen plain,cite,enter,back] [--parts] [--trace] [--json out.json]
+(--trace: a devtools trace of 20 keys of each place on this build, the page's main thread per
+key by kind of work: handlers, style, layout, paint, commit; and where the forced layouts came from)
 (--parts: then this build's handlers one by one, rikuy.rebuild, layoutPass and the rest, a call's
 time and its count per key; the undo after each place is in them too)
 
@@ -133,6 +135,55 @@ with sync_playwright() as p:
                'long tasks': len(lt), 'longest task ms': round(max(lt)) if lt else 0, 'event timing p95 ms': q(et, .95) if et else '<16'}
         out.setdefault(s, {})[n] = row
         print('RESULT %s%s %-6s %-10s to paint: median %6.1f p95 %6.1f worst %6.1f ms | work: median %5.1f p95 %5.1f worst %5.1f ms (handlers %.1f/%.1f, frame %.1f/%.1f) | long tasks %d (longest %s ms) | event timing p95 %s' % (DOC, ' phone' if PHONE else '', s, n, row['median ms'], row['p95 ms'], row['worst ms'], row['work median ms'], row['work p95 ms'], row['work worst ms'], row['handlers median ms'], row['handlers p95 ms'], row['frame median ms'], row['frame p95 ms'], row['long tasks'], row['longest task ms'], row['event timing p95 ms']), flush=True)
+    if '--trace' in sys.argv:
+        # (a devtools trace of 20 keys of each place on this build: the renderer's main thread per
+        # key, by kind of work, and where each forced layout came from)
+        b, page, errors = pages['this build']
+        page.bring_to_front()
+        cdp = page.context.new_cdp_session(page)
+        for s in SCEN:
+            page.evaluate(CARET, AT.get(s))
+            page.wait_for_timeout(400)
+            evs, done = [], []
+            cdp.on('Tracing.dataCollected', lambda e: evs.extend(e['value']))
+            cdp.on('Tracing.tracingComplete', lambda e: done.append(1))
+            cdp.send('Tracing.start', {'categories': 'devtools.timeline,disabled-by-default-devtools.timeline,disabled-by-default-devtools.timeline.stack', 'transferMode': 'ReportEvents'})
+            for i in range(20):
+                if s in ('plain', 'cite'):
+                    page.keyboard.type('abcdefghij klmnopqrst '[i % 22])
+                elif s == 'enter':
+                    page.keyboard.press('Enter' if i % 2 == 0 else 'Backspace')
+                else:
+                    page.keyboard.press('Backspace')
+                page.wait_for_timeout(150)
+            page.wait_for_timeout(300)
+            cdp.send('Tracing.end')
+            while not done:
+                page.wait_for_timeout(100)
+            page.evaluate('() => { while (rikuy.hist.length) rikuy.undo(); }')
+            busy = {}
+            for e in evs:
+                if e.get('ph') == 'X' and e.get('name') == 'RunTask':
+                    busy[(e['pid'], e['tid'])] = busy.get((e['pid'], e['tid']), 0) + e.get('dur', 0)
+            names = {(e['pid'], e['tid']): e['args']['name'] for e in evs if e.get('name') == 'thread_name'}
+            main = max((k for k in busy if names.get(k) == 'CrRendererMain'), key=lambda k: busy[k], default=None)
+            sums, counts, forced = {}, {}, {}
+            for e in evs:
+                if (e['pid'], e['tid']) != main or e.get('ph') != 'X':
+                    continue
+                n, d = e['name'], e.get('dur', 0) / 1000
+                if n in ('EventDispatch', 'TimerFire', 'FireAnimationFrame', 'UpdateLayoutTree', 'Layout', 'PrePaint', 'Paint', 'Layerize', 'Commit', 'RunMicrotasks', 'MinorGC', 'MajorGC', 'HitTest', 'UpdateLayer', 'RasterTask'):
+                    sums[n] = sums.get(n, 0) + d
+                    counts[n] = counts.get(n, 0) + 1
+                if n in ('Layout', 'UpdateLayoutTree'):
+                    st = ((e.get('args') or {}).get('beginData') or {}).get('stackTrace') or []
+                    if st:
+                        k = n + ' from ' + ' < '.join(f.get('functionName') or '?' for f in st[:3])
+                        forced[k] = forced.get(k, 0) + d
+            for n, v in sorted(sums.items(), key=lambda kv: -kv[1]):
+                print('RESULT trace %-6s %-18s ms a key %6.2f  (%.1f a key)' % (s, n, v / 20, counts[n] / 20), flush=True)
+            for k, v in sorted(forced.items(), key=lambda kv: -kv[1])[:6]:
+                print('RESULT trace %-6s forced %s: ms a key %.2f' % (s, k[:120], v / 20), flush=True)
     if '--parts' in sys.argv:
         b, page, errors = pages['this build']
         page.bring_to_front()
