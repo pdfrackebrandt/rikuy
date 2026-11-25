@@ -2421,6 +2421,24 @@ class App {
           this.commit([{ f: y.f, s: y.s, e: y.e, t: '' }], { f: y.f, p: y.s }, 'del');
           return;
         }
+        // A caption whose words were all deleted: Backspace takes the caption itself, as Word's
+        // takes the empty caption paragraph under a picture; Delete there does nothing, as at a
+        // cell's end. The browser's own step went out of the figure: the caret landed on the
+        // picture or the text above it, which the next Backspace deleted, \caption{} staying.
+        // (its \label and the rest of the float stay)
+        if (ph.closest('.cap')) {
+          const src = this.src(c.f), from = Math.max(0, c.a - 400);
+          const open = /\\caption\*?\s*(?:\[[^\]]*\]\s*)?\{\s*$/.exec(src.slice(from, c.a));
+          const close = /^\s*\}/.exec(src.slice(c.a, c.a + 400));
+          if (!open || !close) return;
+          if (!/Backward/.test(type)) return;
+          let s = from + open.index, e = c.a + close[0].length;
+          // (its line too, where nothing else stands on it)
+          const ls = src.lastIndexOf('\n', s - 1) + 1, nl = src.indexOf('\n', e);
+          if (!src.slice(ls, s).trim() && !src.slice(e, nl < 0 ? src.length : nl).trim()) { s = ls; e = nl < 0 ? src.length : nl + 1; }
+          this.commit([{ f: c.f, s, e, t: '' }], { f: c.f, p: s, bias: -1 }, 'del');
+          return;
+        }
         // A heading whose words were all deleted: the next Backspace or Delete takes the heading
         // itself. It stayed as a number with nothing after it, and only the source could remove it.
         if (ph.closest('.it.h')) {
