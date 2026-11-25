@@ -14,7 +14,7 @@
 
 import { register, command, onInstall } from '../commands.js';
 import { openMenu, colorPicker, colorNeeds } from '../ui/kit.js';
-import { $, store, PREFS } from '../ui/dom.js';
+import { $, store, PREFS, setProp } from '../ui/dom.js';
 import * as P from '../parasrc.js';
 import { usePackages, preambleEnd, hasPackage, docClass, packageOptions, stripComments as stripCommentsOf } from '../preamble.js';
 import { envWords, declAtStart, startsLine, eolAt } from '../blockenv.js';
@@ -903,7 +903,7 @@ export const methods = {
     // (the place on the page, in the source, for a field to write to once it has the focus)
     if (id === 'indent-left' && at && at.c && !at.c.ghost && document.activeElement === this.root) this.paraFieldC = at.c;
     const v = this.paraFieldValue(id, at);
-    box.disabled = v == null;
+    setProp(box, 'disabled', v == null);
     box.setValue(v);
   },
   // a field's value (a length in the field's unit, or { value, unit }) applied to the paragraph

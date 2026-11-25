@@ -4,6 +4,11 @@
 
 export const $ = (s, r = document) => r.querySelector(s);
 export function mk(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+// An attribute (null: none) or a property written only where it changes. The ribbon brings its
+// controls up to date after every move of the caret: the same values written again are changes
+// to the page all the same, a style worked out and a frame painted after each keystroke.
+export function setAttr(e, name, v) { if (v == null) { if (e.hasAttribute(name)) e.removeAttribute(name); } else if (e.getAttribute(name) !== v) e.setAttribute(name, v); }
+export function setProp(e, name, v) { if (e[name] !== v) e[name] = v; }
 export function mkBtn(label, fn, title, type) { const b = mk('button', 'btn ghost sm', label); b.type = type || 'button'; if (title) b.title = title; if (fn) b.addEventListener('click', fn); return b; }
 
 // Rikuy was called Galley at first; the keys of what a browser keeps keep that name, so

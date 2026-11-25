@@ -25,7 +25,7 @@ const tipTitle = (c, p) => keyTitle(c, p.name, macUA());
 
 import { LAUNCH, CHECKS, TIPS, groupLayout } from './layout.js';
 import { commands, command, inGroup, places, enabled, pressed, installers } from '../commands.js';
-import { $, mk, store, PREFS } from '../ui/dom.js';
+import { $, mk, store, PREFS, setAttr, setProp } from '../ui/dom.js';
 import { openMenu, splitButton, CARET } from '../ui/kit.js';
 import { measureTiles, installGallery } from '../ui/gallery.js';
 import { gridIcons } from '../ui/icongrid.js';
@@ -385,7 +385,7 @@ export const tabs = {
       let on = false;
       try { on = !!CONTEXTS[T.ctx](this, at); } catch (e) { on = false; }
       const t = $('#rt-' + T.id), o = $('#rb-tabsel').querySelector('option[value="' + T.id + '"]');
-      o.hidden = o.disabled = !on;
+      setProp(o, 'hidden', !on); setProp(o, 'disabled', !on);
       if (t.hidden === !on) continue;
       t.hidden = !on;
       if (!on && this.rbTab === T.id) gone = true;
@@ -409,11 +409,11 @@ export const tabs = {
       const c = command(b.dataset.cmd);
       if (!c || c.static) continue;
       const off = !enabled(this, c, at);
-      b.disabled = off;
+      setProp(b, 'disabled', off);
       const x = b.nextElementSibling && b.nextElementSibling.classList.contains('rb-x') ? b.nextElementSibling : null;
-      if (x) x.disabled = off && !c.menuWhenOff;
+      if (x) setProp(x, 'disabled', off && !c.menuWhenOff);
       const on = pressed(this, c, at);
-      if (on !== null) b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (on !== null) setAttr(b, 'aria-pressed', on ? 'true' : 'false');
     }
     for (const c of commands()) if (c.sync) { try { c.sync(this, at); } catch (e) { console.error(e); } }
     // (the title reads every file for a live graph: once for each build of the page, not for each move of the caret)

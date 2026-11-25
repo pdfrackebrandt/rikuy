@@ -18,6 +18,7 @@ import { menuItems, enabled } from '../commands.js';
 import { editChart } from '../ui/shapes.js';
 import { smartDialog, wordsDialog, axisTitlesDialog } from '../ui/picturedialogs.js';
 import { methods as selMethods, installSelPane } from '../ui/selpane.js';
+import { setAttr, setProp } from '../ui/dom.js';
 
 const sel = (app, kind) => { const o = app.objHere ? app.objHere() : null; return o && (!kind || o.kind === kind) ? o : null; };
 const isK = (kind) => (app) => !!sel(app, kind);
@@ -556,15 +557,15 @@ export const methods = {
     const inp = document.getElementById('rc-' + kind + '-' + which);
     if (!inp) return;
     const o = sel(this, kind);
-    inp.disabled = !o;
-    if (!o) { inp.value = ''; inp.removeAttribute('aria-valuetext'); return; }
+    setProp(inp, 'disabled', !o);
+    if (!o) { setProp(inp, 'value', ''); setAttr(inp, 'aria-valuetext', null); return; }
     if (document.activeElement === inp && !force) return;
     let t = '';
     if (kind === 'shape') { const B = O.shapeBox(o.text); if (B) t = r2(which === 'width' ? B.w : B.h) + ' cm'; }
     else { const I = O.chartInfo(o.text); if (I) t = which === 'width' ? Math.round((I.width ?? 0.8) * 100) + '%' : r2(I.height ?? 6) + ' cm'; }
-    inp.value = t;
-    inp.setAttribute('aria-valuetext', t);
-    inp.setAttribute('aria-valuenow', String(parseFloat(t) || 0));
+    setProp(inp, 'value', t);
+    setAttr(inp, 'aria-valuetext', t);
+    setAttr(inp, 'aria-valuenow', String(parseFloat(t) || 0));
   },
   objFieldFocus(id) { const x = document.getElementById(id); if (x && x.offsetParent) { x.focus(); return true; } return false; }
 };

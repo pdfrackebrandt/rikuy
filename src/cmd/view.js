@@ -6,7 +6,7 @@
 
 import { register, onInstall, commands } from '../commands.js';
 import { keyTitle, macUA } from '../keys.js';
-import { $, PREFS, store } from '../ui/dom.js';
+import { $, PREFS, store, setAttr, setProp } from '../ui/dom.js';
 import { openMenu } from '../ui/kit.js';
 import { buildModel } from '../model.js';
 import { hunks } from '../diff.js';
@@ -208,9 +208,9 @@ export const methods = {
 
   viewSync() {
     const v = this.view || 'page';
-    for (const k of VIEWS) { const b = $('#sv-' + k); if (b) b.setAttribute('aria-pressed', k === v ? 'true' : 'false'); }
+    for (const k of VIEWS) { const b = $('#sv-' + k); if (b) setAttr(b, 'aria-pressed', k === v ? 'true' : 'false'); }
     const m = $('#sv-mobile');
-    if (m) m.setAttribute('aria-pressed', v === 'page' && this.webOn() ? 'true' : 'false');
+    if (m) setAttr(m, 'aria-pressed', v === 'page' && this.webOn() ? 'true' : 'false');
     this.zoomShow();
     this.rulerSoon();
   },
@@ -549,9 +549,9 @@ export const methods = {
     const s = $('#st-zoom'), v = $('#st-zoomv');
     if (!s || !this.px) return;
     const pct = Math.round(this.px / PX_PER_PT * 100);
-    if (document.activeElement !== s) s.value = String(Math.max(25, Math.min(400, pct)));
-    v.textContent = pct + '%';
-    s.setAttribute('aria-valuetext', pct + '%');
+    if (document.activeElement !== s) setProp(s, 'value', String(Math.max(25, Math.min(400, pct))));
+    setProp(v, 'textContent', pct + '%');
+    setAttr(s, 'aria-valuetext', pct + '%');
   },
 
   // ---- Repeat and Undo's list ---------------------------------------------------------------

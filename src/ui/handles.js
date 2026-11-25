@@ -11,6 +11,7 @@
 // trim=… and clip, Escape gives up, Remove Crop (Crop's arrow) takes it off.
 
 import * as X from '../picture.js';
+import { setProp } from './dom.js';
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const el = (cls) => { const d = document.createElement('div'); d.className = cls; return d; };
@@ -79,15 +80,15 @@ class Handles {
         // (a touch screen sets its caret where the finger was a moment after the tap that
         // selected the picture: the picture stays selected then)
         if (Date.now() - (this.app.picSelT || 0) < 700) { const r = document.createRange(); r.selectNode(t); this.app.ourSel = true; s.removeAllRanges(); s.addRange(r); }
-        else { this.app.disarm(); this.app.ribbonSync(); this.frame.hidden = true; return; }
+        else { this.app.disarm(); this.app.ribbonSync(); setProp(this.frame, 'hidden', true); return; }
       }
     }
     // (a picture gone from the page, by a rebuild nothing reselected: nothing stays selected)
-    if (!t) { this.frame.hidden = true; if (this.app.armed && this.app.armed.kind === 'img') { this.app.disarm(); this.app.ribbonSync(); } return; }
+    if (!t) { setProp(this.frame, 'hidden', true); if (this.app.armed && this.app.armed.kind === 'img') { this.app.disarm(); this.app.ribbonSync(); } return; }
     // (the bubble of bold and italic is for words: a picture has its tab)
     const bub = document.getElementById('bubble');
-    if (bub) bub.hidden = true;
-    if (this.cr) { this.frame.hidden = true; this.place(this.cr); return; }
+    if (bub) setProp(bub, 'hidden', true);
+    if (this.cr) { setProp(this.frame, 'hidden', true); this.place(this.cr); return; }
     const box = (t.querySelector('.pic-in') || t.querySelector('img') || t).getBoundingClientRect();
     const r = t.classList.contains('a-box') ? t.getBoundingClientRect() : box;
     // (off the visible part of the page, as a scrolled away picture is)

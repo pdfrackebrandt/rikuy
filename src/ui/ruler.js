@@ -11,7 +11,7 @@
 import * as P from '../parasrc.js';
 import * as PS from '../pagesrc.js';
 import { command, enabled } from '../commands.js';
-import { mk } from './dom.js';
+import { mk, setProp } from './dom.js';
 
 const CM = P.PT.cm;
 const SNAP = 0.25 * CM;
@@ -187,11 +187,11 @@ export function rulerSync(app) {
   if (!R) return;
   const on = rulerShown(app);
   document.body.classList.toggle('ruler-on', on);
-  R.hr.hidden = !on;
-  if (!on) { R.vr.hidden = true; R.S = null; return; }
+  setProp(R.hr, 'hidden', !on);
+  if (!on) { setProp(R.vr, 'hidden', true); R.S = null; return; }
   const S = state(app);
   R.S = S;
-  if (!S) { R.track.hidden = true; R.vr.hidden = true; return; }
+  if (!S) { setProp(R.track, 'hidden', true); setProp(R.vr, 'hidden', true); return; }
   R.track.hidden = false;
   const px = S.px, pr = S.page.getBoundingClientRect(), hr = R.hr.getBoundingClientRect();
   R.track.style.left = (pr.left - hr.left) + 'px';
