@@ -48,4 +48,17 @@ ok('warnings name no place', () => {
   assert.equal(issueText(w, 'see \\cite{x}'), 'Citation `x\' on page 1 undefined on input line 7.');
 });
 
+ok('a brace left open: the text TeX took as the argument is the error\'s context and its runaway, to find its place by', () => {
+  // (TeX named no line: it read to the file's end)
+  const [a] = parseTeXLog('(./main.tex\nRunaway argument?\n{bold text \\par Next para. \\end {document} \n! File ended while scanning use of \\textbf .\n<inserted text> \n                \\par \n<*> main.tex\n');
+  assert.equal(a.runaway, '{bold text \\par Next para. \\end {document} ');
+  assert.equal(issueText(a, ''), 'File ended while scanning use of \\textbf . (at {bold text \\par Next para. \\end {document})');
+  // (in an \input file: TeX names the line of the \input)
+  const [b] = parseTeXLog('Runaway argument?\n{this and that. \\par \n./main.tex:5: File ended while scanning use of \\emph .\n<inserted text> \n                \\par \nl.5 \\input{sec/two}\n');
+  assert.equal(b.runaway, '{this and that. \\par ');
+  assert.equal(b.line, 5);
+  // an error with no runaway argument has none
+  assert.equal(parseTeXLog('./main.tex:4: Undefined control sequence.\nl.4 Hello \\x\n')[0].runaway, undefined);
+});
+
 console.log('texlog:', n, 'passed');

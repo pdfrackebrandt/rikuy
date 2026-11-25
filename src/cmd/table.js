@@ -413,6 +413,30 @@ export const methods = {
     return true;
   },
   // The caret in the cell that holds p (its first words, or its empty place)
+  // Enter and Shift+Enter in a table's cell (app.js enter): a new line in the cell, as Word's
+  // (src/table.js cellBreak), where a selection was its deletion's edits (del), in one step
+  cellEnter(c, del) {
+    const f = c.f, src = this.src(f), p = c.a;
+    const mine = del.filter((x) => x.f === f);
+    const s2 = mine.length ? X.apply(src, mine) : src;
+    const T = X.tableAt(s2, p, Math.max(0, p - 400000), p + 1);
+    const r = T && X.cellBreak(s2, T, p);
+    if (!r) return;
+    if (r.error) { this.toast(r.error); return; }
+    let edits = r.edits.map((x) => ({ f, s: x.s, e: x.e, t: x.t }));
+    if (mine.length) {
+      // (the new line's places are in the text the deletion left: the two as one edit, the part
+      // of the text that changed)
+      const out = X.apply(s2, r.edits);
+      let i = Math.min(...mine.map((x) => x.s), ...r.edits.map((x) => x.s)), k = 0;
+      while (k < src.length - i && k < out.length - i && src[src.length - 1 - k] === out[out.length - 1 - k]) k++;
+      edits = [{ f, s: i, e: src.length - k, t: out.slice(i, out.length - k) }];
+    }
+    const pk = this.tablePackages(r.packages);
+    let q = r.p;
+    for (const x of pk) if (x.f === f && x.s <= q) q += x.t.length - (x.e - x.s);
+    this.commit([...edits, ...pk], { f, p: q }, 'type');
+  },
   caretToCell(f, p) {
     const src = this.src(f), T = X.tableAt(src, p, Math.max(0, p - 400000), p + 1);
     if (!T) return;
@@ -541,7 +565,7 @@ export const methods = {
   tableInsertCol(right) {
     return this.tableOp((src, T, h) => X.insertCol(src, T, right ? h.rect.c1 : h.rect.c0, right, { row: h.r }));
   },
-  tableDeleteRows() { return this.tableOp((src, T, h) => X.deleteRows(src, T, h.rect.r0, h.rect.r1)); },
+  tableDeleteRows() { return this.tableOp((src, T, h) => X.deleteRows(src, T, h.rect.r0, h.rect.r1, h.cell.col)); },
   tableDeleteCols() { return this.tableOp((src, T, h) => X.deleteCols(src, T, h.rect.c0, h.rect.c1)); },
   // the table, and the float around it when it holds nothing else
   tableDelete() {

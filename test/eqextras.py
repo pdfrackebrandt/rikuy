@@ -3,7 +3,7 @@ Shift+Enter rows, wrapping a selection, pasting with delimiters, Copy for Word, 
 comma in German documents, chemistry with \\ce."""
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import settle, until, open_page, check, results, src, SHOTS, load_doc
+from browser import settle, until, open_page, check, results, src, SHOTS, load_doc, place, select_between
 from playwright.sync_api import sync_playwright
 
 with sync_playwright() as p:
@@ -105,6 +105,62 @@ with sync_playwright() as p:
     rows = ta()
     check('rows pasted into a gather come without their &', '&' not in rows and 'a = b' in rows and 'c = d' in rows, rows[-80:])
     k.press('Escape'); settle(page, 300)
+    # (into the middle of an align's row: the rows at the caret, the row split there and every new
+    # line indented as the rows are; the paste went to the align's end, the field's place in the
+    # rows never found in the box, and the row after the rows lost its indent. One row goes in at
+    # the caret, the row staying one; each & of && dropped in a gather, where the second stayed)
+    ALG = '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nText.\n\\begin{align}\n  a &= b \\\\\n  c &= d\n\\end{align}\nMore.\n\\end{document}\n'
+    got = []
+    for doc, own in ((ALG, '\\begin{align}\n  x &= y \\\\\n  z &= w\n\\end{align}'), (ALG, '$x &= y$'), (ALG.replace('align}', 'gather}').replace('&', ''), '\\begin{alignat}{2}\n  x &= y && z &= w \\\\\n  u &= v && s &= t\n\\end{alignat}')):
+        load_doc(page, doc)
+        page.locator('.it.dm').nth(0).click()
+        page.wait_for_selector('#pop-field', timeout=10000); settle(page, 300)
+        if '&' in doc: k.press('ArrowLeft'); settle(page, 100)
+        page.evaluate(PASTE, [' x ', own]); settle(page, 400, full=True)
+        got.append(ta())
+        k.press('Escape'); settle(page, 300)
+    check('rows pasted mid row into an align: at the caret, the row split there, every line indented', got[0] == '  a &= b \\\\\n  c &= \\\\\n  x &= y \\\\\n  z &= w \\\\\n  d', got[0])
+    check('one row pasted mid row: at the caret, its & kept, the row one row', got[1] == '  a &= b \\\\\n  c &=x &= y d', got[1])
+    check('alignat\'s && pasted into a gather: no & left', '&' not in got[2] and '  x = y' in got[2], got[2])
+    # (review: one row goes into the caret's row only where the row then has no more columns than
+    # its equation takes: alignat{1} 2, eqnarray 3; else it is a row of its own, as before, where
+    # c &=x &= y d stopped TeX, "Extra & on this line". A paste at the start of the row after
+    # \\[2pt] goes after the [2pt], which went after it and printed.)
+    GO = """(v) => { const mf = document.getElementById('pop-field'); const M = mf._mathfield.model; let best = -1;
+      for (let i = 0; i <= M.lastOffset; i++) { const a = M.at(i); if (a && a.value === v) best = i; } if (best >= 0) mf.position = best; return best; }"""
+    got = []
+    for doc, own, go in ((ALG.replace('align}', 'alignat}{1}', 1).replace('\\end{align}', '\\end{alignat}'), '$x &= y$', None),
+                         (ALG.replace('align}', 'eqnarray}').replace('&=', '&=&'), '$x &=& y$', None),
+                         (ALG.replace('a &= b \\\\\n', 'a &= b \\\\[2pt]\n'), '$x &= y$', 'c')):
+        load_doc(page, doc)
+        page.locator('.it.dm').nth(0).click()
+        page.wait_for_selector('#pop-field', timeout=10000); settle(page, 300)
+        if go: page.evaluate(GO, go)
+        k.press('ArrowLeft'); settle(page, 100)
+        page.evaluate(PASTE, [' x ', own]); settle(page, 400, full=True)
+        got.append(ta())
+        k.press('Escape'); settle(page, 300)
+    check('one row pasted mid row into alignat{1}: a row of its own (two & in the row stopped TeX)', got[0] == '  a &= b \\\\\n  c &= \\\\\n  x &= y \\\\\n  d', got[0])
+    check('and into eqnarray: a row of its own', got[1] == '  a &=& b \\\\\n  c &=& \\\\\n  x &=& y \\\\\n  d', got[1])
+    check('a paste at the start of the row after \\\\[2pt]: after the [2pt], which stays the row break\'s', '\\\\[2pt]\n  x &= yc &= d' in got[2], got[2])
+    # (rows pasted there: no empty row first, which TeX numbered; and a row that starts with [u, v]
+    # right after a line break of its own is a row, not the break's spacing, which amsmath reads only
+    # right after \\ or \\*)
+    got = []
+    for doc, own, go, lefts in ((ALG.replace('a &= b \\\\\n', 'a &= b \\\\[2pt]\n'), '\\begin{align}\n  x &= y \\\\\n  z &= w\n\\end{align}', 'c', 1),
+                                (ALG.replace('a &= b \\\\\n', 'a &= b \\\\*\n'), '\\begin{align}\n  x &= y \\\\\n  z &= w\n\\end{align}', 'c', 1),
+                                (ALG.replace('c &= d', '[u, v] &= d'), '$x &= y$', 'd', 3)):
+        load_doc(page, doc)
+        page.locator('.it.dm').nth(0).click()
+        page.wait_for_selector('#pop-field', timeout=10000); settle(page, 300)
+        page.evaluate(GO, go)
+        for _ in range(lefts): k.press('ArrowLeft'); settle(page, 60)
+        page.evaluate(PASTE, [' x ', own]); settle(page, 400, full=True)
+        got.append(ta())
+        k.press('Escape'); settle(page, 300)
+    check('rows pasted at the start of the row after \\\\[2pt]: no empty row before them', got[0] == '  a &= b \\\\[2pt]\n  x &= y \\\\\n  z &= w \\\\\n  c &= d', got[0])
+    check('and after \\\\*', got[1] == '  a &= b \\\\*\n  x &= y \\\\\n  z &= w \\\\\n  c &= d', got[1])
+    check('a paste at the start of a row that starts with [u, v]: before it, the row\'s own words', '\\\\\n  x &= y[u, v] &= d' in got[2], got[2])
     load_doc(page, keep)
     open_inline()
     # paste into the LaTeX box
@@ -131,6 +187,23 @@ with sync_playwright() as p:
     cut = page.evaluate("window.__copied['text/plain']")
     check('copied or cut from a formula in the line, the plain text is $...$', got == '$\\frac{a}{b}$' and cut == '$\\frac{a}{b}$', (got, cut))
     k.press('Escape'); settle(page, 300)
+
+    # Ctrl+C over words, a formula in the line and a display: the plain text has each formula as its
+    # LaTeX with its delimiters, as Word gives an equation's linear form; it had the letters of their
+    # drawings, one line each (x 2 + b a), which the source pane or another program then got
+    cur = page.evaluate("window.rikuy.files.get('main.tex')")
+    load_doc(page, '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nLet $x^2+\\frac{a}{b}$ be a value.\n\\[\ny = \\sqrt{z}\n\\]\nAfter that here.\n\\end{document}\n')
+    page.evaluate("window.__copied = {}")
+    place(page, lambda pg: select_between(pg, 'Let', 0, 'After that', 5))
+    k.press('Control+c'); settle(page, 150)
+    got = page.evaluate("window.__copied['text/plain']")
+    check('copied from the page, the plain text has each formula as its LaTeX', got == 'Let $x^2+\\frac{a}{b}$ be a value.\n\\[\ny = \\sqrt{z}\n\\]\nAfter', got)
+    page.evaluate("window.__copied = {}")
+    place(page, lambda pg: select_between(pg, 'Let', 4, 'be a', 2))
+    k.press('Control+c'); settle(page, 150)
+    got = page.evaluate("window.__copied['text/plain']")
+    check('and a formula with a word after it: $...$ and the word', got == '$x^2+\\frac{a}{b}$ be', got)
+    load_doc(page, cur)
 
     # display: Shift+Enter makes a new row
     page.evaluate("document.querySelectorAll('.it.dm')[1].scrollIntoView({block:'center'})")

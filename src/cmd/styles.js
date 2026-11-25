@@ -402,10 +402,21 @@ export const methods = {
     const leadLab = lead && !(w.after != null && x.s < wEnd) ? lead[0].trim() : '';
     // (a heading's short title, \section[S]{...}, would be lost)
     if (kx === 'h' && src.slice(x.s, x.ws).includes('[')) return false;
-    // (the caret at the second block's words' start, or the first's words' end)
-    if (back ? p > x.ws || /\S/.test(src.slice(p, x.ws)) || p < x.s : p < w.we || /\S/.test(src.slice(w.we, p)) || p > wEnd) return false;
-    if (/\S/.test(src.slice(wEnd, x.s))) return false;
+    // (the caret at the second block's words' start, or the first's words' end. Past what opens
+    // its words and shows nothing, \textbf{ or \noindent, the caret is at their start all the
+    // same: no visible text before it in its paragraph; before what only closes the first's, }
+    // of an \emph at a heading's end, at their end. Backspace there did nothing.)
+    const bare = () => { const sel = getSelection(); if (!sel.rangeCount || !X.it.contains(sel.anchorNode)) return false; const r = document.createRange(); r.setStart(X.it, 0); r.setEnd(sel.anchorNode, sel.anchorOffset); return !/\S/.test(r.toString()); };
+    if (back ? p < x.s || p > x.we || (p > x.ws ? !bare() : /\S/.test(src.slice(p, x.ws))) : p < w.we ? !/^[\s}]*$/.test(src.slice(p, w.we)) : /\S/.test(src.slice(w.we, p)) || p > wEnd) return false;
+    // (a \label on the line after a heading, a blank line before the paragraph under it, is the
+    // heading's: it stays after it; the paragraph's \noindent goes with the paragraph; anything
+    // else between the two blocks keeps them apart)
+    const gapM = kw === 'h' ? /^\s*(\\label\s*\{[^{}]*\})?\s*(?:\\(?:no)?indent(?![A-Za-z])\s*)*$/.exec(src.slice(wEnd, x.s)) : null;
+    if (gapM ? gapM[1] && w.after != null : /\S/.test(src.slice(wEnd, x.s))) return false;
+    const gapLab = gapM && gapM[1] ? gapM : null;
     let words = src.slice(x.ws, x.we).trim(), label = x.after != null ? src.slice(x.e, x.after).trim() : '', E = xEnd, reopen = '';
+    // (\noindent and \indent are the joined paragraph's own, gone with it: never in a heading)
+    if (kw === 'h') words = words.replace(/^(?:\\(?:no)?indent(?![A-Za-z])\s*)+/, '');
     // (a quote of several paragraphs: its first leaves it, the quote begins again before the rest)
     const gap = kx === 'env' ? /[ \t]*\r?\n[ \t]*(?:\r?\n[ \t]*)+/.exec(words) : null;
     if (gap) {
@@ -416,12 +427,24 @@ export const methods = {
       words = words.slice(0, gap.index);
     }
     if (!words) return false;
-    if (kw === 'h' && (NOT_PLAIN.test(words) || VERBISH.test(words) || /(^|[^\\])%/.test(words) || words[0] === '%')) return false;
+    // What a heading's argument cannot hold (a display, a list, a footnote, \verb, a % in an
+    // address) stays out of it, and Backspace says why: it did nothing at all. A comment can stay
+    // in it, the closing brace on a line after it (below).
+    // (read without their comments: a \begin in a comment is no environment)
+    const plain = words.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, '$1$2'), addr = /\\(?:url|href|path)\s*\{[^{}]*%/.test(words);
+    if (kw === 'h' && (NOT_PLAIN.test(plain) || VERBISH.test(words) || addr)) {
+      this.toast('A heading cannot hold ' + (/\\footnote\b/.test(plain) ? 'a footnote' : /\\item\b/.test(plain) ? 'a list' : VERBISH.test(words) || addr ? 'verbatim text or an address with %' : 'a display or an environment') + ': the paragraph stays under it.', 2600);
+      return true;
+    }
     if (label && COMMENT.test(words)) return false;
     // (after a comment that ends the first block's words: on a line of their own, or the comment
     // would take them off the page)
     const NL = /\r\n/.test(src) ? '\r\n' : '\n', close = src.slice(w.we, wEnd);
-    const sp = COMMENT.test(src.slice(src.lastIndexOf('\n', w.we - 1) + 1, w.we)) ? NL : src.slice(w.ws, w.we).trim() ? ' ' : '';
+    // (words that begin with a comment's line, a review comment: it keeps its own line, the words
+    // after it on theirs, or it was joined onto the line above, "Head % comment (Ana)", where the
+    // review pane no longer reads it; the caret after it)
+    const leadCm = /^(?:[ \t]*%[^\n]*\n[ \t]*)+/.exec(words), skip = leadCm ? leadCm[0].length : 0;
+    const sp = COMMENT.test(src.slice(src.lastIndexOf('\n', w.we - 1) + 1, w.we)) || leadCm ? NL : src.slice(w.ws, w.we).trim() ? ' ' : '';
     // (joined into a paragraph, which ends nowhere of its own: what came after the second block
     // keeps a blank line from it, or it would run on in the same paragraph)
     let tail = reopen;
@@ -429,9 +452,11 @@ export const methods = {
       const m = /^[ \t]*(\r?\n)?[ \t]*(?=[^\s%])(?!\\(?:end|begin|part|chapter|(?:sub)*section|(?:sub)?paragraph|item|par|label)\b)/.exec(src.slice(E, E + 200));
       if (m) tail = m[1] ? NL : NL + NL;
     }
-    const t = sp + words + label + close + leadLab + tail;
+    // (words ending in a comment: what closes the heading on the next line, or the comment takes it)
+    const cut = kw === 'h' && close && COMMENT.test(words.slice(words.lastIndexOf('\n') + 1)) ? NL : '';
+    const t = sp + words + label + cut + close + (gapLab ? NL + gapLab[1] : '') + leadLab + tail;
     this.closeGroup();
-    this.commit([{ f, s: w.we, e: E, t }], back ? { f, p: w.we + sp.length, bias: 1 } : { f, p: w.we, bias: -1 }, 'del');
+    this.commit([{ f, s: w.we, e: E, t }], back ? { f, p: w.we + sp.length + skip, bias: 1 } : { f, p: w.we, bias: -1 }, 'del');
     return true;
   },
   blockStyleOf(at) {
@@ -606,16 +631,25 @@ export const methods = {
     }
     if (cur.many) { this.setManyStyle(cur, to, c); this.closeGroup(); return; }
     if (cur.item && (isHeading(to) || to === 'part')) return this.itemToHeading(cur.item, to);
-    // a heading on one paragraph of an abstract or a quote of several: that paragraph alone, the
-    // environment split around it (Word styles the paragraph, not its neighbours)
-    if (cur.split && (isHeading(to) || to === 'part')) {
+    // a heading or Normal on one paragraph of an abstract or a quote of several: that paragraph
+    // alone, the environment split around it (Word styles the paragraph, not its neighbours).
+    // Normal took the quote off every paragraph of it.
+    // (a selection over several of its paragraphs: Normal takes the environment off them all)
+    const several = to === 'p' && !c.collapsed && c.f === at.B.f && /\n[ \t]*\r?\n/.test(this.src(c.f).slice(c.a, c.b));
+    if (cur.split && (isHeading(to) || to === 'part' || (to === 'p' && !several))) {
       const f = at.B.f, r = splitEnvEdits(this.src(f), cur.b, to, c.a);
+      // (Normal in an abstract's middle, or in a list inside the quote: it goes whole, as before)
+      if (r.why === 'whole') return this.setBlockStyleWhole(at, cur, to);
       if (r.why) { this.toast(r.why); return; }
       this.commit(r.edits.map((x) => ({ f, ...x })), { f, p: r.p, bias: -1 }, 'block');
       this.closeGroup();
       return;
     }
-    const f = at.B.f, r = restyle(this.src(f), cur.b, to, c.a);
+    return this.setBlockStyleWhole(at, cur, to);
+  },
+  // the block's style by restyle (src/styles.js): an environment of several paragraphs whole
+  setBlockStyleWhole(at, cur, to) {
+    const c = at.c, f = at.B.f, r = restyle(this.src(f), cur.b, to, c.a);
     if (!r) return;
     const needs = this.styleNeeds(to), grow = needs.filter((x) => x.f === f && x.s <= cur.b.s).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
     this.commit([...needs, ...r.edits.map((x) => ({ f, ...x }))], { f, p: r.p + grow, bias: -1 }, 'block');

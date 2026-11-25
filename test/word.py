@@ -354,6 +354,9 @@ try:
                         ('the picture, as wide a share of the line as in Word', '\\includegraphics[width=0.33\\linewidth'), ('the title', '\\title{Growth and Institutions}')]:
             check('Open .docx keeps %s' % what, s in t, t[:600] if s not in t else '')
         check('a javascript: link in the Word file is plain text, not a link', 'javascript' not in t)
+        # (Word showed its headings without numbers: so do the page and the PDF)
+        heads = page.evaluate("[...document.querySelectorAll('#pages .h1, #pages .h2')].map((e) => e.textContent)")
+        check('the Word file\'s headings, unnumbered there, show unnumbered', '\\setcounter{secnumdepth}{0}' in t and 'Introduction' in heads and not page.evaluate("document.querySelectorAll('#pages .secnum').length"), heads)
         check('the table on the page shows its cells, not pandoc\'s \\noalign', '\\noalign' not in t and 'noalign' not in page.inner_text('#pages') and 'Peru' in page.inner_text('#pages'), page.inner_text('#pages')[:300])
         check('the picture is a file of the project, shown on the page', page.evaluate("window.rikuy.assetBlobs.has('figures/figure1.png')") and page.evaluate("[...document.querySelectorAll('#pages img')].some(i => i.complete && i.naturalWidth > 0)"))
         check('the page shows it without error chips', page.evaluate("document.querySelectorAll('#pages .a-chip.err').length") == 0, page.evaluate("[...document.querySelectorAll('#pages .a-chip.err')].map(x => x.textContent)"))

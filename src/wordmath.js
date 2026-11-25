@@ -927,8 +927,13 @@ export function installWordTyping(mf, opts) {
         recognize();
         const here = cellAt();
         if (here && here.c + 1 < here.arr.colCount) goCell(here, here.r, here.c + 1);
+        // (the last column of a display's own rows: an alignment point more there, onAmp; it did nothing)
+        else if (here && opts.onAmp && here.arr.parent && here.arr.parent.type === 'root') opts.onAmp();
         return;
       }
+      // An & in a display outside any rows: an alignment point at the caret, as Word's & in an
+      // equation, the display made one of rows (onAmp); MathLive wrote \&, a printed ampersand
+      if (opts.onAmp) { stop(); recognize(); opts.onAmp(); return; }
     }
     const trigger = k === ' ' || k === 'Enter' || k === 'Tab' || (k.length === 1 && !/[A-Za-z]/.test(k));
     const converted = trigger && recognize();
@@ -1011,5 +1016,23 @@ export function installWordTyping(mf, opts) {
   }, true);
   mf.addEventListener('pointerdown', () => { groups = []; typedBox = new WeakSet(); }, true);
   mf.addEventListener('blur', () => { if (buf != null) cancel(); if (arg) argDone(); });
-  return { active: () => buf != null || arg != null, newRow, reposition: () => { if (buf != null) place(); }, destroy: () => { chip.remove(); } };
+  // (the caret to the start of cell c of row r of the field's own rows, the array at its top)
+  const toCell = (r, c) => {
+    try {
+      const model = mf._mathfield.model, arr = (model.root.body || []).find((a) => a && typeof a.getCell === 'function');
+      return !!arr && goCell({ arr, model }, r, c);
+    } catch (e) { return false; }
+  };
+  // (the caret's cell of the field's own rows: its row, its column, and the LaTeX of the cell up to
+  // the caret; null outside them)
+  const cellOf = () => {
+    const at = cellAt();
+    if (!at || !at.arr.parent || at.arr.parent.type !== 'root') return null;
+    try { const cl = at.arr.getCell(at.r, at.c); return { r: at.r, c: at.c, pre: mf.getValue(at.model.offsetOf(cl[0]), mf.position, 'latex') }; } catch (e) { return null; }
+  };
+  // (whether the caret stands in the field's own line, not inside a fraction, a root or a script)
+  const atTop = () => {
+    try { const model = mf._mathfield.model, a = model.at(mf.position); return !a || a === model.root || a.parent === model.root; } catch (e) { return false; }
+  };
+  return { active: () => buf != null || arg != null, newRow, toCell, cellOf, atTop, reposition: () => { if (buf != null) place(); }, destroy: () => { chip.remove(); } };
 }

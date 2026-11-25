@@ -1489,6 +1489,41 @@ def tooltips(page, w):
     page.keyboard.press('Escape')
 
 
+def tab_picker(page, w):
+    """On a phone the ribbon's tabs are the list "Ribbon tab": a tab chosen there by a tap gives the
+    page its focus back at the caret, as Word's ribbon leaves the caret in the document (the list
+    kept it, and the on-screen keyboard went down); chosen by the keys, the list keeps it."""
+    load_doc(page, DOC)
+    click_text(page, 'Second paragraph', 6)
+    sel = page.get_by_role('combobox', name='Ribbon tab', exact=True)
+    sel.tap(); settle(page, 100)
+    sel.select_option(label='Insert'); settle(page, 250)
+    st = page.evaluate("[document.activeElement.id, window.rikuy.rbTab]")
+    page.keyboard.type('Q'); settle(page, 200)
+    check(f'a tab chosen in "Ribbon tab" by a tap: Insert open, the focus on the page, the next key at the caret ({w})', st == ['pages', 'insert'] and 'SecondQ paragraph' in src(page), [st, [l for l in src(page).splitlines() if 'Q' in l][:1]])
+    sel.focus(); page.keyboard.press('ArrowDown'); settle(page, 200)
+    st = page.evaluate("[document.activeElement.id, window.rikuy.rbTab]")
+    check(f'chosen by the keys, the list keeps the focus for the next arrow ({w})', st[0] == 'rb-tabsel' and st[1] != 'insert', st)
+
+
+IOS_FIX = """([word, data]) => { const R = document.getElementById('pages'), sp = [...R.querySelectorAll('span.t')].find((x) => x.textContent.includes(word)); if (!sp) return false;
+  const n = sp.firstChild, st = n.data.indexOf(word), s = getSelection(); s.collapse(n, st + word.length);
+  return !R.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data, targetRanges: [new StaticRange({ startContainer: n, startOffset: st, endContainer: n, endOffset: st + word.length })], bubbles: true, cancelable: true })); }"""
+
+
+def ios_autocorrect(page, w):
+    """iOS's autocorrect as Safari hands it over: one insertText of the corrected word whose target is
+    the word typed, the selection a caret after it. The word is replaced, as typed by hand would be;
+    it went in at the caret, "tehthe"."""
+    load_doc(page, DOC)
+    click_text(page, 'Second paragraph here', 21)
+    page.keyboard.type(' teh'); settle(page, 250)
+    ok = page.evaluate(IOS_FIX, ['teh', 'the']); settle(page, 250)
+    check(f'an iOS autocorrect over the word before the caret replaces it: "here the." ({w})', ok and 'Second paragraph here the.' in src(page) and 'teh' not in src(page), [l for l in src(page).splitlines() if 'Second' in l])
+    page.keyboard.type('Q'); settle(page, 200)
+    check(f'and the caret after the word it wrote ({w})', 'here theQ.' in src(page), [l for l in src(page).splitlines() if 'Second' in l])
+
+
 PARTS = {'android_input': (android_input, [(390, False), (360, True)]),
          'keyboard_caret': (keyboard_caret, [(390, False), (360, True)]),
          'desktop_input': (desktop_input, [(1366, False)]),
@@ -1522,7 +1557,9 @@ PARTS = {'android_input': (android_input, [(390, False), (360, True)]),
          'file_view': (file_view, [(1366, False), (1920, True), (390, False), (360, True)]),
          'first_visit': (first_visit, [(1366, False), (1920, True), (390, False), (360, True)]),
          'dialogs': (dialogs_give_the_caret_back, [(1400, False), (1400, True)]),
-         'phone_dialogs': (phone_dialogs, [(390, False), (360, True)])}
+         'phone_dialogs': (phone_dialogs, [(390, False), (360, True)]),
+         'tab_picker': (tab_picker, [(390, False), (360, True)]),
+         'ios_autocorrect': (ios_autocorrect, [(390, False)])}
 
 
 # the parts that meet a phone's own default, Mobile View (the others open in Print Layout, as the suites written for it do)

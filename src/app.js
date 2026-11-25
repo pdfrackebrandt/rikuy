@@ -156,6 +156,43 @@ function focusField(mf) {
     if (sink) sink.focus({ preventScroll: true });
   } catch (e) { /* ignore */ }
 }
+// The selection as plain text, each formula in it as its LaTeX with its delimiters ($…$, \\[ … \\],
+// its environment), as Word gives an equation's linear form: the letters of its drawing (x 2 + b a
+// for $x^2+\\frac{a}{b}$, the KaTeX lines one by one) were what another program or the source pane
+// got. Paragraphs on lines of their own, a table's cells by tabs, as the selection's own text has
+// them. latexOf(el): a formula element's source. Without a formula, the selection's own text.
+function selectionPlain(sel, root, latexOf) {
+  const own = () => sel.toString().replace(/\u200B/g, '');
+  if (!sel.rangeCount) return '';
+  const r = sel.getRangeAt(0), MATH = '.a-math[data-a], .dm[data-a]';
+  if (![...root.querySelectorAll(MATH)].some((el) => r.intersectsNode(el))) return own();
+  const SKIP = '[aria-hidden="true"], .lbl-num, .pg-foot, .fn-mark-hidden, script, style';
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, { acceptNode: (n) => (r.intersectsNode(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT) });
+  let out = '', skip = null, at = null;
+  const add = (node, t) => {
+    if (!t) return;
+    const el = node.nodeType === 1 ? node : node.parentElement;
+    const it = el.closest('.it'), td = el.closest('td, th'), tr = td && td.parentElement;
+    if (at && out) out += at.tr && tr && at.tr === tr && at.td !== td ? '\t' : at.it !== it || at.tr !== tr ? '\n' : '';
+    at = { it, td, tr };
+    out += t;
+  };
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    if (skip && skip.contains(n)) continue;
+    skip = null;
+    if (n.nodeType === 1) {
+      if (n.matches(MATH)) { const t = latexOf(n); if (t == null) return own(); add(n, t.trim()); skip = n; continue; }
+      if (n.matches(SKIP)) { skip = n; continue; }
+      if (n.tagName === 'BR') { out += '\n'; continue; }
+      continue;
+    }
+    let t = n.data;
+    if (n === r.endContainer) t = t.slice(0, r.endOffset);
+    if (n === r.startContainer) t = t.slice(r.startOffset);
+    add(n, t);
+  }
+  return out.replace(/\u200B/g, '');
+}
 // The selection as clean HTML for Word, Google Docs and mail: bold and italics as tags,
 // math as MathML (Word turns it into live equations), page furniture dropped.
 function selectionHTML(sel, mathml) {
@@ -2017,6 +2054,12 @@ class App {
           const tr = e.getTargetRanges()[0];
           if (tr) range = this.rangeToSrc(tr);
         }
+        // (an insertText aimed at a word while the selection is a caret: iOS's autocorrect, "teh"
+        // made "the" in one insert; it went in at the caret, "tehthe")
+        if (t === 'insertText' && e.getTargetRanges) {
+          const tr = e.getTargetRanges()[0], s = getSelection();
+          if (tr && !tr.collapsed && s.rangeCount && s.isCollapsed) range = this.rangeToSrc(tr);
+        }
         if (!range && t === 'insertText' && this.typeQueueable(data)) { this.typeQueue(data); break; }
         this.typeFlush();
         this.typeIn(data, range);
@@ -2097,6 +2140,55 @@ class App {
     return { f: A.f, a: Math.min(A.p, B.p), b: Math.max(A.p, B.p) };
   }
 
+  // A selection from one file of the project into another (the main file's words into an \input
+  // file's, a drag or Shift+Down over the place it is input): each file loses the part of it the
+  // selection holds, as Word deletes what is selected, and the \input between them stays unless
+  // it is wholly inside. caretNow() reads such a selection as a caret at its start: Delete took
+  // from there to the paragraph's end with the \input and every file after it out of the
+  // document, Backspace the letter before the selection, and typing went in before it, the
+  // selection kept. Null where its ends are not places of the page: the callers then do what
+  // they did before (typing goes in at the start; nothing is deleted).
+  crossFileEdits(r) {
+    // (a selection from the page's text into the footnotes at its foot ends where the page's text
+    // ends, as caretNow() reads it: their words come earlier in the source)
+    const up = (n, q) => { const e = n && (n.nodeType === 1 ? n : n.parentElement); return e && e.closest ? e.closest(q) : null; };
+    const fs = up(r.startContainer, '.fns'), fe = up(r.endContainer, '.fns'), ns = up(r.startContainer, '.fn');
+    r = r.cloneRange();
+    if (ns && up(r.endContainer, '.fn') !== ns) r.setEnd(ns, ns.childNodes.length);
+    else if (fe && fe !== fs) r.setEnd(fe, 0);
+    else if (fs && fe !== fs) r.setEnd(fs, fs.childNodes.length);
+    const A = posFromDom(r.startContainer, r.startOffset, this.root);
+    const Z = posFromDom(r.endContainer, r.endOffset, this.root, true);
+    if (!A || !Z || A.ghost || Z.ghost || A.f === Z.f) return null;
+    // Each file's part: from its first place in the selection to its last, read from the text
+    // the selection holds. (Not from the page's blocks: an \input inside a list, a theorem or a
+    // table puts two files' words in one block, and such a selection took nothing.)
+    const span = new Map([[A.f, [A.p, A.p]]]);
+    const add = (q) => { if (!q || q.ghost) return; const x = span.get(q.f); if (x) { x[0] = Math.min(x[0], q.p); x[1] = Math.max(x[1], q.p); } else span.set(q.f, [q.p, q.p]); };
+    const box = r.commonAncestorContainer.nodeType === 1 ? r.commonAncestorContainer : r.commonAncestorContainer.parentNode;
+    const tw = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+      if (!n.data.length || !r.intersectsNode(n)) continue;
+      add(posFromDom(n, n === r.startContainer ? r.startOffset : 0, this.root));
+      add(posFromDom(n, n === r.endContainer ? r.endOffset : n.data.length, this.root, true));
+    }
+    add(Z);
+    span.get(A.f)[0] = A.p;
+    span.get(Z.f)[1] = Z.p;
+    // (a file's part that begins at a heading's or a paragraph's first letter and goes past its
+    // end takes the whole of it, as within one file: its words alone went, and an empty numbered
+    // \section{} stayed)
+    const BL = this.renderer.blocks;
+    for (const [f, S] of span) {
+      const B = BL.find((b) => b.f === f && b.s < S[0] && S[0] < b.e);
+      if (B && B.e <= S[1] && !visibleRanges(BL, f, B.s, S[0]).length) S[0] = B.s;
+    }
+    const S0 = span.get(A.f);
+    const edits = [];
+    for (const [f, [s, e]] of span) if (e > s) edits.push(...this.deletionEdits(f, s, e, true));
+    return { edits, at: { f: A.f, p: S0[0] } };
+  }
+
   // Build deletion edits for [a,b) in f without breaking markup. sel: [a, b) is a selection made
   // on the page (typed over, deleted, cut, pasted over), not what one key takes at the caret.
   deletionEdits(f, a, b, sel) {
@@ -2139,6 +2231,9 @@ class App {
     // (from one list item's words into another's: src/cmd/lists.js listSpan)
     const items = this.listSpan(f, a, b);
     if (items) return items;
+    // (from a paragraph into a list item, or out of one past the list: src/cmd/lists.js listSelEdits)
+    const across = sel && this.listSelEdits ? this.listSelEdits(f, a, b) : null;
+    if (across) return across;
     const vr = visibleRanges(this.renderer.blocks, f, a, b);
     if (!sel) return vr.map(([s, e]) => ({ f, s, e, t: '' }));
     // A selection whose ends cannot go as LaTeX (it starts in a heading's words, or ends in a
@@ -2202,6 +2297,15 @@ class App {
     if (whole) { this.replaceBody(whole, escapeTeX(data, ' '), 'replace'); return; }
     const c = this.caretNow();
     if (!c) return;
+    // typed over a selection from one file into another: each file's part goes (crossFileEdits)
+    // and the letters go where it began (where it cannot tell the parts, in at its start, as before)
+    const X = c.crossFile && !range ? this.crossFileEdits(getSelection().getRangeAt(0)) : null;
+    if (X) {
+      const t = this.escapeAt(X.at.f, X.at.p, data), ed = X.edits.find((x) => x.f === X.at.f && x.s === X.at.p);
+      if (ed) ed.t += t; else X.edits.push({ f: X.at.f, s: X.at.p, e: X.at.p, t });
+      this.commit(X.edits, { f: X.at.f, p: X.at.p + t.length, bias: -1 }, 'replace');
+      return;
+    }
     // in a LaTeX paragraph, or a line or a paragraph to come in LaTeX, what is typed is the source
     const T = c.ghost ? null : this.texHere();
     if (T && c.f === T.f) { const r = range && range.f === T.f ? range : c; this.texEdit(T, r.a, r.b, data, c.collapsed && !range ? 'type' : 'replace'); return; }
@@ -2275,6 +2379,8 @@ class App {
     const whole = this.wholeDoc();
     if (whole) { this.replaceBody(whole, '', 'del'); return; }
     if (!c) return;
+    // (a selection from one file into another: crossFileEdits)
+    if (c.crossFile) { const X = this.crossFileEdits(getSelection().getRangeAt(0)); if (X && X.edits.length) this.commit(X.edits, { ...X.at, bias: -1 }, 'del'); return; }
     const T = this.texHere();
     if (T && c.f === T.f && this.texDelete(T, c, type, ranges)) return;
     // (Backspace at a list item's start, Delete at its end, as Word's: src/cmd/lists.js listDelete)
@@ -2397,7 +2503,41 @@ class App {
       // "Press Backspace again")
       if (atom) { this.arm({ ...atom, key: /Backward/.test(type) ? 'Backspace' : 'Delete' }); return; }
     }
-    const edits = this.deletionEdits(f, a, b, !c.collapsed);
+    let edits = this.deletionEdits(f, a, b, !c.collapsed);
+    // One key that takes the line end, or a \\ line break, next to a review comment's line or a
+    // comment ("here.\n% comment (Ana): note\n more.", Backspace at "more."): the words meet, and
+    // the comments stay, each on a line of its own, the line before them ended with % so TeX sets
+    // no space there. The comment line was joined onto the text line ("here.% comment"), which the
+    // review pane no longer reads as a comment, or deleted with the line ends round it.
+    let kept = false;
+    if (c.collapsed && edits.length === 1 && edits[0].s === a && edits[0].e === b && !edits[0].t) {
+      const S = this.src(f), line = (p) => S.slice(S.lastIndexOf('\n', p - 1) + 1, p), blankAfter = (p) => { const z = S.indexOf('\n', p + 1); return !S.slice(p + 1, z < 0 ? S.length : z).trim(); };
+      // (the run of spaces, line ends and whole comment lines the deleted characters stand in, never
+      // over a blank line: a paragraph break is no part of it)
+      let s0 = a, e0 = b;
+      for (let g = 0; g < 400 && s0 > 0; g++) {
+        const ch = S[s0 - 1];
+        if (ch === ' ' || ch === '\t' || ch === '\r') s0--;
+        else if (ch === '\n') { if (!line(s0 - 1).trim()) break; s0--; }
+        else if (/^[ \t]*%/.test(line(s0))) s0 -= line(s0).length;
+        else break;
+      }
+      for (let g = 0; g < 400 && e0 < S.length; g++) {
+        const ch = S[e0];
+        if (ch === ' ' || ch === '\t' || ch === '\r') e0++;
+        else if (ch === '\n') { if (blankAfter(e0)) break; e0++; }
+        else if (!line(e0).trim() && ch === '%') { const z = S.indexOf('\n', e0); e0 = z < 0 ? S.length : z; }
+        else break;
+      }
+      const X = S.slice(s0, e0), CM = /(^|[^\\])((?:\\\\)*)%([^\n]*)/g, cms = [];
+      const rest = X.replace(CM, (m, x, y, z) => { if (z.replace(/\r$/, '').trim()) cms.push('%' + z.replace(/\r$/, '')); return x + y; });
+      // (a comment takes its own line end: the blank line TeX would see is read without them)
+      if (cms.length && /^\s*(?:\\\\\s*)?$/.test(rest) && !/\n[ \t\r]*\n/.test(X.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*(\r?\n)?/g, '$1$2'))) {
+        const NL = /\r\n/.test(S) ? '\r\n' : '\n';
+        edits = [{ f, s: s0, e: e0, t: (s0 === 0 || S[s0 - 1] === '\n' ? '' : '%' + NL) + cms.join(NL) + NL }];
+        a = s0; kept = true;
+      }
+    }
     if (!edits.length) {
       const p = /Backward/.test(type) || !c.collapsed ? a : b;
       this.restoreCaret({ f, p, bias: /Backward/.test(type) ? -1 : 1 });
@@ -2406,7 +2546,8 @@ class App {
     const removedBefore = edits.filter((ed) => ed.e <= a).reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
     let p = a - removedBefore;
     const first = edits[0];
-    if (first.s >= a) p = first.s + first.t.length;
+    // (the caret where the words meet, before the comments kept)
+    if (first.s >= a && !kept) p = first.s + first.t.length;
     this.commit(edits, { f, p, bias: -1 }, 'del');
     // (an empty \textbf{} left where the deleted words were: gone once the caret leaves it untyped)
     if (this.watchDeleted) this.watchDeleted(f, p);
@@ -2471,6 +2612,24 @@ class App {
   enter(soft) {
     const c = this.caretNow();
     if (!c) return;
+    // (over a selection from one file into another: what it holds goes, crossFileEdits. Mostly
+    // the two files' remains are two paragraphs already, the break Enter makes; from one list
+    // item into another file's, whose \item went with it, a new \item is the break: the two items
+    // were left as one. It went in at the selection's start, the selection kept)
+    if (c.crossFile) {
+      const X = this.crossFileEdits(getSelection().getRangeAt(0));
+      if (X && X.edits.length) {
+        const pre = this.src(X.at.f).slice(Math.max(0, X.at.p - 4000), X.at.p), k = pre.search(/\\item(?![A-Za-z])(?![^]*\\item(?![A-Za-z]))/);
+        const inItem = k >= 0 && !/\n[ \t]*\n|\\(?:begin|end)\s*\{/.test(pre.slice(k));
+        const tookItem = X.edits.some((ed) => ed.f !== X.at.f && /\\item(?![A-Za-z])/.test(this.src(ed.f).slice(ed.s, ed.e)));
+        if (!soft && inItem && tookItem) {
+          const ed = X.edits.find((x) => x.f === X.at.f && x.s === X.at.p);
+          if (ed) ed.t += '\n\\item '; else X.edits.push({ f: X.at.f, s: X.at.p, e: X.at.p, t: '\n\\item ' });
+          this.commit(X.edits, { f: X.at.f, p: X.at.p + 7, bias: 1 }, 'enter');
+        } else this.commit(X.edits, { ...X.at, bias: -1 }, 'del');
+        return;
+      }
+    }
     // (a second Enter on the line after a display: a new paragraph there)
     if (c.ghost && this.ghost.line && !this.ghost.pend) { this.ghost.line = false; this.ghost.el.classList.add('ind'); return; }
     // A second Enter where the first left the caret at a paragraph's start: a second empty
@@ -2490,7 +2649,7 @@ class App {
     let edits = c.collapsed ? [] : this.deletionEdits(f, c.a, c.b, true);
     const p = c.a;
     if (soft) {
-      if (kind === 'cell') { this.commit([...edits, { f, s: p, e: p, t: '\\newline ' }], { f, p: p + 9 }, 'type'); return; }
+      if (kind === 'cell') { this.cellEnter(c, edits); return; }
       if (kind === 'h' || kind === 'cap') return;
       this.commit([...edits, { f, s: p, e: p, t: '\\\\\n' }], { f, p: p + 3, bias: 1 }, 'type');
       return;
@@ -2504,7 +2663,8 @@ class App {
       if (c.collapsed && B && B.e > p && B.e - p < 2000 && /^(?:\s|\\label\s*\{[^{}]*\}|%[^\n]*\n)*\}(?:\s|\}|\\label\s*\{[^{}]*\}|%[^\n]*\n)*(?:\\end\s*\{[^{}]+\}\s*)+$/.test(src.slice(p, B.e))) { this.showGhost(itemEl, f, B.e); this.enterAct(); }
       return;
     }
-    if (kind === 'cell') return;
+    // (Enter in a cell: a new line in it, as Word's; it did nothing)
+    if (kind === 'cell') { this.cellEnter(c, edits); return; }
     const itemEl = el.closest('.it');
     if (kind === 'ttl') {
       // Enter in the title, an author or the date starts the text below them, after \maketitle
@@ -3263,10 +3423,21 @@ class App {
   }
   onCopy(e, cut) {
     const c = this.caretNow();
+    // (cut from one file into another: the words as they read, and each file's part goes,
+    // crossFileEdits; the browser's own cut took from the start to the paragraph's end and every
+    // file after it)
+    if (c && c.crossFile && cut) {
+      const X = this.crossFileEdits(getSelection().getRangeAt(0));
+      e.preventDefault();
+      if (!X) return;
+      e.clipboardData.setData('text/plain', getSelection().toString().replace(/\u200B/g, ''));
+      if (X.edits.length) this.commit(X.edits, { ...X.at, bias: -1 }, 'cut');
+      return;
+    }
     if (!c || c.collapsed) return;
     e.preventDefault();
     const latex = this.copyLatex(c);
-    const plain = getSelection().toString().replace(/\u200B/g, '');
+    const plain = selectionPlain(getSelection(), this.root, (el) => { const i = atomOfEl(el); return i && i.s != null ? this.src(i.f).slice(i.s, i.e) : null; });
     e.clipboardData.setData('text/plain', plain);
     try { e.clipboardData.setData('text/x-galley-latex', latex); } catch (err) { /* ignore */ }
     try { e.clipboardData.setData('text/html', selectionHTML(getSelection(), (el) => this.mathML(el))); } catch (err) { /* plain text still works */ }
@@ -3285,6 +3456,10 @@ class App {
     // (a paste from the Edit menu comes with no key: the letters waiting go in before it)
     this.typeFlush();
     e.preventDefault();
+    // (over a selection from one file into another: what it holds goes first, crossFileEdits,
+    // and the paste goes where it began; it went in at the start, the selection kept)
+    const cf = this.caretNow();
+    if (cf && cf.crossFile && e.clipboardData) { const X = this.crossFileEdits(getSelection().getRangeAt(0)); if (X && X.edits.length) this.commit(X.edits, { ...X.at, bias: -1 }, 'del'); }
     const dt = e.clipboardData;
     if (!dt) return;
     const plain = dt.getData('text/plain') || '';
@@ -3367,6 +3542,23 @@ class App {
     if (fmtOnly && !raw) {
       const u = this.pasteInFormats(c.f, fw.p, latex ? this.pasteKept(latex, c.f, fw.p) : rich(false)), parts = u.split(/\s*\n[ \t]*\n\s*/);
       if (parts.length > 1 && this.wrappable && parts.every((x) => this.wrappable(x))) { t = parts.join(fw.close + '\n\n' + fw.open); at = fw.p; }
+      else if (parts.length > 1 && this.wrappable) {
+        // A part the formats' braces cannot hold (a list, a display, a heading) goes in between
+        // them, the formats closed before it and opened again after it; a comment stays in, what
+        // follows it on a line of its own. They went in whole, and \textbf{..} or \uline{..}
+        // with a paragraph break or a list in it stopped TeX. An empty part (the paste began or
+        // ended with a blank line) is the paragraph break alone: it was lost.
+        // (\verb and the like hold a % that is no comment, and no format's argument can hold them)
+        const cm = /(^|[^\\])(\\\\)*%[^\n]*$/, holds = (x) => !x.trim() || (!/\\(?:verb|Verb|lstinline|mintinline)(?![A-Za-z])/.test(x) && this.wrappable(x.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, '$1$2')));
+        let out = '', inside = true;
+        parts.forEach((x, i) => {
+          const w = holds(x);
+          out += (i ? (inside ? fw.close : '') + '\n\n' + (w ? fw.open : '') : w ? '' : fw.close) + x + (cm.test(x.replace(/\\(?:verb|Verb|lstinline|mintinline)\*?([^A-Za-z\s{*])[^\n]*?\1/g, '')) ? '\n' : '');
+          inside = w;
+        });
+        t = out + (inside ? '' : '\n\n' + fw.open);
+        at = fw.p;
+      }
     }
     if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!raw && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
@@ -3853,7 +4045,7 @@ class App {
     if (!P) return;
     const it = P.anchor && P.anchor.closest ? P.anchor.closest('.it') : null;
     const rtl = P.rtl != null ? P.rtl : !!(it && getComputedStyle(it).direction === 'rtl');
-    if (rtl && how !== 'tab') d = d === 'forward' ? 'backward' : 'forward';
+    if (rtl && how !== 'tab' && how !== 'line') d = d === 'forward' ? 'backward' : 'forward';
     P.leftBy = d;
     P.extend = how === 'extend';
     this.closePop();
@@ -3885,11 +4077,26 @@ class App {
     }
     P.el.remove();
     this.closeGroup();
+    // (a display left by an arrow: the caret at the start of the text after it, or at the end of
+    // the text before it for Left and Up, as Word's; the blank line after it, or before it, only
+    // where no text stands there, as a display that ends the document or one beside another)
+    let beside = null;
+    if (!silent && P.display && P.leftBy && !P.extend && P.returnCaret && P.returnCaret.p != null && P.anchorPos && !P.removed) {
+      const f0 = P.anchorPos.f, t = this.src(f0), p0 = P.returnCaret.p, fwd = P.leftBy === 'forward';
+      const q = fwd ? p0 + /^\s*/.exec(t.slice(p0, p0 + 400))[0].length : p0 - /\s*$/.exec(t.slice(Math.max(0, p0 - 400), p0))[0].length;
+      // (only beside words of a paragraph: never in a comment, where what is typed went unseen, nor
+      // after a command's closing brace or before a command, a heading's or a list's, \item: typed
+      // there it went into the heading's line or the item before; there the blank line, a new
+      // paragraph of its own)
+      const ch = fwd ? t[q] : t[q - 1], line = t.slice(t.lastIndexOf('\n', q - 1) + 1, q);
+      if (ch && !/[\\%{}\s]/.test(ch) && !(!fwd && /(^|[^\\])(\\\\)*%/.test(line))) beside = { f: f0, p: q, bias: fwd ? 1 : -1 };
+    }
     if (!silent && P.returnCaret) {
-      this.restoreCaret(P.returnCaret);
+      this.restoreCaret(beside || P.returnCaret);
       if (P.returnCaret.extendBy) try { getSelection().modify('extend', P.returnCaret.extendBy, 'character'); } catch (e) { /* the formula alone stays selected */ }
     }
-    if (!silent && P.display && P.returnCaret && !P.removed && !P.dollarClosed && !P.midLine) this.caretAfterDisplay(P.returnCaret);
+    if (beside) { const c = this.caretNow(); if (!c || c.ghost || !c.collapsed || c.f !== beside.f || c.p !== beside.p) beside = null; }
+    if (!silent && P.display && P.returnCaret && !P.removed && !P.dollarClosed && !P.midLine && !beside && !P.extend) this.caretAfterDisplay(P.returnCaret);
     // Opened from a blank paragraph and closed with nothing made, or a document that so far
     // holds only what the popover made (a first formula) and has no text to put the caret in:
     // the caret goes to the blank paragraph, so typing goes on
@@ -4192,6 +4399,71 @@ class App {
       }
       return parts.length > 1 ? out : null;
     };
+    // Where the field's caret stands in the LaTeX box: what the field holds before it, read back
+    // (fromField). In an equation of rows the field reads that part across the rows' cells (a=bc=
+    // for a &= b \\\\ c &= |d), no start of the box: there the caret's row and cell are found in the
+    // box, by its \\\\ and & outside braces and environments, and its place in the cell by the
+    // characters before it there (spaces aside); else the box's end (where a paste or an & went,
+    // whatever the row)
+    // The box's \\ and & outside braces and environments: [from, to, a row's end]; a \\'s * and
+    // [length] go with it (a paste at the start of the row after \\[2pt] went in before the [2pt],
+    // which then printed)
+    const cutsOf = (v) => {
+      const cuts = [];
+      for (let i = 0, d = 0, env = 0; i < v.length; i++) {
+        const ch = v[i];
+        if (ch === '%') { const n = v.indexOf('\n', i); i = n < 0 ? v.length : n; continue; }
+        if (ch === '\\') {
+          if (v[i + 1] === '\\' && !d && !env) {
+            // (its * after any spaces, as \@ifstar reads it; its [length] only right after it or the
+            // *, as amsmath's \new@ifnextchar reads it: a row may start with [u, v])
+            const m = /^(?:\s*\*)?(?:\[[^\][{}]*\])?/.exec(v.slice(i + 2, i + 60)), y = i + 2 + (m ? m[0].length : 0);
+            cuts.push([i, y, 1]);
+            i = y - 1;
+            continue;
+          }
+          const m = /^\\(begin|end)\s*\{/.exec(v.slice(i, i + 12));
+          if (m) env += m[1] === 'begin' ? 1 : -1;
+          i++;
+          continue;
+        }
+        if (ch === '{') d++;
+        else if (ch === '}') d--;
+        else if (ch === '&' && !d && !env) cuts.push([i, i + 1, 0]);
+      }
+      return cuts;
+    };
+    // the box's row that holds at: its & at the top level (amps)
+    const rowOf = (v, at) => {
+      let amps = 0;
+      for (const [x, , row] of cutsOf(v)) { if (row) { if (x >= at) break; amps = 0; } else amps++; }
+      return { amps };
+    };
+    // Where the field's caret stands in the LaTeX box: what the field holds before it, read back
+    // (fromField). In an equation of rows the field reads that part across the rows' cells (a=bc=
+    // for a &= b \\ c &= |d), no start of the box: there the caret's row and cell are found in the
+    // box by its \\ and &, and its place in the cell by the characters before it there (spaces
+    // aside); else the box's end (where a paste or an & went, whatever the row), or -1 for exact
+    // (an & inside a fraction went to the row's end)
+    const boxAt = (exact) => {
+      const v = ta.value, miss = exact ? -1 : v.length;
+      try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (v.startsWith(pre)) return pre.length; } catch (e) { /* by its cell */ }
+      const C = st.multi ? wt.cellOf() : null;
+      if (!C) return miss;
+      let r = 0, c = 0, a = 0, z = -1;
+      for (const [x, y, row] of [...cutsOf(v), [v.length, v.length, 1]]) {
+        if (r === C.r && c === C.c) { z = x; break; }
+        if (row) { r++; c = 0; } else c++;
+        a = y;
+      }
+      if (z < 0) return miss;
+      const want = C.pre.replace(/\s+/g, '');
+      let i = a, j = 0;
+      while (i < z && j < want.length) { if (/\s/.test(v[i])) { i++; continue; } if (v[i] !== want[j]) break; i++; j++; }
+      if (j < want.length) return exact ? -1 : z;
+      if (!j) while (i < z && /\s/.test(v[i])) i++;
+      return i;
+    };
     mf.addEventListener('paste', (e) => {
       let x = '';
       try { x = (e.clipboardData && e.clipboardData.getData('text/x-galley-latex')) || ''; } catch (err) { x = ''; }
@@ -4214,13 +4486,30 @@ class App {
       // their & for characters and joined the first to the row there, q &= ra\&=b \\ c\&=d)
       if (rows) {
         // (an environment with no columns, gather or multline, takes rows but no & at the top
-        // level, which TeX rejects there; those inside a matrix or cases stay)
-        if (!/^(align|alignat|flalign|eqnarray|split|aligned|alignedat)\*?$/.test(String((opts.env && opts.env()) || ''))) inner = inner.replace(/(\\begin\s*\{([A-Za-z*]+)\}[\s\S]*?\\end\s*\{\2\})|(^|[^\\])&/g, (m, env, n, pre) => env || pre);
+        // level, which TeX rejects there; those inside a matrix or cases stay; each & of && too,
+        // where the second was left alone)
+        if (!/^(align|alignat|flalign|eqnarray|split|aligned|alignedat)\*?$/.test(String((opts.env && opts.env()) || ''))) inner = inner.replace(/(\\begin\s*\{([A-Za-z*]+)\}[\s\S]*?\\end\s*\{\2\})|(?<!\\)&/g, (m, env) => env || '');
         pull();
-        let at = ta.value.length;
-        try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (ta.value.startsWith(pre)) at = pre.length; } catch (err) { /* at the end */ }
-        const before = ta.value.slice(0, at).split('\\\\').pop(), after = ta.value.slice(at).split('\\\\')[0];
-        ta.setRangeText((before.trim() ? ' \\\\\n' : '') + inner + (after.trim() ? ' \\\\\n' : ''), at, at, 'end');
+        const at = boxAt();
+        // (one row, its & and all, goes in at the caret as words do, the row staying one row, as
+        // Word pastes into an equation's line; rows go in as rows, a row break before and after
+        // them where the row there holds something, each new line indented as the caret's row:
+        // the row after them lost its indent)
+        const many = /\\\\/.test(inner.replace(/\\begin\s*\{([A-Za-z*]+)\}[\s\S]*?\\end\s*\{\1\}/g, ''));
+        const v = ta.value, ind = /^[ \t]*/.exec(v.slice(v.lastIndexOf('\n', at - 1) + 1))[0];
+        const lines = inner.split('\n'), cut = Math.min(...lines.slice(1).filter((l) => l.trim()).map((l) => /^[ \t]*/.exec(l)[0].length));
+        if (lines.length > 1 && Number.isFinite(cut)) inner = lines.map((l, k) => (k && l.trim() ? ind + l.slice(cut) : l)).join('\n');
+        // (the caret's row as the box's row breaks cut it, a \\'s [2pt] or * with the break: split on
+        // \\ alone, the [2pt] was words before the caret, and an empty numbered row came first)
+        let rs = 0, re = v.length;
+        for (const [x, y, row] of cutsOf(v)) { if (!row) continue; if (y <= at) rs = y; else if (x >= at) { re = x; break; } }
+        const before = v.slice(rs, at), after = v.slice(at, re);
+        // (one row goes into the caret's row only where the row then has no more columns than its
+        // equation takes, alignat{n} 2n, eqnarray 3; else it is a row of its own, as before)
+        const fits = !many && rowOf(v, at).amps + cutsOf(inner).filter((x) => !x[2]).length < (opts.cols ? opts.cols() : Infinity);
+        // (the spaces beside the caret go where a row break goes between the words and it)
+        const sp = !fits && after.trim() ? /^[ \t]*/.exec(after)[0].length : 0, sb = !fits && before.trim() ? /[ \t]*$/.exec(before)[0].length : 0;
+        ta.setRangeText(fits ? inner : (before.trim() ? ' \\\\\n' + ind : '') + inner + (after.trim() ? ' \\\\\n' + ind : ''), at - sb, at + sp, 'end');
         ta.dispatchEvent(new Event('input'));
         return;
       }
@@ -4237,6 +4526,34 @@ class App {
       macros: () => plain,
       dialect: () => D,
       onNewRowOutside: opts.onNewRowOutside,
+      // (& in a display: an alignment point at the caret, written in the LaTeX box there; a display
+      // of one line made one of rows first, opts.onAmp, as Ctrl+Enter makes it; inside an
+      // environment the box holds, as split or aligned, only the &)
+      onAmp: opts.onAmp ? () => {
+        pull();
+        // (a display of one line that holds an environment, cases, a matrix, split, gathered: its
+        // alignment is that environment's, nothing here, as before; the display became an align and
+        // the & went after its \end. Nor inside a fraction, a root or a script, nor where the box
+        // shows no place for the caret: the & went to the row's end or the formula's start.)
+        if (!st.multi && (wt.cellOf() || /\\begin\s*\{/.test(ta.value) || !wt.atTop())) return;
+        const at = boxAt(true);
+        if (at < 0) return;
+        const v = ta.value, head = v.slice(0, at);
+        if ((head.match(/\\begin\s*\{/g) || []).length > (head.match(/\\end\s*\{/g) || []).length) return;
+        // (no more columns than the environment takes, alignat{n} 2n, eqnarray 3: TeX stopped at one
+        // more, "Extra & on this line")
+        const cols = opts.cols ? opts.cols() : Infinity;
+        if (st.multi && rowOf(v, at).amps + 1 >= cols) { this.toast('This row has all the columns its equation takes (' + cols + ').'); return; }
+        if (!opts.onAmp()) return;
+        if (ta.value !== v) return;
+        // (the cell the & starts: the rows and the & before it)
+        let r = 0, c = 0;
+        for (const [x, , row] of cutsOf(v)) { if (x >= at) break; if (row) { r++; c = 0; } else c++; }
+        ta.setRangeText('&', at, at, 'end');
+        ta.dispatchEvent(new Event('input'));
+        fieldFocus();
+        wt.toCell(r, c + 1);
+      } : null,
       renderTex: (t) => this.renderer.katex(t, false).html,
       decimalComma,
       baseDepth: () => (st.multi ? 1 : 0),
@@ -4255,8 +4572,7 @@ class App {
         // (keys typed into the field whose input event is still to come: in the box first)
         pull();
         backOk = false;
-        let at = ta.value.length;
-        try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (ta.value.startsWith(pre)) at = pre.length; } catch (e) { /* at the end */ }
+        const at = boxAt();
         ta.focus();
         ta.setRangeText(more, at, at, 'end');
         ta.dispatchEvent(new Event('input'));
@@ -4272,16 +4588,18 @@ class App {
       else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) { e.preventDefault(); e.stopImmediatePropagation(); pull(); opts.onEnter(); }
     }, true);
     // Right at a formula's end, Left at its start: the caret leaves it, as Word's does; the words
-    // typed next went into the formula, their spaces lost ($ihasincome$). Only in a formula in the
-    // line: in a display the arrows stay in it.
+    // typed next went into the formula, their spaces lost ($ihasincome$). A display is left so too,
+    // and by Down from its last row and Up from its first, as Word's arrows leave an equation of
+    // its own line (they stayed in it, and only Esc or a click got out).
     if (opts.onMoveOut) {
       // The keys that leave a formula: Right and Left (with Shift, the selection goes on out of it,
       // as Word's), and Tab at its end, which Word takes as leaving forward. Shift+Tab goes on to
-      // the LaTeX box. MathLive sends move-out for all of them, Tab's leap and Shift+Tab's too.
+      // the LaTeX box. MathLive sends move-out for all of them, Tab's leap and Shift+Tab's too, and
+      // for Up and Down where there is no row above or below (upward, downward).
       let key = null;
       mf.addEventListener('keydown', (e) => {
         const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
-        key = plain && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') ? (e.shiftKey ? 'extend' : 'arrow') : plain && e.key === 'Tab' && !e.shiftKey ? 'tab' : null;
+        key = plain && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') ? (e.shiftKey ? 'extend' : 'arrow') : plain && !e.shiftKey && opts.display && (e.key === 'ArrowUp' || e.key === 'ArrowDown') ? 'line' : plain && e.key === 'Tab' && !e.shiftKey ? 'tab' : null;
         // (Shift with an arrow at the field's edge sends no move-out: MathLive keeps the selection in)
         if (key === 'extend' && !wt.active() && mf.mode !== 'latex') {
           let at = -1, last = -2;
@@ -4291,8 +4609,10 @@ class App {
         }
       }, true);
       mf.addEventListener('move-out', (e) => {
-        const d = e.detail && e.detail.direction, how = key;
-        if (!how || (d !== 'forward' && d !== 'backward') || (how === 'tab' && d !== 'forward') || wt.active() || mf.mode === 'latex') return;
+        const how = key, d0 = e.detail && e.detail.direction;
+        // (Up leaves a display backward, Down forward; a row above or below takes them first)
+        const d = how === 'line' ? { upward: 'backward', downward: 'forward' }[d0] : d0 === 'forward' || d0 === 'backward' ? d0 : null;
+        if (!how || !d || (how === 'tab' && d !== 'forward') || wt.active() || mf.mode === 'latex') return;
         e.preventDefault();
         pull();
         // (after MathLive is done with the key: the field torn down inside its handling threw
@@ -4539,7 +4859,21 @@ class App {
         if (display || this.pop.dollarClose) { this.swallowDollar = performance.now(); this.pop.dollarClosed = true; }
         this.closePop();
       },
-      onMoveOut: display ? null : (d, how) => { if (stay()) return; push.flush(); this.leaveMath(d, how); },
+      onMoveOut: (d, how) => { if (stay()) return; push.flush(); this.leaveMath(d, how); },
+      // (& typed in a display of one line: made one of rows, as Ctrl+Enter does, for its alignment
+      // point; gather and multline have no columns)
+      onAmp: display ? () => {
+        if (/^(gather|multline)\*?$/.test(String((this.pop && this.pop.env) || info.a.env))) { this.toast('Gather and Multline have no alignment points: pick Align in the menu.'); return false; }
+        return toRows();
+      } : null,
+      // (the columns its environment takes: alignat{n} 2n, eqnarray 3, split 2; align as many as come)
+      cols: () => {
+        const P = this.pop, env = String((P && P.env) || info.a.env);
+        if (/^eqnarray\*?$/.test(env)) return 3;
+        if (env === 'split') return 2;
+        const m = /^x{0,2}alignat\*?$/.test(env) && P && P.anchorPos ? /^\\begin\s*\{x{0,2}alignat\*?\}\s*\{\s*(\d+)\s*\}/.exec(this.src(P.anchorPos.f).slice(P.anchorPos.s, P.anchorPos.s + 60)) : null;
+        return m ? 2 * +m[1] : Infinity;
+      },
       onEscape: () => { push.flush(); this.closePop(); }
     });
   }
@@ -6975,6 +7309,12 @@ class App {
   fromPdf(file, line) {
     const f = this.fromTexPath(file);
     if (!f) return;
+    // TeX gives a paragraph's lines the line where the paragraph ended: the blank line after it.
+    // Gone to as it is, that place is between two paragraphs, and the page showed the next thing
+    // of that file instead (with an \input after the paragraph, the paragraph after the input's
+    // text). A blank line stands for the text above it.
+    const L = this.src(f).split('\n');
+    while (line > 1 && L[line - 1] != null && !L[line - 1].trim()) line--;
     // in the PDF view the page is not there to go to: the place is kept for going back to it
     if (this.viewPdfClick && this.viewPdfClick(f, line)) return;
     this.goTo(f, lineStart(this.src(f), line));
@@ -7098,10 +7438,29 @@ class App {
       for (const p of res.missing || []) issues.unshift({ sev: 'warn', file: null, line: null, msg: 'Shell escape: ' + p + ' cannot run in the browser, so what it makes is missing' });
       if (untrusted) this.noteRestricted(issues);
       for (const r of res.runs) if (r.cmd !== 'tex' && r.cmd !== 'shell' && r.code) issues.unshift({ sev: r.cmd === 'biber' ? 'warn' : 'error', file: null, line: null, msg: (r.cmd === 'bibtex' ? 'BibTeX: ' : '') + (r.log.split('\n').find((l) => /error|warning|I couldn't|I found no/i.test(l)) || r.log.split('\n')[0] || 'failed').trim() });
+      // TeX notes what a paragraph's end finds wrong (a $ not closed, an argument not ended) at
+      // the blank line that ends it: the paragraph above is where the mistake is. Named as it
+      // came, the problem showed no words of it, and a press on it went to the paragraph after.
+      const linesOf = new Map();
       this.texIssues = issues.map((x) => {
         const known = x.file && this.fromTexPath(x.file);
-        const f = known || this.main;
-        const line = known ? x.line : null;
+        let f = known || this.main;
+        let line = known ? x.line : null;
+        if (line) {
+          if (!linesOf.has(f)) linesOf.set(f, this.src(f).split('\n'));
+          const L = linesOf.get(f);
+          while (line > 1 && L[line - 1] != null && !L[line - 1].trim()) line--;
+        }
+        // (a brace left open: its place is where the words TeX took as the argument begin, where
+        // they are found once in the project's .tex files: TeX named no line, or the line of the
+        // \input whose file it is in; src/tex.js parseTeXLog)
+        if (x.runaway) {
+          const w = /^\{?([^\\{}$%&#^_~]*)/.exec(x.runaway)[1].trim().split(/\s+/).slice(0, 5).filter(Boolean);
+          const re = w.join('').length >= 4 ? new RegExp(w.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'), 'g') : null;
+          const hits = [];
+          if (re) for (const [n, S] of this.files) if (/\.(tex|ltx)$/i.test(n)) for (const m of S.matchAll(re)) hits.push([n, m.index]);
+          if (hits.length === 1) { f = hits[0][0]; line = this.src(f).slice(0, hits[0][1]).split('\n').length; }
+        }
         const p = line ? lineStart(this.src(f), line) : 0;
         return { sev: x.sev, f, p, line, msg: issueText(x, line ? this.src(f).slice(p).split('\n', 1)[0] : ''), key: 'tex:' + x.msg, tex: true };
       });

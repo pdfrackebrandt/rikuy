@@ -1365,6 +1365,10 @@ export function docxToLatex(P, bytes, name, o = {}) {
   for (const p of PG.packages) pre.push(Array.isArray(p) ? '\\usepackage[' + p[1] + ']{' + p[0] + '}' : '\\usepackage{' + p + '}');
   if (many || used(/\\begin\{multicols\}/)) pre.push('\\usepackage{multicol}');
   pre.push(...PG.lines);
+  // the headings show as Word showed them: unnumbered where none of them carried a number there
+  // (src/docx.js counts them; numbers typed into them that LaTeX now gives, N.headnums, are
+  // numbers), where LaTeX would number every \section
+  if (info && info.headings && !info.numbered && !N.headnums && /\\(sub)*section\b|\\paragraph\b/.test(tex)) pre.push('\\setcounter{secnumdepth}{0} % the Word file\'s headings have no numbers');
   if (used(/\\tightlist/)) pre.push('\\providecommand{\\tightlist}{\\setlength{\\itemsep}{0pt}\\setlength{\\parskip}{0pt}}');
   if (used(/\\pandocbounded/)) pre.push('% pictures at their own size, no wider than the text', '\\newcommand{\\pandocbounded}[1]{\\resizebox{\\ifdim\\width>\\linewidth\\linewidth\\else\\width\\fi}{!}{#1}}');
   if (used(/\\begin\{CSLReferences\}/)) pre.push('\\newenvironment{CSLReferences}[2]{}{}', '\\newcommand{\\CSLLeftMargin}[1]{#1}', '\\newcommand{\\CSLRightInline}[1]{#1}', '\\newcommand{\\CSLBlock}[1]{#1}');

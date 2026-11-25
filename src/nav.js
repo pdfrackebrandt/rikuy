@@ -4,7 +4,7 @@
 // methods of src/app.js); refreshNav hands the panel to them. The methods join App's prototype.
 
 import { $, mk, store, PREFS } from './ui/dom.js';
-import { atomOfEl, posFromDom } from './editor.js';
+import { atomOfEl, posFromDom, visibleRanges } from './editor.js';
 import { findProblems } from './problems.js';
 import { spacingOnly } from './diff.js';
 import { commentOnly } from './share.js';
@@ -141,7 +141,25 @@ export const nav = {
         const msg = document.createElement('span'); msg.textContent = x.msg;
         const where = document.createElement('span'); where.className = 'where'; where.textContent = x.f + (x.line ? ':' + x.line : '');
         b.append(dot, msg, where);
-        b.addEventListener('click', () => { this.goTo(x.f, x.p); if (window.innerWidth <= 860) this.toggleNav(false); });
+        // (the caret goes there too, as a heading's or a Go To target's press puts it: the place
+        // was only shown, and what was typed next to fix it went nowhere. Only a place the page
+        // draws, inside one of its blocks: one in the preamble, before \documentclass (a fatal
+        // error's, BibTeX's) or between blocks has no place on the page, and the caret drawn on the
+        // first paragraph typed into the preamble. A finger's tap brings no keyboard up)
+        // (at the first character the page draws from there on, in that block: a problem on a
+        // markup line, \begin{tabular}{lx}, drew the caret in the first cell while what was typed
+        // went before \begin{tabular})
+        const onPage = () => {
+          const B = this.renderer.blocks.find((B) => B.f === x.f && B.s <= x.p && x.p < B.e);
+          const v = B && visibleRanges(this.renderer.blocks, x.f, x.p, B.e);
+          return v && v.length ? v[0][0] : null;
+        };
+        b.addEventListener('click', () => {
+          const at = matchMedia('(pointer: coarse)').matches ? null : onPage();
+          if (at != null) this.restoreCaret({ f: x.f, p: at, bias: 1 }, true);
+          this.goTo(x.f, x.p);
+          if (window.innerWidth <= 860) this.toggleNav(false);
+        });
         body.appendChild(b);
       }
       return;
