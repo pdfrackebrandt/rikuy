@@ -56,6 +56,23 @@ try:
             check('paste ' + name + ': ' + repr(want), s == W(want), s[s.find('Some'):][:80])
             page.keyboard.press('Control+z'); settle(page, 150)
             check('undo after ' + name, src(page) == W(doc))
+        # (round 2) LaTeX with a list, a display or a comment between its paragraphs, pasted into a
+        # bold, italic or underlined word: the part the format's braces cannot hold goes between them,
+        # the format closed before it and opened again after it. Whole, \\textbf{..} or \\uline{..}
+        # with a paragraph break or a list in it stopped TeX ("Paragraph ended before \\text@command")
+        LTX = """([p, l]) => { const dt = new DataTransfer(); dt.setData('text/plain', p); dt.setData('text/x-galley-latex', l);
+          document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }"""
+        for name, doc, latex, want in (
+                ('a list into a bold word', 'Some \\textbf{boldword} here.', 'One.\n\n\\begin{itemize}\n  \\item x\n\\end{itemize}', 'Some \\textbf{boldOne.}\n\n\\begin{itemize}\n  \\item x\n\\end{itemize}\n\n\\textbf{word} here.'),
+                ('a display into an underlined word', '\\usepackage{ulem}Some \\uline{boldword} here.', 'One.\n\\[ x \\]\n\nTwo.', '\\usepackage{ulem}Some \\uline{bold}One.\n\\[ x \\]\n\n\\uline{Two.word} here.'),
+                ('a comment into a bold word', 'Some \\textbf{boldword} here.', 'One. % c\n\nTwo.', 'Some \\textbf{boldOne. % c\n}\n\n\\textbf{Two.word} here.')):
+            d = W(doc).replace('\\begin{document}\n\\usepackage{ulem}', '\\usepackage{ulem}\n\\begin{document}\n')
+            load_doc(page, d); click_text(page, 'boldword', 4)
+            page.evaluate(LTX, ['One.\n\nx', latex]); settle(page, 250)
+            s = src(page)
+            check('paste LaTeX ' + name + ': no paragraph break or block inside the format\'s braces', s == W(want).replace('\\begin{document}\n\\usepackage{ulem}', '\\usepackage{ulem}\n\\begin{document}\n'), repr(s[s.find('Some'):][:120]))
+            page.keyboard.press('Control+z'); settle(page, 150)
+            check('undo after LaTeX ' + name, src(page) == d)
         # words copied from a bold word into plain ones keep the bold of the bold part (they went
         # as the visible words alone, plain); inside \\emph the outer format comes too
         from browser import place
