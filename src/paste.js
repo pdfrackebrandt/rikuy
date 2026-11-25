@@ -213,7 +213,8 @@ export function htmlToTeX(html, opts = {}) {
     if (!t) return '';
     const h = /^H([1-6])$/.exec(tag);
     if (h && !opts.inlineOnly) {
-      const plain = t.replace(/\\textbf\{([^{}]*)\}/g, '$1');
+      // (a heading's bold and colour are its style's, not marks: \section draws it as headings are)
+      const plain = t.replace(/\\textbf\{([^{}]*)\}/g, '$1').replace(/\\textcolor\[HTML\]\{[0-9A-F]{6}\}\{([^{}]*)\}/g, '$1');
       return ['\\section', '\\section', '\\subsection', '\\subsubsection', '\\paragraph', '\\paragraph'][+h[1] - 1] + '{' + plain + '}';
     }
     if (tag === 'BLOCKQUOTE') return '\\begin{quote}\n' + t + '\n\\end{quote}';

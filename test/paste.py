@@ -186,7 +186,9 @@ try:
                  'Alpha para. Plain and \\sout{struck} \\textcolor[HTML]{FF0000}{\\hl{red on yellow}} then the rest of it.', ['\\usepackage[normalem]{ulem}', '\\usepackage{xcolor}']),
                 ('a page\'s grey ink and white paper', '<span style="color: rgb(32, 33, 36); background-color: rgb(255, 255, 255);">Words from a page, <span style="color: rgb(26, 13, 171);">one blue</span> in them.</span>', 'x',
                  'Alpha para. Words from a page, \\textcolor[HTML]{1A0DAB}{one blue} in them.', ['\\usepackage{xcolor}']),
-                ('a struck line break', "<p class=MsoNormal><s>one<br>two</s></p>", 'x', 'Alpha para. \\sout{one}\n\n\\sout{two}', ['\\usepackage[normalem]{ulem}'])):
+                ('a struck line break', "<p class=MsoNormal><s>one<br>two</s></p>", 'x', 'Alpha para. \\sout{one}\n\n\\sout{two}', ['\\usepackage[normalem]{ulem}']),
+                # (a heading's colour is its style's: \\section draws it as headings are)
+                ('a coloured heading', "<h2><span style='color:#2F5496'>Title</span></h2><p>Some words in it here, and more of them.</p>", 'x', 'Alpha para. \\section{Title}\n\nSome words in it here, and more of them.', [])):
             load_doc(page, W2('Alpha para.')); click_text(page, 'Alpha para.', 11); page.keyboard.type(' '); settle(page, 100)
             page.evaluate(PASTE, [html, plain]); settle(page, 250)
             s = src(page)
