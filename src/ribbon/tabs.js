@@ -395,17 +395,21 @@ export const tabs = {
 
   // What the ribbon shows for where the caret is now: the contextual tabs, the pressed buttons,
   // those that can do nothing here disabled, the gallery's style
-  ribbonSync() {
+  // soon: called a moment after the caret moved (ribbonSoon); while keys are typed the closed tabs'
+  // buttons wait for the typing to pause (the open tab's are brought up to date at once, and a tab
+  // that opens brings its own, selectTab): all 336 of every tab took 9 ms after each keystroke on
+  // dev/bench/long, the open one's 51 a sixth of it. Every other call brings all of them.
+  ribbonSync(soon) {
     const rb = $('#ribbon');
     if (!rb || !this.rbBuilt) return;
+    const lite = soon === true && this.keyEditAt && performance.now() - this.keyEditAt < 1000;
+    clearTimeout(this.rbFullT);
+    if (lite) this.rbFullT = setTimeout(() => { this.rbFullT = 0; this.ribbonSync(); }, 1000);
     this.dropEmpty();
     const at = this.ribbonAt();
     if (at) at.memo = {};
     this.ribbonContexts(at);
-    // (the open tab's buttons: the others are read when their tab opens, selectTab, which syncs;
-    // all 336 of every tab took 9 ms after each keystroke on dev/bench/long, the open one's 51
-    // a sixth of it)
-    for (const b of rb.querySelectorAll('.rb-panel:not([hidden]) button[data-cmd]')) {
+    for (const b of rb.querySelectorAll(lite ? '.rb-panel:not([hidden]) button[data-cmd]' : '.rb-panel button[data-cmd]')) {
       const c = command(b.dataset.cmd);
       if (!c || c.static) continue;
       const off = !enabled(this, c, at);
@@ -565,7 +569,7 @@ export function installRibbon(app) {
   if (!rb) return;
   // (not while the search box has the focus: the ribbon keeps showing the place on the page)
   // (nor while a box of the ribbon has it, the font's or the size's: typing there is no move on the page)
-  app.ribbonSoon = (() => { let t = 0; return () => { clearTimeout(t); t = setTimeout(() => { const a = document.activeElement; if (!(a && (a.id === 'rk-search' || (a.matches && a.matches('#ribbon input'))))) app.ribbonSync(); }, 60); }; })();
+  app.ribbonSoon = (() => { let t = 0; return () => { clearTimeout(t); t = setTimeout(() => { const a = document.activeElement; if (!(a && (a.id === 'rk-search' || (a.matches && a.matches('#ribbon input'))))) app.ribbonSync(true); }, 60); }; })();
   app.ribbonBuild();
   installGallery(app);
   // A press must not take the caret or the selection off the page: not on a button, and not on

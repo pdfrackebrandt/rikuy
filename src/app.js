@@ -1408,6 +1408,9 @@ class App {
     // (the blocks shown as LaTeX move with these edits, src/cmd/view.js; typing ends Repeat's turn)
     this.viewMap(byFile, before);
     if (!this.cmdDepth) this.lastAct = null;
+    // (when a key last typed, deleted or split: the ribbon brings its closed tabs up to date once
+    // the typing pauses, src/ribbon/tabs.js ribbonSync)
+    this.keyEditAt = /^(type|enter|del|replace)$/.test(kind || '') ? performance.now() : 0;
     // (a selection the step was made on comes back selected with Undo, as Word's: what was typed
     // over or deleted is selected again, not a caret at its start)
     this.record(before, kind, cb && cb.f != null ? (cb.collapsed === false && !cb.ghost ? { f: cb.f, p: cb.p, selA: cb.a, selB: cb.b } : { f: cb.f, p: cb.p }) : caret, caret, swaps, win);
