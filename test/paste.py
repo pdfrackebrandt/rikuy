@@ -65,7 +65,9 @@ try:
         for name, doc, latex, want in (
                 ('a list into a bold word', 'Some \\textbf{boldword} here.', 'One.\n\n\\begin{itemize}\n  \\item x\n\\end{itemize}', 'Some \\textbf{boldOne.}\n\n\\begin{itemize}\n  \\item x\n\\end{itemize}\n\n\\textbf{word} here.'),
                 ('a display into an underlined word', '\\usepackage{ulem}Some \\uline{boldword} here.', 'One.\n\\[ x \\]\n\nTwo.', '\\usepackage{ulem}Some \\uline{bold}One.\n\\[ x \\]\n\n\\uline{Two.word} here.'),
-                ('a comment into a bold word', 'Some \\textbf{boldword} here.', 'One. % c\n\nTwo.', 'Some \\textbf{boldOne. % c\n}\n\n\\textbf{Two.word} here.')):
+                ('a comment into a bold word', 'Some \\textbf{boldword} here.', 'One. % c\n\nTwo.', 'Some \\textbf{boldOne. % c\n}\n\n\\textbf{Two.word} here.'),
+                # (review of round 2: a % in \\verb is no comment, and no format's argument holds \\verb)
+                ('\\verb into a bold word', 'Some \\textbf{boldword} here.', 'One.\n\nThe \\verb|%x| code.', 'Some \\textbf{boldOne.}\n\nThe \\verb|%x| code.\n\n\\textbf{word} here.')):
             d = W(doc).replace('\\begin{document}\n\\usepackage{ulem}', '\\usepackage{ulem}\n\\begin{document}\n')
             load_doc(page, d); click_text(page, 'boldword', 4)
             page.evaluate(LTX, ['One.\n\nx', latex]); settle(page, 250)
@@ -84,6 +86,10 @@ try:
             check('paste plain text with %s: its paragraph break kept' % name, src(page) == W(want), repr(src(page)[40:]))
         page.keyboard.type('X'); settle(page, 200)
         check('the caret after the pasted words', src(page) == W('Alpha para. New words.X\n\nOmega.'), repr(src(page)[40:]))
+        # (review of round 2) the same at a list item's end: a new item, as Word's paste starts a new bullet
+        load_doc(page, W('\\begin{itemize}\n  \\item One words\n\\end{itemize}')); click_text(page, 'One words', 9)
+        page.evaluate(PASTE, [None, '\n\nNew words.']); settle(page, 250)
+        check('paste plain text with a blank line first at an item\'s end: a new item', src(page) == W('\\begin{itemize}\n  \\item One words\n  \\item New words.\n\\end{itemize}'), repr(src(page)[40:]))
         # words copied from a bold word into plain ones keep the bold of the bold part (they went
         # as the visible words alone, plain); inside \\emph the outer format comes too
         from browser import place

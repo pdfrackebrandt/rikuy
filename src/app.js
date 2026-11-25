@@ -3350,11 +3350,12 @@ class App {
         // follows it on a line of its own. They went in whole, and \textbf{..} or \uline{..}
         // with a paragraph break or a list in it stopped TeX. An empty part (the paste began or
         // ended with a blank line) is the paragraph break alone: it was lost.
-        const cm = /(^|[^\\])(\\\\)*%[^\n]*$/, holds = (x) => !x.trim() || this.wrappable(x.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, '$1$2'));
+        // (\verb and the like hold a % that is no comment, and no format's argument can hold them)
+        const cm = /(^|[^\\])(\\\\)*%[^\n]*$/, holds = (x) => !x.trim() || (!/\\(?:verb|Verb|lstinline|mintinline)(?![A-Za-z])/.test(x) && this.wrappable(x.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, '$1$2')));
         let out = '', inside = true;
         parts.forEach((x, i) => {
           const w = holds(x);
-          out += (i ? (inside ? fw.close : '') + '\n\n' + (w ? fw.open : '') : w ? '' : fw.close) + x + (cm.test(x) ? '\n' : '');
+          out += (i ? (inside ? fw.close : '') + '\n\n' + (w ? fw.open : '') : w ? '' : fw.close) + x + (cm.test(x.replace(/\\(?:verb|Verb|lstinline|mintinline)\*?([^A-Za-z\s{*])[^\n]*?\1/g, '')) ? '\n' : '');
           inside = w;
         });
         t = out + (inside ? '' : '\n\n' + fw.open);

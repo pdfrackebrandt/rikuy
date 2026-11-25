@@ -982,6 +982,11 @@ def r2_selections(page):
         check('r2_selections: undo gives the list back (%s)' % sel[0], src(page) == L, src(page)[40:])
     load_doc(page, L); over('Alpha', 2, 'Two', 2); page.keyboard.type('Z'); settle(page, 200)
     check('r2_selections: typing over a selection into an item: the letter where the ends met', src(page) == WRAP('AlZo second\n\n' + E + '\\item Three third\n\\end{enumerate}\n\nOmega words.'), src(page)[40:])
+    # (review of round 2) the paragraph after the list ends in a comment: the list's end goes on a
+    # line after it, or the comment hides it and the list never closes
+    K = WRAP('\\begin{itemize}\n  \\item One words\n  \\item Two words \\end{itemize}\nAfter text. % note')
+    load_doc(page, K); over('One', 2, 'text', 2); key(page, 'Delete')
+    check('r2_selections: from an item into a paragraph ending in a comment: the list ends on a line after the comment', src(page) == WRAP('\\begin{itemize}\n  \\item Onxt. % note\n \\end{itemize}'), repr(src(page)[40:]))
     C = L.replace('\n', '\r\n')
     load_doc(page, C); over('Alpha', 2, 'Two', 2); key(page, 'Delete')
     check('r2_selections: with CRLF line ends', src(page) == WRAP('Alo second\n\n' + E + '\\item Three third\n\\end{enumerate}\n\nOmega words.').replace('\n', '\r\n'), repr(src(page)[40:]))

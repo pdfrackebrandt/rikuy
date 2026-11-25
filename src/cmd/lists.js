@@ -456,7 +456,10 @@ export const methods = {
     const NL = /\r\n/.test(src) ? '\r\n' : '\n', ind = indentAt(src, it.s) ?? '  ';
     // (only a blank line outside braces: one inside \textbf{...} would put \item in its group)
     const depth = (x, i) => { let d = 0; for (let k = 0; k < i; k++) { if (x[k] === '\\') k++; else if (x[k] === '{') d++; else if (x[k] === '}') d--; } return d; };
-    return t.replace(/^\s+|\s+$/g, '').replace(/[ \t]*\r?\n[ \t]*(?:\r?\n[ \t]*)+/g, (m, i, x) => (depth(x, i) ? m : NL + ind + '\\item '));
+    // (a blank line at the pasted text's start, or at its end before more of the item's words, is
+    // an item's start too: it was dropped, and the words ran on, "One wordsNew words.")
+    const lead = /^[ \t]*\r?\n[ \t]*\r?\n/.test(t) ? NL + ind + '\\item ' : '', trail = /\r?\n[ \t]*\r?\n\s*$/.test(t) && src.slice(at, it.e).trim() ? NL + ind + '\\item ' : '';
+    return lead + t.replace(/^\s+|\s+$/g, '').replace(/[ \t]*\r?\n[ \t]*(?:\r?\n[ \t]*)+/g, (m, i, x) => (depth(x, i) ? m : NL + ind + '\\item ')) + trail;
   },
   // A selection from one item's words into a later item's of the same list (deletionEdits asks
   // here): deleted whole, \item and all, so the two items become one, as Word joins the paragraphs
@@ -520,8 +523,9 @@ export const methods = {
         out.push({ f, s: a, e: b, t: '' });
         return out;
       }
-      if (!safe(a, L.s)) return null;
       const next = L.items[z.k + 1];
+      // (a comment between the item's words and what follows them would go with what is replaced)
+      if (!safe(a, L.s) || hasComment(src.slice(it.e, next ? next.s : L.e))) return null;
       return [{ f, s: a, e: b, t: '' }, next ? { f, s: it.e, e: next.s, t: NL + NL + open } : { f, s: it.e, e: L.e, t: '' }];
     }
     // from item k out of the list into block Q after it
@@ -530,13 +534,16 @@ export const methods = {
     if (a <= tx(it)) {
       // the item held whole from its words' start: Q keeps its style, the items before stay a list
       const prev = L.items[x.k - 1];
+      if (hasComment(src.slice(prev ? prev.e : L.s, a))) return null;
       return prev ? [{ f, s: prev.e, e: a, t: src.slice(last.e, L.e) + src.slice(L.e, Z0.s) }, { f, s: a, e: b, t: '' }] : [{ f, s: L.s, e: a, t: '' }, { f, s: a, e: b, t: '' }];
     }
     // Q's words join the item, and the list ends after them
     let qe = Z0.e;
     while (qe > b && /\s/.test(src[qe - 1])) qe--;
     if (!isBalanced(src, b, qe) || /\\(?:begin|end|item|part|chapter|(?:sub)*section|(?:sub)?paragraph)\b/.test(src.slice(b, qe))) return null;
-    return [{ f, s: a, e: b, t: '' }, { f, s: qe, e: qe, t: src.slice(last.e, L.e) }];
+    // (after a comment ending Q's last line: the list's end on a line of its own, or the comment
+    // hides it and the list never closes)
+    return [{ f, s: a, e: b, t: '' }, { f, s: qe, e: qe, t: (inComment(src, qe) ? NL : '') + src.slice(last.e, L.e) }];
   },
   // whether list L (from s to e) is a block of the page of its own: the empty paragraph Enter shows
   // stands between blocks, and one inside a theorem, a quote or a minipage would have none to stand
