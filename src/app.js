@@ -709,7 +709,7 @@ class App {
     if (this.stale) { this.stale = false; this.root.classList.remove('stale'); this.root.contentEditable = 'true'; }
     this.model = model;
     // chemistry (\ce, \pu): KaTeX's mhchem, fetched the first time a document uses it
-    if (!this.chemReq && window.katex && [...this.files.values()].some((t) => /\\(?:ce|pu|ch)\s*[[{]/.test(t))) {
+    if (!this.chemReq && window.katex && this.chemIn()) {
       this.chemReq = true;
       loadScript(CDN.chem).then(() => { this.renderer.mathCache.clear(); this.forceRender = true; this.rebuild(this.caretNow()); }).catch(() => { /* \ce stays as source */ });
     }
@@ -725,6 +725,31 @@ class App {
     // stands in for it (it was left nowhere, and the next keystroke did nothing)
     if (caret && this.ghost && this.ghost.sticky && document.activeElement === this.root && caret.f === this.ghost.f && caret.p >= this.ghost.pos) this.caretToGhost();
     this.status(performance.now() - t0);
+  }
+
+  // Whether a file holds \ce, \pu or \ch. Each text is read whole once, then only around what an
+  // edit changed (where a command can have come): the whole document searched at every keystroke
+  // took 1 to 2 ms of each key on dev/bench/long.
+  chemIn() {
+    const RX = /\\(?:ce|pu|ch)\s*[[{]/, seen = this.chemSeen || (this.chemSeen = new Map());
+    let hit = false;
+    for (const [n, t] of this.files) {
+      const was = seen.get(n);
+      if (was === t) continue;
+      seen.set(n, t);
+      if (typeof was !== 'string') { if (RX.test(t)) hit = true; continue; }
+      // (the edit: what the two texts share at their start and at their end, compared a block at
+      // a time; the command and its spaces may reach into either side, so a margin goes with it)
+      const m = Math.min(was.length, t.length), C = 4096;
+      let p = 0, q = 0;
+      while (p + C <= m && was.slice(p, p + C) === t.slice(p, p + C)) p += C;
+      while (p < m && was.charCodeAt(p) === t.charCodeAt(p)) p++;
+      while (q + C <= m - p && was.slice(was.length - q - C, was.length - q) === t.slice(t.length - q - C, t.length - q)) q += C;
+      while (q < m - p && was.charCodeAt(was.length - 1 - q) === t.charCodeAt(t.length - 1 - q)) q++;
+      if (RX.test(t.slice(Math.max(0, p - 256), Math.min(t.length, t.length - q + 256)))) hit = true;
+    }
+    for (const n of [...seen.keys()]) if (!this.files.has(n)) seen.delete(n);
+    return hit;
   }
 
   // A float between a run in heading and its paragraph (src/model.js runIns, R2): TeX places the
