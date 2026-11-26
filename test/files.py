@@ -518,6 +518,17 @@ def r4_tabs():
               and 'First AAA paragraph' in src(pa) and 'ZSecond paragraph words' in src(pa), (after[30:130], src(pa)[30:130]))
         pb.keyboard.press('Control+y'); settle(pb, 200)
         check('tabs: and Ctrl+Y puts one\'s typing back, beside them', 'First AAA paragraph' in src(pb) and 'Second BBB paragraph' in src(pb), src(pb)[30:130])
+        # (review N2) a copy saved by a version before ids, open in two windows: their first saves
+        # merge, and neither loses its own words (both windows' own copies written first, so
+        # neither writes over the old copy as it reloads)
+        written(pb); written(pa)
+        pa.evaluate('''(t) => new Promise((ok) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const x = q.result.transaction('kv', 'readwrite'); x.objectStore('kv').put({ name: 'old', main: 'main.tex', files: [['main.tex', t]], t: 1700000000000 }, 'project'); x.oncomplete = () => ok(true); }; })''', TWO)
+        pa.reload(); ready(pa); pb.reload(); ready(pb)
+        click_text(pa, 'First paragraph', 5); pa.keyboard.type(' AAA'); written(pa)
+        click_text(pb, 'Second paragraph', 6); pb.keyboard.type(' BBB'); written(pb)
+        click_text(pa, 'Second', 0); pa.keyboard.type('Z'); written(pa)
+        check('tabs: a copy saved before ids, open in two windows: the first saves merge, no window loses its words (N2)', pa.evaluate('window.rikuy.name') == 'old' and 'First AAA paragraph' in src(pb)
+              and 'First AAA paragraph' in src(pa) and 'ZSecond BBB paragraph' in src(pa), (src(pa)[30:130], src(pb)[30:130]))
         check('tabs: no page errors', not errors, errors[:3])
         browser.close()
 

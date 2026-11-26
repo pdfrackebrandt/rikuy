@@ -673,6 +673,9 @@ class App {
     // (and the project's id: the copy's, or for a copy kept before ids, one every tab that reads
     // that copy makes alike)
     if (saved && saved.files) { this.pid = saved.pid || 'kept:' + saved.t + ':' + this.name; this.pidMap = this.files; this.nameT = saved.nameT || 0; }
+    // (the stored copy this tab read, without an id when a version before ids wrote it: the id
+    // every tab that reads it makes alike, so the first saves of two tabs merge, review N2)
+    if (this.savedCopy && this.savedCopy.files && !this.savedCopy.pid && this.savedCopy.name === this.name && this.savedCopy.main === this.main) this.savedCopy = { ...this.savedCopy, pid: this.pid };
     this.bindUI();
     this.applyPrefs();
     this.updateUndoUI();
@@ -7406,6 +7409,10 @@ class App {
     // document each kept typing on its own copy, and each save put the other's words into the
     // versions, out of the document.
     const base = this.savedMap === this.files ? this.savedCopy : null;
+    // (the copies this one comes from, newest first: another tab merges it only where it comes
+    // from that tab's own last copy, so a copy written over that one without merging it is never
+    // read as that tab's words deleted, review N2)
+    meta.anc = [meta.t, ...(base ? (Array.isArray(base.anc) ? base.anc : [base.t]) : [])].slice(0, 32);
     this.savedCopy = meta;
     this.savedMap = this.files;
     let merged = null;
@@ -7449,12 +7456,19 @@ class App {
     // new document takes it; matched by its old name, a shopping list merged over a thesis, review
     // B1. Renamed in that tab since this one's name was given: its name is taken.)
     if (!meta.pid || cur.pid !== meta.pid || base.pid !== meta.pid || cur.main !== meta.main || base.main !== meta.main) return null;
+    // (and only a copy that comes from this tab's last: one written over it without merging it,
+    // as a tab with another id or none does, would read as this tab's words deleted)
+    if (!Array.isArray(cur.anc) || !cur.anc.includes(base.t)) return null;
     const renamed = this.renamedThere(cur, meta.name, meta.nameT) ? cur.name : null;
     // (this tab's copy as "theirs": the side that wins where both changed the same words)
     const { files, conflicts } = mergeProjects(new Map(base.files), new Map(cur.files), new Map(meta.files));
     const same = !renamed && files.size === meta.files.length && meta.files.every(([n, t]) => files.get(n) === t);
-    // (hT names no Undo steps: those kept were written for this tab's text, not the merged one)
-    return { meta: same ? null : { ...meta, ...(renamed ? { name: renamed, nameT: cur.nameT } : {}), files: [...files], hT: 0 }, conflicts, renamed };
+    // (written again even when it is this tab's text, nothing of that tab's being new, to say it
+    // comes from that tab's copy too: else that tab's next save, finding its own copy nowhere in
+    // this one's, would keep it as another's; hT names no Undo steps where the text is the merge,
+    // for those kept were written for this tab's text)
+    const anc = [...new Set([meta.t, ...cur.anc, ...meta.anc])].slice(0, 32);
+    return { meta: same ? { ...meta, anc } : { ...meta, ...(renamed ? { name: renamed, nameT: cur.nameT } : {}), files: [...files], hT: 0, anc }, conflicts, renamed, same };
   }
 
   // The open project's id: made with its texts (opened, new, the sample, a version put in their
@@ -7494,7 +7508,7 @@ class App {
   async takeOtherTab(meta, merged, cur) {
     const both = (took) => (took ? 'Brought in what was typed in another tab. ' : 'This document is open in another tab too. ') + 'Where both tabs changed the same words, this one\'s are kept; that tab\'s are under Review, Versions, as “From another tab”.';
     // (nothing of that tab's but words this one changed again: those go to the versions)
-    if (!merged.meta) return merged.conflicts.length ? this.keepOtherTab(cur, both(false)) : undefined;
+    if (merged.same) return merged.conflicts.length ? this.keepOtherTab(cur, both(false)) : undefined;
     if (merged.renamed && this.name === meta.name && this.main === meta.main && this.pid === meta.pid) this.renamedHere(merged.renamed, cur.nameT);
     const name = merged.renamed || meta.name;
     const mine = () => this.name === name && this.main === meta.main && this.pidMap === this.files && this.pid === meta.pid;
@@ -7528,8 +7542,10 @@ class App {
       // (and that tab's Track Changes base and switch: its edits stay its changes)
       if (this.rvCheckBase) this.rvCheckBase();
     }
-    // (refused, as in a link for comments only: that tab's text is kept as a version, as before)
-    if ([...want].some(([n, t]) => this.files.get(n) !== t)) return this.keepOtherTab(cur);
+    // (refused, as in a link for comments only: that tab's text is kept as a version, as before,
+    // and this tab's next copy claims to come from none, so no tab reads it as that tab's words
+    // deleted)
+    if ([...want].some(([n, t]) => this.files.get(n) !== t)) { this.savedMap = null; return this.keepOtherTab(cur); }
     if (merged.conflicts.length) return this.keepOtherTab(cur, both(true));
     // (this tab has that tab's text now: its Allow is no longer refused, see allowMark)
     if (this.markStale) this.markStale.delete(this.name + '|' + this.main);
