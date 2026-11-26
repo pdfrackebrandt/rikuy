@@ -418,17 +418,32 @@ function debounce(fn, ms) { let t = null; const d = (...a) => { clearTimeout(t);
 // LaTeX box <-> visual equation field. Row commands (\label, \tag, \notag)
 // are lifted out before the field sees them and put back on the same row.
 const ROW_CMD = /\\label\s*\{[^}]*\}|\\(?:nonumber|notag)\b|\\tag\*?\s*\{[^}]*\}/g;
+// Where the comment lines that end a row of math begin (after the row's last token and the spaces
+// before them), or -1: what follows the first % there is comments and white space only.
+function endComment(t) {
+  for (let i = 0; i < t.length; i++) {
+    if (t[i] === '\\') { i++; continue; }
+    if (t[i] !== '%') continue;
+    if (/^%[^\n]*(?:\n[ \t\r]*(?:%[^\n]*)?)*$/.test(t.slice(i))) { let j = i; while (j > 0 && /[ \t]/.test(t[j - 1])) j--; return j; }
+    const n = t.indexOf('\n', i); if (n < 0) return -1; i = n;
+  }
+  return -1;
+}
 function toField(tex, display, env, D) {
   const base = (env || '').replace(/\*$/, '');
   const spans = display ? splitRows(tex) : [{ s: 0, e: tex.length }];
   if (spans.length > 1 && !tex.slice(spans[spans.length - 1].s, spans[spans.length - 1].e).trim()) spans.pop();
   const rows = spans.map((r) => {
-    const text = tex.slice(r.s, r.e);
+    // (a comment that ends a row, "a = b % note": the field never shows it, and what was typed at
+    // the formula's end went in after it, into the comment, where neither the page nor TeX shows
+    // it; the row ends where the comment begins, so the comment stays after what is typed)
+    const k = endComment(tex.slice(r.s, r.e)), e = k < 0 ? r.e : r.s + k;
+    const text = tex.slice(r.s, e);
     const sfx = [];
     const clean = display ? text.replace(ROW_CMD, (m) => { sfx.push(m); return ''; }) : text;
     const lead = (/^\s*/.exec(text) || [''])[0];
     const trail = (/\s*$/.exec(text) || [''])[0];
-    return { s: r.s, e: r.e, text, clean: clean.trim(), sfx: sfx.join(' '), lead, trail };
+    return { s: r.s, e, text, clean: clean.trim(), sfx: sfx.join(' '), lead, trail, note: k < 0 ? '' : tex.slice(e, r.e).trim() };
   });
   const multi = display && (rows.length > 1 || /^(align|flalign|alignat|eqnarray|gather|multline)$/.test(base));
   const wrap = /^(gather|multline)$/.test(base) ? 'gathered' : 'aligned';
@@ -475,12 +490,13 @@ function fromField(v, st) {
   const pick = now.map((t) => { const j = was.findIndex((w, k) => !used.has(k) && w === t); if (j >= 0) used.add(j); return j; });
   const lines = now.map((t, i) => {
     const j = pick[i];
-    if (j >= 0) return '  ' + R[j].text.trim();
+    if (j >= 0) return { t: '  ' + R[j].text.trim(), note: R[j].note };
     const k = i < R.length && !used.has(i) && !pick.includes(i) ? i : -1;
     if (k >= 0) used.add(k);
-    return '  ' + withSfx(t, k >= 0 ? R[k] : null);
+    return { t: '  ' + withSfx(t, k >= 0 ? R[k] : null), note: k >= 0 ? R[k].note : '' };
   });
-  return lines.join(' \\\\\n');
+  // (a row's comment after its \\, which it would otherwise hide)
+  return lines.map((l, i) => l.t + (i < lines.length - 1 ? ' \\\\' : '') + (l.note ? ' ' + l.note : '')).join('\n');
 }
 
 // A $ typed in a formula's LaTeX box ends the formula, as the closing $ does in the source; not
@@ -5065,7 +5081,10 @@ class App {
     };
     // text that would not stay a formula in the document is not written there (mathBreaksOut)
     const kerr = () => this.renderer.katex(this.mathPreviewTex(ta.value, display), display).err;
-    const held = () => mathBreaksOut(ta.value, kerr());
+    // (a display's own line end after the formula ends a comment that ends it: held back, the
+    // formula was written on closing with a line end of its own, a blank line in the display, TeX's
+    // Missing $)
+    const held = () => mathBreaksOut(ta.value + (display && /\n/.test(trail) ? '\n' : ''), kerr());
     // Enter says the formula is done. With a } or a $ too many there is no telling which one was
     // meant, so the box stays open with its message; an open brace is closed for the writer.
     const stay = () => /^A [}$]/.test(held());

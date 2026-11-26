@@ -244,6 +244,22 @@ try:
             if TEX and name.startswith('Up after a heading'):
                 r = compiles(s9)
                 check('and it compiles in the page', r['ok'] and not r['problems'], r)
+        # A display whose formula ends in a comment: the comment was held back as if it hid the
+        # display's end, so the display was written on closing with a line end of its own, a blank
+        # line before \end{equation*} (TeX's Missing $), even when nothing was typed; and what was
+        # typed in the field went after the comment, into it, shown nowhere
+        for name, doc, keys, want in (('opened and closed', P('Text.\n\\begin{equation*}\na = b % note\n\\end{equation*}\nAfter.'), '', 'a = b % note\n\\end{equation*}'),
+                                      ('typed in', P('Text.\n\\begin{equation*}\na = b % note\n\\end{equation*}\nAfter.'), 'Q', 'a = bQ % note\n\\end{equation*}'),
+                                      ('typed in, \\[ \\] and two comment lines', P('Text.\n\\[\na = b % one\n% two\n\\]\nAfter.'), '+c', 'a = b+c % one\n% two\n\\]')):
+            load_doc(page, doc)
+            page.click('.it.dm >> nth=0'); page.wait_for_selector('#pop-field', timeout=8000); settle(page, 300)
+            if keys: page.keyboard.type(keys); settle(page, 150, full=True)
+            page.keyboard.press('Escape'); settle(page, 300, full=True)
+            s10 = src(page)
+            check('a display ending in a comment, %s: no blank line written, the letters before the comment' % name, want in s10 and s10.replace(keys, '', 1) == doc, s10[s10.find('Text.'):s10.find('After.')])
+            if TEX and keys == 'Q':
+                r = compiles(s10)
+                check('and it compiles in the page', r['ok'] and not r['problems'], r)
 
         # --- dark mode look
         check('no console errors', not errors, errors[:5])
