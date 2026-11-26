@@ -277,6 +277,26 @@ try:
                 settle(page, 150)
             s11 = src(page)
             check('a display emptied and closed, then %s: %r' % (' '.join(keys), want), P(want) == s11, s11[s11.find('{document}') + 11:s11.find('\\end{document}')])
+        # (review of round 4) the same in a file with Windows line ends: a display opened and closed
+        # with Esc got blank lines in it (the box was given the \r of its line ends, and the range it
+        # writes counted \n where the file has \r\n), TeX's Missing $; emptied, the letter typed next
+        # went inside \end{equation}
+        C = lambda t: P(t).replace('\n', '\r\n')
+        for name, body, keys, after, want in (
+                ('opened and closed', 'Text.\n\\begin{equation*}\na = b % note\n\\end{equation*}\nAfter.', [], '', None),
+                ('Q typed before its comment', 'Text.\n\\begin{equation*}\na = b % note\n\\end{equation*}\nAfter.', ['Q'], '', 'Text.\n\\begin{equation*}\na = bQ % note\n\\end{equation*}\nAfter.'),
+                ('a row of an align added to', 'Text.\n\\begin{align}\na &= b \\\\\nc &= d\n\\end{align}\nAfter.', ['+', '1'], '', 'Text.\n\\begin{align}\na &= b \\\\\nc &= d+1\n\\end{align}\nAfter.'),
+                ('emptied, then W', 'Before.\n\n\\begin{equation}\na+1\n\\end{equation}\n\nNext.', ['Backspace'] * 5, 'W', 'Before.\n\nW\n\nNext.')):
+            load_doc(page, C(body))
+            page.click('.it.dm >> nth=0'); page.wait_for_selector('#pop-field', timeout=8000); settle(page, 300)
+            for k in keys:
+                if len(k) > 1: page.keyboard.press(k)
+                else: page.keyboard.type(k)
+                settle(page, 80)
+            page.keyboard.press('Escape'); settle(page, 300, full=True)
+            if after: page.keyboard.type(after); settle(page, 200)
+            s12 = src(page)
+            check('a display in a file with Windows line ends, %s: as Word would, \\r\\n kept' % name, s12 == C(want or body), repr(s12[s12.find('{document}') + 11:s12.find('\\end{document}')]))
 
         # --- dark mode look
         check('no console errors', not errors, errors[:5])

@@ -4541,14 +4541,19 @@ class App {
     return (text, caret) => {
       const R = P.range;
       const cur = this.src(R.f).slice(R.s, R.e);
-      if (cur === text) return;
-      const keepSel = document.activeElement;
+      // (the same text with Windows line ends, as the commit would write it, is no change)
+      if (cur === text || (cur.includes('\r') && cur === text.replace(/\r?\n/g, '\r\n'))) return;
+      const keepSel = document.activeElement, n0 = this.src(R.f).length;
       this.commit([{ f: R.f, s: R.s, e: R.e, t: text }], null, P.session);
+      // (how much the text grew, read from the file: in a file with Windows line ends the commit
+      // writes each line end as \r\n, longer than the text given, and a range counted from that
+      // text ended inside \end{equation}, where the next write and the letter typed after went)
+      const grew = this.src(R.f).length - n0;
       // the caret goes back after the formula or citation when the popover closes: it moves with
       // the range's end, or what is typed next lands inside the new text (\end{ More.equation})
       const rc = P.returnCaret;
-      if (rc && rc.f === R.f && rc.p >= R.e) P.returnCaret = { ...rc, p: rc.p + text.length - (R.e - R.s) };
-      R.e = R.s + text.length;
+      if (rc && rc.f === R.f && rc.p >= R.e) P.returnCaret = { ...rc, p: rc.p + grew };
+      R.e += grew;
       if (keepSel && keepSel.isConnected) keepSel.focus({ preventScroll: true });
       this.positionPop();
       void caret;
@@ -4998,12 +5003,14 @@ class App {
     ta.id = 'pop-tex';
     ta.setAttribute('aria-label', 'The math, as LaTeX');
     ta.spellcheck = false;
-    const lead = display ? inner.match(/^\n?/)[0] : '';
+    // (\r\n, a file with Windows line ends: the box was given the \r, which it reads as a line
+    // end of its own, and it came back as a blank line in the display, TeX's Missing $)
+    const lead = display ? inner.match(/^(?:\r?\n)?/)[0] : '';
     // the trailing line end is looked for after the leading one: in a new, empty equation
     // ("\n  \n") it is the last line end alone, not the whole blank line, which TeX reads as a
     // paragraph break inside the equation (Missing $ inserted)
     const rest = inner.slice(lead.length);
-    const end = rest.match(/\n\s*$/);
+    const end = rest.match(/\r?\n\s*$/);
     // an equation whose two lines hold nothing ("\n"): the formula goes on a line of its own
     const trail = !display ? '' : end ? end[0] : rest.trim() ? '' : lead;
     ta.value = display ? (end ? rest.slice(0, end.index) : rest) : inner;
