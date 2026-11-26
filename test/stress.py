@@ -6,6 +6,29 @@ from browser import open_page, check, results, SHOTS, src, click_text
 from playwright.sync_api import sync_playwright
 
 D = os.path.join(os.path.dirname(__file__), 'stress')
+
+# How far each page's text runs past its margin, as TeX measures it: the baseline of the last line
+# against the bottom of the text block (or the top of the footnotes). A line's box also holds the
+# leading below its baseline, half of \onehalfspacing's extra space, which TeX never counts: the
+# last baseline may sit on the margin and its descenders below it. The baseline is the last
+# character's box less its font's descent (the box's bottom is the baseline plus that descent),
+# read from a canvas, so nothing is added to the page.
+OVER = '''() => { const cv = document.createElement('canvas').getContext('2d');
+  const baseline = (el) => { const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let t, lt = null;
+    while ((t = w.nextNode())) if (t.data.trim() && t.parentElement.getClientRects().length) lt = t;
+    if (!lt) return el.getBoundingClientRect().bottom;
+    const r = document.createRange(), k = lt.data.trimEnd().length; r.setStart(lt, k - 1); r.setEnd(lt, k);
+    const rs = r.getClientRects(), box = rs[rs.length - 1];
+    cv.font = getComputedStyle(lt.parentElement).font;
+    return box.bottom - cv.measureText(lt.data[k - 1]).fontBoundingBoxDescent; };
+  return [...document.querySelectorAll('.page')].map((pg, i) => {
+    const pb = pg.querySelector('.pb').getBoundingClientRect();
+    const fl = pg.querySelector('.flow').getBoundingClientRect();
+    const fn = pg.querySelector('.fns');
+    const fr = fn && !fn.hidden ? fn.getBoundingClientRect() : null;
+    const last = pg.querySelector('.flow').lastElementChild;
+    const lb = last ? baseline(last) : fl.top;
+    return {i: i + 1, over: Math.round(lb - (fr ? fr.top : pb.bottom)), fill: Math.round((lb - pb.top) / pb.height * 100)}; }); }'''
 main = open(os.path.join(D, 'main.tex')).read()
 bib = open(os.path.join(D, 'refs.bib')).read()
 
@@ -19,16 +42,16 @@ try:
         check('stress: pages', n >= 15, n)
         check('stress: full build < 4s', dt < 4000, round(dt))
         print('build ms', round(dt), 'pages', n, 'model+render ms', page.evaluate('window.rikuy.lastMs'))
-        over = page.evaluate('''() => [...document.querySelectorAll('.page')].map((pg,i) => {
-          const pb = pg.querySelector('.pb').getBoundingClientRect();
-          const fl = pg.querySelector('.flow').getBoundingClientRect();
-          const fn = pg.querySelector('.fns');
-          const fr = fn && !fn.hidden ? fn.getBoundingClientRect() : null;
-          const last = pg.querySelector('.flow').lastElementChild;
-          const lb = last ? last.getBoundingClientRect().bottom : fl.top;
-          return {i: i+1, over: Math.round(lb - (fr ? fr.top : pb.bottom)), fill: Math.round((lb - pb.top) / pb.height * 100)}; })''')
+        over = page.evaluate(OVER)
         bad = [o for o in over if o['over'] > 3]
         check('stress: no overflow', not bad, bad)
+        # the measure must still see a real overflow: a page's last paragraph pushed down by 40 px
+        # puts its last line past the margin, and only that page is flagged
+        k = max(range(len(over)), key=lambda j: over[j]['fill'])
+        page.evaluate('(k) => { const el = document.querySelectorAll(".page")[k].querySelector(".flow").lastElementChild; el.style.paddingTop = "40px"; return true; }', k)
+        caught = [o['i'] for o in page.evaluate(OVER) if o['over'] > 3]
+        page.evaluate('(k) => { document.querySelectorAll(".page")[k].querySelector(".flow").lastElementChild.style.paddingTop = ""; }', k)
+        check('stress: the overflow measure catches text past the margin', caught == [k + 1], caught)
         sparse = [o for o in over[2:-2] if o['fill'] < 60]
         print('fill per page', [o['fill'] for o in over])
         check('stress: pages reasonably full', len(sparse) <= 3, sparse)
