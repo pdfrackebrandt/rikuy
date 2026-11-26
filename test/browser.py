@@ -1705,6 +1705,8 @@ def run():
             browser, page, errors = open_page(p, width=w, height=h)
             enter_kept(page, w)
             check('no console errors (Enter kept, %d px)' % w, not errors, errors[:5])
+            ghost_looks(page, w)
+            check('no console errors (Enter\'s empty paragraphs, %d px)' % w, not errors, errors[:5])
             browser.close()
 
         browser, page, errors = open_page(p, width=1366, height=900)
@@ -1773,6 +1775,56 @@ def enter_kept(page, w):
     got = page.evaluate("window.rikuy.rbRange ? window.rikuy.rbRange.toString() : null")
     check('a relayout with a dialog\'s field focused keeps what the dialog acts on (%d px)' % w, got == 'Second one', got)
     page.keyboard.press('Escape'); settle(page, 200)
+
+
+# every element of the pages (and its ::before and ::after) drawn with a dashed outline, border or
+# underline: the blank page's hint had a dashed line under it
+_DASHED = """() => [...document.querySelectorAll('#pages, #pages *')].flatMap((e) => [null, '::before', '::after'].map((x) => [e, x])).filter(([e, x]) => {
+  const c = getComputedStyle(e, x); if (x && c.content === 'none') return false;
+  return c.outlineStyle === 'dashed' || ['Top', 'Right', 'Bottom', 'Left'].some((d) => c['border' + d + 'Style'] === 'dashed') || (c.textDecorationLine !== 'none' && c.textDecorationStyle === 'dashed'); })
+  .map(([e, x]) => e.className + (x || ''))"""
+
+
+_GHOST_DOC = ('\\documentclass{article}\n\\begin{document}\nFirst paragraph with a note\\footnote{A note.} and $x^2$ in it, '
+              'long enough to run over two lines of the page, and Ctrl+Z gives back exactly the bytes you had.\n\nSecond one.\n\\end{document}\n')
+# where a word is drawn (x from its paragraph's left), its paragraph's indent and line height, the
+# caret, and Enter's empty paragraphs: how many, their height, their outline
+_GHOST_GEO = """(w) => { const sp = [...document.querySelectorAll('#pages span.t')].filter((x) => x.textContent.includes(w)).pop();
+  const it = sp.closest('.it'), i = sp.firstChild.data.indexOf(w), r = document.createRange(); r.setStart(sp.firstChild, i); r.setEnd(sp.firstChild, i + 1);
+  const R = r.getBoundingClientRect(), I = it.getBoundingClientRect(), s = getSelection(), C = s.rangeCount ? s.getRangeAt(0).getBoundingClientRect() : null;
+  const g = window.rikuy.ghost, cs = getComputedStyle(it);
+  return { x: R.left - I.left, y: R.top, ind: parseFloat(cs.textIndent) || 0, lh: parseFloat(cs.lineHeight), cx: C && C.left, cy: C && C.top,
+    n: g ? g.n || 1 : 0, gh: g ? g.el.getBoundingClientRect().height : 0, go: g ? getComputedStyle(g.el).outlineStyle : null }; }"""
+
+
+def ghost_looks(page, w):
+    """Enter's empty paragraph as Word's (Pedro, 2026-11-26): no frame round it (a dashed blue box
+    was drawn round it, on a white page, a dark one, in forced colours and on phones), and the blank
+    page's "Type here to start." plain words with no dashed line under them. Enter before a word
+    ends the paragraph there and starts the next at its indent; Enter twice more, two empty lines
+    above the word, the caret staying before it."""
+    load_doc(page, _GHOST_DOC)
+    click_text(page, 'had.')
+    page.keyboard.press('Enter'); settle(page, 100)
+    a = page.evaluate(_GHOST_GEO, 'had.')
+    check('Enter before a word: the paragraph ends there and the next starts at its indent, as TeX sets it (%d px)' % w,
+          'you \n\nhad.' in src(page) and abs(a['x'] - a['ind']) < 1.5 and a['ind'] > 5, (a, src(page)[-80:]))
+    page.keyboard.press('Enter'); settle(page, 100)
+    page.keyboard.press('Enter'); settle(page, 100)
+    b = page.evaluate(_GHOST_GEO, 'had.')
+    check('Enter twice more there: two empty lines above the word, the caret staying before it, nothing written (%d px)' % w,
+          b['n'] == 2 and abs(b['gh'] - 2 * b['lh']) < 2 and abs(b['y'] - a['y'] - 2 * b['lh']) < 2 and abs(b['cy'] - b['y']) < 3 and abs(b['x'] - b['ind']) < 1.5 and 'you \n\nhad.' in src(page), b)
+    for scheme in ('white page', 'dark page', 'forced colours'):
+        if scheme == 'dark page': page.evaluate("document.body.classList.add('dark-page')")
+        if scheme == 'forced colours': page.evaluate("document.body.classList.remove('dark-page')"); page.emulate_media(forced_colors='active')
+        d = page.evaluate(_DASHED)
+        check('no dashed frame round the empty paragraphs, nor any dashed line on the page (%s, %d px)' % (scheme, w), not d and page.evaluate(_GHOST_GEO, 'had.')['go'] == 'none', d)
+    page.emulate_media(forced_colors='none')
+    # the blank page's hint: plain words, as Word's placeholder text
+    page.click('#b-new')
+    page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000)
+    hint = page.evaluate("(() => { const c = getComputedStyle(document.querySelector('.ghostp.empty .gh'), '::after'); return [c.content, c.borderBottomStyle, c.textDecorationLine]; })()")
+    check('the blank page says "Type here to start." with no dashed line under it (%d px)' % w, 'Type here' in hint[0] and hint[1] == 'none' and hint[2] == 'none' and not page.evaluate(_DASHED), (hint, page.evaluate(_DASHED)))
 
 
 def crlf_enter(page):
