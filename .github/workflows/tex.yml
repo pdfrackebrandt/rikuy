@@ -81,10 +81,12 @@ jobs:
         with:
           persist-credentials: false
       # the tree is a function of tex/, inputs/ and the npm packages (Pyodide's wheels), and the
-      # manifest check holds it
+      # manifest check holds it; not of the editor's native core (tex/native/core, tex/vendor/core),
+      # which the page's build puts beside the page, not in the tree: a change to it kept the
+      # tree's key from main's and suite.yml's TeX runs from finding one
       - name: The tree's key
         id: key
-        run: echo "key=dist-tex-${{ hashFiles('tex/**', 'inputs/**', 'package-lock.json', 'dev/dist-manifest.txt') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=dist-tex-${{ hashFiles('tex/**', '!tex/native/core/**', '!tex/vendor/core/**', 'inputs/**', 'package-lock.json', 'dev/dist-manifest.txt') }}" >> "$GITHUB_OUTPUT"
       - name: The TeX tree of an earlier run with the same inputs
         id: exact
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
