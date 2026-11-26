@@ -405,7 +405,9 @@ const WORDS_MAX = 200000;
 // budget: one mergeBudget() shared by every file of one merge (mergeProjects, a git pull), so
 // thirty files at the limit cost what one does; each merge3 call has its own when none is given.
 export const mergeBudget = () => ({ left: WORDS_MAX });
-export function merge3(base, mine, theirs, { words: byWords = true, budget = null } = {}) {
+// report: an object told, where a conflict was taken wider than its lines, how wide: 'lines'
+// (from it to the other half of the pair), 'paragraph', 'environment' or 'file'
+export function merge3(base, mine, theirs, { words: byWords = true, budget = null, report = null } = {}) {
   if (theirs === base || theirs === mine) return { text: mine, clean: true };
   if (mine === base) return { text: theirs, clean: true };
   const A = lineEdits(base, mine), C = lineEdits(base, theirs), B = byWords ? budget || mergeBudget() : null;
@@ -413,14 +415,23 @@ export function merge3(base, mine, theirs, { words: byWords = true, budget = nul
   // A conflict takes theirs for its clashing lines alone, which can keep half of a pair whose other
   // half stands on lines of mine that did not clash: a \begin{quote} line mine put above a
   // paragraph whose words both changed went, its \end{quote} stayed, and TeX stopped (review
-  // V3-B). Where the result's pairs are not as balanced as theirs, each conflict takes theirs for
-  // its whole paragraph, then for the whole environment of base it is in, and failing that the
-  // file is theirs (the author's text kept under Versions, the changes shown).
+  // V3-B). Where the result's pairs are not as balanced as theirs, each conflict takes theirs from
+  // it to the other halves (the edits of its paragraph that open or close a pair), then for its
+  // whole paragraph, then for the whole environment of base it is in, and failing that the file
+  // is theirs (the author's text kept under Versions, the changes shown). Each step keeps more of
+  // the author's other edits: a no blank line document's paragraph is the whole file (V4-B).
   if (r.clean || balance(r.text) === balance(theirs)) return { text: r.text, clean: r.clean };
-  for (const widen of [paragraphOf, environmentOf]) {
+  const halves = (b, s, e) => {
+    const [ps, pe] = paragraphOf(b, s, e);
+    let x = s, y = e;
+    for (const h of [...A, ...C]) if (h.s >= ps && h.e <= pe && balance(h.t) !== balance(b.slice(h.s, h.e))) { x = Math.min(x, h.s); y = Math.max(y, h.e); }
+    return [x, y];
+  };
+  for (const [how, widen] of [['lines', halves], ['paragraph', paragraphOf], ['environment', environmentOf]]) {
     const w = combine(base, A, C, B, r.spans.map(([s, e]) => widen(base, s, e)));
-    if (balance(w.text) === balance(theirs)) return { text: w.text, clean: false };
+    if (balance(w.text) === balance(theirs)) { if (report) report.wide = how; return { text: w.text, clean: false }; }
   }
+  if (report) report.wide = 'file';
   return { text: theirs, clean: false };
 }
 // how unbalanced a text's pairs are: braces, \begin and \end, \( \), \[ \], and whether its
@@ -532,19 +543,29 @@ export function vvHas(cur, base) {
 }
 
 // whole projects as Maps name -> text; a file one side removed and the other left alone goes
+// The words that say how far conflicts were taken, for a toast: '' where none was wider than the
+// words both changed (mergeProjects' wide)
+const WIDE = { lines: 'and the lines up to the other half of a \\begin, brace or $ beside them', paragraph: 'for the whole paragraph', environment: 'for the whole environment', file: 'for the whole file' };
+export function wideSaid(wide) {
+  const w = wide instanceof Map ? [...wide] : Array.isArray(wide) ? wide : [];
+  return w.length ? ' (' + w.map(([f, how]) => f + ': ' + (WIDE[how] || how)).join('; ') + ', so that nothing is left half open)' : '';
+}
+// wide: for the files whose conflict was taken wider than its lines, how wide (merge3's report)
 export function mergeProjects(base, mine, theirs, opts = {}) {
-  const files = new Map(), conflicts = [];
+  const files = new Map(), conflicts = [], wide = new Map();
   // (one budget for the words of every file)
   opts = { budget: mergeBudget(), ...opts };
   for (const n of new Set([...base.keys(), ...mine.keys(), ...theirs.keys()])) {
     const b = base.get(n), m = mine.get(n), t = theirs.get(n);
     if (t === undefined) { if (m !== undefined && b === undefined) files.set(n, m); else if (m !== undefined && m !== b) files.set(n, m); continue; }
     if (m === undefined) { if (b === undefined || t !== b) files.set(n, t); continue; }
-    const r = merge3(b ?? '', m, t, opts);
+    const report = {};
+    const r = merge3(b ?? '', m, t, { ...opts, report });
     if (!r.clean) conflicts.push(n);
+    if (report.wide) wide.set(n, report.wide);
     files.set(n, r.text);
   }
-  return { files, conflicts };
+  return { files, conflicts, wide };
 }
 
 // a tracked change that only adds or removes comment lines: the Review tab shows those as

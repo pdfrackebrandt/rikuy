@@ -1,6 +1,6 @@
 // Share links, comments in the source and the three way merge (src/share.js).
 import assert from 'node:assert/strict';
-import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, merge3, mergeProjects, commentOnly, base32, unbase32, parseCommentLine, commentBodyAt } from '../src/share.js';
+import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, merge3, mergeProjects, commentOnly, base32, unbase32, parseCommentLine, commentBodyAt, wideSaid } from '../src/share.js';
 import { changes } from '../src/diff.js';
 import { TeXEngine } from '../src/tex.js';
 import { graphShort, graphWhole, graphHtml, readGraph, OTHER_VERSION } from '../src/graph.js';
@@ -485,6 +485,20 @@ await ok('a conflict never keeps half of a pair across lines: its paragraph, its
   const r4 = merge3(b4, m4, t4);
   assert.equal(r4.clean, false);
   assert.equal(r4.text, t4);
+});
+
+await ok('a conflict that would split a pair takes the lines up to its other half before a paragraph; the scope is said (R4 review V4-B)', () => {
+  const L = Array.from({ length: 12 }, (_, i) => 'Line ' + i + ' with some words.');
+  const doc = (ls) => '\\documentclass{article}\n\\begin{document}\n' + ls.join('\n') + '\n\\end{document}\n';
+  const a = [...L]; a[5] = a[5].replace('words', 'WORDS'); a[0] = a[0].replace('with', 'WITH'); a[11] = a[11].replace('with', 'WITH'); a.splice(5, 0, '\\begin{center}'); a.splice(8, 0, '\\end{center}');
+  const b = [...L]; b[5] = b[5].replace('words', 'terms'); b[9] = b[9].replace('some', 'many');
+  const want = [...b]; want[0] = want[0].replace('with', 'WITH'); want[11] = want[11].replace('with', 'WITH');
+  const r = mergeProjects(new Map([['main.tex', doc(L)]]), new Map([['main.tex', doc(a)]]), new Map([['main.tex', doc(b)]]));
+  assert.equal(r.files.get('main.tex'), doc(want));
+  assert.deepEqual(r.conflicts, ['main.tex']);
+  assert.deepEqual([...r.wide], [['main.tex', 'lines']]);
+  assert.ok(/main\.tex: .*other half/.test(wideSaid(r.wide)), wideSaid(r.wide));
+  assert.equal(wideSaid(new Map()), '');
 });
 
 await ok('a comment line\'s own words start after its head\'s colon, not one in the quoted words (R4)', () => {

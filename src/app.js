@@ -59,7 +59,7 @@ import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packag
 import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, THM_STYLES, titleInfo } from './styles.js';
 import { tableAt, cellAt as tableCellAt, colAlign, clipToCell, clearCells, blockTabular } from './table.js';
 import { eolAt } from './blockenv.js';
-import { shareParam, texParam, commentOnly, cleanPath, mergeProjects, merge3, vvJoin, vvHas } from './share.js';
+import { shareParam, texParam, commentOnly, cleanPath, mergeProjects, merge3, vvJoin, vvHas, wideSaid } from './share.js';
 import { version as VERSION } from '../package.json';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
 import { scriptNeeds, scriptLines, addScriptSetup, scriptName, scriptSetup, MORE } from './scripts.js';
@@ -7414,6 +7414,10 @@ class App {
     // read as that tab's words deleted, review N2, V2-C; src/share.js vvJoin)
     if (!this.tabKey) this.tabKey = [...crypto.getRandomValues(new Uint8Array(9))].map((x) => x.toString(16).padStart(2, '0')).join('');
     meta.vv = vvJoin(base && base.vv, { [this.tabKey]: meta.t });
+    // (the word to the tab whose words a merge here took out goes with every copy until a copy of
+    // that tab's after it is in: one save of this tab's after the merge would have lost it)
+    const dn = this.dropNote;
+    if (dn && !((meta.vv[dn.tab] || 0) > dn.t)) meta.dropped = dn; else this.dropNote = null;
     this.savedCopy = meta;
     this.savedMap = this.files;
     let merged = null;
@@ -7422,6 +7426,7 @@ class App {
       if (!cur || !cur.files || cur.t === prevT) return;
       if (!merged) return this.keepOtherTab(cur);
       if (put !== meta && this.savedCopy === meta) this.savedCopy = put;
+      if (merged.meta && merged.meta.dropped) this.dropNote = merged.meta.dropped;
       return this.takeOtherTab(meta, merged, cur);
     }));
     if (this.binaryDirty) {
@@ -7462,14 +7467,30 @@ class App {
     if (!vvHas(cur.vv, base.vv)) return null;
     const renamed = this.renamedThere(cur, meta.name, meta.nameT) ? cur.name : null;
     // (this tab's copy as "theirs": the side that wins where both changed the same words)
-    const { files, conflicts } = mergeProjects(new Map(base.files), new Map(cur.files), new Map(meta.files));
+    const { files, conflicts, wide } = mergeProjects(new Map(base.files), new Map(cur.files), new Map(meta.files));
     const same = !renamed && files.size === meta.files.length && meta.files.every(([n, t]) => files.get(n) === t);
     // (written again even when it is this tab's text, nothing of that tab's being new, to say it
     // comes from that tab's copy too: else that tab's next save, finding its own copy nowhere in
     // this one's, would keep it as another's; hT names no Undo steps where the text is the merge,
     // for those kept were written for this tab's text)
     const vv = vvJoin(meta.vv, cur.vv);
-    return { meta: same ? { ...meta, vv } : { ...meta, ...(renamed ? { name: renamed, nameT: cur.nameT } : {}), files: [...files], hT: 0, vv }, conflicts, renamed, same };
+    // (where both changed the same words this tab's are written: that tab, whose words they took
+    // out, is told so when it takes this copy in, not that it brought in what was typed here,
+    // review V4-B; it is known by its entry for its own copy)
+    const tab = Object.keys(cur.vv || {}).find((k) => cur.vv[k] === cur.t);
+    const dropped = conflicts.length && tab ? { tab, t: cur.t, wide: conflicts.map((f) => [f, wide.get(f) || 'words']) } : null;
+    const note = dropped ? { dropped } : {};
+    return { meta: same ? { ...meta, vv, ...note } : { ...meta, ...(renamed ? { name: renamed, nameT: cur.nameT } : {}), files: [...files], hT: 0, vv, ...note }, conflicts, wide, renamed, same };
+  }
+
+  // What another tab's copy says it took out of this tab's: where both changed the same words it
+  // kept its own and put this tab's text under Versions (review V4-B); '' where it took nothing.
+  droppedSaid(cur) {
+    const d = cur && cur.dropped;
+    if (!d || d.tab !== this.tabKey || !Array.isArray(d.wide) || this.droppedSeen === d.t) return '';
+    this.droppedSeen = d.t;
+    const wide = d.wide.filter(([, how]) => how !== 'words');
+    return 'Brought in what was typed in another tab. In ' + d.wide.map(([f]) => f).join(', ') + ' you both changed the same words, and that tab kept its own' + wideSaid(wide) + ': your text from before is under Review, Versions, as “From another tab”, and Compare brings words of it back.';
   }
 
   // The open project's id: made with its texts (opened, new, the sample, a version put in their
@@ -7507,7 +7528,7 @@ class App {
   // The merged copy written, this tab takes it as one step Ctrl+Z undoes, what was typed here
   // since the write staying on top, the caret where its words are.
   async takeOtherTab(meta, merged, cur) {
-    const both = (took) => (took ? 'Brought in what was typed in another tab. ' : 'This document is open in another tab too. ') + 'Where both tabs changed the same words, this one\'s are kept; that tab\'s are under Review, Versions, as “From another tab”.';
+    const both = (took) => (took ? 'Brought in what was typed in another tab. ' : 'This document is open in another tab too. ') + 'Where both tabs changed the same words, this one\'s are kept' + wideSaid(merged.wide) + '; that tab\'s are under Review, Versions, as “From another tab”.';
     // (nothing of that tab's but words this one changed again: those go to the versions)
     if (merged.same) return merged.conflicts.length ? this.keepOtherTab(cur, both(false)) : undefined;
     if (merged.renamed && this.name === meta.name && this.main === meta.main && this.pid === meta.pid) this.renamedHere(merged.renamed, cur.nameT);
@@ -7554,7 +7575,8 @@ class App {
     // (this tab has that tab's text now: its Allow is no longer refused, see allowMark)
     if (this.markStale) this.markStale.delete(this.name + '|' + this.main);
     // (Ctrl+Z takes out this person's own typing, not that tab's words: undoUnder)
-    this.toast('Brought in what was typed in another tab. Ctrl+Z undoes your own typing, not theirs.', 5000);
+    const dropped = this.droppedSaid(cur);
+    this.toast(dropped || 'Brought in what was typed in another tab. Ctrl+Z undoes your own typing, not theirs.', dropped ? 12000 : 5000);
   }
 
   // Ctrl+Z with another tab's words brought in at a save (takeOtherTab) on top of Undo's steps:
@@ -7661,7 +7683,8 @@ class App {
     // (and that tab's Track Changes base and switch: its edits stay its changes)
     this.rvCheckBase();
     // (Ctrl+Z takes out this person's own typing, not that tab's words: undoUnder)
-    this.toast('Brought in what was typed in another tab. Ctrl+Z undoes your own typing, not theirs.', 5000);
+    const dropped = this.droppedSaid(cur);
+    this.toast(dropped || 'Brought in what was typed in another tab. Ctrl+Z undoes your own typing, not theirs.', dropped ? 12000 : 5000);
   }
 
   resetToSample() {

@@ -566,6 +566,30 @@ def r4_tabs():
         click_text(pa, 'Second', 0); pa.keyboard.type('Z'); written(pa)
         check('tabs: a Rename inside a save that brings the other window\'s words in loses none of them (V2-D)', pb.evaluate('window.rikuy.name') == 'race2' and 'First AAA paragraph' in src(pb)
               and 'First AAA paragraph' in src(pa) and 'ZSecond BBB paragraph' in src(pa), (pb.evaluate('window.rikuy.name'), src(pa)[30:130], src(pb)[30:130]))
+        # (review V4-B) a document with no blank lines; one window wraps two lines in center and
+        # changes a word of the first and of two lines far off, the other changes the same word: the
+        # conflict takes the lines up to the other half of the wrap, not the whole file, the far
+        # lines stay, and each window is told what happened (the one whose words went: where they are)
+        WL = ['Line %d with some words.' % i for i in range(12)]
+        WDOC = lambda ls: '\\documentclass{article}\n\\begin{document}\n' + '\n'.join(ls) + '\n\\end{document}\n'
+        wa = list(WL); wa[5] = wa[5].replace('words', 'WORDS'); wa[0] = wa[0].replace('with', 'WITH'); wa[11] = wa[11].replace('with', 'WITH'); wa.insert(5, '\\begin{center}'); wa.insert(8, '\\end{center}')
+        wb = list(WL); wb[5] = wb[5].replace('words', 'terms'); wb[9] = wb[9].replace('some', 'many')
+        until(pb, '() => !window.rikuy.unsaved'); written(pb); pb.close()
+        pa.evaluate('(t) => { window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "wide1", "Opened"); window.rikuy.persist(); }', WDOC(WL)); written(pa)
+        pb = pa.context.new_page()
+        pb.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+        pb.goto('https://rikuy.test/'); ready(pb); pb.evaluate(STUB)
+        WHOLE = "(t) => { const g = window.rikuy, s = g.files.get('main.tex'); g.closeGroup(); g.commit([{ f: 'main.tex', s: 0, e: s.length, t }], null, 'type'); g.closeGroup(); }"
+        pa.evaluate(WHOLE, WDOC(wa)); written(pa)
+        pa.evaluate(SAID); pb.evaluate(SAID)
+        pb.evaluate(WHOLE, WDOC(wb)); written(pb)
+        said_b = ' '.join(pb.evaluate('() => window.rikuy.__said'))
+        click_text(pa, 'Line 3', 0); pa.keyboard.type('Z'); written(pa)
+        said_a = ' '.join(pa.evaluate('() => window.rikuy.__said'))
+        tb, ta = src(pb), src(pa)
+        check('tabs: a conflict that would split a wrap takes the lines up to its other half, the far lines of the other window stay (V4-B)', 'Line 0 WITH' in tb and 'Line 11 WITH' in tb and 'some terms' in tb and 'center' not in tb and 'many words' in tb, tb[40:400])
+        check('tabs: the window that kept its words says how far; the other, whose words went, is told where they are (V4-B)', 'same words' in said_b and 'other half' in said_b and 'that tab kept its own' in said_a and 'From another tab' in said_a
+              and 'Line 0 WITH' in ta and 'ZLine 3' in ta and 'center' not in ta, (said_b[:300], said_a[:300], ta[40:200]))
         check('tabs: no page errors', not errors, errors[:3])
         browser.close()
 

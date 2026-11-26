@@ -3,7 +3,7 @@
 // that are LaTeX comments in the source, a copy sent back that arrives as tracked changes, and
 // one click out to Overleaf or a plain .tex. The methods join App's prototype (app.js).
 
-import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, mergeProjects, commentOnly, onlyComments, commentsBack, bodyAt, linkRole } from './share.js';
+import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, mergeProjects, commentOnly, onlyComments, commentsBack, bodyAt, linkRole, wideSaid } from './share.js';
 import { kvGet, kvPut, kvDel } from './store.js';
 import { graphShort, graphWhole } from './graph.js';
 import { buildModel } from './model.js';
@@ -435,7 +435,7 @@ export const collab = {
     // (changes of your own waiting: kept, theirs come beside them, never into the base)
     const pending = !!this.base && this.realChanges().length > 0;
     // (a copy for comments only merged by whole lines: its comment lines never mix into text)
-    const { files, conflicts } = mergeProjects(baseFiles, mine, theirs, { words: role !== 'comments' });
+    const { files, conflicts, wide } = mergeProjects(baseFiles, mine, theirs, { words: role !== 'comments' });
     await this.snapshot('Before the changes from ' + by, { force: true });
     this.closeGroup();
     const edits = [];
@@ -451,7 +451,8 @@ export const collab = {
     const n = this.currentChanges().filter((x) => !commentOnly(x)).length;
     const c = [...this.files].reduce((k, [f, t]) => k + findComments(t, f).length, 0) - [...mine].reduce((k, [f, t]) => k + findComments(t, f).length, 0);
     let msg = edits.length ? by + "'s copy is in: " + plural(n, 'change', 'changes') + (c > 0 ? ' and ' + plural(c, 'comment', 'comments') : '') + ', marked on the page. Accept or reject each under Review.' : by + ' sent the document back unchanged.';
-    if (conflicts.length) msg += ' In ' + conflicts.join(', ') + ' you both changed the same words, so theirs are shown there; your text from before is under Review, Versions.';
+    // (and how far theirs were taken where a conflict would have split a pair: review V4-B)
+    if (conflicts.length) msg += ' In ' + conflicts.join(', ') + ' you both changed the same words, so theirs are shown there' + wideSaid(wide) + '; your text from before is under Review, Versions.';
     if (dropped) msg += ' The link let ' + by + ' comment only: ' + plural(dropped, 'edit of the text was', 'edits of the text were') + ' left out.';
     this.toast(msg, 12000);
   },
