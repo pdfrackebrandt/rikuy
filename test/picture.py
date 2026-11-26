@@ -1075,6 +1075,16 @@ def hunt(page):
         ok = src(page) == WRAP(want)
         page.keyboard.press('Control+z'); settle(page, 200)
         check('a float\'s only picture deleted takes what is left empty with it, one undo back: ' + repr(d[17:60]), ok and src(page) == WRAP(d), want)
+    # (round 4) and with a comment in it: the float stayed, drawn nowhere, and the letters typed
+    # next went into it, floated off to a page's top. It goes; the comment stays where it stood.
+    for d, want in (('Before it here.\n\n\\begin{figure}[h]\n\\centering\n% a comment\n\\includegraphics[width=0.3\\linewidth]{a.png}\n\\end{figure}\n\nAfter it here.', 'Before it here.\n% a comment\n\nZAfter it here.'),
+                    ('Before it here.\n\\begin{figure}[h]\n\\includegraphics[width=0.3\\linewidth]{a.png} % note\n\\end{figure}\nafter it.', 'Before it here.\n% note\nZafter it.'),
+                    ('Before it here.\n\n\\begin{figure}[h]\n\\begin{center}\n% in center\n\\includegraphics[width=0.3\\linewidth]{a.png}\n\\end{center}\n\\caption{Cap}\n\\end{figure}\n\nAfter it here.', 'Before it here.\n\n\\begin{figure}[h]\n% in center\n\\caption{ZCap}\n\\end{figure}\n\nAfter it here.')):
+        load_doc(page, WRAP(d)); settle(page, 300)
+        sel_pic()(page); page.keyboard.press('Delete'); settle(page, 200); page.keyboard.type('Z'); settle(page, 200)
+        ok = src(page) == WRAP(want)
+        page.keyboard.press('Control+z'); page.keyboard.press('Control+z'); settle(page, 200)
+        check('a float\'s only picture deleted with a comment beside it: the float goes, the comment kept, the letter typed outside it: ' + repr(d[17:60]), ok and src(page) == WRAP(d), src(page)[60:])
 
 
 # (round 3) Insert › Picture puts the picture where the caret is and selects it, as Word's: it went
