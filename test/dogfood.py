@@ -792,6 +792,12 @@ def real(page):
     click_text(page, 'names and', 5); k.press('Enter'); settle(page, 200); k.type('Q')
     settle(page, 200)
     check('real: Enter inside \\captionof{..} writes no second caption', src(page) == before.replace('names and', 'namesQ and'), src(page)[-160:])
+    # (review N2, N9) Enter in a letter's \closing is a line in it, \\: it wrote a blank line inside,
+    # which TeX refuses, and then a second \closing
+    load_doc(page, '\\documentclass{letter}\n\\signature{Pedro}\n\\begin{document}\n\\begin{letter}{Firm\\\\Town}\n\\opening{Dear Sir,}\nBody text here.\n\\closing{Kind regards, yours}\n\\end{letter}\n\\end{document}\n')
+    click_text(page, 'regards,', 8); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
+    check('real: Enter in \\closing{..} writes a line break in it', '\\closing{Kind regards,\\\\\nQ yours}' in src(page), src(page)[-120:])
+    compiles(page, 'real closing')
     # and in the middle of an environment's own title, \begin{definition}{Title} (a frame of the
     # document's own): a blank line went inside it, and TeX stopped ("Paragraph ended before \@textcolor")
     D2 = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\newenvironment{definition}[1]{\\par\\textcolor{black}{\\textbf{#1}}\\par}{\\par}\n\\usepackage{xcolor}').replace('Agent income here.', '\\begin{definition}{Rekurrentes Neuronale Netz}\nEin RNN ist.\n\\end{definition}')

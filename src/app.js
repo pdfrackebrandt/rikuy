@@ -3063,7 +3063,11 @@ class App {
       return;
     }
     const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
-    if (w.refuse) return;
+    if (w.refuse) {
+      // (\\ then the words after it on the next line; {} where a [ or a * follows, which \\ takes)
+      if (w.br) { const t = '\\\\' + (/^[ \t]*[[*]/.test(src.slice(p, p + 40)) ? '{}' : '') + '\n'; this.commit([...edits, { f, s: p, e: p, t }], { f, p: p + t.length, bias: 1 }, 'type'); }
+      return;
+    }
     // At a paragraph's start, where a blank line already stands before it: Word makes an empty
     // paragraph, which LaTeX has not, and each Enter piled blank lines up in the source (twelve
     // Enters, twelve). The empty paragraph shows above it, to type in (Up), the caret staying, as
@@ -3216,9 +3220,11 @@ class App {
       if (envs(src.slice(y.is, p)) > 0 || envs(src.slice(p, y.ie)) < 0) break;
       if (!y.page && !y.name && !list) { held.push(y); continue; }
       if (!y.page && holdsPars(y.name)) break;
-      // (a caption, a letter's closing or a title made twice would print twice, numbered twice:
-      // no break inside one, as none in a figure's caption)
-      if (!y.page && /^(?:caption|captionof|subcaption|closing|opening|signature|address|subject|title|subtitle|author|date|frametitle|framesubtitle|institute)$/.test(y.name)) return { p, close: '', open: '', refuse: true };
+      // (a caption, a title or a frame's title made twice would print twice, numbered twice: no
+      // break inside one, as none in a figure's caption; a letter's address, closing or signature,
+      // a title's or an author's lines take a line break, \\, as Word's Enter there makes a line)
+      if (/^(?:address|signature|closing|opening|subject|title|subtitle|author|institute)$/.test(y.name)) return { p, close: '', open: '', refuse: true, br: true };
+      if (/^(?:caption|captionof|subcaption|date|frametitle|framesubtitle)$/.test(y.name)) return { p, close: '', open: '', refuse: true };
       for (const g of [...held, y]) { close += src.slice(g.ie, g.e); open = src.slice(g.s, g.is) + open; }
       held.length = 0;
     }
