@@ -17,7 +17,8 @@ across the notes' files keeps the case of what it replaces. And the hostile revi
 (E1 to E10; then E11 to E18: review2; the verification's V1 to V9: review3).
 
 Round four, real documents (`real`): Enter in the words of a command of the document's own
-(\\question{..}) or in a caption of algorithm's float, and at the end of a list item in braces.
+(\\question{..}) or in a caption of algorithm's float, and at the end of a list item in braces;
+a word typed after an acronym's or a glossary entry's command (\\ac{KDE}, \\Gls{slp}).
 
   python3 dogfood.py [part ...]   parts: formula arrows textfield styles table caption cite paste
                                   split filename undo_words enter reload_undo mathpkg intertext envlist replace review review2 review3 real
@@ -754,6 +755,15 @@ def real(page):
     settle(page, 200)
     check('real: Enter inside an algorithm\'s caption writes no blank line in it', '\\caption{SolveX the problem}' in src(page) and src(page).replace('SolveX', 'Solve') == before, src(page)[-160:])
     compiles(page, 'real algorithm')
+    # \ac{KDE} and \Gls{slp}: an entry's key, drawn as a field; a word typed after it goes after
+    # its braces. It went into the key, and TeX stopped ("Glossary entry `slp Zq' has not been defined")
+    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\usepackage{acronym}\n\\usepackage{glossaries}\n\\newacronym{slp}{SLP}{single-layer perceptron}\n\\makeglossaries').replace('Agent income here.', 'Convallis \\ac{KDE} nec a erat. Egestas \\Gls{slp} Mauris.\n\n\\begin{acronym}\n\\acro{KDE}{K Desktop Environment}\n\\end{acronym}'))
+    for i in range(2):
+        page.evaluate("""(i) => { const a = [...document.querySelectorAll('#pages .atom')].filter((x) => /^(KDE|slp)$/.test(x.textContent))[i]; const r = document.createRange(); r.setStartAfter(a); r.collapse(true);
+          const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.getElementById('pages').focus(); }""", i)
+        settle(page, 100); k.type('Zq'); settle(page, 200)
+    check('real: a word typed after \\ac{..} or \\Gls{..} goes after its braces, not into its key', '\\ac{KDE}Zq nec' in src(page) and '\\Gls{slp}Zq Mauris' in src(page), src(page)[-200:])
+    compiles(page, 'real acronyms')
 
 
 with sync_playwright() as p:

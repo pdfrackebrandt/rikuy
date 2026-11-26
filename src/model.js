@@ -114,6 +114,10 @@ const INVIS = new Set([
 const CITE_CMDS = new Set(['cite', 'citet', 'citep', 'citealt', 'citealp', 'citeauthor', 'citeyear', 'citeyearpar',
   'Citet', 'Citep', 'Citealt', 'Citealp', 'Citeauthor', 'textcite', 'parencite', 'autocite', 'Textcite',
   'Parencite', 'Autocite', 'footcite', 'smartcite', 'citenum']);
+// (R4) acronym's and acro's \ac family, glossaries' \gls family and its acronyms' \acrshort family:
+// the argument is an entry's key; the silent ones mark an entry used or listed and print nothing
+const GLS_CMDS = /^(?:[aA]c(?:[slf]|fi)?p?\*?|ac[sl]u|[iI]ac|[gG]ls(?:pl)?|GLS(?:pl)?|[gG]ls(?:text|first|plural|firstplural|name|symbol|desc|useri)|GLS(?:text|name)|[aA]cr(?:short|long|full)(?:pl)?|ACR(?:short|long|full)(?:pl)?|[gG]lsentry(?:name|text|short|long|plural|symbol|desc)|[gG]lsxtr(?:short|long|full)(?:pl)?|glsadd|acused|glsreset|glsunset)$/;
+const GLS_SILENT = /^(?:glsadd|acused|glsreset|glsunset)$/;
 const REF_CMDS = new Set(['ref', 'eqref', 'pageref', 'cref', 'Cref', 'autoref', 'nameref', 'vref', 'Vref', 'labelcref']);
 const SECTIONS = { part: -1, chapter: 0, section: 1, subsection: 2, subsubsection: 3, paragraph: 4, subparagraph: 5 };
 // memoir's \setsecnumdepth{…} names
@@ -1121,6 +1125,8 @@ class Builder {
             O.parskip = typeof v === 'number' ? v / O.pt : 0.6; O.parindent = 0;
           }
           if (p === 'cleveref') { O.cleveref = true; O.crefCap = /capitali[sz]e/.test(op); }
+          // (R4) acronym's, acro's and glossaries' commands, whose argument is an entry's key
+          if (/^(?:acronym|acro|glossaries|glossaries-extra)$/.test(p)) O.gls = true;
           if (p === 'fullpage') O.margins = { l: 72.27, r: 72.27, t: 72.27, b: 72.27 };
           // (geometry with no options lays the page out by its own defaults; with pass it leaves
           // the class's layout and only sets the PDF's sheet)
@@ -3886,6 +3892,17 @@ class Builder {
       const file = FC[1] >= 0 && nd.args[FC[1]] ? texToPlain(this.argText(ctx, nd.args[FC[1]])).trim() : '';
       out.push(this.chip(ctx, nd.s, nd.e, FC[0] + (file ? ' ' + file : ''), '\\' + name + ': set in the PDF. Click to edit the command.'));
       return false;
+    }
+    // (R4) \ac{KDE}, \gls{slp}: the argument is an entry's key, which TeX writes out as the entry's
+    // words. Drawn as words of the text, a word typed after them went into the key ("Glossary entry
+    // `SLP Zqc' has not been defined"); a field of its own, the key shown, as \ref's number is
+    if (this.opts.gls && GLS_CMDS.test(name)) {
+      const a = nd.args.find((x) => x && !x.o);
+      if (a) {
+        acc.flush();
+        if (!GLS_SILENT.test(name)) out.push(this.atom(ctx, { k: 'chip', s: nd.s, e: nd.e, text: texToPlain(this.argText(ctx, a)).trim(), plain: true, title: '\\' + name + ': an entry of the acronyms or the glossary, written out by TeX in the PDF' }));
+        return false;
+      }
     }
     // Unknown command
     acc.flush();
