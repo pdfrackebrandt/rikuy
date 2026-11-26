@@ -1110,6 +1110,8 @@ class App {
     // what it holds. A font that came, the window resized (a phone's keyboard), a pane opened
     // after Enter lost it, and the next words went on the end of the line above)
     const G = c && c.ghost && this.ghost && !this.ghost.tex && !this.ghost.sticky ? { ...this.ghost } : null;
+    // (and those Enter at a paragraph's start showed above it, the caret staying at its start)
+    const K = !G && this.ghost && this.ghost.keepAt && !this.ghost.tex && !this.ghost.sticky && this.ghostKept() ? { ...this.ghost } : null;
     // (a dialog's field with the focus, the Font dialog's size box: the page's selection is not
     // there to read, so what the dialog acts on is read from its own range, to be put on the new
     // nodes; it kept the old ones and OK formatted the document's start. A dialog's alone: a pane's
@@ -1123,10 +1125,14 @@ class App {
       if (x && x.node && y && y.node) { const r = document.createRange(); r.setStart(x.node, x.offset); r.setEnd(y.node, y.offset); this.rbRange = r; }
     }
     if (G && !this.ghost) {
-      this.ghostAt(G.f, G.pos, G.style, G.line);
+      this.ghostAt(G.f, G.pos, G.style, G.line, G.before);
       if (this.ghost) {
         const el = this.ghost.el;
+        // (looking as it did, aligned as the paragraph it was made from: showGhost)
+        el.className = G.el.className;
         Object.assign(this.ghost, G, { el });
+        // (and as many empty lines as Enter made: the new one showed one)
+        this.ghostLines();
         if (G.pend) this.paintGhost();
         return;
       }
@@ -1145,6 +1151,22 @@ class App {
       if (x && x.node && y && y.node) {
         getSelection().setBaseAndExtent(x.node, x.offset, y.node, y.offset);
         if (this.rbRange) this.rbRange = getSelection().getRangeAt(0).cloneRange();
+      }
+    }
+    // The empty paragraphs Enter showed above the paragraph whose start the caret stays at: shown
+    // again before it, as many, the caret kept there. The pass took them away, so a font that came,
+    // the window resized (a phone's keyboard) or a pane opened lost them, and the next Enter began
+    // again at one.
+    if (K && !this.ghost && document.activeElement === this.root) {
+      const sel = getSelection(), keep = sel.rangeCount && sel.isCollapsed ? sel.getRangeAt(0).cloneRange() : null;
+      const n = keep && keep.startContainer, it = n && (n.nodeType === 1 ? n : n.parentElement).closest('.it');
+      if (it && this.root.contains(it)) {
+        this.showGhost(it, K.f, K.pos, { before: true });
+        const el = this.ghost.el;
+        el.className = K.el.className;
+        Object.assign(this.ghost, K, { el, keepAt: keep });
+        sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true;
+        this.ghostLines();
       }
     }
   }
@@ -2912,6 +2934,9 @@ class App {
     // paragraph above it, as Word's, and one Backspace or Undo takes one away (review V2). The
     // first was shown again in its place, so a second Backspace joined the two paragraphs.
     if (!soft && this.ghost && this.ghost.keepAt && this.ghostKept()) { this.ghost.n = (this.ghost.n || 1) + 1; this.ghostLines(); this.enterAct(); return; }
+    // (Enter again on the empty paragraph an Enter showed shows no second one: what is typed there
+    // is written as one paragraph after the one above, and a second empty line would vanish at the
+    // first key, the words drawn a line higher than the caret was; review B3)
     if (c.ghost) { if (this.ghost.tex) this.texGhostEnter(); else this.ghostLeaveEnv(); return; }
     const T = this.texHere();
     if (T && c.f === T.f) { this.texEnter(T, c); return; }
@@ -3064,7 +3089,7 @@ class App {
       // plain after them; \textsl{..} round a blank line stopped TeX, which takes no paragraph there)
       const out = this.wrapBreak(el, f, E.p);
       if (!out.close) E.p = out.p;
-      this.showGhost(itemEl, f, E.p);
+      this.showGhost(itemEl, f, E.p, { align: true });
       if (E.wrap && this.ghost) this.ghost.wrap = E.wrap;
       this.enterAct();
       return;
@@ -3077,7 +3102,7 @@ class App {
     const ps = c.collapsed && !w.close && itemEl && kind === 'p' ? PARA_START.exec(src.slice(Math.max(0, w.p - 400), w.p)) : null;
     if (ps) {
       const keep = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-      this.showGhost(itemEl, f, w.p - ps[1].length, { before: true });
+      this.showGhost(itemEl, f, w.p - ps[1].length, { before: true, align: true });
       if (keep) { sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true; if (this.ghost) this.ghost.keepAt = keep; }
       this.enterAct();
       return;
@@ -3157,8 +3182,16 @@ class App {
     const g = document.createElement('div');
     g.className = 'it p ghostp' + (!o.line && (afterEl.classList.contains('ind') || afterEl.classList.contains('p') || afterEl.classList.contains('tex')) ? ' ind' : '') + (o.style === 'latex' ? ' tex' : isEnvStyle(o.style) ? ' quote' : '');
     g.dataset.ctx = 'p';
+    // (a paragraph to a screen reader, as the page's own are: it was a bare generic node)
+    g.setAttribute('role', 'paragraph');
     // the new paragraph runs the way the one above it does
     if (afterEl.dir === 'rtl' || afterEl.dir === 'ltr') g.dir = afterEl.dir;
+    // (o.align: made by Enter at a paragraph's words, where it is written in the same flushright,
+    // center or flushleft: it is aligned as that paragraph, without the indent those set to none,
+    // as Word's new paragraph keeps the alignment. The caret was drawn at the left of a right
+    // aligned or centred paragraph, and the first letter typed jumped across.)
+    const al = o.align && [...afterEl.classList].find((k) => /^al-(?:left|center|right)$/.test(k));
+    if (al) { g.classList.add(al); if (!afterEl.classList.contains('ind')) g.classList.remove('ind'); }
     const s = document.createElement('span');
     s.className = 't gh';
     s.textContent = '\u200B';
@@ -3182,7 +3215,10 @@ class App {
     // a center hold paragraphs of their own, and one left out of a frame is set nowhere; review H3)
     const name = m && m[1].trim(), thm = name && (THM_STYLES[name] || name === 'assumption' || (this.model && this.model.thms && this.model.thms.has(name)));
     if (!m || !(thm || /^(quote|quotation|verse)$/.test(name))) return false;
-    const after = g.el.previousElementSibling;
+    // (after the environment's last element on the page: the element before the empty line was
+    // taken, the paragraph above a theorem where the line stood there)
+    const prev = g.el.previousElementSibling, B = this.renderer.blocks.find((b) => b.f === g.f && b.items.length && b.s < g.pos && g.pos < b.e);
+    const after = B && !(prev && prev.dataset.b === String(B.id)) ? [...this.root.querySelectorAll('.it[data-b="' + B.id + '"]')].pop() || prev : prev;
     if (!after) return false;
     this.showGhost(after, g.f, g.pos + m[0].length);
     return true;
@@ -3493,15 +3529,37 @@ class App {
     this.commit([{ f: T.f, s: g.pos, e: g.pos, t }], { f: T.f, p: g.pos + t.length + (g.tex === 'after' ? 1 : 0), bias: 1 }, 'enter');
   }
   // a blank paragraph for pos, after the block of the page that ends before it (before the one
-  // that starts after it, where none does)
-  ghostAt(f, pos, style, line) {
+  // that starts after it, where none does); before: one Enter showed at a paragraph's start
+  ghostAt(f, pos, style, line, before) {
     let prev = null, next = null;
+    // (a block's end may take in the line break after its last words, the last paragraph before
+    // \end{document}: a place between those words and that break is after it. The block before it
+    // was taken, and a relayout moved Enter's empty paragraph at the last paragraph's end above it)
+    const src = this.src(f), ends = (B) => B.e <= pos || (B.s < pos && !src.slice(pos, B.e).trim());
+    let inside = null;
     for (const B of this.renderer.blocks) {
       if (B.f !== f || !B.items.length) continue;
-      if (B.e <= pos && (!prev || B.e >= prev.e)) prev = B;
+      if (ends(B) && (!prev || B.e >= prev.e)) prev = B;
       if (B.s >= pos && (!next || B.s < next.s)) next = B;
+      if (B.s < pos && !ends(B)) inside = B;
     }
+    // (a place inside a block, at a paragraph's end in a theorem, a quote, a flushright: after
+    // that paragraph, found by the page's index. The block before the environment was taken, and
+    // the empty paragraph went above it. Only where the index has words ending there: a display
+    // is not in it, and the nearest words were taken, the line after a display in an item drawn
+    // after the next item, what was typed written on a line of its own, mathfield.py)
+    // (one made at a paragraph's start goes before the paragraph whose words start there: it went
+    // after it, below the paragraph, and what was typed was written above it; review B2)
+    const x = inside ? this.index.find(f, pos, before ? 1 : -1) : null, it = x && !x.inexact && x.node && x.node.parentElement ? x.node.parentElement.closest('.it.p') : null;
+    if (it && this.root.contains(it) && it.dataset.b === String(inside.id)) { this.showGhost(it, f, pos, { before: !!before, style, line }); return; }
     const els = (B) => [...this.root.querySelectorAll('.it[data-b="' + B.id + '"]')];
+    // (or after a display of the block ending there: the line after the display that ends a
+    // theorem, drawn above the theorem. Not in a list, where the letter after a display goes on
+    // the display's line, \]Q: mathfield.py)
+    if (inside && !before) {
+      const all = els(inside), d = all.some((e) => e.dataset.li) ? null : all.find((e) => { const i = e.dataset.a ? atomOfEl(e) : null; return !!i && i.f === f && i.e === pos; });
+      if (d) { this.showGhost(d, f, pos, { style, line }); return; }
+    }
     const at = prev ? els(prev).pop() : next ? els(next)[0] : null;
     if (at) this.showGhost(at, f, pos, { before: !prev, style, line });
   }

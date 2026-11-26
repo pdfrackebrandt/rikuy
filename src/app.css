@@ -855,7 +855,7 @@ body.pdf-on #pdfpane { display: flex; }
   .it.tex::before { content: none; }
 }
 /* a paragraph to come that is set to LaTeX, and a line to come in one */
-.ghostp.tex { min-height: 0; outline-offset: 0; }
+.ghostp.tex { min-height: 0; }
 .ghostp.tex.empty .gh::after { content: 'Type LaTeX here.'; font-family: var(--font-ui); }
 .it.tex .tex-gh { color: transparent; }
 .it.hrule { border-top: calc(var(--pt) * .4px) solid #111; margin: .4em 0; }
@@ -948,17 +948,18 @@ body.pdf-on #pdfpane { display: flex; }
 .lg-sc { font-variant: small-caps; text-transform: lowercase; }
 .lg-rev { display: inline-block; transform: scaleX(-1); vertical-align: -.22em; margin: 0 -.06em; }
 .mac { }
-.ghostp { outline: 1px dashed rgba(43, 116, 176, .45); outline-offset: 2px; min-height: var(--lh); }
+/* the empty paragraph Enter shows before anything is written: a line's height and nothing
+   else, as Word's empty paragraph (it had a dashed blue frame round it, which Word never draws) */
+.ghostp { min-height: var(--lh); }
 #pages.stale { opacity: .45; }
 /* the caret's hint, on the white page (dark page below). #3E4C59 on white is past 7:1;
    the old grey (#8A9098) was about 3:1 and disappeared into the paper */
-.ghostp.empty { outline: none; }
-.ghostp.empty .gh::after { content: 'Type here to start.'; color: #3E4C59; pointer-events: none; border-bottom: 1px dashed #7E97AD; }
+/* (plain words, as Word's placeholder text: no dashed line under them) */
+.ghostp.empty .gh::after { content: 'Type here to start.'; color: #3E4C59; pointer-events: none; }
 .empty-hint { display: block; max-width: 34em; margin-top: .7em; text-indent: 0; text-align: start; font: 13.5px/1.45 var(--font-ui); font-style: normal; color: #3E4C59; user-select: none; pointer-events: none; }
 .empty-hint p { margin: 0 0 .2em; }
 .empty-hint .empty-keys { font-size: 12.5px; }
 body.dark-page .ghostp.empty .gh::after, body.dark-page .empty-hint { color: #D5DDE6; }
-body.dark-page .ghostp.empty .gh::after { border-bottom-color: #8AA4BC; }
 @media print { .empty-hint { display: none !important; } .ghostp.empty .gh::after { content: none; } }
 .pbk { height: 0; }
 
@@ -1317,7 +1318,7 @@ body.nav-on.nav-wide #nav { width: 340px; }
   #pages { display: block !important; gap: 0 !important; caret-color: transparent; }
   .page { box-shadow: none !important; margin: 0 !important; break-after: page; break-inside: avoid; content-visibility: visible !important; contain: none !important; }
   .page:last-child { break-after: auto; }
-  .has-err, .ghostp { outline: none !important; }
+  .has-err { outline: none !important; }
 }
 
 /* sharing and comments (src/collab.js) */

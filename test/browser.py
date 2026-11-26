@@ -1708,6 +1708,14 @@ def run():
             browser, page, errors = open_page(p, width=w, height=h)
             enter_kept(page, w)
             check('no console errors (Enter kept, %d px)' % w, not errors, errors[:5])
+            ghost_looks(page, w)
+            ghost_last(page, w)
+            ghost_kept(page, w)
+            ghost_enters(page, w)
+            ghost_inside(page, w)
+            ghost_display(page, w)
+            ghost_aligned(page, w)
+            check('no console errors (Enter\'s empty paragraphs, %d px)' % w, not errors, errors[:5])
             browser.close()
 
         browser, page, errors = open_page(p, width=1366, height=900)
@@ -1776,6 +1784,213 @@ def enter_kept(page, w):
     got = page.evaluate("window.rikuy.rbRange ? window.rikuy.rbRange.toString() : null")
     check('a relayout with a dialog\'s field focused keeps what the dialog acts on (%d px)' % w, got == 'Second one', got)
     page.keyboard.press('Escape'); settle(page, 200)
+
+
+# every element of the pages (and its ::before and ::after) drawn with a dashed outline, border or
+# underline: the blank page's hint had a dashed line under it
+_DASHED = """() => [...document.querySelectorAll('#pages, #pages *')].flatMap((e) => [null, '::before', '::after'].map((x) => [e, x])).filter(([e, x]) => {
+  const c = getComputedStyle(e, x); if (x && c.content === 'none') return false;
+  return c.outlineStyle === 'dashed' || ['Top', 'Right', 'Bottom', 'Left'].some((d) => c['border' + d + 'Style'] === 'dashed') || (c.textDecorationLine !== 'none' && c.textDecorationStyle === 'dashed'); })
+  .map(([e, x]) => e.className + (x || ''))"""
+
+
+_GHOST_DOC = ('\\documentclass{article}\n\\begin{document}\nFirst paragraph with a note\\footnote{A note.} and $x^2$ in it, '
+              'long enough to run over two lines of the page, and Ctrl+Z gives back exactly the bytes you had.\n\nSecond one.\n\\end{document}\n')
+# where a word is drawn (x from its paragraph's left), its paragraph's indent and line height, the
+# caret, and Enter's empty paragraphs: how many, their height, their outline
+_GHOST_GEO = """(w) => { const sp = [...document.querySelectorAll('#pages span.t')].filter((x) => x.textContent.includes(w)).pop();
+  const it = sp.closest('.it'), i = sp.firstChild.data.indexOf(w), r = document.createRange(); r.setStart(sp.firstChild, i); r.setEnd(sp.firstChild, i + 1);
+  const R = r.getBoundingClientRect(), I = it.getBoundingClientRect(), s = getSelection(), C = s.rangeCount ? s.getRangeAt(0).getBoundingClientRect() : null;
+  const g = window.rikuy.ghost, cs = getComputedStyle(it);
+  return { x: R.left - I.left, y: R.top, ind: parseFloat(cs.textIndent) || 0, lh: parseFloat(cs.lineHeight), cx: C && C.left, cy: C && C.top,
+    n: g ? g.n || 1 : 0, gh: g ? g.el.getBoundingClientRect().height : 0, go: g ? getComputedStyle(g.el).outlineStyle : null }; }"""
+
+
+def ghost_looks(page, w):
+    """Enter's empty paragraph as Word's (Pedro, 2026-11-26): no frame round it (a dashed blue box
+    was drawn round it, on a white page, a dark one, in forced colours and on phones), and the blank
+    page's "Type here to start." plain words with no dashed line under them. Enter before a word
+    ends the paragraph there and starts the next at its indent; Enter twice more, two empty lines
+    above the word, the caret staying before it."""
+    load_doc(page, _GHOST_DOC)
+    click_text(page, 'had.')
+    page.keyboard.press('Enter'); settle(page, 100)
+    a = page.evaluate(_GHOST_GEO, 'had.')
+    check('Enter before a word: the paragraph ends there and the next starts at its indent, as TeX sets it (%d px)' % w,
+          'you \n\nhad.' in src(page) and abs(a['x'] - a['ind']) < 1.5 and a['ind'] > 5, (a, src(page)[-80:]))
+    page.keyboard.press('Enter'); settle(page, 100)
+    page.keyboard.press('Enter'); settle(page, 100)
+    b = page.evaluate(_GHOST_GEO, 'had.')
+    check('Enter twice more there: two empty lines above the word, the caret staying before it, nothing written (%d px)' % w,
+          b['n'] == 2 and abs(b['gh'] - 2 * b['lh']) < 2 and abs(b['y'] - a['y'] - 2 * b['lh']) < 2 and abs(b['cy'] - b['y']) < 3 and abs(b['x'] - b['ind']) < 1.5 and 'you \n\nhad.' in src(page), b)
+    # (a screen reader meets it as the paragraph it is, as those round it: it was a bare generic node)
+    roles = page.evaluate("[window.rikuy.ghost && window.rikuy.ghost.el.getAttribute('role'), document.querySelector('#pages .ghostp') && document.querySelector('#pages .ghostp').getAttribute('role')]")
+    check('the empty paragraph is a paragraph to a screen reader (%d px)' % w, roles == ['paragraph', 'paragraph'], roles)
+    for scheme in ('white page', 'dark page', 'forced colours'):
+        if scheme == 'dark page': page.evaluate("document.body.classList.add('dark-page')")
+        if scheme == 'forced colours': page.evaluate("document.body.classList.remove('dark-page')"); page.emulate_media(forced_colors='active')
+        d = page.evaluate(_DASHED)
+        check('no dashed frame round the empty paragraphs, nor any dashed line on the page (%s, %d px)' % (scheme, w), not d and page.evaluate(_GHOST_GEO, 'had.')['go'] == 'none', d)
+    page.emulate_media(forced_colors='none')
+    # the blank page's hint: plain words, as Word's placeholder text
+    page.click('#b-new')
+    page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000)
+    hint = page.evaluate("(() => { const c = getComputedStyle(document.querySelector('.ghostp.empty .gh'), '::after'); return [c.content, c.borderBottomStyle, c.textDecorationLine]; })()")
+    check('the blank page says "Type here to start." with no dashed line under it (%d px)' % w, 'Type here' in hint[0] and hint[1] == 'none' and hint[2] == 'none' and not page.evaluate(_DASHED), (hint, page.evaluate(_DASHED)))
+
+
+def ghost_last(page, w):
+    """Enter at the last paragraph's end, then a relayout (a font that came, the window resized, a
+    pane opened): the empty paragraph stays below the paragraph, the caret in it. Its block takes in
+    the line break before \\end{document}, so the place was read as inside it, and the empty
+    paragraph and the caret went above the paragraph (ghostAt)."""
+    load_doc(page, _GHOST_DOC)
+    click_text(page, 'Second one.', 11)
+    page.keyboard.press('Enter'); settle(page, 100)
+    page.evaluate('window.rikuy.relayout(true)'); settle(page, 100)
+    g = page.evaluate(_GHOST_GEO, 'Second')
+    check('Enter at the last paragraph\'s end, then a relayout: the empty paragraph stays below it, the caret in it (%d px)' % w,
+          g['n'] == 1 and abs(g['cy'] - g['y'] - g['lh']) < 2, g)
+    page.keyboard.type('New words'); settle(page, 200)
+    check('and words typed there go after it (%d px)' % w, 'Second one.\n\nNew words\n\n\\end{document}' in src(page), src(page)[-60:])
+
+
+def ghost_kept(page, w):
+    """Enter at a word's start, the caret staying at it, the empty paragraphs above it: a relayout
+    (a font that came, the window resized, a phone's keyboard, a pane) keeps them, as many, the
+    caret at the word, and the next Enter adds one. The pass took them away, and the next Enter
+    began again at one (the runner's 390 px run of ghost_looks met it, a font arriving between
+    two Enters)."""
+    load_doc(page, _GHOST_DOC)
+    click_text(page, 'had.')
+    for _ in range(3): page.keyboard.press('Enter'); settle(page, 100)
+    a = page.evaluate(_GHOST_GEO, 'had.')
+    split = src(page)
+    page.evaluate('window.rikuy.relayout(true)'); settle(page, 100)
+    r = page.evaluate(_GHOST_GEO, 'had.')
+    check('two empty paragraphs above a word, then a relayout: both still there, the caret at the word (%d px)' % w,
+          a['n'] == 2 and r['n'] == 2 and abs(r['gh'] - 2 * r['lh']) < 2 and abs(r['y'] - a['y']) < 2 and abs(r['cy'] - r['y']) < 3, (a, r))
+    page.keyboard.press('Enter'); settle(page, 100)
+    e = page.evaluate(_GHOST_GEO, 'had.')
+    check('and the next Enter makes a third (%d px)' % w, e['n'] == 3 and abs(e['y'] - a['y'] - e['lh']) < 2 and abs(e['cy'] - e['y']) < 3 and src(page) == split, e)
+    for _ in range(3): page.keyboard.press('Backspace'); settle(page, 100)
+    check('three Backspaces take the three, joining nothing (%d px)' % w, not page.evaluate('window.rikuy.ghost') and src(page) == split, src(page)[-80:])
+
+
+def ghost_enters(page, w):
+    """Enter again, or Shift+Enter, on the empty line Enter showed at a paragraph's end: no further
+    line. What is typed there is written as one paragraph after the one above, so a second empty
+    line would vanish at the first key (review B3 of ac721f5e: three lines shown, the words then
+    drawn two lines higher; Shift+Enter counted as Enter). The words land where the caret is drawn;
+    a relayout keeps the line; Backspace takes it, the text untouched."""
+    load_doc(page, _GHOST_DOC)
+    click_text(page, 'Second one.', 11)
+    for k in ('Enter', 'Enter', 'Shift+Enter', 'Enter'):
+        page.keyboard.press(k); settle(page, 100)
+    g = page.evaluate(_GHOST_GEO, 'Second')
+    check('Enter three times and Shift+Enter at a paragraph\'s end: one empty line, the caret on it, nothing written (%d px)' % w,
+          g['n'] == 1 and abs(g['gh'] - g['lh']) < 2 and abs(g['cy'] - g['y'] - g['lh']) < 2 and src(page) == _GHOST_DOC, g)
+    page.evaluate('window.rikuy.relayout(true)'); settle(page, 100)
+    r = page.evaluate(_GHOST_GEO, 'Second')
+    check('a relayout keeps it, the caret on it (%d px)' % w, r['n'] == 1 and abs(r['cy'] - g['cy']) < 2, (r, g))
+    check('and draws no dashed line round it (%d px)' % w, not page.evaluate(_DASHED), page.evaluate(_DASHED))
+    page.keyboard.type('New words'); settle(page, 200)
+    t = page.evaluate(_GHOST_GEO, 'New words')
+    check('words typed there land where the caret was drawn, nothing jumping, a paragraph of their own (%d px)' % w,
+          abs(t['y'] - g['cy']) < 2 and 'Second one.\n\nNew words\n\n\\end{document}' in src(page) and not page.evaluate('window.rikuy.ghost'), (t, g, src(page)[-60:]))
+    load_doc(page, _GHOST_DOC)
+    click_text(page, 'Second one.', 11)
+    page.keyboard.press('Enter'); settle(page, 100)
+    page.keyboard.press('Enter'); settle(page, 100)
+    page.keyboard.press('Backspace'); settle(page, 100)
+    u = page.evaluate(_GHOST_GEO, 'Second')
+    check('Backspace takes it, the text untouched, the caret back at the paragraph\'s end (%d px)' % w, u['n'] == 0 and src(page) == _GHOST_DOC and abs(u['cy'] - u['y']) < 3, (u, src(page)[-60:]))
+
+
+_ALIGNED_DOC = ('\\documentclass{article}\n\\usepackage{amsthm}\n\\newtheorem{theorem}{Theorem}\n\\begin{document}\nBefore it.\n\n'
+                '\\begin{flushright}\nRight words one.\n\nRight words two.\n\\end{flushright}\n\n\\begin{center}\nCentred words.\n\\end{center}\n\n'
+                '\\begin{theorem}\nTheorem words.\n\\end{theorem}\n\n\\begin{quote}\nQuoted words.\n\\end{quote}\n\nAfter it.\n\\end{document}\n')
+# the caret against the paragraph whose words w are: from its left, its right, its middle, below it
+_CARET_BY = """(w) => { const sp = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(w)), it = sp.closest('.it');
+  const I = it.getBoundingClientRect(), C = getSelection().getRangeAt(0).getBoundingClientRect(), g = window.rikuy.ghost;
+  return { left: C.left - I.left, right: I.right - C.left, mid: C.left - (I.left + I.width / 2), below: C.top - I.bottom, above: I.top - C.bottom,
+    after: !!g && g.el.previousElementSibling === it, before: !!g && g.el.nextElementSibling === it, cls: g && g.el.className }; }"""
+
+
+def ghost_inside(page, w):
+    """Enter at the end of a paragraph in an environment (a theorem, a quote, a flushright, one of
+    two there), then a relayout (a font that came, the window resized, a pane): the empty paragraph
+    stays right after that paragraph, the caret in it, and what is typed goes there. The
+    environment is one block of the page, and the place inside it was read as before it: the empty
+    paragraph and the caret went above the environment (ghostAt)."""
+    for words in ('Theorem words.', 'Quoted words.', 'Right words one.', 'Right words two.'):
+        load_doc(page, _ALIGNED_DOC)
+        click_text(page, words, len(words)); page.keyboard.press('Enter'); settle(page, 100)
+        page.evaluate('window.rikuy.relayout(true)'); settle(page, 100)
+        r = page.evaluate(_CARET_BY, words)
+        page.keyboard.type('Zz'); settle(page, 200)
+        check('Enter after %r, then a relayout: the empty paragraph and the caret right below it, the words typed after it (%d px)' % (words, w),
+              r['after'] and r['below'] > -2 and words + '\n\nZz\n\n' in src(page), (r, src(page)[src(page).find(words):][:60]))
+    # (review B2) at the paragraph's start, then Up into the empty paragraph above it: a relayout
+    # keeps it above, where what is typed is written; it went below the paragraph, the words above
+    for words in ('Theorem words.', 'Quoted words.', 'Right words one.', 'Right words two.'):
+        load_doc(page, _ALIGNED_DOC)
+        click_text(page, words); page.keyboard.press('Enter'); settle(page, 100)
+        page.keyboard.press('ArrowUp'); settle(page, 100)
+        page.evaluate('window.rikuy.relayout(true)'); settle(page, 100)
+        r = page.evaluate(_CARET_BY, words)
+        page.keyboard.type('Zz'); settle(page, 200)
+        s = src(page)
+        check('Enter at the start of %r, Up, then a relayout: the empty paragraph and the caret right above it, the words typed before it (%d px)' % (words, w),
+              r['before'] and r['above'] > -2 and 'Zz\n\n' + words in s, (r, s[s.find('Zz') - 30:][:80]))
+
+
+def ghost_display(page, w):
+    """The line after a display that ends a theorem (Esc out of the equation's field): drawn under
+    the equation, in the theorem, where what is typed goes; Enter twice, out of the theorem, under
+    its last line. It was drawn above the theorem, the caret there, though the words went after the
+    equation (review nit of bugs-ghost; main does it too)."""
+    D = ('\\documentclass{article}\n\\usepackage{amsmath,amsthm}\n\\newtheorem{theorem}{Theorem}\n\\begin{document}\nBefore.\n\n'
+         '\\begin{theorem}\nTheorem words:\n\\begin{equation}y=2\\end{equation}\n\\end{theorem}\n\nAfter.\n\\end{document}\n')
+    at = """() => { const g = window.rikuy.ghost, dm = document.querySelector('#pages .it.dm'), C = getSelection().getRangeAt(0).getBoundingClientRect();
+      return { after: !!g && g.el.previousElementSibling === dm, below: C.top - dm.getBoundingClientRect().bottom }; }"""
+    for keys, want, name in (([], 'y=2\\end{equation}\nZz\n\\end{theorem}', 'the line after it, in the theorem'),
+                             (['Enter', 'Enter'], '\\end{theorem}\n\nZz\n\nAfter.', 'Enter twice there: a paragraph after the theorem')):
+        load_doc(page, D)
+        page.click('.it.dm >> nth=0'); page.wait_for_selector('#pop-field', timeout=8000); settle(page, 300)
+        page.keyboard.press('Escape'); settle(page, 120, full=True)
+        for k in keys: page.keyboard.press(k); settle(page, 100)
+        a = page.evaluate(at)
+        page.keyboard.type('Zz'); settle(page, 300, full=True)
+        check('Esc out of a display ending a theorem, %s: the empty line and the caret under the equation, the words written there (%d px)' % (name, w),
+              a['after'] and a['below'] > -2 and want in src(page), (a, src(page)[src(page).find('Theorem words'):][:90]))
+
+
+def ghost_aligned(page, w):
+    """Enter in a right aligned or centred paragraph (\\begin{flushright}, \\begin{center}, Ctrl+R,
+    Ctrl+E): the empty paragraph is aligned as it, as Word's new paragraph keeps the alignment, the
+    caret drawn at the right or in the middle, a relayout keeping it so; what is typed is written in
+    the same environment and drawn there. The caret was drawn at the left, and the first letter
+    jumped across."""
+    load_doc(page, _ALIGNED_DOC)
+    click_text(page, 'Right words two.', 16); page.keyboard.press('Enter'); settle(page, 100)
+    a = page.evaluate(_CARET_BY, 'Right words two.')
+    check('Enter at a right aligned paragraph\'s end: the caret at the right of the empty one below it (%d px)' % w, a['after'] and abs(a['right']) < 2, a)
+    page.evaluate('window.rikuy.relayout(true)'); settle(page, 100)
+    r = page.evaluate(_CARET_BY, 'Right words two.')
+    check('a relayout keeps it there (%d px)' % w, r['after'] and abs(r['right']) < 2, r)
+    page.keyboard.type('Zz'); settle(page, 200)
+    z = page.evaluate("(() => { const sp = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent === 'Zz'); const it = sp.closest('.it'); return it.getBoundingClientRect().right - sp.getBoundingClientRect().right; })()")
+    check('what is typed there is a paragraph of the flushright, drawn at the right (%d px)' % w, 'Right words two.\n\nZz\n\n\\end{flushright}' in src(page) and abs(z) < 2, (z, src(page)[60:160]))
+    load_doc(page, _ALIGNED_DOC)
+    click_text(page, 'Right words two.'); page.keyboard.press('Enter'); settle(page, 100)
+    page.keyboard.press('ArrowUp'); settle(page, 100)
+    u = page.evaluate(_CARET_BY, 'Right words one.')
+    check('Enter at its start, then Up: the caret at the right of the empty paragraph between the two (%d px)' % w, u['after'] and abs(u['right']) < 2 and src(page) == _ALIGNED_DOC, u)
+    load_doc(page, _ALIGNED_DOC)
+    click_text(page, 'Centred words.', 14); page.keyboard.press('Enter'); settle(page, 100)
+    c = page.evaluate(_CARET_BY, 'Centred words.')
+    check('Enter at a centred paragraph\'s end: the caret in the middle of the empty one below it (%d px)' % w, c['after'] and abs(c['mid']) < 2, c)
 
 
 def crlf_enter(page):
