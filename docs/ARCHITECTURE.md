@@ -80,17 +80,6 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
   (`s`, `e`, inner `is`/`ie`, environment body `be`/`es`). `scanUserSigs()` first reads
   `\newcommand`/`\def` arities from all files and marks environments whose definition opens a
   TikZ picture as raw. See also `SIG`, `MATH_ENVS`, `RAW_ENVS`, `PARSE_CACHE`.
-  A file's text that differs from the cached one by an edit inside one run of text is not
-  parsed again: `editTree()` makes its tree from the last one (`parseCached()` finds the edit by
-  the two texts' common prefix and suffix), where the parse cannot have changed but for offsets
-  (inert characters in and out, after the run's first character that is no space, no blank line
-  made, no command before it that reads on by a pattern, no `$` scan near `MATH_BUDGET`; its
-  header lists them): the nodes before the edit are the same objects, those holding it copied,
-  those after it moved lazily (`moved()`: a node's offsets at once, its children on first read,
-  one cumulative shift). `test/native.test.mjs` and `test/incremental.test.mjs` hold every such
-  tree equal to `parseJS` and the core on edit streams of the repository's documents, random
-  text and the corpus, with planted edits it must leave to the parse; a development build checks
-  every eighth against the parse (`PARSE_CHECK`).
 - **Model.** `buildModel({files, main}, prev)` runs `Builder` (`src/model.js`): `preamble()`,
   `preCmd()`, `collectDefs()`, then `flow()` groups nodes into units (paragraph, heading, display
   math, list, theorem, float, table, bibliography) and `inl()`/`cmd()` build inline items;

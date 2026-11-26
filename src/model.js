@@ -1,7 +1,7 @@
 // Rikuy model: turns the syntax tree into blocks of flow items with
 // numbering, cross references and citations resolved. Every editable
 // character keeps a pointer to its exact source range.
-import { parse, scanUserSigs, CHARS, ACCENTS, splitRows, MATH_BUDGET, editTree, failedDollars } from './parser.js';
+import { parse, scanUserSigs, CHARS, ACCENTS, splitRows, MATH_BUDGET } from './parser.js';
 import { filesRead, resolveIn } from './scan.js';
 import { refsSetup, readIndexArg, indexKey, istRight } from './refsrc.js';
 import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bib.js';
@@ -426,8 +426,14 @@ const MATH_WRITES = /\\(?:label|intertext|shortintertext)\b|color/;
 // the most paragraphs one edit may touch and still be built alone
 const INCR_UNITS = 8;
 
-// (failedDollars, src/parser.js: a $ that found no partner; the parse's searches past MATH_BUDGET
-// depend on how many failed, and so on text far from the edit)
+// a $ that found no partner: the parse's searches past MATH_BUDGET depend on how many failed, and
+// so on text far from the edit
+function failedDollars(ns) {
+  let k = 0;
+  const walk = (xs) => { for (const n of xs) { if (n.t === 'special' && n.err && (n.ch === '$' || n.ch === '$$')) k++; if (n.nodes) walk(n.nodes); if (n.args) for (const a of n.args) if (a) walk(a.nodes); } };
+  walk(ns);
+  return k;
+}
 
 // An offset moved by the edits since a unit was built: steps [[at, d], ...], each in the
 // coordinates the one before it left (values in other files, and before `at`, stay)
@@ -791,40 +797,13 @@ function trimMasked(nodes, ranges) {
 }
 
 function parseCached(name, t, userSigs, sigKey, beamer = false) {
-  const ranges = [], hit = PARSE_CACHE.get(name);
-  // (the tests' oracle: the text parsed, the cache neither read nor written)
-  if (!PARSE_CHECK.on) { const x = maskOverlays(t, beamer, ranges); return ranges.length ? trimMasked(parse(x, { userSigs }), ranges) : parse(x, { userSigs }); }
+  const hit = PARSE_CACHE.get(name);
   if (hit && hit.text === t && hit.sig === sigKey && hit.beamer === beamer) return hit.nodes;
-  const masked = maskOverlays(t, beamer, ranges);
-  // A keystroke's text: its tree from the last one's where the parser can tell (editTree), not
-  // the whole text parsed again. Only for a text read as it is (no beamer overlays masked), with
-  // the same signatures; the $ that never closed are counted once per parse and kept.
-  if (hit && hit.plain && masked === t && hit.sig === sigKey && hit.beamer === beamer) {
-    const old = hit.text, m = Math.min(old.length, t.length), C = 4096;
-    let p = 0, q = 0;
-    while (p + C <= m && old.slice(p, p + C) === t.slice(p, p + C)) p += C;
-    while (p < m && old.charCodeAt(p) === t.charCodeAt(p)) p++;
-    while (q + C <= m - p && old.slice(old.length - q - C, old.length - q) === t.slice(t.length - q - C, t.length - q)) q += C;
-    while (q < m - p && old.charCodeAt(old.length - 1 - q) === t.charCodeAt(t.length - 1 - q)) q++;
-    if (hit.failed === undefined) hit.failed = failedDollars(hit.nodes);
-    let nodes = editTree(hit.nodes, old, t, p, old.length - q - p, hit.failed);
-    // (a development build holds every eighth against the parse, and takes the parse on a difference)
-    if (nodes && PARSE_CHECK.every && ++PARSE_CHECK.n % PARSE_CHECK.every === 0) {
-      const full = parse(t, { userSigs });
-      if (JSON.stringify(full) !== JSON.stringify(nodes)) { PARSE_CHECK.mismatch++; console.warn('Rikuy: the edited parse tree differed from the parse; the parse is used'); nodes = full; }
-    }
-    if (nodes) {
-      PARSE_CHECK.edited++;
-      PARSE_CACHE.set(name, { text: t, sig: sigKey, nodes, beamer, plain: true, failed: hit.failed });
-      return nodes;
-    }
-  }
+  const ranges = [], masked = maskOverlays(t, beamer, ranges);
   const nodes = ranges.length ? trimMasked(parse(masked, { userSigs }), ranges) : parse(masked, { userSigs });
-  PARSE_CACHE.set(name, { text: t, sig: sigKey, nodes, beamer, plain: masked === t });
+  PARSE_CACHE.set(name, { text: t, sig: sigKey, nodes, beamer });
   return nodes;
 }
-// how many trees editTree made, and the development build's check of them (for the tests)
-export const PARSE_CHECK = { on: true, every: typeof __RIKUY_DEV__ !== 'undefined' && __RIKUY_DEV__ ? 8 : 0, n: 0, edited: 0, mismatch: 0 };
 
 class Builder {
   constructor(project, prev) {

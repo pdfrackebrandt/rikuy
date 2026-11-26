@@ -8,8 +8,7 @@
 //   the offset guard; with a LaTeX-examples clone also every document of it: CI's corpus job)
 import fs from 'fs';
 import path from 'path';
-import { buildModel, INCR, OFFSET_KEYS, sameModels, sharedParts, PARSE_CHECK, parsedText } from '../src/model.js';
-import { parseJS, scanUserSigs } from '../src/parser.js';
+import { buildModel, INCR, OFFSET_KEYS, sameModels, sharedParts } from '../src/model.js';
 import { buildWordDoc } from '../src/wordast.js';
 
 const root = new URL('..', import.meta.url).pathname;
@@ -28,7 +27,7 @@ const TYPED = ['a', 'b', 'e', 'x', ' ', ' ', 'word ', 'Z', 'é', '😀', '--', "
   '\\cite{k}', '\\ref{sec:1}', '\\label{new}', '\\footnote{n}', '\n', '\n\n', '% c\n', '\\section{S}', '\\newcommand{\\q}{Q}', '\\verb|v|', '$\\ref{x}$', '\\ldots{}', "\\'e", '\\\\'];
 
 const PLAIN = ['a', 'e', 'n', 's', 't', ' ', 'the ', 'X', 'é', '.', ','];
-let steps = 0, fast = 0, shareSteps = 0, shareFast = 0, edits = 0;
+let steps = 0, fast = 0, shareSteps = 0, shareFast = 0;
 // (the documents whose every edit is meant to leave the fast path: R3's objects sit in a Form, its
 // fields read the page, so each keystroke there is a full build. Their edits are compared with the
 // full build as every other's; they only stay out of the share of edits the fast path takes, which
@@ -54,23 +53,13 @@ function streamOf(name, files, main, n) {
     const ins = rnd() < 0.15 && del ? '' : rnd() < 0.75 ? pick(PLAIN) : pick(TYPED);
     const next = new Map(cur);
     next.set(main, t.slice(0, at) + ins + t.slice(Math.min(t.length, at + del)));
-    const before = INCR.reused, edited = PARSE_CHECK.edited;
+    const before = INCR.reused;
     INCR.on = true;
     let a, b;
     try { a = buildModel({ files: next, main }, prev); } catch (e) { a = 'throws ' + e.message; }
-    // the oracle: the full build from a parse of the whole text (src/model.js PARSE_CHECK)
-    INCR.on = false; PARSE_CHECK.on = false;
+    INCR.on = false;
     try { b = buildModel({ files: next, main }, prev); } catch (e) { b = 'throws ' + e.message; }
-    INCR.on = true; PARSE_CHECK.on = true;
-    // and the tree a keystroke made from the last one's (src/parser.js editTree), the parse's
-    if (PARSE_CHECK.edited > edited) {
-      edits++;
-      // (with the signatures of every file of the project, as the model's parse has them)
-      const sigs = {};
-      for (const [n, x] of next) if (!/\.html?$/i.test(n)) scanUserSigs(x, sigs);
-      const tx = next.get(main), mine = parsedText(tx), full = parseJS(tx, sigs);
-      if (JSON.stringify(mine) !== JSON.stringify(full)) { check(name + ' edit ' + k + ' at ' + at + ' ' + JSON.stringify(ins) + ' -' + del + ': the edited tree', false, first(JSON.stringify(mine), JSON.stringify(full))); return; }
-    }
+    INCR.on = true;
     steps++;
     if (INCR.reused > before) fast++;
     const sa = typeof a === 'string' ? a : ser(a), sb = typeof b === 'string' ? b : ser(b);
@@ -181,9 +170,6 @@ docs.forEach(([name, files, main], i) => {
 // (B9, R1, R2, the LaTeX paragraph) are mostly what the fast path leaves to the full build. Where
 // it must be taken is checked exactly below.)
 check('every edit of every stream: the incremental model is the full build\'s (' + steps + ' edits, ' + fast + ' on the fast path, ' + docs.length + ' documents)', fail === failsBefore && shareFast > shareSteps / 40, [steps, fast, shareSteps, shareFast]);
-// (and the parse made from the last tree, src/parser.js editTree: every such tree the parse's, and
-// typing's letters and spaces, three edits in four, take it often)
-check('every tree a keystroke made from the last one is the parse of its text (' + edits + ' of ' + steps + ' edits)', fail === failsBefore && edits > steps / 10, [edits, steps]);
 // The fast path taken where it should be, whatever the streams pick: a keystroke in the middle of
 // each paragraph of each repository document, against the count of 2026-11-20 (the same as with
 // the sources of f5bb84d, task 53's, for every document both read alike; R1's two were full builds
