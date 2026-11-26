@@ -28,7 +28,7 @@ const PLACEHOLDER_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAAAAACRn/EaAAAACXBIWXM
 const PLACEHOLDER_EPS = '%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 320 240\n0.85 setgray 0 0 320 240 rectfill\n0.6 setgray 2 setlinewidth 1 1 318 238 rectstroke\nshowpage\n';
 import { texToPlain, shortAuthors, entryYear, parseBib } from './bib.js';
 import { kvGet, kvPut, kvDel, kvSwap, decodeText, encodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
-import { changes, spacingOnly } from './diff.js';
+import { changes, spacingOnly, hunks } from './diff.js';
 import { TeXEngine, parseTeXLog, issueText } from './tex.js';
 import { PdfView } from './pdfview.js';
 import { collab, installCollab, cleanProjectName } from './collab.js';
@@ -59,7 +59,7 @@ import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packag
 import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, THM_STYLES, titleInfo } from './styles.js';
 import { tableAt, cellAt as tableCellAt, colAlign, clipToCell, clearCells, blockTabular } from './table.js';
 import { eolAt } from './blockenv.js';
-import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
+import { shareParam, texParam, commentOnly, cleanPath, mergeProjects, merge3 } from './share.js';
 import { version as VERSION } from '../package.json';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
 import { scriptNeeds, scriptLines, addScriptSetup, scriptName, scriptSetup, MORE } from './scripts.js';
@@ -634,6 +634,7 @@ class App {
     let saved = null;
     try { saved = await kvGet('project'); } catch (e) { saved = null; this.noIdb = true; }
     this.savedT = saved ? saved.t : null; // the copy in IndexedDB this tab last read or wrote
+    this.savedCopy = saved; // (and its text: what another tab's copy and this one's both come from)
     const ls = load(STORE);
     if (ls && ls.files && (!saved || (ls.t || 0) > (saved.t || 0))) saved = ls; // a session that could not use IndexedDB
     if (this.newPrefs) {
@@ -666,6 +667,9 @@ class App {
         }
       } catch (e) { /* text still loads */ }
     } else this.loadSample();
+    // (the texts savedCopy is the stored copy of: a project opened over them, a new Map, comes
+    // from no copy another tab's could be merged with, see persist)
+    this.savedMap = this.files;
     this.bindUI();
     this.applyPrefs();
     this.updateUndoUI();
@@ -7385,7 +7389,21 @@ class App {
       jobs.push(kvPut('history', this.historyKept(meta)).catch(() => { this.histSig = null; }));
     }
     meta.hT = this.histT;
-    jobs.push(kvSwap('project', meta).then((cur) => { if (cur && cur.files && cur.t !== prevT) return this.keepOtherTab(cur); }));
+    // Another tab's copy found in place of this tab's last is merged with this one in the same
+    // write (mergeOtherTab), from the copy both come from: two windows side by side on one
+    // document each kept typing on its own copy, and each save put the other's words into the
+    // versions, out of the document.
+    const base = this.savedMap === this.files ? this.savedCopy : null;
+    this.savedCopy = meta;
+    this.savedMap = this.files;
+    let merged = null;
+    const over = (cur) => (cur && cur.files && cur.t !== prevT && (merged = this.mergeOtherTab(base, meta, cur)) ? merged.meta : null);
+    jobs.push(kvSwap('project', meta, over).then(({ was: cur, put }) => {
+      if (!cur || !cur.files || cur.t === prevT) return;
+      if (!merged) return this.keepOtherTab(cur);
+      if (put !== meta && this.savedCopy === meta) this.savedCopy = put;
+      return this.takeOtherTab(meta, merged, cur);
+    }));
     if (this.binaryDirty) {
       this.binaryDirty = false;
       jobs.push(kvPut('binary', {
@@ -7400,12 +7418,72 @@ class App {
 
   // Another tab saved this project (or another one) after this tab last read it: keep that text
   // as a named version, so it is never pruned, and say where it is.
-  async keepOtherTab(cur) {
+  async keepOtherTab(cur, said) {
     const sig = textSig(cur.main, cur.files);
     if (sig === textSig(this.main, [...this.files.entries()])) return;
     try { await snapAdd({ t: Date.now(), label: 'From another tab', named: true, name: cur.name || cur.main, main: cur.main, sig, files: cur.files }); } catch (e) { return; }
     this.snapList = null;
-    this.toast('This document is open in another tab too. What that tab saved is kept under Review, Versions, as “From another tab”.', 9000);
+    this.toast(said || 'This document is open in another tab too. What that tab saved is kept under Review, Versions, as “From another tab”.', 9000);
+  }
+
+  // The copy to write when another tab of this browser saved this project (cur) since this tab
+  // last read or wrote it (base): the two tabs' texts merged as a coauthor's copy is (src/share.js),
+  // so both tabs' words are kept; where both changed the same words, this tab's, typed last, are
+  // written. Called inside the write's transaction, so no tab reads the copy in between. null
+  // where cur is another project or this tab knows no copy both come from.
+  mergeOtherTab(base, meta, cur) {
+    if (!base || !Array.isArray(base.files) || !Array.isArray(cur.files)) return null;
+    if (cur.name !== meta.name || cur.main !== meta.main || base.name !== meta.name || base.main !== meta.main) return null;
+    // (this tab's copy as "theirs": the side that wins where both changed the same words)
+    const { files, conflicts } = mergeProjects(new Map(base.files), new Map(cur.files), new Map(meta.files));
+    const same = files.size === meta.files.length && meta.files.every(([n, t]) => files.get(n) === t);
+    // (hT names no Undo steps: those kept were written for this tab's text, not the merged one)
+    return { meta: same ? null : { ...meta, files: [...files], hT: 0 }, conflicts };
+  }
+
+  // The merged copy written, this tab takes it as one step Ctrl+Z undoes, what was typed here
+  // since the write staying on top, the caret where its words are.
+  async takeOtherTab(meta, merged, cur) {
+    const both = (took) => (took ? 'Brought in what was typed in another tab. ' : 'This document is open in another tab too. ') + 'Where both tabs changed the same words, this one\'s are kept; that tab\'s are under Review, Versions, as “From another tab”.';
+    // (nothing of that tab's but words this one changed again: those go to the versions)
+    if (!merged.meta) return merged.conflicts.length ? this.keepOtherTab(cur, both(false)) : undefined;
+    const mine = () => this.name === meta.name && this.main === meta.main;
+    if (!mine()) return this.keepOtherTab(cur);
+    // (that tab may have marked the project a stranger's since this one read its mark, as an
+    // archive dropped there does: read again before its text is drawn and compiled here, V2)
+    await this.freshMark();
+    if (!mine()) return this.keepOtherTab(cur);
+    this.syncEngineMenu();
+    const W = new Map(meta.files), edits = [];
+    const want = new Map();
+    for (const [n, t] of merged.meta.files) {
+      const now = this.files.get(n), was = W.get(n);
+      const to = now === was ? t : merge3(was ?? '', t, now ?? '').text;
+      want.set(n, to);
+      if (now === undefined) { edits.push({ f: n, s: 0, e: 0, t: to }); continue; }
+      for (const h of hunks(now, to)) edits.push({ f: n, s: h.as, e: h.as + h.a.length, t: h.b });
+    }
+    let caret = this.caretNow();
+    if (caret && caret.f != null && !caret.ghost) {
+      // (the edits in the order of the text, offsets in it as it is now: one the caret is inside
+      // puts it after what replaced it)
+      let d = 0;
+      for (const ed of edits) if (ed.f === caret.f && ed.s < caret.p) d += ed.e <= caret.p ? ed.t.length - (ed.e - ed.s) : ed.s + ed.t.length - caret.p;
+      caret = { f: caret.f, p: caret.p + d };
+    } else caret = null;
+    if (edits.length) {
+      this.closeGroup();
+      this.commit(edits, caret, 'other-tab');
+      this.closeGroup();
+      // (and that tab's Track Changes base and switch: its edits stay its changes)
+      if (this.rvCheckBase) this.rvCheckBase();
+    }
+    // (refused, as in a link for comments only: that tab's text is kept as a version, as before)
+    if ([...want].some(([n, t]) => this.files.get(n) !== t)) return this.keepOtherTab(cur);
+    if (merged.conflicts.length) return this.keepOtherTab(cur, both(true));
+    // (this tab has that tab's text now: its Allow is no longer refused, see allowMark)
+    if (this.markStale) this.markStale.delete(this.name + '|' + this.main);
+    this.toast('Brought in what was typed in another tab. Ctrl+Z undoes it.', 5000);
   }
 
   // Back in this tab after working in another one on the same project: take its text, as one
@@ -7426,6 +7504,7 @@ class App {
     const edits = [];
     for (const [n, t] of cur.files) { const was = this.files.get(n); if (was !== t) edits.push({ f: n, s: 0, e: was == null ? 0 : was.length, t }); }
     this.savedT = cur.t;
+    this.savedCopy = cur;
     // (this tab has that tab's text now: its Allow is no longer refused, see allowMark)
     if (this.markStale) this.markStale.delete(this.name + '|' + this.main);
     if (!edits.length) return;

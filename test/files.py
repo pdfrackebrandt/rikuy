@@ -413,8 +413,82 @@ def cross_files():
         browser.close()
 
 
+# R4: one project in two windows side by side, both shown: each kept typing on its own copy,
+# and each save put the other window's words into the versions, out of the document. A save now
+# merges what the other window saved since (as a coauthor's copy is), keeps the caret by its
+# words, keeps this window's words where both changed the same ones (the other's go to the
+# versions, said), and leaves another project's text alone.
+TWO = '\\documentclass{article}\n\\begin{document}\nFirst paragraph words here.\n\nSecond paragraph words here.\n\\end{document}\n'
+STORED = """async () => { const r = await new Promise((res) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const g = q.result.transaction('kv').objectStore('kv').get('project'); g.onsuccess = () => res(g.result); }; }); return [r.name, new Map(r.files).get(r.main)]; }"""
+def r4_tabs():
+    from browser import saved as written, ready
+    with sync_playwright() as p:
+        browser, pa, errors = open_page(p)
+        pa.evaluate('(t) => { window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "two", "Opened"); window.rikuy.persist(); }', TWO)
+        written(pa)
+        pb = pa.context.new_page()
+        pb.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+        pb.goto('https://rikuy.test/'); ready(pb)
+        pa.evaluate(SAID); pb.evaluate(SAID)
+        click_text(pa, 'First paragraph', 5); pa.keyboard.type(' AAA'); written(pa)
+        click_text(pb, 'Second paragraph', 6); pb.keyboard.type(' BBB'); written(pb)
+        check('tabs: a save brings in what the other window saved, its own words kept', 'First AAA paragraph' in src(pb) and 'Second BBB paragraph' in src(pb), src(pb))
+        check('tabs: and the copy kept has both', pa.evaluate(STORED)[1] == src(pb), pa.evaluate(STORED))
+        check('tabs: it says so', any('Brought in what was typed in another tab' in x for x in pb.evaluate('() => window.rikuy.__said')), pb.evaluate('() => window.rikuy.__said'))
+        pb.keyboard.type('X')
+        check('tabs: the caret stays after the words typed there', 'Second BBBX paragraph' in src(pb), src(pb))
+        written(pb)
+        click_text(pa, 'Second', 0); pa.keyboard.type('CCC '); written(pa)
+        check('tabs: and the other window, at its next save, brings those in', 'First AAA paragraph' in src(pa) and 'CCC Second BBBX paragraph' in src(pa), src(pa))
+        # the same word changed in both: the window that saves last keeps its own, the other's goes
+        # to the versions, and the user hears it
+        pb.evaluate('() => window.rikuy.adoptOtherTab()')
+        until(pb, '() => window.rikuy.files.get("main.tex").includes("CCC")')
+        pa.evaluate(SAID); pb.evaluate(SAID)
+        pa.evaluate("() => window.rikuy.commit([{ f: 'main.tex', s: window.rikuy.files.get('main.tex').indexOf('words here.\\n\\nCCC'), e: window.rikuy.files.get('main.tex').indexOf('words here.\\n\\nCCC') + 5, t: 'terms' }], null, 'type')")
+        written(pa)
+        pb.evaluate("() => window.rikuy.commit([{ f: 'main.tex', s: window.rikuy.files.get('main.tex').indexOf('words here.\\n\\nCCC'), e: window.rikuy.files.get('main.tex').indexOf('words here.\\n\\nCCC') + 5, t: 'items' }], null, 'type')")
+        written(pb)
+        has = pb.evaluate('async () => { for (const v of await window.rikuy.allSnaps()) { const f = new Map(await window.rikuy.versionFiles(v) || []); if (v.label === "From another tab" && (f.get("main.tex") || "").includes("AAA paragraph terms here")) return true; } return false; }')
+        check('tabs: the same word changed in both: this window\'s is kept, the other\'s under Versions', 'AAA paragraph items here' in src(pb) and pa.evaluate(STORED)[1] == src(pb) and has, (src(pb), has))
+        check('tabs: and it says so', any('changed the same words' in x for x in pb.evaluate('() => window.rikuy.__said')), pb.evaluate('() => window.rikuy.__said'))
+        # another project in the other window: nothing of it comes in
+        pa.evaluate("() => { window.rikuy.loadProject(new Map([['main.tex', '\\\\documentclass{article}\\n\\\\begin{document}\\nOther project.\\n\\\\end{document}\\n']]), 'main.tex', 'other', 'Opened'); window.rikuy.persist(); }")
+        written(pa)
+        click_text(pb, 'First', 0); pb.keyboard.type('Z'); written(pb)
+        check('tabs: another project saved in the other window does not come in', 'Other project' not in src(pb) and 'ZFirst' in src(pb) and pa.evaluate(STORED)[0] == 'two', (src(pb)[:120], pa.evaluate(STORED)))
+        # a stranger's archive dropped in the other window marks the project there: this window,
+        # bringing its files in at a save, compiles restricted too (as adoptOtherTab does, V2)
+        PAPER = '\\documentclass{article}\n\\usepackage{defs}\n\\begin{document}\nMine here.\n\\end{document}\n'
+        pb.evaluate("(fs) => { window.rikuy.loadProject(new Map(fs), 'paper.tex', 'tabs2', 'Opened'); window.rikuy.persist(); }", [['paper.tex', PAPER], ['defs.sty', '\\ProvidesPackage{defs}\n']])
+        written(pb)
+        pa.goto('https://rikuy.test/'); ready(pa)
+        pa.evaluate(STUB); pb.evaluate(STUB)
+        z = io.BytesIO()
+        with zipfile.ZipFile(z, 'w') as f: f.writestr('defs.sty', '\\ProvidesPackage{defs}\n\\immediate\\write18{echo pwned}\n')
+        path = os.path.join(TMP, 'defs-r4.zip'); open(path, 'wb').write(z.getvalue())
+        pa.set_input_files('#fileinput', path)
+        pa.wait_for_function("() => (window.rikuy.files.get('defs.sty') || '').includes('write18')", timeout=10000)
+        pa.evaluate('window.rikuy.persist()'); written(pa)
+        click_text(pb, 'Mine here', 4); pb.keyboard.type(' too'); written(pb)
+        until(pb, "() => (window.rikuy.files.get('defs.sty') || '').includes('write18')")
+        f = pb.evaluate(FLAGS)
+        check('tabs: a stranger\'s archive brought in from the other window at a save compiles restricted', 'Mine too here' in src(pb, 'paper.tex') and f['mark'] and f['mark']['allowed'] is False and f['se'] is False, f)
+        check('tabs: no page errors', not errors, errors[:3])
+        browser.close()
+
+
 if sys.argv[1:] == ['cross']:
     try: cross_files()
+    except Exception as e:
+        traceback.print_exc()
+        check('the run reaches its end', False, e)
+    bad = [r for r in results if not r[1]]
+    print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
+    sys.exit(1 if bad else 0)
+
+if sys.argv[1:] == ['r4tabs']:
+    try: r4_tabs()
     except Exception as e:
         traceback.print_exc()
         check('the run reaches its end', False, e)
@@ -818,6 +892,7 @@ try:
             browser.close()
     marks()
     cross_files()
+    r4_tabs()
 except Exception as e:
     # a run that stops part way has failed, whatever the checks before it said
     traceback.print_exc()
