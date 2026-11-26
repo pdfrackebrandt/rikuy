@@ -437,6 +437,26 @@ await ok('what a coauthor puts beside a word the other side changed merges: fift
   assert.equal(merge3('the users data\n', "the user's data\n", "the users' data\n").clean, false);
 });
 
+await ok('a conflict never keeps half of a pair: braces, math, an environment, brackets, quotes (R4 review V2-B)', () => {
+  const bal = (t) => ['{}', '()', '[]'].every(([o, c]) => t.split(o).length === t.split(c).length) && (t.match(/(?<!\\\\)\$/g) || []).length % 2 === 0
+    && (t.match(/\\\\begin\b/g) || []).length === (t.match(/\\\\end\b/g) || []).length && !/`/.test(t.replace(/`[^`']*'/g, ''));
+  const cases = [
+    ['We study a b c here.\n', 'We study \\emph{a b cc} here.\n', 'We study a b C here.\n'],
+    ['where x plus y holds\n', 'where $x plus yy$ holds\n', 'where x plus Y holds\n'],
+    ['see a b c now\n', 'see \\begin{em}a b cc\\end{em} now\n', 'see a b C now\n'],
+    ['as a b c here\n', 'as (a b cc) here\n', 'as a b C here\n'],
+    ['make it bold now\n', 'make \\textbf{it bolder} now\n', 'make it BOLD now\n'],
+    ['a test here\n', "a `tests' here\n", 'a exam here\n'],
+  ];
+  for (const [b, m, t] of cases) {
+    const r = merge3(b, m, t);
+    assert.equal(r.clean, false, b);
+    assert.ok(bal(r.text), JSON.stringify(r.text));
+  }
+  // where both halves stay, my other words of the line are still kept (nit 6)
+  assert.deepEqual(merge3('We study the efect of taxes on growth.\n', 'We study the effects of high taxes on growth.\n', 'We study the effect of taxes on growth.\n'), { text: 'We study the effect of high taxes on growth.\n', clean: false });
+});
+
 await ok('a comment line\'s own words start after its head\'s colon, not one in the quoted words (R4)', () => {
   const l = '% comment (Ana) on "ratio: two": Check this';
   assert.equal(l.slice(commentBodyAt(l)), 'Check this');

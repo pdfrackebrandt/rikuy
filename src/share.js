@@ -397,6 +397,9 @@ export function merge3(base, mine, theirs, { words: byWords = true, budget = nul
   if (mine === base) return { text: theirs, clean: true };
   return combine(base, lineEdits(base, mine), lineEdits(base, theirs), byWords ? budget || mergeBudget() : null);
 }
+// what a merge may not leave half of: braces, math, brackets, opening quotes, environments
+const PAIRS = /(?<!\\)[{}$()[\]`]|\\begin\b|\\end\b/g;
+const pairsOf = (t) => { const n = {}; for (const [x] of t.matchAll(PAIRS)) n[x] = (n[x] || 0) + 1; return JSON.stringify(Object.entries(n).sort()); };
 // (lines that are all comment lines, each ended)
 const commentLines = (t) => /\n$/.test(t) && t.slice(0, -1).split('\n').every((l) => isComment(l));
 // budget: the characters of clashing lines left to merge word by word (null: by lines alone, and
@@ -426,10 +429,13 @@ function combine(base, A, C, budget) {
         else { t = c; clean = false; }
       } else if (budget && budget.left >= cost) {
         budget.left -= cost;
-        // (word by word: theirs only at the words both changed, every other edit of mine kept)
+        // (word by word: theirs only at the words both changed, every other edit of mine kept;
+        // but where that would keep half of a pair, an \emph{ whose } went with the words both
+        // changed, a $ without its other, a \begin without its \end, theirs whole, which left
+        // half of one my edit put in, \emph{a b C here, and the document no longer compiled)
         const w = combine(base.slice(s, e), wordEdits(base.slice(s, e), m), wordEdits(base.slice(s, e), c), null);
         t = w.text;
-        if (!w.clean) clean = false;
+        if (!w.clean) { clean = false; if (pairsOf(t) !== pairsOf(c)) t = c; }
       } else { t = c; clean = false; }
     }
     out += base.slice(p, s) + t; p = e;
