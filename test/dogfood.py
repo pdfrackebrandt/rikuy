@@ -954,6 +954,15 @@ def real(page):
     s_ = src(page)
     check('real: quotes typed at the end of \\foreignlanguage{english}{..} and of otherlanguage are English, after them German', "here ``q1''} ende \u201eq3\u201c." in s_ and "here. ``q2''\\end{otherlanguage}" in s_, s_[-220:])
     three(page, s_, 'real quotes at a passage\'s end', ('\u201cq1\u201d', '\u201cq2\u201d', 'q3\u201c'))
+    # (verification W5) in a passage emptied of its words, its language still: both quotes English
+    # (the first was German, „q''), and right after \begin{otherlanguage}{..} a quote opens
+    De = '\\documentclass{article}\n\\usepackage[english,ngerman]{babel}\n\\begin{document}\nDeutsch \\foreignlanguage{english}{E} ende.\n\n\\begin{otherlanguage}{english}F\\end{otherlanguage}\n\nEnde.\n\\end{document}\n'
+    load_doc(page, De)
+    for w in ('E', 'F'):
+        click_text(page, w, 1); settle(page, 100); k.press('Backspace'); settle(page, 300); k.type('"q" x'); settle(page, 300)
+    s_ = src(page)
+    check('real: quotes typed into an emptied English passage are English', "\\foreignlanguage{english}{``q'' x}" in s_ and "\\begin{otherlanguage}{english}``q'' x\\end{otherlanguage}" in s_, s_[-200:])
+    three(page, s_, 'real quotes in an emptied passage', ('\u201cq\u201d x',))
     for D, name in (('\\documentclass[ngerman]{article}\n\\begin{document}\nDas ist ein Text hier.\n\\end{document}\n', 'a class option alone'),
                     ('\\documentclass[ngerman]{scrartcl}\n\\usepackage{babel}\n\\begin{document}\nDas ist ein Text hier.\n\\end{document}\n', 'KOMA\'s class option with babel')):
         load_doc(page, D)

@@ -2479,14 +2479,26 @@ class App {
       const t = this.src(f) || '', main = this.src(this.main) || '';
       // (the language of the character before the caret, as Word's: at the end of a passage that
       // closes right after its words, \foreignlanguage{english}{..|}, the passage's; else the one at it)
-      const sp = languageSpans(t), here = (at > 0 && langAt(sp, at - 1)) || langAt(sp, at), L = mainLanguage(main);
+      const sp = languageSpans(t), L = mainLanguage(main);
+      let here = (at > 0 && langAt(sp, at - 1)) || langAt(sp, at);
+      // (inside a passage emptied of its words, \foreignlanguage{english}{|}, otherlanguage's or
+      // polyglossia's: no text there marks its language, read off the command: verification W5)
+      if (!here) {
+        const pre = t.slice(Math.max(0, at - 160), at), post = t.slice(at, at + 60);
+        const m = /^\s*\}/.test(post) ? /\\foreignlanguage\s*(?:\[[^\]]*\])?\s*\{\s*([A-Za-z-]+)\s*\}\s*\{\s*$/.exec(pre) || /\\text(english|british|american|german|ngerman|spanish|french|italian|portuguese|dutch)\s*(?:\[[^\]]*\])?\s*\{\s*$/.exec(pre)
+          : /^\s*\\end\s*\{/.test(post) ? /\\begin\s*\{otherlanguage\*?\}\s*(?:\[[^\]]*\])?\s*\{\s*([A-Za-z-]+)\s*\}\s*$/.exec(pre) || /\\begin\s*\{(english|british|american|german|ngerman|spanish|french|italian|portuguese|dutch)\}\s*$/.exec(pre) : null;
+        if (m) here = m[1].toLowerCase();
+      }
       if ((here ? dictOf(here) : L.name ? dictOf(L.name, L.variant) : '') === 'de_DE') {
         quotes = /\\usepackage\s*\[[^\]]*\b(?:latin\d|ansinew|applemac|cp\d+|decmulti|next)\b[^\]]*\]\s*\{inputenc\}/.test(main) ? 'de-cmd' : 'de';
         const par = t.slice(Math.max(0, at - 2000), at).split(/\n[ \t\r]*\n/).pop();
         sq = (par.match(/\u201A|\\glq(?![a-z])/g) || []).length > (par.match(/\u2018|\\grq(?![a-z])/g) || []).length;
       }
     }
-    return escapeTeX(data, o.prev ?? (this.src(f).slice(Math.max(0, at - 2), at) || ' '), { code: this.codeAt(f, at, o.wrap), quotes, openSingle: sq });
+    // (right after an environment's \begin and its arguments, \begin{otherlanguage}{english}|, a
+    // quote opens, as at a paragraph's start: the } before it closes no words)
+    const pv = o.prev ?? (/\\begin\s*\{[^{}]*\}(?:\s*(?:\[[^\]]*\]|\{[^{}]*\}))*$/.test(this.src(f).slice(Math.max(0, at - 160), at)) ? ' ' : this.src(f).slice(Math.max(0, at - 2), at) || ' ');
+    return escapeTeX(data, pv, { code: this.codeAt(f, at, o.wrap), quotes, openSingle: sq });
   }
 
   // Text typed, or written by Replace, at p of file f as the source takes it there. A selection
