@@ -122,9 +122,10 @@ const CITE_CMDS = new Set(['cite', 'citet', 'citep', 'citealt', 'citealp', 'cite
   'Citet', 'Citep', 'Citealt', 'Citealp', 'Citeauthor', 'textcite', 'parencite', 'autocite', 'Textcite',
   'Parencite', 'Autocite', 'footcite', 'smartcite', 'citenum']);
 // (R4) acronym's and acro's \ac family, glossaries' \gls family and its acronyms' \acrshort family:
-// the argument is an entry's key; the silent ones mark an entry used or listed and print nothing
-const GLS_CMDS = /^(?:[aA]c(?:[slf]|fi)?p?\*?|ac[sl]u|[iI]ac|[gG]ls(?:pl)?|GLS(?:pl)?|[gG]ls(?:text|first|plural|firstplural|name|symbol|desc|useri)|GLS(?:text|name)|[aA]cr(?:short|long|full)(?:pl)?|ACR(?:short|long|full)(?:pl)?|[gG]lsentry(?:name|text|short|long|plural|symbol|desc)|[gG]lsxtr(?:short|long|full)(?:pl)?|glsadd|acused|glsreset|glsunset)$/;
-const GLS_SILENT = /^(?:glsadd|acused|glsreset|glsunset)$/;
+// the argument is an entry's key; the silent ones mark an entry used, unused or listed and print
+// nothing (acronym's \acused and \acreset, acro's \acuse, glossaries' \glsadd, \glsreset, \glsunset)
+const GLS_CMDS = /^(?:[aA]c(?:[slf]|fi)?p?\*?|ac[sl]u|[iI]ac|[gG]ls(?:pl)?|GLS(?:pl)?|[gG]ls(?:text|first|plural|firstplural|name|symbol|desc|useri)|GLS(?:text|name)|[aA]cr(?:short|long|full)(?:pl)?|ACR(?:short|long|full)(?:pl)?|[gG]lsentry(?:name|text|short|long|plural|symbol|desc)|[gG]lsxtr(?:short|long|full)(?:pl)?|glsadd|acused|acuse|acreset|glsreset|glsunset)$/;
+const GLS_SILENT = /^(?:glsadd|acused|acuse|acreset|glsreset|glsunset)$/;
 const REF_CMDS = new Set(['ref', 'eqref', 'pageref', 'cref', 'Cref', 'autoref', 'nameref', 'vref', 'Vref', 'labelcref']);
 const SECTIONS = { part: -1, chapter: 0, section: 1, subsection: 2, subsubsection: 3, paragraph: 4, subparagraph: 5 };
 // memoir's \setsecnumdepth{…} names

@@ -799,6 +799,10 @@ def real(page):
         settle(page, 100); k.type('Zq'); settle(page, 200)
     check('real: a word typed after \\ac{..} or \\Gls{..} goes after its braces, not into its key', '\\ac{KDE}Zq nec' in src(page) and '\\Gls{slp}Zq Mauris' in src(page), src(page)[-200:])
     compiles(page, 'real acronyms')
+    # (acronym's \\acreset and acro's \\acuse print nothing: review N7)
+    load_doc(page, src(page).replace('Mauris.', 'Mauris \\acreset{KDE}\\acuse{KDE}\\acused{KDE}end.'))
+    txt = page.evaluate("document.getElementById('pages').innerText")
+    check('real: \\acreset, \\acuse and \\acused draw nothing', txt.count('KDE') == 1 and 'Mauris end.' in txt, txt[:200])
     # enumitem's \newlist{todolist}{itemize}{2}: a list, its items drawn with its own label; its
     # \item were drawn as words, and Enter at an item's end made a paragraph, not an item
     load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,amssymb,enumitem}\n\\newlist{todolist}{itemize}{2}\n\\setlist[todolist]{label=$\\square$}').replace('Agent income here.', '\\begin{todolist}\n  \\item Passport\n  \\item Tickets\n\\end{todolist}'))
