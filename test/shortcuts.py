@@ -395,6 +395,17 @@ def caret_keys(page):
         key(page, 'Delete', 150)
         got = src(page)
         check('Shift+End then Delete on a paragraph ending in %s keeps the next paragraph apart' % name, 'Se\n\nNext para.' in got, got[got.find('Se'):got.find('Se') + 30])
+    # The empty paragraph Enter leaves at a paragraph's end: Left goes to the end of the paragraph
+    # before and Right to the next one's start at once, Delete takes it and leaves the caret at the
+    # next paragraph's start, as Word's. Left and Right seemed to do nothing (the browser stepped
+    # over its invisible mark first) and Delete did nothing: the letter went into the new paragraph.
+    G = '\\documentclass{article}\n\\begin{document}\nBefore words.\n\nNext words.\n\\end{document}\n'
+    for k, want in (('ArrowLeft', 'Before words.Q\n\nNext'), ('ArrowRight', 'Before words.\n\nQNext'), ('Delete', 'Before words.\n\nQNext'), ('Backspace', 'Before words.Q\n\nNext')):
+        load_doc(page, G); click_text(page, 'Before words.', 13); key(page, 'Enter', 150); key(page, k, 150)
+        typed_at(page, k, G, 'Enter at a paragraph\'s end, then %s: the letter %s' % (k, 'in the paragraph before' if 'Q\n' in want else 'at the next paragraph\'s start'), want)
+    E = '\\documentclass{article}\n\\begin{document}\nBefore words.\n\\end{document}\n'
+    load_doc(page, E); click_text(page, 'Before words.', 13); key(page, 'Enter', 150); key(page, 'Delete', 150); page.keyboard.type('Q'); settle(page, 200)
+    check('Enter at the text\'s last paragraph, then Delete: nothing to take, the letter in the new paragraph', 'Before words.\n\nQ' in src(page), src(page)[40:])
 
 
 def paint_up(page):

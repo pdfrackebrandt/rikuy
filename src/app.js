@@ -2004,6 +2004,17 @@ class App {
         }
       }
     }
+    // (Left and Right in the empty paragraph Enter showed: out of it at once, to the end of the
+    // paragraph before or the start of the next, as Word's; the browser stepped over its invisible
+    // mark first, so the caret seemed not to move and what was typed went into it)
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.shiftKey && !mod && !e.altKey && this.ghost && !this.ghost.pend && this.ghost.el) {
+      const s = getSelection();
+      if (s.rangeCount && s.isCollapsed && this.ghost.el.contains(s.anchorNode)) {
+        const fwd = (e.key === 'ArrowRight') !== (getComputedStyle(this.ghost.el).direction === 'rtl');
+        const t = this.ghostSide(fwd);
+        if (t) { e.preventDefault(); s.collapse(t, fwd ? 0 : t.data.length); return; }
+      }
+    }
     // out of a footnote at the page's foot: Esc, or Right at its end (Shift+F5 too: goBack)
     if ((e.key === 'Escape' && !this.pop) || (e.key === 'ArrowRight' && !e.shiftKey && !mod && !e.altKey)) {
       const F = this.footnoteHere(), c = F && this.caretNow();
@@ -3204,6 +3215,15 @@ class App {
     return true;
   }
   removeGhost() { if (this.ghost) { const g = this.ghost; this.ghost = null; g.el.remove(); if (g.restore) g.restore(); } }
+  // the page's first text after the empty paragraph Enter showed (fwd), or its last text before it:
+  // where Right, Left and Delete there go
+  ghostSide(fwd) {
+    const g = this.ghost;
+    if (!g || !g.el || !g.el.isConnected) return null;
+    const w = document.createTreeWalker(this.root, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (!g.el.contains(n) && n.data.replace(/\u200B/g, '') && n.parentElement.closest('span.t') && !n.parentElement.closest('.atom, .gh, .caplab') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
+    w.currentNode = g.el;
+    return fwd ? w.nextNode() : w.previousNode();
+  }
   // the caret where Enter at a paragraph's start left it, the empty paragraph showing above it
   ghostKept() {
     const k = this.ghost && this.ghost.keepAt, sel = getSelection();
@@ -3242,8 +3262,10 @@ class App {
       // Backspace and Delete in it or on its selected mark, or Backspace at the caret Enter left
       // below it; spaces waiting in a line to come go one by one first (deleteInput)
       if (g.pend || !(inIt || over || (kept && how === 'back'))) return false;
-      // (Delete in the empty paragraph above a paragraph: the caret goes to that paragraph's start)
-      if (how === 'del' && !(g.before || g.tex === 'before')) return false;
+      // (Delete in the empty paragraph above a paragraph: the caret goes to that paragraph's start;
+      // in one below a paragraph it goes too, the caret at the next paragraph's start, as Word's
+      // Delete takes the empty paragraph's mark: it did nothing. At the text's end, nothing to take)
+      if (how === 'del' && !(g.before || g.tex === 'before') && (g.tex || !this.ghostSide(true))) return false;
     }
     const back = () => { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(g.keepAt); this.ourSel = true; };
     // (of several Enters' empty paragraphs, one goes: review V2)
@@ -3253,8 +3275,10 @@ class App {
       this.ribbonSoon();
       return true;
     }
+    const next = how === 'del' && !(kept || over) && !(g.before || g.tex === 'before') ? this.ghostSide(true) : null;
     this.removeGhost();
     if (kept || over) back();
+    else if (next) { const sel = getSelection(); sel.collapse(next, next.data.search(/[^\u200B]/) < 0 ? 0 : next.data.search(/[^\u200B]/)); }
     // (Backspace in it ends at the paragraph above, Delete and Undo at the place it stood for)
     else this.restoreCaret({ f: g.f, p: g.pos, bias: g.tex === 'before' || (how !== 'back' && (g.before || how === 'del')) ? 1 : -1 });
     this.ribbonSoon();
