@@ -1707,6 +1707,7 @@ def run():
             check('no console errors (Enter kept, %d px)' % w, not errors, errors[:5])
             ghost_looks(page, w)
             ghost_last(page, w)
+            ghost_enters(page, w)
             check('no console errors (Enter\'s empty paragraphs, %d px)' % w, not errors, errors[:5])
             browser.close()
 
@@ -1842,6 +1843,33 @@ def ghost_last(page, w):
           g['n'] == 1 and abs(g['cy'] - g['y'] - g['lh']) < 2, g)
     page.keyboard.type('New words'); settle(page, 200)
     check('and words typed there go after it (%d px)' % w, 'Second one.\n\nNew words\n\n\\end{document}' in src(page), src(page)[-60:])
+
+
+def ghost_enters(page, w):
+    """Enter pressed again and again at a paragraph's end: as many empty lines, the caret on the
+    last, as Word's (the second and third Enter did nothing: one empty line for three); a relayout
+    keeps them; Backspace and Undo take one each, the text untouched; words typed on the last are
+    a paragraph of their own."""
+    load_doc(page, _GHOST_DOC)
+    click_text(page, 'Second one.', 11)
+    ys = []
+    for _ in range(3):
+        page.keyboard.press('Enter'); settle(page, 100)
+        ys.append(page.evaluate(_GHOST_GEO, 'Second'))
+    lh = ys[0]['lh']
+    check('Enter three times at a paragraph\'s end: three empty lines, the caret on the last (%d px)' % w,
+          [g['n'] for g in ys] == [1, 2, 3] and abs(ys[2]['gh'] - 3 * lh) < 2 and all(abs(g['cy'] - g['y'] - (k + 1) * lh) < 2 for k, g in enumerate(ys)), ys)
+    page.evaluate('window.rikuy.relayout(true)'); settle(page, 100)
+    r = page.evaluate(_GHOST_GEO, 'Second')
+    check('a relayout keeps the three (%d px)' % w, r['n'] == 3 and abs(r['gh'] - 3 * lh) < 2 and abs(r['cy'] - r['y'] - 3 * lh) < 2, (r, ys[2]))
+    check('and draws no dashed line round them (%d px)' % w, not page.evaluate(_DASHED), page.evaluate(_DASHED))
+    page.keyboard.press('Backspace'); settle(page, 100)
+    page.keyboard.press('Control+z'); settle(page, 100)
+    u = page.evaluate(_GHOST_GEO, 'Second')
+    check('Backspace takes one, Undo another, the text untouched (%d px)' % w, u['n'] == 1 and src(page) == _GHOST_DOC and abs(u['cy'] - u['y'] - lh) < 2, (u, src(page)[-60:]))
+    page.keyboard.press('Enter'); settle(page, 100)
+    page.keyboard.type('New words'); settle(page, 200)
+    check('words typed on the last of them are a paragraph of their own (%d px)' % w, 'Second one.\n\nNew words\n\n\\end{document}' in src(page) and not page.evaluate('window.rikuy.ghost'), src(page)[-60:])
 
 
 def crlf_enter(page):

@@ -1117,6 +1117,8 @@ class App {
       if (this.ghost) {
         const el = this.ghost.el;
         Object.assign(this.ghost, G, { el });
+        // (and as many empty lines as Enter made: the new one showed one)
+        this.ghostLines();
         if (G.pend) this.paintGhost();
         return;
       }
@@ -2900,7 +2902,16 @@ class App {
     // paragraph above it, as Word's, and one Backspace or Undo takes one away (review V2). The
     // first was shown again in its place, so a second Backspace joined the two paragraphs.
     if (!soft && this.ghost && this.ghost.keepAt && this.ghostKept()) { this.ghost.n = (this.ghost.n || 1) + 1; this.ghostLines(); this.enterAct(); return; }
-    if (c.ghost) { if (this.ghost.tex) this.texGhostEnter(); else this.ghostLeaveEnv(); return; }
+    // (Enter again on the empty paragraph an Enter showed: another empty paragraph, the caret going
+    // down to it, as Word's; one Backspace or Undo takes one away (takeBackGhost). It did nothing,
+    // and three Enters at a paragraph's end showed one empty line. Not the blank page's own
+    // paragraph, nor one set to LaTeX, whose source a blank line would end.)
+    if (c.ghost) {
+      const g = this.ghost;
+      if (g.tex) this.texGhostEnter();
+      else if (!this.ghostLeaveEnv() && !g.sticky && g.style !== 'latex') { g.n = (g.n || 1) + 1; this.ghostLines(); this.scrollToCaret(); this.enterAct(); }
+      return;
+    }
     const T = this.texHere();
     if (T && c.f === T.f) { this.texEnter(T, c); return; }
     const sel = getSelection();
