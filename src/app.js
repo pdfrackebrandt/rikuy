@@ -5488,8 +5488,12 @@ class App {
       if (word && ch && ((word[0] === '(' && ch === ')') || (word[0] === '[' && ch === ']')) && !word.includes(ch)) { word += ch; wait(); return true; }
       if (!word && ch && /^["'“‘«„]$/.test(ch)) { makePrice(''); this.typeRest(ch); return true; }
       if (k === 'Backspace') { if (word) word = word.slice(0, -1); else pend = null; wait(); return true; }
-      if (word && ch && /^[ .,;:!?)'"]$/.test(ch)) return makePrice(word + ch);
-      if (word && /^(Enter|Escape|Tab)$/.test(k)) return makePrice(word);
+      // (one letter in a bracket is a variable: "$2 (x + y)$", "$2 (a, b)$", "$2 [a, b]$" keep the
+      // formula, the bracket and the letter in it; a word of two letters or more, "(excl.", "[sic]",
+      // makes the price: review B3)
+      const brief = word && (word[0] === '(' || word[0] === '[') && (word.match(/\p{L}/gu) || []).length < 2;
+      if (word && !brief && ch && /^[ .,;:!?)'"]$/.test(ch)) return makePrice(word + ch);
+      if (word && !brief && /^(Enter|Escape|Tab)$/.test(k)) return makePrice(word);
       if (!word && k === ' ') return true;
       // (anything else keeps the formula, the space and the word in it: in the box as typed, in the
       // field the word alone, which sets no space)
