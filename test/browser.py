@@ -1709,6 +1709,7 @@ def run():
             ghost_last(page, w)
             ghost_enters(page, w)
             ghost_inside(page, w)
+            ghost_aligned(page, w)
             check('no console errors (Enter\'s empty paragraphs, %d px)' % w, not errors, errors[:5])
             browser.close()
 
@@ -1896,6 +1897,33 @@ def ghost_inside(page, w):
         page.keyboard.type('Zz'); settle(page, 200)
         check('Enter after %r, then a relayout: the empty paragraph and the caret right below it, the words typed after it (%d px)' % (words, w),
               r['after'] and r['below'] > -2 and words + '\n\nZz\n\n' in src(page), (r, src(page)[src(page).find(words):][:60]))
+
+
+def ghost_aligned(page, w):
+    """Enter in a right aligned or centred paragraph (\\begin{flushright}, \\begin{center}, Ctrl+R,
+    Ctrl+E): the empty paragraph is aligned as it, as Word's new paragraph keeps the alignment, the
+    caret drawn at the right or in the middle, a relayout keeping it so; what is typed is written in
+    the same environment and drawn there. The caret was drawn at the left, and the first letter
+    jumped across."""
+    load_doc(page, _ALIGNED_DOC)
+    click_text(page, 'Right words two.', 16); page.keyboard.press('Enter'); settle(page, 100)
+    a = page.evaluate(_CARET_BY, 'Right words two.')
+    check('Enter at a right aligned paragraph\'s end: the caret at the right of the empty one below it (%d px)' % w, a['after'] and abs(a['right']) < 2, a)
+    page.evaluate('window.rikuy.relayout(true)'); settle(page, 100)
+    r = page.evaluate(_CARET_BY, 'Right words two.')
+    check('a relayout keeps it there (%d px)' % w, r['after'] and abs(r['right']) < 2, r)
+    page.keyboard.type('Zz'); settle(page, 200)
+    z = page.evaluate("(() => { const sp = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent === 'Zz'); const it = sp.closest('.it'); return it.getBoundingClientRect().right - sp.getBoundingClientRect().right; })()")
+    check('what is typed there is a paragraph of the flushright, drawn at the right (%d px)' % w, 'Right words two.\n\nZz\n\n\\end{flushright}' in src(page) and abs(z) < 2, (z, src(page)[60:160]))
+    load_doc(page, _ALIGNED_DOC)
+    click_text(page, 'Right words two.'); page.keyboard.press('Enter'); settle(page, 100)
+    page.keyboard.press('ArrowUp'); settle(page, 100)
+    u = page.evaluate(_CARET_BY, 'Right words one.')
+    check('Enter at its start, then Up: the caret at the right of the empty paragraph between the two (%d px)' % w, u['after'] and abs(u['right']) < 2 and src(page) == _ALIGNED_DOC, u)
+    load_doc(page, _ALIGNED_DOC)
+    click_text(page, 'Centred words.', 14); page.keyboard.press('Enter'); settle(page, 100)
+    c = page.evaluate(_CARET_BY, 'Centred words.')
+    check('Enter at a centred paragraph\'s end: the caret in the middle of the empty one below it (%d px)' % w, c['after'] and abs(c['mid']) < 2, c)
 
 
 def crlf_enter(page):

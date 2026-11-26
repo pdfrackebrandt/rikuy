@@ -1116,6 +1116,8 @@ class App {
       this.ghostAt(G.f, G.pos, G.style, G.line);
       if (this.ghost) {
         const el = this.ghost.el;
+        // (looking as it did, aligned as the paragraph it was made from: showGhost)
+        el.className = G.el.className;
         Object.assign(this.ghost, G, { el });
         // (and as many empty lines as Enter made: the new one showed one)
         this.ghostLines();
@@ -3063,7 +3065,7 @@ class App {
       // plain after them; \textsl{..} round a blank line stopped TeX, which takes no paragraph there)
       const out = this.wrapBreak(el, f, E.p);
       if (!out.close) E.p = out.p;
-      this.showGhost(itemEl, f, E.p);
+      this.showGhost(itemEl, f, E.p, { align: true });
       if (E.wrap && this.ghost) this.ghost.wrap = E.wrap;
       this.enterAct();
       return;
@@ -3076,7 +3078,7 @@ class App {
     const ps = c.collapsed && !w.close && itemEl && kind === 'p' ? PARA_START.exec(src.slice(Math.max(0, w.p - 400), w.p)) : null;
     if (ps) {
       const keep = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-      this.showGhost(itemEl, f, w.p - ps[1].length, { before: true });
+      this.showGhost(itemEl, f, w.p - ps[1].length, { before: true, align: true });
       if (keep) { sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true; if (this.ghost) this.ghost.keepAt = keep; }
       this.enterAct();
       return;
@@ -3158,6 +3160,12 @@ class App {
     g.dataset.ctx = 'p';
     // the new paragraph runs the way the one above it does
     if (afterEl.dir === 'rtl' || afterEl.dir === 'ltr') g.dir = afterEl.dir;
+    // (o.align: made by Enter at a paragraph's words, where it is written in the same flushright,
+    // center or flushleft: it is aligned as that paragraph, without the indent those set to none,
+    // as Word's new paragraph keeps the alignment. The caret was drawn at the left of a right
+    // aligned or centred paragraph, and the first letter typed jumped across.)
+    const al = o.align && [...afterEl.classList].find((k) => /^al-(?:left|center|right)$/.test(k));
+    if (al) { g.classList.add(al); if (!afterEl.classList.contains('ind')) g.classList.remove('ind'); }
     const s = document.createElement('span');
     s.className = 't gh';
     s.textContent = '\u200B';
