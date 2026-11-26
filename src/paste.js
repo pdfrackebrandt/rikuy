@@ -408,8 +408,9 @@ export function unwrapMath(t) {
 // joined stay joined and no brace after them is commented out), a heading leaves its words in a
 // group, a label goes, a display becomes a formula in the line, a list's items words in a row,
 // paragraphs and lines join with a space. '' where something is left that the line cannot hold
-// (an align, a figure): then the words alone are pasted.
-export function oneLineLatex(t) {
+// (an align, a figure): then the words alone are pasted. In a table's cell (cell) a line break,
+// \\, is a space too: there it ended the row, the cell's words after it a row of their own.
+export function oneLineLatex(t, cell) {
   const t0 = String(t || '');
   let s = t0.replace(/\r\n?/g, '\n');
   // An address or verbatim text keeps its % and its line as written: \url{x%20y} is no comment.
@@ -427,6 +428,8 @@ export function oneLineLatex(t) {
   s = s.replace(/\\begin\s*\{(equation|displaymath)(\*?)\}([\s\S]*?)\\end\s*\{\1\2\}/g, (m, e, st, x) => '$' + x.trim() + '$');
   s = s.replace(/\\(?:begin|end)\s*\{(?:itemize|enumerate|description)\}(?:\[[^\]\n]*\])?/g, ' ');
   s = s.replace(/\\item(?![A-Za-z])\s*(?:\[([^\]\n]*)\])?/g, (m, lab) => ' ' + (lab ? lab + ' ' : ''));
+  // (pairs read from the left: \\\% is a line break and a percent sign)
+  if (cell) s = s.replace(/\\\\\*?(?:[ \t]*\[[^\]\n]*\])?/g, ' ');
   s = s.replace(/\s*\n\s*/g, ' ').replace(/[ \t]{2,}/g, ' ').trim();
   if (/\\(?:begin|end|par|maketitle|caption)(?![A-Za-z])/.test(s)) return '';
   s = s.replace(/\uE000(\d+)\uE001/g, (m, k) => kept[+k]);

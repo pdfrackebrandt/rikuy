@@ -537,6 +537,13 @@ def paste_cells(page):
     load_doc(page, DOC); at_src(page, 'two'); run_cmd(page, 'select-row'); settle(page, 150)
     got = page.evaluate(copy); click_text(page, 'three', 0); page.evaluate(paste3, got); settle(page, 200)
     check('and pasted in another row\'s cell it fills that row\'s cells', '\\midrule\none & two \\\\\none & two \\\\\n\\bottomrule' in src(page), src(page)[100:260])
+    # (round 4) words copied across a line break (\\) and pasted in a cell: the \\ ended the row
+    # there, the cell's words after it and the cells beside them a row of their own
+    lb = WRAP('Line one\\\\ line two here.\n\n' + FLOAT(BOOK))
+    load_doc(page, lb); place(page, ('one', 'line'))
+    got = page.evaluate(copy); click_text(page, 'three', 5); page.evaluate(paste3, got); settle(page, 200)
+    s = src(page)
+    check('words copied across a line break, pasted in a cell: the break a space there, the row whole', '\\\\' in got[2] and '\\midrule\none & two \\\\\nthreeone line & four \\\\\n\\bottomrule' in s, (got[2], s[s.find('\\midrule'):s.find('\\bottomrule')]))
     # (review of PR 115) one line with a tab in it is text, from an editor or a terminal: as text,
     # nothing overwritten
     s = pasted(lambda: click_text(page, 'one', 2), 'foo\tbar')
