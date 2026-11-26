@@ -1820,6 +1820,9 @@ def ghost_looks(page, w):
     b = page.evaluate(_GHOST_GEO, 'had.')
     check('Enter twice more there: two empty lines above the word, the caret staying before it, nothing written (%d px)' % w,
           b['n'] == 2 and abs(b['gh'] - 2 * b['lh']) < 2 and abs(b['y'] - a['y'] - 2 * b['lh']) < 2 and abs(b['cy'] - b['y']) < 3 and abs(b['x'] - b['ind']) < 1.5 and 'you \n\nhad.' in src(page), b)
+    # (a screen reader meets it as the paragraph it is, as those round it: it was a bare generic node)
+    roles = page.evaluate("[window.rikuy.ghost && window.rikuy.ghost.el.getAttribute('role'), document.querySelector('#pages .ghostp') && document.querySelector('#pages .ghostp').getAttribute('role')]")
+    check('the empty paragraph is a paragraph to a screen reader (%d px)' % w, roles == ['paragraph', 'paragraph'], roles)
     for scheme in ('white page', 'dark page', 'forced colours'):
         if scheme == 'dark page': page.evaluate("document.body.classList.add('dark-page')")
         if scheme == 'forced colours': page.evaluate("document.body.classList.remove('dark-page')"); page.emulate_media(forced_colors='active')

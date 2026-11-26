@@ -3170,6 +3170,8 @@ class App {
     const g = document.createElement('div');
     g.className = 'it p ghostp' + (!o.line && (afterEl.classList.contains('ind') || afterEl.classList.contains('p') || afterEl.classList.contains('tex')) ? ' ind' : '') + (o.style === 'latex' ? ' tex' : isEnvStyle(o.style) ? ' quote' : '');
     g.dataset.ctx = 'p';
+    // (a paragraph to a screen reader, as the page's own are: it was a bare generic node)
+    g.setAttribute('role', 'paragraph');
     // the new paragraph runs the way the one above it does
     if (afterEl.dir === 'rtl' || afterEl.dir === 'ltr') g.dir = afterEl.dir;
     // (o.align: made by Enter at a paragraph's words, where it is written in the same flushright,
