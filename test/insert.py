@@ -1256,12 +1256,16 @@ def code_ok(body):
 def code_fuzz(page):
     """(review of round 4) inline code's syntax under random edits: random selections and carets over
     paragraphs holding \lstinline, \mintinline, \verb and \texttt runs, then typing, Delete,
-    Backspace, a cut, a paste, or a key that moves first (End, Home, arrows, Shift with them).
-    Every result keeps each run closed on its line and the braces balanced, one undo (or a few, for
-    a cut) gives the source back byte for byte, and with dist/tex a sample of the results compiles.
-    Seeded (CODE_FUZZ_SEED), so a failure is found again."""
+    Backspace, Enter, a cut, a paste, Ctrl+B or Ctrl+I, Replace All of a piece of the text, or a
+    drag of the selection to another place, sometimes after a key that moves (End, Home, arrows,
+    Shift with them) and sometimes followed by X and two Backspaces. Every result keeps each run
+    closed on its line and the braces beside them balanced; a lone Backspace or Delete at a caret
+    takes at most one letter of the page (it took a whole run once); Undo gives the source back
+    byte for byte; with dist/tex a sample of the results compiles. The seed is CODE_FUZZ_SEED, or
+    the commit's (GITHUB_SHA), printed with a failure so it is found again."""
     import random
-    rnd = random.Random(int(os.environ.get('CODE_FUZZ_SEED', '4')))
+    seed = int(os.environ.get('CODE_FUZZ_SEED') or int((os.environ.get('GITHUB_SHA') or '4')[:8], 16))
+    rnd = random.Random(seed)
     body = ('Use \\lstinline|ab cd| here and \\verb|x_y| too, then \\lstinline{gh ij}\n\n'
             'Then \\mintinline{py}|f(x)| and \\texttt{tt w} end \\lstinline[language=R]{df %>% q}\n\n'
             'Also \\mintinline{c}{p{q}r} last \\verb+k%l+ words.')
@@ -1272,34 +1276,57 @@ def code_fuzz(page):
       const [a, ao] = pick(r[0]), [b, bo] = pick(r[1]); document.getElementById('pages').focus();
       const s = getSelection(); s.removeAllRanges(); s.collapse(a, ao); if (r[2]) s.extend(b, bo); return true; }"""
     PASTE = "(t) => { const d = new DataTransfer(); d.setData('text/plain', t); document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', {clipboardData: d, bubbles: true, cancelable: true})); }"
-    bad, undone, seen = [], [], []
-    for k in range(int(os.environ.get('CODE_FUZZ_N', '36'))):
+    SEEN = "() => [...document.querySelectorAll('#pages .flow > .it')].map((x) => x.textContent).join('').length"
+    DRAG = """(r) => { const g = window.rikuy, c = g.caretNow(); if (!c || c.collapsed) return false; const latex = g.selectionLatex(c); if (!latex) return false;
+      const M = { f: c.f, a: c.a, b: c.b, latex, src: g.src(c.f), wraps: [] };
+      const ts = [...document.querySelectorAll('#pages .flow span.t')].filter((x) => x.firstChild && x.firstChild.nodeType === 3); const t = ts[Math.floor(r[0] * ts.length) % ts.length].firstChild;
+      getSelection().collapse(t, Math.floor(r[1] * (t.data.length + 1))); const d = g.caretNow(); if (!d) return false; g.moveSource(M, { f: d.f, p: d.a }); return true; }"""
+    REPALL = """(q) => { const g = window.rikuy; g.findSet({ q, rep: 'Z', o: { matchCase: true, wholeWord: false, wildcards: false, regex: false, source: false, insel: false, fmt: 0 } }); g.replaceAll(); return true; }"""
+    bad, undone, seen, greedy = [], [], [], []
+    for k in range(int(os.environ.get('CODE_FUZZ_N', '48'))):
         load_doc(page, D)
         sel = rnd.random() < 0.6
         page.evaluate(POS, [[rnd.random(), rnd.random()], [rnd.random(), rnd.random()], sel])
         settle(page, 60)
-        steps = [] if sel else [rnd.choice(['End', 'Home', 'ArrowRight', 'ArrowLeft', 'Shift+End', 'Shift+Home', 'Shift+ArrowRight', 'Shift+ArrowLeft', 'End', 'ArrowRight'])]
-        act = rnd.choice(['type', 'Delete', 'Backspace', 'cut', 'paste', 'type'])
+        steps = [] if sel else [rnd.choice(['End', 'Home', 'ArrowRight', 'ArrowLeft', 'Shift+End', 'Shift+Home', 'Shift+ArrowRight', 'Shift+ArrowLeft', 'End', 'ArrowRight', None, None])]
+        steps = [x for x in steps if x]
+        act = rnd.choice(['type', 'Delete', 'Backspace', 'cut', 'paste', 'type', 'Enter', 'bold', 'italic', 'replace-all', 'drag', 'Backspace', 'Delete'])
         for st in steps:
             page.keyboard.press(st); settle(page, 60)
+        lone = act in ('Delete', 'Backspace') and page.evaluate('getSelection().isCollapsed')
+        n0 = page.evaluate(SEEN)
         if act == 'type': page.keyboard.type('X')
         elif act == 'paste': page.evaluate(PASTE, 'p_q')
         elif act == 'cut': page.keyboard.press('Control+x')
+        elif act == 'bold': page.keyboard.press('Control+b')
+        elif act == 'italic': page.keyboard.press('Control+i')
+        elif act == 'replace-all':
+            words = body.replace('\\', ' ').replace('{', ' ').replace('}', ' ').replace('|', ' ')
+            i = rnd.randrange(0, len(words) - 6)
+            page.evaluate(REPALL, words[i:i + rnd.randint(2, 6)])
+        elif act == 'drag': page.evaluate(DRAG, [rnd.random(), rnd.random()])
         else: page.keyboard.press(act)
         settle(page, 150)
+        if lone and n0 - page.evaluate(SEEN) > 1:
+            greedy.append(('%d: %s %s' % (k, ' '.join(steps), act), n0 - page.evaluate(SEEN)))
+        more = rnd.random() < 0.3
+        if more:
+            page.keyboard.type('X'); settle(page, 80)
+            for _ in range(2): page.keyboard.press('Backspace'); settle(page, 80)
         got = src(page)
-        what = '%d: %s %s' % (k, ' '.join(steps) or ('selection' if sel else 'caret'), act)
+        what = 'seed %d, %d: %s %s%s' % (seed, k, ' '.join(steps) or ('selection' if sel else 'caret'), act, ', X and two Backspaces' if more else '')
         if not code_ok(got[got.find('{document}') + 10:got.rfind('\\end{document}')]):
             bad.append((what, got[got.find('{document}') + 11:got.rfind('\\end{document}')]))
         elif got != D and got not in seen:
             seen.append(got)
-        for _ in range(4):
+        for _ in range(6):
             if src(page) == D: break
             page.keyboard.press('Control+z'); settle(page, 120)
         if src(page) != D:
             undone.append((what, src(page)[60:200]))
-    check('code fuzz: every random edit leaves each inline code run closed and the braces balanced (%d edits)' % (k + 1), not bad, bad[:3])
-    check('code fuzz: Undo gives each source back byte for byte', not undone, undone[:3])
+    check('code fuzz (seed %d): every random edit leaves each inline code run closed and the braces balanced (%d edits)' % (seed, k + 1), not bad, bad[:3])
+    check('code fuzz (seed %d): a lone Backspace or Delete takes at most one letter of the page' % seed, not greedy, greedy[:3])
+    check('code fuzz (seed %d): Undo gives each source back byte for byte' % seed, not undone, undone[:3])
     if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')) and seen:
         page.set_default_timeout(600000)
         failed = []
@@ -1308,7 +1335,7 @@ def code_fuzz(page):
               return { ok: r.ok, errors: (r.problems || []).filter((x) => x.severity === 'error').map((x) => x.message).slice(0, 2) }; }""", t)
             if not r['ok'] or r['errors']: failed.append((t[60:200], r))
         page.set_default_timeout(30000)
-        check('code fuzz: a sample of the results compiles in the page', not failed, failed[:2])
+        check('code fuzz (seed %d): a sample of the results compiles in the page' % seed, not failed, failed[:2])
 
 
 def code_commands(page):
