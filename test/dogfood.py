@@ -16,15 +16,20 @@ set: \\mathbb typed in the equation field or pasted from a chat assistant brings
 across the notes' files keeps the case of what it replaces. And the hostile reviews' cases
 (E1 to E10; then E11 to E18: review2; the verification's V1 to V9: review3).
 
+Round four, real documents (`real`): Enter in the words of a command of the document's own
+(\\question{..}) or in a caption of algorithm's float, and at the end of a list item in braces;
+a word typed after an acronym's or a glossary entry's command (\\ac{KDE}, \\Gls{slp}); enumitem's
+\\newlist lists; \\marginnote's offset and \\columnseprule=.4pt drawn as no words; German quotes typed in a German document.
+
   python3 dogfood.py [part ...]   parts: formula arrows textfield styles table caption cite paste
-                                  split filename undo_words enter reload_undo mathpkg intertext envlist replace review review2 review3
+                                  split filename undo_words enter reload_undo mathpkg intertext envlist replace review review2 review3 real
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import settle, saved, until, ready, open_page, check, results, src, load_doc, click_text, ROOT
 from playwright.sync_api import sync_playwright
 
-PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo', 'mathpkg', 'intertext', 'envlist', 'replace', 'review', 'review2', 'review3']
+PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo', 'mathpkg', 'intertext', 'envlist', 'replace', 'review', 'review2', 'review3', 'real']
 DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
 TEX = os.path.isdir(os.path.join(DIST, 'tex')) and any(n.endswith('.wasm') for n in os.listdir(os.path.join(DIST, 'tex')))
 
@@ -470,6 +475,24 @@ def pdf_text(page):
     return ' '.join(pg.extract_text() or '' for pg in pypdf.PdfReader(io.BytesIO(base64.b64decode(b))).pages)
 
 
+def three(page, doc, name, want=()):
+    """doc compiled in the page with pdfLaTeX, XeLaTeX and LuaLaTeX (dist/tex): no error, and each of
+    want in the PDF's text (spaces aside), as the page draws it. Leaves the pdfLaTeX copy loaded."""
+    if not TEX:
+        return
+    import base64, io, re, pypdf
+    page.set_default_timeout(900000)
+    for eng in ('xelatex', 'lualatex', 'pdflatex'):
+        load_doc(page, ('% !TeX program = ' + eng + '\n' if eng != 'pdflatex' else '') + doc)
+        r = page.evaluate("""async () => { const r = await window.rikuy.api.compile(); let s = ''; if (r.pdf) { const u = new Uint8Array(r.pdf); for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode(...u.subarray(i, i + 8192)); }
+          return { ok: r.ok, errs: r.problems.filter((p) => p.severity === 'error').map((p) => p.message).slice(0, 3), pdf: s ? btoa(s) : '' }; }""")
+        text = ' '.join(pg.extract_text() or '' for pg in pypdf.PdfReader(io.BytesIO(base64.b64decode(r['pdf']))).pages) if r['pdf'] else ''
+        flat = re.sub(r'\s+', '', text)
+        miss = [w for w in want if re.sub(r'\s+', '', w) not in flat]
+        check(name + ' (' + eng + '): compiles with no error' + (', the PDF reads ' + ' / '.join(want) if want else ''), r['ok'] and not r['errs'] and not miss, (r['errs'], miss, text[:200]))
+    page.set_default_timeout(30000)
+
+
 def review2(page):
     """The second hostile review of PR 94 (E11 to E18, and what it saw in passing)."""
     k = page.keyboard
@@ -712,6 +735,241 @@ def review3(page):
     k.press('Control+Alt+1'); settle(page, 300)
     check('review3: a proof made a heading leaves \\qedhere behind', '\\section{Only plain step.}\n\nSecond paragraph.' in src(page) and 'qedhere' not in src(page), src(page)[-120:])
     compiles(page, 'review3 qedhere')
+
+
+def real(page):
+    """Round 4: real documents of the corpus, edited as a Word user does, then compiled."""
+    k = page.keyboard
+    # Enter in the words of \question{..}, a command of the document's own: its braces close
+    # before the break and open again after it, as a format's do; at its end the new paragraph is
+    # after it. A blank line went inside, and TeX stopped ("Paragraph ended before \@ssect")
+    D = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\newcommand{\\question}[1]{\\subsection*{#1}}').replace('Agent income here.', '\\question{\\bf Wie haben Sie gelernt?}')
+    load_doc(page, D)
+    click_text(page, 'Wie haben', 9); k.press('Enter'); settle(page, 200); k.type('Q')
+    settle(page, 200)
+    check('real: Enter in a command of its own closes and opens it again round the break', '\\question{\\bf Wie haben}\n\n\\question{\\bf Q Sie gelernt?}' in src(page), src(page)[-120:])
+    three(page, src(page), 'real question split')
+    load_doc(page, D)
+    click_text(page, 'gelernt?', 8); k.press('Enter'); settle(page, 200); k.type('After')
+    settle(page, 200)
+    # (its words' bold goes on in the new paragraph, as Word's formats do)
+    check('real: Enter at the end of its words starts a paragraph after it', '\\question{\\bf Wie haben Sie gelernt?}\n\n{\\bf After}' in src(page), src(page)[-120:])
+    three(page, src(page), 'real question end')
+    # (review B1) a group after an argument is a group, which holds the break: the command before it
+    # was copied into the new paragraph, \textbf{Keywords:} printed twice, \LaTeX{} twice
+    for body, at, want in (('Intro words. \\textbf{Keywords:} {\\small alpha beta gamma} end.', 'beta', '{\\small alpha \n\nQbeta gamma} end.'),
+                           ('We use \\LaTeX{} {\\it for typesetting long documents} here.', 'typesetting', '\\LaTeX{} {\\it for \n\nQtypesetting long'),
+                           ('Start \\textcolor{red}{Warning} {\\bf read this carefully now} end.', 'carefully', '{Warning} {\\bf read this \n\nQcarefully now}')):
+        load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,xcolor}').replace('Agent income here.', body))
+        click_text(page, at, 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
+        check('real: Enter in a group after ' + body.split('{')[0].split()[-1] + ' keeps the group, the command once', want in src(page) and src(page).count(body.split('{')[0].split()[-1]) == 1, src(page)[-140:])
+        three(page, src(page), 'real group after ' + body.split('{')[0].split()[-1], ('Qbeta' if 'beta' in want else 'Qtypesetting' if 'typesetting' in want else 'Qcarefully',))
+    # (review B2) Enter in a minipage inside a command of the document's own: the break stays in the
+    # minipage; the command was split between \begin and \end, and TeX stopped
+    Db = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\newcommand{\\mybox}[1]{\\fbox{#1}}').replace('Agent income here.', '\\mybox{\\begin{minipage}{5cm}\nFirst words of the box and more.\n\\end{minipage}}')
+    load_doc(page, Db)
+    click_text(page, 'box and', 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
+    check('real: Enter in a minipage inside \\mybox{..} keeps the break in the minipage', 'First words of the \n\nQbox and more.\n\\end{minipage}}' in src(page) and src(page).count('\\mybox{') == 1, src(page)[-160:])
+    three(page, src(page), 'real minipage in a command', ('First words of the', 'Qbox and more.'))
+    # (review N1) a \long command of the document's own whose words reach no other command takes
+    # paragraphs: one exercise of two paragraphs, not two exercises
+    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\newcounter{ex}\n\\newcommand{\\exercise}[1]{\\refstepcounter{ex}\\par\\noindent\\textbf{Exercise \\theex.} #1}').replace('Agent income here.', '\\exercise{Prove the first claim and then the second}'))
+    click_text(page, 'and then', 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
+    check('real: Enter in \\exercise{..} (#1 at its top) writes the paragraph inside it', '\\exercise{Prove the first claim \n\nQand then the second}' in src(page), src(page)[-120:])
+    three(page, src(page), 'real long command', ('Exercise 1. Prove the first claim', 'Qand then the second'))
+    # (verification W3) the same with its argument right after declarations, \par\noindent #1: they
+    # take no argument, and the paragraph stays inside
+    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\newcounter{ex}\n\\newcommand{\\exercise}[1]{\\refstepcounter{ex}\\par\\noindent #1}').replace('Agent income here.', '\\exercise{Prove the first claim and then the second}'))
+    click_text(page, 'and then', 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
+    check('real: Enter in \\exercise{..} whose #1 follows \\par\\noindent writes the paragraph inside it', '\\exercise{Prove the first claim \n\nQand then the second}' in src(page), src(page)[-120:])
+    three(page, src(page), 'real long command after declarations', ('Prove the first claim', 'Qand then the second'))
+    # (verification V3) the definition in force there: \renewcommand* after \newcommand makes it short,
+    # and an argument handed to a command right before it (\@foo#1\@nil) may take no paragraph: the
+    # command is split, where the blank line went inside and TeX stopped
+    H3 = '\\makeatletter\n\\def\\@foo#1\\@nil{\\textbf{#1}}\n\\newcommand{\\foob}[1]{\\@foo#1\\@nil}\n\\makeatother\n\\newcommand{\\foo}[1]{#1}\n\\renewcommand*{\\foo}[1]{\\par\\noindent #1}'
+    for cmd in ('foo', 'foob'):
+        load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n' + H3).replace('Agent income here.', '\\' + cmd + '{alpha beta gamma}'))
+        click_text(page, 'gamma', 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
+        check('real: Enter in \\' + cmd + '{..} (its argument no paragraph\'s) splits it', '\\' + cmd + '{alpha beta }\n\n\\' + cmd + '{Qgamma}' in src(page), src(page)[-120:])
+        three(page, src(page), 'real \\' + cmd + ' split', ('alpha beta', 'Qgamma'))
+    # (verification V4) xparse's \NewDocumentCommand{\foo}{m} takes one argument: a group after it is
+    # a group, which holds the break; \foo{alpha} was written twice and the italic lost
+    Dx = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,xparse}\n\\NewDocumentCommand{\\foo}{m}{\\textbf{#1}}').replace('Agent income here.', 'Text \\foo{alpha}{\\it beta gamma delta} end.')
+    load_doc(page, Dx)
+    check('real: \\foo{alpha}{\\it ..} drawn as TeX sets it, "alphabeta gamma delta"', 'Text alphabeta gamma delta end.' in page.evaluate("document.getElementById('pages').innerText"), page.evaluate("document.getElementById('pages').innerText")[:80])
+    click_text(page, 'gamma', 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
+    check('real: Enter in the group after an xparse command keeps the group, the command once', '\\foo{alpha}{\\it beta \n\nQgamma delta} end.' in src(page), src(page)[-120:])
+    three(page, src(page), 'real xparse command', ('alphabeta', 'Qgamma delta end.'))
+    # Enter at the end of a list item in a group: the new \item after the group, not in it,
+    # where the page drew it as the text "\item"
+    load_doc(page, DOC.replace('Agent income here.', '\\begin{enumerate}\n\\item {\\textbf{First}}\n\\item {\\bf Second}\n\\end{enumerate}'))
+    click_text(page, 'Second', 6); k.press('Enter'); settle(page, 200); k.type('Third')
+    settle(page, 200)
+    check('real: Enter at the end of an item in braces writes the new \\item after them', '\\item {\\bf Second}\n\\item Third\n\\end{enumerate}' in src(page), src(page)[-120:])
+    check('real: and the page draws it as an item', page.evaluate("[...document.querySelectorAll('#pages .it')].some((e) => e.dataset.li && e.textContent.trim().endsWith('Third') && !e.textContent.includes('\\\\item'))"))
+    three(page, src(page), 'real item group')
+    # Enter in the middle of a caption outside a float (\captionof) or a letter's \closing writes
+    # nothing, as in a figure's caption: closed and opened again round the break it printed twice
+    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,caption}').replace('Agent income here.', 'Text.\n\n\\begin{center}\n\\captionof{figure}{Stone with names and years.}\n\\end{center}'))
+    before = src(page)
+    click_text(page, 'names and', 5); k.press('Enter'); settle(page, 200); k.type('Q')
+    settle(page, 200)
+    check('real: Enter inside \\captionof{..} writes no second caption', src(page) == before.replace('names and', 'namesQ and'), src(page)[-160:])
+    # (review N2, N9) Enter in a letter's \closing is a line in it, \\: it wrote a blank line inside,
+    # which TeX refuses, and then a second \closing
+    load_doc(page, '\\documentclass{letter}\n\\signature{Pedro}\n\\begin{document}\n\\begin{letter}{Firm\\\\Town}\n\\opening{Dear Sir,}\nBody text here.\n\\closing{Kind regards, yours}\n\\end{letter}\n\\end{document}\n')
+    click_text(page, 'regards,', 8); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
+    check('real: Enter in \\closing{..} writes a line break in it', '\\closing{Kind regards,\\\\\nQ yours}' in src(page), src(page)[-120:])
+    three(page, src(page), 'real closing', ('Kind regards,', 'Q yours'))
+    # and in the middle of an environment's own title, \begin{definition}{Title} (a frame of the
+    # document's own): a blank line went inside it, and TeX stopped ("Paragraph ended before \@textcolor")
+    D2 = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\newenvironment{definition}[1]{\\par\\textcolor{black}{\\textbf{#1}}\\par}{\\par}\n\\usepackage{xcolor}').replace('Agent income here.', '\\begin{definition}{Rekurrentes Neuronale Netz}\nEin RNN ist.\n\\end{definition}')
+    load_doc(page, D2)
+    before = src(page)
+    click_text(page, 'Neuronale Netz', 9); k.press('Enter'); settle(page, 200); k.type('Q')
+    settle(page, 200)
+    check('real: Enter inside an environment\'s title writes no blank line in it', src(page) == before.replace('Neuronale Netz', 'NeuronaleQ Netz'), src(page)[-160:])
+    three(page, src(page), 'real environment title')
+    # the algorithm package's float, as TeX sets it (review B5): ruled by default, the caption first
+    # between rules, "Algorithm 1" in bold then a space, wherever \caption stands; plain, "Algorithm 1:"
+    # last; numbered within the section by [section]; a \ref to it numbered; its algorithmic drawn
+    # in it. Enter inside the caption writes nothing (as in a figure's), where it wrote a blank
+    # line in \caption and TeX stopped
+    alg = lambda opt: DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\usepackage' + opt + '{algorithm}\n\\usepackage{algpseudocode}').replace('Agent income here.', '\\section{Intro}\nSee Algorithm~\\ref{alg:a}.\n\n\\begin{algorithm}\n\\begin{algorithmic}\n\\State $s \\gets 0$\n\\end{algorithmic}\n\\caption{Solve the problem}\\label{alg:a}\n\\end{algorithm}')
+    for opt, cap, first in (('', 'Algorithm 1 Solve the problem', True), ('[section]', 'Algorithm 1.1 Solve the problem', True), ('[plain]', 'Algorithm 1: Solve the problem', False)):
+        load_doc(page, alg(opt))
+        txt = page.evaluate("document.getElementById('pages').innerText").replace('\u00a0', ' ')
+        num = cap.split()[1].rstrip(':')
+        order = txt.find(cap) >= 0 and txt.find('\\State') >= 0 and (txt.find(cap) < txt.find('\\State')) == first
+        check('real: algorithm' + opt + ' drawn "' + cap + '" ' + ('above' if first else 'below') + ' its lines, "See Algorithm ' + num + '."', order and 'See Algorithm ' + num + '.' in txt, txt[:300])
+        if TEX:
+            three(page, alg(opt), 'real algorithm' + opt, ('See Algorithm ' + num + '.', cap.replace(' Solve', 'Solve') if first else cap.replace(': ', ':')))
+            r = pdf_text(page).replace('\n', ' ')
+            check('real: and TeX prints it ' + ('above' if first else 'below') + ' the lines (pdfLaTeX)', (r.find('Solve the problem') < r.find('s\u2190')) == first, r[:200])
+    # (review N8) algorithm2e's float, ruled: "Algorithm 1:" in bold, first
+    D2e = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\usepackage[ruled]{algorithm2e}').replace('Agent income here.', 'See Algorithm~\\ref{alg:b}.\n\n\\begin{algorithm}\n$s \\gets 0$\\;\n\\caption{Solve it}\\label{alg:b}\n\\end{algorithm}')
+    load_doc(page, D2e)
+    txt = page.evaluate("document.getElementById('pages').innerText").replace('\u00a0', ' ')
+    check('real: algorithm2e\'s ruled float drawn "Algorithm 1: Solve it" first, "See Algorithm 1."', 'See Algorithm 1.' in txt and 0 <= txt.find('Algorithm 1: Solve it') < txt.find('s\u2190'), txt[:200])
+    three(page, D2e, 'real algorithm2e', ('See Algorithm 1.', 'Algorithm 1:Solve it'))
+    load_doc(page, alg(''))
+    before = src(page)
+    click_text(page, 'Solve the', 5); k.press('Enter'); settle(page, 200); k.type('X')
+    settle(page, 200)
+    check('real: Enter inside an algorithm\'s caption writes no blank line in it', '\\caption{SolveX the problem}' in src(page) and src(page).replace('SolveX', 'Solve') == before, src(page)[-160:])
+    three(page, src(page), 'real algorithm')
+    # \ac{KDE} and \Gls{slp}: an entry's key, drawn as a field; a word typed after it goes after
+    # its braces. It went into the key, and TeX stopped ("Glossary entry `slp Zq' has not been defined")
+    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\usepackage{acronym}\n\\usepackage{glossaries}\n\\newacronym{slp}{SLP}{single-layer perceptron}\n\\makeglossaries').replace('Agent income here.', 'Convallis \\ac{KDE} nec a erat. Egestas \\Gls{slp} Mauris.\n\n\\begin{acronym}\n\\acro{KDE}{K Desktop Environment}\n\\end{acronym}'))
+    for i in range(2):
+        page.evaluate("""(i) => { const a = [...document.querySelectorAll('#pages .atom')].filter((x) => /^(KDE|slp)$/.test(x.textContent))[i]; const r = document.createRange(); r.setStartAfter(a); r.collapse(true);
+          const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.getElementById('pages').focus(); }""", i)
+        settle(page, 100); k.type('Zq'); settle(page, 200)
+    check('real: a word typed after \\ac{..} or \\Gls{..} goes after its braces, not into its key', '\\ac{KDE}Zq nec' in src(page) and '\\Gls{slp}Zq Mauris' in src(page), src(page)[-200:])
+    three(page, src(page), 'real acronyms')
+    # (acronym's \\acreset and acro's \\acuse print nothing: review N7)
+    load_doc(page, src(page).replace('Mauris.', 'Mauris \\acreset{KDE}\\acuse{KDE}\\acused{KDE}end.'))
+    txt = page.evaluate("document.getElementById('pages').innerText")
+    check('real: \\acreset, \\acuse and \\acused draw nothing', txt.count('KDE') == 1 and 'Mauris end.' in txt, txt[:200])
+    # enumitem's \newlist{todolist}{itemize}{2}: a list, its items drawn with its own label; its
+    # \item were drawn as words, and Enter at an item's end made a paragraph, not an item
+    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,amssymb,enumitem}\n\\newlist{todolist}{itemize}{2}\n\\setlist[todolist]{label=$\\square$}').replace('Agent income here.', '\\begin{todolist}\n  \\item Passport\n  \\item Tickets\n\\end{todolist}'))
+    txt = page.evaluate("document.getElementById('pages').innerText")
+    check('real: a list of enumitem\'s \\newlist is drawn as a list with its label', '\\item' not in txt and '\u25a1' in txt and page.evaluate("[...document.querySelectorAll('#pages .it')].filter((e) => e.dataset.li).length") == 2, txt[:200])
+    click_text(page, 'Tickets', 7); k.press('Enter'); settle(page, 200); k.type('Money')
+    settle(page, 200)
+    check('real: Enter at the end of its item makes the next item', '\\item Tickets\n  \\item Money\n\\end{todolist}' in src(page), src(page)[-120:])
+    three(page, src(page), 'real newlist')
+    # (review B6) an itemize inside it keeps its own first level's bullet, as enumitem counts a
+    # \newlist list's depth apart: it was drawn a level deeper, "–"; (N3) Tab nests an item in a
+    # todolist of its own, Shift+Tab takes it back, as in an itemize
+    Dn = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,amssymb,enumitem}\n\\newlist{todolist}{itemize}{2}\n\\setlist[todolist]{label=$\\square$}').replace('Agent income here.', '\\begin{todolist}\n  \\item Passport\n  \\begin{itemize}\n  \\item Inner\n  \\end{itemize}\n  \\item Tickets\n  \\item Money\n\\end{todolist}')
+    load_doc(page, Dn)
+    txt = page.evaluate("document.getElementById('pages').innerText")
+    check('real: an itemize in a \\newlist list has its first level\'s bullet', '\u25a1\nPassport\n\u2022\nInner\n\u25a1\nTickets' in txt, txt[:120])
+    three(page, Dn, 'real nested newlist', ('Passport', '\u2022Inner', 'Tickets'))
+    click_text(page, 'Money', 0); k.press('Tab'); settle(page, 300)
+    check('real: Tab in a todolist item nests it in a todolist', '\\item Tickets\n    \\begin{todolist}\n      \\item Money\n    \\end{todolist}\n\\end{todolist}' in src(page), src(page)[-160:])
+    k.press('Shift+Tab'); settle(page, 300)
+    check('real: Shift+Tab takes it back', src(page) == Dn, src(page)[-160:])
+    # marginnote's offset after its text (\marginnote{..}[0cm]) and a layout register's assignment
+    # in the text (\columnseprule=.4pt) are no words of the page; they were drawn as "[0cm]", "=.4pt"
+    # (and its documented form, \\marginnote[left page's text]{text}[offset]: review B4)
+    Dm = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,marginnote}').replace('Agent income here.', 'Agent income here.\\marginnote{A note.}[0cm] More.\\marginnote[Left side]{Right side}[0cm] Words.\n\n\\columnseprule=.4pt\n\\fboxsep=2pt Last words.')
+    load_doc(page, Dm)
+    txt = page.evaluate("document.getElementById('pages').innerText")
+    check('real: \\marginnote{..}[0cm], \\marginnote[..]{..}[0cm] and \\columnseprule=.4pt draw no "[0cm]", "side" or "=.4pt"', '[0cm]' not in txt and 'side' not in txt and '=.4pt' not in txt and '=2pt' not in txt and 'fboxsep' not in txt and 'More.' in txt and 'Words.' in txt and 'Last words.' in txt, txt[:200])
+    three(page, Dm, 'real margin notes', ('A note.', 'Right side', 'Words.', 'Last words.'))
+    # a $ in the source with no closing $ is drawn as TeX reads it: a formula to the paragraph's end,
+    # marked as TeX's error "Missing $ inserted"; it was a "$" chip and the words after it as text
+    Du = DOC.replace('Agent income here.', 'Costs $5 (excl. tax) now.')
+    load_doc(page, Du)
+    txt = page.evaluate("document.getElementById('pages').innerText")
+    err = page.evaluate("[...document.querySelectorAll('#pages .m.has-err')].map((e) => e.title)")
+    check('real: an unclosed $ draws the rest of its paragraph as a formula, marked', 'Costs 5(excl.tax)now.' in txt and err and 'Missing $ inserted' in err[0], (txt[:80], err))
+    if TEX:
+        for eng in ('pdflatex', 'xelatex', 'lualatex'):
+            load_doc(page, ('% !TeX program = ' + eng + '\n' if eng != 'pdflatex' else '') + Du)
+            r = page.evaluate("async () => { const r = await window.rikuy.api.compile(); return r.problems.filter((p) => p.severity === 'error').map((p) => p.message); }")
+            t = pdf_text(page).replace('\n', ' ')
+            check('real: and TeX (' + eng + ') says "Missing $ inserted" and sets the same', any('Missing $ inserted' in x for x in r) and 'Costs 5(excl.tax)now.' in t.replace(' ', '').replace('Costs', 'Costs '), (r[:2], t[:80]))
+    # (verification W4) inside a format's braces as well: TeX takes the closing brace out, "Extra }, or
+    # forgotten $", and reads on in math to the paragraph's end; the page drew " more words." as text
+    Dg = DOC.replace('Agent income here.', 'Some \\textbf{costs $5 now} more words.')
+    load_doc(page, Dg)
+    txt = page.evaluate("document.getElementById('pages').innerText")
+    check('real: an unclosed $ in \\textbf{..} draws the rest of the paragraph as its formula', 'Some costs 5nowmorewords.' in txt.replace('\n', ''), txt[:80])
+    if TEX:
+        for eng in ('pdflatex', 'xelatex', 'lualatex'):
+            load_doc(page, ('% !TeX program = ' + eng + '\n' if eng != 'pdflatex' else '') + Dg)
+            r = page.evaluate("async () => { const r = await window.rikuy.api.compile(); return r.problems.filter((p) => p.severity === 'error').map((p) => p.message); }")
+            t = pdf_text(page).replace('\n', ' ')
+            check('real: and TeX (' + eng + ') says "Extra }, or forgotten $" and sets "costs 5nowmorewords."', any('Extra }, or forgotten $' in x for x in r) and 'costs5nowmorewords.' in t.replace(' ', ''), (r[:3], t[:80]))
+    # (review N4) inside a line or a group, and a glue's stretch with it
+    Dr = DOC.replace('Agent income here.', 'Before {\\fboxsep=0pt\\fbox{boxed}} after.\n\n\\parfillskip=0pt plus 1fil Some words here.')
+    load_doc(page, Dr)
+    txt = page.evaluate("document.getElementById('pages').innerText")
+    check('real: {\\fboxsep=0pt\\fbox{..}} and \\parfillskip=0pt plus 1fil draw no value', '=0pt' not in txt and 'plus' not in txt and 'fil' not in txt and 'Before boxed after.' in txt and 'Some words here.' in txt, txt[:200])
+    three(page, Dr, 'real registers', ('Before boxed after.', 'Some words here.'))
+    # straight quotes typed where the text is German as babel or polyglossia set it: „..“ and ‚..‘,
+    # as Word's smart quotes make them in German; they were English ``..'', printed “..” there. In an
+    # English passage of it, and in a document whose class option alone says German (no babel, so
+    # pdfLaTeX's OT1 has no „), they stay ``..'' (review B7, B8, N5, N6)
+    Dq = '\\documentclass{article}\n\\usepackage[english,ngerman]{babel}\n\\begin{document}\nDas ist ein Text hier.\n\n\\selectlanguage{english}\nEnglish words here.\n\\end{document}\n'
+    load_doc(page, Dq)
+    click_text(page, 'Text', 4); k.type(' "Hallo" und \'nein\' geht\'s'); settle(page, 300)
+    click_text(page, 'words', 5); k.type(' "quoted" it\'s'); settle(page, 300)
+    s_ = src(page)
+    check('real: quotes typed in German text are \u201eHallo\u201c and \u201anein\u2018, an apostrophe stays', 'Text \u201eHallo\u201c und \u201anein\u2018 geht\'s hier.' in s_ and 'Text \u201eHallo\u201c und \u201anein\u2018 geht\u2019s hier.' in page.evaluate("document.getElementById('pages').innerText"), s_[-160:])
+    check('real: and in its English passage ``quoted\'\'', "English words ``quoted'' it's here." in s_, s_[-80:])
+    # (pdfLaTeX's OT1 sets babel's „ as a lowered ”, which the PDF's text reads as ”)
+    three(page, s_, 'real German quotes', ('Hallo\u201c', 'nein\u2018', '\u201cquoted\u201d'))
+    # (verification V1) at the end of an English passage that closes right after its words, the
+    # passage's quotes: the language of the character before the caret, as Word's
+    Dv = '\\documentclass{article}\n\\usepackage[english,ngerman]{babel}\n\\begin{document}\nDeutsch \\foreignlanguage{english}{English words here} ende.\n\n\\begin{otherlanguage}{english}More English here.\\end{otherlanguage}\n\nEnde.\n\\end{document}\n'
+    load_doc(page, Dv)
+    click_text(page, 'words here', 10); k.type(' "q1"'); settle(page, 300)
+    click_text(page, 'English here.', 13); k.type(' "q2"'); settle(page, 300)
+    click_text(page, ' ende', 5); k.type(' "q3"'); settle(page, 300)
+    s_ = src(page)
+    check('real: quotes typed at the end of \\foreignlanguage{english}{..} and of otherlanguage are English, after them German', "here ``q1''} ende \u201eq3\u201c." in s_ and "here. ``q2''\\end{otherlanguage}" in s_, s_[-220:])
+    three(page, s_, 'real quotes at a passage\'s end', ('\u201cq1\u201d', '\u201cq2\u201d', 'q3\u201c'))
+    # (verification W5) in a passage emptied of its words, its language still: both quotes English
+    # (the first was German, „q''), and right after \begin{otherlanguage}{..} a quote opens
+    De = '\\documentclass{article}\n\\usepackage[english,ngerman]{babel}\n\\begin{document}\nDeutsch \\foreignlanguage{english}{E} ende.\n\n\\begin{otherlanguage}{english}F\\end{otherlanguage}\n\nEnde.\n\\end{document}\n'
+    load_doc(page, De)
+    for w in ('E', 'F'):
+        click_text(page, w, 1); settle(page, 100); k.press('Backspace'); settle(page, 300); k.type('"q" x'); settle(page, 300)
+    s_ = src(page)
+    check('real: quotes typed into an emptied English passage are English', "\\foreignlanguage{english}{``q'' x}" in s_ and "\\begin{otherlanguage}{english}``q'' x\\end{otherlanguage}" in s_, s_[-200:])
+    three(page, s_, 'real quotes in an emptied passage', ('\u201cq\u201d x',))
+    for D, name in (('\\documentclass[ngerman]{article}\n\\begin{document}\nDas ist ein Text hier.\n\\end{document}\n', 'a class option alone'),
+                    ('\\documentclass[ngerman]{scrartcl}\n\\usepackage{babel}\n\\begin{document}\nDas ist ein Text hier.\n\\end{document}\n', 'KOMA\'s class option with babel')):
+        load_doc(page, D)
+        click_text(page, 'Text', 4); k.type(' "Hallo" und'); settle(page, 300)
+        want = "``Hallo''" if 'alone' in name else '\u201eHallo\u201c'
+        check('real: German set by ' + name + ': ' + want, 'Text ' + want + ' und hier.' in src(page), src(page)[-80:])
+        three(page, src(page), 'real quotes, ' + name)
 
 
 with sync_playwright() as p:

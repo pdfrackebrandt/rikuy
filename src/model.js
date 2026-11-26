@@ -16,7 +16,7 @@ import { fieldText } from './fields.js';
 import { readField } from './forms.js';
 
 const DVIPS = Object.fromEntries(DVIPS_COLORS), XC = Object.fromEntries(BASE_COLORS);
-import { listSetup, formatOf, numText, bulletGlyph, INDENT_KEYS } from './lists.js';
+import { listSetup, formatOf, numText, bulletGlyph, INDENT_KEYS, setNewLists } from './lists.js';
 
 const WIDGET_FILE = /\.html?$/i;
 // the page's set up of the last preamble read (Builder.pageSetup)
@@ -77,7 +77,14 @@ const FILE_CMDS = {
 const SI_CMDS = new Set(['num', 'SI', 'si', 'qty', 'unit', 'numrange', 'SIrange', 'qtyrange', 'numlist', 'SIlist', 'qtylist', 'numproduct', 'SIproduct', 'qtyproduct', 'ang', 'tablenum']);
 // a package's options as { key: value or true }, for src/pagesrc.js setsMedia
 const optsOf = (op) => Object.fromEntries(String(op || '').split(',').map((x) => x.trim()).filter(Boolean).map((x) => { const q = x.indexOf('='); return q < 0 ? [x, true] : [x.slice(0, q).trim(), x.slice(q + 1).trim()]; }));
-const INVIS = new Set([
+// (R4) the layout's registers, written as TeX's assignments in a document's text
+// (\columnseprule=.4pt before a multicols): no text of the page (INVIS), their value read off with
+// them (ASSIGN); the page drew the value as words, "=.4pt"
+const LAYOUT_REGS = ['columnseprule', 'columnsep', 'baselineskip', 'lineskip', 'lineskiplimit', 'topsep', 'itemsep', 'parsep', 'partopsep', 'fboxsep', 'fboxrule',
+  'arraycolsep', 'tabcolsep', 'arrayrulewidth', 'doublerulesep', 'abovedisplayskip', 'belowdisplayskip', 'abovedisplayshortskip', 'belowdisplayshortskip',
+  'textfloatsep', 'intextsep', 'floatsep', 'labelsep', 'labelwidth', 'itemindent', 'listparindent', 'unitlength', 'jot', 'mathsurround', 'parfillskip',
+  'hfuzz', 'vfuzz', 'hbadness', 'vbadness', 'brokenpenalty', 'predisplaypenalty', 'postdisplaypenalty', 'relpenalty', 'binoppenalty', 'overfullrule'];
+const INVIS = new Set([...LAYOUT_REGS,
   'label', 'index', 'glossary', 'nocite', 'phantomsection', 'protect', 'relax', 'indent', 'sloppy', 'fussy',
   'frenchspacing', 'makeatletter', 'makeatother', 'raggedright', 'raggedleft', 'addcontentsline', 'setlength',
   'addtolength', 'setcounter', 'addtocounter', 'stepcounter', 'refstepcounter', 'hypersetup', 'pagestyle',
@@ -114,6 +121,11 @@ const INVIS = new Set([
 const CITE_CMDS = new Set(['cite', 'citet', 'citep', 'citealt', 'citealp', 'citeauthor', 'citeyear', 'citeyearpar',
   'Citet', 'Citep', 'Citealt', 'Citealp', 'Citeauthor', 'textcite', 'parencite', 'autocite', 'Textcite',
   'Parencite', 'Autocite', 'footcite', 'smartcite', 'citenum']);
+// (R4) acronym's and acro's \ac family, glossaries' \gls family and its acronyms' \acrshort family:
+// the argument is an entry's key; the silent ones mark an entry used, unused or listed and print
+// nothing (acronym's \acused and \acreset, acro's \acuse, glossaries' \glsadd, \glsreset, \glsunset)
+const GLS_CMDS = /^(?:[aA]c(?:[slf]|fi)?p?\*?|ac[sl]u|[iI]ac|[gG]ls(?:pl)?|GLS(?:pl)?|[gG]ls(?:text|first|plural|firstplural|name|symbol|desc|useri)|GLS(?:text|name)|[aA]cr(?:short|long|full)(?:pl)?|ACR(?:short|long|full)(?:pl)?|[gG]lsentry(?:name|text|short|long|plural|symbol|desc)|[gG]lsxtr(?:short|long|full)(?:pl)?|glsadd|acused|acuse|acreset|glsreset|glsunset)$/;
+const GLS_SILENT = /^(?:glsadd|acused|acuse|acreset|glsreset|glsunset)$/;
 const REF_CMDS = new Set(['ref', 'eqref', 'pageref', 'cref', 'Cref', 'autoref', 'nameref', 'vref', 'Vref', 'labelcref']);
 const SECTIONS = { part: -1, chapter: 0, section: 1, subsection: 2, subsubsection: 3, paragraph: 4, subparagraph: 5 };
 // memoir's \setsecnumdepth{…} names
@@ -220,8 +232,10 @@ const FLUSH = { align: null, flushAll: false };
 const SPACING_ENV = { singlespace: 1, 'singlespace*': 1, SingleSpace: 1, onehalfspace: 'h', OnehalfSpace: 'h', doublespace: 'd', DoubleSpace: 'd', spacing: 'x', Spacing: 'x' };
 const SPACING_DECL = new Set(['onehalfspacing', 'doublespacing', 'singlespacing', 'OnehalfSpacing', 'DoubleSpacing', 'SingleSpacing']);
 const ASSIGN = new Set(['hangindent', 'hangafter', 'parindent', 'parskip', 'widowpenalty', 'clubpenalty', 'displaywidowpenalty', 'interlinepenalty', 'linepenalty',
-  'hyphenpenalty', 'exhyphenpenalty', 'tolerance', 'pretolerance', 'emergencystretch', 'looseness', 'leftskip', 'rightskip']);
-const ASSIGN_VALUE = /^[ \t]*=?[ \t]*([+-]?(?:\d+(?:\.\d*)?|\.\d+)[ \t]*(?:pt|bp|mm|cm|in|pc|dd|cc|sp|em|ex)?) ?/;
+  'hyphenpenalty', 'exhyphenpenalty', 'tolerance', 'pretolerance', 'emergencystretch', 'looseness', 'leftskip', 'rightskip',
+  ...LAYOUT_REGS]);
+// (a glue's stretch and shrink go with it, \parfillskip=0pt plus 1fil: review N4)
+const ASSIGN_VALUE = /^[ \t]*=?[ \t]*([+-]?(?:\d+(?:\.\d*)?|\.\d+)[ \t]*(?:pt|bp|mm|cm|in|pc|dd|cc|sp|em|ex)?)(?:[ \t]+plus[ \t]*[+-]?(?:\d+(?:\.\d*)?|\.\d+)?[ \t]*(?:pt|bp|mm|cm|in|pc|dd|cc|sp|em|ex|fil{1,3}))?(?:[ \t]+minus[ \t]*[+-]?(?:\d+(?:\.\d*)?|\.\d+)?[ \t]*(?:pt|bp|mm|cm|in|pc|dd|cc|sp|em|ex|fil{1,3}))? ?/;
 // setspace's stretch for one and a half and double spacing at 10, 11 and 12 pt (memoir's too)
 const ONEHALF = { 10: 1.25, 11: 1.213, 12: 1.241 }, DOUBLE = { 10: 1.667, 11: 1.618, 12: 1.655 };
 // the alignment a group {\centering ...\par} gives its paragraph: the declaration first in it,
@@ -544,7 +558,7 @@ export function sameModels(a, b) {
 // Whether an edit of a text ([p, p + del) of old made [p, p + ins) of now) leaves the user's
 // command signatures (scanUserSigs) as they were: plain characters in and out, and no keyword of
 // a definition within 80 characters of it and of the spaces around it, in either text
-const SIG_CHARS = /[\\{}#[\]]/, SIG_WORDS = /def|newcommand|newenvironment|DocumentEnvironment/;
+const SIG_CHARS = /[\\{}#[\]]/, SIG_WORDS = /def|newcommand|newenvironment|DocumentEnvironment|DocumentCommand|RobustCommand/;
 function sigsKept(old, now, p, del, ins) {
   if (SIG_CHARS.test(old.slice(p, p + del)) || SIG_CHARS.test(now.slice(p, p + ins))) return false;
   const near = (t, a, b) => {
@@ -643,6 +657,9 @@ function incremental(project, hint) {
   if (keptO.length !== keptN.length || keptO.some((x, k) => x !== keptN[k])) return null;
   const failed = H.failed - failedDollars(oldMine) + failedDollars(mine);
   if (failed * now.length > MATH_BUDGET) return null;
+  // (a $ with no closing $ reads the rest of its paragraph as a formula, citations and references
+  // in it too, Builder.inl: the full build says what it then reads)
+  if (failedDollars(mine) || failedDollars(oldMine)) return null;
   // the paragraphs built again where they were: the first one's indent, alignment and direction
   // are the old first one's, and the flow sets the ones after it as the full build's would
   const B = new Builder(project, hint);
@@ -1125,6 +1142,8 @@ class Builder {
             O.parskip = typeof v === 'number' ? v / O.pt : 0.6; O.parindent = 0;
           }
           if (p === 'cleveref') { O.cleveref = true; O.crefCap = /capitali[sz]e/.test(op); }
+          // (R4) acronym's, acro's and glossaries' commands, whose argument is an entry's key
+          if (/^(?:acronym|acro|glossaries|glossaries-extra)$/.test(p)) O.gls = true;
           if (p === 'fullpage') O.margins = { l: 72.27, r: 72.27, t: 72.27, b: 72.27 };
           // (geometry with no options lays the page out by its own defaults; with pass it leaves
           // the class's layout and only sets the PDF's sheet)
@@ -2406,6 +2425,10 @@ class Builder {
       return us.length ? us : null;
     }
     if (LIST_ENVS.has(name)) return this.listBlock(nd, ctx, env);
+    // (R4) a list of the document's own, enumitem's \newlist{todolist}{itemize}{2}: a list of its
+    // type, labelled by its own \setlist[todolist]; drawn as an unknown environment, its \item
+    // were words on the page
+    if (this.listsOf().newlist[name]) return this.listBlock(nd, ctx, env);
     if (name === 'abstract') {
       const items = [{ type: 'h', level: 'abs', num: '', inl: [{ k: 'chr', text: 'Abstract' }], star: true, ctx: 'h', f: ctx.f, dir: this.dirOf() }];
       const fns = [];
@@ -2749,11 +2772,29 @@ class Builder {
     return { f: ctx.f, s: nd.s, e: nd.e, items, fns };
   }
 
+  // the preamble's list set up (src/lists.js listSetup), read once
+  listsOf() {
+    if (this.listCfg) return this.listCfg;
+    const cfg = this.listCfg = this.docBody ? listSetup(this.mainCtx.src, this.docBody.at) : listSetup('');
+    // (lists of the document's own declared in a .sty or .cls of the project count too, and the list
+    // commands edit them as lists: src/lists.js setNewLists)
+    for (const [n, t] of this.files || []) {
+      if (typeof t !== 'string' || !/\.(sty|cls)$/.test(n) || !/\\newlist/.test(t)) continue;
+      const x = listSetup(t, t.length);
+      for (const k of Object.keys(x.newlist)) if (!cfg.newlist[k]) { cfg.newlist[k] = x.newlist[k]; cfg.newlistDepth[k] = x.newlistDepth[k]; }
+    }
+    setNewLists(cfg.newlist, cfg.newlistDepth);
+    return cfg;
+  }
+
   listBlock(nd, ctx, env) {
-    const name = nd.name.replace(/\*$/, '');
+    const name = this.listsOf().newlist[nd.name] || nd.name.replace(/\*$/, '');
     const depth = (env.listDepth || 0) + 1;
     const kind = /enum/.test(name) ? 'enum' : name === 'description' ? 'desc' : 'item';
-    const level = kind === 'enum' ? (env.enumDepth || 0) + 1 : (env.itemDepth || 0) + 1;
+    // (a list of enumitem's \newlist counts its own depth, \enitdp@<name>: the standard lists' depths
+    // are not stepped by it, nor its by them: review B6)
+    const ownList = this.listsOf().newlist[nd.name] ? nd.name : null;
+    const level = ownList ? ((env.newDepth || {})[ownList] || 0) + 1 : kind === 'enum' ? (env.enumDepth || 0) + 1 : (env.itemDepth || 0) + 1;
     // split by \item
     const items = [];
     let cur = null;
@@ -2780,7 +2821,7 @@ class Builder {
     // its options (enumitem's label=, start=, resume, nosep; the enumerate package's "(a)"), its
     // own set up (\def\labelenumi, \setcounter{enumi}, \setlength{\itemsep}), the preamble's
     // \setlist and \renewcommand of \labelitemi or \theenumi, LaTeX's own by level
-    const cfg = this.listCfg || (this.listCfg = this.docBody ? listSetup(this.mainCtx.src, this.docBody.at) : listSetup(''));
+    const cfg = this.listsOf();
     const a0 = nd.args[0];
     const L = { name: nd.name, kind, s: nd.s, e: nd.e, be: nd.be, es: nd.es, opt: a0 && a0.o !== false ? { s: a0.s, e: a0.e, is: a0.is, ie: a0.ie } : null, setupE: items.length ? items[0].cmd.s : nd.es };
     let F = kind === 'desc' ? null : formatOf(ctx.src, L, cfg, { level, depth });
@@ -2848,7 +2889,7 @@ class Builder {
       }
       // (the label and the spacing are the block's own: a \setlist in the preamble changes them)
       this.use('L' + count + level + (label && label[0] && label[0].text != null ? label[0].text : picM ? 'img:' + picM[0] : '') + '|' + (sep ?? '') + (lm ? '|' + lm.text + ',' + lm.lab + ',' + lm.w : ''));
-      const sub = { ...env, ...FLUSH, top: false, listDepth: depth, list: true, lmBase: lm ? lm.text : env.lmBase, enumDepth: kind === 'enum' ? level : (env.enumDepth || 0), itemDepth: kind === 'item' ? level : (env.itemDepth || 0), ctxKind: 'li', noIndentFirst: true, depth: depth, cls: (env.cls || ''),
+      const sub = { ...env, ...FLUSH, top: false, listDepth: depth, list: true, lmBase: lm ? lm.text : env.lmBase, enumDepth: kind === 'enum' && !ownList ? level : (env.enumDepth || 0), itemDepth: kind === 'item' && !ownList ? level : (env.itemDepth || 0), newDepth: ownList ? { ...(env.newDepth || {}), [ownList]: level } : env.newDepth, ctxKind: 'li', noIndentFirst: true, depth: depth, cls: (env.cls || ''),
         enumVals: kind === 'enum' ? [...vals.slice(0, level - 1), count] : vals, enumThe: kind === 'enum' ? [...thes.slice(0, level - 1), F.theStar] : thes,
         enumLabel: kind === 'enum' && label && label[0].text != null ? label[0].text : env.enumLabel };
       const us = this.flow(it.nodes, ctx, sub);
@@ -3015,19 +3056,35 @@ class Builder {
         // a TikZ picture in a figure (Shape Format's and Chart Format's Position): drawn as in the
         // text (src/render.js floatPart), its source box where the page cannot draw it
         if (n.t === 'env' && n.name === 'tikzpicture' && !ctx.pm) { flushP(); parts.push({ type: 'raw', f: ctx.f, s: n.s, e: n.e, is: n.be, ie: n.es, name: 'tikzpicture', align: align || dflt }); continue; }
+        // (an environment the page shows as its source, algorithmic in an algorithm, a listing in a
+        // figure: its source box, as in the text; taken as the words of a paragraph, it was not drawn)
+        if (n.t === 'env' && n.raw && n.name !== 'comment' && n.name !== 'tikzpicture') {
+          flushP();
+          parts.push({ type: 'raw', f: ctx.f, s: n.s, e: n.e, is: n.be, ie: n.es, name: n.name, text: ctx.src.slice(n.be, n.es).replace(/^\n/, '').replace(/\s+$/, ''), verb: /verbatim|lstlisting|minted|Verbatim/.test(n.name), align: 'left' });
+          continue;
+        }
         para.push(n);
       }
     };
     walk(nd.nodes);
     flushP();
     this.lastTarget = saveT;
+    // (a float with a style of its own, algorithm's: its caption first or last wherever \caption
+    // stands, its label as the style writes it, its rules: src/refsrc.js)
+    const FS = RR.floats && Object.prototype.hasOwnProperty.call(RR.floats, kind) ? RR.floats[kind] : null;
+    if (FS && FS.style) {
+      const caps = parts.filter((x) => x.type === 'caption'), rest = parts.filter((x) => x.type !== 'caption');
+      for (const c of caps) { c.sep = FS.sep; c.bold = FS.bold; }
+      parts.length = 0;
+      parts.push(...(FS.style === 'ruled' ? [...caps, ...rest] : [...rest, ...caps]));
+    }
     if (!parts.length) parts.push({ type: 'p', inl: [{ k: 'chip', f: ctx.f, s: nd.s, e: nd.e, text: kind, title: 'Empty ' + kind }], align: 'center', indent: false, ctx: 'p', f: ctx.f });
     const placement = nd.args[0] ? this.argText(ctx, nd.args[0]) : 'tbp';
     // (a wrapfigure's width: the line its pictures' \linewidth is, B8)
     const wrapW = /^wrap(figure|table)$/.test(nd.name) && nd.args[3] ? this.argText(ctx, nd.args[3]).trim() : null;
     // (R3) its side: r, l, or the outer and inner margins, which a one sided page has right and left
     const side = wrapW && nd.args[1] ? ({ r: 'r', l: 'l', o: 'r', i: 'l' }[this.argText(ctx, nd.args[1]).trim().toLowerCase()[0]] || 'r') : null;
-    return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind, num, parts, f: ctx.f, placement, wide: /\*$/.test(nd.name), wrapW, side }], fns };
+    return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind, num, parts, f: ctx.f, placement, wide: /\*$/.test(nd.name), wrapW, side, rule: FS && FS.style ? FS.style : null }], fns };
   }
 
   // set: what stands before the table in its float or group (B7: \rowcolors, \arraystretch,
@@ -3324,7 +3381,13 @@ class Builder {
   }
 
   // ---- inline conversion --------------------------------------------------------
+  // (inlDepth: how deep the lines' groups stand, so an unclosed $ that ran out of its group is
+  // forgotten at its paragraph's end: dollarOpen, below)
   inl(nodes, ctx, fns, out = []) {
+    this.inlDepth = (this.inlDepth || 0) + 1;
+    try { return this.inlBody(nodes, ctx, fns, out); } finally { if (!--this.inlDepth) this.dollarOpen = false; }
+  }
+  inlBody(nodes, ctx, fns, out = []) {
     const acc = new Acc(out, ctx);
     // \selectlanguage{arabic} in the middle of a line (and bidi's \setRTL): the words after it,
     // up to the next one or the line's end, turn. They are one run beside the others, a wrapper
@@ -3341,6 +3404,31 @@ class Builder {
     };
     for (let k = 0; k < nodes.length; k++) {
       const nd = nodes[k];
+      // (an unclosed $ in the group or the format just before: TeX takes its closing brace out,
+      // "Extra }, or forgotten $", and reads on in math to the paragraph's end: the rest drawn as
+      // that formula, as at the top: verification W4)
+      if (this.dollarOpen) {
+        this.dollarOpen = false;
+        const pv = nodes[k - 1];
+        if (pv && (pv.t === 'group' || (pv.t === 'cmd' && /^(?:text(?:bf|it|sl|sc|tt|sf|rm|up|md|normal|color|superscript|subscript)|emph|underline|enquote)$/.test(pv.name)))) {
+          let e = nodes[nodes.length - 1].e;
+          while (e > nd.s && /\s/.test(ctx.src[e - 1])) e--;
+          if (e > nd.s) {
+            acc.flush();
+            out.push(this.atom(ctx, { k: 'math', s: nd.s, e, is: nd.s, ie: e, tex: this.mathRefs(ctx.src.slice(nd.s, e)), display: false, unclosed: true }));
+            this.use('m');
+            this.dollarOpen = true;
+            break;
+          }
+          this.dollarOpen = true;
+        }
+      }
+      // (a register's assignment inside a line or a group, {\fboxsep=0pt\fbox{..}}: its value is no
+      // text, as at a paragraph's start (flow); it was drawn "=0pt": review N4)
+      if (nd.t === 'cmd' && ASSIGN.has(nd.name) && nodes[k + 1] && nodes[k + 1].t === 'text') {
+        const nx = nodes[k + 1], m = ASSIGN_VALUE.exec(ctx.src.slice(nx.s, Math.min(nx.e, nx.s + 80)));
+        if (m) { nodes = nodes.slice(); if (nx.s + m[0].length < nx.e) nodes[k + 1] = { ...nx, s: nx.s + m[0].length }; else nodes.splice(k + 1, 1); }
+      }
       const decl = nd.t === 'cmd' ? this.declDir(nd, ctx) : null;
       if (decl) {
         if (decl === this.dir) continue;
@@ -3358,6 +3446,22 @@ class Builder {
         case 'par': if (this.fnPar) { acc.flush(); out.push(this.atom(ctx, { k: 'br', s: nd.s, e: nd.e, par: true })); } else acc.ch(' ', nd.s, nd.e); break;
         case 'comment': acc.flush(); break;
         case 'special': {
+          // (a $ with no closing $: TeX reads on in math to the paragraph's end and stops there,
+          // "Missing $ inserted"; drawn so, a formula to there marked as the error, where
+          // it drew a "$" chip and the words after it as text)
+          if (nd.ch === '$' && nd.err) {
+            // (and past the group it stands in, to the paragraph's end: the loop above, a level out)
+            this.dollarOpen = true;
+            let e = k + 1 < nodes.length ? nodes[nodes.length - 1].e : nd.e;
+            while (e > nd.e && /\s/.test(ctx.src[e - 1])) e--;
+            if (e > nd.e) {
+              acc.flush();
+              out.push(this.atom(ctx, { k: 'math', s: nd.s, e, is: nd.e, ie: e, tex: this.mathRefs(ctx.src.slice(nd.e, e)), display: false, unclosed: true }));
+              this.use('m');
+              k = nodes.length;
+              break;
+            }
+          }
           if (nd.ch === '~') acc.ch(' ', nd.s, nd.e);
           else { acc.flush(); out.push(this.chip(ctx, nd.s, nd.e, nd.ch, nd.err ? 'Unbalanced ' + nd.ch : 'Special character ' + nd.ch + ' is only valid in math or tables', true)); }
           break;
@@ -3856,9 +3960,10 @@ class Builder {
     // vertical space inside a line (\title{\vspace{-1.5em}...}, a box's \smallskip) has no width: TeX
     // ends the paragraph or ignores it, and the page shows nothing either
     if (INVIS.has(name) || nd.def || name === 'vspace' || name === 'smallskip' || name === 'medskip' || name === 'bigskip') return false;
-    if (name === 'marginpar' || name === 'todo') {
+    // (marginnote's \marginnote[left page's text]{text}[offset]: its offset after the text, drawn as words "[0cm]")
+    if (name === 'marginpar' || name === 'todo' || name === 'marginnote') {
       acc.flush();
-      const a = nd.args[1];
+      const a = nd.args.find((x) => x && !x.o);
       out.push(this.atom(ctx, { k: 'chip', s: nd.s, e: nd.e, text: name === 'todo' ? 'TODO' : 'margin', title: a ? texToPlain(ctx.src.slice(a.is, a.ie)) : '', note: true }));
       return false;
     }
@@ -3885,6 +3990,17 @@ class Builder {
       const file = FC[1] >= 0 && nd.args[FC[1]] ? texToPlain(this.argText(ctx, nd.args[FC[1]])).trim() : '';
       out.push(this.chip(ctx, nd.s, nd.e, FC[0] + (file ? ' ' + file : ''), '\\' + name + ': set in the PDF. Click to edit the command.'));
       return false;
+    }
+    // (R4) \ac{KDE}, \gls{slp}: the argument is an entry's key, which TeX writes out as the entry's
+    // words. Drawn as words of the text, a word typed after them went into the key ("Glossary entry
+    // `SLP Zqc' has not been defined"); a field of its own, the key shown, as \ref's number is
+    if (this.opts.gls && GLS_CMDS.test(name)) {
+      const a = nd.args.find((x) => x && !x.o);
+      if (a) {
+        acc.flush();
+        if (!GLS_SILENT.test(name)) out.push(this.atom(ctx, { k: 'chip', s: nd.s, e: nd.e, text: texToPlain(this.argText(ctx, a)).trim(), plain: true, title: '\\' + name + ': an entry of the acronyms or the glossary, written out by TeX in the PDF' }));
+        return false;
+      }
     }
     // Unknown command
     acc.flush();

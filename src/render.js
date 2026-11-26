@@ -369,6 +369,8 @@ export class Renderer {
       }
       case 'float': {
         el.classList.add('flt', 'flt-' + it.kind);
+        // (float's styles: ruled's rules round the caption and under the float, boxed's frame)
+        if (it.rule) el.classList.add('flt-' + it.rule);
         if (it.wide) el.classList.add('wide');
         if (it.depth) { el.classList.add('deep'); el.style.setProperty('--depth', it.depth); }
         // a wrapfigure: its parts as wide as it is (its pictures' \linewidth), until the page wraps
@@ -602,7 +604,8 @@ export class Renderer {
       const lab = p.lab != null ? p.lab : { figure: 'Figure', table: 'Table' }[p.kind] || p.kind;
       // (\caption*: the words alone; beamer's: "Figure:" with no number)
       if (p.kind === 'sub') d.appendChild(chr('(' + p.num + ') ', 'caplab'));
-      else if (!p.star) { d.appendChild(chr((lab ? lab + (p.num ? ' ' + p.num : '') : p.num) + ': ', 'caplab')); d.dataset.cap = p.kind + ':' + (p.num || ''); }
+      // (a float style's label: algorithm's ruled "Algorithm 1" in bold, then a space)
+      else if (!p.star) { d.appendChild(chr((lab ? lab + (p.num ? ' ' + p.num : '') : p.num) + (p.sep != null ? p.sep : ': '), p.bold ? 'caplab caplab-b' : 'caplab')); d.dataset.cap = p.kind + ':' + (p.num || ''); }
       this.inl(p.inl, d);
       return d;
     }
@@ -712,11 +715,15 @@ export class Renderer {
       // a TikZ picture in a figure: drawn as in the text, selected as there (src/ui/shapes.js)
       const d = div('fp raw atom al-' + (p.align || 'center'));
       d.contentEditable = 'false';
-      const whole = p.e - p.s < 20000 ? (this.app.files.get(p.f) || '').slice(p.s, p.e) : '';
+      const whole = p.text == null && p.e - p.s < 20000 ? (this.app.files.get(p.f) || '').slice(p.s, p.e) : '';
       const pic = whole ? drawRaw(whole) : null;
-      if (pic) { d.classList.add('drawn'); d.appendChild(pic); } else { const h = div('raw-h'); h.textContent = 'tikzpicture'; d.appendChild(h); }
+      if (pic) { d.classList.add('drawn'); d.appendChild(pic); } else if (p.text == null) { const h = div('raw-h'); h.textContent = 'tikzpicture'; d.appendChild(h); } else {
+        // (another environment shown as its source: its name and its lines, as the text's box)
+        if (!p.verb) { const h = div('raw-h'); h.textContent = p.name; d.appendChild(h); } else d.classList.add('verb');
+        const pre = document.createElement('pre'); pre.textContent = p.text; d.appendChild(pre);
+      }
       const idx = B.atoms.length;
-      B.atoms.push({ kind: 'raw', f: p.f, s: this.rel(p.s), e: this.rel(p.e), is: this.rel(p.is), ie: this.rel(p.ie), name: 'tikzpicture' });
+      B.atoms.push({ kind: 'raw', f: p.f, s: this.rel(p.s), e: this.rel(p.e), is: this.rel(p.is), ie: this.rel(p.ie), name: p.name || 'tikzpicture' });
       d.dataset.a = B.id + '.' + idx;
       return d;
     }
@@ -861,6 +868,8 @@ export class Renderer {
         const r = this.katex(x.tex, false);
         s.innerHTML = r.html;
         if (r.err) { s.classList.add('has-err'); s.title = r.err; rec.err = r.err; }
+        // (a $ never closed: TeX's error, the formula it reads to the paragraph's end: src/model.js)
+        else if (x.unclosed) { s.classList.add('has-err'); s.title = rec.err = 'Missing $ inserted: this $ has no closing $, so TeX reads the rest of the paragraph as a formula. Write \\$ for a dollar sign, or close the formula with $.'; }
         break;
       }
       case 'cite': s.textContent = x.text; rec.keys = x.keys; rec.cmd = x.cmd; if (x.missing) s.classList.add('miss'); break;

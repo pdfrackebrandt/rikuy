@@ -23,7 +23,7 @@ export const SIG = own({
   textbf: 'm', textit: 'm', emph: 'm', texttt: 'm', textsc: 'm', textsf: 'm', textrm: 'm', textup: 'm',
   textsl: 'm', textmd: 'm', textnormal: 'm', underline: 'm', uline: 'm', uuline: 'm', uwave: 'm', sout: 'm', xout: 'm',
   hl: 'om', mbox: 'm', fbox: 'm', text: 'm', textsuperscript: 'm', textsubscript: 'm', ensuremath: 'm',
-  footnote: 'om', footnotetext: 'om', footnotemark: 'o', endnote: 'om', printendnotes: 'o', thanks: 'm', marginpar: 'om', todo: 'om',
+  footnote: 'om', footnotetext: 'om', footnotemark: 'o', endnote: 'om', printendnotes: 'o', thanks: 'm', marginpar: 'om', todo: 'om', marginnote: 'omo',
   cite: 'oom', citet: 'oom', citep: 'oom', citealt: 'oom', citealp: 'oom', citeauthor: 'oom', citeyear: 'oom',
   citeyearpar: 'oom', Citet: 'oom', Citep: 'oom', Citealt: 'oom', Citealp: 'oom', Citeauthor: 'oom',
   textcite: 'oom', parencite: 'oom', autocite: 'oom', Textcite: 'oom', Parencite: 'oom', Autocite: 'oom',
@@ -143,7 +143,8 @@ const isWS = (c) => c === ' ' || c === '\t' || c === '\n' || c === '\r';
 
 // Scan a whole source once for user macro arities so arguments attach correctly.
 export function scanUserSigs(src, into = {}) {
-  const re = /\\(?:re|provide)?newcommand\*?\s*\{?\s*\\([A-Za-z]+)\s*\}?\s*(?:\[\s*(\d)\s*\])?\s*(\[)?/g;
+  // (\DeclareRobustCommand takes \newcommand's form: review V4)
+  const re = /\\(?:(?:re|provide)?newcommand|DeclareRobustCommand)\*?\s*\{?\s*\\([A-Za-z]+)\s*\}?\s*(?:\[\s*(\d)\s*\])?\s*(\[)?/g;
   let m;
   while ((m = re.exec(src))) {
     const n = m[2] ? +m[2] : 0;
@@ -152,6 +153,23 @@ export function scanUserSigs(src, into = {}) {
   }
   const re2 = /\\def\s*\\([A-Za-z]+)((?:#\d)*)\s*\{/g;
   while ((m = re2.exec(src))) into[m[1]] = 'm'.repeat((m[2].match(/#/g) || []).length);
+  // xparse's \NewDocumentCommand{\foo}{m o O{x} m} (and Renew, Provide, Declare): its m, o and O{..}
+  // as far as the spec has only those (a star, s, is the parser's own), so a group after its
+  // arguments is no argument of it; it took every group that followed (review V4)
+  const re5 = /\\(?:New|Renew|Provide|Declare)DocumentCommand\s*\{?\s*\\([A-Za-z]+)\s*\}?\s*\{([^{}]{0,200}(?:\{[^{}]{0,200}\}[^{}]{0,200}){0,9})\}/g;
+  while ((m = re5.exec(src))) {
+    const spec = m[2];
+    let sig = '';
+    for (let i = 0; i < spec.length; i++) {
+      const c = spec[i];
+      if (/[\s+!s]/.test(c)) continue;
+      if (c === 'm') sig += 'm';
+      else if (c === 'o') sig += 'o';
+      else if (c === 'O' && spec[i + 1] === '{') { sig += 'o'; let d = 0; for (i++; i < spec.length; i++) { if (spec[i] === '{') d++; else if (spec[i] === '}' && --d === 0) break; } }
+      else break;
+    }
+    into[m[1]] = sig;
+  }
   // environments whose opening code starts a picture are pictures themselves: kept as source
   // blocks (drawn in the PDF) like tikzpicture, instead of having their body read as text
   const W = '(?:\\s|%[^\\n]*(?:\\n|$))*';

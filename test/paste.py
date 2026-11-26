@@ -17,6 +17,8 @@ cases = [
      '\\begin{table}[h]\n\\centering\n\\begin{tabular}{lr}\n\\toprule\nModel & R2 \\\\\n\\midrule\nOLS & 0.41 \\\\\n\\bottomrule\n\\end{tabular}\n\\end{table}'),
     ('markdown from a chat', None, '**Key** result:\n\n- first with $x^2$\n- second', '\\textbf{Key} result:\n\n\\begin{itemize}\n  \\item first with $x^2$\n  \\item second\n\\end{itemize}'),
     ('money stays money', None, 'It costs $5 and $10.', 'It costs \\$5 and \\$10.'),
+    # (R4) a price before a bracket, pasted as plain text: a dollar sign, as typed (power.py dollars)
+    ('a price before a bracket stays money', None, 'It costs $5 (excl. tax) now.', 'It costs \\$5 (excl. tax) now.'),
     ('link with hyperref', '<p>See <a href="https://arxiv.org/abs/1234">the preprint</a>.</p>', 'See the preprint.', 'See \\href{https://arxiv.org/abs/1234}{the preprint}.'),
     ('display math from chatgpt', None, 'The loss is\n\n$$L=\\sum_i (y_i-\\hat y_i)^2$$', 'The loss is\n\n\\[\nL=\\sum_i (y_i-\\hat y_i)^2\n\\]'),
     # (a quote after a no-break space opens: it came out ''q'')

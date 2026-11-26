@@ -8,7 +8,7 @@ import {
   endsWithControlWord, isBalanced, diff, stepStart, stepJoin, boundary, clusterEdge, sourceEdge, backspaceUnits
 } from './editor.js';
 import { SAMPLE } from './sample.js';
-import { splitRows, parseJS, scanUserSigs, setNativeParse } from './parser.js';
+import { splitRows, parseJS, scanUserSigs, setNativeParse, SIG, CHARS } from './parser.js';
 import { mathNeeds } from './ui/eqtab.js';
 import { installWordTyping, wordShortcuts, makeDialect, classifyMacros, resolveCommand, PACKAGES, WORD_GROUPS, FIELD_MACROS, fieldValue, modelValue, mathOnly } from './wordmath.js';
 import { isTallDef, fitBrackets, tallTest } from './fences.js';
@@ -27,6 +27,7 @@ const PLACEHOLDER_PDF = 'JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXM
 const PLACEHOLDER_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAAAAACRn/EaAAAACXBIWXMAAAAjAAAAIwHV9BZdAAAADklEQVR42mO4CQQMcAIATFkKLSVMoyAAAAAASUVORK5CYII=';
 const PLACEHOLDER_EPS = '%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 320 240\n0.85 setgray 0 0 320 240 rectfill\n0.6 setgray 2 setlinewidth 1 1 318 238 rectstroke\nshowpage\n';
 import { texToPlain, shortAuthors, entryYear, parseBib } from './bib.js';
+import { mainLanguage, dictOf, languageSpans, langAt } from './spell/words.js';
 import { kvGet, kvPut, kvDel, kvSwap, decodeText, encodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
 import { changes, spacingOnly, hunks } from './diff.js';
 import { TeXEngine, parseTeXLog, issueText } from './tex.js';
@@ -55,7 +56,7 @@ import { installCaret } from './caret.js';
 import { installWebMcp } from './webmcp.js';
 import { TOOLS, agentTools, callTool as callAgentTool, describeCommand } from './agent.js';
 import * as kit from './ui/kit.js';
-import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass, pickMain } from './preamble.js';
+import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass, pickMain, groupEnd } from './preamble.js';
 import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, THM_STYLES, titleInfo } from './styles.js';
 import { tableAt, cellAt as tableCellAt, colAlign, clipToCell, clearCells, blockTabular } from './table.js';
 import { eolAt } from './blockenv.js';
@@ -2502,7 +2503,36 @@ class App {
   // quotes. o.prev: the text before where it is not the source's (a new paragraph: ' '); by
   // default the two characters before, as `` is told from `; o.wrap: as codeAt
   typedTeX(f, at, data, o = {}) {
-    return escapeTeX(data, o.prev ?? (this.src(f).slice(Math.max(0, at - 2), at) || ' '), { code: this.codeAt(f, at, o.wrap) });
+    // (German quotes, „..“, as Word's in German, where the text at the caret is German as babel or
+    // polyglossia set it: its own \selectlanguage, \foreignlanguage or otherlanguage, else the
+    // document's (src/spell/words.js); a class's option alone sets no German up, and pdfLaTeX's OT1
+    // has no „ then (review B7, B8). babel's commands where the main file's text is no UTF-8; a '
+    // after a word closes an open ‚ before it in its paragraph, ‘: src/editor.js escapeTeX)
+    let quotes = null, sq = false;
+    if (/["']/.test(data)) {
+      const t = this.src(f) || '', main = this.src(this.main) || '';
+      // (the language of the character before the caret, as Word's: at the end of a passage that
+      // closes right after its words, \foreignlanguage{english}{..|}, the passage's; else the one at it)
+      const sp = languageSpans(t), L = mainLanguage(main);
+      let here = (at > 0 && langAt(sp, at - 1)) || langAt(sp, at);
+      // (inside a passage emptied of its words, \foreignlanguage{english}{|}, otherlanguage's or
+      // polyglossia's: no text there marks its language, read off the command: verification W5)
+      if (!here) {
+        const pre = t.slice(Math.max(0, at - 160), at), post = t.slice(at, at + 60);
+        const m = /^\s*\}/.test(post) ? /\\foreignlanguage\s*(?:\[[^\]]*\])?\s*\{\s*([A-Za-z-]+)\s*\}\s*\{\s*$/.exec(pre) || /\\text(english|british|american|german|ngerman|spanish|french|italian|portuguese|dutch)\s*(?:\[[^\]]*\])?\s*\{\s*$/.exec(pre)
+          : /^\s*\\end\s*\{/.test(post) ? /\\begin\s*\{otherlanguage\*?\}\s*(?:\[[^\]]*\])?\s*\{\s*([A-Za-z-]+)\s*\}\s*$/.exec(pre) || /\\begin\s*\{(english|british|american|german|ngerman|spanish|french|italian|portuguese|dutch)\}\s*$/.exec(pre) : null;
+        if (m) here = m[1].toLowerCase();
+      }
+      if ((here ? dictOf(here) : L.name ? dictOf(L.name, L.variant) : '') === 'de_DE') {
+        quotes = /\\usepackage\s*\[[^\]]*\b(?:latin\d|ansinew|applemac|cp\d+|decmulti|next)\b[^\]]*\]\s*\{inputenc\}/.test(main) ? 'de-cmd' : 'de';
+        const par = t.slice(Math.max(0, at - 2000), at).split(/\n[ \t\r]*\n/).pop();
+        sq = (par.match(/\u201A|\\glq(?![a-z])/g) || []).length > (par.match(/\u2018|\\grq(?![a-z])/g) || []).length;
+      }
+    }
+    // (right after an environment's \begin and its arguments, \begin{otherlanguage}{english}|, a
+    // quote opens, as at a paragraph's start: the } before it closes no words)
+    const pv = o.prev ?? (/\\begin\s*\{[^{}]*\}(?:\s*(?:\[[^\]]*\]|\{[^{}]*\}))*$/.test(this.src(f).slice(Math.max(0, at - 160), at)) ? ' ' : this.src(f).slice(Math.max(0, at - 2), at) || ' ');
+    return escapeTeX(data, pv, { code: this.codeAt(f, at, o.wrap), quotes, openSingle: sq });
   }
 
   // Text typed, or written by Replace, at p of file f as the source takes it there. A selection
@@ -3074,7 +3104,8 @@ class App {
       // indent like the current item line
       let ls2 = +is + base; let ind = '';
       while (ls2 > 0 && (src[ls2 - 1] === ' ' || src[ls2 - 1] === '\t')) { ind = src[ls2 - 1] + ind; ls2--; }
-      const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
+      const w = c.collapsed ? this.wrapBreak(el, f, p, true) : { p, close: '', open: '' };
+      if (w.refuse) return;
       const ins = w.close + NL + ind + t.slice(NL.length) + w.open;
       this.commit([...edits, { f, s: w.p, e: w.p, t: ins }], { f, p: Math.max(w.p, p) + ins.length, bias: 1 }, 'enter');
       return;
@@ -3088,6 +3119,7 @@ class App {
       // (and out of any other command's words ending there, \textsl, \enquote, \href: written
       // plain after them; \textsl{..} round a blank line stopped TeX, which takes no paragraph there)
       const out = this.wrapBreak(el, f, E.p);
+      if (out.refuse) return;
       if (!out.close) E.p = out.p;
       this.showGhost(itemEl, f, E.p, { align: true });
       if (E.wrap && this.ghost) this.ghost.wrap = E.wrap;
@@ -3095,6 +3127,11 @@ class App {
       return;
     }
     const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
+    if (w.refuse) {
+      // (\\ then the words after it on the next line; {} where a [ or a * follows, which \\ takes)
+      if (w.br) { const t = '\\\\' + (/^[ \t]*[[*]/.test(src.slice(p, p + 40)) ? '{}' : '') + '\n'; this.commit([...edits, { f, s: p, e: p, t }], { f, p: p + t.length, bias: 1 }, 'type'); }
+      return;
+    }
     // At a paragraph's start, where a blank line already stands before it: Word makes an empty
     // paragraph, which LaTeX has not, and each Enter piled blank lines up in the source (twelve
     // Enters, twelve). The empty paragraph shows above it, to type in (Up), the caret staying, as
@@ -3135,16 +3172,146 @@ class App {
   // Enter inside \textbf{...}, \emph{...} and the like: TeX stops with "Paragraph ended before
   // \textbf was complete" at a break inside their argument, so they close before the break and
   // open again after it. At the very start or end of one the break goes outside it instead.
-  wrapBreak(el, f, p) {
+  // The same holds for the braces round p that the page draws no wrapper for: a command of the
+  // document's own, drawn through its definition (\question{..}), one of a package the page shows
+  // only the words of, a caption in a float it does not know; and in a list (list set), a group
+  // ({\bf ..}) a new \item would be written into, drawn as text. A blank line went inside them,
+  // and TeX stopped ("Paragraph ended before \@ssect was complete"). Their levels are read from
+  // the source, the paragraph's braces from its start; an argument already holding a blank line,
+  // or a command whose argument takes paragraphs (\footnote, \parbox), keeps the break inside.
+  wrapBreak(el, f, p, list) {
     const src = this.src(f);
     let close = '', open = '';
+    const L = [];
     for (let n = el; n && n !== this.root && !n.classList.contains('it'); n = n.parentElement) {
       const y = n.dataset.y ? styOfEl(n) : null;
       if (!y || y.f !== f || !Number.isFinite(y.s) || p < y.is || p > y.ie) continue;
-      if (!close && p === y.ie) { p = y.e; continue; }
-      if (!open && p === y.is) { p = y.s; continue; }
-      close += src.slice(y.ie, y.e);
-      open = src.slice(y.s, y.is) + open;
+      L.push({ s: y.s, is: y.is, ie: y.ie, e: y.e, page: true, name: (/^\\([A-Za-z@]+)/.exec(src.slice(y.s, y.s + 40)) || [])[1] || '' });
+    }
+    let i0 = p;
+    for (let k = p - 1, nl = false; k >= Math.max(0, p - 4000); k--) {
+      const ch = src[k];
+      if (ch === '\n') { if (nl) break; nl = true; } else if (ch !== ' ' && ch !== '\t' && ch !== '\r') nl = false;
+      i0 = k;
+    }
+    // (\verb|{| and \lstinline|{| hold no braces of the text's)
+    const verb = (i) => { const m = /^\\(?:verb\*?|lstinline)([^A-Za-z\s*[{])/.exec(src.slice(i, i + 12)); return m ? src.indexOf(m[1], i + m[0].length) : -1; };
+    const st = [];
+    for (let i = i0; i < p; i++) {
+      const ch = src[i];
+      if (ch === '\\') { const v = verb(i); if (v > i) { i = v; continue; } i++; continue; }
+      if (ch === '%') { while (i < p && src[i] !== '\n') i++; continue; }
+      if (ch === '{') st.push(i); else if (ch === '}') st.pop();
+    }
+    const SW = /^(?:\s*\\(?:bf|it|sl|sc|em|tt|rm|sf|(?:bf|md)series|(?:it|up|sl|sc)shape|(?:rm|sf|tt)family|normalfont|tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)(?![A-Za-z]))*\s*/;
+    // what a command takes: the parser's table, the document's own \newcommand and \def, none for a
+    // character or a logo; null for one unknown (review B1)
+    let U = null;
+    const sigOf = (n) => {
+      if (SIG[n] !== undefined) return SIG[n];
+      if (!U) { U = {}; for (const t of this.files.values()) if (typeof t === 'string') scanUserSigs(t, U); }
+      if (Object.prototype.hasOwnProperty.call(U, n)) return U[n];
+      return CHARS[n] !== undefined || /^(?:LaTeX|TeX|LaTeXe|BibTeX|XeLaTeX|pdfLaTeX|LuaLaTeX|today|xspace)$/.test(n) ? '' : null;
+    };
+    // (a command of the document's own whose words reach no other command's braces, \newcommand's
+    // \long: its argument holds paragraphs, and the break stays in it, one numbered exercise of two
+    // paragraphs; split, it was two, every later one renumbered: review N1)
+    const holdsPars = (n) => {
+      // (the definition in force at the break: the last before it in its file, \renewcommand too,
+      // else the last in the project's other files, its preamble's and .sty's: review V3)
+      const re = new RegExp('\\\\(long\\s*\\\\def|def|(?:re|provide)?newcommand(\\*?))\\s*\\{?\\s*\\\\' + n + '(?![A-Za-z@])', 'g');
+      let best = null;
+      const scan = (t, lim) => { re.lastIndex = 0; let m; while ((m = re.exec(t)) && m.index < lim) best = { t, m }; };
+      for (const [name, t] of this.files) if (typeof t === 'string' && name !== f) scan(t, t.length);
+      scan(src, p);
+      if (!best) return false;
+      const { t, m } = best;
+      if (!(/^long/.test(m[1]) || (/newcommand/.test(m[1]) && !m[2]))) return false;
+      // its body: after the name, the count and the default of an optional argument, or \def's
+      // parameter text
+      let i = m.index + m[0].length;
+      const sp = () => { while (i < t.length && /\s/.test(t[i])) i++; };
+      sp(); if (t[i] === '}') { i++; sp(); }
+      for (let k = 0; k < 2 && t[i] === '['; k++) { const z = t.indexOf(']', i); if (z < 0) return false; i = z + 1; sp(); }
+      while (i < t.length && t[i] !== '{' && i - m.index < 400) i++;
+      if (t[i] !== '{') return false;
+      const z = groupEnd(t, i, 20000);
+      if (z < 0) return false;
+      const body = t.slice(i + 1, z - 1);
+      if (!/#\d/.test(body)) return false;
+      // (its arguments at the top of its body, none in another command's braces nor handed to a
+      // command right before them, \@foo#1\@nil, whose own argument may take no paragraph; a
+      // declaration takes none, \par\noindent #1: verification W3)
+      const DECL = /^(?:par|noindent|indent|centering|raggedright|raggedleft|leavevmode|ignorespaces|unskip|relax|null|newline|linebreak|smallskip|medskip|bigskip|vfill|hfill|quad|qquad|enspace|thinspace|normalfont|em|bf|it|sl|sc|tt|rm|sf|(?:bf|md)series|(?:it|up|sl|sc)shape|(?:rm|sf|tt)family|tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)$/;
+      let d = 0;
+      for (let j = 0; j < body.length; j++) {
+        const ch = body[j];
+        if (ch === '\\') { j++; continue; }
+        if (ch === '{') d++; else if (ch === '}') d--;
+        else if (ch === '#' && /\d/.test(body[j + 1] || '')) {
+          const cs = /\\([A-Za-z@]+)\s*$/.exec(body.slice(0, j));
+          if (d > 0 || (cs && !DECL.test(cs[1]) && sigOf(cs[1]) !== '')) return false;
+        }
+      }
+      return true;
+    };
+    for (let j = st.length - 1; j >= 0; j--) {
+      const q = st[j];
+      if (L.some((y) => y.page && y.is === q + 1)) continue;
+      // (a command's argument: its brace right after the name, or after an argument before it on
+      // the line; \begin{..}, \item, \noindent or a declaration before a brace start a group)
+      const pre = src.slice(Math.max(0, q - 300), q);
+      let head = /\\([A-Za-z@]+)(?:\*?|\*?(?:[ \t]*\[[^[\]{}\n]*\]|[ \t]*\{[^{}\n]*\})+[ \t]*)$/.exec(pre);
+      // (an environment's own argument, \begin{definition}{Title}: a title, made twice no split)
+      const envArg = head && head[1] === 'begin' && /\\begin\s*\{\s*([A-Za-z@*]+)\s*\}/.exec(head[0]);
+      if (envArg && !/^(?:document|center|flushleft|flushright|quote|quotation|verse|itemize|enumerate|description|abstract)$/.test(envArg[1])) head[1] = 'caption';
+      else if (head && /^(?:begin|end|item|noindent|indent|par|centering|raggedright|raggedleft)$/.test(head[1])) head = null;
+      if (head && SW.exec('\\' + head[1])[0].length === head[1].length + 1) head = null;
+      // (an argument only while the command takes more than stand before it on the line; an unknown
+      // one's only with no space between, \foo{a}{b}: a group after an argument is a group,
+      // \textbf{Keywords:} {\small ..}, \LaTeX{} {\it ..}, which the break was copied with)
+      if (head && !envArg) {
+        const sig = sigOf(head[1]), n = (head[0].match(/\{/g) || []).length;
+        if (sig != null ? n >= (sig.match(/[mv]/g) || []).length : /[ \t]/.test(head[0])) head = null;
+      }
+      // (an optional argument's group, \item[{..}]: left as it is)
+      if (!head && /\[\s*$/.test(pre)) break;
+      let d = 0, qe = -1;
+      for (let i = q; i < src.length && i < q + 20000; i++) {
+        const ch = src[i];
+        if (ch === '\\') { const v = verb(i); if (v > i) { i = v; continue; } i++; continue; }
+        if (ch === '%') { while (i < src.length && src[i] !== '\n') i++; continue; }
+        if (ch === '{') d++; else if (ch === '}' && --d === 0) { qe = i; break; }
+      }
+      if (qe < 0) break;
+      L.push({ s: head ? q - head[0].length : q, is: q + 1 + SW.exec(src.slice(q + 1, qe))[0].length, ie: qe, e: qe + 1, name: head ? head[1] : '' });
+    }
+    // innermost first, the page's wrappers and the source's levels in one order; a group of
+    // declarations holds paragraphs, so the break stays in one (held) unless a command round it
+    // closes, and then it closes and opens again too
+    L.sort((x, y) => y.is - x.is);
+    const held = [];
+    for (const y of L) {
+      if (/^(?:footnote|footnotetext|endnote|thanks|parbox|marginpar|marginnote|sidenote|todo|vbox|vtop|vcenter)$/.test(y.name)) break;
+      if (!close && !held.length && (y.page ? p === y.ie : !src.slice(p, y.ie).trim())) { p = y.e; continue; }
+      if (!open && !held.length && (y.page ? p === y.is : !src.slice(y.is, p).trim())) { p = y.s; continue; }
+      // (an argument already holding a blank line takes paragraphs; and in a list, a group round
+      // more items or the list's end is none of this item's)
+      if (!y.page && (/\n[ \t\r]*\n/.test(src.slice(p, y.ie)) || (list && /\\(?:item|end)(?![A-Za-z])/.test(src.slice(p, y.ie))))) break;
+      // (an environment begun before the break and ended after it inside these braces, a minipage
+      // in a box: closing the braces there would cut it, "Extra }, or forgotten \endgroup"; it
+      // holds paragraphs: review B2)
+      const envs = (t) => (t.match(/\\begin\s*\{/g) || []).length - (t.match(/\\end\s*\{/g) || []).length;
+      if (envs(src.slice(y.is, p)) > 0 || envs(src.slice(p, y.ie)) < 0) break;
+      if (!y.page && !y.name && !list) { held.push(y); continue; }
+      if (!y.page && holdsPars(y.name)) break;
+      // (a caption, a title or a frame's title made twice would print twice, numbered twice: no
+      // break inside one, as none in a figure's caption; a letter's address, closing or signature,
+      // a title's or an author's lines take a line break, \\, as Word's Enter there makes a line)
+      if (/^(?:address|signature|closing|opening|subject|title|subtitle|author|institute)$/.test(y.name)) return { p, close: '', open: '', refuse: true, br: true };
+      if (/^(?:caption|captionof|subcaption|date|frametitle|framesubtitle)$/.test(y.name)) return { p, close: '', open: '', refuse: true };
+      for (const g of [...held, y]) { close += src.slice(g.ie, g.e); open = src.slice(g.s, g.is) + open; }
+      held.length = 0;
     }
     return { p, close, open };
   }
