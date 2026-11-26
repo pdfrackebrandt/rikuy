@@ -2704,6 +2704,10 @@ class App {
         if (!r) return;
       }
       f = r.f; a = r.a; b = r.b;
+      // (from inline code's end into what follows, the paragraph after joined to it: the code's
+      // closing character stays, as a } does; taken, the code ran on over the words joined,
+      // "\lstinline|abcdNext.", which TeX stops at: ended by end of line)
+      { const ic = b > a + 1 ? this.inlineCodeAt(f, a) : null; if (ic && ic.includes(this.src(f)[a])) a += 1; }
       // In a table Backspace at a cell's start and Delete at its end do nothing, and a word or a
       // line taken stops at the cell's edge, as Word's: the & or \\ went, joining two cells or rows
       const clip = f === c.f && clipToCell(this.src(f), c.a, a, b);

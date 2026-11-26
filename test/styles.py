@@ -1497,6 +1497,14 @@ def block_join(page):
     after one, and Delete at the end of the block before: the two join, the second's words taking
     the first's style, as Word keeps the first paragraph's formatting. Backspace only moved the
     caret to the end of the block above, and a second one took its last letter."""
+    # (review of round 4) a paragraph joined to one ending in inline code: the code's closing
+    # character stays, as a } does; it was taken ("\lstinline|abcdNext.", TeX: ended by end of
+    # line), and with {..} nothing joined
+    L = '\\usepackage{listings}\n\\usepackage{minted}\n'
+    for code in ('\\lstinline|abcd|', '\\lstinline{abcd}', '\\mintinline{py}|abcd|'):
+        for key, at in (('Backspace', ('Next.', 0)), ('Delete', ('abcd', 4))):
+            load_doc(page, A('Use ' + code + '\n\nNext.', L)); click_text(page, *at); page.keyboard.press(key); settle(page, 200)
+            check('block_join: %s joins the paragraph after %s, the code closed' % (key, code), src(page) == A('Use ' + code + ' Next.', L), src(page)[60:])
     H = A('Alpha para.\n\n\\section{Head}\nBody text.\n\nGamma.')
     load_doc(page, H); h0 = page.evaluate('window.rikuy.hist.length'); click_text(page, 'Head', 0); page.keyboard.press('Backspace'); settle(page, 200)
     check('block_join: Backspace at a heading\'s start joins its words to the paragraph above, as text', src(page) == H.replace('Alpha para.\n\n\\section{Head}\nBody', 'Alpha para. Head\n\nBody'), src(page)[40:])
