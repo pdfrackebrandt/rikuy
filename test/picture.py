@@ -17,7 +17,7 @@ drawing of it, undo. Where dist/tex holds a TeX tree, every construct compiled i
 picture's box in the PDF against the page's.
 
 RIKUY_DIST names another dist/."""
-import os, sys, re, base64, struct, zlib
+import os, sys, re, time, base64, struct, zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from browser import settle, until, tap, open_page, check, results, src, load_doc, click_text, roundtrip, pressed, PRINT_LAYOUT
 from playwright.sync_api import sync_playwright
@@ -1085,6 +1085,14 @@ def hunt(page):
         ok = src(page) == WRAP(want)
         page.keyboard.press('Control+z'); page.keyboard.press('Control+z'); settle(page, 200)
         check('a float\'s only picture deleted with a comment beside it: the float goes, the comment kept, the letter typed outside it: ' + repr(d[17:60]), ok and src(page) == WRAP(d), src(page)[60:])
+    # (review of round 4) a "%%%%" banner in a float that keeps its caption: the test of what is left
+    # took time doubling with each % (26 of them, 1.4 s; 80, the tab held for good)
+    d = 'Before it here.\n\n\\begin{figure}[h]\n\\centering\n' + '%' * 80 + '\n\\includegraphics[width=0.3\\linewidth]{a.png}\n\\caption{Cap}\n\\end{figure}\n\nAfter it here.'
+    load_doc(page, WRAP(d)); settle(page, 300)
+    sel_pic()(page)
+    t0 = time.time(); page.keyboard.press('Delete'); settle(page, 200); dt = time.time() - t0
+    check('a picture deleted from a float with a banner of 80 %% and a caption: at once, the banner and caption kept (%.2f s)' % dt,
+          dt < 2 and '\\includegraphics' not in src(page) and ('%' * 80 + '\n') in src(page) and '\\caption{Cap}' in src(page), repr(src(page)[60:260]))
 
 
 # (round 3) Insert › Picture puts the picture where the caret is and selects it, as Word's: it went

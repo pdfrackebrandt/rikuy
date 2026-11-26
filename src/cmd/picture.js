@@ -281,7 +281,9 @@ export const methods = {
   picDeleteEdit(h, a) {
     const F = h && h.P.anc.float;
     if (!F || a.f !== h.f || a.s == null) return null;
-    const S = h.src, FILL = /^(?:\s|\\centering\b|\\label\s*\{[^{}%\\]*\}|\\vspace\*?\s*\{[^{}%\\]*\}|%[^\n]*)*$/;
+    // (a comment takes its whole line, (?=\n|$): one that could end anywhere let a run of %, a
+    // "%%%%" banner, be cut in every way, and a test that failed took time doubling with each %)
+    const S = h.src, FILL = /^(?:\s|\\centering\b|\\label\s*\{[^{}%\\]*\}|\\vspace\*?\s*\{[^{}%\\]*\}|%[^\n]*(?=\n|$))*$/;
     const left = (E, s, e) => S.slice(E.be, s) + S.slice(e, E.es);
     // (with the boxes it stands in, a border or a turn)
     const O = h.P.outer;
