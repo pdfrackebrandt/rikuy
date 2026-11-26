@@ -877,6 +877,18 @@ def real(page):
     txt = page.evaluate("document.getElementById('pages').innerText")
     check('real: \\marginnote{..}[0cm], \\marginnote[..]{..}[0cm] and \\columnseprule=.4pt draw no "[0cm]", "side" or "=.4pt"', '[0cm]' not in txt and 'side' not in txt and '=.4pt' not in txt and '=2pt' not in txt and 'fboxsep' not in txt and 'More.' in txt and 'Words.' in txt and 'Last words.' in txt, txt[:200])
     three(page, Dm, 'real margin notes', ('A note.', 'Right side', 'Words.', 'Last words.'))
+    # (R4, V2 of its verification) a price and a formula typed after "$5 " and "$2 ": TeX's pairing
+    # decides, and the PDF reads "$5 (excl. tax) now." as text and 2(ab + c) as a formula
+    load_doc(page, DOC)
+    click_text(page, 'here.', 5)
+    for ch in ' It costs $5 (excl. tax) now.':
+        k.type(ch); settle(page, 250 if ch == '$' else 40)
+    k.press('Escape'); settle(page, 300)
+    for ch in ' So $2 (ab + c)$ holds.':
+        k.type(ch); settle(page, 250 if ch == '$' else 40)
+    settle(page, 300)
+    check('real: "$5 (excl. tax) now." typed is a price, "$2 (ab + c)$" a formula', 'It costs \\$5 (excl. tax) now. So $2 (ab + c)$ holds.' in src(page), src(page)[-120:])
+    three(page, src(page), 'real price and formula', ('It costs $5 (excl. tax) now.', 'holds.'))
     # (review N4) inside a line or a group, and a glue's stretch with it
     Dr = DOC.replace('Agent income here.', 'Before {\\fboxsep=0pt\\fbox{boxed}} after.\n\n\\parfillskip=0pt plus 1fil Some words here.')
     load_doc(page, Dr)

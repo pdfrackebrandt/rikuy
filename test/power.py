@@ -188,6 +188,23 @@ def dollars(page):
         settle(page, 300)
         s = src(page)
         check('dollars: ' + typed_.strip() + (' is a price' if '%' in typed_ else ' stays a formula'), re.search('gamma\\.' + want + '\n', s) is not None and active(page) == 'pages', (s[60:130], active(page)))
+    # (R4, real documents; the verification of bugs-r4-real, V2) after "$5 " what is no word waits
+    # for TeX's pairing: a closing $ makes the formula, the sentence's end, Enter or Esc the price.
+    # The sentence went into the formula ("$5 (excl. tax) now."); guessing from the letters in a
+    # bracket turned "$2 (ab + c)$" into text
+    for typed_, want in ((' costs $5 (excl. tax) now.', re.escape(' Costs \\$5 (excl. tax) now.')), (' costs $5 "only" now.', re.escape(" Costs \\$5 ``only'' now.")),
+                         (' costs $5 [sic] now.', re.escape(' Costs \\$5 [sic] now.')), (' costs $5 (10% off) now.', re.escape(' Costs \\$5 (10\\% off) now.')),
+                         (' a $3 (a)$ term', r' A \$3\s*\(a\)\$ term'), (' so $2 (x + y)$ ok', r' So \$2\s*\(x\s*\+\s*y\)\$ ok'),
+                         (' so $2 (ab + c)$ ok', r' So \$2\s*\(ab\s*\+\s*c\)\$ ok'), (' so $2 (dx + dy)$ ok', r' So \$2\s*\(dx\s*\+\s*dy\)\$ ok'),
+                         (' so $2 (a, b)$ ok', r' So \$2\s*\(a,\s*b\)\$ ok'), (' on $2 [a, b]$ ok', r' On \$2\s*\[a,\s*b\]\$ ok')):
+        fresh(page, MATH)
+        click_text(page, 'gamma.', 6)
+        for ch in typed_:
+            page.keyboard.type(ch); settle(page, 250 if ch == '$' else 40)
+        settle(page, 300)
+        if 'now.' in typed_: key(page, 'Escape', 300)
+        s = src(page)
+        check('dollars: ' + typed_.strip() + (' is a price' if 'now.' in typed_ else ' stays a formula'), re.search('gamma\\.' + want + '\n', s) is not None and active(page) == 'pages', (s[60:130], active(page)))
     fresh(page, MATH)
     click_text(page, 'gamma.', 6)
     for ch in ' costs $5 each': page.keyboard.type(ch); settle(page, 250 if ch == '$' else 40)

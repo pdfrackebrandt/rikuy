@@ -5502,6 +5502,14 @@ class App {
     // letters, then the space. Text from an input method or a dead key after the space is a word,
     // never a variable (W5).
     let pend = null, word = '', priced = false;
+    // (R4) rest: what follows "$5 " when it is no word (a bracket, a quote, a sign, a digit): TeX
+    // pairs dollar signs, so it waits as typed until a $ closes it, a formula ($2 (ab + c)$,
+    // $1 - \alpha$), or the sentence's end, Enter, Esc, Tab, a move or the box closing leave the $
+    // unpaired, a price ("$5 (excl. tax) now.", "$5 (10% off)"). Main kept the formula at the first
+    // such key, and the sentence after it went into it in math italics.
+    let rest = null;
+    const restText = (r) => this.typedTeX(base ? base.f : ghost.f, base ? base.a : ghost.pos, r, { prev: ' ' });
+    const restMath = (r) => r.replace(/(^|[^\\])([%#&])/g, '$1\\$2');
     const PRICE = /^\d+([.,]\d+)?(\\?%)?[.,;:!?)]?$/;
     const priceText = (more) => '\\$' + pend.replace(/(^|[^\\])%/g, '$1\\%') + ' ' + more;
     // (a formula opened by $$ where a display cannot go: its closing $$ is one, the second $ taken)
@@ -5509,7 +5517,7 @@ class App {
     const makePrice = (more) => {
       push.cancel();
       const t = priceText(more), at = ins, P = this.pop;
-      pend = null; word = '';
+      pend = null; word = ''; rest = null;
       ins = null; ta.value = '';
       if (at) this.commit([{ f: at.f, s: at.s, e: at.e, t }], null, P.session);
       // (closed as a price: not an empty formula to take away, with the price's own step)
@@ -5522,7 +5530,7 @@ class App {
     };
     const hint0 = hint.textContent;
     const wait = () => {
-      hint.textContent = pend === null ? hint0 : word ? '$' + pend + ' ' + word + ': a price at the next space or mark; $ keeps a formula.' : '$' + pend + ' and a space: a price if a word follows.';
+      hint.textContent = pend === null ? hint0 : rest !== null ? '$' + pend + ' ' + rest + ': a price at the sentence\'s end; a closing $ makes it a formula.' : word ? '$' + pend + ' ' + word + ': a price at the next space or mark; $ keeps a formula.' : '$' + pend + ' and a space: a price if a word follows.';
       hint.classList.toggle('wait', pend !== null);
     };
     // k: a key's name, or with data a character that came with no key
@@ -5539,11 +5547,25 @@ class App {
       const ch = data ? k[0] : k.length === 1 ? k : null;
       // (Shift, Caps Lock, an input method's Process and the like come before what they make)
       if (!ch && !/^(Enter|Escape|Tab|Delete|Backspace|Arrow|Home|End|Page)/.test(k)) return false;
+      if (rest !== null) {
+        if (k === 'Backspace') { rest = rest.slice(0, -1) || null; wait(); return true; }
+        if (ch === '$') {
+          const more = ' ' + restMath(rest);
+          pend = null; rest = null; wait();
+          if (inBox) ta.setRangeText(more, ta.selectionStart, ta.selectionEnd, 'end'); else ta.value += more;
+          ta.dispatchEvent(new Event('input'));
+          return false;
+        }
+        if (ch === ' ' && /[.!?]$/.test(rest)) return makePrice(restText(rest) + ' ');
+        if (ch) { rest += ch; wait(); return true; }
+        return makePrice(restText(rest));
+      }
       if (ch && /^\p{L}$/u.test(ch)) { word += ch; wait(); return true; }
       if (k === 'Backspace') { if (word) word = word.slice(0, -1); else pend = null; wait(); return true; }
       if (word && ch && /^[ .,;:!?)'"]$/.test(ch)) return makePrice(word + ch);
       if (word && /^(Enter|Escape|Tab)$/.test(k)) return makePrice(word);
       if (!word && k === ' ') return true;
+      if (!word && ch && ch !== '$') { rest = ch; wait(); return true; }
       // (anything else keeps the formula, the space and the word in it: in the box as typed, in the
       // field the word alone, which sets no space)
       const more = word ? ' ' + word : ch && ch !== '$' && inBox ? ' ' : '';
@@ -5569,6 +5591,7 @@ class App {
     p.addEventListener('compositionend', (e) => {
       if (pend === null || !e.data || this.pop !== PM) return;
       e.stopPropagation(); e.preventDefault();
+      if (rest !== null) { rest += e.data; wait(); return; }
       makePrice(word + e.data);
     }, true);
     ta.addEventListener('beforeinput', (e) => {
@@ -5614,10 +5637,11 @@ class App {
       let v = '';
       // (closed as a price by its key: makePrice wrote it)
       if (priced) { /* written */ }
-      // (closed by a click or the like with a word after "$5 ": the price, W6)
-      else if (pend !== null && word) {
-        const t = priceText(word);
-        pend = null; word = '';
+      // (closed by a click or the like with a word after "$5 ", or what waits for its closing $: the
+      // price, W6)
+      else if (pend !== null && (word || rest !== null)) {
+        const t = priceText(rest !== null ? restText(rest) : word);
+        pend = null; word = ''; rest = null;
         if (ins) { this.commit([{ f: ins.f, s: ins.s, e: ins.e, t }], null, P.session); P.returnCaret = { f: ins.f, p: ins.s + t.length }; ins = null; }
         else if (ghost) { this.ghost = ghost; this.ghostInsert(t); P.returnCaret = null; }
         else { this.commit([{ f: base.f, s: base.a, e: base.b, t }], null, P.session); P.returnCaret = { f: base.f, p: base.a + t.length }; }
