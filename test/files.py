@@ -552,6 +552,20 @@ def r4_tabs():
         click_text(pb, 'w39', 0); pb.keyboard.type('M'); written(pb)
         check('tabs: after forty saves in one window the other, saving unfocused, still merges; nothing to Versions (V2-C)', 'w39' in src(pa) and 'NQ' not in src(pa) and 'NFirst' in src(pa) and 'NFirst' in src(pb) and 'Mw39' in src(pb)
               and pa.evaluate(FROM) == n0, (src(pa)[30:100], src(pb)[30:100], n0, pa.evaluate(FROM)))
+        # (review V2-D) File, Rename landing inside a save that brings the other window's words in:
+        # those words are taken all the same, and stay in both windows
+        # (the other window closed once its last save, the one its merge set going, is written)
+        until(pb, '() => !window.rikuy.unsaved'); written(pb); pb.close()
+        pa.evaluate('(t) => { window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "race1", "Opened"); window.rikuy.persist(); }', TWO); written(pa)
+        pb = pa.context.new_page()
+        pb.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+        pb.goto('https://rikuy.test/'); ready(pb); pb.evaluate(STUB)
+        click_text(pa, 'First paragraph', 5); pa.keyboard.type(' AAA'); written(pa)
+        pb.evaluate("() => { const g = window.rikuy, f = g.freshMark; g.freshMark = async function (...a) { g.freshMark = f; await g.runCommand('recent', { rename: 'race1', to: 'race2' }); return f.apply(this, a); }; }")
+        click_text(pb, 'Second paragraph', 6); pb.keyboard.type(' BBB'); written(pb)
+        click_text(pa, 'Second', 0); pa.keyboard.type('Z'); written(pa)
+        check('tabs: a Rename inside a save that brings the other window\'s words in loses none of them (V2-D)', pb.evaluate('window.rikuy.name') == 'race2' and 'First AAA paragraph' in src(pb)
+              and 'First AAA paragraph' in src(pa) and 'ZSecond BBB paragraph' in src(pa), (pb.evaluate('window.rikuy.name'), src(pa)[30:130], src(pb)[30:130]))
         check('tabs: no page errors', not errors, errors[:3])
         browser.close()
 

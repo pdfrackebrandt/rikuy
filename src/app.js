@@ -7511,13 +7511,16 @@ class App {
     // (nothing of that tab's but words this one changed again: those go to the versions)
     if (merged.same) return merged.conflicts.length ? this.keepOtherTab(cur, both(false)) : undefined;
     if (merged.renamed && this.name === meta.name && this.main === meta.main && this.pid === meta.pid) this.renamedHere(merged.renamed, cur.nameT);
-    const name = merged.renamed || meta.name;
-    const mine = () => this.name === name && this.main === meta.main && this.pidMap === this.files && this.pid === meta.pid;
-    if (!mine()) return this.keepOtherTab(cur);
+    // (the project by its id, whatever its name: a Rename here while this ran is the same project,
+    // and the merge is taken; another project opened meanwhile keeps that tab's text as a version,
+    // and this tab's next copy claims to have seen none, so its write over the merged copy is
+    // never read there as that tab's words deleted, review V2-D)
+    const mine = () => this.main === meta.main && this.pidMap === this.files && this.pid === meta.pid;
+    if (!mine()) { this.savedMap = null; return this.keepOtherTab(cur); }
     // (that tab may have marked the project a stranger's since this one read its mark, as an
     // archive dropped there does: read again before its text is drawn and compiled here, V2)
     await this.freshMark();
-    if (!mine()) return this.keepOtherTab(cur);
+    if (!mine()) { this.savedMap = null; return this.keepOtherTab(cur); }
     this.syncEngineMenu();
     const W = new Map(meta.files), edits = [];
     const want = new Map();
