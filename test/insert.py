@@ -1116,6 +1116,19 @@ def hunt_c(page):
             else: page.keyboard.press(k)
             settle(page, 120)
         check('in \\lstinline|abcd| then %s: %r' % (' '.join(keys), want), want in src(page), src(page)[40:120])
+    # (review of round 4) after a way out at a paragraph's end the caret is a place of its own, after
+    # the code: Delete joins the next paragraph (it took its first letter), Backspace takes the
+    # code's last letter (it took the closing |), Shift+Home selects the line; Left goes back to
+    # the code's end (it went before its last letter)
+    for keys, want in ((['End', 'Delete'], 'Use \\lstinline|abcd| Next.'), (['End', 'Backspace'], 'Use \\lstinline|abc|\n\nNext.'), (['End', 'Shift+Home', 'X'], '\nX\n\nNext.')):
+        load_doc(page, W('Use \\lstinline|abcd|\n\nNext.')); click_text(page, 'abcd', 4)
+        for k in keys:
+            if len(k) == 1: page.keyboard.type(k)
+            else: page.keyboard.press(k)
+            settle(page, 120)
+        check('after End out of \\lstinline|abcd| at a paragraph\'s end, %s: %r' % (' '.join(keys[1:]), want), want in src(page), src(page)[40:120])
+    load_doc(page, W('Use \\lstinline|abcd| here.')); click_text(page, 'abcd', 4); page.keyboard.press('ArrowRight'); settle(page, 120); page.keyboard.press('ArrowLeft'); settle(page, 120); page.keyboard.type('X'); settle(page, 200)
+    check('Right out of the code, then Left: back at its end, X in the code after its last letter', '\\lstinline|abcdX| here.' in src(page), src(page)[40:120])
     # pasted words go in as typed (escaped as prose, \} ended the code); words with its closing
     # character are refused
     PASTE = "(t) => { const d = new DataTransfer(); d.setData('text/plain', t); document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', {clipboardData: d, bubbles: true, cancelable: true})); }"

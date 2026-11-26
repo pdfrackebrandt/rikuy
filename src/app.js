@@ -2023,6 +2023,7 @@ class App {
     // (Right at inline code's very end: just after the code, in the same paragraph, codeStepOut;
     // it went on to the next paragraph, or past the space after the code)
     if (e.key === 'ArrowRight' && !e.shiftKey && !mod && !e.altKey && this.codeStepOut()) { e.preventDefault(); return; }
+    if (e.key === 'ArrowLeft' && !e.shiftKey && !mod && !e.altKey && this.codeStepIn()) { e.preventDefault(); return; }
     // (Left and Right in the empty paragraph Enter showed: out of it at once, to the end of the
     // paragraph before or the start of the next, as Word's; the browser stepped over its invisible
     // mark first, so the caret seemed not to move and what was typed went into it)
@@ -2547,7 +2548,34 @@ class App {
     if (!c || !c.collapsed || c.ghost || this.texAt(c.f, c.a)) return false;
     const S = this.src(c.f), ic = this.inlineCodeAt(c.f, c.a);
     if (!ic || !ic.includes(S[c.a])) return false;
+    // (the page's caret after the code's run in its own line, held for the place after the closing
+    // character: left at the code's end, or at the next paragraph's start where the code ended its
+    // own, Delete took that paragraph's first letter and Backspace the closing |)
+    const sel = getSelection(), n = sel.rangeCount ? sel.focusNode : null, run = n && (n.nodeType === 1 ? n : n.parentElement).closest('.y.y-tt');
+    if (run && this.root.contains(run)) {
+      const i = [...run.parentNode.childNodes].indexOf(run) + 1;
+      sel.collapse(run.parentNode, i);
+      this.ourSel = true;
+      this.pending = { f: c.f, p: c.a + 1, node: run.parentNode, offset: i };
+      return true;
+    }
     this.restoreCaret({ f: c.f, p: c.a + 1, bias: -1 }, true);
+    return true;
+  }
+  // Left from just after a typewriter run (where codeStepOut put the caret): back to the code's end,
+  // the same place on the page; the browser went on before its last letter
+  codeStepIn() {
+    const sel = getSelection();
+    if (!sel.rangeCount || !sel.isCollapsed) return false;
+    const n = sel.focusNode, o = sel.focusOffset;
+    const prev = n && n.nodeType === 1 ? n.childNodes[o - 1] : null;
+    if (!prev || prev.nodeType !== 1 || !prev.matches('.y.y-tt') || !this.root.contains(prev)) return false;
+    const w = document.createTreeWalker(prev, NodeFilter.SHOW_TEXT);
+    let t = null;
+    for (let x; (x = w.nextNode());) t = x;
+    if (!t) return false;
+    sel.collapse(t, t.data.length);
+    this.pending = null;
     return true;
   }
 
