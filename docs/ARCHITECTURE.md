@@ -1239,7 +1239,17 @@ exits from deep inside leave it lower: unreset, Ghostscript's 64 KB stack hit it
 
 TeX does likewise in `newTeX()` and `run()`: after warm runs the first 64 MiB (`MEM_HEADER`) are
 kept and restored after every run, the rest zeroed, the stack reset to `_sp0`, descriptors above 2
-closed; that also frees strings the worker mallocs into TeX's heap. asy's fork to render a 3D
+closed; that also frees strings the worker mallocs into TeX's heap. XeTeX's warm run reads ICU's
+data (5 MB, in a pack of 2.75 MB): it runs the first time an instance runs XeTeX (`xeWarm()`), on
+the heap kept then, which is kept again after it, so a document that never runs XeTeX does not
+fetch that pack; a XeLaTeX compile fetches it with its other packs, and the offline plan keeps it.
+Every PDF of pdfLaTeX, XeLaTeX and LuaLaTeX, in either order in a session, came out byte for byte
+the same as with every warm run at the start. On a GitHub runner (`test/loadbench.py pdf`: a first
+visit with Preview pressed at once, cable line, 10 runs of each build in turn, one run) press to
+first PDF went from a median of 15056 ms (p95 15714) to 13834 (p95 13864), 2.75 MB fewer on the line;
+one run of ten each, so the 8% is that run's, not a spread over runs. A warm stopped short (the
+ICU pack not loaded) is not kept and is tried again, and a nested XeTeX behind a pipe is warmed
+before the pipe takes its output. asy's fork to render a 3D
 bitmap becomes `galley_fork_save` (memory below `sbrk(0)`), render, `galley_fork_restore`.
 
 ## 13. The TeX tree, packs, lazy loading, mirror
@@ -1433,8 +1443,14 @@ Rikuy's (`tex/native/spell/spell.cc`: open a dictionary, check a list of words i
 suggest, add), in a worker (`src/spell/worker.js`, written by `build.mjs` after Emscripten's glue
 as `spell/spell-<hash>.js`). The page starts it with the first check, from a blob as the TeX and
 Word workers start; the worker fetches the module and each dictionary it needs (`spell/<name>-
-<hash>.aff` and `.dic`) and uses no byte whose SHA-256 is not the one the bundle names
-(`__RIKUY_SPELL__`). The service worker keeps the module at install and a dictionary the first time
+<hash>.aff` and `.dic`, gzipped by `build.mjs`: Pages sends those types uncompressed) and uses no
+byte whose SHA-256 is not the one the bundle names (`__RIKUY_SPELL__`), then unpacks it
+(`src/spell/unpack.js`: DecompressionStream, else fflate). On a runner (`loadbench.py spell`, 10 runs
+of each build in turn, one run) the English dictionary's last byte came at a median of 8952 ms
+(p95 9020) before and 6040 (p95 6123) after on the phone line, 2149 (2222) and 1918 (1948) on cable:
+when it arrives, not when spelling can use it. Hashing and unpacking it then takes 7.5 ms in
+Chromium here (7.4 to 7.7 over 10 runs) and 65 ms at a phone's CPU (CDP's 4x: 38 to 116), which those
+numbers leave out. The service worker keeps the module at install and a dictionary the first time
 a document in its language is checked. The artifact's copy has none of it and keeps the browser's
 own spelling.
 

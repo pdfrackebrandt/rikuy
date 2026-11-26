@@ -315,4 +315,20 @@ if (CORPUS && fs.existsSync(CORPUS)) {
   groups++;
 }
 
+// a dictionary as it travels (build.mjs gzips it) unpacked by the worker's own function, with the
+// browser's DecompressionStream and without it (Firefox before 113, Safari before 16.4: there the
+// worker threw and the Spelling pane and the Thesaurus had nothing)
+{
+  const { gunzip } = await import('../src/spell/unpack.js');
+  const zlib = await import('zlib');
+  const dic = fs.readFileSync(path.join(ROOT, 'tex/vendor/hunspell/dict/en_US.dic'));
+  const gz = zlib.gzipSync(dic, { level: 9 });
+  const same = (a) => a.length === dic.length && Buffer.from(a).equals(dic);
+  assert.ok(same(await gunzip(gz)), 'with DecompressionStream');
+  const D = globalThis.DecompressionStream;
+  globalThis.DecompressionStream = undefined;
+  try { assert.ok(same(await gunzip(gz)), 'without DecompressionStream'); } finally { globalThis.DecompressionStream = D; }
+  assert.ok(/from '\.\/unpack\.js'/.test(fs.readFileSync(path.join(ROOT, 'src/spell/worker.js'), 'utf8')), 'the worker unpacks with it');
+  groups++;
+}
 console.log('spell: ' + groups + ' groups of checks passed');

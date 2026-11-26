@@ -158,6 +158,66 @@ await ok('the offline plan is the core packs and the packs holding files under t
   assert.deepEqual([ctx.packFolder(1), ctx.packFolder(3), ctx.packFolder(2)], ['tex/latex/amsmath', 'fonts/type1/public/lm', 'tex/latex/amsmath2']);
 });
 
+await ok('the offline plan keeps ICU\'s data, which XeTeX reads as it starts and no start fetches now', () => {
+  run("INDEX.files.push(['/texlive/icudt78l.dat', 1, 3, 0]);");
+  try {
+    assert.equal(ctx.icuPack(), 3);
+    assert.deepEqual([...ctx.keepPlan(['tex/latex/amsmath'])], [0, 1, 3]);
+  } finally { run('INDEX.files.pop();'); }
+  assert.equal(ctx.icuPack(), null);
+});
+
+await ok('XeTeX is warmed once, the first time an instance runs it, before that run, and the heap kept after it', () => {
+  // (a TeX instance with a heap just past the part kept: the warm run writes there and above it)
+  const calls = [];
+  ctx.__calls = calls;
+  run(`M = { FS: { streams: [] }, _out: {}, _sp0: 7, HEAPU8: new Uint8Array(MEM_HEADER + 8), _memHeader: new Uint8Array(MEM_HEADER),
+    _stackRestore: (v) => { M._sp = v; }, _spGet: () => 5,
+    callMain: (a) => { __calls.push(a.join(' ') + ' sp' + M._sp); M.HEAPU8[0] = a[0] === 'xetex' ? 1 : M.HEAPU8[0]; M.HEAPU8[MEM_HEADER] = 9; } };`);
+  run('run(["pdflatex", "a.tex"]);');
+  assert.deepEqual(calls, ['pdflatex a.tex sp7'], 'pdfLaTeX warms nothing');
+  run('run(["xelatex", "a.tex"]); run(["xelatex", "b.tex"]); run(["xetex", "-ini", "c"]);');
+  assert.deepEqual(calls.slice(1), ['xetex --version sp7', 'xelatex a.tex sp5', 'xelatex b.tex sp5', 'xetex -ini c sp5']);
+  // the heap kept is the one after XeTeX's warm run, and above it nothing is left
+  assert.equal(run('[M._memHeader[0], M.HEAPU8[0], M.HEAPU8[MEM_HEADER]].join()'), '1,1,0');
+});
+
+await ok('a piped XeTeX run from TeX (\\input|"xelatex ...") reads its answer without XeTeX\'s version banner', () => {
+  // (the second instance's first XeTeX run is warmed, and that warm printed into the pipe)
+  run(`__fs2 = { files: {}, streams: [{ fd: 0, path: '/dev/stdin' }, { fd: 1, path: '/dev/stdout' }, { fd: 2, path: '/dev/stderr' }],
+    writeFile(p, d) { this.files[p] = String(d); }, readFile(p) { return new TextEncoder().encode(this.files[p] || ''); },
+    close(st) { this.streams[st.fd] = null; }, open(p, m) { const fd = this.streams.indexOf(null); const st = { fd, path: p }; this.streams[fd] = st; if (m === 'w') this.files[p] = ''; return st; },
+    chdir() {}, cwd() { return '/' } };
+  __T2 = { FS: __fs2, _out: { stdout: '', stderr: '' }, _sp0: 7, HEAPU8: new Uint8Array(MEM_HEADER + 8), _memHeader: new Uint8Array(MEM_HEADER),
+    _stackRestore() {}, _spGet: () => 5,
+    callMain(a) { const say = (t) => { const o = __fs2.streams[1]; if (o.path === '/dev/stdout') __T2._out.stdout += t; else __fs2.files[o.path] += t; };
+      if (a[1] === '--version') say('XeTeX 3.14159265 (TeX Live 2026)\\nCompiled with ICU version 78.1\\n');
+      else say('the answer\\n' + PIPE_END + '\\n');
+      throw Object.assign(new Error('exit'), { name: 'ExitStatus', status: 0 }); } };
+  texPool[1] = __T2; texDepth = 0; M = MAIN = { FS: __fs2 };`);
+  const out = [];
+  ctx.__io = { out: (t) => out.push(t), err: () => {}, env: { cwd: '/home/web_user/project' } };
+  run('nestedTeX(["xelatex", "q.tex"], __io, { stdin: "x" });');
+  assert.equal(out.join(''), 'the answer');
+  run('texPool.length = 1; texPool[0] = null;');
+});
+
+await ok('a XeTeX warm stopped short (ICU\'s pack not loaded) is not kept: the heap before it stays, and the next XeTeX run warms again', () => {
+  // (offline, its prefetch failed: the pack's load throws from inside the read, not exit())
+  const calls = [];
+  ctx.__calls = calls;
+  ctx.__net = false;
+  run(`M = { FS: { streams: [] }, _out: {}, _sp0: 7, HEAPU8: new Uint8Array(MEM_HEADER + 8), _memHeader: new Uint8Array(MEM_HEADER),
+    _stackRestore: (v) => { M._sp = v; }, _spGet: () => 5,
+    callMain: (a) => { __calls.push(a.join(' ') + ' sp' + M._sp); if (a[0] === 'xetex') { M.HEAPU8[0] = 2; if (!__net) throw new Error('pack p-icu.wasm no network'); M.HEAPU8[0] = 1; throw Object.assign(new Error('exit'), { name: 'ExitStatus', status: 0 }); } } };`);
+  run('run(["xelatex", "a.tex"]);');
+  assert.equal(run('[M._xe ? 1 : 0, M._memHeader[0], M._sp0].join()'), '0,0,7', 'not kept');
+  ctx.__net = true;
+  run('run(["xelatex", "b.tex"]);');
+  assert.deepEqual(calls, ['xetex --version sp7', 'xelatex a.tex sp7', 'xetex --version sp7', 'xelatex b.tex sp5']);
+  assert.equal(run('[M._xe ? 1 : 0, M._memHeader[0]].join()'), '1,1', 'kept once it ran through');
+});
+
 await ok('a pack TeX cannot load is counted as missed until it loads, and bytes that do not unpack are not kept', async () => {
   blobs.clear(); served.clear(); run('packs.clear(); packMissed.clear();');
   const f1 = run('INDEX.packs[1].f');
