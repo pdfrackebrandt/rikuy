@@ -6701,7 +6701,9 @@ class App {
       return 'Could not reach the remote. From inside claude.ai the page may only talk to its own server; run Rikuy on its own site, or Download LaTeX and push from your computer. (' + m + ')';
     }
     if (/401|403|auth/i.test(m)) return 'The remote refused the credentials. Check the token and that it can write to this repository. (' + m + ')';
-    if (/MergeConflict|conflict/i.test(m)) return 'Pull found conflicting edits to the same lines. Commit, then merge on your computer, or restore one side. (' + m + ')';
+    if (/MergeConflict|conflict/i.test(m)) return 'Pull found edits of the same words on both sides, so nothing was merged. Commit, then merge on your computer, or restore one side. (' + m + ')';
+    // (isomorphic-git's own words say to force it, which would throw the other commits away)
+    if (/PushRejected|not a simple fast-forward/i.test(m)) return 'The remote has commits this project does not have yet. Pull first, then push again.';
     return m;
   }
 

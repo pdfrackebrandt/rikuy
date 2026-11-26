@@ -12,6 +12,7 @@ import git from 'isomorphic-git';
 import http from 'isomorphic-git/http/web';
 import LightningFS from '@isomorphic-git/lightning-fs';
 import { authFor, canonicalRemote } from './gitauth.js';
+import { merge3 } from './share.js';
 
 const lfs = new LightningFS('galley-git');
 const fs = lfs;
@@ -201,11 +202,28 @@ export async function push(dir, o) {
   return git.push({ ...net(o), dir, remote: 'origin', url, ref: current || 'main', remoteRef: current || 'main', force: !!o.force });
 }
 
-// fetch and merge (fast-forward or a real merge commit); conflicts are reported, not written
+// A file both sides changed since their common commit, merged as a coauthor's copy is
+// (src/share.js merge3): edits of different words of one line both kept. Git's own merge calls any
+// two edits of one line a conflict, and a paragraph is often one line of LaTeX, so a coauthor's
+// typo fixed in the paragraph where you fixed another stopped the pull. Edits of the same words are
+// still a conflict. Only text files read as UTF-8 are merged: a picture's bytes, or a Latin-1 file
+// decoded as UTF-8, would be written back damaged, so those are conflicts too.
+const TEXT = /\.(tex|bib|sty|cls|bst|txt|ltx|dtx|clo|cfg|def|md|html?|csv|dat|bbx|cbx|lbx)$/i;
+function mergeDriver({ path, contents: [base, ours, theirs] }) {
+  if (!TEXT.test(path) || [base, ours, theirs].some((t) => t.includes('\uFFFD'))) return { cleanMerge: false, mergedText: ours };
+  const r = merge3(base, ours, theirs);
+  return { cleanMerge: r.clean, mergedText: r.clean ? r.text : ours };
+}
+
+// fetch and merge (fast-forward or a real merge commit); conflicts are reported, not written.
+// git.pull's own steps (fetch, merge, checkout), with the merge driver above, which pull takes not.
 export async function pull(dir, o, author) {
   const { current } = await branches(dir);
   const url = await target(dir, o);
-  return git.pull({ ...net(o), dir, remote: 'origin', url, ref: current || 'main', remoteRef: current || 'main', singleBranch: true, fastForward: true, author: { name: author.name, email: author.email } });
+  const ref = current || 'main';
+  const { fetchHead, fetchHeadDescription } = await git.fetch({ ...net(o), dir, remote: 'origin', url, ref, remoteRef: ref, singleBranch: true });
+  await git.merge({ fs, dir, ours: ref, theirs: fetchHead, fastForward: true, message: 'Merge ' + fetchHeadDescription, author: { name: author.name, email: author.email }, mergeDriver });
+  await git.checkout({ fs, dir, ref, remote: 'origin', noCheckout: false });
 }
 
 export async function clone(dir, raw, o) {

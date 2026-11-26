@@ -183,6 +183,73 @@ def commits(page):
     return page.evaluate("[...document.querySelectorAll('#nav-body .git-c .ver-n')].map(e => e.textContent)")
 
 
+# R4: a coauthor on the desktop and the author in Rikuy fix different words of one paragraph,
+# which is one line of the source. Push says to pull first in plain words (it said to force it);
+# Pull merges the two (git's own merge called any two edits of one line a conflict and stopped);
+# edits of the same words are still a conflict, said, and nothing is written.
+MERGE_TEX = '\\documentclass{article}\n\\begin{document}\nWe study the efect of taxes on growth in Peru and Chile.\n\nSecond paragraph.\n\\end{document}\n'
+def r4_pull():
+    subprocess.run(['git', 'init', '-q', '--bare', '-b', 'main', ROOT + '/merge.git'], check=True)
+    subprocess.run(['git', '--git-dir', ROOT + '/merge.git', 'config', 'http.receivepack', 'true'], check=True)
+    murl = 'http://127.0.0.1:%d/merge.git' % PORT
+    with sync_playwright() as p:
+        browser, page, errors = open_page(p, width=1440, height=900, connect=STANDINS)
+        page.evaluate('(t) => window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "merge", "Opened")', MERGE_TEX)
+        settle(page, 300)
+        page.click('#b-nav'); settle(page, 200)
+        page.click('#nt-git'); until(page, DRAWN); settle(page, 800)
+        page.click('#nav-body button:has-text("Start a repository")')
+        until(page, REPO); settle(page, 800)
+        page.fill('.git-who input[type=text]', 'Ada Lovelace')
+        page.fill('.git-who input[type=email]', 'ada@example.org')
+        commit(page, 'First draft')
+        page.click('.git-remote summary'); settle(page, 200)
+        page.fill('.git-remote input[type=url] >> nth=0', murl)
+        page.fill('.git-remote input[aria-label="CORS proxy"]', '')
+        remote(page, 'Push', 1500)
+        work = tempfile.mkdtemp(prefix='gitmerge-')
+        subprocess.run(['git', 'clone', '-q', ROOT + '/merge.git', work], check=True)
+        def desktop(a, b, msg):
+            subprocess.run(['git', '-C', work, 'pull', '-q', '--no-rebase', 'origin', 'main'], check=True, capture_output=True)
+            t = open(work + '/main.tex', encoding='utf8').read().replace(a, b)
+            open(work + '/main.tex', 'w', encoding='utf8').write(t)
+            subprocess.run(['git', '-C', work, '-c', 'user.name=Bob', '-c', 'user.email=bob@example.org', 'commit', '-qam', msg], check=True)
+            subprocess.run(['git', '-C', work, 'push', '-q', 'origin', 'main'], check=True)
+        desktop('efect', 'effect', 'Typo')
+        edit(page, 'and Chile', 'and northern Chile')
+        refresh(page); commit(page, 'Northern')
+        page.evaluate(TOASTS)
+        remote(page, 'Push', 1500)
+        said = page.evaluate('() => window.rikuy.__toast')
+        check('r4 git: a push behind the remote says to pull first, in plain words', 'Pull first' in said and 'force' not in said, said)
+        remote(page, 'Pull', 2500)
+        check('r4 git: pull merges edits of different words of one line', 'We study the effect of taxes on growth in Peru and northern Chile.' in src(page), (src(page), page.evaluate('() => window.rikuy.__toast')))
+        remote(page, 'Push', 1500)
+        server = subprocess.run(['git', '--git-dir', ROOT + '/merge.git', 'show', 'main:main.tex'], capture_output=True, text=True).stdout
+        check('r4 git: and the merge is pushed', 'the effect of taxes on growth in Peru and northern Chile.' in server, server)
+        # the same words changed on both sides: a conflict, said, the text left as it was
+        desktop('northern Chile', 'southern Chile', 'South')
+        edit(page, 'northern Chile', 'coastal Chile')
+        refresh(page); commit(page, 'Coast')
+        before = src(page)
+        page.evaluate(TOASTS)
+        remote(page, 'Pull', 1500)
+        said = page.evaluate('() => window.rikuy.__toast')
+        check('r4 git: edits of the same words are still a conflict, said, nothing written', src(page) == before and 'same words' in said, (said, src(page)[-120:]))
+        check('r4 git: no page errors', not errors, errors[:3])
+        browser.close()
+
+
+if sys.argv[1:] == ['r4pull']:
+    try: r4_pull()
+    except Exception as e:
+        traceback.print_exc()
+        check('the run reaches its end', False, e)
+    bad = [r for r in results if not r[1]]
+    print('%d/%d passed' % (len(results) - len(bad), len(results)))
+    sys.exit(1 if bad else 0)
+
+
 try:
     with sync_playwright() as p:
         browser, page, errors = open_page(p, width=1440, height=900, connect=STANDINS)
@@ -457,6 +524,7 @@ try:
         nav.close()
         stand.kill()
         browser.close()
+    r4_pull()
 except Exception as e:
     # a run that stops part way has failed, whatever the checks before it said
     traceback.print_exc()
