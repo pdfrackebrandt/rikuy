@@ -3,7 +3,7 @@
 // comments, so Overleaf, Git and every TeX keep them and print nothing, and a coauthor's copy
 // comes back as a three way merge against the version that was shared.
 
-import { hunks } from './diff.js';
+import { hunks, diffSeq } from './diff.js';
 
 // ---- links --------------------------------------------------------------------------------
 
@@ -208,6 +208,14 @@ export function unbase32(s) {
   return new TextDecoder().decode(new Uint8Array(b));
 }
 
+// where a comment line's own words start (after its head and the colon that ends it), -1 for a
+// line that is no comment in the plain form: the colon is the head's, not one in the quoted words
+const HEAD = /^[ \t]*%[ \t]*(?:comment|reply)[ \t]*\([^)\n\r\u0085\u2028\u2029]*\)(?:[ \t]+on[ \t]+"[^"\n\r\u0085\u2028\u2029]*")?[ \t]*:[ \t]?/i;
+export function commentBodyAt(line) {
+  const m = LINE.test(line) && HEAD.exec(line);
+  return m ? m[0].length : -1;
+}
+
 export function parseCommentLine(line) {
   const m = LINE.exec(line);
   if (m) return { kind: m[1].toLowerCase(), who: m[2].trim(), quote: m[3] || '', body: m[4].trim() };
@@ -306,41 +314,258 @@ export function stripComments(text) {
 // two edits of the same base clash when their ranges overlap, or when both insert at one point
 // (which goes first is anyone's guess)
 const clash = (a, c) => (a.s < c.e && c.s < a.e) || (a.s === a.e && c.s === c.e && a.s === c.s);
+// Two edits that meet inside a word clash too: what each put there joins the other's into one word
+// neither side wrote ("the user's' data"; 他不很喜欢; ข้าวต้มผัด, where the script's words, found
+// from the text around them, glue a word put in on one side to its neighbour and not on the
+// other). l ends where r starts; between them in the result stand the last character l leaves and
+// the first r leaves: inside a word only when both are letters, marks, digits or apostrophes. A
+// comma, a period, \footnote, ~\cite, ^2 or \emph{ put beside a word the other side changed is
+// no conflict, nor a text's start or end.
+const WORDCH = /[\p{L}\p{M}\p{N}'’]/u;
+const inWord = (ch) => ch !== undefined && WORDCH.test(ch);
+// (sides: each side's hunks, A and C: an apostrophe closes a quote, ``test'' or `test', where
+// that side's line has a ` open before it; only a lone ' after a word may be part of it, as in
+// "users'", review V4-A)
+function glued(base, x, y, sides) {
+  const [l, r] = x.e === y.s ? [x, y] : y.e === x.s ? [y, x] : [null, null];
+  if (!l) return false;
+  const left = l.t ? l.t[l.t.length - 1] : base[l.s - 1], right = r.t ? r.t[0] : base[r.e];
+  if (!inWord(left) || !inWord(right)) return false;
+  // the text of h's side on its line before p, with own after it
+  const before = (h, p, own) => {
+    const ls = base.lastIndexOf('\n', p - 1) + 1;
+    return applied(base, sides(h).filter((k) => k.s >= ls && k.s < p && k.e <= p), ls, p) + own;
+  };
+  const quote = (t) => (t.match(/`/g) || []).length > (t.match(/'/g) || []).length;
+  const p = l.e;
+  if (/^'/.test(right) && quote(before(r, p, ''))) return false;
+  if (/^'/.test(left) && quote(before(l, l.s, l.t.slice(0, -1)))) return false;
+  return true;
+}
 
-// base -> mine and base -> theirs, line by line: both kept when they touch different lines
-export function merge3(base, mine, theirs) {
+// one side's edits of a text as hunks of it, {s, e, t}: by lines, or by words inside lines
+const lineEdits = (a, b) => hunks(a, b).map((h) => ({ s: h.as, e: h.as + h.a.length, t: h.b }));
+// The words a merge compares. A line end is a word of its own, so lines added stay whole lines;
+// and each space, so two words deleted side by side, one on each side, do not both take the space
+// between them; and a LaTeX command. The rest goes in words as its script has them: Intl.Segmenter
+// never cuts a letter from its marks (Hindi's vowel signs, Arabic's harakat: cut there, one word
+// edited on both sides merged into a word neither wrote) and finds Chinese and Japanese words;
+// without it, letters with their marks.
+const PARTS = /\r?\n|[^\S\n]|\\[A-Za-z@]+|\\[^\n]?|[^\s\\]+/gu;
+const RUN = /[\p{L}\p{M}\p{N}]+|\P{M}\p{M}*/gu;
+const SEG = typeof Intl === 'object' && typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'word' }) : null;
+function words(t) {
+  const out = [];
+  for (const [p] of t.matchAll(PARTS)) {
+    if (/^[\s\\]/.test(p)) out.push(p);
+    else if (SEG) for (const x of SEG.segment(p)) out.push(x.segment);
+    else for (const [x] of p.matchAll(RUN)) out.push(x);
+  }
+  return out;
+}
+function wordEdits(a, b) {
+  const out = [];
+  let p = 0, cur = null;
+  for (const [op, v] of diffSeq(words(a), words(b))) {
+    if (op === ' ') { if (cur) { out.push(cur); cur = null; } p += v.length; continue; }
+    if (!cur) cur = { s: p, e: p, t: '' };
+    if (op === '-') { p += v.length; cur.e = p; } else cur.t += v;
+  }
+  if (cur) out.push(cur);
+  // a line added after a line's last word reads as "\nline" before that line's end: the same
+  // edit as "line\n" after it, which is where the other side's added line is looked for
+  for (const h of out) {
+    const nl = h.s === h.e && /^\r?\n/.exec(a.slice(h.s, h.s + 2));
+    if (nl && h.t.startsWith(nl[0])) { h.s = h.e = h.s + nl[0].length; h.t = h.t.slice(nl[0].length) + nl[0]; }
+  }
+  return out;
+}
+// the text of base from s to e with these hunks (all inside it) applied
+function applied(base, hs, s, e) {
+  let out = '', p = s;
+  for (const h of hs) { out += base.slice(p, h.s) + h.t; p = h.e; }
+  return out + base.slice(p, e);
+}
+
+// base -> mine and base -> theirs: both kept where they touch different lines, and where they
+// touch the same lines but different words of them, as Word combines two copies of a document (a
+// paragraph is often one line of the source: two typos fixed in it, one each, are no conflict).
+// Where both change the same words, or put different things at one place, theirs win there, and
+// the result is flagged as not clean, so the author is told and keeps the text from before the
+// merge under Versions. Two things put at one place are a conflict (two \newcommand of one name,
+// two files made under one name): only comment lines, a comment each under one line, are both kept.
+// words: false merges by whole lines alone, so every line of the result is one of mine or one of
+// theirs (a copy from a link for comments only: its comment lines must not mix into text lines).
+// The words of at most WORDS_MAX characters of clashing lines are compared in one merge, of one
+// file or of a whole project; past it, by lines (where they clash, a conflict: theirs shown, the
+// author's text kept under Versions): a copy that rewrote the document as long lines, or thirty
+// files each at the limit, would cost the page seconds and hundreds of megabytes, inside the
+// save's transaction where two windows merge.
+const WORDS_MAX = 200000;
+// budget: one mergeBudget() shared by every file of one merge (mergeProjects, a git pull), so
+// thirty files at the limit cost what one does; each merge3 call has its own when none is given.
+export const mergeBudget = () => ({ left: WORDS_MAX });
+// report: an object told, where a conflict was taken wider than its lines, how wide: 'lines'
+// (from it to the other half of the pair), 'paragraph', 'environment' or 'file'
+export function merge3(base, mine, theirs, { words: byWords = true, budget = null, report = null } = {}) {
   if (theirs === base || theirs === mine) return { text: mine, clean: true };
   if (mine === base) return { text: theirs, clean: true };
-  const A = hunks(base, mine).map((h) => ({ s: h.as, e: h.as + h.a.length, t: h.b }));
-  const C = hunks(base, theirs).map((h) => ({ s: h.as, e: h.as + h.a.length, t: h.b }));
-  // Take every one of their hunks, and every one of mine that clashes with none of theirs, so my
-  // edits on lines they did not touch survive: a clash on one line must not throw away the rest of
-  // my work. Where we do clash, their version wins (and the result is flagged as not clean, so the
-  // author is told and keeps the pre-merge text under Versions).
-  let clean = true;
-  const keep = [];
-  for (const a of A) { if (C.some((c) => clash(a, c))) clean = false; else keep.push(a); }
-  // an insertion at a point goes before a replacement that starts there
-  let out = '', p = 0;
-  for (const h of [...keep, ...C].sort((x, y) => x.s - y.s || x.e - y.e)) {
-    if (h.s < p) continue; // a kept hunk never overlaps a later one, but never write past p
-    out += base.slice(p, h.s) + h.t; p = h.e;
+  const A = lineEdits(base, mine), C = lineEdits(base, theirs), B = byWords ? budget || mergeBudget() : null;
+  const r = combine(base, A, C, B);
+  // A conflict takes theirs for its clashing lines alone, which can keep half of a pair whose other
+  // half stands on lines of mine that did not clash: a \begin{quote} line mine put above a
+  // paragraph whose words both changed went, its \end{quote} stayed, and TeX stopped (review
+  // V3-B). Where the result's pairs are not as balanced as theirs, each conflict takes theirs from
+  // it to the other halves (the edits of its paragraph that open or close a pair), then for its
+  // whole paragraph, then for the whole environment of base it is in, and failing that the file
+  // is theirs (the author's text kept under Versions, the changes shown). Each step keeps more of
+  // the author's other edits: a no blank line document's paragraph is the whole file (V4-B).
+  if (r.clean || balance(r.text) === balance(theirs)) return { text: r.text, clean: r.clean };
+  const halves = (b, s, e) => {
+    const [ps, pe] = paragraphOf(b, s, e);
+    let x = s, y = e;
+    for (const h of [...A, ...C]) if (h.s >= ps && h.e <= pe && balance(h.t) !== balance(b.slice(h.s, h.e))) { x = Math.min(x, h.s); y = Math.max(y, h.e); }
+    return [x, y];
+  };
+  for (const [how, widen] of [['lines', halves], ['paragraph', paragraphOf], ['environment', environmentOf]]) {
+    const w = combine(base, A, C, B, r.spans.map(([s, e]) => widen(base, s, e)));
+    if (balance(w.text) === balance(theirs)) { if (report) report.wide = how; return { text: w.text, clean: false }; }
   }
-  return { text: out + base.slice(p), clean };
+  if (report) report.wide = 'file';
+  return { text: theirs, clean: false };
+}
+// how unbalanced a text's pairs are: braces, \begin and \end, \( \), \[ \], and whether its
+// unescaped $ are odd
+function balance(t) {
+  const n = (re) => (t.match(re) || []).length;
+  return [n(/(?<!\\)\{/g) - n(/(?<!\\)\}/g), n(/\\begin\b/g) - n(/\\end\b/g), n(/\\\(/g) - n(/\\\)/g), n(/\\\[/g) - n(/\\\]/g), n(/(?<!\\)\$/g) % 2].join(',');
+}
+// the paragraph of base holding s to e: from the blank line before it to the one after it
+function paragraphOf(base, s, e) {
+  const BLANK = /\n[ \t]*\r?\n/g;
+  let ps = 0, pe = base.length, m;
+  while ((m = BLANK.exec(base)) && m.index + m[0].length <= s) ps = m.index + m[0].length;
+  BLANK.lastIndex = e;
+  if ((m = BLANK.exec(base))) pe = m.index + 1;
+  return [ps, Math.max(pe, e)];
+}
+// the innermost environment of base around s to e, \begin to \end, whole lines (the paragraph
+// where there is none)
+function environmentOf(base, s, e) {
+  const stack = [];
+  let best = null;
+  for (const m of base.matchAll(/\\(begin|end)\s*\{([^{}\n]{1,60})\}/g)) {
+    if (m[1] === 'begin') { stack.push(m.index); continue; }
+    const b = stack.pop();
+    if (b !== undefined && b <= s && m.index + m[0].length >= e && (!best || b > best[0])) best = [b, m.index + m[0].length];
+  }
+  if (!best) return paragraphOf(base, s, e);
+  const ls = base.lastIndexOf('\n', best[0] - 1) + 1, le = base.indexOf('\n', best[1]);
+  return [ls, le < 0 ? base.length : le + 1];
+}
+// what a merge may not leave half of: braces, math ($, \( \), \[ \]), brackets, opening quotes,
+// environments (\( and \[ counted apart from ( and [: a lone \( stops TeX, review V3-A)
+const PAIRS = /\\[()[\]]|(?<!\\)[{}$()[\]`]|\\begin\b|\\end\b/g;
+const pairsOf = (t) => { const n = {}; for (const [x] of t.matchAll(PAIRS)) n[x] = (n[x] || 0) + 1; return JSON.stringify(Object.entries(n).sort()); };
+// (lines that are all comment lines, each ended)
+const commentLines = (t) => /\n$/.test(t) && t.slice(0, -1).split('\n').every((l) => isComment(l));
+// budget: the characters of clashing lines left to merge word by word (null: by lines alone, and
+// inside a line's words)
+// wide: spans of base each taken as one conflict where both sides edited in it (theirs, whole)
+function combine(base, A, C, budget, wide = null) {
+  // the hunks in the order of base (an insertion at a point before a replacement that starts
+  // there), gathered into runs of hunks that clash with one another
+  const all = [...A.map((h) => ({ ...h, mine: true })), ...C].sort((x, y) => x.s - y.s || x.e - y.e);
+  const within = (h) => (wide ? wide.findIndex(([ws, we]) => h.s <= we && h.e >= ws) : -1);
+  const runs = [];
+  for (const h of all) {
+    const r = runs[runs.length - 1];
+    const k = within(h);
+    if (r && ((k >= 0 && r.k === k) || r.some((x) => x.mine !== h.mine && (clash(x, h) || glued(base, x, h, (g) => (g.mine ? A : C)))))) r.push(h);
+    else { const n = [h]; n.k = k; runs.push(n); }
+  }
+  let clean = true, out = '', p = 0;
+  const spans = [];
+  for (const r of runs) {
+    const s = Math.min(...r.map((h) => h.s)), e = Math.max(...r.map((h) => h.e));
+    const ours = r.filter((h) => h.mine), theirs = r.filter((h) => !h.mine);
+    // (this run's own conflict, apart from the runs before it: its span is noted)
+    const before = clean;
+    clean = true;
+    let t;
+    if (!ours.length || !theirs.length) t = applied(base, r, s, e);
+    else {
+      const m = applied(base, ours, s, e), c = applied(base, theirs, s, e);
+      const cost = (e - s) + m.length + c.length;
+      if (m === c) t = c;
+      else if (r.k >= 0) { t = c; clean = false; }
+      // (two things put at one place: comment lines at a line's start both kept, mine first)
+      else if (s === e) {
+        if ((s === 0 || base[s - 1] === '\n') && commentLines(m) && commentLines(c)) t = m + c;
+        else { t = c; clean = false; }
+      } else if (budget && budget.left >= cost) {
+        budget.left -= cost;
+        // (word by word: theirs only at the words both changed, every other edit of mine kept;
+        // but where that would keep half of a pair, an \emph{ whose } went with the words both
+        // changed, a $ without its other, a \begin without its \end, theirs whole, which left
+        // half of one my edit put in, \emph{a b C here, and the document no longer compiled)
+        const w = combine(base.slice(s, e), wordEdits(base.slice(s, e), m), wordEdits(base.slice(s, e), c), null);
+        t = w.text;
+        if (!w.clean) { clean = false; if (pairsOf(t) !== pairsOf(c)) t = c; }
+      } else { t = c; clean = false; }
+    }
+    if (!clean) spans.push([s, e]);
+    clean = clean && before;
+    out += base.slice(p, s) + t; p = e;
+  }
+  return { text: out + base.slice(p), clean, spans };
+}
+
+// Which copies of a project a copy has seen, as a version vector: for each tab that wrote one, the
+// time of the last of its copies this one comes from. A tab merges another's copy only where it
+// has seen this tab's last copy (vvHas), so a copy written over that one without merging it is
+// never read as this tab's words deleted. One entry per tab, the newest VV_MAX kept: a list of
+// the last copies, 32 of them, filled up in one window's 32 saves, and the other window, saving
+// unfocused, merged no more (review V2-C).
+const VV_MAX = 64;
+export function vvJoin(...vs) {
+  const o = {};
+  for (const v of vs) if (v && typeof v === 'object') for (const [k, t] of Object.entries(v)) if (typeof t === 'number' && !(o[k] >= t)) o[k] = t;
+  const e = Object.entries(o);
+  return e.length > VV_MAX ? Object.fromEntries(e.sort((x, y) => y[1] - x[1]).slice(0, VV_MAX)) : o;
+}
+// whether cur has seen every copy base has (an entry older than all cur keeps, when cur is full,
+// was dropped from it as old, and counts as seen)
+export function vvHas(cur, base) {
+  if (!cur || typeof cur !== 'object') return false;
+  const kept = Object.values(cur), floor = kept.length >= VV_MAX ? Math.min(...kept) : -Infinity;
+  return Object.entries(base && typeof base === 'object' ? base : {}).every(([k, t]) => (cur[k] || 0) >= t || t < floor);
 }
 
 // whole projects as Maps name -> text; a file one side removed and the other left alone goes
-export function mergeProjects(base, mine, theirs) {
-  const files = new Map(), conflicts = [];
+// The words that say how far conflicts were taken, for a toast: '' where none was wider than the
+// words both changed (mergeProjects' wide)
+const WIDE = { lines: 'and the lines up to the other half of a \\begin, brace or $ beside them', paragraph: 'for the whole paragraph', environment: 'for the whole environment', file: 'for the whole file' };
+export function wideSaid(wide) {
+  const w = wide instanceof Map ? [...wide] : Array.isArray(wide) ? wide : [];
+  return w.length ? ' (' + w.map(([f, how]) => f + ': ' + (WIDE[how] || how)).join('; ') + ', so that nothing is left half open)' : '';
+}
+// wide: for the files whose conflict was taken wider than its lines, how wide (merge3's report)
+export function mergeProjects(base, mine, theirs, opts = {}) {
+  const files = new Map(), conflicts = [], wide = new Map();
+  // (one budget for the words of every file)
+  opts = { budget: mergeBudget(), ...opts };
   for (const n of new Set([...base.keys(), ...mine.keys(), ...theirs.keys()])) {
     const b = base.get(n), m = mine.get(n), t = theirs.get(n);
     if (t === undefined) { if (m !== undefined && b === undefined) files.set(n, m); else if (m !== undefined && m !== b) files.set(n, m); continue; }
     if (m === undefined) { if (b === undefined || t !== b) files.set(n, t); continue; }
-    const r = merge3(b ?? '', m, t);
+    const report = {};
+    const r = merge3(b ?? '', m, t, { ...opts, report });
     if (!r.clean) conflicts.push(n);
+    if (report.wide) wide.set(n, report.wide);
     files.set(n, r.text);
   }
-  return { files, conflicts };
+  return { files, conflicts, wide };
 }
 
 // a tracked change that only adds or removes comment lines: the Review tab shows those as
