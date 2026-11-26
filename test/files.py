@@ -503,6 +503,21 @@ def r4_tabs():
         shop = pa.evaluate('async () => { for (const v of await window.rikuy.allSnaps()) { const f = new Map(await window.rikuy.versionFiles(v) || []); if (v.label === "From another tab" && (f.get("main.tex") || "").includes("My shopping")) return v.name; } return null; }')
         check('tabs: a new document under a name Rename gave back is never merged over the renamed one (B1)', 'Chapter one.' in thesis and 'Then Chapter three.' in thesis and 'shopping' not in thesis
               and pa.evaluate('window.rikuy.name') == 'Thesis' and pb.evaluate('window.rikuy.name') == 'Untitled' and 'shopping' in src(pb) and 'Chapter' not in src(pb) and shop == 'Untitled', (thesis[30:140], src(pb)[30:120], shop))
+        # (review B2) Ctrl+Z right after a save brought the other window's words in: the person's
+        # own typing goes, the other window's words stay, in both windows; Ctrl+Y puts it back
+        pa.evaluate('(t) => { window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "undo1", "Opened"); window.rikuy.persist(); }', TWO); written(pa)
+        pb.reload(); ready(pb); pb.evaluate(STUB)
+        click_text(pa, 'First paragraph', 5); pa.keyboard.type(' AAA'); written(pa)
+        click_text(pb, 'Second paragraph', 6); pb.keyboard.type(' BBB'); written(pb)
+        both = 'First AAA paragraph' in src(pb) and 'Second BBB paragraph' in src(pb)
+        pb.keyboard.press('Control+z'); settle(pb, 200)
+        after = src(pb)
+        written(pb)
+        click_text(pa, 'Second', 0); pa.keyboard.type('Z'); written(pa)
+        check('tabs: Ctrl+Z after a save that brought the other window\'s words in takes out one\'s own typing, theirs stay in both windows (B2)', both and 'First AAA paragraph' in after and 'Second paragraph words' in after
+              and 'First AAA paragraph' in src(pa) and 'ZSecond paragraph words' in src(pa), (after[30:130], src(pa)[30:130]))
+        pb.keyboard.press('Control+y'); settle(pb, 200)
+        check('tabs: and Ctrl+Y puts one\'s typing back, beside them', 'First AAA paragraph' in src(pb) and 'Second BBB paragraph' in src(pb), src(pb)[30:130])
         check('tabs: no page errors', not errors, errors[:3])
         browser.close()
 

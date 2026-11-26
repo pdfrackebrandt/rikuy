@@ -1627,6 +1627,8 @@ class App {
     this.closePop(true);
     // (an empty paragraph Enter showed is a step of its own: takeBackGhost)
     if (this.takeBackGhost('undo')) return;
+    // (another tab's words brought in at a save are not this person's to undo: undoUnder)
+    if (this.undoUnder()) return;
     const h = this.hist.pop();
     if (!h) { this.toast('Nothing to undo'); return; }
     if (!this.stepFits(h, true)) return;
@@ -7532,6 +7534,77 @@ class App {
     // (this tab has that tab's text now: its Allow is no longer refused, see allowMark)
     if (this.markStale) this.markStale.delete(this.name + '|' + this.main);
     this.toast('Brought in what was typed in another tab. Ctrl+Z undoes it.', 5000);
+  }
+
+  // Ctrl+Z with another tab's words brought in at a save (takeOtherTab) on top of Undo's steps:
+  // the person's own last step is taken out and that tab's words stay, as Word's coauthoring
+  // does. Undone as a step, the merge took that tab's words out of this window, then at the next
+  // saves out of the other one too, with no version (review B2). Their step is taken out around
+  // those words as a merge of the texts (from the text with it, the text without it and the text
+  // now); the words stay one step of that tab's, and the person's step can be redone. Where there
+  // is no step of theirs under it, or it cannot be taken out so, the merge is undone as before,
+  // its text kept under Review, Versions first. false: undo goes on as before.
+  undoUnder() {
+    const H = this.hist;
+    if (!H.length || H[H.length - 1].kind !== 'other-tab') return false;
+    let k = H.length - 1;
+    while (k >= 0 && H[k].kind === 'other-tab') k--;
+    const keep = () => {
+      const files = [...this.files.entries()];
+      snapAdd({ t: Date.now(), label: 'From another tab', named: true, name: this.name, main: this.main, sig: textSig(this.main, files), files }).then(() => { this.snapList = null; }).catch(() => {});
+      this.toast('Undone: what another tab typed. Its text is kept under Review, Versions, as “From another tab”.', 7000);
+      return false;
+    };
+    const X = H[k], tops = H.slice(k + 1);
+    const odd = (h) => (h.blobs && h.blobs.length) || h.base0 || h.files.some((d) => d.made);
+    if (k < 0 || odd(X) || tops.some(odd)) return keep();
+    const names = [...new Set([...X.files, ...tops.flatMap((h) => h.files)].map((d) => d.f))];
+    const back = (t, d) => (t.slice(d.s, d.s + d.ins.length) === d.ins ? t.slice(0, d.s) + d.del + t.slice(d.s + d.ins.length) : null);
+    const T0 = new Map(), T1 = new Map(), R = new Map();
+    for (const f of names) {
+      // the text before that tab's words (t1) and before the person's step (t0)
+      let t1 = this.files.get(f) ?? '';
+      for (let i = tops.length - 1; i >= 0 && t1 != null; i--) for (const d of tops[i].files) if (d.f === f && t1 != null) t1 = back(t1, d);
+      let t0 = t1;
+      for (const d of X.files) if (d.f === f && t0 != null) t0 = back(t0, d);
+      if (t1 == null || t0 == null) return keep();
+      const m = merge3(t1, t0, this.files.get(f) ?? '');
+      if (!m.clean) return keep();
+      T0.set(f, t0); T1.set(f, t1); R.set(f, m.text);
+    }
+    // a step from one text to another, one span per file, as record() makes them
+    const span = (a, b) => {
+      let s = 0, e = 0;
+      const n = Math.min(a.length, b.length);
+      while (s < n && a[s] === b[s]) s++;
+      while (e < n - s && a[a.length - 1 - e] === b[b.length - 1 - e]) e++;
+      return { s, del: a.slice(s, a.length - e), ins: b.slice(s, b.length - e) };
+    };
+    const step = (h, from, to) => ({ ...h, files: names.filter((f) => from.get(f) !== to.get(f)).map((f) => ({ f, ...span(from.get(f), to.get(f)) })), open: false, before: null, win: null, after: null });
+    const Y = step(tops[tops.length - 1], T0, R);
+    // (the person's step again on top, for Redo, where it goes in around those words)
+    const RX = new Map();
+    for (const f of names) { const r = merge3(T0.get(f), T1.get(f), R.get(f)); if (!r.clean) { RX.clear(); break; } RX.set(f, r.text); }
+    const was = new Map(names.map((f) => [f, this.files.get(f) ?? '']));
+    H.splice(k);
+    if (Y.files.length) H.push(Y);
+    if (RX.size === names.length) this.redoStack.push(step(X, R, RX));
+    for (const f of names) this.files.set(f, R.get(f));
+    this.viewMap(new Map(names.map((f) => [f, [{ s: 0, e: was.get(f).length, t: R.get(f) }]])), was);
+    this.lastAct = null;
+    this.rvStep = Y;
+    // (the caret where the step began, moved by that tab's words before it)
+    const cb = X.caretBefore;
+    let c = null;
+    if (cb && cb.f != null && R.has(cb.f)) {
+      const d = span(T0.get(cb.f), R.get(cb.f)), p = cb.p ?? 0;
+      c = { f: cb.f, p: p <= d.s ? p : p >= d.s + d.del.length ? p + d.ins.length - d.del.length : d.s + d.ins.length };
+    } else if (cb) c = cb;
+    this.rebuild(c);
+    this.pushToSource();
+    this.saveSoon();
+    this.updateUndoUI();
+    return true;
   }
 
   // Back in this tab after working in another one on the same project: take its text, as one
