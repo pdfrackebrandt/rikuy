@@ -208,6 +208,14 @@ export function unbase32(s) {
   return new TextDecoder().decode(new Uint8Array(b));
 }
 
+// where a comment line's own words start (after its head and the colon that ends it), -1 for a
+// line that is no comment in the plain form: the colon is the head's, not one in the quoted words
+const HEAD = /^[ \t]*%[ \t]*(?:comment|reply)[ \t]*\([^)\n\r\u0085\u2028\u2029]*\)(?:[ \t]+on[ \t]+"[^"\n\r\u0085\u2028\u2029]*")?[ \t]*:[ \t]?/i;
+export function commentBodyAt(line) {
+  const m = LINE.test(line) && HEAD.exec(line);
+  return m ? m[0].length : -1;
+}
+
 export function parseCommentLine(line) {
   const m = LINE.exec(line);
   if (m) return { kind: m[1].toLowerCase(), who: m[2].trim(), quote: m[3] || '', body: m[4].trim() };

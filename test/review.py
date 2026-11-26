@@ -477,6 +477,16 @@ def run():
         check('and writes its line again, in base32, with the new words', src(page) == safe_doc.replace(line32('Shorter?'), line32('Much shorter, please.')), src(page)[-160:])
         page.evaluate("window.rikuy.undo()"); settle(page, 200)
         check('one undo, byte for byte', src(page) == safe_doc)
+        # (R4) a comment on words with a colon in them ("ends: here"): Edit Comment wrote the new
+        # words from that colon on, cutting the line, and the comment was gone from the list
+        colon_doc = DOC.replace('% comment (Bo): Shorter?', '% comment (Bo) on "ends: here": Shorter?')
+        fresh(page, colon_doc)
+        click_text(page, 'third paragraph', 0)
+        page.evaluate("window.rikuy.runCommand('comment-edit')"); settle(page, 250)
+        page.fill('.pop-comment textarea', 'Much shorter, please.')
+        page.locator('.pop-comment').get_by_role('button', name='Save', exact=True).click(); settle(page, 250)
+        check('R4: Edit Comment on quoted words with a colon rewrites its words only, the comment still listed', src(page) == colon_doc.replace('": Shorter?', '": Much shorter, please.')
+              and ['Bo', 'Much shorter, please.'] in page.evaluate("window.rikuy.allComments().map((c) => [c.who, c.body])"), src(page)[-140:])
         fresh(page)
         click_text(page, 'third paragraph', 0)
         r = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); return [r.left, r.top]; })()")

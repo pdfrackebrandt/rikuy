@@ -1,6 +1,6 @@
 // Share links, comments in the source and the three way merge (src/share.js).
 import assert from 'node:assert/strict';
-import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, merge3, mergeProjects, commentOnly, base32, unbase32, parseCommentLine } from '../src/share.js';
+import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, merge3, mergeProjects, commentOnly, base32, unbase32, parseCommentLine, commentBodyAt } from '../src/share.js';
 import { changes } from '../src/diff.js';
 import { TeXEngine } from '../src/tex.js';
 import { graphShort, graphWhole, graphHtml, readGraph, OTHER_VERSION } from '../src/graph.js';
@@ -343,6 +343,14 @@ await ok('merge keeps both sides when they touch different words of one line, an
   assert.deepEqual(merge3(b, b.replace('efect', 'effect'), b.replace('efect', 'effect')), { text: b.replace('efect', 'effect'), clean: true });
   // LaTeX around a word on one side, the word changed on the other
   assert.deepEqual(merge3(b, b.replace('taxes', '\\emph{taxes}'), b.replace('taxes', 'tariffs')).text, b.replace('taxes', '\\emph{tariffs}'));
+});
+
+await ok('a comment line\'s own words start after its head\'s colon, not one in the quoted words (R4)', () => {
+  const l = '% comment (Ana) on "ratio: two": Check this';
+  assert.equal(l.slice(commentBodyAt(l)), 'Check this');
+  assert.equal('% reply (Bo):Yes.'.slice(commentBodyAt('% reply (Bo):Yes.')), 'Yes.');
+  assert.equal(commentBodyAt('% note: x'), -1);
+  assert.equal(commentBodyAt('% comment32 AB 0 CD'), -1);
 });
 
 await ok('merge of whole projects', () => {
