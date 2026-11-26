@@ -38,6 +38,10 @@ import { spacingOnly } from '../diff.js';
 import { kvGet, kvPut } from '../store.js';
 // (places as [block of the page, file, offset], compared in that order)
 const keyCmp = (a, b) => (a[0] - b[0]) || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0) || a[2] - b[2];
+// what a change does to the balance of braces: { counted up, } down, \{ and \} not, in the text
+// it puts back on Reject (a) against the text it holds now (b)
+const braceCount = (t) => { let n = 0; for (let i = 0; i < t.length; i++) { if (t[i] === '\\') i++; else if (t[i] === '{') n++; else if (t[i] === '}') n--; } return n; };
+const braceNet = (c) => braceCount(c.a) - braceCount(c.b);
 
 const SPELL = typeof __RIKUY_SPELL__ === 'undefined' ? null : __RIKUY_SPELL__;
 const reviewOpen = () => document.body.classList.contains('nav-on');
@@ -671,18 +675,34 @@ export const methods = {
     this.restoreCaret(x.be > x.bs ? { f: x.f, p: x.be, selA: x.bs, selB: x.be } : { f: x.f, p: x.bs }, true);
     return x;
   },
+  // the changes one edit made, taken as one: a heading joined to the paragraph below it carries
+  // its closing brace to the paragraph's end, two changes in the text, and Reject on the first put
+  // the brace back and left the other, \section{Head}\nBody text.} (TeX's Extra }); a change that
+  // unbalances the braces takes the nearest ones in its file that balance them again, as Word
+  // has one change for one edit
+  changeGroup(x) {
+    let n = braceNet(x);
+    if (!n) return [x];
+    const near = this.realChanges().filter((y) => y.f === x.f && (y.bs !== x.bs || y.be !== x.be)).sort((p, q) => Math.abs(p.bs - x.bs) - Math.abs(q.bs - x.bs));
+    const out = [x];
+    for (const y of near.slice(0, 3)) { out.push(y); n += braceNet(y); if (!n) return out; }
+    return [x];
+  },
   acceptHere(next) {
     const x = this.changeHere() || this.gotoChange(1);
     if (!x) return;
     const at = { f: x.f, p: x.be, collapsed: true };
-    this.acceptChanges([x]);
+    this.acceptChanges(this.changeGroup(x));
     if (next && this.realChanges().length) this.gotoChange(1, at);
   },
   rejectHere(next) {
     const x = this.changeHere() || this.gotoChange(1);
     if (!x) return;
-    const at = { f: x.f, p: x.bs + x.a.length, collapsed: true };
-    this.rejectChanges([x]);
+    const G = this.changeGroup(x);
+    // (where x's text ends once the changes before it in the group are put back too)
+    const moved = G.reduce((d, y) => d + (y.be <= x.bs ? y.a.length - (y.be - y.bs) : 0), 0);
+    const at = { f: x.f, p: x.bs + moved + x.a.length, collapsed: true };
+    this.rejectChanges(G, null, true);
     if (next && this.realChanges().length) this.gotoChange(1, at);
   },
   // Show Markup's Specific People: All Reviewers, and each person whose changes wait

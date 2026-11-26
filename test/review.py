@@ -290,6 +290,25 @@ def r2_review(p):
     j = src(page)
     page.evaluate("window.rikuy.rejectHere()"); settle(page, 300, full=True)
     check('r2_review: Backspace joining two paragraphs, then Reject: the paragraphs apart again', j != D and src(page) == D, repr(j[40:90]) + ' / ' + repr(src(page)[40:90]))
+    # (round 4) Backspace joining a paragraph to the heading above it carries the heading's closing
+    # brace to the paragraph's end: two changes in the text. One Reject put the brace back and left
+    # the other, "\section{Head}\nBody text.}" (TeX's Extra }); one Accept left a change that,
+    # rejected later, did the same. The changes of that one edit are now one change.
+    H = WRAP('\\section{Head}\nBody text.\n\n\\section{Next}\n\\noindent\\textbf{Bold} start.\n\nOther words.')
+    for name, at in (('a paragraph', 'Body'), ('a \\noindent\\textbf paragraph', 'Bold')):
+        for how in ('rejectHere()', 'acceptHere()'):
+            fresh(page, H)
+            page.evaluate("window.rikuy.setTracking(true)")
+            click_text(page, 'Other', 6); page.keyboard.type('new '); settle(page, 200)
+            click_text(page, at, 0); page.keyboard.press('Backspace'); settle(page, 300, full=True)
+            j = src(page)
+            page.evaluate("window.rikuy." + how); settle(page, 300, full=True)
+            if how == 'rejectHere()':
+                check('r2_review: %s joined to the heading above with Track Changes on, one Reject: as it was, the other change kept' % name,
+                      j != H.replace('Other ', 'Other new ') and src(page) == H.replace('Other ', 'Other new '), repr(j[40:120]) + ' / ' + repr(src(page)[40:120]))
+            else:
+                left = page.evaluate("window.rikuy.realChanges().map((c) => [c.a, c.b])")
+                check('r2_review: %s joined to the heading above, one Accept: only the other change left' % name, left == [['', 'new ']], left)
     # Backspace at the words after a review comment's line, or after a \\\\ and a comment: the words
     # meet and the comment keeps its own line. It was joined onto the text line ("here.% comment"),
     # where the pane no longer reads it, or deleted with the line ends round it.
