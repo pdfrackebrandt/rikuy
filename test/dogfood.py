@@ -777,6 +777,15 @@ def real(page):
     click_text(page, 'and then', 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
     check('real: Enter in \\exercise{..} (#1 at its top) writes the paragraph inside it', '\\exercise{Prove the first claim \n\nQand then the second}' in src(page), src(page)[-120:])
     three(page, src(page), 'real long command', ('Exercise 1. Prove the first claim', 'Qand then the second'))
+    # (verification V3) the definition in force there: \renewcommand* after \newcommand makes it short,
+    # and an argument handed to a command right before it (\@foo#1\@nil) may take no paragraph: the
+    # command is split, where the blank line went inside and TeX stopped
+    H3 = '\\makeatletter\n\\def\\@foo#1\\@nil{\\textbf{#1}}\n\\newcommand{\\foob}[1]{\\@foo#1\\@nil}\n\\makeatother\n\\newcommand{\\foo}[1]{#1}\n\\renewcommand*{\\foo}[1]{\\par\\noindent #1}'
+    for cmd in ('foo', 'foob'):
+        load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n' + H3).replace('Agent income here.', '\\' + cmd + '{alpha beta gamma}'))
+        click_text(page, 'gamma', 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
+        check('real: Enter in \\' + cmd + '{..} (its argument no paragraph\'s) splits it', '\\' + cmd + '{alpha beta }\n\n\\' + cmd + '{Qgamma}' in src(page), src(page)[-120:])
+        three(page, src(page), 'real \\' + cmd + ' split', ('alpha beta', 'Qgamma'))
     # Enter at the end of a list item in a group: the new \item after the group, not in it,
     # where the page drew it as the text "\item"
     load_doc(page, DOC.replace('Agent income here.', '\\begin{enumerate}\n\\item {\\textbf{First}}\n\\item {\\bf Second}\n\\end{enumerate}'))

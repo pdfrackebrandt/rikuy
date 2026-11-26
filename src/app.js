@@ -56,7 +56,7 @@ import { installCaret } from './caret.js';
 import { installWebMcp } from './webmcp.js';
 import { TOOLS, agentTools, callTool as callAgentTool, describeCommand } from './agent.js';
 import * as kit from './ui/kit.js';
-import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass, pickMain } from './preamble.js';
+import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass, pickMain, groupEnd } from './preamble.js';
 import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, THM_STYLES, titleInfo } from './styles.js';
 import { tableAt, cellAt as tableCellAt, colAlign, clipToCell, clearCells, blockTabular } from './table.js';
 import { eolAt } from './blockenv.js';
@@ -3168,20 +3168,36 @@ class App {
     // \long: its argument holds paragraphs, and the break stays in it, one numbered exercise of two
     // paragraphs; split, it was two, every later one renumbered: review N1)
     const holdsPars = (n) => {
-      const M = this.model && this.model.textMacros && this.model.textMacros.get(n);
-      if (!M || !M.nargs) return false;
-      let long = false;
-      for (const t of this.files.values()) {
-        if (typeof t !== 'string') continue;
-        const m = new RegExp('\\\\(long\\s*\\\\def|def|(?:re|provide)?newcommand(\\*?))\\s*\\{?\\s*\\\\' + n + '(?![A-Za-z@])').exec(t);
-        if (m) { long = /^long/.test(m[1]) || (/newcommand/.test(m[1]) && !m[2]); break; }
-      }
-      if (!long) return false;
+      // (the definition in force at the break: the last before it in its file, \renewcommand too,
+      // else the last in the project's other files, its preamble's and .sty's: review V3)
+      const re = new RegExp('\\\\(long\\s*\\\\def|def|(?:re|provide)?newcommand(\\*?))\\s*\\{?\\s*\\\\' + n + '(?![A-Za-z@])', 'g');
+      let best = null;
+      const scan = (t, lim) => { re.lastIndex = 0; let m; while ((m = re.exec(t)) && m.index < lim) best = { t, m }; };
+      for (const [name, t] of this.files) if (typeof t === 'string' && name !== f) scan(t, t.length);
+      scan(src, p);
+      if (!best) return false;
+      const { t, m } = best;
+      if (!(/^long/.test(m[1]) || (/newcommand/.test(m[1]) && !m[2]))) return false;
+      // its body: after the name, the count and the default of an optional argument, or \def's
+      // parameter text
+      let i = m.index + m[0].length;
+      const sp = () => { while (i < t.length && /\s/.test(t[i])) i++; };
+      sp(); if (t[i] === '}') { i++; sp(); }
+      for (let k = 0; k < 2 && t[i] === '['; k++) { const z = t.indexOf(']', i); if (z < 0) return false; i = z + 1; sp(); }
+      while (i < t.length && t[i] !== '{' && i - m.index < 400) i++;
+      if (t[i] !== '{') return false;
+      const z = groupEnd(t, i, 20000);
+      if (z < 0) return false;
+      const body = t.slice(i + 1, z - 1);
+      if (!/#\d/.test(body)) return false;
+      // (its arguments at the top of its body, none in another command's braces nor handed to a
+      // command right before them, \@foo#1\@nil, whose own argument may take no paragraph)
       let d = 0;
-      for (let i = 0; i < M.body.length; i++) {
-        const ch = M.body[i];
-        if (ch === '\\') { i++; continue; }
-        if (ch === '{') d++; else if (ch === '}') d--; else if (ch === '#' && /\d/.test(M.body[i + 1] || '') && d > 0) return false;
+      for (let j = 0; j < body.length; j++) {
+        const ch = body[j];
+        if (ch === '\\') { j++; continue; }
+        if (ch === '{') d++; else if (ch === '}') d--;
+        else if (ch === '#' && /\d/.test(body[j + 1] || '') && (d > 0 || /\\[A-Za-z@]+\s*$/.test(body.slice(0, j)))) return false;
       }
       return true;
     };
