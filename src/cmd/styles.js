@@ -407,7 +407,11 @@ export const methods = {
     // same: no visible text before it in its paragraph; before what only closes the first's, }
     // of an \emph at a heading's end, at their end. Backspace there did nothing.)
     const bare = () => { const sel = getSelection(); if (!sel.rangeCount || !X.it.contains(sel.anchorNode)) return false; const r = document.createRange(); r.setStart(X.it, 0); r.setEnd(sel.anchorNode, sel.anchorOffset); return !/\S/.test(r.toString()); };
-    if (back ? p < x.s || p > x.we || (p > x.ws ? !bare() : /\S/.test(src.slice(p, x.ws))) : p < w.we ? !/^[\s}]*$/.test(src.slice(p, w.we)) : /\S/.test(src.slice(w.we, p)) || p > wEnd) return false;
+    // (Delete at a paragraph's end before a comment that ends it, "here. % c": the comment shows
+    // nothing, and Delete only moved the caret into the heading or the quote below, where the
+    // next letters went)
+    const uncommented = (t) => t.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, '$1$2');
+    if (back ? p < x.s || p > x.we || (p > x.ws ? !bare() : /\S/.test(src.slice(p, x.ws))) : p < w.we ? !/^[\s}]*$/.test(uncommented(src.slice(p, w.we))) : /\S/.test(src.slice(w.we, p)) || p > wEnd) return false;
     // (a \label on the line after a heading, a blank line before the paragraph under it, is the
     // heading's: it stays after it; the paragraph's \noindent goes with the paragraph; anything
     // else between the two blocks keeps them apart)
@@ -456,7 +460,10 @@ export const methods = {
     const cut = kw === 'h' && close && COMMENT.test(words.slice(words.lastIndexOf('\n') + 1)) ? NL : '';
     const t = sp + words + label + cut + close + (gapLab ? NL + gapLab[1] : '') + leadLab + tail;
     this.closeGroup();
-    this.commit([{ f, s: w.we, e: E, t }], back ? { f, p: w.we + sp.length + skip, bias: 1 } : { f, p: w.we, bias: -1 }, 'del');
+    // (Delete before a comment that ends the words: the caret stays where it was, before the
+    // comment, or what is typed next went into it)
+    const fore = p < w.we && COMMENT.test(src.slice(p, w.we)) ? p : w.we;
+    this.commit([{ f, s: w.we, e: E, t }], back ? { f, p: w.we + sp.length + skip, bias: 1 } : { f, p: fore, bias: -1 }, 'del');
     return true;
   },
   blockStyleOf(at) {

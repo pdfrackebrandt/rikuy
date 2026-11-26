@@ -1555,6 +1555,12 @@ def review_joins(page):
     the heading's argument; a heading with \\label on its line did not join the paragraph under it."""
     load_doc(page, A('Alpha. % note\n\n\\section{Head}\nBody.')); click_text(page, 'Head', 0); page.keyboard.press('Backspace'); settle(page, 200); page.keyboard.type('X'); settle(page, 200)
     check('review_joins: a heading joined to a paragraph ending in a comment: its words on a line after the comment', src(page) == A('Alpha. % note\nXHead\n\nBody.'), src(page)[40:])
+    # (round 4) Delete at the end of that paragraph, before the comment, did not join: it only moved
+    # the caret into the heading or the quote below, where the next letters went
+    for name, doc, want in (('a heading', 'Alpha. % note\n\n\\section{Head}\nBody.', 'Alpha.X % note\nHead\n\nBody.'),
+                            ('a quote', 'Alpha. % note\n\\begin{quote}\nQ words.\n\\end{quote}\nBody.', 'Alpha.X % note\nQ words.\n\nBody.')):
+        load_doc(page, A(doc)); click_text(page, 'Alpha.', 6); page.keyboard.press('Delete'); settle(page, 200); page.keyboard.type('X'); settle(page, 200)
+        check('review_joins: Delete at a paragraph\'s end before its comment joins %s, the caret before the comment' % name, src(page) == A(want), src(page)[40:])
     load_doc(page, A('\\begin{quote}\nQ words. % c\n\\end{quote}\n\nAfter.')); click_text(page, 'After.', 0); page.keyboard.press('Backspace'); settle(page, 200)
     check('review_joins: and a paragraph joined into a quote ending in one', src(page) == A('\\begin{quote}\nQ words. % c\nAfter.\n\\end{quote}'), src(page)[40:])
     V = A('\\section{Head}\nBody \\verb|x|.')
