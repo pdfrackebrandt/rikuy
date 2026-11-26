@@ -544,6 +544,11 @@ def paste_cells(page):
     got = page.evaluate(copy); click_text(page, 'three', 5); page.evaluate(paste3, got); settle(page, 200)
     s = src(page)
     check('words copied across a line break, pasted in a cell: the break a space there, the row whole', '\\\\' in got[2] and '\\midrule\none & two \\\\\nthreeone line & four \\\\\n\\bottomrule' in s, (got[2], s[s.find('\\midrule'):s.find('\\bottomrule')]))
+    # (review of round 4) a line break inside braces or a formula is its argument's own, not the row's
+    for lat in ('See \\makecell{Two\\\\lines} here', '$\\sum_{\\substack{i<n\\\\j<m}} x$', '\\parbox{2cm}{a\\\\b} c'):
+        load_doc(page, DOC); click_text(page, 'three', 5); page.evaluate(paste3, ['x', '', lat]); settle(page, 200)
+        s = src(page)
+        check('a line break inside braces or a formula pasted in a cell stays: ' + lat, ('three' + lat + ' & four \\\\') in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
     # (review of PR 115) one line with a tab in it is text, from an editor or a terminal: as text,
     # nothing overwritten
     s = pasted(lambda: click_text(page, 'one', 2), 'foo\tbar')

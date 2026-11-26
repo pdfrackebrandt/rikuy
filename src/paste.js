@@ -428,8 +428,7 @@ export function oneLineLatex(t, cell) {
   s = s.replace(/\\begin\s*\{(equation|displaymath)(\*?)\}([\s\S]*?)\\end\s*\{\1\2\}/g, (m, e, st, x) => '$' + x.trim() + '$');
   s = s.replace(/\\(?:begin|end)\s*\{(?:itemize|enumerate|description)\}(?:\[[^\]\n]*\])?/g, ' ');
   s = s.replace(/\\item(?![A-Za-z])\s*(?:\[([^\]\n]*)\])?/g, (m, lab) => ' ' + (lab ? lab + ' ' : ''));
-  // (pairs read from the left: \\\% is a line break and a percent sign)
-  if (cell) s = s.replace(/\\\\\*?(?:[ \t]*\[[^\]\n]*\])?/g, ' ');
+  if (cell) s = rowBreaksOut(s);
   s = s.replace(/\s*\n\s*/g, ' ').replace(/[ \t]{2,}/g, ' ').trim();
   if (/\\(?:begin|end|par|maketitle|caption)(?![A-Za-z])/.test(s)) return '';
   s = s.replace(/\uE000(\d+)\uE001/g, (m, k) => kept[+k]);
@@ -437,6 +436,32 @@ export function oneLineLatex(t, cell) {
   let depth = 0;
   for (const x of s.replace(/\\./g, '').replace(/\uE000\d+\uE001/g, '')) { if (x === '{') depth++; else if (x === '}' && --depth < 0) break; }
   return depth === 0 ? s : t0;
+}
+
+// A line break, \\ with its * or [length], that would end a table's row: one outside every group
+// and formula, made a space. Inside braces (\makecell{a\\b}, \parbox, \shortstack) or a formula
+// (\substack{i\\j}) it is the argument's own and stays. (Pairs read from the left: \\\% is a line
+// break and a percent sign.)
+function rowBreaksOut(s) {
+  let out = '', depth = 0, math = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\') {
+      const n = s[i + 1];
+      if (n === '\\' && !depth && !math) {
+        const m = /^\\\\\*?(?:[ \t]*\[[^\]\n]*\])?/.exec(s.slice(i, i + 80));
+        out += ' '; i += m[0].length - 1; continue;
+      }
+      if (!math && (n === '(' || n === '[')) math = n === '(' ? ')' : ']';
+      else if (math && n === math) math = '';
+      out += c + (n ?? ''); i++; continue;
+    }
+    if (c === '$') { if (!math) math = '$'; else if (math === '$') math = ''; }
+    else if (c === '{') depth++;
+    else if (c === '}' && depth) depth--;
+    out += c;
+  }
+  return out;
 }
 
 // A heading copied with what is pasted inside another command's argument (a footnote, a bold
