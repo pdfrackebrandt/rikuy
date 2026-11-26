@@ -657,8 +657,12 @@ struct Parser {
       auto sp = [&]() { if (code) while (at(a) == ' ' || at(a) == '\t') a++; };
       sp();
       if (code && at(a) == '[') {
+        // (a blank line ends them unclosed: parser.js)
         int depth = 0, k = a + 1;
-        for (; k < n; k++) { if (src[k] == '{') depth++; else if (src[k] == '}') depth--; else if (src[k] == ']' && depth <= 0) break; }
+        for (; k < n; k++) {
+          if (src[k] == '{') depth++; else if (src[k] == '}') depth--; else if (src[k] == ']' && depth <= 0) break;
+          else if (src[k] == '\n') { int z = k + 1; while (z < n && (src[z] == ' ' || src[z] == '\t' || src[z] == '\r')) z++; if (z >= n || src[z] == '\n') { k = n; break; } }
+        }
         if (k >= n) { i = ne; head(ns, nameE, s, ge, ne, star); return { N_CMD, ge }; }
         a = k + 1; sp();
       }

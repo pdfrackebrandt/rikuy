@@ -48,7 +48,9 @@ for (const [c, want, blocks] of [['Use \\lstinline|x % 2| for odd.\nNext.', 'Use
   ['Use \\lstinline [style=x]{a % b} ok.\nNext.', 'Use a % b ok. Next.'], ['Use \\lstinline {a % b} ok.\nNext.', 'Use a % b ok. Next.'],
   ['Use \\lstinline[language={[LaTeX]TeX}]|a % b| ok.\nNext.', 'Use a % b ok. Next.'], ['See \\url|a%b| for more.\nNext.', 'See a%b for more. Next.'],
   ['Use \\lstinline|bad\n\nNext \\textbf{para}.\n\nLast.', 'Use bad Next para. Last.', 3], ['Use \\lstinline{bad\n\nNext \\textbf{para}.\n\nLast.', 'Use bad Next para. Last.', 3],
-  ['Use \\verb|bad\r\n\r\nNext.', 'Use bad Next.', 2]]) {
+  ['Use \\verb|bad\r\n\r\nNext.', 'Use bad Next.', 2],
+  // (options never closed stop at the blank line, as TeX's optional argument does)
+  ['a \\lstinline[style\n\nNext para \\cite[p.~3]{k} more.', 'a [style Next para more.', 2]]) {
   const M = buildModel({ files: new Map([['m.tex', c]]), main: 'm.tex' });
   const text = (inl) => (inl || []).map((x) => x.k === 'seg' ? x.t : x.kids ? text(x.kids) : x.k === 'verb' || x.k === 'url' ? x.text : '').join('');
   const got = M.blocks.map((b) => b.items.map((it) => text(it.inl)).join('')).join(' ').replace(/\s+/g, ' ').trim();

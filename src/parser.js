@@ -499,8 +499,12 @@ export function parseJS(src, userSigs) {
       sp();
       if (code && src[a] === '[') {
         // (options with brackets of their own in braces: language={[LaTeX]TeX})
+        // (a blank line ends them unclosed, as it ends TeX's optional argument: Runaway argument)
         let depth = 0, k = a + 1;
-        for (; k < n; k++) { if (src[k] === '{') depth++; else if (src[k] === '}') depth--; else if (src[k] === ']' && depth <= 0) break; }
+        for (; k < n; k++) {
+          if (src[k] === '{') depth++; else if (src[k] === '}') depth--; else if (src[k] === ']' && depth <= 0) break;
+          else if (src[k] === '\n') { let z = k + 1; while (src[z] === ' ' || src[z] === '\t' || src[z] === '\r') z++; if (z >= n || src[z] === '\n') { k = n; break; } }
+        }
         if (k >= n) { i = ne; return node; }
         a = k + 1; sp();
       }
