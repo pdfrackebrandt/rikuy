@@ -180,6 +180,10 @@ export function refsSetup(src, chapters = false) {
     R.floats[env] = { name: kv.name || env.charAt(0).toUpperCase() + env.slice(1), by: 'newfloat' };
   }
   for (const c of cmdCalls(t, 'newfloat', 3)) { const env = argOf(t, c, 0); if (/^[A-Za-z]{1,30}$/.test(env)) R.floats[env] = { name: env.charAt(0).toUpperCase() + env.slice(1), by: 'float' }; }
+  // (the algorithm package's float, which it declares itself, captioned "Algorithm 1: ..." as
+  // float's are: drawn as an unknown environment, its \caption was words of a paragraph, and Enter
+  // in it wrote a blank line into the caption, which TeX refuses)
+  if (!R.floats.algorithm && has('algorithm')) R.floats.algorithm = { name: 'Algorithm', by: 'algorithm' };
   for (const c of cmdCalls(t, 'floatname', 2)) { const env = argOf(t, c, 0); if (R.floats[env]) R.floats[env].name = unbrace(argOf(t, c, 1)); }
   R.capFormats = {};
   for (const c of cmdCalls(t, 'DeclareCaptionLabelFormat', 2)) { const n = argOf(t, c, 0); if (/^[A-Za-z-]{1,30}$/.test(n)) R.capFormats[n] = argOf(t, c, 1); }

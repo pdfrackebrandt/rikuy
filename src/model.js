@@ -3009,6 +3009,13 @@ class Builder {
         // a TikZ picture in a figure (Shape Format's and Chart Format's Position): drawn as in the
         // text (src/render.js floatPart), its source box where the page cannot draw it
         if (n.t === 'env' && n.name === 'tikzpicture' && !ctx.pm) { flushP(); parts.push({ type: 'raw', f: ctx.f, s: n.s, e: n.e, is: n.be, ie: n.es, name: 'tikzpicture', align: align || dflt }); continue; }
+        // (an environment the page shows as its source, algorithmic in an algorithm, a listing in a
+        // figure: its source box, as in the text; taken as the words of a paragraph, it was not drawn)
+        if (n.t === 'env' && n.raw && n.name !== 'comment' && n.name !== 'tikzpicture') {
+          flushP();
+          parts.push({ type: 'raw', f: ctx.f, s: n.s, e: n.e, is: n.be, ie: n.es, name: n.name, text: ctx.src.slice(n.be, n.es).replace(/^\n/, '').replace(/\s+$/, ''), verb: /verbatim|lstlisting|minted|Verbatim/.test(n.name), align: 'left' });
+          continue;
+        }
         para.push(n);
       }
     };

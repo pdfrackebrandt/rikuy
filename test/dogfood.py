@@ -17,7 +17,7 @@ across the notes' files keeps the case of what it replaces. And the hostile revi
 (E1 to E10; then E11 to E18: review2; the verification's V1 to V9: review3).
 
 Round four, real documents (`real`): Enter in the words of a command of the document's own
-(\\question{..}), and at the end of a list item in braces.
+(\\question{..}) or in a caption of algorithm's float, and at the end of a list item in braces.
 
   python3 dogfood.py [part ...]   parts: formula arrows textfield styles table caption cite paste
                                   split filename undo_words enter reload_undo mathpkg intertext envlist replace review review2 review3 real
@@ -743,6 +743,17 @@ def real(page):
     check('real: Enter at the end of an item in braces writes the new \\item after them', '\\item {\\bf Second}\n\\item Third\n\\end{enumerate}' in src(page), src(page)[-120:])
     check('real: and the page draws it as an item', page.evaluate("[...document.querySelectorAll('#pages .it')].some((e) => e.dataset.li && e.textContent.trim().endsWith('Third') && !e.textContent.includes('\\\\item'))"))
     compiles(page, 'real item group')
+    # the algorithm package's float: its caption drawn as one ("Algorithm 1: ..."), a \ref to it
+    # numbered, its algorithmic drawn in it; Enter inside the caption writes nothing (as in a
+    # figure's), where it wrote a blank line in \caption and TeX stopped
+    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\usepackage{algorithm}\n\\usepackage{algpseudocode}').replace('Agent income here.', 'See Algorithm~\\ref{alg:a}.\n\n\\begin{algorithm}\n\\begin{algorithmic}\n\\State $s \\gets 0$\n\\end{algorithmic}\n\\caption{Solve the problem}\\label{alg:a}\n\\end{algorithm}'))
+    txt = page.evaluate("document.getElementById('pages').innerText").replace('\u00a0', ' ')
+    check('real: an algorithm float is drawn with its caption, number and lines', 'Algorithm 1: Solve the problem' in txt and 'See Algorithm 1.' in txt and '\\State' in txt, txt[:300])
+    before = src(page)
+    click_text(page, 'Solve the', 5); k.press('Enter'); settle(page, 200); k.type('X')
+    settle(page, 200)
+    check('real: Enter inside an algorithm\'s caption writes no blank line in it', '\\caption{SolveX the problem}' in src(page) and src(page).replace('SolveX', 'Solve') == before, src(page)[-160:])
+    compiles(page, 'real algorithm')
 
 
 with sync_playwright() as p:

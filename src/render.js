@@ -712,11 +712,15 @@ export class Renderer {
       // a TikZ picture in a figure: drawn as in the text, selected as there (src/ui/shapes.js)
       const d = div('fp raw atom al-' + (p.align || 'center'));
       d.contentEditable = 'false';
-      const whole = p.e - p.s < 20000 ? (this.app.files.get(p.f) || '').slice(p.s, p.e) : '';
+      const whole = p.text == null && p.e - p.s < 20000 ? (this.app.files.get(p.f) || '').slice(p.s, p.e) : '';
       const pic = whole ? drawRaw(whole) : null;
-      if (pic) { d.classList.add('drawn'); d.appendChild(pic); } else { const h = div('raw-h'); h.textContent = 'tikzpicture'; d.appendChild(h); }
+      if (pic) { d.classList.add('drawn'); d.appendChild(pic); } else if (p.text == null) { const h = div('raw-h'); h.textContent = 'tikzpicture'; d.appendChild(h); } else {
+        // (another environment shown as its source: its name and its lines, as the text's box)
+        if (!p.verb) { const h = div('raw-h'); h.textContent = p.name; d.appendChild(h); } else d.classList.add('verb');
+        const pre = document.createElement('pre'); pre.textContent = p.text; d.appendChild(pre);
+      }
       const idx = B.atoms.length;
-      B.atoms.push({ kind: 'raw', f: p.f, s: this.rel(p.s), e: this.rel(p.e), is: this.rel(p.is), ie: this.rel(p.ie), name: 'tikzpicture' });
+      B.atoms.push({ kind: 'raw', f: p.f, s: this.rel(p.s), e: this.rel(p.e), is: this.rel(p.is), ie: this.rel(p.ie), name: p.name || 'tikzpicture' });
       d.dataset.a = B.id + '.' + idx;
       return d;
     }

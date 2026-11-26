@@ -827,12 +827,12 @@ body.pdf-on #pdfpane { display: flex; }
 @media print { #pages.tb-grid .tab td { outline: 0; } }
 
 /* raw blocks */
-.it.raw { background: #F4F6F8; border-radius: 3px; padding: .5em .7em; font-family: var(--font-doc-tt); font-size: .82em; line-height: 1.35; text-align: left; text-indent: 0; overflow: hidden; }
-.it.raw.verb { background: transparent; padding: 0; font-size: .95em; }
+.it.raw, .fp.raw:not(.drawn) { background: #F4F6F8; border-radius: 3px; padding: .5em .7em; font-family: var(--font-doc-tt); font-size: .82em; line-height: 1.35; text-align: left; text-indent: 0; overflow: hidden; }
+.it.raw.verb, .fp.raw.verb { background: transparent; padding: 0; font-size: .95em; }
 /* verbatim's lines as TeX sets them: never broken, a long one past the margin (review H2, R2) */
 .it.raw.verbatim-env pre { white-space: pre; overflow: visible; }
 .raw-h { font: 600 9px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .08em; color: #8693A0; margin-bottom: .3em; }
-.it.raw pre { margin: 0; white-space: pre-wrap; font: inherit; }
+.it.raw pre, .fp.raw pre { margin: 0; white-space: pre-wrap; font: inherit; }
 /* A LaTeX paragraph (src/styles.js): its source in a quiet box, typed in as text. The header is
    drawn here, not in the page's text, so it is never selected or copied; its spoken form is
    empty, the paragraph says "LaTeX paragraph" itself. The box keeps its look when the PDF view's
