@@ -529,6 +529,17 @@ def r4_tabs():
         click_text(pa, 'Second', 0); pa.keyboard.type('Z'); written(pa)
         check('tabs: a copy saved before ids, open in two windows: the first saves merge, no window loses its words (N2)', pa.evaluate('window.rikuy.name') == 'old' and 'First AAA paragraph' in src(pb)
               and 'First AAA paragraph' in src(pa) and 'ZSecond BBB paragraph' in src(pa), (src(pa)[30:130], src(pb)[30:130]))
+        # (review N3) brought in when a window is shown again: what the toast says Ctrl+Z does is
+        # what it does (one's own typing goes, the other window's words stay)
+        written(pb)
+        click_text(pb, 'First AAA', 0); pb.keyboard.type('Q'); written(pb)
+        click_text(pa, 'ZSecond', 0); pa.keyboard.type('R'); written(pa)
+        pb.evaluate(SAID)
+        pb.evaluate('() => window.rikuy.adoptOtherTab()'); until(pb, "() => window.rikuy.files.get('main.tex').includes('RZSecond')")
+        said = ' '.join(pb.evaluate('() => window.rikuy.__said'))
+        pb.keyboard.press('Control+z'); settle(pb, 200)
+        check('tabs: a window shown again says Ctrl+Z undoes one\'s own typing, and it does: the other window\'s words stay (N3)', 'your own typing' in said and 'undoes it' not in said
+              and 'QFirst' not in src(pb) and 'RZSecond' in src(pb), (said, src(pb)[30:130]))
         check('tabs: no page errors', not errors, errors[:3])
         browser.close()
 

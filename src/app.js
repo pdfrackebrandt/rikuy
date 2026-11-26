@@ -7549,7 +7549,8 @@ class App {
     if (merged.conflicts.length) return this.keepOtherTab(cur, both(true));
     // (this tab has that tab's text now: its Allow is no longer refused, see allowMark)
     if (this.markStale) this.markStale.delete(this.name + '|' + this.main);
-    this.toast('Brought in what was typed in another tab. Ctrl+Z undoes it.', 5000);
+    // (Ctrl+Z takes out this person's own typing, not that tab's words: undoUnder)
+    this.toast('Brought in what was typed in another tab. Ctrl+Z undoes your own typing, not theirs.', 5000);
   }
 
   // Ctrl+Z with another tab's words brought in at a save (takeOtherTab) on top of Undo's steps:
@@ -7655,7 +7656,8 @@ class App {
     this.closeGroup();
     // (and that tab's Track Changes base and switch: its edits stay its changes)
     this.rvCheckBase();
-    this.toast('Brought in what was typed in another tab. Ctrl+Z undoes it.', 5000);
+    // (Ctrl+Z takes out this person's own typing, not that tab's words: undoUnder)
+    this.toast('Brought in what was typed in another tab. Ctrl+Z undoes your own typing, not theirs.', 5000);
   }
 
   resetToSample() {
