@@ -236,6 +236,13 @@ def r4_pull():
         remote(page, 'Pull', 1500)
         said = page.evaluate('() => window.rikuy.__toast')
         check('r4 git: edits of the same words are still a conflict, said, nothing written', src(page) == before and 'same words' in said, (said, src(page)[-120:]))
+        # offline: said as such, not as a proxy or a policy to change
+        page.context.set_offline(True)
+        page.evaluate(TOASTS)
+        remote(page, 'Push', 800)
+        said = page.evaluate('() => window.rikuy.__toast')
+        page.context.set_offline(False)
+        check('r4 git: a push while offline says the computer is offline, and the commits are kept', 'offline' in said and 'proxy' not in said, said)
         check('r4 git: no page errors', not errors, errors[:3])
         browser.close()
 

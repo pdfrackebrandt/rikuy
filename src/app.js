@@ -6695,6 +6695,8 @@ class App {
 
   gitError(e) {
     const m = String((e && (e.message || e.code)) || e);
+    // (offline, the proxy and the policy are not why: what to change there would be no help)
+    if (/Failed to fetch|NetworkError|Load failed/i.test(m) && navigator.onLine === false) return 'This computer is offline. Your commits are kept in this browser: pull or push once you are back online.';
     if (/Failed to fetch|NetworkError|Load failed|Content Security Policy|CORS/i.test(m)) {
       // (the hosted copy reaches git hosts through its own proxy alone: its policy refuses any other address)
       if (__RIKUY_APP__) return 'Could not reach the remote. Rikuy reaches git hosts only through its own proxy, ' + gitProxyHere() + ': put that address in CORS proxy, or Download LaTeX and push from your computer. (' + m + ')';
