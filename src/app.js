@@ -7359,6 +7359,10 @@ class App {
   // Keep the project in this browser: text on every change, binary files when they change.
   persist() {
     const meta = { name: this.name, main: this.main, files: [...this.files.entries()], t: Date.now(), zipDirty: this.zipDirty };
+    // (the names this project had before a Rename in this tab: another tab showing it under one of
+    // them takes the new name, see renamedHere)
+    const was = this.wasNames && this.wasNames.key === this.name + '|' + this.main ? this.wasNames.names : null;
+    if (was) meta.was = was;
     // when this browser keeps nothing (storage turned off, as in some private windows, or
     // full) or keeps the text but not the figures, the user hears it once, not only in the
     // status line, so nobody closes the page trusting a copy that is not there
@@ -7437,12 +7441,37 @@ class App {
   // where cur is another project or this tab knows no copy both come from.
   mergeOtherTab(base, meta, cur) {
     if (!base || !Array.isArray(base.files) || !Array.isArray(cur.files)) return null;
-    if (cur.name !== meta.name || cur.main !== meta.main || base.name !== meta.name || base.main !== meta.main) return null;
+    // (the same project under another name: renamed in that tab, File, Rename, whose new name is
+    // taken; or in this one, the other tab writing on under a name it had, and this one's is kept)
+    const renamed = this.renamedThere(cur, meta.name, meta.main) ? cur.name : null;
+    const ours = (n) => n === meta.name || (Array.isArray(meta.was) && meta.was.includes(n));
+    if ((!ours(cur.name) && !renamed) || cur.main !== meta.main || !ours(base.name) || base.main !== meta.main) return null;
     // (this tab's copy as "theirs": the side that wins where both changed the same words)
     const { files, conflicts } = mergeProjects(new Map(base.files), new Map(cur.files), new Map(meta.files));
-    const same = files.size === meta.files.length && meta.files.every(([n, t]) => files.get(n) === t);
+    const same = !renamed && files.size === meta.files.length && meta.files.every(([n, t]) => files.get(n) === t);
     // (hT names no Undo steps: those kept were written for this tab's text, not the merged one)
-    return { meta: same ? null : { ...meta, files: [...files], hT: 0 }, conflicts };
+    return { meta: same ? null : { ...meta, ...(renamed ? { name: renamed, was: cur.was } : {}), files: [...files], hT: 0 }, conflicts, renamed };
+  }
+
+  // Whether the copy another tab wrote (cur) is this project (name, main) renamed there: Rename
+  // moved its versions and records to the new name, and this tab, still under the old one, wrote
+  // on as another document; the two never met again.
+  renamedThere(cur, name, main) {
+    return cur.name !== name && cur.main === main && Array.isArray(cur.was) && cur.was.includes(name) && typeof cur.name === 'string' && !!cur.name;
+  }
+  // This tab takes the name another tab gave the project (its records there were moved already)
+  renamedHere(to, was) {
+    const from = this.name, main = this.main;
+    this.name = to;
+    this.wasNames = { key: to + '|' + main, names: was.slice(-8) };
+    const k = from + '|' + main, n = to + '|' + main;
+    if (this.linkCache && this.linkCache.has(k)) { this.linkCache.set(n, this.linkCache.get(k)); this.linkCache.delete(k); }
+    if (this.scriptSeen && this.scriptSeen.has(k)) { this.scriptSeen.set(n, this.scriptSeen.get(k)); this.scriptSeen.delete(k); }
+    if (this.fold) this.fold.key = n;
+    const d = $('#docname');
+    if (d) d.textContent = to;
+    if (this.saveTitle) this.saveTitle();
+    this.toast(from + ' was renamed ' + to + ' in another tab: this tab shows it under that name.', 7000);
   }
 
   // The merged copy written, this tab takes it as one step Ctrl+Z undoes, what was typed here
@@ -7451,7 +7480,9 @@ class App {
     const both = (took) => (took ? 'Brought in what was typed in another tab. ' : 'This document is open in another tab too. ') + 'Where both tabs changed the same words, this one\'s are kept; that tab\'s are under Review, Versions, as “From another tab”.';
     // (nothing of that tab's but words this one changed again: those go to the versions)
     if (!merged.meta) return merged.conflicts.length ? this.keepOtherTab(cur, both(false)) : undefined;
-    const mine = () => this.name === meta.name && this.main === meta.main;
+    if (merged.renamed && this.name === meta.name && this.main === meta.main) this.renamedHere(merged.renamed, cur.was);
+    const name = merged.renamed || meta.name;
+    const mine = () => this.name === name && this.main === meta.main;
     if (!mine()) return this.keepOtherTab(cur);
     // (that tab may have marked the project a stranger's since this one read its mark, as an
     // archive dropped there does: read again before its text is drawn and compiled here, V2)
@@ -7499,6 +7530,8 @@ class App {
     let cur = null;
     try { cur = await kvGet('project'); } catch (e) { return; }
     if (!cur || !cur.files || cur.t === this.savedT || this.unsaved) return;
+    // (renamed there: the same project, which this tab now shows under its new name)
+    if (this.renamedThere(cur, this.name, this.main)) this.renamedHere(cur.name, cur.was);
     if (cur.name !== this.name || cur.main !== this.main) return;
     // (that tab may have marked the project a stranger's since this one read its mark, as an
     // archive dropped there does: read again before its text is drawn and compiled here, V2)

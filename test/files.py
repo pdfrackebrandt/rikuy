@@ -474,6 +474,20 @@ def r4_tabs():
         until(pb, "() => (window.rikuy.files.get('defs.sty') || '').includes('write18')")
         f = pb.evaluate(FLAGS)
         check('tabs: a stranger\'s archive brought in from the other window at a save compiles restricted', 'Mine too here' in src(pb, 'paper.tex') and f['mark'] and f['mark']['allowed'] is False and f['se'] is False, f)
+        # File, Rename in one window: the other, showing the document under its old name, wrote on
+        # as another document (both names in Recent, the words of one never reaching the other);
+        # it takes the new name at its next save, or when it is shown again
+        pa.evaluate(SAID); pb.evaluate(SAID)
+        ok = pa.evaluate('() => window.rikuy.runCommand("recent", { rename: "tabs2", to: "tabs3" })'); written(pa)
+        click_text(pb, 'Mine too here', 0); pb.keyboard.type('Then '); written(pb)
+        names = pb.evaluate('(async () => [...new Set((await window.rikuy.allSnaps()).map((v) => v.name))])()')
+        check('tabs: renamed in one window, the other takes the new name at its save and keeps writing the one document', ok is True and pb.evaluate('window.rikuy.name') == 'tabs3'
+              and pa.evaluate(STORED)[0] == 'tabs3' and 'Then Mine too here' in pa.evaluate("async () => { const r = await new Promise((res) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const g = q.result.transaction('kv').objectStore('kv').get('project'); g.onsuccess = () => res(g.result); }; }); return new Map(r.files).get('paper.tex'); }")
+              and 'tabs2' not in names and any('renamed tabs3' in x for x in pb.evaluate('() => window.rikuy.__said')), (pb.evaluate('window.rikuy.name'), pa.evaluate(STORED)[0], names))
+        pa.evaluate('() => window.rikuy.adoptOtherTab()'); until(pa, "() => window.rikuy.files.get('paper.tex').includes('Then Mine')")
+        pa.evaluate('() => window.rikuy.runCommand("recent", { rename: "tabs3", to: "tabs4" })'); written(pa)
+        pb.evaluate('() => window.rikuy.adoptOtherTab()'); until(pb, "() => window.rikuy.name === 'tabs4'")
+        check('tabs: and when it is shown again', pb.evaluate('window.rikuy.name') == 'tabs4' and pb.evaluate("document.getElementById('docname').textContent") == 'tabs4', pb.evaluate('window.rikuy.name'))
         check('tabs: no page errors', not errors, errors[:3])
         browser.close()
 
