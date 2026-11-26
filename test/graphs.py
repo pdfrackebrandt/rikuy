@@ -153,7 +153,8 @@ def aligned(p):
     """Every live graph's frame lies on its box, within a pixel: the opening document's and Learn
     Rikuy's at 390 px with touch, 1024, 1366 and 1920 px; then with the pages moved and nothing in
     them drawn again, the zoom staying (a wider window, the Help pane docked and closed, Side to
-    Side on and off), and an inserted graph through the same. The frames once stayed where they
+    Side on and off, the ruler shown and hidden, Focus with the ruler on, where the vertical ruler
+    must stay on its page too), and an inserted graph through the same. The frames once stayed where they
     were while the pages centred themselves again: the graph stood 167 px left of its box after a
     window went from 1366 to 1700 px, its pale hover box running on empty past it."""
     def off(page, n):
@@ -191,7 +192,15 @@ def aligned(p):
         page.evaluate("window.rikuy.runCommand('side-to-side')")
         v = off(page, 1)
         check('aligned: Side to Side %s, the frame follows its box' % k, ok(v, 1), v)
+    # The ruler shown above the sheet moves the pages down 21 px, and hidden (Focus hides it) up
+    # again, with nothing in them changing; the vertical ruler beside the page follows it too
     click_text(page, 'Drag its sliders')
+    VR = '''() => { const v = document.getElementById('vruler'); if (!v || v.hidden) return null; const t = v.getBoundingClientRect().top;
+      return Math.min(...[...document.querySelectorAll('#pages > .page')].map((q) => Math.abs(q.getBoundingClientRect().top - t))); }'''
+    for step, cmd, ruled in (('the ruler shown', 'ruler', True), ('Focus with the ruler on', 'focus', False), ('Focus left', 'focus', True), ('the ruler hidden', 'ruler', False)):
+        page.evaluate('(c) => window.rikuy.runCommand(c)', cmd)
+        v, vr = off(page, 1), page.evaluate(VR)
+        check('aligned: %s, the frame follows its box%s' % (step, ', and the vertical ruler lies on its page\'s top' if ruled else ''), ok(v, 1) and (vr is not None and vr <= 1 if ruled else vr is None), (v, vr))
     page.evaluate('window.rikuy.runCommand("insert-interactive-graph")'); page.wait_for_selector('#gd-ok'); settle(page, 300)
     page.click('#gd-ok')
     v = off(page, 2)
