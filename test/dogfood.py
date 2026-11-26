@@ -777,6 +777,12 @@ def real(page):
     click_text(page, 'and then', 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
     check('real: Enter in \\exercise{..} (#1 at its top) writes the paragraph inside it', '\\exercise{Prove the first claim \n\nQand then the second}' in src(page), src(page)[-120:])
     three(page, src(page), 'real long command', ('Exercise 1. Prove the first claim', 'Qand then the second'))
+    # (verification W3) the same with its argument right after declarations, \par\noindent #1: they
+    # take no argument, and the paragraph stays inside
+    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\newcounter{ex}\n\\newcommand{\\exercise}[1]{\\refstepcounter{ex}\\par\\noindent #1}').replace('Agent income here.', '\\exercise{Prove the first claim and then the second}'))
+    click_text(page, 'and then', 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
+    check('real: Enter in \\exercise{..} whose #1 follows \\par\\noindent writes the paragraph inside it', '\\exercise{Prove the first claim \n\nQand then the second}' in src(page), src(page)[-120:])
+    three(page, src(page), 'real long command after declarations', ('Prove the first claim', 'Qand then the second'))
     # (verification V3) the definition in force there: \renewcommand* after \newcommand makes it short,
     # and an argument handed to a command right before it (\@foo#1\@nil) may take no paragraph: the
     # command is split, where the blank line went inside and TeX stopped

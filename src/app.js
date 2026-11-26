@@ -3191,13 +3191,18 @@ class App {
       const body = t.slice(i + 1, z - 1);
       if (!/#\d/.test(body)) return false;
       // (its arguments at the top of its body, none in another command's braces nor handed to a
-      // command right before them, \@foo#1\@nil, whose own argument may take no paragraph)
+      // command right before them, \@foo#1\@nil, whose own argument may take no paragraph; a
+      // declaration takes none, \par\noindent #1: verification W3)
+      const DECL = /^(?:par|noindent|indent|centering|raggedright|raggedleft|leavevmode|ignorespaces|unskip|relax|null|newline|linebreak|smallskip|medskip|bigskip|vfill|hfill|quad|qquad|enspace|thinspace|normalfont|em|bf|it|sl|sc|tt|rm|sf|(?:bf|md)series|(?:it|up|sl|sc)shape|(?:rm|sf|tt)family|tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)$/;
       let d = 0;
       for (let j = 0; j < body.length; j++) {
         const ch = body[j];
         if (ch === '\\') { j++; continue; }
         if (ch === '{') d++; else if (ch === '}') d--;
-        else if (ch === '#' && /\d/.test(body[j + 1] || '') && (d > 0 || /\\[A-Za-z@]+\s*$/.test(body.slice(0, j)))) return false;
+        else if (ch === '#' && /\d/.test(body[j + 1] || '')) {
+          const cs = /\\([A-Za-z@]+)\s*$/.exec(body.slice(0, j));
+          if (d > 0 || (cs && !DECL.test(cs[1]) && sigOf(cs[1]) !== '')) return false;
+        }
       }
       return true;
     };
