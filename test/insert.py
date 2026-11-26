@@ -1091,6 +1091,11 @@ def hunt_c(page):
     # (review of round 4) AutoCorrect leaves inline code alone: ... typed there wrote \ldots{}
     load_doc(page, W('Use \\lstinline{abcd} here.')); click_text(page, 'abcd', 2); page.keyboard.type('x...'); settle(page, 200)
     check('AutoCorrect leaves inline code alone: ... stays three dots', '\\lstinline{abx...cd}' in src(page), src(page)[40:120])
+    # (review of round 4) minted's braces balance: {} typed in its code go in, a } that would close
+    # its own brace is refused
+    for typed, off, want in (('{}', 2, '\\mintinline{c}{ab{}cd} here'), ('}', 2, '\\mintinline{c}{abcd} here')):
+        load_doc(page, W('Use \\mintinline{c}{abcd} here.')); click_text(page, 'abcd', off); page.keyboard.type(typed); settle(page, 200)
+        check('typed in \\mintinline{c}{..}: %r' % typed, want in src(page), src(page)[40:120])
     # and in every verbatim context: what a ' becomes there, as the page would write it
     vb = W('A \\verb|v1 x| B \\lstinline{l1 x} C \\url{u1 x} D \\texttt{t1 \\textbf{b} x} E\n\\begin{verbatim}\nvb1 x\n\\end{verbatim}\n\\begin{lstlisting}\nls1 x\n\\end{lstlisting}\nAfter x1 y.')
     load_doc(page, vb)

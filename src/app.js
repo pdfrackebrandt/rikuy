@@ -2494,15 +2494,24 @@ class App {
   }
 
   // The characters that end the \lstinline or \mintinline code place at of file f is in (its
-  // delimiter, or the closing brace: listings ends its braces at the first }, minted's balance, so
-  // { too there), or null outside such code; read on the line before at, as codeAt reads
+  // delimiter, or the closing brace: listings ends its braces at the first }; minted's balance, so
+  // there a } ends it only at the code's own depth: '' inside a brace of the code), or null
+  // outside such code; read on the line before at, as codeAt reads
   inlineCodeAt(f, at) {
     const src = this.src(f), near = src.slice(Math.max(0, at - 400), at), line = near.slice(near.lastIndexOf('\n') + 1);
     let m = /\\lstinline[ \t]*(?:\[[^\]\n]*\][ \t]*)?(?:\{[^}]*|([^A-Za-z\s{[])(?:(?!\1).)*)$/.exec(line);
     if (m) return m[1] || '}';
-    m = /\\mintinline[ \t]*(?:\[[^\]\n]*\][ \t]*)?\{[^{}]*\}[ \t]*(?:\{[^{}]*|([^A-Za-z\s{[])(?:(?!\1).)*)$/.exec(line);
-    if (m) return m[1] || '{}';
-    return null;
+    m = /\\mintinline[ \t]*(?:\[[^\]\n]*\][ \t]*)?\{[^{}]*\}[ \t]*([^A-Za-z\s{[])(?:(?!\1).)*$/.exec(line);
+    if (m) return m[1];
+    // (minted's braces balance, as fvextra reads them: a { and a } inside are the code's; only the }
+    // that would close its own brace ends it)
+    const o = /\\mintinline[ \t]*(?:\[[^\]\n]*\][ \t]*)?\{[^{}]*\}[ \t]*\{/g;
+    let k = -1;
+    for (let x; (x = o.exec(line));) k = x.index + x[0].length;
+    if (k < 0) return null;
+    let depth = 1;
+    for (let i = k; i < line.length; i++) { if (line[i] === '{') depth++; else if (line[i] === '}' && --depth === 0) return null; }
+    return depth === 1 ? '}' : '';
   }
 
   // Whether place at of file f is code, where typed quotes stay straight (a ' wrote a backtick
