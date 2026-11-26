@@ -117,6 +117,11 @@ ok('smart quotes as typed or pasted: opening after a space, nested ones kept apa
   // two straight quotes typed for LaTeX's own closing quote stay ''
   assert.equal(typed("end''"), "end''");
   assert.equal(escapeTeX("print 'a' \"b\"", ' ', { code: true }), "print 'a' \"b\"");
+  // (R4) a German document's: „..“ and ‚.., as Word's in German; babel's commands in a latin1 file
+  const de = (s, q) => { let t = ' '; for (const ch of s) t += escapeTeX(ch, t.slice(-2), { quotes: q }); return t.slice(1); };
+  assert.equal(de('Er sagt "ja" und \'nein\', geht\'s', 'de'), 'Er sagt \u201Eja\u201C und \u201Anein\', geht\'s');
+  assert.equal(escapeTeX('"\'a\'"', ' ', { quotes: 'de' }), '\u201E\u201Aa\'\u201C');
+  assert.equal(de('so "ja"', 'de-cmd'), 'so \\glqq{}ja\\grqq{}');
 });
 
 ok('ordinals and fractions, off by default', () => {

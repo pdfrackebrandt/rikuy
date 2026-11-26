@@ -411,17 +411,23 @@ export function escapeTeX(text, prev = ' ', opts = {}) {
   // a double quote closes it, “”)
   let w = /[`']*$/.exec(prev || '')[0];
   const quotes = !opts.verbatim && !opts.code;
+  // (opts.quotes 'de': a German document's quotes, „..“ and ‚.., as Word's smart quotes make them
+  // in German; 'de-cmd' babel's \glqq{}, \grqq{} and \glq{} where the file is no UTF-8 (inputenc's
+  // latin1). They were English ``..'', printed “..” in a German text)
+  const de = opts.quotes === 'de' || opts.quotes === 'de-cmd', cmd = opts.quotes === 'de-cmd';
+  const openS = de ? (cmd ? '\\glq{}' : '\u201A') : '`', openD = cmd ? '\\glqq{}' : '\u201E';
   for (const ch of text) {
     let r = ch;
-    const base = /[\s([{—–-]/.test(p) || p === '';
-    const opening = base || w.endsWith('`'), openingD = base || /(^|[^`])`$/.test(w);
+    const base = /[\s([{—–-]/.test(p) || p === '' || (de && /[\u201E\u201A]/.test(p));
+    const opening = base || w.endsWith(openS) || (de && w.endsWith(openD)), openingD = base || (de ? w.endsWith(openS) : /(^|[^`])`$/.test(w));
     if (LIGATURES[ch] && !opts.verbatim) r = LIGATURES[ch];
     else if (mathForPdf && TEXT_MATH[ch] && !opts.verbatim && (mathForPdf.greek || !/[\u0370-\u03FF]/.test(ch))) r = '$' + TEXT_MATH[ch] + '$';
+    else if (ch === '"' && quotes && de) r = openingD ? (cmd ? '\\glqq{}' : '\u201E') : (cmd ? '\\grqq{}' : '\u201C');
     else if (ch === '"' && quotes) r = openingD ? '``' : "''";
     // (a straight single quote opening a quotation, after a space, a bracket or an opening quote:
     // LaTeX's opening quote, as Word's smart quotes make it. Left as ', TeX printed a closing
     // quote at both ends, ’word’; one after a letter or a digit stays an apostrophe or a prime)
-    else if (ch === "'" && quotes && opening) r = '`';
+    else if (ch === "'" && quotes && opening) r = openS;
     else if (ch === '“') r = '``';
     else if (ch === '”') r = "''";
     else if (ch === '‘') r = '`';

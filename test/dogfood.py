@@ -19,7 +19,7 @@ across the notes' files keeps the case of what it replaces. And the hostile revi
 Round four, real documents (`real`): Enter in the words of a command of the document's own
 (\\question{..}) or in a caption of algorithm's float, and at the end of a list item in braces;
 a word typed after an acronym's or a glossary entry's command (\\ac{KDE}, \\Gls{slp}); enumitem's
-\\newlist lists; \\marginnote's offset and \\columnseprule=.4pt drawn as no words.
+\\newlist lists; \\marginnote's offset and \\columnseprule=.4pt drawn as no words; German quotes typed in a German document.
 
   python3 dogfood.py [part ...]   parts: formula arrows textfield styles table caption cite paste
                                   split filename undo_words enter reload_undo mathpkg intertext envlist replace review review2 review3 real
@@ -787,6 +787,12 @@ def real(page):
     txt = page.evaluate("document.getElementById('pages').innerText")
     check('real: \\marginnote{..}[0cm] and \\columnseprule=.4pt draw no "[0cm]" or "=.4pt"', '[0cm]' not in txt and '=.4pt' not in txt and '=2pt' not in txt and 'fboxsep' not in txt and 'More.' in txt and 'Last words.' in txt, txt[:200])
     compiles(page, 'real margin note')
+    # straight quotes typed in a German document: „..“, as Word's smart quotes make them in German;
+    # they were English ``..'', which TeX prints “..” in the German text
+    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\usepackage[ngerman]{babel}').replace('Agent income here.', 'Das ist ein Text hier.'))
+    click_text(page, 'Text', 4); k.type(' "Hallo" und'); settle(page, 300)
+    check('real: "Hallo" typed in a German document is \u201eHallo\u201c', 'Text \u201eHallo\u201c und hier.' in src(page) and 'Text \u201eHallo\u201c und hier.' in page.evaluate("document.getElementById('pages').innerText"), src(page)[-80:])
+    compiles(page, 'real German quotes')
 
 
 with sync_playwright() as p:

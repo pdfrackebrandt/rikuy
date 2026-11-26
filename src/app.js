@@ -2468,7 +2468,10 @@ class App {
   // quotes. o.prev: the text before where it is not the source's (a new paragraph: ' '); by
   // default the two characters before, as `` is told from `; o.wrap: as codeAt
   typedTeX(f, at, data, o = {}) {
-    return escapeTeX(data, o.prev ?? (this.src(f).slice(Math.max(0, at - 2), at) || ' '), { code: this.codeAt(f, at, o.wrap) });
+    // (a German document's quotes, „..“, as Word's in German: src/editor.js escapeTeX; babel's
+    // commands where the main file says its text is no UTF-8)
+    const de = this.model && this.model.opts.lang === 'de' && /["']/.test(data) ? (/\\usepackage\s*\[[^\]]*\b(?:latin\d|ansinew|applemac|cp\d+|decmulti|next)\b[^\]]*\]\s*\{inputenc\}/.test(this.src(this.main) || '') ? 'de-cmd' : 'de') : null;
+    return escapeTeX(data, o.prev ?? (this.src(f).slice(Math.max(0, at - 2), at) || ' '), { code: this.codeAt(f, at, o.wrap), quotes: de });
   }
 
   // Text typed, or written by Replace, at p of file f as the source takes it there. A selection
