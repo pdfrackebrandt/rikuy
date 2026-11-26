@@ -182,6 +182,22 @@ await ok('XeTeX is warmed once, the first time an instance runs it, before that 
   assert.equal(run('[M._memHeader[0], M.HEAPU8[0], M.HEAPU8[MEM_HEADER]].join()'), '1,1,0');
 });
 
+await ok('a XeTeX warm stopped short (ICU\'s pack not loaded) is not kept: the heap before it stays, and the next XeTeX run warms again', () => {
+  // (offline, its prefetch failed: the pack's load throws from inside the read, not exit())
+  const calls = [];
+  ctx.__calls = calls;
+  ctx.__net = false;
+  run(`M = { FS: { streams: [] }, _out: {}, _sp0: 7, HEAPU8: new Uint8Array(MEM_HEADER + 8), _memHeader: new Uint8Array(MEM_HEADER),
+    _stackRestore: (v) => { M._sp = v; }, _spGet: () => 5,
+    callMain: (a) => { __calls.push(a.join(' ') + ' sp' + M._sp); if (a[0] === 'xetex') { M.HEAPU8[0] = 2; if (!__net) throw new Error('pack p-icu.wasm no network'); M.HEAPU8[0] = 1; throw Object.assign(new Error('exit'), { name: 'ExitStatus', status: 0 }); } } };`);
+  run('run(["xelatex", "a.tex"]);');
+  assert.equal(run('[M._xe ? 1 : 0, M._memHeader[0], M._sp0].join()'), '0,0,7', 'not kept');
+  ctx.__net = true;
+  run('run(["xelatex", "b.tex"]);');
+  assert.deepEqual(calls, ['xetex --version sp7', 'xelatex a.tex sp7', 'xetex --version sp7', 'xelatex b.tex sp5']);
+  assert.equal(run('[M._xe ? 1 : 0, M._memHeader[0]].join()'), '1,1', 'kept once it ran through');
+});
+
 await ok('a pack TeX cannot load is counted as missed until it loads, and bytes that do not unpack are not kept', async () => {
   blobs.clear(); served.clear(); run('packs.clear(); packMissed.clear();');
   const f1 = run('INDEX.packs[1].f');

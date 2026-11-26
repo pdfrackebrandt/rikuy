@@ -474,7 +474,14 @@ async function newTeX(primary) {
   T._sp0 = spGet(); T._spGet = spGet; T._stackRestore = spSet;
   return T;
 }
-function warmRun(T, args) { try { T.callMain([...args]); } catch (e) { /* exit */ } try { T._flush_streams && T._flush_streams(); } catch (e) { /* ignore */ } }
+// (true when the program ended as a program does: returned, or exit() thrown as ExitStatus; not
+// when something it read threw, a pack that could not be loaded among them)
+function warmRun(T, args) {
+  let ok = true;
+  try { T.callMain([...args]); } catch (e) { ok = typeof e === 'number' || !!(e && (e.name === 'ExitStatus' || e.status != null)); }
+  try { T._flush_streams && T._flush_streams(); } catch (e) { /* ignore */ }
+  return ok;
+}
 function keepHeap(T) {
   T._memHeader = Uint8Array.from(T.HEAPU8.subarray(0, MEM_HEADER));
   T.HEAPU8.fill(0, MEM_HEADER);
@@ -484,12 +491,17 @@ function keepHeap(T) {
 // XeTeX. So XeTeX is warmed the first time an instance runs it, on top of the heap kept then, and
 // the heap is kept again after it, as at the start: every later run starts from that heap.
 const XETEX = /^xe(la)?tex(-dev)?$/;
+// A warm run stopped short (ICU's pack not loaded: offline, its prefetch failed) is not kept: the
+// heap goes back to the one kept before it and the next XeTeX run warms again; kept, it would be
+// every later run's start, a XeTeX stopped in the middle of reading ICU's data.
 function xeWarm() {
   if (M._xe) return;
-  M._xe = true;
   M._stackRestore(M._sp0);
-  warmRun(M, ['xetex', '--version']);
+  const icu = icuPack();
+  const ok = warmRun(M, ['xetex', '--version']) && !(icu != null && packMissed.has(icu));
   for (const st of M.FS.streams || []) if (st && st.fd > 2) { try { M.FS.close(st); } catch (e) { /* already closed */ } }
+  if (!ok) { M.HEAPU8.fill(0); M.HEAPU8.set(M._memHeader); M._stackRestore(M._sp0); return; }
+  M._xe = true;
   keepHeap(M);
   M._sp0 = M._spGet();
 }
