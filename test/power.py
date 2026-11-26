@@ -188,6 +188,17 @@ def dollars(page):
         settle(page, 300)
         s = src(page)
         check('dollars: ' + typed_.strip() + (' is a price' if '%' in typed_ else ' stays a formula'), re.search('gamma\\.' + want + '\n', s) is not None and active(page) == 'pages', (s[60:130], active(page)))
+    # (R4, real documents) an opening bracket or a quote mark after "$5 " is prose, as a letter is:
+    # the rest of the sentence went into the formula in math italics; "$3 (a)$" stays a formula
+    for typed_, want in ((' costs $5 (excl. tax) now.', re.escape(' Costs \\$5 (excl. tax) now.')), (' costs $5 "only" now.', re.escape(" Costs \\$5 ``only'' now.")),
+                         (' costs $5 [sic] now.', re.escape(' Costs \\$5 [sic] now.')), (' a $3 (a)$ term', r' A \$3\s*\(a\)\$ term')):
+        fresh(page, MATH)
+        click_text(page, 'gamma.', 6)
+        for ch in typed_:
+            page.keyboard.type(ch); settle(page, 250 if ch == '$' else 40)
+        settle(page, 300)
+        s = src(page)
+        check('dollars: ' + typed_.strip() + (' stays a formula' if '(a)$' in typed_ else ' is a price'), re.search('gamma\\.' + want + '\n', s) is not None and active(page) == 'pages', (s[60:130], active(page)))
     fresh(page, MATH)
     click_text(page, 'gamma.', 6)
     for ch in ' costs $5 each': page.keyboard.type(ch); settle(page, 250 if ch == '$' else 40)
