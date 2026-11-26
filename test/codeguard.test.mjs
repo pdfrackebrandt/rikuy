@@ -16,7 +16,9 @@ const S = 'Use \\lstinline|abcd| here.';
 const at = (t) => S.indexOf(t);
 ok('a selection from inside the code to past it keeps the closing |', () => assert.equal(run(S, at('cd|'), at(' here') + 3, 'X').text, 'Use \\lstinline|abX|re.'));
 ok('one from before the run into its code keeps the opening', () => assert.equal(run(S, at('Use') + 2, at('cd|'), 'X').text, 'UsX\\lstinline|cd| here.'));
-ok('the closing | alone (Backspace after the code): the whole run', () => assert.equal(run(S, at('| here'), at(' here'), '').text, 'Use  here.'));
+ok('the closing | alone (Backspace after the code): the code\'s last letter', () => assert.equal(run(S, at('| here'), at(' here'), '').text, 'Use \\lstinline|abc| here.'));
+ok('the opening alone (Delete before the code): its first letter', () => assert.equal(run(S, at('\\lst'), at('\\lst') + 1, '').text, 'Use \\lstinline|bcd| here.'));
+ok('an empty code\'s closer: the whole run', () => assert.equal(run('Use \\lstinline|| here.', 15, 16, '').text, 'Use  here.'));
 ok('all of the code\'s text and more: the whole run, no empty shell', () => assert.equal(run(S, 0, at('| here'), 'X').text, 'X here.'));
 ok('inside the code, or the whole run, or outside it: as it came', () => {
   for (const [s, e] of [[at('bc'), at('d|')], [at('\\lst'), at(' here')], [0, 3], [at('here'), S.length]]) { const r = run(S, s, e, 'X'); assert.equal(r.r.moved, null, S.slice(s, e)); }

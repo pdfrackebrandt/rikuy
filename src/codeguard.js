@@ -81,9 +81,18 @@ function guardOne(src, ed) {
       // (a place in the syntax, a letter typed there: to the code's edge it is next to)
       if (s === e) { next.push(s > R.S && s < R.is ? { s: R.is, e: R.is } : s > R.ie && s < R.E ? { s: R.E, e: R.E } : x); continue; }
       if (e <= R.S || s >= R.E || (s <= R.S && e >= R.E) || (s >= R.is && e <= R.ie)) { next.push(x); continue; }
-      // all of the code's text, or nothing but syntax: the whole run
+      // nothing but the syntax of one side (Backspace just after the code, Delete just before it):
+      // the code's letter next to it, as a key takes the letter before or after the caret; an
+      // empty code, the whole run (it took the whole run while its code had letters)
       const cs = Math.max(s, R.is), ce = Math.min(e, R.ie);
-      if ((s <= R.is && e >= R.ie) || (cs >= ce && s >= R.S && e <= R.E)) { next.push({ s: Math.min(s, R.S), e: Math.max(e, R.E) }); continue; }
+      if (cs >= ce && s >= R.S && e <= R.E) {
+        if (R.ie > R.is && s >= R.ie) next.push({ s: R.ie - (R.ie - 2 >= R.is && /[\uDC00-\uDFFF]/.test(src[R.ie - 1]) ? 2 : 1), e: R.ie });
+        else if (R.ie > R.is && e <= R.is) next.push({ s: R.is, e: R.is + (/[\uD800-\uDBFF]/.test(src[R.is]) ? 2 : 1) });
+        else next.push({ s: R.S, e: R.E });
+        continue;
+      }
+      // all of the code's text with text outside the run: the whole run
+      if (s <= R.is && e >= R.ie) { next.push({ s: Math.min(s, R.S), e: Math.max(e, R.E) }); continue; }
       if (s < R.S) next.push({ s, e: R.S });
       if (cs < ce) next.push(inner({ s: cs, e: ce }) ? { s: cs, e: ce } : { s: cs, e: cs });
       if (e > R.E) next.push({ s: R.E, e });

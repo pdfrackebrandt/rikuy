@@ -1127,6 +1127,19 @@ def hunt_c(page):
             else: page.keyboard.press(k)
             settle(page, 120)
         check('after End out of \\lstinline|abcd| at a paragraph\'s end, %s: %r' % (' '.join(keys[1:]), want), want in src(page), src(page)[40:120])
+    # (review of round 4) the code's last letter deleted leaves the run, empty; only a delete more
+    # takes the empty run (End, X and two Backspaces took the whole \lstinline|abcd|)
+    def press(ks):
+        for k in ks:
+            if len(k) == 1: page.keyboard.type(k)
+            else: page.keyboard.press(k)
+            settle(page, 120)
+    load_doc(page, W('Use \\lstinline|abcd|\n\nNext.')); click_text(page, 'abcd', 4); press(['End', 'X', 'Backspace', 'Backspace'])
+    check('End, X and two Backspaces at a paragraph\'s end after \\lstinline|abcd|: the X and the d go, the code stays', 'Use \\lstinline|abc|\n\nNext.' in src(page), src(page)[40:120])
+    load_doc(page, W('Use \\lstinline|ab| here.')); click_text(page, 'ab', 2); press(['Backspace', 'Backspace'])
+    kept = src(page)
+    press(['Backspace'])
+    check('Backspace over the code\'s letters leaves \\lstinline|| until one Backspace more takes it', 'Use \\lstinline|| here.' in kept and 'Use  here.' in src(page), (kept[40:100], src(page)[40:100]))
     load_doc(page, W('Use \\lstinline|abcd| here.')); click_text(page, 'abcd', 4); page.keyboard.press('ArrowRight'); settle(page, 120); page.keyboard.press('ArrowLeft'); settle(page, 120); page.keyboard.type('X'); settle(page, 200)
     check('Right out of the code, then Left: back at its end, X in the code after its last letter', '\\lstinline|abcdX| here.' in src(page), src(page)[40:120])
     # pasted words go in as typed (escaped as prose, \} ended the code); words with its closing
