@@ -3037,7 +3037,7 @@ class App {
       // indent like the current item line
       let ls2 = +is + base; let ind = '';
       while (ls2 > 0 && (src[ls2 - 1] === ' ' || src[ls2 - 1] === '\t')) { ind = src[ls2 - 1] + ind; ls2--; }
-      const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
+      const w = c.collapsed ? this.wrapBreak(el, f, p, true) : { p, close: '', open: '' };
       const ins = w.close + NL + ind + t.slice(NL.length) + w.open;
       this.commit([...edits, { f, s: w.p, e: w.p, t: ins }], { f, p: Math.max(w.p, p) + ins.length, bias: 1 }, 'enter');
       return;
@@ -3098,16 +3098,74 @@ class App {
   // Enter inside \textbf{...}, \emph{...} and the like: TeX stops with "Paragraph ended before
   // \textbf was complete" at a break inside their argument, so they close before the break and
   // open again after it. At the very start or end of one the break goes outside it instead.
-  wrapBreak(el, f, p) {
+  // The same holds for the braces round p that the page draws no wrapper for: a command of the
+  // document's own, drawn through its definition (\question{..}), one of a package the page shows
+  // only the words of, a caption in a float it does not know; and in a list (list set), a group
+  // ({\bf ..}) a new \item would be written into, drawn as text. A blank line went inside them,
+  // and TeX stopped ("Paragraph ended before \@ssect was complete"). Their levels are read from
+  // the source, the paragraph's braces from its start; an argument already holding a blank line,
+  // or a command whose argument takes paragraphs (\footnote, \parbox), keeps the break inside.
+  wrapBreak(el, f, p, list) {
     const src = this.src(f);
     let close = '', open = '';
+    const L = [];
     for (let n = el; n && n !== this.root && !n.classList.contains('it'); n = n.parentElement) {
       const y = n.dataset.y ? styOfEl(n) : null;
       if (!y || y.f !== f || !Number.isFinite(y.s) || p < y.is || p > y.ie) continue;
-      if (!close && p === y.ie) { p = y.e; continue; }
-      if (!open && p === y.is) { p = y.s; continue; }
-      close += src.slice(y.ie, y.e);
-      open = src.slice(y.s, y.is) + open;
+      L.push({ s: y.s, is: y.is, ie: y.ie, e: y.e, page: true });
+    }
+    let i0 = p;
+    for (let k = p - 1, nl = false; k >= Math.max(0, p - 4000); k--) {
+      const ch = src[k];
+      if (ch === '\n') { if (nl) break; nl = true; } else if (ch !== ' ' && ch !== '\t' && ch !== '\r') nl = false;
+      i0 = k;
+    }
+    // (\verb|{| and \lstinline|{| hold no braces of the text's)
+    const verb = (i) => { const m = /^\\(?:verb\*?|lstinline)([^A-Za-z\s*[{])/.exec(src.slice(i, i + 12)); return m ? src.indexOf(m[1], i + m[0].length) : -1; };
+    const st = [];
+    for (let i = i0; i < p; i++) {
+      const ch = src[i];
+      if (ch === '\\') { const v = verb(i); if (v > i) { i = v; continue; } i++; continue; }
+      if (ch === '%') { while (i < p && src[i] !== '\n') i++; continue; }
+      if (ch === '{') st.push(i); else if (ch === '}') st.pop();
+    }
+    const SW = /^(?:\s*\\(?:bf|it|sl|sc|em|tt|rm|sf|(?:bf|md)series|(?:it|up|sl|sc)shape|(?:rm|sf|tt)family|normalfont|tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)(?![A-Za-z]))*\s*/;
+    for (let j = st.length - 1; j >= 0; j--) {
+      const q = st[j];
+      if (L.some((y) => y.page && y.is === q + 1)) continue;
+      // (a command's argument: its brace right after the name, or after an argument before it on
+      // the line; \begin{..}, \item, \noindent or a declaration before a brace start a group)
+      const pre = src.slice(Math.max(0, q - 300), q);
+      let head = /\\([A-Za-z@]+)(?:\*?|\*?(?:[ \t]*\[[^[\]{}\n]*\]|[ \t]*\{[^{}\n]*\})+[ \t]*)$/.exec(pre);
+      if (head && /^(?:begin|end|item|noindent|indent|par|centering|raggedright|raggedleft)$/.test(head[1])) head = null;
+      if (head && SW.exec('\\' + head[1])[0].length === head[1].length + 1) head = null;
+      // (an optional argument's group, \item[{..}]: left as it is)
+      if (!head && /\[\s*$/.test(pre)) break;
+      let d = 0, qe = -1;
+      for (let i = q; i < src.length && i < q + 20000; i++) {
+        const ch = src[i];
+        if (ch === '\\') { const v = verb(i); if (v > i) { i = v; continue; } i++; continue; }
+        if (ch === '%') { while (i < src.length && src[i] !== '\n') i++; continue; }
+        if (ch === '{') d++; else if (ch === '}' && --d === 0) { qe = i; break; }
+      }
+      if (qe < 0) break;
+      L.push({ s: head ? q - head[0].length : q, is: q + 1 + SW.exec(src.slice(q + 1, qe))[0].length, ie: qe, e: qe + 1, name: head ? head[1] : '' });
+    }
+    // innermost first, the page's wrappers and the source's levels in one order; a group of
+    // declarations holds paragraphs, so the break stays in one (held) unless a command round it
+    // closes, and then it closes and opens again too
+    L.sort((x, y) => y.is - x.is);
+    const held = [];
+    for (const y of L) {
+      if (!y.page && /^(?:footnote|footnotetext|endnote|thanks|parbox|marginpar|marginnote|sidenote|todo|vbox|vtop|vcenter)$/.test(y.name)) break;
+      if (!close && !held.length && (y.page ? p === y.ie : !src.slice(p, y.ie).trim())) { p = y.e; continue; }
+      if (!open && !held.length && (y.page ? p === y.is : !src.slice(y.is, p).trim())) { p = y.s; continue; }
+      // (an argument already holding a blank line takes paragraphs; and in a list, a group round
+      // more items or the list's end is none of this item's)
+      if (!y.page && (/\n[ \t\r]*\n/.test(src.slice(p, y.ie)) || (list && /\\(?:item|end)(?![A-Za-z])/.test(src.slice(p, y.ie))))) break;
+      if (!y.page && !y.name && !list) { held.push(y); continue; }
+      for (const g of [...held, y]) { close += src.slice(g.ie, g.e); open = src.slice(g.s, g.is) + open; }
+      held.length = 0;
     }
     return { p, close, open };
   }

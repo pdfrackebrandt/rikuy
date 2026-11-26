@@ -16,15 +16,18 @@ set: \\mathbb typed in the equation field or pasted from a chat assistant brings
 across the notes' files keeps the case of what it replaces. And the hostile reviews' cases
 (E1 to E10; then E11 to E18: review2; the verification's V1 to V9: review3).
 
+Round four, real documents (`real`): Enter in the words of a command of the document's own
+(\\question{..}), and at the end of a list item in braces.
+
   python3 dogfood.py [part ...]   parts: formula arrows textfield styles table caption cite paste
-                                  split filename undo_words enter reload_undo mathpkg intertext envlist replace review review2 review3
+                                  split filename undo_words enter reload_undo mathpkg intertext envlist replace review review2 review3 real
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import settle, saved, until, ready, open_page, check, results, src, load_doc, click_text, ROOT
 from playwright.sync_api import sync_playwright
 
-PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo', 'mathpkg', 'intertext', 'envlist', 'replace', 'review', 'review2', 'review3']
+PARTS = sys.argv[1:] or ['formula', 'arrows', 'textfield', 'styles', 'table', 'caption', 'cite', 'paste', 'split', 'filename', 'undo_words', 'enter', 'reload_undo', 'mathpkg', 'intertext', 'envlist', 'replace', 'review', 'review2', 'review3', 'real']
 DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
 TEX = os.path.isdir(os.path.join(DIST, 'tex')) and any(n.endswith('.wasm') for n in os.listdir(os.path.join(DIST, 'tex')))
 
@@ -712,6 +715,34 @@ def review3(page):
     k.press('Control+Alt+1'); settle(page, 300)
     check('review3: a proof made a heading leaves \\qedhere behind', '\\section{Only plain step.}\n\nSecond paragraph.' in src(page) and 'qedhere' not in src(page), src(page)[-120:])
     compiles(page, 'review3 qedhere')
+
+
+def real(page):
+    """Round 4: real documents of the corpus, edited as a Word user does, then compiled."""
+    k = page.keyboard
+    # Enter in the words of \question{..}, a command of the document's own: its braces close
+    # before the break and open again after it, as a format's do; at its end the new paragraph is
+    # after it. A blank line went inside, and TeX stopped ("Paragraph ended before \@ssect")
+    D = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\newcommand{\\question}[1]{\\subsection*{#1}}').replace('Agent income here.', '\\question{\\bf Wie haben Sie gelernt?}')
+    load_doc(page, D)
+    click_text(page, 'Wie haben', 9); k.press('Enter'); settle(page, 200); k.type('Q')
+    settle(page, 200)
+    check('real: Enter in a command of its own closes and opens it again round the break', '\\question{\\bf Wie haben}\n\n\\question{\\bf Q Sie gelernt?}' in src(page), src(page)[-120:])
+    compiles(page, 'real question split')
+    load_doc(page, D)
+    click_text(page, 'gelernt?', 8); k.press('Enter'); settle(page, 200); k.type('After')
+    settle(page, 200)
+    # (its words' bold goes on in the new paragraph, as Word's formats do)
+    check('real: Enter at the end of its words starts a paragraph after it', '\\question{\\bf Wie haben Sie gelernt?}\n\n{\\bf After}' in src(page), src(page)[-120:])
+    compiles(page, 'real question end')
+    # Enter at the end of a list item in a group: the new \item after the group, not in it,
+    # where the page drew it as the text "\item"
+    load_doc(page, DOC.replace('Agent income here.', '\\begin{enumerate}\n\\item {\\textbf{First}}\n\\item {\\bf Second}\n\\end{enumerate}'))
+    click_text(page, 'Second', 6); k.press('Enter'); settle(page, 200); k.type('Third')
+    settle(page, 200)
+    check('real: Enter at the end of an item in braces writes the new \\item after them', '\\item {\\bf Second}\n\\item Third\n\\end{enumerate}' in src(page), src(page)[-120:])
+    check('real: and the page draws it as an item', page.evaluate("[...document.querySelectorAll('#pages .it')].some((e) => e.dataset.li && e.textContent.trim().endsWith('Third') && !e.textContent.includes('\\\\item'))"))
+    compiles(page, 'real item group')
 
 
 with sync_playwright() as p:
