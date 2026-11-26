@@ -396,6 +396,20 @@ await ok('two edits that meet with no space between them are a conflict: Chinese
   assert.deepEqual(merge3('the users data\n', 'the USERS data\n', 'the users DATA\n'), { text: 'the USERS DATA\n', clean: true });
 });
 
+await ok('one word budget for a whole project: thirty files each at the limit merge fast, the rest by lines (R4 review N4)', () => {
+  // each file: base, mine and theirs of 60 kB of one clashing line, about the budget alone
+  const line = 'w ' + 'x '.repeat(30000) + '\n';
+  const base = new Map(), mine = new Map(), theirs = new Map();
+  for (let k = 0; k < 30; k++) { const f = 'f' + k + '.tex'; base.set(f, line); mine.set(f, line.replace(/x \n$/, 'MINE \n')); theirs.set(f, line.replace(/^w/, 'W')); }
+  const t0 = Date.now();
+  const r = mergeProjects(base, mine, theirs);
+  const ms = Date.now() - t0;
+  const merged = [...r.files.values()].filter((t) => t.startsWith('W') && t.includes('MINE')).length;
+  assert.ok(ms < 8000, ms + ' ms');
+  assert.equal(merged, 1, 'one file within the budget merged word by word');
+  assert.equal(r.conflicts.length, 29, 'the others by lines: conflicts, theirs shown');
+});
+
 await ok('a comment line\'s own words start after its head\'s colon, not one in the quoted words (R4)', () => {
   const l = '% comment (Ana) on "ratio: two": Check this';
   assert.equal(l.slice(commentBodyAt(l)), 'Check this');

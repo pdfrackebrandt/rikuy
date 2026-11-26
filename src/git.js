@@ -12,7 +12,7 @@ import git from 'isomorphic-git';
 import http from 'isomorphic-git/http/web';
 import LightningFS from '@isomorphic-git/lightning-fs';
 import { authFor, canonicalRemote } from './gitauth.js';
-import { merge3 } from './share.js';
+import { merge3, mergeBudget } from './share.js';
 
 const lfs = new LightningFS('galley-git');
 const fs = lfs;
@@ -211,11 +211,12 @@ export async function push(dir, o) {
 // both sides), are still a conflict. Bytes that are no UTF-8 text are never merged: a picture's,
 // or a Latin-1 file decoded as UTF-8, would be written back damaged.
 const TEXT = /\.(tex|bib|sty|cls|bst|txt|ltx|dtx|clo|cfg|def|md|html?|csv|dat|bbx|cbx|lbx)$/i;
-function mergeDriver({ path, contents: [base, ours, theirs] }) {
+// (budget: one for the words of every file of one pull, src/share.js mergeBudget)
+const mergeDriver = (budget) => ({ path, contents: [base, ours, theirs] }) => {
   if ([base, ours, theirs].some((t) => t.includes('\uFFFD') || t.includes('\u0000'))) return { cleanMerge: false, mergedText: ours };
-  const r = merge3(base, ours, theirs, { words: TEXT.test(path) });
+  const r = merge3(base, ours, theirs, { words: TEXT.test(path), budget });
   return { cleanMerge: r.clean, mergedText: r.clean ? r.text : ours };
-}
+};
 
 // fetch and merge (fast-forward or a real merge commit); conflicts are reported, not written.
 // git.pull's own steps (fetch, merge, checkout), with the merge driver above, which pull takes not.
@@ -224,7 +225,7 @@ export async function pull(dir, o, author) {
   const url = await target(dir, o);
   const ref = current || 'main';
   const { fetchHead, fetchHeadDescription } = await git.fetch({ ...net(o), dir, remote: 'origin', url, ref, remoteRef: ref, singleBranch: true });
-  await git.merge({ fs, dir, ours: ref, theirs: fetchHead, fastForward: true, message: 'Merge ' + fetchHeadDescription, author: { name: author.name, email: author.email }, mergeDriver });
+  await git.merge({ fs, dir, ours: ref, theirs: fetchHead, fastForward: true, message: 'Merge ' + fetchHeadDescription, author: { name: author.name, email: author.email }, mergeDriver: mergeDriver(mergeBudget()) });
   await git.checkout({ fs, dir, ref, remote: 'origin', noCheckout: false });
 }
 

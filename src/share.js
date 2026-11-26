@@ -380,14 +380,19 @@ function applied(base, hs, s, e) {
 // two files made under one name): only comment lines, a comment each under one line, are both kept.
 // words: false merges by whole lines alone, so every line of the result is one of mine or one of
 // theirs (a copy from a link for comments only: its comment lines must not mix into text lines).
-// The words of at most WORDS_MAX characters of clashing lines are compared in one merge; past it,
-// by lines: a copy that rewrote the document as long lines would cost the page seconds and
-// hundreds of megabytes, inside the save's transaction where two windows merge.
+// The words of at most WORDS_MAX characters of clashing lines are compared in one merge, of one
+// file or of a whole project; past it, by lines (where they clash, a conflict: theirs shown, the
+// author's text kept under Versions): a copy that rewrote the document as long lines, or thirty
+// files each at the limit, would cost the page seconds and hundreds of megabytes, inside the
+// save's transaction where two windows merge.
 const WORDS_MAX = 200000;
-export function merge3(base, mine, theirs, { words: byWords = true } = {}) {
+// budget: one mergeBudget() shared by every file of one merge (mergeProjects, a git pull), so
+// thirty files at the limit cost what one does; each merge3 call has its own when none is given.
+export const mergeBudget = () => ({ left: WORDS_MAX });
+export function merge3(base, mine, theirs, { words: byWords = true, budget = null } = {}) {
   if (theirs === base || theirs === mine) return { text: mine, clean: true };
   if (mine === base) return { text: theirs, clean: true };
-  return combine(base, lineEdits(base, mine), lineEdits(base, theirs), byWords ? { left: WORDS_MAX } : null);
+  return combine(base, lineEdits(base, mine), lineEdits(base, theirs), byWords ? budget || mergeBudget() : null);
 }
 // (lines that are all comment lines, each ended)
 const commentLines = (t) => /\n$/.test(t) && t.slice(0, -1).split('\n').every((l) => isComment(l));
@@ -430,8 +435,10 @@ function combine(base, A, C, budget) {
 }
 
 // whole projects as Maps name -> text; a file one side removed and the other left alone goes
-export function mergeProjects(base, mine, theirs, opts) {
+export function mergeProjects(base, mine, theirs, opts = {}) {
   const files = new Map(), conflicts = [];
+  // (one budget for the words of every file)
+  opts = { budget: mergeBudget(), ...opts };
   for (const n of new Set([...base.keys(), ...mine.keys(), ...theirs.keys()])) {
     const b = base.get(n), m = mine.get(n), t = theirs.get(n);
     if (t === undefined) { if (m !== undefined && b === undefined) files.set(n, m); else if (m !== undefined && m !== b) files.set(n, m); continue; }
