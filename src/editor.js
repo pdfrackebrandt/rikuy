@@ -416,6 +416,9 @@ export function escapeTeX(text, prev = ' ', opts = {}) {
   // latin1). They were English ``..'', printed “..” in a German text)
   const de = opts.quotes === 'de' || opts.quotes === 'de-cmd', cmd = opts.quotes === 'de-cmd';
   const openS = de ? (cmd ? '\\glq{}' : '\u201A') : '`', openD = cmd ? '\\glqq{}' : '\u201E';
+  // (a German single quote opened before, here or in the paragraph (opts.openSingle): the next '
+  // after a word closes it, ‘ (babel's \grq), as Word's in German; else it is an apostrophe)
+  let sq = !!opts.openSingle;
   for (const ch of text) {
     let r = ch;
     const base = /[\s([{—–-]/.test(p) || p === '' || (de && /[\u201E\u201A]/.test(p));
@@ -427,7 +430,8 @@ export function escapeTeX(text, prev = ' ', opts = {}) {
     // (a straight single quote opening a quotation, after a space, a bracket or an opening quote:
     // LaTeX's opening quote, as Word's smart quotes make it. Left as ', TeX printed a closing
     // quote at both ends, ’word’; one after a letter or a digit stays an apostrophe or a prime)
-    else if (ch === "'" && quotes && opening) r = openS;
+    else if (ch === "'" && quotes && opening) { r = openS; if (de) sq = true; }
+    else if (ch === "'" && quotes && de && sq) { r = cmd ? '\\grq{}' : '\u2018'; sq = false; }
     else if (ch === '“') r = '``';
     else if (ch === '”') r = "''";
     else if (ch === '‘') r = '`';

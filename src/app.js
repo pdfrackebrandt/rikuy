@@ -2472,16 +2472,19 @@ class App {
     // (German quotes, „..“, as Word's in German, where the text at the caret is German as babel or
     // polyglossia set it: its own \selectlanguage, \foreignlanguage or otherlanguage, else the
     // document's (src/spell/words.js); a class's option alone sets no German up, and pdfLaTeX's OT1
-    // has no „ then (review B7, B8). babel's commands where the main file's text is no UTF-8)
-    let quotes = null;
+    // has no „ then (review B7, B8). babel's commands where the main file's text is no UTF-8; a '
+    // after a word closes an open ‚ before it in its paragraph, ‘: src/editor.js escapeTeX)
+    let quotes = null, sq = false;
     if (/["']/.test(data)) {
       const t = this.src(f) || '', main = this.src(this.main) || '';
       const here = langAt(languageSpans(t), at), L = mainLanguage(main);
       if ((here ? dictOf(here) : L.name ? dictOf(L.name, L.variant) : '') === 'de_DE') {
         quotes = /\\usepackage\s*\[[^\]]*\b(?:latin\d|ansinew|applemac|cp\d+|decmulti|next)\b[^\]]*\]\s*\{inputenc\}/.test(main) ? 'de-cmd' : 'de';
+        const par = t.slice(Math.max(0, at - 2000), at).split(/\n[ \t\r]*\n/).pop();
+        sq = (par.match(/\u201A|\\glq(?![a-z])/g) || []).length > (par.match(/\u2018|\\grq(?![a-z])/g) || []).length;
       }
     }
-    return escapeTeX(data, o.prev ?? (this.src(f).slice(Math.max(0, at - 2), at) || ' '), { code: this.codeAt(f, at, o.wrap), quotes });
+    return escapeTeX(data, o.prev ?? (this.src(f).slice(Math.max(0, at - 2), at) || ' '), { code: this.codeAt(f, at, o.wrap), quotes, openSingle: sq });
   }
 
   // Text typed, or written by Replace, at p of file f as the source takes it there. A selection

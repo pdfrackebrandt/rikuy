@@ -118,10 +118,13 @@ ok('smart quotes as typed or pasted: opening after a space, nested ones kept apa
   assert.equal(typed("end''"), "end''");
   assert.equal(escapeTeX("print 'a' \"b\"", ' ', { code: true }), "print 'a' \"b\"");
   // (R4) a German document's: „..“ and ‚.., as Word's in German; babel's commands in a latin1 file
-  const de = (s, q) => { let t = ' '; for (const ch of s) t += escapeTeX(ch, t.slice(-2), { quotes: q }); return t.slice(1); };
-  assert.equal(de('Er sagt "ja" und \'nein\', geht\'s', 'de'), 'Er sagt \u201Eja\u201C und \u201Anein\', geht\'s');
-  assert.equal(escapeTeX('"\'a\'"', ' ', { quotes: 'de' }), '\u201E\u201Aa\'\u201C');
-  assert.equal(de('so "ja"', 'de-cmd'), 'so \\glqq{}ja\\grqq{}');
+  // (typed a key at a time, as typedTeX hands over whether a ‚ stands open before the caret)
+  const de = (s, q) => { let t = ' '; for (const ch of s) t += escapeTeX(ch, t.slice(-2), { quotes: q, openSingle: (t.match(/\u201A|\\glq(?![a-z])/g) || []).length > (t.match(/\u2018|\\grq(?![a-z])/g) || []).length }); return t.slice(1); };
+  // (a ' after a word closes an open ‚, ‘, else it is an apostrophe: review N5)
+  assert.equal(de('Er sagt "ja" und \'nein\', geht\'s', 'de'), 'Er sagt \u201Eja\u201C und \u201Anein\u2018, geht\'s');
+  assert.equal(escapeTeX('"\'a\'"', ' ', { quotes: 'de' }), '\u201E\u201Aa\u2018\u201C');
+  assert.equal(escapeTeX("nein' und", ' ', { quotes: 'de', openSingle: true }), 'nein\u2018 und');
+  assert.equal(de('so "ja" \'x\'', 'de-cmd'), 'so \\glqq{}ja\\grqq{} \\glq{}x\\grq{}');
 });
 
 ok('ordinals and fractions, off by default', () => {
