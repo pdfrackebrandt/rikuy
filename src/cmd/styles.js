@@ -415,10 +415,13 @@ export const methods = {
     // (a \label on the line after a heading, a blank line before the paragraph under it, is the
     // heading's: it stays after it; the paragraph's \noindent goes with the paragraph; anything
     // else between the two blocks keeps them apart)
-    const gapM = kw === 'h' ? /^\s*(\\label\s*\{[^{}]*\})?\s*(?:\\(?:no)?indent(?![A-Za-z])\s*)*$/.exec(src.slice(wEnd, x.s)) : null;
+    // (comment lines there, before a \noindent, are the paragraph's: they go with its words, on
+    // lines of their own; they kept the two apart, and Backspace only moved the caret)
+    const gapM = kw === 'h' ? /^\s*(\\label\s*\{[^{}]*\})?\s*((?:[ \t]*%[^\n]*\n)*)\s*(?:\\(?:no)?indent(?![A-Za-z])\s*)*$/.exec(src.slice(wEnd, x.s)) : null;
     if (gapM ? gapM[1] && w.after != null : /\S/.test(src.slice(wEnd, x.s))) return false;
     const gapLab = gapM && gapM[1] ? gapM : null;
     let words = src.slice(x.ws, x.we).trim(), label = x.after != null ? src.slice(x.e, x.after).trim() : '', E = xEnd, reopen = '';
+    if (gapM && gapM[2]) words = gapM[2].replace(/^\s+/, '').replace(/[ \t]*\r?\n[ \t]*/g, '\n') + words;
     // (\noindent and \indent are the joined paragraph's own, gone with it: never in a heading)
     if (kw === 'h') words = words.replace(/^(?:\\(?:no)?indent(?![A-Za-z])\s*)+/, '');
     // (a quote of several paragraphs: its first leaves it, the quote begins again before the rest)
@@ -435,7 +438,9 @@ export const methods = {
     // address) stays out of it, and Backspace says why: it did nothing at all. A comment can stay
     // in it, the closing brace on a line after it (below).
     // (read without their comments: a \begin in a comment is no environment)
-    const plain = words.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, '$1$2'), addr = /\\(?:url|href|path)\s*\{[^{}]*%/.test(words);
+    // (a comment's line keeps a % of its own here: emptied, two comment lines in a row read as a
+    // blank line, a paragraph break, and the join was refused; TeX reads no break there)
+    const plain = words.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, '$1$2%'), addr = /\\(?:url|href|path)\s*\{[^{}]*%/.test(words);
     if (kw === 'h' && (NOT_PLAIN.test(plain) || VERBISH.test(words) || addr)) {
       this.toast('A heading cannot hold ' + (/\\footnote\b/.test(plain) ? 'a footnote' : /\\item\b/.test(plain) ? 'a list' : VERBISH.test(words) || addr ? 'verbatim text or an address with %' : 'a display or an environment') + ': the paragraph stays under it.', 2600);
       return true;

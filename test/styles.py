@@ -1561,6 +1561,16 @@ def review_joins(page):
                             ('a quote', 'Alpha. % note\n\\begin{quote}\nQ words.\n\\end{quote}\nBody.', 'Alpha.X % note\nQ words.\n\nBody.')):
         load_doc(page, A(doc)); click_text(page, 'Alpha.', 6); page.keyboard.press('Delete'); settle(page, 200); page.keyboard.type('X'); settle(page, 200)
         check('review_joins: Delete at a paragraph\'s end before its comment joins %s, the caret before the comment' % name, src(page) == A(want), src(page)[40:])
+    # (round 4) Backspace at a paragraph under a heading after two comment lines, or a comment line
+    # and \noindent: refused (two comment lines read as a blank line; a comment before \noindent
+    # kept the two apart), the caret only moved to the heading's end. It joins, the comments kept on
+    # lines of their own, one undo back.
+    for doc, want in (('\\section{Head}\n% a\n% b\nBody text.', '\\section{Head\n% a\n% b\nZBody text.}'),
+                      ('\\section{Head}\n% a\n\\noindent Body text.', '\\section{Head\n% a\nZBody text.}')):
+        load_doc(page, A(doc)); click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 200); page.keyboard.type('Z'); settle(page, 200)
+        got = src(page)
+        page.keyboard.press('Control+z'); page.keyboard.press('Control+z'); settle(page, 200)
+        check('review_joins: Backspace joins a paragraph after %s into the heading, one undo back' % ('two comment lines' if '% b' in doc else 'a comment and \\noindent'), got == A(want) and src(page) == A(doc), (got[40:], src(page)[40:]))
     load_doc(page, A('\\begin{quote}\nQ words. % c\n\\end{quote}\n\nAfter.')); click_text(page, 'After.', 0); page.keyboard.press('Backspace'); settle(page, 200)
     check('review_joins: and a paragraph joined into a quote ending in one', src(page) == A('\\begin{quote}\nQ words. % c\nAfter.\n\\end{quote}'), src(page)[40:])
     V = A('\\section{Head}\nBody \\verb|x|.')
