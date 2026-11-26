@@ -364,6 +364,18 @@ await ok('a word is never cut from its marks: Hindi, Arabic; Chinese words found
   assert.equal(merge3('我们研究税收对增长的影响。\n', '我们研究税收对增长的作用。\n', '我们研究税收对增长的效果。\n').clean, false);
 });
 
+await ok('two different things put at one place are a conflict; comment lines there are both kept (R4 review B5)', () => {
+  assert.equal(merge3('', '\\documentclass{article}\nA\n', '\\documentclass{article}\nB\n').clean, false);
+  const d = '\\begin{document}\nText.\n\\end{document}\n';
+  assert.deepEqual(merge3(d, d.replace('Text.\n', 'Text.\nMine ends.\n'), d.replace('Text.\n', 'Text.\nTheirs ends.\n')), { text: d.replace('Text.\n', 'Text.\nTheirs ends.\n'), clean: false });
+  const p = '\\usepackage{amsmath}\n\\begin{document}\n';
+  const r = merge3(p, p.replace('}\n', '}\n\\newcommand{\\R}{\\mathbb{R}}\n'), p.replace('}\n', '}\n\\newcommand{\\R}{\\mathbb{R}}\n\\newcommand{\\N}{\\mathbb{N}}\n'));
+  assert.equal(r.text.split('\\newcommand{\\R}').length, 2, r.text);
+  assert.equal(r.clean, false);
+  assert.deepEqual(merge3('x\n', 'x\n% comment (P): a\n', 'x\n% comment (A): b\n'), { text: 'x\n% comment (P): a\n% comment (A): b\n', clean: true });
+  assert.deepEqual(merge3('x\r\n', 'x\r\n% comment (P): a\r\n', 'x\r\n% comment (A): b\r\n'), { text: 'x\r\n% comment (P): a\r\n% comment (A): b\r\n', clean: true });
+});
+
 await ok('a comment line\'s own words start after its head\'s colon, not one in the quoted words (R4)', () => {
   const l = '% comment (Ana) on "ratio: two": Check this';
   assert.equal(l.slice(commentBodyAt(l)), 'Check this');
