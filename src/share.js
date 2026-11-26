@@ -317,8 +317,9 @@ const clash = (a, c) => (a.s < c.e && c.s < a.e) || (a.s === a.e && c.s === c.e 
 
 // one side's edits of a text as hunks of it, {s, e, t}: by lines, or by words inside lines
 const lineEdits = (a, b) => hunks(a, b).map((h) => ({ s: h.as, e: h.as + h.a.length, t: h.b }));
-// (a line end is a word of its own, so lines added stay whole lines)
-const WORDS = /\r?\n|[^\S\n]+|[\p{L}\p{N}]+|\\[A-Za-z@]+|[\s\S]/gu;
+// (a line end is a word of its own, so lines added stay whole lines; and each space, so two
+// words deleted side by side, one on each side, do not both take the space between them)
+const WORDS = /\r?\n|[^\S\n]|[\p{L}\p{N}]+|\\[A-Za-z@]+|[\s\S]/gu;
 function wordEdits(a, b) {
   const out = [];
   let p = 0, cur = null;

@@ -339,6 +339,10 @@ await ok('merge keeps both sides when they touch different words of one line, an
   // the same word changed by both, or a word each put at one place: theirs, and said
   assert.deepEqual(merge3(b, b.replace('efect', 'effects'), b.replace('efect', 'effect')), { text: b.replace('efect', 'effect'), clean: false });
   assert.deepEqual(merge3(b, b.replace('taxes', 'high taxes'), b.replace('taxes', 'low taxes')), { text: b.replace('taxes', 'low taxes'), clean: false });
+  // words side by side, one deleted on each side, or one changed beside one deleted
+  const w = 'Rates rose; whatever else a buyer did.\n';
+  assert.deepEqual(merge3(w, w.replace('whatever ', ''), w.replace('else ', '')), { text: 'Rates rose; a buyer did.\n', clean: true });
+  assert.deepEqual(merge3(w, w.replace('whatever', 'WHATEVER'), w.replace(' else', '')), { text: 'Rates rose; WHATEVER a buyer did.\n', clean: true });
   // the same edit made by both is no conflict
   assert.deepEqual(merge3(b, b.replace('efect', 'effect'), b.replace('efect', 'effect')), { text: b.replace('efect', 'effect'), clean: true });
   // LaTeX around a word on one side, the word changed on the other
