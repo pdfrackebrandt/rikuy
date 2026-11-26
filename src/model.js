@@ -2769,7 +2769,10 @@ class Builder {
     const name = this.listsOf().newlist[nd.name] || nd.name.replace(/\*$/, '');
     const depth = (env.listDepth || 0) + 1;
     const kind = /enum/.test(name) ? 'enum' : name === 'description' ? 'desc' : 'item';
-    const level = kind === 'enum' ? (env.enumDepth || 0) + 1 : (env.itemDepth || 0) + 1;
+    // (a list of enumitem's \newlist counts its own depth, \enitdp@<name>: the standard lists' depths
+    // are not stepped by it, nor its by them: review B6)
+    const ownList = this.listsOf().newlist[nd.name] ? nd.name : null;
+    const level = ownList ? ((env.newDepth || {})[ownList] || 0) + 1 : kind === 'enum' ? (env.enumDepth || 0) + 1 : (env.itemDepth || 0) + 1;
     // split by \item
     const items = [];
     let cur = null;
@@ -2864,7 +2867,7 @@ class Builder {
       }
       // (the label and the spacing are the block's own: a \setlist in the preamble changes them)
       this.use('L' + count + level + (label && label[0] && label[0].text != null ? label[0].text : picM ? 'img:' + picM[0] : '') + '|' + (sep ?? '') + (lm ? '|' + lm.text + ',' + lm.lab + ',' + lm.w : ''));
-      const sub = { ...env, ...FLUSH, top: false, listDepth: depth, list: true, lmBase: lm ? lm.text : env.lmBase, enumDepth: kind === 'enum' ? level : (env.enumDepth || 0), itemDepth: kind === 'item' ? level : (env.itemDepth || 0), ctxKind: 'li', noIndentFirst: true, depth: depth, cls: (env.cls || ''),
+      const sub = { ...env, ...FLUSH, top: false, listDepth: depth, list: true, lmBase: lm ? lm.text : env.lmBase, enumDepth: kind === 'enum' && !ownList ? level : (env.enumDepth || 0), itemDepth: kind === 'item' && !ownList ? level : (env.itemDepth || 0), newDepth: ownList ? { ...(env.newDepth || {}), [ownList]: level } : env.newDepth, ctxKind: 'li', noIndentFirst: true, depth: depth, cls: (env.cls || ''),
         enumVals: kind === 'enum' ? [...vals.slice(0, level - 1), count] : vals, enumThe: kind === 'enum' ? [...thes.slice(0, level - 1), F.theStar] : thes,
         enumLabel: kind === 'enum' && label && label[0].text != null ? label[0].text : env.enumLabel };
       const us = this.flow(it.nodes, ctx, sub);
