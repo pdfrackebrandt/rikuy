@@ -451,7 +451,7 @@ export const collab = {
     const n = this.currentChanges().filter((x) => !commentOnly(x)).length;
     const c = [...this.files].reduce((k, [f, t]) => k + findComments(t, f).length, 0) - [...mine].reduce((k, [f, t]) => k + findComments(t, f).length, 0);
     let msg = edits.length ? by + "'s copy is in: " + plural(n, 'change', 'changes') + (c > 0 ? ' and ' + plural(c, 'comment', 'comments') : '') + ', marked on the page. Accept or reject each under Review.' : by + ' sent the document back unchanged.';
-    if (conflicts.length) msg += ' In ' + conflicts.join(', ') + ' you both edited the same lines, so their version is shown; yours is under Review, Versions.';
+    if (conflicts.length) msg += ' In ' + conflicts.join(', ') + ' you both changed the same words, so theirs are shown there; your text from before is under Review, Versions.';
     if (dropped) msg += ' The link let ' + by + ' comment only: ' + plural(dropped, 'edit of the text was', 'edits of the text were') + ' left out.';
     this.toast(msg, 12000);
   },

@@ -361,7 +361,7 @@ def r4_merge():
         check('merge: both words are in the line', 'We study the effect of taxes on growth in Peru and northern Chile.' in s, s)
         check('merge: both comments are kept, theirs under mine', '% comment (Pedro) on "Peru": Add Bolivia?\n% comment (Ana) on "growth": Which measure?\n' in s, s)
         toast = page.evaluate(TOASTS)
-        check('merge: no word of being told both edited the same lines', 'same lines' not in toast, toast)
+        check('merge: no word of being told both changed the same words', 'same lines' not in toast and 'same words' not in toast, toast)
         ch = page.evaluate('() => window.rikuy.currentChanges().map((c) => [c.a, c.b])')
         check('merge: her edit is the one tracked change, the author\'s word is not among them', not any('northern' in a + b for a, b in ch) and any('effect' in b for a, b in ch), ch)
         bad = [e for e in errs + errs2 if 'clipboard' not in e.lower()]
