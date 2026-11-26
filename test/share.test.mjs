@@ -356,6 +356,14 @@ await ok('merge keeps both sides when they touch different words of one line, an
   assert.deepEqual(merge3(long, 'A ' + long, long.slice(0, -2) + 'Z\n'), { text: long.slice(0, -2) + 'Z\n', clean: false });
 });
 
+await ok('a word is never cut from its marks: Hindi, Arabic; Chinese words found without spaces (R4 review B3)', () => {
+  assert.deepEqual(merge3('मैं किताब पढ़ता हूँ।', 'मैं किताबें पढ़ता हूँ।', 'मैं खिताब पढ़ता हूँ।'), { text: 'मैं खिताब पढ़ता हूँ।', clean: false });
+  assert.deepEqual(merge3('كَتَبَ الولد', 'كُتَبَ الولد', 'كَتَبْ الولد'), { text: 'كَتَبْ الولد', clean: false });
+  assert.deepEqual(merge3('मैं किताब पढ़ता हूँ।\n', 'मैं किताबें पढ़ता हूँ।\n', 'मैं किताब पढ़ती हूँ।\n'), { text: 'मैं किताबें पढ़ती हूँ।\n', clean: true });
+  assert.deepEqual(merge3('我们研究税收对增长的影响。\n', '我们研究关税对增长的影响。\n', '我们研究税收对发展的影响。\n'), { text: '我们研究关税对发展的影响。\n', clean: true });
+  assert.equal(merge3('我们研究税收对增长的影响。\n', '我们研究税收对增长的作用。\n', '我们研究税收对增长的效果。\n').clean, false);
+});
+
 await ok('a comment line\'s own words start after its head\'s colon, not one in the quoted words (R4)', () => {
   const l = '% comment (Ana) on "ratio: two": Check this';
   assert.equal(l.slice(commentBodyAt(l)), 'Check this');

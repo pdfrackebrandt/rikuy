@@ -317,13 +317,28 @@ const clash = (a, c) => (a.s < c.e && c.s < a.e) || (a.s === a.e && c.s === c.e 
 
 // one side's edits of a text as hunks of it, {s, e, t}: by lines, or by words inside lines
 const lineEdits = (a, b) => hunks(a, b).map((h) => ({ s: h.as, e: h.as + h.a.length, t: h.b }));
-// (a line end is a word of its own, so lines added stay whole lines; and each space, so two
-// words deleted side by side, one on each side, do not both take the space between them)
-const WORDS = /\r?\n|[^\S\n]|[\p{L}\p{N}]+|\\[A-Za-z@]+|[\s\S]/gu;
+// The words a merge compares. A line end is a word of its own, so lines added stay whole lines;
+// and each space, so two words deleted side by side, one on each side, do not both take the space
+// between them; and a LaTeX command. The rest goes in words as its script has them: Intl.Segmenter
+// never cuts a letter from its marks (Hindi's vowel signs, Arabic's harakat: cut there, one word
+// edited on both sides merged into a word neither wrote) and finds Chinese and Japanese words;
+// without it, letters with their marks.
+const PARTS = /\r?\n|[^\S\n]|\\[A-Za-z@]+|\\[^\n]?|[^\s\\]+/gu;
+const RUN = /[\p{L}\p{M}\p{N}]+|\P{M}\p{M}*/gu;
+const SEG = typeof Intl === 'object' && typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'word' }) : null;
+function words(t) {
+  const out = [];
+  for (const [p] of t.matchAll(PARTS)) {
+    if (/^[\s\\]/.test(p)) out.push(p);
+    else if (SEG) for (const x of SEG.segment(p)) out.push(x.segment);
+    else for (const [x] of p.matchAll(RUN)) out.push(x);
+  }
+  return out;
+}
 function wordEdits(a, b) {
   const out = [];
   let p = 0, cur = null;
-  for (const [op, v] of diffSeq(a.match(WORDS) || [], b.match(WORDS) || [])) {
+  for (const [op, v] of diffSeq(words(a), words(b))) {
     if (op === ' ') { if (cur) { out.push(cur); cur = null; } p += v.length; continue; }
     if (!cur) cur = { s: p, e: p, t: '' };
     if (op === '-') { p += v.length; cur.e = p; } else cur.t += v;
@@ -355,10 +370,10 @@ function applied(base, hs, s, e) {
 // A clash over more than WORDS_MAX characters is not merged word by word: a copy that rewrote the
 // whole document as one long line would cost the page seconds and hundreds of megabytes.
 const WORDS_MAX = 200000;
-export function merge3(base, mine, theirs, { words = true } = {}) {
+export function merge3(base, mine, theirs, { words: byWords = true } = {}) {
   if (theirs === base || theirs === mine) return { text: mine, clean: true };
   if (mine === base) return { text: theirs, clean: true };
-  return combine(base, lineEdits(base, mine), lineEdits(base, theirs), true, words);
+  return combine(base, lineEdits(base, mine), lineEdits(base, theirs), true, byWords);
 }
 function combine(base, A, C, lines, words = false) {
   // the hunks in the order of base (an insertion at a point before a replacement that starts
