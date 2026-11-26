@@ -1871,30 +1871,33 @@ def ghost_kept(page, w):
 
 
 def ghost_enters(page, w):
-    """Enter pressed again and again at a paragraph's end: as many empty lines, the caret on the
-    last, as Word's (the second and third Enter did nothing: one empty line for three); a relayout
-    keeps them; Backspace and Undo take one each, the text untouched; words typed on the last are
-    a paragraph of their own."""
+    """Enter again, or Shift+Enter, on the empty line Enter showed at a paragraph's end: no further
+    line. What is typed there is written as one paragraph after the one above, so a second empty
+    line would vanish at the first key (review B3 of ac721f5e: three lines shown, the words then
+    drawn two lines higher; Shift+Enter counted as Enter). The words land where the caret is drawn;
+    a relayout keeps the line; Backspace takes it, the text untouched."""
     load_doc(page, _GHOST_DOC)
     click_text(page, 'Second one.', 11)
-    ys = []
-    for _ in range(3):
-        page.keyboard.press('Enter'); settle(page, 100)
-        ys.append(page.evaluate(_GHOST_GEO, 'Second'))
-    lh = ys[0]['lh']
-    check('Enter three times at a paragraph\'s end: three empty lines, the caret on the last (%d px)' % w,
-          [g['n'] for g in ys] == [1, 2, 3] and abs(ys[2]['gh'] - 3 * lh) < 2 and all(abs(g['cy'] - g['y'] - (k + 1) * lh) < 2 for k, g in enumerate(ys)), ys)
+    for k in ('Enter', 'Enter', 'Shift+Enter', 'Enter'):
+        page.keyboard.press(k); settle(page, 100)
+    g = page.evaluate(_GHOST_GEO, 'Second')
+    check('Enter three times and Shift+Enter at a paragraph\'s end: one empty line, the caret on it, nothing written (%d px)' % w,
+          g['n'] == 1 and abs(g['gh'] - g['lh']) < 2 and abs(g['cy'] - g['y'] - g['lh']) < 2 and src(page) == _GHOST_DOC, g)
     page.evaluate('window.rikuy.relayout(true)'); settle(page, 100)
     r = page.evaluate(_GHOST_GEO, 'Second')
-    check('a relayout keeps the three (%d px)' % w, r['n'] == 3 and abs(r['gh'] - 3 * lh) < 2 and abs(r['cy'] - r['y'] - 3 * lh) < 2, (r, ys[2]))
-    check('and draws no dashed line round them (%d px)' % w, not page.evaluate(_DASHED), page.evaluate(_DASHED))
-    page.keyboard.press('Backspace'); settle(page, 100)
-    page.keyboard.press('Control+z'); settle(page, 100)
-    u = page.evaluate(_GHOST_GEO, 'Second')
-    check('Backspace takes one, Undo another, the text untouched (%d px)' % w, u['n'] == 1 and src(page) == _GHOST_DOC and abs(u['cy'] - u['y'] - lh) < 2, (u, src(page)[-60:]))
-    page.keyboard.press('Enter'); settle(page, 100)
+    check('a relayout keeps it, the caret on it (%d px)' % w, r['n'] == 1 and abs(r['cy'] - g['cy']) < 2, (r, g))
+    check('and draws no dashed line round it (%d px)' % w, not page.evaluate(_DASHED), page.evaluate(_DASHED))
     page.keyboard.type('New words'); settle(page, 200)
-    check('words typed on the last of them are a paragraph of their own (%d px)' % w, 'Second one.\n\nNew words\n\n\\end{document}' in src(page) and not page.evaluate('window.rikuy.ghost'), src(page)[-60:])
+    t = page.evaluate(_GHOST_GEO, 'New words')
+    check('words typed there land where the caret was drawn, nothing jumping, a paragraph of their own (%d px)' % w,
+          abs(t['y'] - g['cy']) < 2 and 'Second one.\n\nNew words\n\n\\end{document}' in src(page) and not page.evaluate('window.rikuy.ghost'), (t, g, src(page)[-60:]))
+    load_doc(page, _GHOST_DOC)
+    click_text(page, 'Second one.', 11)
+    page.keyboard.press('Enter'); settle(page, 100)
+    page.keyboard.press('Enter'); settle(page, 100)
+    page.keyboard.press('Backspace'); settle(page, 100)
+    u = page.evaluate(_GHOST_GEO, 'Second')
+    check('Backspace takes it, the text untouched, the caret back at the paragraph\'s end (%d px)' % w, u['n'] == 0 and src(page) == _GHOST_DOC and abs(u['cy'] - u['y']) < 3, (u, src(page)[-60:]))
 
 
 _ALIGNED_DOC = ('\\documentclass{article}\n\\usepackage{amsthm}\n\\newtheorem{theorem}{Theorem}\n\\begin{document}\nBefore it.\n\n'
