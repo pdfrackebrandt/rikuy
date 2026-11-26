@@ -225,7 +225,10 @@ function keepPlan(folders) {
     const p = String(f).replace(/\*$/, '').replace(/^\/+|\/+$/g, '');
     if (p && !p.split('/').some((x) => x === '..' || x === '.' || x === '' || x.includes('*'))) pre.push('/texlive/texmf-dist/' + p + (some ? '' : '/'));
   }
+  // (and ICU's data, which XeTeX reads as it starts: every start fetched it before XeTeX was
+  // warmed only when it runs, so a copy kept for offline use had it)
   const want = new Set(INDEX.core || []);
+  if (icuPack() != null) want.add(icuPack());
   for (const f of INDEX.files) if (pre.some((p) => f[0].startsWith(p))) want.add(f[2]);
   return [...want].sort((a, b) => a - b);
 }
@@ -458,19 +461,42 @@ async function newTeX(primary) {
   T._pipes = new Map();
   // The first runs set up state the C library keeps for good (stdio buffers, environment);
   // the heap is snapshotted after them and restored after every TeX run, as BusyTeX does.
+  // XeTeX's is not among them: it is warmed the first time this instance runs XeTeX (xeWarm).
   const prev = M;
   M = T;
   try {
-    const warm = (args) => { try { T.callMain([...args]); } catch (e) { /* exit */ } try { T._flush_streams && T._flush_streams(); } catch (e) { /* ignore */ } };
-    warm([]);
-    for (const a of ['pdftex', 'xetex', 'luahbtex', 'xdvipdfmx', 'bibtex8', 'kpsewhich']) warm([a, '--version']); // not makeindex: it would read stdin
+    warmRun(T, []);
+    for (const a of ['pdftex', 'luahbtex', 'xdvipdfmx', 'bibtex8', 'kpsewhich']) warmRun(T, [a, '--version']); // not makeindex: it would read stdin
   } finally { M = prev; }
-  T._memHeader = Uint8Array.from(T.HEAPU8.subarray(0, MEM_HEADER));
-  T.HEAPU8.fill(0, MEM_HEADER);
+  keepHeap(T);
   const [spGet, spSet] = Module._galleyStack;
   if (typeof spGet !== 'function' || typeof spSet !== 'function') throw new Error('the TeX engine exports no stack pointer functions');
-  T._sp0 = spGet(); T._stackRestore = spSet;
+  T._sp0 = spGet(); T._spGet = spGet; T._stackRestore = spSet;
   return T;
+}
+function warmRun(T, args) { try { T.callMain([...args]); } catch (e) { /* exit */ } try { T._flush_streams && T._flush_streams(); } catch (e) { /* ignore */ } }
+function keepHeap(T) {
+  T._memHeader = Uint8Array.from(T.HEAPU8.subarray(0, MEM_HEADER));
+  T.HEAPU8.fill(0, MEM_HEADER);
+}
+// XeTeX's warm run reads ICU's data (/texlive/icudt78l.dat, 5 MB, in a pack of 2.75 MB with
+// fontconfig's caches): made at every start, it fetched that pack for documents that never run
+// XeTeX. So XeTeX is warmed the first time an instance runs it, on top of the heap kept then, and
+// the heap is kept again after it, as at the start: every later run starts from that heap.
+const XETEX = /^xe(la)?tex(-dev)?$/;
+function xeWarm() {
+  if (M._xe) return;
+  M._xe = true;
+  M._stackRestore(M._sp0);
+  warmRun(M, ['xetex', '--version']);
+  for (const st of M.FS.streams || []) if (st && st.fd > 2) { try { M.FS.close(st); } catch (e) { /* already closed */ } }
+  keepHeap(M);
+  M._sp0 = M._spGet();
+}
+// the pack holding ICU's data, fetched with a compile's packs when it runs XeTeX
+function icuPack() {
+  const f = INDEX.files.find((x) => /^\/texlive\/icudt\d+l\.dat$/.test(x[0]));
+  return f ? f[2] : null;
 }
 // one more instance, for TeX run from the deepest one now (made between passes)
 async function addTeXInstance() {
@@ -891,6 +917,7 @@ const SHELL = self.GalleyShell({ FS: () => M.FS, treeLookup, tools: TOOLS, vars:
 
 function run(args, beforeRestore) {
   const FS = M.FS;
+  if (!M._xe && XETEX.test(args[0])) xeWarm();
   M._out.stdout = ''; M._out.stderr = '';
   M._pipes = new Map(); pipeOpening = null;
   // The stack pointer is a WebAssembly global, outside the memory restored after each run:
@@ -1843,6 +1870,8 @@ async function compile(job) {
   // the packs holding the packages and class this document names: fetched together up front,
   // not one by one from inside TeX
   const want = new Set(job.prefetch || []);
+  // (XeTeX reads ICU's data as it starts: that pack with the others, not from inside TeX)
+  if (engine === 'xelatex' && icuPack() != null) want.add(icuPack());
   for (const f of texFiles) {
     const t = textOf(f);
     const re = /\\(usepackage|RequirePackage|documentclass|LoadClass|use(|color|font|inner|outer)theme)\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}/g;

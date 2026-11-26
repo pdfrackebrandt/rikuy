@@ -32,7 +32,11 @@ async function get(file) {
   if (!r.ok) throw new Error('could not fetch ' + file.name + ' (' + r.status + ')');
   const bytes = new Uint8Array(await r.arrayBuffer());
   if (hex(await crypto.subtle.digest('SHA-256', bytes)) !== file.sha256) throw new Error(file.name + ' is not the file this page was built with');
-  return bytes;
+  if (!file.gz) return bytes;
+  // (a dictionary or a thesaurus travels gzipped, build.mjs packed: checked as it came, then unpacked)
+  const out = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+  if (out.length !== file.size) throw new Error(file.name + ' did not unpack to the file this page was built with');
+  return out;
 }
 
 function start() {

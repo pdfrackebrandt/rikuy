@@ -84,7 +84,10 @@ as its canonical one.
   `offline.py`'s offline compile); keeps `dist/` as the artifact `rikuy-dist` for a week.
 - **`deploy.yml` (Deploy)**, when a TeX run on `main` has passed: downloads that run's `dist/`,
   builds the page again from the same commit, checks the manifest and Pages' limits
-  (`dev/pages_check.py`: 20,000 files, 25 MiB per file, 100 header rules), and uploads with the
+  (`dev/pages_check.py`: 20,000 files, 25 MiB per file, 100 header rules, and no file over 64 KB
+  lying uncompressed in a type Cloudflare sends as it lies: Pages gives `.dic`, `.aff`, `.idx`,
+  `.dat` and `.bin` `application/octet-stream`, which Cloudflare does not compress, so the build
+  gzips spell/'s dictionaries and thesauri and pandoc's parts), and uploads with the
   `wrangler` pinned in `package.json` (`wrangler pages deploy dist --branch main`), then checks
   the live site (`dev/live_check.py`): the page is this build, its policy names the hash of the
   script it serves, `no-transform` and HSTS are there, the widget document answers at its address
