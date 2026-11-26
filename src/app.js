@@ -3143,7 +3143,10 @@ class App {
       // the line; \begin{..}, \item, \noindent or a declaration before a brace start a group)
       const pre = src.slice(Math.max(0, q - 300), q);
       let head = /\\([A-Za-z@]+)(?:\*?|\*?(?:[ \t]*\[[^[\]{}\n]*\]|[ \t]*\{[^{}\n]*\})+[ \t]*)$/.exec(pre);
-      if (head && /^(?:begin|end|item|noindent|indent|par|centering|raggedright|raggedleft)$/.test(head[1])) head = null;
+      // (an environment's own argument, \begin{definition}{Title}: a title, made twice no split)
+      const envArg = head && head[1] === 'begin' && /\\begin\s*\{\s*([A-Za-z@*]+)\s*\}/.exec(head[0]);
+      if (envArg && !/^(?:document|center|flushleft|flushright|quote|quotation|verse|itemize|enumerate|description|abstract)$/.test(envArg[1])) head[1] = 'title';
+      else if (head && /^(?:begin|end|item|noindent|indent|par|centering|raggedright|raggedleft)$/.test(head[1])) head = null;
       if (head && SW.exec('\\' + head[1])[0].length === head[1].length + 1) head = null;
       // (an optional argument's group, \item[{..}]: left as it is)
       if (!head && /\[\s*$/.test(pre)) break;

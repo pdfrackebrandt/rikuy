@@ -752,6 +752,15 @@ def real(page):
     click_text(page, 'names and', 5); k.press('Enter'); settle(page, 200); k.type('Q')
     settle(page, 200)
     check('real: Enter inside \\captionof{..} writes no second caption', src(page) == before.replace('names and', 'namesQ and'), src(page)[-160:])
+    # and in the middle of an environment's own title, \begin{definition}{Title} (a frame of the
+    # document's own): a blank line went inside it, and TeX stopped ("Paragraph ended before \@textcolor")
+    D2 = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\newenvironment{definition}[1]{\\par\\textcolor{black}{\\textbf{#1}}\\par}{\\par}\n\\usepackage{xcolor}').replace('Agent income here.', '\\begin{definition}{Rekurrentes Neuronale Netz}\nEin RNN ist.\n\\end{definition}')
+    load_doc(page, D2)
+    before = src(page)
+    click_text(page, 'Neuronale Netz', 9); k.press('Enter'); settle(page, 200); k.type('Q')
+    settle(page, 200)
+    check('real: Enter inside an environment\'s title writes no blank line in it', src(page) == before.replace('Neuronale Netz', 'NeuronaleQ Netz'), src(page)[-160:])
+    compiles(page, 'real environment title')
     # the algorithm package's float: its caption drawn as one ("Algorithm 1: ..."), a \ref to it
     # numbered, its algorithmic drawn in it; Enter inside the caption writes nothing (as in a
     # figure's), where it wrote a blank line in \caption and TeX stopped
