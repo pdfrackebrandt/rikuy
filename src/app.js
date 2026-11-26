@@ -2477,7 +2477,9 @@ class App {
     let quotes = null, sq = false;
     if (/["']/.test(data)) {
       const t = this.src(f) || '', main = this.src(this.main) || '';
-      const here = langAt(languageSpans(t), at), L = mainLanguage(main);
+      // (the language of the character before the caret, as Word's: at the end of a passage that
+      // closes right after its words, \foreignlanguage{english}{..|}, the passage's; else the one at it)
+      const sp = languageSpans(t), here = (at > 0 && langAt(sp, at - 1)) || langAt(sp, at), L = mainLanguage(main);
       if ((here ? dictOf(here) : L.name ? dictOf(L.name, L.variant) : '') === 'de_DE') {
         quotes = /\\usepackage\s*\[[^\]]*\b(?:latin\d|ansinew|applemac|cp\d+|decmulti|next)\b[^\]]*\]\s*\{inputenc\}/.test(main) ? 'de-cmd' : 'de';
         const par = t.slice(Math.max(0, at - 2000), at).split(/\n[ \t\r]*\n/).pop();

@@ -921,6 +921,16 @@ def real(page):
     check('real: and in its English passage ``quoted\'\'', "English words ``quoted'' it's here." in s_, s_[-80:])
     # (pdfLaTeX's OT1 sets babel's „ as a lowered ”, which the PDF's text reads as ”)
     three(page, s_, 'real German quotes', ('Hallo\u201c', 'nein\u2018', '\u201cquoted\u201d'))
+    # (verification V1) at the end of an English passage that closes right after its words, the
+    # passage's quotes: the language of the character before the caret, as Word's
+    Dv = '\\documentclass{article}\n\\usepackage[english,ngerman]{babel}\n\\begin{document}\nDeutsch \\foreignlanguage{english}{English words here} ende.\n\n\\begin{otherlanguage}{english}More English here.\\end{otherlanguage}\n\nEnde.\n\\end{document}\n'
+    load_doc(page, Dv)
+    click_text(page, 'words here', 10); k.type(' "q1"'); settle(page, 300)
+    click_text(page, 'English here.', 13); k.type(' "q2"'); settle(page, 300)
+    click_text(page, ' ende', 5); k.type(' "q3"'); settle(page, 300)
+    s_ = src(page)
+    check('real: quotes typed at the end of \\foreignlanguage{english}{..} and of otherlanguage are English, after them German', "here ``q1''} ende \u201eq3\u201c." in s_ and "here. ``q2''\\end{otherlanguage}" in s_, s_[-220:])
+    three(page, s_, 'real quotes at a passage\'s end', ('\u201cq1\u201d', '\u201cq2\u201d', 'q3\u201c'))
     for D, name in (('\\documentclass[ngerman]{article}\n\\begin{document}\nDas ist ein Text hier.\n\\end{document}\n', 'a class option alone'),
                     ('\\documentclass[ngerman]{scrartcl}\n\\usepackage{babel}\n\\begin{document}\nDas ist ein Text hier.\n\\end{document}\n', 'KOMA\'s class option with babel')):
         load_doc(page, D)
