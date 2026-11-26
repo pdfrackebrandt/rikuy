@@ -860,12 +860,26 @@ def real(page):
     txt = page.evaluate("document.getElementById('pages').innerText")
     check('real: \\marginnote{..}[0cm], \\marginnote[..]{..}[0cm] and \\columnseprule=.4pt draw no "[0cm]", "side" or "=.4pt"', '[0cm]' not in txt and 'side' not in txt and '=.4pt' not in txt and '=2pt' not in txt and 'fboxsep' not in txt and 'More.' in txt and 'Words.' in txt and 'Last words.' in txt, txt[:200])
     three(page, Dm, 'real margin notes', ('A note.', 'Right side', 'Words.', 'Last words.'))
-    # straight quotes typed in a German document: „..“, as Word's smart quotes make them in German;
-    # they were English ``..'', which TeX prints “..” in the German text
-    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\usepackage[ngerman]{babel}').replace('Agent income here.', 'Das ist ein Text hier.'))
-    click_text(page, 'Text', 4); k.type(' "Hallo" und'); settle(page, 300)
-    check('real: "Hallo" typed in a German document is \u201eHallo\u201c', 'Text \u201eHallo\u201c und hier.' in src(page) and 'Text \u201eHallo\u201c und hier.' in page.evaluate("document.getElementById('pages').innerText"), src(page)[-80:])
-    compiles(page, 'real German quotes')
+    # straight quotes typed where the text is German as babel or polyglossia set it: „..“,
+    # as Word's smart quotes make them in German; they were English ``..'', printed “..” there. In an
+    # English passage of it, and in a document whose class option alone says German (no babel, so
+    # pdfLaTeX's OT1 has no „), they stay ``..'' (review B7, B8, N6)
+    Dq = '\\documentclass{article}\n\\usepackage[english,ngerman]{babel}\n\\begin{document}\nDas ist ein Text hier.\n\n\\selectlanguage{english}\nEnglish words here.\n\\end{document}\n'
+    load_doc(page, Dq)
+    click_text(page, 'Text', 4); k.type(' "Hallo" und \'nein\' geht\'s'); settle(page, 300)
+    click_text(page, 'words', 5); k.type(' "quoted" it\'s'); settle(page, 300)
+    s_ = src(page)
+    check('real: quotes typed in German text are \u201eHallo\u201c', 'Text \u201eHallo\u201c und \u201anein\' geht\'s hier.' in s_ and 'Text \u201eHallo\u201c und' in page.evaluate("document.getElementById('pages').innerText"), s_[-160:])
+    check('real: and in its English passage ``quoted\'\'', "English words ``quoted'' it's here." in s_, s_[-80:])
+    # (pdfLaTeX's OT1 sets babel's „ as a lowered ”, which the PDF's text reads as ”)
+    three(page, s_, 'real German quotes', ('Hallo\u201c', '\u201cquoted\u201d'))
+    for D, name in (('\\documentclass[ngerman]{article}\n\\begin{document}\nDas ist ein Text hier.\n\\end{document}\n', 'a class option alone'),
+                    ('\\documentclass[ngerman]{scrartcl}\n\\usepackage{babel}\n\\begin{document}\nDas ist ein Text hier.\n\\end{document}\n', 'KOMA\'s class option with babel')):
+        load_doc(page, D)
+        click_text(page, 'Text', 4); k.type(' "Hallo" und'); settle(page, 300)
+        want = "``Hallo''" if 'alone' in name else '\u201eHallo\u201c'
+        check('real: German set by ' + name + ': ' + want, 'Text ' + want + ' und hier.' in src(page), src(page)[-80:])
+        compiles(page, 'real quotes, ' + name)
 
 
 with sync_playwright() as p:

@@ -27,6 +27,7 @@ const PLACEHOLDER_PDF = 'JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXM
 const PLACEHOLDER_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAAAAACRn/EaAAAACXBIWXMAAAAjAAAAIwHV9BZdAAAADklEQVR42mO4CQQMcAIATFkKLSVMoyAAAAAASUVORK5CYII=';
 const PLACEHOLDER_EPS = '%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 320 240\n0.85 setgray 0 0 320 240 rectfill\n0.6 setgray 2 setlinewidth 1 1 318 238 rectstroke\nshowpage\n';
 import { texToPlain, shortAuthors, entryYear, parseBib } from './bib.js';
+import { mainLanguage, dictOf, languageSpans, langAt } from './spell/words.js';
 import { kvGet, kvPut, kvDel, kvSwap, decodeText, encodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
 import { changes, spacingOnly } from './diff.js';
 import { TeXEngine, parseTeXLog, issueText } from './tex.js';
@@ -2468,10 +2469,19 @@ class App {
   // quotes. o.prev: the text before where it is not the source's (a new paragraph: ' '); by
   // default the two characters before, as `` is told from `; o.wrap: as codeAt
   typedTeX(f, at, data, o = {}) {
-    // (a German document's quotes, „..“, as Word's in German: src/editor.js escapeTeX; babel's
-    // commands where the main file says its text is no UTF-8)
-    const de = this.model && this.model.opts.lang === 'de' && /["']/.test(data) ? (/\\usepackage\s*\[[^\]]*\b(?:latin\d|ansinew|applemac|cp\d+|decmulti|next)\b[^\]]*\]\s*\{inputenc\}/.test(this.src(this.main) || '') ? 'de-cmd' : 'de') : null;
-    return escapeTeX(data, o.prev ?? (this.src(f).slice(Math.max(0, at - 2), at) || ' '), { code: this.codeAt(f, at, o.wrap), quotes: de });
+    // (German quotes, „..“, as Word's in German, where the text at the caret is German as babel or
+    // polyglossia set it: its own \selectlanguage, \foreignlanguage or otherlanguage, else the
+    // document's (src/spell/words.js); a class's option alone sets no German up, and pdfLaTeX's OT1
+    // has no „ then (review B7, B8). babel's commands where the main file's text is no UTF-8)
+    let quotes = null;
+    if (/["']/.test(data)) {
+      const t = this.src(f) || '', main = this.src(this.main) || '';
+      const here = langAt(languageSpans(t), at), L = mainLanguage(main);
+      if ((here ? dictOf(here) : L.name ? dictOf(L.name, L.variant) : '') === 'de_DE') {
+        quotes = /\\usepackage\s*\[[^\]]*\b(?:latin\d|ansinew|applemac|cp\d+|decmulti|next)\b[^\]]*\]\s*\{inputenc\}/.test(main) ? 'de-cmd' : 'de';
+      }
+    }
+    return escapeTeX(data, o.prev ?? (this.src(f).slice(Math.max(0, at - 2), at) || ' '), { code: this.codeAt(f, at, o.wrap), quotes });
   }
 
   // Text typed, or written by Replace, at p of file f as the source takes it there. A selection
