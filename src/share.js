@@ -395,7 +395,49 @@ export const mergeBudget = () => ({ left: WORDS_MAX });
 export function merge3(base, mine, theirs, { words: byWords = true, budget = null } = {}) {
   if (theirs === base || theirs === mine) return { text: mine, clean: true };
   if (mine === base) return { text: theirs, clean: true };
-  return combine(base, lineEdits(base, mine), lineEdits(base, theirs), byWords ? budget || mergeBudget() : null);
+  const A = lineEdits(base, mine), C = lineEdits(base, theirs), B = byWords ? budget || mergeBudget() : null;
+  const r = combine(base, A, C, B);
+  // A conflict takes theirs for its clashing lines alone, which can keep half of a pair whose other
+  // half stands on lines of mine that did not clash: a \begin{quote} line mine put above a
+  // paragraph whose words both changed went, its \end{quote} stayed, and TeX stopped (review
+  // V3-B). Where the result's pairs are not as balanced as theirs, each conflict takes theirs for
+  // its whole paragraph, then for the whole environment of base it is in, and failing that the
+  // file is theirs (the author's text kept under Versions, the changes shown).
+  if (r.clean || balance(r.text) === balance(theirs)) return { text: r.text, clean: r.clean };
+  for (const widen of [paragraphOf, environmentOf]) {
+    const w = combine(base, A, C, B, r.spans.map(([s, e]) => widen(base, s, e)));
+    if (balance(w.text) === balance(theirs)) return { text: w.text, clean: false };
+  }
+  return { text: theirs, clean: false };
+}
+// how unbalanced a text's pairs are: braces, \begin and \end, \( \), \[ \], and whether its
+// unescaped $ are odd
+function balance(t) {
+  const n = (re) => (t.match(re) || []).length;
+  return [n(/(?<!\\)\{/g) - n(/(?<!\\)\}/g), n(/\\begin\b/g) - n(/\\end\b/g), n(/\\\(/g) - n(/\\\)/g), n(/\\\[/g) - n(/\\\]/g), n(/(?<!\\)\$/g) % 2].join(',');
+}
+// the paragraph of base holding s to e: from the blank line before it to the one after it
+function paragraphOf(base, s, e) {
+  const BLANK = /\n[ \t]*\r?\n/g;
+  let ps = 0, pe = base.length, m;
+  while ((m = BLANK.exec(base)) && m.index + m[0].length <= s) ps = m.index + m[0].length;
+  BLANK.lastIndex = e;
+  if ((m = BLANK.exec(base))) pe = m.index + 1;
+  return [ps, Math.max(pe, e)];
+}
+// the innermost environment of base around s to e, \begin to \end, whole lines (the paragraph
+// where there is none)
+function environmentOf(base, s, e) {
+  const stack = [];
+  let best = null;
+  for (const m of base.matchAll(/\\(begin|end)\s*\{([^{}\n]{1,60})\}/g)) {
+    if (m[1] === 'begin') { stack.push(m.index); continue; }
+    const b = stack.pop();
+    if (b !== undefined && b <= s && m.index + m[0].length >= e && (!best || b > best[0])) best = [b, m.index + m[0].length];
+  }
+  if (!best) return paragraphOf(base, s, e);
+  const ls = base.lastIndexOf('\n', best[0] - 1) + 1, le = base.indexOf('\n', best[1]);
+  return [ls, le < 0 ? base.length : le + 1];
 }
 // what a merge may not leave half of: braces, math ($, \( \), \[ \]), brackets, opening quotes,
 // environments (\( and \[ counted apart from ( and [: a lone \( stops TeX, review V3-A)
@@ -405,25 +447,34 @@ const pairsOf = (t) => { const n = {}; for (const [x] of t.matchAll(PAIRS)) n[x]
 const commentLines = (t) => /\n$/.test(t) && t.slice(0, -1).split('\n').every((l) => isComment(l));
 // budget: the characters of clashing lines left to merge word by word (null: by lines alone, and
 // inside a line's words)
-function combine(base, A, C, budget) {
+// wide: spans of base each taken as one conflict where both sides edited in it (theirs, whole)
+function combine(base, A, C, budget, wide = null) {
   // the hunks in the order of base (an insertion at a point before a replacement that starts
   // there), gathered into runs of hunks that clash with one another
   const all = [...A.map((h) => ({ ...h, mine: true })), ...C].sort((x, y) => x.s - y.s || x.e - y.e);
+  const within = (h) => (wide ? wide.findIndex(([ws, we]) => h.s <= we && h.e >= ws) : -1);
   const runs = [];
   for (const h of all) {
     const r = runs[runs.length - 1];
-    if (r && r.some((x) => x.mine !== h.mine && (clash(x, h) || glued(base, x, h)))) r.push(h); else runs.push([h]);
+    const k = within(h);
+    if (r && ((k >= 0 && r.k === k) || r.some((x) => x.mine !== h.mine && (clash(x, h) || glued(base, x, h))))) r.push(h);
+    else { const n = [h]; n.k = k; runs.push(n); }
   }
   let clean = true, out = '', p = 0;
+  const spans = [];
   for (const r of runs) {
     const s = Math.min(...r.map((h) => h.s)), e = Math.max(...r.map((h) => h.e));
     const ours = r.filter((h) => h.mine), theirs = r.filter((h) => !h.mine);
+    // (this run's own conflict, apart from the runs before it: its span is noted)
+    const before = clean;
+    clean = true;
     let t;
     if (!ours.length || !theirs.length) t = applied(base, r, s, e);
     else {
       const m = applied(base, ours, s, e), c = applied(base, theirs, s, e);
       const cost = (e - s) + m.length + c.length;
       if (m === c) t = c;
+      else if (r.k >= 0) { t = c; clean = false; }
       // (two things put at one place: comment lines at a line's start both kept, mine first)
       else if (s === e) {
         if ((s === 0 || base[s - 1] === '\n') && commentLines(m) && commentLines(c)) t = m + c;
@@ -439,9 +490,11 @@ function combine(base, A, C, budget) {
         if (!w.clean) { clean = false; if (pairsOf(t) !== pairsOf(c)) t = c; }
       } else { t = c; clean = false; }
     }
+    if (!clean) spans.push([s, e]);
+    clean = clean && before;
     out += base.slice(p, s) + t; p = e;
   }
-  return { text: out + base.slice(p), clean };
+  return { text: out + base.slice(p), clean, spans };
 }
 
 // Which copies of a project a copy has seen, as a version vector: for each tab that wrote one, the

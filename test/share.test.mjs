@@ -461,6 +461,27 @@ await ok('a conflict never keeps half of a pair: braces, math, an environment, b
   assert.deepEqual(merge3('We study the efect of taxes on growth.\n', 'We study the effects of high taxes on growth.\n', 'We study the effect of taxes on growth.\n'), { text: 'We study the effect of high taxes on growth.\n', clean: false });
 });
 
+await ok('a conflict never keeps half of a pair across lines: its paragraph, its environment, or the file goes to theirs (R4 review V3-B)', () => {
+  const D = (b) => '\\documentclass{article}\n\\begin{document}\nIntro words.\n\n' + b + '\nClosing words.\n\\end{document}\n';
+  const base = D('Line one alpha.\nLine two beta.\nLine three gamma.\n'), theirs = D('Line one Alpha.\nLine two beta.\nLine three gamma.\n');
+  // a quote put round the paragraph, on lines of their own or glued to its first and last; and my word elsewhere kept
+  for (const q of ['\\begin{quote}\nLine one ALPHA.\nLine two beta.\nLine three gamma.\n\\end{quote}\n', '\\begin{quote}Line one ALPHA.\nLine two beta.\nLine three gamma.\\end{quote}\n']) {
+    const r = merge3(base, D(q).replace('Intro', 'Opening'), theirs);
+    assert.deepEqual(r, { text: theirs.replace('Intro', 'Opening'), clean: false }, q);
+  }
+  // a quote over two paragraphs: the file is theirs
+  const b3 = D('Para one alpha.\n\nPara two beta.\n');
+  const t3 = D('Para one Alpha.\n\nPara two beta.\n');
+  assert.deepEqual(merge3(b3, D('\\begin{quote}\nPara one ALPHA.\n\nPara two beta.\n\\end{quote}\n'), t3), { text: t3, clean: false });
+  // an environment of base: the conflict inside it takes theirs for it whole
+  const b4 = D('\\begin{itemize}\n\\item One alpha.\n\n\\item Two beta.\n\\end{itemize}\n');
+  const m4 = b4.replace('\\item One alpha.', '\\begin{quote}\\item One ALPHA.').replace('\\item Two beta.', '\\item Two beta.\\end{quote}');
+  const t4 = b4.replace('One alpha', 'One Alpha');
+  const r4 = merge3(b4, m4, t4);
+  assert.equal(r4.clean, false);
+  assert.equal(r4.text, t4);
+});
+
 await ok('a comment line\'s own words start after its head\'s colon, not one in the quoted words (R4)', () => {
   const l = '% comment (Ana) on "ratio: two": Check this';
   assert.equal(l.slice(commentBodyAt(l)), 'Check this');
