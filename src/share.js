@@ -323,11 +323,24 @@ const clash = (a, c) => (a.s < c.e && c.s < a.e) || (a.s === a.e && c.s === c.e 
 // no conflict, nor a text's start or end.
 const WORDCH = /[\p{L}\p{M}\p{N}'’]/u;
 const inWord = (ch) => ch !== undefined && WORDCH.test(ch);
-function glued(base, x, y) {
+// (sides: each side's hunks, A and C: an apostrophe closes a quote, ``test'' or `test', where
+// that side's line has a ` open before it; only a lone ' after a word may be part of it, as in
+// "users'", review V4-A)
+function glued(base, x, y, sides) {
   const [l, r] = x.e === y.s ? [x, y] : y.e === x.s ? [y, x] : [null, null];
   if (!l) return false;
   const left = l.t ? l.t[l.t.length - 1] : base[l.s - 1], right = r.t ? r.t[0] : base[r.e];
-  return inWord(left) && inWord(right);
+  if (!inWord(left) || !inWord(right)) return false;
+  // the text of h's side on its line before p, with own after it
+  const before = (h, p, own) => {
+    const ls = base.lastIndexOf('\n', p - 1) + 1;
+    return applied(base, sides(h).filter((k) => k.s >= ls && k.s < p && k.e <= p), ls, p) + own;
+  };
+  const quote = (t) => (t.match(/`/g) || []).length > (t.match(/'/g) || []).length;
+  const p = l.e;
+  if (/^'/.test(right) && quote(before(r, p, ''))) return false;
+  if (/^'/.test(left) && quote(before(l, l.s, l.t.slice(0, -1)))) return false;
+  return true;
 }
 
 // one side's edits of a text as hunks of it, {s, e, t}: by lines, or by words inside lines
@@ -457,7 +470,7 @@ function combine(base, A, C, budget, wide = null) {
   for (const h of all) {
     const r = runs[runs.length - 1];
     const k = within(h);
-    if (r && ((k >= 0 && r.k === k) || r.some((x) => x.mine !== h.mine && (clash(x, h) || glued(base, x, h))))) r.push(h);
+    if (r && ((k >= 0 && r.k === k) || r.some((x) => x.mine !== h.mine && (clash(x, h) || glued(base, x, h, (g) => (g.mine ? A : C)))))) r.push(h);
     else { const n = [h]; n.k = k; runs.push(n); }
   }
   let clean = true, out = '', p = 0;

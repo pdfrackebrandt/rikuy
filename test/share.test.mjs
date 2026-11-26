@@ -432,8 +432,13 @@ await ok('what a coauthor puts beside a word the other side changed merges: fift
   // the first word of a line deleted on one side, the second changed on the other; line 1 deleted, line 2's first word changed
   P('The results show growth.\n', 'results show growth.\n', 'The findings show growth.\n', 'findings show growth.\n');
   P('Title line\nFirst words here.\n', 'First words here.\n', 'Title line\nOpening words here.\n', 'Opening words here.\n');
-  // N1's cases stay conflicts
+  // quotes put round a word the other side changed, TeX's ``double'' and `single' (review V4-A)
+  P('the word test here\n', "the word ``test'' here\n", 'the word exam here\n', "the word ``exam'' here\n");
+  P('the word test here\n', 'the word exam here\n', "the word ``test'' here\n", "the word ``exam'' here\n");
+  P('the word test here\n', "the word `test' here\n", 'the word exam here\n', "the word `exam' here\n");
+  // N1's cases stay conflicts, a lone ' after a word too
   assert.equal(merge3('他喜欢学习。\n', '他很喜欢学习。\n', '他不喜欢学习。\n').clean, false);
+  assert.equal(merge3('the users data\n', "the users' data\n", "the user's data\n").clean, false);
   assert.equal(merge3('the users data\n', "the user's data\n", "the users' data\n").clean, false);
 });
 
