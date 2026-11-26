@@ -8,26 +8,35 @@ from playwright.sync_api import sync_playwright
 D = os.path.join(os.path.dirname(__file__), 'stress')
 
 # How far each page's text runs past its margin, as TeX measures it: the baseline of the last line
-# against the bottom of the text block (or the top of the footnotes). A line's box also holds the
-# leading below its baseline, half of \onehalfspacing's extra space, which TeX never counts: the
-# last baseline may sit on the margin and its descenders below it. The baseline is the last
-# character's box less its font's descent (the box's bottom is the baseline plus that descent),
-# read from a canvas, so nothing is added to the page.
-OVER = '''() => { const cv = document.createElement('canvas').getContext('2d');
-  const baseline = (el) => { const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let t, lt = null;
-    while ((t = w.nextNode())) if (t.data.trim() && t.parentElement.getClientRects().length) lt = t;
-    if (!lt) return el.getBoundingClientRect().bottom;
-    const r = document.createRange(), k = lt.data.trimEnd().length; r.setStart(lt, k - 1); r.setEnd(lt, k);
-    const rs = r.getClientRects(), box = rs[rs.length - 1];
-    cv.font = getComputedStyle(lt.parentElement).font;
-    return box.bottom - cv.measureText(lt.data[k - 1]).fontBoundingBoxDescent; };
+# against the bottom of the text block (or the top of the footnotes), and what hangs below that
+# baseline no deeper than \maxdepth (.5\topskip, 6 pt in this 12 pt document). A line's box also
+# holds the leading below its baseline, half of \onehalfspacing's extra space, which TeX never
+# counts. A character's baseline is its box less its font's descent (read from a canvas, nothing
+# added to the page); the line's is the one most of its characters stand on, so a footnote mark
+# or a superscript at its end, raised, does not lift it, nor a subscript lower it. Depth: the
+# last block's bottom less \maxdepth (a display ending in a deep sum).
+OVER = r'''() => { const cv = document.createElement('canvas').getContext('2d');
+  const base = (t, k) => { const r = document.createRange(); r.setStart(t, k); r.setEnd(t, k + 1);
+    const rs = r.getClientRects(); if (!rs.length) return null; const box = rs[rs.length - 1];
+    cv.font = getComputedStyle(t.parentElement).font; return { top: box.top, bottom: box.bottom, base: box.bottom - cv.measureText(t.data[k]).fontBoundingBoxDescent }; };
+  const lastLine = (el) => { const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), ts = []; let t;
+    while ((t = w.nextNode())) if (t.data.trim() && t.parentElement.getClientRects().length) ts.push(t);
+    let line = null; const seen = new Map();
+    const most = () => { let best = null, n = 0; for (const [y, c] of seen) if (c > n || (c === n && y > best)) { best = y; n = c; } return best; };
+    for (let j = ts.length - 1; j >= 0; j--) { const d = ts[j].data;
+      for (let k = d.length - 1; k >= 0; k--) { if (!d[k].trim()) continue; const b = base(ts[j], k); if (!b) continue;
+        if (!line) line = b; else if (b.bottom < line.top) return most();
+        const y = Math.round(b.base); seen.set(y, (seen.get(y) || 0) + 1); } }
+    return line ? most() : null; };
   return [...document.querySelectorAll('.page')].map((pg, i) => {
     const pb = pg.querySelector('.pb').getBoundingClientRect();
     const fl = pg.querySelector('.flow').getBoundingClientRect();
     const fn = pg.querySelector('.fns');
     const fr = fn && !fn.hidden ? fn.getBoundingClientRect() : null;
     const last = pg.querySelector('.flow').lastElementChild;
-    const lb = last ? baseline(last) : fl.top;
+    const pt = last ? parseFloat(getComputedStyle(last).fontSize) / 12 : 1;
+    const bl = last ? lastLine(last) : null, eb = last ? last.getBoundingClientRect().bottom : fl.top;
+    const lb = bl == null ? eb : Math.max(bl, eb - 6 * pt);
     return {i: i + 1, over: Math.round(lb - (fr ? fr.top : pb.bottom)), fill: Math.round((lb - pb.top) / pb.height * 100)}; }); }'''
 main = open(os.path.join(D, 'main.tex')).read()
 bib = open(os.path.join(D, 'refs.bib')).read()
@@ -45,13 +54,16 @@ try:
         over = page.evaluate(OVER)
         bad = [o for o in over if o['over'] > 3]
         check('stress: no overflow', not bad, bad)
-        # the measure must still see a real overflow: a page's last paragraph pushed down by 40 px
-        # puts its last line past the margin, and only that page is flagged
+        # the measure is exact enough to tell a line past the margin from one on it: the fullest
+        # page's last paragraph pushed down to 5 px past the margin is flagged, to 1 px is not
+        # (with the 3 px leave), and no other page is
         k = max(range(len(over)), key=lambda j: over[j]['fill'])
-        page.evaluate('(k) => { const el = document.querySelectorAll(".page")[k].querySelector(".flow").lastElementChild; el.style.paddingTop = "40px"; return true; }', k)
-        caught = [o['i'] for o in page.evaluate(OVER) if o['over'] > 3]
-        page.evaluate('(k) => { document.querySelectorAll(".page")[k].querySelector(".flow").lastElementChild.style.paddingTop = ""; }', k)
-        check('stress: the overflow measure catches text past the margin', caught == [k + 1], caught)
+        PUSH = '([k, px]) => { document.querySelectorAll(".page")[k].querySelector(".flow").lastElementChild.style.paddingTop = px ? px + "px" : ""; }'
+        for by, flagged in ((5, True), (1, False)):
+            page.evaluate(PUSH, [k, -over[k]['over'] + by])
+            caught = [o['i'] for o in page.evaluate(OVER) if o['over'] > 3]
+            page.evaluate(PUSH, [k, 0])
+            check('stress: the last line pushed to %d px past the margin is %s' % (by, 'flagged' if flagged else 'not flagged'), caught == ([k + 1] if flagged else []), caught)
         sparse = [o for o in over[2:-2] if o['fill'] < 60]
         print('fill per page', [o['fill'] for o in over])
         check('stress: pages reasonably full', len(sparse) <= 3, sparse)
