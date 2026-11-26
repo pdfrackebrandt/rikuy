@@ -182,6 +182,26 @@ await ok('XeTeX is warmed once, the first time an instance runs it, before that 
   assert.equal(run('[M._memHeader[0], M.HEAPU8[0], M.HEAPU8[MEM_HEADER]].join()'), '1,1,0');
 });
 
+await ok('a piped XeTeX run from TeX (\\input|"xelatex ...") reads its answer without XeTeX\'s version banner', () => {
+  // (the second instance's first XeTeX run is warmed, and that warm printed into the pipe)
+  run(`__fs2 = { files: {}, streams: [{ fd: 0, path: '/dev/stdin' }, { fd: 1, path: '/dev/stdout' }, { fd: 2, path: '/dev/stderr' }],
+    writeFile(p, d) { this.files[p] = String(d); }, readFile(p) { return new TextEncoder().encode(this.files[p] || ''); },
+    close(st) { this.streams[st.fd] = null; }, open(p, m) { const fd = this.streams.indexOf(null); const st = { fd, path: p }; this.streams[fd] = st; if (m === 'w') this.files[p] = ''; return st; },
+    chdir() {}, cwd() { return '/' } };
+  __T2 = { FS: __fs2, _out: { stdout: '', stderr: '' }, _sp0: 7, HEAPU8: new Uint8Array(MEM_HEADER + 8), _memHeader: new Uint8Array(MEM_HEADER),
+    _stackRestore() {}, _spGet: () => 5,
+    callMain(a) { const say = (t) => { const o = __fs2.streams[1]; if (o.path === '/dev/stdout') __T2._out.stdout += t; else __fs2.files[o.path] += t; };
+      if (a[1] === '--version') say('XeTeX 3.14159265 (TeX Live 2026)\\nCompiled with ICU version 78.1\\n');
+      else say('the answer\\n' + PIPE_END + '\\n');
+      throw Object.assign(new Error('exit'), { name: 'ExitStatus', status: 0 }); } };
+  texPool[1] = __T2; texDepth = 0; M = MAIN = { FS: __fs2 };`);
+  const out = [];
+  ctx.__io = { out: (t) => out.push(t), err: () => {}, env: { cwd: '/home/web_user/project' } };
+  run('nestedTeX(["xelatex", "q.tex"], __io, { stdin: "x" });');
+  assert.equal(out.join(''), 'the answer');
+  run('texPool.length = 1; texPool[0] = null;');
+});
+
 await ok('a XeTeX warm stopped short (ICU\'s pack not loaded) is not kept: the heap before it stays, and the next XeTeX run warms again', () => {
   // (offline, its prefetch failed: the pack's load throws from inside the read, not exit())
   const calls = [];

@@ -555,6 +555,9 @@ function nestedTeX(argv, io, opts) {
   status('tool', { tool: name });
   M = T; texDepth = depth;
   const piped = opts && opts.stdin != null;
+  // (XeTeX's warm run prints its version: here, on the terminal, before a pipe takes its output;
+  // warmed by run() inside the pipe, the banner went to the reader ahead of TeX's answer)
+  if (!T._xe && XETEX.test(P.prog)) xeWarm();
   flushProxyCache(T.FS);
   try {
     T.FS.chdir(io.env.cwd);
@@ -566,7 +569,7 @@ function nestedTeX(argv, io, opts) {
       FS.writeFile('/tmp/galley-stdout', '');
       FS.close(FS.streams[0]); FS.close(FS.streams[1]);
       FS.open('/tmp/galley-stdin', 'r'); FS.open('/tmp/galley-stdout', 'w');
-      try { r = run(args); } finally {
+      try { r = run(args, null, false); } finally {
         for (const fd of [0, 1]) { try { FS.close(FS.streams[fd]); } catch (e) { /* closed */ } }
         FS.open('/dev/stdin', 'r'); FS.open('/dev/stdout', 'w');
       }
@@ -927,9 +930,9 @@ const KPSE_VARS = {
 const TOOLS = { gs: null, gnuplot: null, python: null, dvips: null, asy: null, tex: { run: (argv, io) => nestedTeX(argv, io) }, pdfcrop: { run: (argv, io, h) => pdfcrop(argv, io, h) } };
 const SHELL = self.GalleyShell({ FS: () => M.FS, treeLookup, tools: TOOLS, vars: KPSE_VARS });
 
-function run(args, beforeRestore) {
+function run(args, beforeRestore, warm = true) {
   const FS = M.FS;
-  if (!M._xe && XETEX.test(args[0])) xeWarm();
+  if (warm && !M._xe && XETEX.test(args[0])) xeWarm();
   M._out.stdout = ''; M._out.stderr = '';
   M._pipes = new Map(); pipeOpening = null;
   // The stack pointer is a WebAssembly global, outside the memory restored after each run:
