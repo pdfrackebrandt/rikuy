@@ -453,7 +453,8 @@ function rowBreaksOut(s) {
         out += ' '; i += m[0].length - 1; continue;
       }
       if (!math && (n === '(' || n === '[')) math = n === '(' ? ')' : ']';
-      else if (math && n === math) math = '';
+      // (\$ in a formula is a dollar sign: only \) and \] close what \( and \[ opened)
+      else if ((math === ')' || math === ']') && n === math) math = '';
       out += c + (n ?? ''); i++; continue;
     }
     if (c === '$') { if (!math) math = '$'; else if (math === '$') math = ''; }

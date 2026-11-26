@@ -549,6 +549,11 @@ def paste_cells(page):
         load_doc(page, DOC); click_text(page, 'three', 5); page.evaluate(paste3, ['x', '', lat]); settle(page, 200)
         s = src(page)
         check('a line break inside braces or a formula pasted in a cell stays: ' + lat, ('three' + lat + ' & four \\\\') in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
+    # (and a \$ in a formula is a dollar sign, not the formula's end: the \\ after the formula ends
+    # the row, a space in the cell; read as the end, the formula ran on and the \\ stayed)
+    load_doc(page, DOC); click_text(page, 'three', 5); page.evaluate(paste3, ['x', '', '$a\\$b$\\\\ c']); settle(page, 200)
+    s = src(page)
+    check('a formula holding \\$ then a line break, pasted in a cell: the break a space', 'three$a\\$b$ c & four \\\\' in s, s[s.find('\\midrule'):s.find('\\bottomrule')])
     # (review of PR 115) one line with a tab in it is text, from an editor or a terminal: as text,
     # nothing overwritten
     s = pasted(lambda: click_text(page, 'one', 2), 'foo\tbar')
