@@ -1100,6 +1100,8 @@ class App {
     // what it holds. A font that came, the window resized (a phone's keyboard), a pane opened
     // after Enter lost it, and the next words went on the end of the line above)
     const G = c && c.ghost && this.ghost && !this.ghost.tex && !this.ghost.sticky ? { ...this.ghost } : null;
+    // (and those Enter at a paragraph's start showed above it, the caret staying at its start)
+    const K = !G && this.ghost && this.ghost.keepAt && !this.ghost.tex && !this.ghost.sticky && this.ghostKept() ? { ...this.ghost } : null;
     // (a dialog's field with the focus, the Font dialog's size box: the page's selection is not
     // there to read, so what the dialog acts on is read from its own range, to be put on the new
     // nodes; it kept the old ones and OK formatted the document's start. A dialog's alone: a pane's
@@ -1139,6 +1141,22 @@ class App {
       if (x && x.node && y && y.node) {
         getSelection().setBaseAndExtent(x.node, x.offset, y.node, y.offset);
         if (this.rbRange) this.rbRange = getSelection().getRangeAt(0).cloneRange();
+      }
+    }
+    // The empty paragraphs Enter showed above the paragraph whose start the caret stays at: shown
+    // again before it, as many, the caret kept there. The pass took them away, so a font that came,
+    // the window resized (a phone's keyboard) or a pane opened lost them, and the next Enter began
+    // again at one.
+    if (K && !this.ghost && document.activeElement === this.root) {
+      const sel = getSelection(), keep = sel.rangeCount && sel.isCollapsed ? sel.getRangeAt(0).cloneRange() : null;
+      const n = keep && keep.startContainer, it = n && (n.nodeType === 1 ? n : n.parentElement).closest('.it');
+      if (it && this.root.contains(it)) {
+        this.showGhost(it, K.f, K.pos, { before: true });
+        const el = this.ghost.el;
+        el.className = K.el.className;
+        Object.assign(this.ghost, K, { el, keepAt: keep });
+        sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true;
+        this.ghostLines();
       }
     }
   }

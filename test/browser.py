@@ -1707,6 +1707,7 @@ def run():
             check('no console errors (Enter kept, %d px)' % w, not errors, errors[:5])
             ghost_looks(page, w)
             ghost_last(page, w)
+            ghost_kept(page, w)
             ghost_enters(page, w)
             ghost_inside(page, w)
             ghost_aligned(page, w)
@@ -1845,6 +1846,28 @@ def ghost_last(page, w):
           g['n'] == 1 and abs(g['cy'] - g['y'] - g['lh']) < 2, g)
     page.keyboard.type('New words'); settle(page, 200)
     check('and words typed there go after it (%d px)' % w, 'Second one.\n\nNew words\n\n\\end{document}' in src(page), src(page)[-60:])
+
+
+def ghost_kept(page, w):
+    """Enter at a word's start, the caret staying at it, the empty paragraphs above it: a relayout
+    (a font that came, the window resized, a phone's keyboard, a pane) keeps them, as many, the
+    caret at the word, and the next Enter adds one. The pass took them away, and the next Enter
+    began again at one (the runner's 390 px run of ghost_looks met it, a font arriving between
+    two Enters)."""
+    load_doc(page, _GHOST_DOC)
+    click_text(page, 'had.')
+    for _ in range(3): page.keyboard.press('Enter'); settle(page, 100)
+    a = page.evaluate(_GHOST_GEO, 'had.')
+    split = src(page)
+    page.evaluate('window.rikuy.relayout(true)'); settle(page, 100)
+    r = page.evaluate(_GHOST_GEO, 'had.')
+    check('two empty paragraphs above a word, then a relayout: both still there, the caret at the word (%d px)' % w,
+          a['n'] == 2 and r['n'] == 2 and abs(r['gh'] - 2 * r['lh']) < 2 and abs(r['y'] - a['y']) < 2 and abs(r['cy'] - r['y']) < 3, (a, r))
+    page.keyboard.press('Enter'); settle(page, 100)
+    e = page.evaluate(_GHOST_GEO, 'had.')
+    check('and the next Enter makes a third (%d px)' % w, e['n'] == 3 and abs(e['y'] - a['y'] - e['lh']) < 2 and abs(e['cy'] - e['y']) < 3 and src(page) == split, e)
+    for _ in range(3): page.keyboard.press('Backspace'); settle(page, 100)
+    check('three Backspaces take the three, joining nothing (%d px)' % w, not page.evaluate('window.rikuy.ghost') and src(page) == split, src(page)[-80:])
 
 
 def ghost_enters(page, w):
