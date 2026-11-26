@@ -18,7 +18,8 @@ across the notes' files keeps the case of what it replaces. And the hostile revi
 
 Round four, real documents (`real`): Enter in the words of a command of the document's own
 (\\question{..}) or in a caption of algorithm's float, and at the end of a list item in braces;
-a word typed after an acronym's or a glossary entry's command (\\ac{KDE}, \\Gls{slp}).
+a word typed after an acronym's or a glossary entry's command (\\ac{KDE}, \\Gls{slp}); enumitem's
+\\newlist lists.
 
   python3 dogfood.py [part ...]   parts: formula arrows textfield styles table caption cite paste
                                   split filename undo_words enter reload_undo mathpkg intertext envlist replace review review2 review3 real
@@ -764,6 +765,15 @@ def real(page):
         settle(page, 100); k.type('Zq'); settle(page, 200)
     check('real: a word typed after \\ac{..} or \\Gls{..} goes after its braces, not into its key', '\\ac{KDE}Zq nec' in src(page) and '\\Gls{slp}Zq Mauris' in src(page), src(page)[-200:])
     compiles(page, 'real acronyms')
+    # enumitem's \newlist{todolist}{itemize}{2}: a list, its items drawn with its own label; its
+    # \item were drawn as words, and Enter at an item's end made a paragraph, not an item
+    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,amssymb,enumitem}\n\\newlist{todolist}{itemize}{2}\n\\setlist[todolist]{label=$\\square$}').replace('Agent income here.', '\\begin{todolist}\n  \\item Passport\n  \\item Tickets\n\\end{todolist}'))
+    txt = page.evaluate("document.getElementById('pages').innerText")
+    check('real: a list of enumitem\'s \\newlist is drawn as a list with its label', '\\item' not in txt and '\u25a1' in txt and page.evaluate("[...document.querySelectorAll('#pages .it')].filter((e) => e.dataset.li).length") == 2, txt[:200])
+    click_text(page, 'Tickets', 7); k.press('Enter'); settle(page, 200); k.type('Money')
+    settle(page, 200)
+    check('real: Enter at the end of its item makes the next item', '\\item Tickets\n  \\item Money\n\\end{todolist}' in src(page), src(page)[-120:])
+    compiles(page, 'real newlist')
 
 
 with sync_playwright() as p:

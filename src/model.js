@@ -2408,6 +2408,10 @@ class Builder {
       return us.length ? us : null;
     }
     if (LIST_ENVS.has(name)) return this.listBlock(nd, ctx, env);
+    // (R4) a list of the document's own, enumitem's \newlist{todolist}{itemize}{2}: a list of its
+    // type, labelled by its own \setlist[todolist]; drawn as an unknown environment, its \item
+    // were words on the page
+    if (this.listsOf().newlist[name]) return this.listBlock(nd, ctx, env);
     if (name === 'abstract') {
       const items = [{ type: 'h', level: 'abs', num: '', inl: [{ k: 'chr', text: 'Abstract' }], star: true, ctx: 'h', f: ctx.f, dir: this.dirOf() }];
       const fns = [];
@@ -2749,8 +2753,11 @@ class Builder {
     return { f: ctx.f, s: nd.s, e: nd.e, items, fns };
   }
 
+  // the preamble's list set up (src/lists.js listSetup), read once
+  listsOf() { return this.listCfg || (this.listCfg = this.docBody ? listSetup(this.mainCtx.src, this.docBody.at) : listSetup('')); }
+
   listBlock(nd, ctx, env) {
-    const name = nd.name.replace(/\*$/, '');
+    const name = this.listsOf().newlist[nd.name] || nd.name.replace(/\*$/, '');
     const depth = (env.listDepth || 0) + 1;
     const kind = /enum/.test(name) ? 'enum' : name === 'description' ? 'desc' : 'item';
     const level = kind === 'enum' ? (env.enumDepth || 0) + 1 : (env.itemDepth || 0) + 1;
@@ -2780,7 +2787,7 @@ class Builder {
     // its options (enumitem's label=, start=, resume, nosep; the enumerate package's "(a)"), its
     // own set up (\def\labelenumi, \setcounter{enumi}, \setlength{\itemsep}), the preamble's
     // \setlist and \renewcommand of \labelitemi or \theenumi, LaTeX's own by level
-    const cfg = this.listCfg || (this.listCfg = this.docBody ? listSetup(this.mainCtx.src, this.docBody.at) : listSetup(''));
+    const cfg = this.listsOf();
     const a0 = nd.args[0];
     const L = { name: nd.name, kind, s: nd.s, e: nd.e, be: nd.be, es: nd.es, opt: a0 && a0.o !== false ? { s: a0.s, e: a0.e, is: a0.is, ie: a0.ie } : null, setupE: items.length ? items[0].cmd.s : nd.es };
     let F = kind === 'desc' ? null : formatOf(ctx.src, L, cfg, { level, depth });

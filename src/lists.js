@@ -432,14 +432,20 @@ export function bulletGlyph(code) {
 // \labelenumi and \theenumi; { setlist: [{ names, levels, kv, s, e, arg }], labelitem: { 1: code },
 // labelenum: { 1: code }, theenum: { 1: code } } (names, levels: null for all). end: where it ends.
 export function listSetup(src, end) {
-  const out = { setlist: [], labelitem: {}, labelenum: {}, theenum: {}, pos: { labelitem: {}, labelenum: {}, theenum: {} } };
+  const out = { setlist: [], labelitem: {}, labelenum: {}, theenum: {}, pos: { labelitem: {}, labelenum: {}, theenum: {} }, newlist: Object.create(null) };
   if (end == null) end = preambleEnd(src);
   if (end < 0) return out;
   const pre = stripComments(src.slice(0, Math.min(end, PRE)));
-  const re = /\\(setlist|renewcommand|def)(?![A-Za-z@])/g;
+  const re = /\\(setlist|renewcommand|def|newlist)(?![A-Za-z@])/g;
   let m, n = 0;
   while ((m = re.exec(pre)) && n++ < 3000) {
     let i = skip(pre, m.index + m[0].length);
+    // (R4) enumitem's lists of the document's own, \newlist{todolist}{itemize}{2}: name -> type
+    if (m[1] === 'newlist') {
+      const w = /^\{\s*([A-Za-z]{1,40}\*?)\s*\}\s*\{\s*(itemize|enumerate|description)\s*\}/.exec(pre.slice(i, i + 120));
+      if (w) out.newlist[w[1]] = w[2];
+      continue;
+    }
     if (m[1] === 'setlist') {
       if (pre[i] === '*') i = skip(pre, i + 1);
       let names = null, levels = null;
