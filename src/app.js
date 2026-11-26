@@ -5540,15 +5540,6 @@ class App {
       // (Shift, Caps Lock, an input method's Process and the like come before what they make)
       if (!ch && !/^(Enter|Escape|Tab|Delete|Backspace|Arrow|Home|End|Page)/.test(k)) return false;
       if (ch && /^\p{L}$/u.test(ch)) { word += ch; wait(); return true; }
-      // (R4) an opening bracket or a quote mark after "$5 " starts prose, as a letter does: "$5
-      // (excl. tax)", "$5 "only"" kept the formula, and the sentence after it went into it in
-      // math italics. A bracket waits as a word's first letter ($2 (x+1)$ keeps its formula at the
-      // +); a quote mark makes the price at once and is typed on the page, where quotes are made
-      if (!word && ch && (ch === '(' || ch === '[')) { word = ch; wait(); return true; }
-      // (its closing bracket waits with it: a space or a mark after it makes the price, "$5 (tax)
-      // now", a $ the formula, "$3 (a)$")
-      if (word && ch && ((word[0] === '(' && ch === ')') || (word[0] === '[' && ch === ']')) && !word.includes(ch)) { word += ch; wait(); return true; }
-      if (!word && ch && /^["'“‘«„]$/.test(ch)) { makePrice(''); this.typeRest(ch); return true; }
       if (k === 'Backspace') { if (word) word = word.slice(0, -1); else pend = null; wait(); return true; }
       if (word && ch && /^[ .,;:!?)'"]$/.test(ch)) return makePrice(word + ch);
       if (word && /^(Enter|Escape|Tab)$/.test(k)) return makePrice(word);
