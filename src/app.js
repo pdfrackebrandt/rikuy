@@ -3038,6 +3038,7 @@ class App {
       let ls2 = +is + base; let ind = '';
       while (ls2 > 0 && (src[ls2 - 1] === ' ' || src[ls2 - 1] === '\t')) { ind = src[ls2 - 1] + ind; ls2--; }
       const w = c.collapsed ? this.wrapBreak(el, f, p, true) : { p, close: '', open: '' };
+      if (w.refuse) return;
       const ins = w.close + NL + ind + t.slice(NL.length) + w.open;
       this.commit([...edits, { f, s: w.p, e: w.p, t: ins }], { f, p: Math.max(w.p, p) + ins.length, bias: 1 }, 'enter');
       return;
@@ -3051,6 +3052,7 @@ class App {
       // (and out of any other command's words ending there, \textsl, \enquote, \href: written
       // plain after them; \textsl{..} round a blank line stopped TeX, which takes no paragraph there)
       const out = this.wrapBreak(el, f, E.p);
+      if (out.refuse) return;
       if (!out.close) E.p = out.p;
       this.showGhost(itemEl, f, E.p);
       if (E.wrap && this.ghost) this.ghost.wrap = E.wrap;
@@ -3058,6 +3060,7 @@ class App {
       return;
     }
     const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
+    if (w.refuse) return;
     // At a paragraph's start, where a blank line already stands before it: Word makes an empty
     // paragraph, which LaTeX has not, and each Enter piled blank lines up in the source (twelve
     // Enters, twelve). The empty paragraph shows above it, to type in (Up), the caret staying, as
@@ -3164,6 +3167,9 @@ class App {
       // more items or the list's end is none of this item's)
       if (!y.page && (/\n[ \t\r]*\n/.test(src.slice(p, y.ie)) || (list && /\\(?:item|end)(?![A-Za-z])/.test(src.slice(p, y.ie))))) break;
       if (!y.page && !y.name && !list) { held.push(y); continue; }
+      // (a caption, a letter's closing or a title made twice would print twice, numbered twice:
+      // no break inside one, as none in a figure's caption)
+      if (!y.page && /^(?:caption|captionof|subcaption|closing|opening|signature|address|subject|title|subtitle|author|date|frametitle|framesubtitle|institute)$/.test(y.name)) return { p, close: '', open: '', refuse: true };
       for (const g of [...held, y]) { close += src.slice(g.ie, g.e); open = src.slice(g.s, g.is) + open; }
       held.length = 0;
     }

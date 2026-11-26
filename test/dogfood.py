@@ -745,6 +745,13 @@ def real(page):
     check('real: Enter at the end of an item in braces writes the new \\item after them', '\\item {\\bf Second}\n\\item Third\n\\end{enumerate}' in src(page), src(page)[-120:])
     check('real: and the page draws it as an item', page.evaluate("[...document.querySelectorAll('#pages .it')].some((e) => e.dataset.li && e.textContent.trim().endsWith('Third') && !e.textContent.includes('\\\\item'))"))
     compiles(page, 'real item group')
+    # Enter in the middle of a caption outside a float (\captionof) or a letter's \closing writes
+    # nothing, as in a figure's caption: closed and opened again round the break it printed twice
+    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,caption}').replace('Agent income here.', 'Text.\n\n\\begin{center}\n\\captionof{figure}{Stone with names and years.}\n\\end{center}'))
+    before = src(page)
+    click_text(page, 'names and', 5); k.press('Enter'); settle(page, 200); k.type('Q')
+    settle(page, 200)
+    check('real: Enter inside \\captionof{..} writes no second caption', src(page) == before.replace('names and', 'namesQ and'), src(page)[-160:])
     # the algorithm package's float: its caption drawn as one ("Algorithm 1: ..."), a \ref to it
     # numbered, its algorithmic drawn in it; Enter inside the caption writes nothing (as in a
     # figure's), where it wrote a blank line in \caption and TeX stopped
