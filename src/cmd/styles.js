@@ -407,14 +407,21 @@ export const methods = {
     // same: no visible text before it in its paragraph; before what only closes the first's, }
     // of an \emph at a heading's end, at their end. Backspace there did nothing.)
     const bare = () => { const sel = getSelection(); if (!sel.rangeCount || !X.it.contains(sel.anchorNode)) return false; const r = document.createRange(); r.setStart(X.it, 0); r.setEnd(sel.anchorNode, sel.anchorOffset); return !/\S/.test(r.toString()); };
-    if (back ? p < x.s || p > x.we || (p > x.ws ? !bare() : /\S/.test(src.slice(p, x.ws))) : p < w.we ? !/^[\s}]*$/.test(src.slice(p, w.we)) : /\S/.test(src.slice(w.we, p)) || p > wEnd) return false;
+    // (Delete at a paragraph's end before a comment that ends it, "here. % c": the comment shows
+    // nothing, and Delete only moved the caret into the heading or the quote below, where the
+    // next letters went)
+    const uncommented = (t) => t.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, '$1$2');
+    if (back ? p < x.s || p > x.we || (p > x.ws ? !bare() : /\S/.test(src.slice(p, x.ws))) : p < w.we ? !/^[\s}]*$/.test(uncommented(src.slice(p, w.we))) : /\S/.test(src.slice(w.we, p)) || p > wEnd) return false;
     // (a \label on the line after a heading, a blank line before the paragraph under it, is the
     // heading's: it stays after it; the paragraph's \noindent goes with the paragraph; anything
     // else between the two blocks keeps them apart)
-    const gapM = kw === 'h' ? /^\s*(\\label\s*\{[^{}]*\})?\s*(?:\\(?:no)?indent(?![A-Za-z])\s*)*$/.exec(src.slice(wEnd, x.s)) : null;
+    // (comment lines there, before a \noindent, are the paragraph's: they go with its words, on
+    // lines of their own; they kept the two apart, and Backspace only moved the caret)
+    const gapM = kw === 'h' ? /^\s*(\\label\s*\{[^{}]*\})?\s*((?:[ \t]*%[^\n]*\n)*)\s*(?:\\(?:no)?indent(?![A-Za-z])\s*)*$/.exec(src.slice(wEnd, x.s)) : null;
     if (gapM ? gapM[1] && w.after != null : /\S/.test(src.slice(wEnd, x.s))) return false;
     const gapLab = gapM && gapM[1] ? gapM : null;
     let words = src.slice(x.ws, x.we).trim(), label = x.after != null ? src.slice(x.e, x.after).trim() : '', E = xEnd, reopen = '';
+    if (gapM && gapM[2]) words = gapM[2].replace(/^\s+/, '').replace(/[ \t]*\r?\n[ \t]*/g, '\n') + words;
     // (\noindent and \indent are the joined paragraph's own, gone with it: never in a heading)
     if (kw === 'h') words = words.replace(/^(?:\\(?:no)?indent(?![A-Za-z])\s*)+/, '');
     // (a quote of several paragraphs: its first leaves it, the quote begins again before the rest)
@@ -431,7 +438,9 @@ export const methods = {
     // address) stays out of it, and Backspace says why: it did nothing at all. A comment can stay
     // in it, the closing brace on a line after it (below).
     // (read without their comments: a \begin in a comment is no environment)
-    const plain = words.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, '$1$2'), addr = /\\(?:url|href|path)\s*\{[^{}]*%/.test(words);
+    // (a comment's line keeps a % of its own here: emptied, two comment lines in a row read as a
+    // blank line, a paragraph break, and the join was refused; TeX reads no break there)
+    const plain = words.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*/g, '$1$2%'), addr = /\\(?:url|href|path)\s*\{[^{}]*%/.test(words);
     if (kw === 'h' && (NOT_PLAIN.test(plain) || VERBISH.test(words) || addr)) {
       this.toast('A heading cannot hold ' + (/\\footnote\b/.test(plain) ? 'a footnote' : /\\item\b/.test(plain) ? 'a list' : VERBISH.test(words) || addr ? 'verbatim text or an address with %' : 'a display or an environment') + ': the paragraph stays under it.', 2600);
       return true;
@@ -456,7 +465,10 @@ export const methods = {
     const cut = kw === 'h' && close && COMMENT.test(words.slice(words.lastIndexOf('\n') + 1)) ? NL : '';
     const t = sp + words + label + cut + close + (gapLab ? NL + gapLab[1] : '') + leadLab + tail;
     this.closeGroup();
-    this.commit([{ f, s: w.we, e: E, t }], back ? { f, p: w.we + sp.length + skip, bias: 1 } : { f, p: w.we, bias: -1 }, 'del');
+    // (Delete before a comment that ends the words: the caret stays where it was, before the
+    // comment, or what is typed next went into it)
+    const fore = p < w.we && COMMENT.test(src.slice(p, w.we)) ? p : w.we;
+    this.commit([{ f, s: w.we, e: E, t }], back ? { f, p: w.we + sp.length + skip, bias: 1 } : { f, p: fore, bias: -1 }, 'del');
     return true;
   },
   blockStyleOf(at) {

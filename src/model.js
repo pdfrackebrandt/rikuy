@@ -3474,7 +3474,19 @@ class Builder {
           this.use('m');
           break;
         }
-        case 'verb': acc.flush(); out.push(this.atom(ctx, { k: 'verb', s: nd.s, e: nd.e, text: ctx.src.slice(nd.is, nd.ie) })); break;
+        case 'verb': {
+          acc.flush();
+          // (\lstinline and \mintinline: typed in where they stand, as before they were read as
+          // code, in a typewriter run whose letters are the source's one for one; \verb an atom)
+          if (/^\\(?:lstinline|mintinline)(?![A-Za-z])/.test(ctx.src.slice(nd.s, nd.s + 12))) {
+            const kids = [], code = new Acc(kids, ctx);
+            for (let p = nd.is; p < nd.ie; p++) code.ch(ctx.src[p], p, p + 1);
+            code.flush();
+            if (!kids.length) kids.push(this.ph(ctx, nd.is));
+            out.push(this.styAtom(ctx, { k: 'sty', st: 'tt', kids, s: nd.s, e: nd.e, is: nd.is, ie: nd.ie, cmd: 'lstinline' }));
+          } else out.push(this.atom(ctx, { k: 'verb', s: nd.s, e: nd.e, text: ctx.src.slice(nd.is, nd.ie) }));
+          break;
+        }
         case 'group': {
           acc.flush();
           if (!nd.nodes.length) break;

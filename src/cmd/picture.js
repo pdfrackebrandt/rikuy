@@ -275,20 +275,26 @@ export const methods = {
   // a: the picture's place on the page): with the picture, a center of its own inside the float,
   // which nothing draws once empty and no key reached; and the float itself where nothing is left
   // in it (no caption): an empty figure stayed in the source, drawn nowhere. null: the picture
-  // alone, as for any other. A comment or anything else left in them keeps them.
+  // alone, as for any other. Anything else left in them keeps them; a comment does not, it stays
+  // on a line of its own where they stood: kept, the float was drawn nowhere and what was typed
+  // next went into it, a paragraph floating off to the top of a page.
   picDeleteEdit(h, a) {
     const F = h && h.P.anc.float;
     if (!F || a.f !== h.f || a.s == null) return null;
-    const S = h.src, FILL = /^(?:\s|\\centering\b|\\label\s*\{[^{}%\\]*\}|\\vspace\*?\s*\{[^{}%\\]*\})*$/;
+    // (a comment takes its whole line, (?=\n|$): one that could end anywhere let a run of %, a
+    // "%%%%" banner, be cut in every way, and a test that failed took time doubling with each %)
+    const S = h.src, FILL = /^(?:\s|\\centering\b|\\label\s*\{[^{}%\\]*\}|\\vspace\*?\s*\{[^{}%\\]*\}|%[^\n]*(?=\n|$))*$/;
     const left = (E, s, e) => S.slice(E.be, s) + S.slice(e, E.es);
     // (with the boxes it stands in, a border or a turn)
     const O = h.P.outer;
     let s = O && O.s <= a.s && a.e <= O.e ? O.s : a.s, e = O && O.s <= a.s && a.e <= O.e ? O.e : a.e, whole = false;
+    const ps = s, pe = e;
     const E = h.P.block.env;
     if (E && E !== F && E.es != null && /^(center|flushleft|flushright)$/.test(E.name) && FILL.test(left(E, s, e))) { s = E.s; e = E.e; }
     if (F.es != null && FILL.test(left(F, s, e))) { s = F.s; e = F.e; whole = true; }
     if (!whole && (!E || E === F || s !== E.s)) return null;
     const NL = /\r\n/.test(S) ? '\r\n' : '\n';
+    const cms = (S.slice(s, ps) + S.slice(pe, e)).match(/%[^\r\n]*/g) || [];
     let t = '';
     if (whole) {
       // (the paragraphs either side stay two where a blank line stood; a float ends no paragraph,
@@ -297,10 +303,12 @@ export const methods = {
       while (e < S.length && /\s/.test(S[e])) e++;
       const before = S.slice(s, F.s), after = S.slice(F.e, e), blank = /\n[ \t\r]*\n/;
       t = blank.test(before) ? before : blank.test(after) ? after : before.includes('\n') ? before : after.includes('\n') ? after : NL;
+      if (cms.length) t = NL + cms.join(NL) + (blank.test(t) ? NL + NL : NL);
     } else {
       // (the center's line goes with it)
       while (s > 0 && /[ \t]/.test(S[s - 1])) s--;
       if ((!s || S[s - 1] === '\n') && /^[ \t]*\r?\n/.test(S.slice(e))) e += /^[ \t]*\r?\n/.exec(S.slice(e))[0].length;
+      if (cms.length) t = (s && S[s - 1] !== '\n' ? NL : '') + cms.join(NL) + NL;
     }
     return { edit: { f: h.f, s, e, t }, caret: { f: h.f, p: s + t.length, bias: 1 }, whole };
   },

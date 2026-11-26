@@ -441,6 +441,12 @@ export function parseJS(src, userSigs) {
           }
         } else if (src[i] === '}' || src[i] === ']' || (src[i] === '\\' && src.startsWith('\\end', i) && !isLetter(src[i + 4] || ''))) {
           args.push(null); i = save;
+        } else if (kind === 'v' && delimEnd(i) >= 0) {
+          // \url|a%b|: the address between two of one character on its line, as url.sty reads it;
+          // its % read as a comment took the rest of the line off the page (parse.cc: the same)
+          const s = i, k = delimEnd(i);
+          i = k + 1;
+          args.push({ o: false, s, e: i, is: s + 1, ie: k, nodes: [], raw: true });
         } else if (src[i] === '\\') {
           const s = i;
           const node = parseCommand(null, true);
@@ -452,6 +458,15 @@ export function parseJS(src, userSigs) {
       }
     }
     return args;
+  }
+
+  // where an argument given between two of one character (\url|..|) ends on its line, or -1:
+  // the character is no letter, digit, space, brace, bracket, backslash or %
+  function delimEnd(a) {
+    const d = src[a];
+    if (!d || !/^[!-~]$/.test(d) || /[A-Za-z0-9{}[\]\\%]/.test(d)) return -1;
+    for (let k = a + 1; k < n && src[k] !== '\n'; k++) if (src[k] === d) return k;
+    return -1;
   }
 
   function parseCommand(stop, noArgs) {
@@ -488,13 +503,52 @@ export function parseJS(src, userSigs) {
       i = k + 2;
       return { t: 'math', s, e: i, is: ne, ie: k, display: name === '[', delim: name === '(' ? '\\(' : '\\[' };
     }
-    if (name === 'verb') {
-      const d = src[ne];
+    // \lstinline and \mintinline read their code as \verb does, after their [options] and minted's
+    // {language} (spaces before those skipped, as TeX's look for them skips them): between two of
+    // one character, or in braces, which listings ends at the first } and minted at the one that
+    // balances. A % in it (R's %>%, a format's %d) is code: read as a comment, it took the rest of
+    // the line off the page. The code ends at its line's end at the latest, as TeX's does ("\verb
+    // ended by end of line"): an unclosed one took the rest of the file.
+    // (parse.cc: the same, in the same place)
+    if (name === 'verb' || name === 'lstinline' || name === 'mintinline') {
+      const code = name !== 'verb';
+      let a = ne;
+      const sp = () => { if (code) while (src[a] === ' ' || src[a] === '\t') a++; };
+      sp();
+      if (code && src[a] === '[') {
+        // (options with brackets of their own in braces: language={[LaTeX]TeX})
+        // (a blank line ends them unclosed, as it ends TeX's optional argument: Runaway argument)
+        let depth = 0, k = a + 1;
+        for (; k < n; k++) {
+          if (src[k] === '{') depth++; else if (src[k] === '}') depth--; else if (src[k] === ']' && depth <= 0) break;
+          else if (src[k] === '\n') { let z = k + 1; while (src[z] === ' ' || src[z] === '\t' || src[z] === '\r') z++; if (z >= n || src[z] === '\n') { k = n; break; } }
+        }
+        if (k >= n) { i = ne; return node; }
+        a = k + 1; sp();
+      }
+      if (name === 'mintinline') {
+        let k = src[a] === '{' ? a + 1 : n;
+        while (k < n && src[k] !== '}' && src[k] !== '\n') k++;
+        if (k >= n || src[k] !== '}') { i = ne; return node; }
+        a = k + 1; sp();
+      }
+      const d = src[a];
       if (!d || isLetter(d) || isWS(d)) { i = ne; return node; }
-      const k = src.indexOf(d, ne + 1);
-      const end = k < 0 ? n : k;
-      i = Math.min(n, end + 1);
-      return { t: 'verb', s, e: i, is: ne + 1, ie: end };
+      // (one pass to the closing character or the line's end, whichever comes first: a search to
+      // the line's end first went to the file's end for every \verb of a file of one line)
+      const close = code && d === '{' && name === 'lstinline' ? '}' : d, bal = code && d === '{' && name === 'mintinline';
+      let end = -1, eol = a + 1, depth = 1;
+      for (; eol < n && src[eol] !== '\n'; eol++) {
+        if (bal) { if (src[eol] === '{') depth++; else if (src[eol] === '}' && --depth === 0) { end = eol; break; } }
+        else if (src[eol] === close) { end = eol; break; }
+      }
+      if (end < 0) {
+        const z = eol > a + 1 && src[eol - 1] === '\r' ? eol - 1 : eol;
+        i = z;
+        return { t: 'verb', s, e: z, is: a + 1, ie: z };
+      }
+      i = end + 1;
+      return { t: 'verb', s, e: i, is: a + 1, ie: end };
     }
     if (DEF_CMDS.has(name)) return parseDef(node);
     if (ENV_DEF.has(name)) return parseEnvDef(node);

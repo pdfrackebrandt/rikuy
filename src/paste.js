@@ -408,8 +408,9 @@ export function unwrapMath(t) {
 // joined stay joined and no brace after them is commented out), a heading leaves its words in a
 // group, a label goes, a display becomes a formula in the line, a list's items words in a row,
 // paragraphs and lines join with a space. '' where something is left that the line cannot hold
-// (an align, a figure): then the words alone are pasted.
-export function oneLineLatex(t) {
+// (an align, a figure): then the words alone are pasted. In a table's cell (cell) a line break,
+// \\, is a space too: there it ended the row, the cell's words after it a row of their own.
+export function oneLineLatex(t, cell) {
   const t0 = String(t || '');
   let s = t0.replace(/\r\n?/g, '\n');
   // An address or verbatim text keeps its % and its line as written: \url{x%20y} is no comment.
@@ -427,6 +428,7 @@ export function oneLineLatex(t) {
   s = s.replace(/\\begin\s*\{(equation|displaymath)(\*?)\}([\s\S]*?)\\end\s*\{\1\2\}/g, (m, e, st, x) => '$' + x.trim() + '$');
   s = s.replace(/\\(?:begin|end)\s*\{(?:itemize|enumerate|description)\}(?:\[[^\]\n]*\])?/g, ' ');
   s = s.replace(/\\item(?![A-Za-z])\s*(?:\[([^\]\n]*)\])?/g, (m, lab) => ' ' + (lab ? lab + ' ' : ''));
+  if (cell) s = rowBreaksOut(s);
   s = s.replace(/\s*\n\s*/g, ' ').replace(/[ \t]{2,}/g, ' ').trim();
   if (/\\(?:begin|end|par|maketitle|caption)(?![A-Za-z])/.test(s)) return '';
   s = s.replace(/\uE000(\d+)\uE001/g, (m, k) => kept[+k]);
@@ -434,6 +436,33 @@ export function oneLineLatex(t) {
   let depth = 0;
   for (const x of s.replace(/\\./g, '').replace(/\uE000\d+\uE001/g, '')) { if (x === '{') depth++; else if (x === '}' && --depth < 0) break; }
   return depth === 0 ? s : t0;
+}
+
+// A line break, \\ with its * or [length], that would end a table's row: one outside every group
+// and formula, made a space. Inside braces (\makecell{a\\b}, \parbox, \shortstack) or a formula
+// (\substack{i\\j}) it is the argument's own and stays. (Pairs read from the left: \\\% is a line
+// break and a percent sign.)
+function rowBreaksOut(s) {
+  let out = '', depth = 0, math = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\') {
+      const n = s[i + 1];
+      if (n === '\\' && !depth && !math) {
+        const m = /^\\\\\*?(?:[ \t]*\[[^\]\n]*\])?/.exec(s.slice(i, i + 80));
+        out += ' '; i += m[0].length - 1; continue;
+      }
+      if (!math && (n === '(' || n === '[')) math = n === '(' ? ')' : ']';
+      // (\$ in a formula is a dollar sign: only \) and \] close what \( and \[ opened)
+      else if ((math === ')' || math === ']') && n === math) math = '';
+      out += c + (n ?? ''); i++; continue;
+    }
+    if (c === '$') { if (!math) math = '$'; else if (math === '$') math = ''; }
+    else if (c === '{') depth++;
+    else if (c === '}' && depth) depth--;
+    out += c;
+  }
+  return out;
 }
 
 // A heading copied with what is pasted inside another command's argument (a footnote, a bold

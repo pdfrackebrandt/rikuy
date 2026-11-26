@@ -244,6 +244,59 @@ try:
             if TEX and name.startswith('Up after a heading'):
                 r = compiles(s9)
                 check('and it compiles in the page', r['ok'] and not r['problems'], r)
+        # A display whose formula ends in a comment: the comment was held back as if it hid the
+        # display's end, so the display was written on closing with a line end of its own, a blank
+        # line before \end{equation*} (TeX's Missing $), even when nothing was typed; and what was
+        # typed in the field went after the comment, into it, shown nowhere
+        for name, doc, keys, want in (('opened and closed', P('Text.\n\\begin{equation*}\na = b % note\n\\end{equation*}\nAfter.'), '', 'a = b % note\n\\end{equation*}'),
+                                      ('typed in', P('Text.\n\\begin{equation*}\na = b % note\n\\end{equation*}\nAfter.'), 'Q', 'a = bQ % note\n\\end{equation*}'),
+                                      ('typed in, \\[ \\] and two comment lines', P('Text.\n\\[\na = b % one\n% two\n\\]\nAfter.'), '+c', 'a = b+c % one\n% two\n\\]')):
+            load_doc(page, doc)
+            page.click('.it.dm >> nth=0'); page.wait_for_selector('#pop-field', timeout=8000); settle(page, 300)
+            if keys: page.keyboard.type(keys); settle(page, 150, full=True)
+            page.keyboard.press('Escape'); settle(page, 300, full=True)
+            s10 = src(page)
+            check('a display ending in a comment, %s: no blank line written, the letters before the comment' % name, want in s10 and s10.replace(keys, '', 1) == doc, s10[s10.find('Text.'):s10.find('After.')])
+            if TEX and keys == 'Q':
+                r = compiles(s10)
+                check('and it compiles in the page', r['ok'] and not r['problems'], r)
+        # A display of its own between paragraphs, emptied in the field and closed: the display goes
+        # and an empty paragraph stays where it stood, the caret in it, as Word leaves the
+        # equation's paragraph. The caret went to the next paragraph's start, and a letter typed
+        # joined its first word ("WNext."). Backspace there ends after the paragraph above, Undo
+        # brings the display back.
+        D2 = P('Before.\n\n\\begin{equation}\na+1\n\\end{equation}\n\nNext.')
+        for keys, want in ((['W'], 'Before.\n\nW\n\nNext.'), (['Backspace', 'W'], 'Before.W\n\nNext.'), (['Control+z'], 'Before.\n\n\\begin{equation}\na+1\n\\end{equation}\n\nNext.')):
+            load_doc(page, D2)
+            page.click('.it.dm >> nth=0'); page.wait_for_selector('#pop-field', timeout=8000); settle(page, 300)
+            for k in range(5): page.keyboard.press('Backspace'); settle(page, 60)
+            page.keyboard.press('Escape'); settle(page, 300, full=True)
+            for k in keys:
+                if len(k) > 1: page.keyboard.press(k)
+                else: page.keyboard.type(k)
+                settle(page, 150)
+            s11 = src(page)
+            check('a display emptied and closed, then %s: %r' % (' '.join(keys), want), P(want) == s11, s11[s11.find('{document}') + 11:s11.find('\\end{document}')])
+        # (review of round 4) the same in a file with Windows line ends: a display opened and closed
+        # with Esc got blank lines in it (the box was given the \r of its line ends, and the range it
+        # writes counted \n where the file has \r\n), TeX's Missing $; emptied, the letter typed next
+        # went inside \end{equation}
+        C = lambda t: P(t).replace('\n', '\r\n')
+        for name, body, keys, after, want in (
+                ('opened and closed', 'Text.\n\\begin{equation*}\na = b % note\n\\end{equation*}\nAfter.', [], '', None),
+                ('Q typed before its comment', 'Text.\n\\begin{equation*}\na = b % note\n\\end{equation*}\nAfter.', ['Q'], '', 'Text.\n\\begin{equation*}\na = bQ % note\n\\end{equation*}\nAfter.'),
+                ('a row of an align added to', 'Text.\n\\begin{align}\na &= b \\\\\nc &= d\n\\end{align}\nAfter.', ['+', '1'], '', 'Text.\n\\begin{align}\na &= b \\\\\nc &= d+1\n\\end{align}\nAfter.'),
+                ('emptied, then W', 'Before.\n\n\\begin{equation}\na+1\n\\end{equation}\n\nNext.', ['Backspace'] * 5, 'W', 'Before.\n\nW\n\nNext.')):
+            load_doc(page, C(body))
+            page.click('.it.dm >> nth=0'); page.wait_for_selector('#pop-field', timeout=8000); settle(page, 300)
+            for k in keys:
+                if len(k) > 1: page.keyboard.press(k)
+                else: page.keyboard.type(k)
+                settle(page, 80)
+            page.keyboard.press('Escape'); settle(page, 300, full=True)
+            if after: page.keyboard.type(after); settle(page, 200)
+            s12 = src(page)
+            check('a display in a file with Windows line ends, %s: as Word would, \\r\\n kept' % name, s12 == C(want or body), repr(s12[s12.find('{document}') + 11:s12.find('\\end{document}')]))
 
         # --- dark mode look
         check('no console errors', not errors, errors[:5])

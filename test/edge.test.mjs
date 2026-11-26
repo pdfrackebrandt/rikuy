@@ -36,6 +36,26 @@ for (const [c, want] of [['x \\%{b} c', 'x %b c'], ['a\\textasciitilde{}{b c} d'
   const got = M.blocks.map((b) => b.items.map((it) => text(it.inl)).join('')).join('');
   if (got !== want) { process.exitCode = 1; console.log('FAIL char command group', JSON.stringify(c), '=>', JSON.stringify(got)); }
 }
+// Inline code read as \verb is, a % in it code (R's %>%, a format's %d): read as a comment, it took
+// the rest of the line off the page ("Use x Next line words."). Its end as TeX's: listings' braces
+// at the first }, minted's at the one that balances, every kind at its line's end at the latest
+// (an unclosed one took the rest of the file); spaces before [options] and {code} skipped, as
+// TeX's look for them skips them; \url|..| as url.sty reads it. The native core reads the same
+// (native.test.mjs compares the trees).
+for (const [c, want, blocks] of [['Use \\lstinline|x % 2| for odd.\nNext.', 'Use x % 2 for odd. Next.'], ['Use \\lstinline{f() {} ok.\nNext.', 'Use f() { ok. Next.'],
+  ['Use \\lstinline[language=R]{df %>% f} ok.\nNext.', 'Use df %>% f ok. Next.'], ['Use \\mintinline{r}{a %in% {b}} ok.\nNext.', 'Use a %in% {b} ok. Next.'],
+  ['Use \\mintinline[x]{r}|a % b| ok.\nNext.', 'Use a % b ok. Next.'], ['Use \\verb|x % 2| ok.\nNext.', 'Use x % 2 ok. Next.'],
+  ['Use \\lstinline [style=x]{a % b} ok.\nNext.', 'Use a % b ok. Next.'], ['Use \\lstinline {a % b} ok.\nNext.', 'Use a % b ok. Next.'],
+  ['Use \\lstinline[language={[LaTeX]TeX}]|a % b| ok.\nNext.', 'Use a % b ok. Next.'], ['See \\url|a%b| for more.\nNext.', 'See a%b for more. Next.'],
+  ['Use \\lstinline|bad\n\nNext \\textbf{para}.\n\nLast.', 'Use bad Next para. Last.', 3], ['Use \\lstinline{bad\n\nNext \\textbf{para}.\n\nLast.', 'Use bad Next para. Last.', 3],
+  ['Use \\verb|bad\r\n\r\nNext.', 'Use bad Next.', 2],
+  // (options never closed stop at the blank line, as TeX's optional argument does)
+  ['a \\lstinline[style\n\nNext para \\cite[p.~3]{k} more.', 'a [style Next para more.', 2]]) {
+  const M = buildModel({ files: new Map([['m.tex', c]]), main: 'm.tex' });
+  const text = (inl) => (inl || []).map((x) => x.k === 'seg' ? x.t : x.kids ? text(x.kids) : x.k === 'verb' || x.k === 'url' ? x.text : '').join('');
+  const got = M.blocks.map((b) => b.items.map((it) => text(it.inl)).join('')).join(' ').replace(/\s+/g, ' ').trim();
+  if (got !== want || (blocks && M.blocks.length !== blocks)) { process.exitCode = 1; console.log('FAIL inline code', JSON.stringify(c), '=>', JSON.stringify(got), M.blocks.length); }
+}
 // Ranges a deletion may take whole: never one that splits [...] or reads a % inside \verb as a comment.
 for (const [s, a, b, want] of [
   ['\\begin{theorem}[Title]\\label{t} Body', 18, 33, false],

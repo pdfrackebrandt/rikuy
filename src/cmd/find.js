@@ -525,7 +525,7 @@ export const methods = {
     // (^p in the replacement: a blank line, where the place is a paragraph's own text, outside any
     // group, argument or formula; a heading's, a cell's or a caption's text cannot hold one)
     if (/\n/.test(text) && !this.breakFits(h, at)) return { skip: 'break' };
-    const t = text ? this.escapeAt(h.f, at, text) : '';
+    const t = text ? this.escapeAt(h.f, at, text, b) : '';
     const out = [];
     let put = !t;
     for (const ed of del) { if (!put && ed.s === at) { out.push({ ...ed, t: ed.t + t }); put = true; } else out.push(ed); }

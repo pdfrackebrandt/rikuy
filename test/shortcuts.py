@@ -13,7 +13,7 @@ Alt+Shift+Down); Save and Open by Word's function keys (Shift+F12, Ctrl+F12); th
 menus naming the keys; Help's list with the keys the browser keeps; and the whole again as a Mac
 has it (Cmd, Word for Mac's own chords, ⌘ in tooltips). Screenshots in $RIKUY_SHOTS (default
 /tmp/keys-shots): Help's list and a tooltip, at 1920 and 1366 px light and dark, and 390 px."""
-import os, sys
+import os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from browser import settle, until, saved, ready, open_page, check, results, src, click_text, select_text, load_doc
 from playwright.sync_api import sync_playwright
@@ -381,6 +381,48 @@ def caret_keys(page):
     typed_at(page, 'Control+ArrowDown', TAB, 'Ctrl+Down from a table\'s last cell goes to its caption (it skipped it)', '\\caption{QThe caption}')
     load_doc(page, EQ); click_text(page, 'paragraph is here', 3); key(page, 'Control+Shift+ArrowDown', 150)
     check('Ctrl+Shift+Down selects to the paragraph\'s end', selected(page) == 'agraph is here and it runs on with words enough to stand above the formula.', selected(page))
+    # End on a line whose last thing is a citation, a reference, a footnote mark or an address: the
+    # browser's End went on to the next paragraph's start, so the words typed next began it; Shift+End
+    # selected into that paragraph's start, a paragraph mark Word leaves out (what Delete did with it
+    # came out the same, so the check is on the selection itself)
+    for tail, name in (('\\cite{k}', 'a citation'), ('\\footnote{A note.}', 'a footnote mark'), ('\\url{http://a.b}', 'an address'), ('\\ref{x}', 'a reference')):
+        doc = '\\documentclass{article}\n\\usepackage{hyperref}\n\\begin{document}\nSee the site ' + tail + '\n\nNext para.\n\\end{document}\n'
+        load_doc(page, doc); click_text(page, 'See the', 2); key(page, 'End', 150)
+        typed_at(page, 'End', doc, 'End on a paragraph ending in %s stays on its line' % name, tail + 'Q\n')
+        load_doc(page, doc); click_text(page, 'See the', 2); key(page, 'Shift+End', 150)
+        ends = page.evaluate("(() => { const s = getSelection(), b = (n) => (n.nodeType === 1 ? n : n.parentElement).closest('.it'); return [b(s.anchorNode) === b(s.focusNode), s.toString().includes('\\n')]; })()")
+        check('Shift+End on a paragraph ending in %s selects to the line\'s end, not into the next paragraph' % name, ends == [True, False], (ends, selected(page)))
+        key(page, 'Delete', 150)
+        got = src(page)
+        check('Shift+End then Delete on a paragraph ending in %s keeps the next paragraph apart' % name, 'Se\n\nNext para.' in got, got[got.find('Se'):got.find('Se') + 30])
+    # The empty paragraph Enter leaves at a paragraph's end: Left goes to the end of the paragraph
+    # before and Right to the next one's start at once, Delete takes it and leaves the caret at the
+    # next paragraph's start, as Word's. Left and Right seemed to do nothing (the browser stepped
+    # over its invisible mark first) and Delete did nothing: the letter went into the new paragraph.
+    G = '\\documentclass{article}\n\\begin{document}\nBefore words.\n\nNext words.\n\\end{document}\n'
+    for k, want in (('ArrowLeft', 'Before words.Q\n\nNext'), ('ArrowRight', 'Before words.\n\nQNext'), ('Delete', 'Before words.\n\nQNext'), ('Backspace', 'Before words.Q\n\nNext')):
+        load_doc(page, G); click_text(page, 'Before words.', 13); key(page, 'Enter', 150); key(page, k, 150)
+        typed_at(page, k, G, 'Enter at a paragraph\'s end, then %s: the letter %s' % (k, 'in the paragraph before' if 'Q\n' in want else 'at the next paragraph\'s start'), want)
+    # (review of round 4) by paragraphs of the text, never by text nodes: Left from it went to the
+    # end of the text before an atom ending the paragraph above ("See the site Q\cite{k}"), and
+    # Right and Delete after a page's last paragraph went on into its footnote ("\footnote{QNote")
+    W = lambda body: '\\documentclass{article}\n\\usepackage{hyperref}\n\\begin{document}\n' + body + '\n\\end{document}\n'
+    for body, at, k, want in (('See the site \\cite{k}\n\nNext words.', 'See the', 'ArrowLeft', '\\cite{k}Q\n\nNext'),
+                              ('Para one\\footnote{A note.}\n\nNext words.', 'Para one', 'ArrowLeft', '\\footnote{A note.}Q\n\nNext'),
+                              ('Para one $x^2$\n\nNext words.', 'Para one', 'ArrowLeft', '$x^2$Q\n\nNext'),
+                              ('See \\url{http://a.b}\n\nNext words.', 'See', 'ArrowRight', '}\n\nQNext words.'),
+                              ('First\\footnote{Note text.} here.\n\nPara one.', 'Para one', 'ArrowRight', 'Para one.\n\nQ\n'),
+                              ('First\\footnote{Note text.} here.\n\nPara one.', 'Para one', 'Delete', 'Para one.\n\nQ\n'),
+                              ('Para one.\n\n\\[ a+b \\]\n\nNext words.', 'Para one', 'Delete', 'Para one.\n\nQ\n\n\\['),
+                              ('Para one.\n\n\\newpage\n\nNext words.', 'Para one', 'Delete', '\\newpage\n\nQNext words.')):
+        d = W(body)
+        load_doc(page, d); click_text(page, at, 2); key(page, 'End', 100); key(page, 'Enter', 150); key(page, k, 150)
+        page.keyboard.type('Q'); settle(page, 200)
+        got = src(page)
+        check('Enter at the end of %r, then %s: the letter where Word puts it (%r)' % (body.split('\n')[-1 if 'First' in body else 0], k, want), want in got and re.sub('\n+', '\n', got.replace('Q', '', 1)) == re.sub('\n+', '\n', d), got[got.find('Q') - 30:got.find('Q') + 20])
+    E = '\\documentclass{article}\n\\begin{document}\nBefore words.\n\\end{document}\n'
+    load_doc(page, E); click_text(page, 'Before words.', 13); key(page, 'Enter', 150); key(page, 'Delete', 150); page.keyboard.type('Q'); settle(page, 200)
+    check('Enter at the text\'s last paragraph, then Delete: nothing to take, the letter in the new paragraph', 'Before words.\n\nQ' in src(page), src(page)[40:])
 
 
 def paint_up(page):

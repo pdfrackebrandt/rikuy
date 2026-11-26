@@ -1497,6 +1497,14 @@ def block_join(page):
     after one, and Delete at the end of the block before: the two join, the second's words taking
     the first's style, as Word keeps the first paragraph's formatting. Backspace only moved the
     caret to the end of the block above, and a second one took its last letter."""
+    # (review of round 4) a paragraph joined to one ending in inline code: the code's closing
+    # character stays, as a } does; it was taken ("\lstinline|abcdNext.", TeX: ended by end of
+    # line), and with {..} nothing joined
+    L = '\\usepackage{listings}\n\\usepackage{minted}\n'
+    for code in ('\\lstinline|abcd|', '\\lstinline{abcd}', '\\mintinline{py}|abcd|'):
+        for key, at in (('Backspace', ('Next.', 0)), ('Delete', ('abcd', 4))):
+            load_doc(page, A('Use ' + code + '\n\nNext.', L)); click_text(page, *at); page.keyboard.press(key); settle(page, 200)
+            check('block_join: %s joins the paragraph after %s, the code closed' % (key, code), src(page) == A('Use ' + code + ' Next.', L), src(page)[60:])
     H = A('Alpha para.\n\n\\section{Head}\nBody text.\n\nGamma.')
     load_doc(page, H); h0 = page.evaluate('window.rikuy.hist.length'); click_text(page, 'Head', 0); page.keyboard.press('Backspace'); settle(page, 200)
     check('block_join: Backspace at a heading\'s start joins its words to the paragraph above, as text', src(page) == H.replace('Alpha para.\n\n\\section{Head}\nBody', 'Alpha para. Head\n\nBody'), src(page)[40:])
@@ -1555,6 +1563,22 @@ def review_joins(page):
     the heading's argument; a heading with \\label on its line did not join the paragraph under it."""
     load_doc(page, A('Alpha. % note\n\n\\section{Head}\nBody.')); click_text(page, 'Head', 0); page.keyboard.press('Backspace'); settle(page, 200); page.keyboard.type('X'); settle(page, 200)
     check('review_joins: a heading joined to a paragraph ending in a comment: its words on a line after the comment', src(page) == A('Alpha. % note\nXHead\n\nBody.'), src(page)[40:])
+    # (round 4) Delete at the end of that paragraph, before the comment, did not join: it only moved
+    # the caret into the heading or the quote below, where the next letters went
+    for name, doc, want in (('a heading', 'Alpha. % note\n\n\\section{Head}\nBody.', 'Alpha.X % note\nHead\n\nBody.'),
+                            ('a quote', 'Alpha. % note\n\\begin{quote}\nQ words.\n\\end{quote}\nBody.', 'Alpha.X % note\nQ words.\n\nBody.')):
+        load_doc(page, A(doc)); click_text(page, 'Alpha.', 6); page.keyboard.press('Delete'); settle(page, 200); page.keyboard.type('X'); settle(page, 200)
+        check('review_joins: Delete at a paragraph\'s end before its comment joins %s, the caret before the comment' % name, src(page) == A(want), src(page)[40:])
+    # (round 4) Backspace at a paragraph under a heading after two comment lines, or a comment line
+    # and \noindent: refused (two comment lines read as a blank line; a comment before \noindent
+    # kept the two apart), the caret only moved to the heading's end. It joins, the comments kept on
+    # lines of their own, one undo back.
+    for doc, want in (('\\section{Head}\n% a\n% b\nBody text.', '\\section{Head\n% a\n% b\nZBody text.}'),
+                      ('\\section{Head}\n% a\n\\noindent Body text.', '\\section{Head\n% a\nZBody text.}')):
+        load_doc(page, A(doc)); click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 200); page.keyboard.type('Z'); settle(page, 200)
+        got = src(page)
+        page.keyboard.press('Control+z'); page.keyboard.press('Control+z'); settle(page, 200)
+        check('review_joins: Backspace joins a paragraph after %s into the heading, one undo back' % ('two comment lines' if '% b' in doc else 'a comment and \\noindent'), got == A(want) and src(page) == A(doc), (got[40:], src(page)[40:]))
     load_doc(page, A('\\begin{quote}\nQ words. % c\n\\end{quote}\n\nAfter.')); click_text(page, 'After.', 0); page.keyboard.press('Backspace'); settle(page, 200)
     check('review_joins: and a paragraph joined into a quote ending in one', src(page) == A('\\begin{quote}\nQ words. % c\nAfter.\n\\end{quote}'), src(page)[40:])
     V = A('\\section{Head}\nBody \\verb|x|.')

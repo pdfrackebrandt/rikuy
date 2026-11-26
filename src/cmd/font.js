@@ -849,6 +849,9 @@ export const methods = {
   // one step of history. Where B2 cannot read the paragraph (a heading, a list item) an alignment
   // or spacing environment holding it alone still goes, as before.
   clearFormatting(all) {
+    // (Ctrl+Space at inline code's very end: out of the code, what is typed next plain, as Word
+    // leaves a run's format; it said "Nothing to clear here", src/app.js codeStepOut)
+    if (!all && this.codeStepOut && this.codeStepOut()) return true;
     const at = this.ribbonAt();
     const p = all && at && this.paraUnits ? this.paraUnits(at) : null;
     const para = !!p && !p.why && !p.float && p.units.length > 0;

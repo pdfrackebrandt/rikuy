@@ -52,7 +52,8 @@ Map NAMES;
 Text namedText;
 struct Named { const char *name; int32_t flag; };
 const Named NAMED[] = {
-  { "begin", F_BEGIN }, { "end", F_END }, { "verb", F_VERB }, { "def", F_TEXDEF }, { "gdef", F_TEXDEF },
+  { "begin", F_BEGIN }, { "end", F_END }, { "verb", F_VERB }, { "lstinline", F_VERB }, { "mintinline", F_VERB },
+  { "def", F_TEXDEF }, { "gdef", F_TEXDEF },
   { "edef", F_TEXDEF }, { "xdef", F_TEXDEF }, { "let", F_LET }, { "DeclareMathOperator", F_DMO },
   { "newtheorem", F_NEWTHM }, { "tikzstyle", F_TIKZ },
 };
@@ -239,6 +240,14 @@ struct Parser {
     int q = 0;
     for (; lit[q]; q++) if (a + q >= b || src[a + q] != (unsigned char)lit[q]) return false;
     return a + q == b;
+  }
+  // where an argument given between two of one character (\url|..|) ends on its line, or -1
+  // (parser.js delimEnd)
+  int delimEnd(int a) const {
+    int d = at(a);
+    if (d < 33 || d > 126 || isLetter(d) || (d >= '0' && d <= '9') || d == '{' || d == '}' || d == '[' || d == ']' || d == '\\' || d == '%') return -1;
+    for (int k = a + 1; k < n && src[k] != '\n'; k++) if (src[k] == d) return k;
+    return -1;
   }
   // src.indexOf(c, from) for one code unit
   int indexOf(int c, int from) const {
@@ -539,6 +548,14 @@ struct Parser {
         } else if (src[i] == '}' || src[i] == ']' || (src[i] == '\\' && startsWith("\\end", i) && !isLetter(at(i + 4)))) {
           o.push(A_NULL); o.inc(argc);
           i = save;
+        } else if (kind == 'v' && delimEnd(i) >= 0) {
+          // \url|a%b|: between two of one character on its line (parser.js: the same)
+          int s = i, k = delimEnd(i);
+          i = k + 1;
+          o.push(A_RAW); o.push(s); o.push(i); o.push(s + 1); o.push(k);
+          o.inc(argc);
+          acc.allNull = false;
+          if (i > acc.maxE) acc.maxE = i;
         } else if (src[i] == '\\') {
           int s = i;
           o.push(A_SINGLE); o.push(s);
@@ -631,13 +648,48 @@ struct Parser {
       o.push(N_MATH); o.push(s); o.push(i); o.push(ne); o.push(k); o.push(paren ? 0 : 1); o.push(paren ? 2 : 3);
       return { N_MATH, i };
     }
+    // \lstinline and \mintinline as \verb, after their [options] and minted's {language}, spaces
+    // before those skipped; their code in braces too (listings: to the first }, minted: to the one
+    // that balances); the code ends at its line's end at the latest (parser.js: the same)
     if (cls & F_VERB) {
-      int d = at(ne);
+      bool code = !sliceIs(ns, nameE, "verb"), mint = sliceIs(ns, nameE, "mintinline");
+      int a = ne;
+      auto sp = [&]() { if (code) while (at(a) == ' ' || at(a) == '\t') a++; };
+      sp();
+      if (code && at(a) == '[') {
+        // (a blank line ends them unclosed: parser.js)
+        int depth = 0, k = a + 1;
+        for (; k < n; k++) {
+          if (src[k] == '{') depth++; else if (src[k] == '}') depth--; else if (src[k] == ']' && depth <= 0) break;
+          else if (src[k] == '\n') { int z = k + 1; while (z < n && (src[z] == ' ' || src[z] == '\t' || src[z] == '\r')) z++; if (z >= n || src[z] == '\n') { k = n; break; } }
+        }
+        if (k >= n) { i = ne; head(ns, nameE, s, ge, ne, star); return { N_CMD, ge }; }
+        a = k + 1; sp();
+      }
+      if (mint) {
+        int k = at(a) == '{' ? a + 1 : n;
+        while (k < n && src[k] != '}' && src[k] != '\n') k++;
+        if (k >= n || src[k] != '}') { i = ne; head(ns, nameE, s, ge, ne, star); return { N_CMD, ge }; }
+        a = k + 1; sp();
+      }
+      int d = at(a);
       if (d < 0 || isLetter(d) || isWS(d)) { i = ne; head(ns, nameE, s, ge, ne, star); return { N_CMD, ge }; }
-      int k = indexOf(d, ne + 1);
-      int end = k < 0 ? n : k;
-      i = end + 1 < n ? end + 1 : n;
-      o.push(N_VERB); o.push(s); o.push(i); o.push(ne + 1); o.push(end);
+      // (one pass to the closing character or the line's end, whichever comes first)
+      int close = code && d == '{' && !mint ? '}' : d;
+      bool bal = code && d == '{' && mint;
+      int end = -1, eol = a + 1, depth = 1;
+      for (; eol < n && src[eol] != '\n'; eol++) {
+        if (bal) { if (src[eol] == '{') depth++; else if (src[eol] == '}' && --depth == 0) { end = eol; break; } }
+        else if (src[eol] == close) { end = eol; break; }
+      }
+      if (end < 0) {
+        int z = eol > a + 1 && src[eol - 1] == '\r' ? eol - 1 : eol;
+        i = z;
+        o.push(N_VERB); o.push(s); o.push(z); o.push(a + 1); o.push(z);
+        return { N_VERB, i };
+      }
+      i = end + 1;
+      o.push(N_VERB); o.push(s); o.push(i); o.push(a + 1); o.push(end);
       return { N_VERB, i };
     }
     if (cls & F_DEF) return parseDef(ns, nameE, s, ge, ne, star);

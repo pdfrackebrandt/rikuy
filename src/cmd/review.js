@@ -38,6 +38,23 @@ import { spacingOnly } from '../diff.js';
 import { kvGet, kvPut } from '../store.js';
 // (places as [block of the page, file, offset], compared in that order)
 const keyCmp = (a, b) => (a[0] - b[0]) || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0) || a[2] - b[2];
+// what a change does to the balance of braces: { counted up, } down, \{ and \} not, in the text
+// it puts back on Reject (a) against the text it holds now (b)
+const braceCount = (t) => { let n = 0; for (let i = 0; i < t.length; i++) { if (t[i] === '\\') i++; else if (t[i] === '{') n++; else if (t[i] === '}') n--; } return n; };
+const braceNet = (c) => braceCount(c.a) - braceCount(c.b);
+// for each brace of t, where the brace TeX pairs it with stands (-1: none, or no brace); \{ and \}
+// are characters, and a comment's braces are nothing
+const braceMates = (t) => {
+  const m = new Int32Array(t.length).fill(-1), st = [];
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (ch === '\\') { i++; continue; }
+    if (ch === '%') { const n = t.indexOf('\n', i); if (n < 0) break; i = n; continue; }
+    if (ch === '{') st.push(i);
+    else if (ch === '}' && st.length) { const o = st.pop(); m[o] = i; m[i] = o; }
+  }
+  return m;
+};
 
 const SPELL = typeof __RIKUY_SPELL__ === 'undefined' ? null : __RIKUY_SPELL__;
 const reviewOpen = () => document.body.classList.contains('nav-on');
@@ -673,18 +690,68 @@ export const methods = {
     this.restoreCaret(x.be > x.bs ? { f: x.f, p: x.be, selA: x.bs, selB: x.be } : { f: x.f, p: x.bs }, true);
     return x;
   },
+  // The changes one edit made, taken as one: a heading joined to the paragraph below it carries
+  // its closing brace to the paragraph's end, two changes in the text, and Reject on the first put
+  // the brace back and left the other, \section{Head}\nBody text.} (TeX's Extra }). The changes
+  // are a difference of two texts and keep no record of the edit that made them, so what ties
+  // them is the braces themselves: a brace a change takes out or puts in whose partner (the brace
+  // TeX pairs it with, in the old text or the new) is one another change takes out or puts in.
+  // Never the nearest change: two joins, or a word typed in between, are each their own.
+  changeGroup(x) {
+    if (!braceNet(x)) return [x];
+    // (every change of the file, spacing ones too: each moves the places after it)
+    const all = this.currentChanges().filter((y) => y.f === x.f).sort((p, q) => p.bs - q.bs || p.as - q.as);
+    const cur = this.src(x.f), base = (this.base && this.base.files.get(x.f)) ?? '';
+    const mc = braceMates(cur), mb = braceMates(base);
+    // (a place in text no change touches, from one side to the other; -1 inside a change)
+    const across = (q, toCur) => {
+      let d = 0;
+      for (const y of all) {
+        const [s, e, s2, e2] = toCur ? [y.as, y.ae, y.bs, y.be] : [y.bs, y.be, y.as, y.ae];
+        if (e <= q) d += (e2 - s2) - (e - s);
+        else if (s <= q) return -1;
+        else break;
+      }
+      return q + d;
+    };
+    const inCur = (q) => all.find((y) => y.bs <= q && q < y.be), inBase = (q) => all.find((y) => y.as <= q && q < y.ae);
+    const out = [x], has = (y) => out.some((z) => z.bs === y.bs && z.be === y.be && z.as === y.as);
+    for (let k = 0; k < out.length && out.length < 8; k++) {
+      const c = out[k], add = (y) => { if (y && !has(y)) out.push(y); };
+      for (let p = c.bs; p < c.be; p++) {
+        const q = mc[p];
+        if (q < 0 || (q >= c.bs && q < c.be)) continue;
+        const y = inCur(q);
+        if (y) { add(y); continue; }
+        const q0 = across(q, false), r = q0 < 0 ? -1 : mb[q0];
+        if (r >= 0) add(inBase(r));
+      }
+      for (let p = c.as; p < c.ae; p++) {
+        const q = mb[p];
+        if (q < 0 || (q >= c.as && q < c.ae)) continue;
+        const y = inBase(q);
+        if (y) { add(y); continue; }
+        const q1 = across(q, true), r = q1 < 0 ? -1 : mc[q1];
+        if (r >= 0) add(inCur(r));
+      }
+    }
+    return out;
+  },
   acceptHere(next) {
     const x = this.changeHere() || this.gotoChange(1);
     if (!x) return;
     const at = { f: x.f, p: x.be, collapsed: true };
-    this.acceptChanges([x]);
+    this.acceptChanges(this.changeGroup(x));
     if (next && this.realChanges().length) this.gotoChange(1, at);
   },
   rejectHere(next) {
     const x = this.changeHere() || this.gotoChange(1);
     if (!x) return;
-    const at = { f: x.f, p: x.bs + x.a.length, collapsed: true };
-    this.rejectChanges([x]);
+    const G = this.changeGroup(x);
+    // (where x's text ends once the changes before it in the group are put back too)
+    const moved = G.reduce((d, y) => d + (y.be <= x.bs ? y.a.length - (y.be - y.bs) : 0), 0);
+    const at = { f: x.f, p: x.bs + moved + x.a.length, collapsed: true };
+    this.rejectChanges(G, null, true);
     if (next && this.realChanges().length) this.gotoChange(1, at);
   },
   // Show Markup's Specific People: All Reviewers, and each person whose changes wait

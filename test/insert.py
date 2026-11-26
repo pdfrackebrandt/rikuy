@@ -1073,6 +1073,118 @@ def hunt_c(page):
     load_doc(page, W('Run \\texttt{print x} now.')); click_text(page, 'print', 5)
     page.keyboard.type(" 'a' \"b\""); settle(page, 300)
     check('quotes typed in \\texttt stay straight', '\\texttt{print \'a\' "b" x}' in src(page), src(page)[40:120])
+    # (round 4) inline code with a % in it keeps the rest of its line on the page, and its code is
+    # typed in where it stands (read as \verb is, it had become an atom a letter went past)
+    load_doc(page, W('Run \\lstinline{mycode} and \\lstinline|x % 2| for odd.\nNext \\url|a%b| words.'))
+    shown = page.evaluate("document.querySelector('#pages .flow .it').textContent")
+    click_text(page, 'mycode', 3); page.keyboard.type('X'); settle(page, 200)
+    check('inline code with a %: the line\'s words after it drawn, its code typed in where it stands', 'for odd.' in shown and 'Next' in shown and 'words.' in shown and '\\lstinline{mycXode}' in src(page), (shown, src(page)[40:140]))
+    # (review of round 4) what is typed in that code is the code's own, as typed: escaped as prose a _
+    # printed its backslash, $ opened a formula, \ the command list, and \} ended the code (Extra }).
+    # The character that would end it (its delimiter, or }) is refused.
+    for doc, at, typed, want in (('Use \\lstinline{abcd} here.', 'abcd', '_%$\\~', '\\lstinline{ab_%$\\~cd}'), ('Use \\lstinline{abcd} here.', 'abcd', '}', '\\lstinline{abcd}'),
+                                 ('Use \\lstinline|abcd| here.', 'abcd', '|}', '\\lstinline|ab}cd|'), ('Use \\mintinline{r}{abcd} here.', 'abcd', '}%', '\\mintinline{r}{ab%cd}')):
+        load_doc(page, W(doc)); click_text(page, at, 2); page.keyboard.type(typed); settle(page, 200)
+        opened = page.evaluate('!!window.rikuy.pop')
+        if opened: page.keyboard.press('Escape'); settle(page, 100)
+        check('typed in inline code: %r as the code\'s own, its closing character refused' % typed, want in src(page) and not opened, src(page)[40:120])
+    # (review of round 4) a way out of inline code that ends a paragraph, as Word leaves a run's
+    # format: its closing character typed at its end, End, Right and Ctrl+Space put the caret just
+    # after the code, the next letters outside it (they all stayed in it, or Right went to the next
+    # paragraph); typing at the code's end without them still goes on in the code
+    E2 = 'Use \\lstinline{abcd}\n\nNext.'
+    for keys, at in ((['}'], ('abcd', 4)), (['End'], ('Use', 1)), (['ArrowRight'], ('abcd', 4)), (['Control+Space'], ('abcd', 4)), ([], ('abcd', 4))):
+        load_doc(page, W(E2)); click_text(page, *at)
+        for k in keys:
+            if len(k) == 1: page.keyboard.type(k)
+            else: page.keyboard.press(k)
+            settle(page, 120)
+        page.keyboard.type('X'); settle(page, 200)
+        want = 'Use \\lstinline{abcdX}\n\nNext.' if not keys else 'Use \\lstinline{abcd}X\n\nNext.'
+        check('inline code ending a paragraph, %s then X: %r' % (' '.join(keys) or 'nothing', want), want in src(page), src(page)[40:120])
+    load_doc(page, W('Use \\lstinline|abcd|\n\nNext.')); click_text(page, 'abcd', 4); page.keyboard.type('|X'); settle(page, 200)
+    check('its | typed at the end of \\lstinline|..|: out of it, X after it', 'Use \\lstinline|abcd|X\n\nNext.' in src(page), src(page)[40:120])
+    # (review of round 4) an edit never takes part of inline code's syntax alone (src/codeguard.js):
+    # a selection from inside the code to past it keeps its closing | (typed over, deleted or cut,
+    # it went, and the code ran to the line's end); one that takes all the code's text with words
+    # outside it takes the whole run, no empty \lstinline|| left
+    for keys, at, want in ((['Shift+End', 'X'], ('abcd', 2), 'Use \\lstinline|abX|\n'), (['Shift+End', 'Delete'], ('abcd', 2), 'Use \\lstinline|ab|\n'),
+                           (['Shift+End', 'Control+x'], ('abcd', 2), 'Use \\lstinline|ab|\n'), (['Shift+Home', 'X'], ('abcd', 4), '\nX\n\nNext.')):
+        load_doc(page, W('Use \\lstinline|abcd|\n\nNext.')); click_text(page, *at)
+        for k in keys:
+            if len(k) == 1: page.keyboard.type(k)
+            else: page.keyboard.press(k)
+            settle(page, 120)
+        check('in \\lstinline|abcd| then %s: %r' % (' '.join(keys), want), want in src(page), src(page)[40:120])
+    # (review of round 4) after a way out at a paragraph's end the caret is a place of its own, after
+    # the code: Delete joins the next paragraph (it took its first letter), Backspace takes the
+    # code's last letter (it took the closing |), Shift+Home selects the line; Left goes back to
+    # the code's end (it went before its last letter)
+    for keys, want in ((['End', 'Delete'], 'Use \\lstinline|abcd| Next.'), (['End', 'Backspace'], 'Use \\lstinline|abc|\n\nNext.'), (['End', 'Shift+Home', 'X'], '\nX\n\nNext.')):
+        load_doc(page, W('Use \\lstinline|abcd|\n\nNext.')); click_text(page, 'abcd', 4)
+        for k in keys:
+            if len(k) == 1: page.keyboard.type(k)
+            else: page.keyboard.press(k)
+            settle(page, 120)
+        check('after End out of \\lstinline|abcd| at a paragraph\'s end, %s: %r' % (' '.join(keys[1:]), want), want in src(page), src(page)[40:120])
+    # (review of round 4) the code's last letter deleted leaves the run, empty; only a delete more
+    # takes the empty run (End, X and two Backspaces took the whole \lstinline|abcd|)
+    def press(ks):
+        for k in ks:
+            if len(k) == 1: page.keyboard.type(k)
+            else: page.keyboard.press(k)
+            settle(page, 120)
+    load_doc(page, W('Use \\lstinline|abcd|\n\nNext.')); click_text(page, 'abcd', 4); press(['End', 'X', 'Backspace', 'Backspace'])
+    check('End, X and two Backspaces at a paragraph\'s end after \\lstinline|abcd|: the X and the d go, the code stays', 'Use \\lstinline|abc|\n\nNext.' in src(page), src(page)[40:120])
+    load_doc(page, W('Use \\lstinline|ab| here.')); click_text(page, 'ab', 2); press(['Backspace', 'Backspace'])
+    kept = src(page)
+    press(['Backspace'])
+    check('Backspace over the code\'s letters leaves \\lstinline|| until one Backspace more takes it', 'Use \\lstinline|| here.' in kept and 'Use  here.' in src(page), (kept[40:100], src(page)[40:100]))
+    # (review of round 4) commands that act on a selection reach the code through the same guard:
+    # Ctrl+B over code wrote \textbf{ in it and } after it, Replace All took the closing |
+    SEL = """([a, z]) => { const w = document.createTreeWalker(document.getElementById('pages'), NodeFilter.SHOW_TEXT); const ns = []; for (let n; (n = w.nextNode());) if (n.data.trim()) ns.push(n);
+      const na = ns.find((n) => n.data.includes(a)), nz = a === z ? na : ns.find((n) => n !== na && n.data.includes(z));
+      const r = document.createRange(); r.setStart(na, na.data.indexOf(a)); r.setEnd(nz, nz.data.indexOf(z) + z.length); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); return true; }"""
+    for a, z in (('cd', ' here'), ('bc', 'bc')):
+        load_doc(page, W('Use \\lstinline|abcd| here.')); before = src(page); page.evaluate("document.getElementById('toast').textContent = ''"); page.evaluate(SEL, [a, z]); settle(page, 60); press(['Control+b'])
+        check('Ctrl+B over %r of \\lstinline|abcd| here: the source unchanged, a toast says why' % (a + '..' + z if a != z else a), src(page) == before and 'no formatting' in page.inner_text('#toast'), (src(page)[40:120], page.inner_text('#toast')[:80]))
+    load_doc(page, W('Use \\lstinline|abcd| here.'))
+    page.evaluate("() => { const g = window.rikuy; g.findSet({ q: 'cd here', rep: 'Z', o: { matchCase: true, wholeWord: false, wildcards: false, regex: false, source: false, insel: false, fmt: 0 } }); g.replaceAll(); }"); settle(page, 200)
+    check('Replace All of "cd here" by Z across the code\'s end: the code keeps its closing |', 'Use \\lstinline|abZ|.' in src(page), src(page)[40:120])
+    # (review of round 4) words put over a selection that leaves the code land in the prose and
+    # are written as prose there; code's letters dragged or copied go in their run (from the code's
+    # start or end into the words after it, a pasted p_q went into the paragraph raw, TeX's Missing
+    # $; a dragged %>% of \lstinline ended the paragraph's line)
+    SEL2 = """([a, ao, z, zo]) => { const w = document.createTreeWalker(document.getElementById('pages'), NodeFilter.SHOW_TEXT); const ns = []; for (let n; (n = w.nextNode());) if (n.data.trim()) ns.push(n);
+      const na = ns.find((n) => n.data.includes(a)), nz = ns.find((n) => n !== na && n.data.includes(z));
+      const r = document.createRange(); r.setStart(na, na.data.indexOf(a) + ao); r.setEnd(nz, nz.data.indexOf(z) + zo); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); return true; }"""
+    PASTE2 = "(t) => { const d = new DataTransfer(); d.setData('text/plain', t); document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', {clipboardData: d, bubbles: true, cancelable: true})); }"
+    for sel, how, want in ((['abcd', 0, ' here', 6], 'from the code\'s start', 'Use p\\_q\n'), (['abcd', 4, ' here', 5], 'from the code\'s end', 'Use \\lstinline|abcd|p\\_q.')):
+        load_doc(page, W('Use \\lstinline|abcd| here.')); page.evaluate(SEL2, sel); settle(page, 60); page.evaluate(PASTE2, 'p_q'); settle(page, 200)
+        check('p_q pasted over a selection %s into the words after it: in the prose, as prose (\\_)' % how, want in src(page), src(page)[40:120])
+    load_doc(page, W('Use \\lstinline|abcd| here.')); page.evaluate(SEL2, ['abcd', 2, ' here', 5]); settle(page, 60)
+    got = page.evaluate("() => window.rikuy.selectionLatex(window.rikuy.caretNow())")
+    check('the LaTeX a drag or a copy takes of "cd here": the code\'s letters in their run', got == '\\lstinline|cd| here', got)
+    # a delete the guard cuts to nothing says why (it did nothing, silently)
+    load_doc(page, W('Use \\mintinline{c}{a{b}c} here.')); before = src(page); page.evaluate("document.getElementById('toast').textContent = ''")
+    page.evaluate("() => { const g = window.rikuy, s = g.src('main.tex'), p = s.indexOf('{b}'); g.restoreCaret({ f: 'main.tex', p: p + 2, selA: p, selB: p + 2 }); }"); settle(page, 100); press(['Delete'])
+    check('Delete of "{b" in \\mintinline{c}{a{b}c}: nothing deleted, a toast says why', src(page) == before and 'braces' in page.inner_text('#toast'), (src(page)[40:120], page.inner_text('#toast')[:100]))
+    load_doc(page, W('Use \\lstinline|abcd| here.')); click_text(page, 'abcd', 4); page.keyboard.press('ArrowRight'); settle(page, 120); page.keyboard.press('ArrowLeft'); settle(page, 120); page.keyboard.type('X'); settle(page, 200)
+    check('Right out of the code, then Left: back at its end, X in the code after its last letter', '\\lstinline|abcdX| here.' in src(page), src(page)[40:120])
+    # pasted words go in as typed (escaped as prose, \} ended the code); words with its closing
+    # character are refused
+    PASTE = "(t) => { const d = new DataTransfer(); d.setData('text/plain', t); document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', {clipboardData: d, bubbles: true, cancelable: true})); }"
+    for doc, text, want in (('Use \\lstinline{abcd} here.', 'a_b%c', '\\lstinline{aba_b%ccd}'), ('Use \\lstinline{abcd} here.', 'x}y', '\\lstinline{abcd}'), ('Use \\lstinline|abcd| here.', 'p|q', '\\lstinline|abcd|')):
+        load_doc(page, W(doc)); click_text(page, 'abcd', 2); page.evaluate(PASTE, text); settle(page, 200)
+        check('pasted in inline code: %r as the code\'s own, or refused where it would end it' % text, want in src(page), src(page)[40:120])
+    # (review of round 4) AutoCorrect leaves inline code alone: ... typed there wrote \ldots{}
+    load_doc(page, W('Use \\lstinline{abcd} here.')); click_text(page, 'abcd', 2); page.keyboard.type('x...'); settle(page, 200)
+    check('AutoCorrect leaves inline code alone: ... stays three dots', '\\lstinline{abx...cd}' in src(page), src(page)[40:120])
+    # (review of round 4) minted's braces balance: {} typed in its code go in, a } that would close
+    # its own brace is refused, one typed at its end steps out
+    for typed, off, want in (('{}', 2, '\\mintinline{c}{ab{}cd} here'), ('}', 2, '\\mintinline{c}{abcd} here'), ('}X', 4, '\\mintinline{c}{abcd}X here')):
+        load_doc(page, W('Use \\mintinline{c}{abcd} here.')); click_text(page, 'abcd', off); page.keyboard.type(typed); settle(page, 200)
+        check('typed in \\mintinline{c}{..}: %r' % typed, want in src(page), src(page)[40:120])
     # and in every verbatim context: what a ' becomes there, as the page would write it
     vb = W('A \\verb|v1 x| B \\lstinline{l1 x} C \\url{u1 x} D \\texttt{t1 \\textbf{b} x} E\n\\begin{verbatim}\nvb1 x\n\\end{verbatim}\n\\begin{lstlisting}\nls1 x\n\\end{lstlisting}\nAfter x1 y.')
     load_doc(page, vb)
@@ -1105,7 +1217,190 @@ def hunt_c(page):
     check('AutoCorrect: "i" typed at the end of Italian words stays', '{Ciao i }' in src(page) or '{Ciao i} ' in src(page), src(page)[60:160])
 
 
-EXTRA = [hunt, hunt_c, clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]
+def code_ok(body, prose=False):
+    """Whether every \verb, \lstinline and \mintinline of body reads as TeX reads it, closed on its
+    line, and the braces outside their code balance (what codeRuns in src/codeguard.js reads);
+    prose: also no _, ^, #, & or % outside the code unescaped (a body with no formula or comment:
+    a pasted p_q went into the paragraph raw, TeX's Missing $)."""
+    import re
+    depth = 0
+    for line in body.split('\n'):
+        i = 0
+        while i < len(line):
+            c = line[i]
+            if prose and c in '_^#&%':
+                return False
+            if c == '%':
+                break
+            if c == '\\':
+                m = re.match(r'\\(verb|lstinline|mintinline)(?![A-Za-z])\*?', line[i:])
+                if not m:
+                    i += 2
+                    continue
+                name, p = m.group(1), i + len(m.group(0))
+                code = name != 'verb'
+                if code:
+                    while p < len(line) and line[p] in ' \t': p += 1
+                    if p < len(line) and line[p] == '[':
+                        q = line.find(']', p)
+                        if q < 0: return False
+                        p = q + 1
+                if name == 'mintinline':
+                    if p >= len(line) or line[p] != '{' or line.find('}', p) < 0: return False
+                    p = line.find('}', p) + 1
+                if p >= len(line) or line[p].isalpha() or line[p].isspace(): return False
+                d = line[p]
+                if code and d == '{' and name == 'mintinline':
+                    k, dep = p + 1, 1
+                    while k < len(line):
+                        if line[k] == '{': dep += 1
+                        elif line[k] == '}':
+                            dep -= 1
+                            if dep == 0: break
+                        k += 1
+                else:
+                    k = line.find('}' if (code and d == '{') else d, p + 1)
+                if k < 0 or k >= len(line): return False
+                i = k + 1
+                continue
+            if c == '{': depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth < 0: return False
+            i += 1
+    return depth == 0
+
+
+def code_fuzz(page):
+    """(review of round 4) inline code's syntax under random edits: random selections and carets over
+    paragraphs holding \lstinline, \mintinline, \verb and \texttt runs, then typing, Delete,
+    Backspace, Enter, a cut, a paste, Ctrl+B or Ctrl+I, Replace All of a piece of the text, or a
+    drag of the selection to another place, sometimes after a key that moves (End, Home, arrows,
+    Shift with them) and sometimes followed by X and two Backspaces. Every result keeps each run
+    closed on its line and the braces beside them balanced; a lone Backspace or Delete at a caret
+    takes at most one letter of the page (it took a whole run once); Undo gives the source back
+    byte for byte; no _, ^, #, & or % is left bare in the prose (a body with no formula or
+    comment); with dist/tex a sample of the results compiles. The seed is CODE_FUZZ_SEED, or
+    the commit's (GITHUB_SHA), printed with a failure so it is found again; and always 153620966,
+    whose Shift+End and paste from the code's start wrote p_q raw into the paragraph."""
+    seeds = [int(os.environ['CODE_FUZZ_SEED'])] if os.environ.get('CODE_FUZZ_SEED') else [153620966, int((os.environ.get('GITHUB_SHA') or '4')[:8], 16)]
+    for seed in seeds:
+        code_fuzz_seed(page, seed)
+
+
+def code_fuzz_seed(page, seed):
+    import random
+    rnd = random.Random(seed)
+    body = ('Use \\lstinline|ab cd| here and \\verb|x_y| too, then \\lstinline{gh ij}\n\n'
+            'Then \\mintinline{py}|f(x)| and \\texttt{tt w} end \\lstinline[language=R]{df %>% q}\n\n'
+            'Also \\mintinline{c}{p{q}r} last \\verb+k%l+ words.')
+    D = '\\documentclass{article}\n\\usepackage{listings}\n\\usepackage{minted}\n\\begin{document}\n' + body + '\n\\end{document}\n'
+    POS = """(r) => { const ts = []; const w = document.createTreeWalker(document.querySelector('#pages .flow'), NodeFilter.SHOW_TEXT);
+      for (let t; (t = w.nextNode());) if (t.parentElement.closest('span.t') && !t.parentElement.closest('.gh') && t.data.length) ts.push(t);
+      const pick = (x) => { const t = ts[Math.floor(x[0] * ts.length) % ts.length]; return [t, Math.floor(x[1] * (t.data.length + 1))]; };
+      const [a, ao] = pick(r[0]), [b, bo] = pick(r[1]); document.getElementById('pages').focus();
+      const s = getSelection(); s.removeAllRanges(); s.collapse(a, ao); if (r[2]) s.extend(b, bo); return true; }"""
+    PASTE = "(t) => { const d = new DataTransfer(); d.setData('text/plain', t); document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', {clipboardData: d, bubbles: true, cancelable: true})); }"
+    SEEN = "() => [...document.querySelectorAll('#pages .flow > .it')].map((x) => x.textContent).join('').length"
+    DRAG = """(r) => { const g = window.rikuy, c = g.caretNow(); if (!c || c.collapsed) return false; const latex = g.selectionLatex(c); if (!latex) return false;
+      const M = { f: c.f, a: c.a, b: c.b, latex, src: g.src(c.f), wraps: [] };
+      const ts = [...document.querySelectorAll('#pages .flow span.t')].filter((x) => x.firstChild && x.firstChild.nodeType === 3); const t = ts[Math.floor(r[0] * ts.length) % ts.length].firstChild;
+      getSelection().collapse(t, Math.floor(r[1] * (t.data.length + 1))); const d = g.caretNow(); if (!d) return false; g.moveSource(M, { f: d.f, p: d.a }); return true; }"""
+    REPALL = """(q) => { const g = window.rikuy; g.findSet({ q, rep: 'Z', o: { matchCase: true, wholeWord: false, wildcards: false, regex: false, source: false, insel: false, fmt: 0 } }); g.replaceAll(); return true; }"""
+    bad, undone, seen, greedy = [], [], [], []
+    for k in range(int(os.environ.get('CODE_FUZZ_N', '48'))):
+        load_doc(page, D)
+        sel = rnd.random() < 0.6
+        page.evaluate(POS, [[rnd.random(), rnd.random()], [rnd.random(), rnd.random()], sel])
+        settle(page, 60)
+        steps = [] if sel else [rnd.choice(['End', 'Home', 'ArrowRight', 'ArrowLeft', 'Shift+End', 'Shift+Home', 'Shift+ArrowRight', 'Shift+ArrowLeft', 'End', 'ArrowRight', None, None])]
+        steps = [x for x in steps if x]
+        act = rnd.choice(['type', 'Delete', 'Backspace', 'cut', 'paste', 'type', 'Enter', 'bold', 'italic', 'replace-all', 'drag', 'Backspace', 'Delete'])
+        for st in steps:
+            page.keyboard.press(st); settle(page, 60)
+        lone = act in ('Delete', 'Backspace') and page.evaluate('getSelection().isCollapsed')
+        n0 = page.evaluate(SEEN)
+        if act == 'type': page.keyboard.type('X')
+        elif act == 'paste': page.evaluate(PASTE, 'p_q')
+        elif act == 'cut': page.keyboard.press('Control+x')
+        elif act == 'bold': page.keyboard.press('Control+b')
+        elif act == 'italic': page.keyboard.press('Control+i')
+        elif act == 'replace-all':
+            words = body.replace('\\', ' ').replace('{', ' ').replace('}', ' ').replace('|', ' ')
+            i = rnd.randrange(0, len(words) - 6)
+            page.evaluate(REPALL, words[i:i + rnd.randint(2, 6)])
+        elif act == 'drag': page.evaluate(DRAG, [rnd.random(), rnd.random()])
+        else: page.keyboard.press(act)
+        settle(page, 150)
+        if lone and n0 - page.evaluate(SEEN) > 1:
+            greedy.append(('%d: %s %s' % (k, ' '.join(steps), act), n0 - page.evaluate(SEEN)))
+        more = rnd.random() < 0.3
+        if more:
+            page.keyboard.type('X'); settle(page, 80)
+            for _ in range(2): page.keyboard.press('Backspace'); settle(page, 80)
+        got = src(page)
+        what = 'seed %d, %d: %s %s%s' % (seed, k, ' '.join(steps) or ('selection' if sel else 'caret'), act, ', X and two Backspaces' if more else '')
+        if not code_ok(got[got.find('{document}') + 10:got.rfind('\\end{document}')], prose=True):
+            bad.append((what, got[got.find('{document}') + 11:got.rfind('\\end{document}')]))
+        elif got != D and got not in seen:
+            seen.append(got)
+        for _ in range(6):
+            if src(page) == D: break
+            page.keyboard.press('Control+z'); settle(page, 120)
+        if src(page) != D:
+            undone.append((what, src(page)[60:200]))
+    check('code fuzz (seed %d): every random edit leaves each inline code run closed and the braces balanced (%d edits)' % (seed, k + 1), not bad, bad[:3])
+    check('code fuzz (seed %d): a lone Backspace or Delete takes at most one letter of the page' % seed, not greedy, greedy[:3])
+    check('code fuzz (seed %d): Undo gives each source back byte for byte' % seed, not undone, undone[:3])
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')) and seen:
+        page.set_default_timeout(600000)
+        failed = []
+        for t in seen[::max(1, len(seen) // 6)][:6]:
+            r = page.evaluate("""async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile();
+              return { ok: r.ok, errors: (r.problems || []).filter((x) => x.severity === 'error').map((x) => x.message).slice(0, 2) }; }""", t)
+            if not r['ok'] or r['errors']: failed.append((t[60:200], r))
+        page.set_default_timeout(30000)
+        check('code fuzz (seed %d): a sample of the results compiles in the page' % seed, not failed, failed[:2])
+
+
+def code_commands(page):
+    """(review of round 4) every command of the registry over inline code: with a selection that
+    reaches from a run's code to the words after it, and one inside the code, each command that
+    can run there (all but those that leave the document, open a file or a network, or replace it
+    whole) is run, its dialog or menu closed; the source keeps every run closed on its line and the
+    braces beside them balanced. Ctrl+B there wrote \textbf{ into the code and } after it (Extra }),
+    Replace All took the closing | (the code ran to the line's end)."""
+    D = W('Use \\lstinline|abcd| here and \\verb|xy| too.\n\nThen \\mintinline{py}|f(x)| end.')
+    skip = re.compile(r'(^|-)(download|export|share|publish|upload|push|pull|clone|email|send|print|open|save|recent|new|template|sample|git|version|versions|restore|compare|import|close|remove|rename|project|install|offline|help|tour|learn|compile|pdf|engine|word|quit|reload|fullscreen|focus|read)(-|$)')
+    ids = page.evaluate("() => window.rikuy.cmds.commands().filter((c) => c.run).map((c) => c.id)")
+    sels = (("cd", " here"), ("bc", "bc"))
+    SEL = """([a, z]) => { const w = document.createTreeWalker(document.getElementById('pages'), NodeFilter.SHOW_TEXT); const ns = []; for (let n; (n = w.nextNode());) if (n.data.trim()) ns.push(n);
+      const na = ns.find((n) => n.data.includes(a)), nz = a === z ? na : ns.find((n) => n !== na && n.data.includes(z));
+      const r = document.createRange(); r.setStart(na, na.data.indexOf(a)); r.setEnd(nz, nz.data.indexOf(z) + z.length); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); return true; }"""
+    broken, ran = [], 0
+    page.on('dialog', lambda d: d.dismiss())
+    for cid in ids:
+        if skip.search(cid):
+            continue
+        for a, z in sels:
+            load_doc(page, D)
+            page.evaluate(SEL, [a, z]); settle(page, 40)
+            try:
+                r = page.evaluate("(id) => { try { return !!window.rikuy.runCommand(id); } catch (e) { return 'threw ' + e.message; } }", cid)
+            except Exception as e:
+                r = 'failed ' + str(e)[:60]
+            if r: ran += 1
+            for _ in range(2):
+                page.keyboard.press('Escape'); settle(page, 30)
+            got = src(page)
+            if not code_ok(got[got.find('{document}') + 10:got.rfind('\\end{document}')]):
+                broken.append((cid, a, got[got.find('{document}') + 11:got.rfind('\\end{document}')][:120]))
+    print('code_commands: %d commands, %d runs made' % (len(ids), ran))
+    check('every command run over inline code keeps its runs closed and the braces beside them balanced (%d runs)' % ran, not broken and ran > 50, broken[:4])
+
+
+
+EXTRA = [hunt, hunt_c, code_fuzz, code_commands, clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]
 
 if __name__ == '__main__':
     sys.exit(run())

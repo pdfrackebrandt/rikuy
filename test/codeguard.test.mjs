@@ -1,0 +1,48 @@
+// src/codeguard.js: inline code's syntax kept whole by edits made on the page (its header says why)
+import assert from 'node:assert/strict';
+import { codeRuns, keepCodeSyntax, proseAt } from '../src/codeguard.js';
+
+let n = 0;
+const ok = (name, fn) => { try { fn(); n++; } catch (e) { console.log('FAIL', name, e.message); process.exitCode = 1; } };
+const apply = (src, edits) => { let t = src; for (const ed of [...edits].sort((a, b) => b.s - a.s)) t = t.slice(0, ed.s) + ed.t + t.slice(ed.e); return t; };
+const run = (src, s, e, t) => { const files = new Map([['m', src]]); const r = keepCodeSyntax(files, [{ f: 'm', s, e, t }], { typing: true }); return { text: apply(src, r.edits), r }; };
+
+ok('runs read as the parser reads them', () => {
+  const s = 'a \\lstinline|x % y| b \\verb+q+ \\mintinline[o]{py}{f({})} \\lstinline{g {} h\n\\lstinline|open';
+  const R = codeRuns(s, 0, s.length).map((x) => [s.slice(x.S, x.is), s.slice(x.is, x.ie), s.slice(x.ie, x.E)]);
+  assert.deepEqual(R, [['\\lstinline|', 'x % y', '|'], ['\\verb+', 'q', '+'], ['\\mintinline[o]{py}{', 'f({})', '}'], ['\\lstinline{', 'g {', '}'], ['\\lstinline|', 'open', '']]);
+});
+const S = 'Use \\lstinline|abcd| here.';
+const at = (t) => S.indexOf(t);
+ok('a selection from inside the code to past it keeps the closing |', () => assert.equal(run(S, at('cd|'), at(' here') + 3, 'X').text, 'Use \\lstinline|abX|re.'));
+ok('one from before the run into its code keeps the opening', () => assert.equal(run(S, at('Use') + 2, at('cd|'), 'X').text, 'UsX\\lstinline|cd| here.'));
+ok('the closing | alone (Backspace after the code): the code\'s last letter', () => assert.equal(run(S, at('| here'), at(' here'), '').text, 'Use \\lstinline|abc| here.'));
+ok('the opening alone (Delete before the code): its first letter', () => assert.equal(run(S, at('\\lst'), at('\\lst') + 1, '').text, 'Use \\lstinline|bcd| here.'));
+ok('an empty code\'s closer: the whole run', () => assert.equal(run('Use \\lstinline|| here.', 15, 16, '').text, 'Use  here.'));
+const cmd = (src, edits) => { const files = new Map([['m', src]]); const r = keepCodeSyntax(files, edits.map(([s, e, t]) => ({ f: 'm', s, e, t })), {}); return { text: apply(src, r.edits), why: r.why }; };
+ok('a command\'s markup goes beside the code: Ctrl+B over "cd here" bolds " here"', () => assert.equal(cmd(S, [[at('cd|'), at('cd|'), '\\textbf{'], [at('.'), at('.'), '}']]).text, 'Use \\lstinline|abcd|\\textbf{ here}.'));
+ok('and over "Use ab" bolds "Use "', () => assert.equal(cmd(S, [[0, 0, '\\textbf{'], [at('cd|'), at('cd|'), '}']]).text, '\\textbf{Use }\\lstinline|abcd| here.'));
+ok('inside the code alone: nothing, said why', () => { const r = cmd(S, [[at('bc'), at('bc'), '\\textbf{'], [at('d|'), at('d|'), '}']]); assert.equal(r.text, S); assert.ok(r.why); });
+ok('plain words a command writes into the code go in', () => assert.equal(cmd(S, [[at('cd|'), at('cd|'), 'zz']]).text, 'Use \\lstinline|abzzcd| here.'));
+ok('a command\'s deletion of the closer alone takes the last letter', () => assert.equal(cmd(S, [[at('| here'), at('| here') + 1, '']]).text, 'Use \\lstinline|abc| here.'));
+ok('a { typed in minted\'s braced code goes in (its } comes with a later key)', () => assert.equal(run('a \\mintinline{c}{xy} b', 18, 18, '{').text, 'a \\mintinline{c}{x{y} b'));
+ok('a step that would unbalance the braces beside the code: nothing, said why', () => { const r = cmd(S, [[at('here'), at('here') + 4, '{']]); assert.equal(r.text, S); assert.ok(r.why); });
+ok('all of the code\'s text and more: the whole run, no empty shell', () => assert.equal(run(S, 0, at('| here'), 'X').text, 'X here.'));
+ok('inside the code, or the whole run, or outside it: as it came', () => {
+  for (const [s, e] of [[at('bc'), at('d|')], [at('\\lst'), at(' here')], [0, 3], [at('here'), S.length]]) { const r = run(S, s, e, 'X'); assert.equal(r.r.moved, null, S.slice(s, e)); }
+});
+ok('a join from the code\'s end: the closer stays', () => assert.equal(run('a \\lstinline|ab|\n\nNext.', 15, 18, '').text.replace(/\n/g, '/'), 'a \\lstinline|ab|Next.'));
+ok('the caret after the letters typed over a cut range', () => {
+  const r = run(S, at('cd|'), at(' here') + 3, 'X');
+  assert.equal(r.r.moved('m', at('cd|') + 1), at('cd|') + 1);
+});
+ok('\\verb and braces of minted the same', () => {
+  assert.equal(run('a \\verb|xy| b', 9, 12, 'Q').text, 'a \\verb|xQ|b');
+  assert.equal(run('a \\mintinline{c}{xy} b', 18, 22, '').text, 'a \\mintinline{c}{x}');
+});
+ok('where words over a range from inside code land: in the code, or the prose beside the run', () => {
+  // (inside, from after the first letter: the code; from its start past it: before the run, which
+  // goes whole; from its end: after the run)
+  assert.deepEqual([[at('bc'), at('d|')], [at('bc'), at('here')], [at('abcd'), at('here')], [at('| here'), at('here')], [0, 2]].map(([a, b]) => proseAt(S, a, b)), [-1, -1, at('\\lst'), at(' here'), -1]);
+});
+console.log('codeguard: ' + n + ' passed');

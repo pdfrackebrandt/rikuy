@@ -482,11 +482,12 @@ export const review = {
     if (this.markupOn()) this.marksSoon();
   },
 
-  rejectChanges(cs, label) {
+  // (one: the changes of one edit, rejected as one change: no version kept before them)
+  rejectChanges(cs, label, one) {
     // the list may be a moment behind the text: act only on changes still exactly there
     cs = cs.filter((c) => this.src(c.f).slice(c.bs, c.be) === c.b);
     if (!cs.length) { this.refreshNav(); return; }
-    if (cs.length > 1) this.snapshot(label || 'Before rejecting changes', { force: true });
+    if (cs.length > 1 && !one) this.snapshot(label || 'Before rejecting changes', { force: true });
     // (changes at one place of the text now, two authors' deletions side by side, go back as one
     // edit, their old words in their old order: as separate edits at one point the later went in
     // before the earlier, "\emph{examine" for "examine \emph{", where Reject one by one was right)
@@ -499,7 +500,7 @@ export const review = {
     this.commit(edits, null, 'reject');
     this.closeGroup();
     this.refreshNav();
-    if (cs.length === 1) this.goTo(cs[0].f, cs[0].bs);
+    if (cs.length === 1 || one) this.goTo(cs[0].f, cs[0].bs);
   },
 
   // the pane's "Show changes on the pages": All Markup or No Markup (Display for Review)
@@ -630,8 +631,9 @@ export const review = {
     const row = mk('div', 'chg-row');
     const kind = !c.a ? 'Added' : !c.b ? 'Deleted' : 'Changed';
     row.append(mk('span', 'where', kind + ' · ' + this.rvName(c.who) + ' · ' + c.f + ':' + c.line), mk('span', 'grow'),
-      mkBtn('Accept', () => this.acceptChanges([c]), 'Keep this change'),
-      mkBtn('Reject', () => this.rejectChanges([c]), 'Put the old text back'));
+      // (with the changes the same edit made, changeGroup: a heading's join is one change)
+      mkBtn('Accept', () => this.acceptChanges(this.changeGroup ? this.changeGroup(c) : [c]), 'Keep this change'),
+      mkBtn('Reject', () => this.rejectChanges(this.changeGroup ? this.changeGroup(c) : [c], null, true), 'Put the old text back'));
     it.append(txt, row);
     return it;
   },
