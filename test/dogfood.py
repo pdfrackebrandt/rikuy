@@ -475,6 +475,24 @@ def pdf_text(page):
     return ' '.join(pg.extract_text() or '' for pg in pypdf.PdfReader(io.BytesIO(base64.b64decode(b))).pages)
 
 
+def three(page, doc, name, want=()):
+    """doc compiled in the page with pdfLaTeX, XeLaTeX and LuaLaTeX (dist/tex): no error, and each of
+    want in the PDF's text (spaces aside), as the page draws it. Leaves the pdfLaTeX copy loaded."""
+    if not TEX:
+        return
+    import base64, io, re, pypdf
+    page.set_default_timeout(900000)
+    for eng in ('xelatex', 'lualatex', 'pdflatex'):
+        load_doc(page, ('% !TeX program = ' + eng + '\n' if eng != 'pdflatex' else '') + doc)
+        r = page.evaluate("""async () => { const r = await window.rikuy.api.compile(); let s = ''; if (r.pdf) { const u = new Uint8Array(r.pdf); for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode(...u.subarray(i, i + 8192)); }
+          return { ok: r.ok, errs: r.problems.filter((p) => p.severity === 'error').map((p) => p.message).slice(0, 3), pdf: s ? btoa(s) : '' }; }""")
+        text = ' '.join(pg.extract_text() or '' for pg in pypdf.PdfReader(io.BytesIO(base64.b64decode(r['pdf']))).pages) if r['pdf'] else ''
+        flat = re.sub(r'\s+', '', text)
+        miss = [w for w in want if re.sub(r'\s+', '', w) not in flat]
+        check(name + ' (' + eng + '): compiles with no error' + (', the PDF reads ' + ' / '.join(want) if want else ''), r['ok'] and not r['errs'] and not miss, (r['errs'], miss, text[:200]))
+    page.set_default_timeout(30000)
+
+
 def review2(page):
     """The second hostile review of PR 94 (E11 to E18, and what it saw in passing)."""
     k = page.keyboard
@@ -792,10 +810,12 @@ def real(page):
     compiles(page, 'real newlist')
     # marginnote's offset after its text (\marginnote{..}[0cm]) and a layout register's assignment
     # in the text (\columnseprule=.4pt) are no words of the page; they were drawn as "[0cm]", "=.4pt"
-    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,marginnote}').replace('Agent income here.', 'Agent income here.\\marginnote{A note.}[0cm] More.\n\n\\columnseprule=.4pt\n\\fboxsep=2pt Last words.'))
+    # (and its documented form, \\marginnote[left page's text]{text}[offset]: review B4)
+    Dm = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,marginnote}').replace('Agent income here.', 'Agent income here.\\marginnote{A note.}[0cm] More.\\marginnote[Left side]{Right side}[0cm] Words.\n\n\\columnseprule=.4pt\n\\fboxsep=2pt Last words.')
+    load_doc(page, Dm)
     txt = page.evaluate("document.getElementById('pages').innerText")
-    check('real: \\marginnote{..}[0cm] and \\columnseprule=.4pt draw no "[0cm]" or "=.4pt"', '[0cm]' not in txt and '=.4pt' not in txt and '=2pt' not in txt and 'fboxsep' not in txt and 'More.' in txt and 'Last words.' in txt, txt[:200])
-    compiles(page, 'real margin note')
+    check('real: \\marginnote{..}[0cm], \\marginnote[..]{..}[0cm] and \\columnseprule=.4pt draw no "[0cm]", "side" or "=.4pt"', '[0cm]' not in txt and 'side' not in txt and '=.4pt' not in txt and '=2pt' not in txt and 'fboxsep' not in txt and 'More.' in txt and 'Words.' in txt and 'Last words.' in txt, txt[:200])
+    three(page, Dm, 'real margin notes', ('A note.', 'Right side', 'Words.', 'Last words.'))
     # straight quotes typed in a German document: „..“, as Word's smart quotes make them in German;
     # they were English ``..'', which TeX prints “..” in the German text
     load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\usepackage[ngerman]{babel}').replace('Agent income here.', 'Das ist ein Text hier.'))

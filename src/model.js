@@ -3878,7 +3878,7 @@ class Builder {
     // vertical space inside a line (\title{\vspace{-1.5em}...}, a box's \smallskip) has no width: TeX
     // ends the paragraph or ignores it, and the page shows nothing either
     if (INVIS.has(name) || nd.def || name === 'vspace' || name === 'smallskip' || name === 'medskip' || name === 'bigskip') return false;
-    // (marginnote's \marginnote{text}[offset]: its offset after the text, drawn as words "[0cm]")
+    // (marginnote's \marginnote[left page's text]{text}[offset]: its offset after the text, drawn as words "[0cm]")
     if (name === 'marginpar' || name === 'todo' || name === 'marginnote') {
       acc.flush();
       const a = nd.args.find((x) => x && !x.o);
