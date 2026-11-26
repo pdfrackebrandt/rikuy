@@ -913,6 +913,18 @@ def real(page):
             r = page.evaluate("async () => { const r = await window.rikuy.api.compile(); return r.problems.filter((p) => p.severity === 'error').map((p) => p.message); }")
             t = pdf_text(page).replace('\n', ' ')
             check('real: and TeX (' + eng + ') says "Missing $ inserted" and sets the same', any('Missing $ inserted' in x for x in r) and 'Costs 5(excl.tax)now.' in t.replace(' ', '').replace('Costs', 'Costs '), (r[:2], t[:80]))
+    # (verification W4) inside a format's braces as well: TeX takes the closing brace out, "Extra }, or
+    # forgotten $", and reads on in math to the paragraph's end; the page drew " more words." as text
+    Dg = DOC.replace('Agent income here.', 'Some \\textbf{costs $5 now} more words.')
+    load_doc(page, Dg)
+    txt = page.evaluate("document.getElementById('pages').innerText")
+    check('real: an unclosed $ in \\textbf{..} draws the rest of the paragraph as its formula', 'Some costs 5nowmorewords.' in txt.replace('\n', ''), txt[:80])
+    if TEX:
+        for eng in ('pdflatex', 'xelatex', 'lualatex'):
+            load_doc(page, ('% !TeX program = ' + eng + '\n' if eng != 'pdflatex' else '') + Dg)
+            r = page.evaluate("async () => { const r = await window.rikuy.api.compile(); return r.problems.filter((p) => p.severity === 'error').map((p) => p.message); }")
+            t = pdf_text(page).replace('\n', ' ')
+            check('real: and TeX (' + eng + ') says "Extra }, or forgotten $" and sets "costs 5nowmorewords."', any('Extra }, or forgotten $' in x for x in r) and 'costs5nowmorewords.' in t.replace(' ', ''), (r[:3], t[:80]))
     # (review N4) inside a line or a group, and a glue's stretch with it
     Dr = DOC.replace('Agent income here.', 'Before {\\fboxsep=0pt\\fbox{boxed}} after.\n\n\\parfillskip=0pt plus 1fil Some words here.')
     load_doc(page, Dr)

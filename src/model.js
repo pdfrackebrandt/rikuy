@@ -3375,7 +3375,13 @@ class Builder {
   }
 
   // ---- inline conversion --------------------------------------------------------
+  // (inlDepth: how deep the lines' groups stand, so an unclosed $ that ran out of its group is
+  // forgotten at its paragraph's end: dollarOpen, below)
   inl(nodes, ctx, fns, out = []) {
+    this.inlDepth = (this.inlDepth || 0) + 1;
+    try { return this.inlBody(nodes, ctx, fns, out); } finally { if (!--this.inlDepth) this.dollarOpen = false; }
+  }
+  inlBody(nodes, ctx, fns, out = []) {
     const acc = new Acc(out, ctx);
     // \selectlanguage{arabic} in the middle of a line (and bidi's \setRTL): the words after it,
     // up to the next one or the line's end, turn. They are one run beside the others, a wrapper
@@ -3392,6 +3398,25 @@ class Builder {
     };
     for (let k = 0; k < nodes.length; k++) {
       const nd = nodes[k];
+      // (an unclosed $ in the group or the format just before: TeX takes its closing brace out,
+      // "Extra }, or forgotten $", and reads on in math to the paragraph's end: the rest drawn as
+      // that formula, as at the top: verification W4)
+      if (this.dollarOpen) {
+        this.dollarOpen = false;
+        const pv = nodes[k - 1];
+        if (pv && (pv.t === 'group' || (pv.t === 'cmd' && /^(?:text(?:bf|it|sl|sc|tt|sf|rm|up|md|normal|color|superscript|subscript)|emph|underline|enquote)$/.test(pv.name)))) {
+          let e = nodes[nodes.length - 1].e;
+          while (e > nd.s && /\s/.test(ctx.src[e - 1])) e--;
+          if (e > nd.s) {
+            acc.flush();
+            out.push(this.atom(ctx, { k: 'math', s: nd.s, e, is: nd.s, ie: e, tex: this.mathRefs(ctx.src.slice(nd.s, e)), display: false, unclosed: true }));
+            this.use('m');
+            this.dollarOpen = true;
+            break;
+          }
+          this.dollarOpen = true;
+        }
+      }
       // (a register's assignment inside a line or a group, {\fboxsep=0pt\fbox{..}}: its value is no
       // text, as at a paragraph's start (flow); it was drawn "=0pt": review N4)
       if (nd.t === 'cmd' && ASSIGN.has(nd.name) && nodes[k + 1] && nodes[k + 1].t === 'text') {
@@ -3415,11 +3440,13 @@ class Builder {
         case 'par': if (this.fnPar) { acc.flush(); out.push(this.atom(ctx, { k: 'br', s: nd.s, e: nd.e, par: true })); } else acc.ch(' ', nd.s, nd.e); break;
         case 'comment': acc.flush(); break;
         case 'special': {
-          // (a $ with no closing $: TeX reads on in math to the paragraph's end, or the group's, and
-          // stops there, "Missing $ inserted"; drawn so, a formula to there marked as the error, where
+          // (a $ with no closing $: TeX reads on in math to the paragraph's end and stops there,
+          // "Missing $ inserted"; drawn so, a formula to there marked as the error, where
           // it drew a "$" chip and the words after it as text)
-          if (nd.ch === '$' && nd.err && k + 1 < nodes.length) {
-            let e = nodes[nodes.length - 1].e;
+          if (nd.ch === '$' && nd.err) {
+            // (and past the group it stands in, to the paragraph's end: the loop above, a level out)
+            this.dollarOpen = true;
+            let e = k + 1 < nodes.length ? nodes[nodes.length - 1].e : nd.e;
             while (e > nd.e && /\s/.test(ctx.src[e - 1])) e--;
             if (e > nd.e) {
               acc.flush();
