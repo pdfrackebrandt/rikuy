@@ -309,6 +309,31 @@ def r2_review(p):
             else:
                 left = page.evaluate("window.rikuy.realChanges().map((c) => [c.a, c.b])")
                 check('r2_review: %s joined to the heading above, one Accept: only the other change left' % name, left == [['', 'new ']], left)
+    # (review of round 4) the changes taken together are those of the same edit, never the nearest:
+    # two joins, then Reject at the second took the first join's brace (\section{Head ... over a
+    # blank line, TeX's error); a word typed above, or inside the joined words, went with a Reject
+    T2 = WRAP('\\section{Head}\nBody text one.\n\n\\section{Next}\nPara two has many more words in it, far away from the first one.\n\nOther.')
+    for how in ('rejectHere()', 'acceptHere()'):
+        fresh(page, T2); page.evaluate("window.rikuy.setTracking(true)")
+        click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 300, full=True)
+        click_text(page, 'Para two', 0); page.keyboard.press('Backspace'); settle(page, 300, full=True)
+        page.evaluate("window.rikuy." + how); settle(page, 300, full=True)
+        if how == 'rejectHere()':
+            check('r2_review: two headings joined, Reject at the second: only the second back',
+                  src(page) == T2.replace('{Head}\nBody text one.', '{Head Body text one.}'), repr(src(page)[40:200]))
+        page.evaluate("window.rikuy.rejectAllChanges(false)"); settle(page, 300, full=True)
+        want = T2 if how == 'rejectHere()' else T2.replace('{Next}\nPara two has many more words in it, far away from the first one.', '{Next Para two has many more words in it, far away from the first one.}')
+        check('r2_review: two headings joined, %s at the second, then Reject All: the first back, the second as Accept left it' % how.split('(')[0], src(page) == want, repr(src(page)[40:200]))
+    T3 = WRAP('Alpha words here.\n\n\\section{Head}\nBody text that is long enough to stand apart from the edit above it here.\n\nOther.')
+    for name, edit, want in (('a word typed above it', lambda: (click_text(page, 'Alpha', 5), page.keyboard.type(' new')), 'Alpha new words'),
+                             ('a word typed in the joined words', None, 'is very long')):
+        fresh(page, T3); page.evaluate("window.rikuy.setTracking(true)")
+        if edit: edit(); settle(page, 200)
+        click_text(page, 'Body', 0); page.keyboard.press('Backspace'); settle(page, 300, full=True)
+        if not edit: click_text(page, 'long enough', 0); page.keyboard.type('very '); settle(page, 200)
+        click_text(page, 'Head', 2); page.evaluate("window.rikuy.rejectHere()"); settle(page, 300, full=True)
+        s = src(page)
+        check('r2_review: a join rejected keeps %s, a change of its own' % name, want in s and '\\section{Head}\n' in s and s.count('}') == T3.count('}'), repr(s[40:220]))
     # Backspace at the words after a review comment's line, or after a \\\\ and a comment: the words
     # meet and the comment keeps its own line. It was joined onto the text line ("here.% comment"),
     # where the pane no longer reads it, or deleted with the line ends round it.
