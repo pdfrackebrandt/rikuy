@@ -877,6 +877,12 @@ def real(page):
     txt = page.evaluate("document.getElementById('pages').innerText")
     check('real: \\marginnote{..}[0cm], \\marginnote[..]{..}[0cm] and \\columnseprule=.4pt draw no "[0cm]", "side" or "=.4pt"', '[0cm]' not in txt and 'side' not in txt and '=.4pt' not in txt and '=2pt' not in txt and 'fboxsep' not in txt and 'More.' in txt and 'Words.' in txt and 'Last words.' in txt, txt[:200])
     three(page, Dm, 'real margin notes', ('A note.', 'Right side', 'Words.', 'Last words.'))
+    # (review N4) inside a line or a group, and a glue's stretch with it
+    Dr = DOC.replace('Agent income here.', 'Before {\\fboxsep=0pt\\fbox{boxed}} after.\n\n\\parfillskip=0pt plus 1fil Some words here.')
+    load_doc(page, Dr)
+    txt = page.evaluate("document.getElementById('pages').innerText")
+    check('real: {\\fboxsep=0pt\\fbox{..}} and \\parfillskip=0pt plus 1fil draw no value', '=0pt' not in txt and 'plus' not in txt and 'fil' not in txt and 'Before boxed after.' in txt and 'Some words here.' in txt, txt[:200])
+    three(page, Dr, 'real registers', ('Before boxed after.', 'Some words here.'))
     # straight quotes typed where the text is German as babel or polyglossia set it: „..“ and ‚..‘,
     # as Word's smart quotes make them in German; they were English ``..'', printed “..” there. In an
     # English passage of it, and in a document whose class option alone says German (no babel, so

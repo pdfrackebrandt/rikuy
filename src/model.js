@@ -234,7 +234,8 @@ const SPACING_DECL = new Set(['onehalfspacing', 'doublespacing', 'singlespacing'
 const ASSIGN = new Set(['hangindent', 'hangafter', 'parindent', 'parskip', 'widowpenalty', 'clubpenalty', 'displaywidowpenalty', 'interlinepenalty', 'linepenalty',
   'hyphenpenalty', 'exhyphenpenalty', 'tolerance', 'pretolerance', 'emergencystretch', 'looseness', 'leftskip', 'rightskip',
   ...LAYOUT_REGS]);
-const ASSIGN_VALUE = /^[ \t]*=?[ \t]*([+-]?(?:\d+(?:\.\d*)?|\.\d+)[ \t]*(?:pt|bp|mm|cm|in|pc|dd|cc|sp|em|ex)?) ?/;
+// (a glue's stretch and shrink go with it, \parfillskip=0pt plus 1fil: review N4)
+const ASSIGN_VALUE = /^[ \t]*=?[ \t]*([+-]?(?:\d+(?:\.\d*)?|\.\d+)[ \t]*(?:pt|bp|mm|cm|in|pc|dd|cc|sp|em|ex)?)(?:[ \t]+plus[ \t]*[+-]?(?:\d+(?:\.\d*)?|\.\d+)?[ \t]*(?:pt|bp|mm|cm|in|pc|dd|cc|sp|em|ex|fil{1,3}))?(?:[ \t]+minus[ \t]*[+-]?(?:\d+(?:\.\d*)?|\.\d+)?[ \t]*(?:pt|bp|mm|cm|in|pc|dd|cc|sp|em|ex|fil{1,3}))? ?/;
 // setspace's stretch for one and a half and double spacing at 10, 11 and 12 pt (memoir's too)
 const ONEHALF = { 10: 1.25, 11: 1.213, 12: 1.241 }, DOUBLE = { 10: 1.667, 11: 1.618, 12: 1.655 };
 // the alignment a group {\centering ...\par} gives its paragraph: the declaration first in it,
@@ -3388,6 +3389,12 @@ class Builder {
     };
     for (let k = 0; k < nodes.length; k++) {
       const nd = nodes[k];
+      // (a register's assignment inside a line or a group, {\fboxsep=0pt\fbox{..}}: its value is no
+      // text, as at a paragraph's start (flow); it was drawn "=0pt": review N4)
+      if (nd.t === 'cmd' && ASSIGN.has(nd.name) && nodes[k + 1] && nodes[k + 1].t === 'text') {
+        const nx = nodes[k + 1], m = ASSIGN_VALUE.exec(ctx.src.slice(nx.s, Math.min(nx.e, nx.s + 80)));
+        if (m) { nodes = nodes.slice(); if (nx.s + m[0].length < nx.e) nodes[k + 1] = { ...nx, s: nx.s + m[0].length }; else nodes.splice(k + 1, 1); }
+      }
       const decl = nd.t === 'cmd' ? this.declDir(nd, ctx) : null;
       if (decl) {
         if (decl === this.dir) continue;
