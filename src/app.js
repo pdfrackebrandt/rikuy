@@ -8,7 +8,7 @@ import {
   endsWithControlWord, isBalanced, diff, stepStart, stepJoin, boundary, clusterEdge, sourceEdge, backspaceUnits
 } from './editor.js';
 import { SAMPLE } from './sample.js';
-import { splitRows, parseJS, scanUserSigs, setNativeParse } from './parser.js';
+import { splitRows, parseJS, scanUserSigs, setNativeParse, SIG, CHARS } from './parser.js';
 import { mathNeeds } from './ui/eqtab.js';
 import { installWordTyping, wordShortcuts, makeDialect, classifyMacros, resolveCommand, PACKAGES, WORD_GROUPS, FIELD_MACROS, fieldValue, modelValue, mathOnly } from './wordmath.js';
 import { isTallDef, fitBrackets, tallTest } from './fences.js';
@@ -3118,7 +3118,7 @@ class App {
     for (let n = el; n && n !== this.root && !n.classList.contains('it'); n = n.parentElement) {
       const y = n.dataset.y ? styOfEl(n) : null;
       if (!y || y.f !== f || !Number.isFinite(y.s) || p < y.is || p > y.ie) continue;
-      L.push({ s: y.s, is: y.is, ie: y.ie, e: y.e, page: true });
+      L.push({ s: y.s, is: y.is, ie: y.ie, e: y.e, page: true, name: (/^\\([A-Za-z@]+)/.exec(src.slice(y.s, y.s + 40)) || [])[1] || '' });
     }
     let i0 = p;
     for (let k = p - 1, nl = false; k >= Math.max(0, p - 4000); k--) {
@@ -3136,6 +3136,36 @@ class App {
       if (ch === '{') st.push(i); else if (ch === '}') st.pop();
     }
     const SW = /^(?:\s*\\(?:bf|it|sl|sc|em|tt|rm|sf|(?:bf|md)series|(?:it|up|sl|sc)shape|(?:rm|sf|tt)family|normalfont|tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)(?![A-Za-z]))*\s*/;
+    // what a command takes: the parser's table, the document's own \newcommand and \def, none for a
+    // character or a logo; null for one unknown (review B1)
+    let U = null;
+    const sigOf = (n) => {
+      if (SIG[n] !== undefined) return SIG[n];
+      if (!U) { U = {}; for (const t of this.files.values()) if (typeof t === 'string') scanUserSigs(t, U); }
+      if (Object.prototype.hasOwnProperty.call(U, n)) return U[n];
+      return CHARS[n] !== undefined || /^(?:LaTeX|TeX|LaTeXe|BibTeX|XeLaTeX|pdfLaTeX|LuaLaTeX|today|xspace)$/.test(n) ? '' : null;
+    };
+    // (a command of the document's own whose words reach no other command's braces, \newcommand's
+    // \long: its argument holds paragraphs, and the break stays in it, one numbered exercise of two
+    // paragraphs; split, it was two, every later one renumbered: review N1)
+    const holdsPars = (n) => {
+      const M = this.model && this.model.textMacros && this.model.textMacros.get(n);
+      if (!M || !M.nargs) return false;
+      let long = false;
+      for (const t of this.files.values()) {
+        if (typeof t !== 'string') continue;
+        const m = new RegExp('\\\\(long\\s*\\\\def|def|(?:re|provide)?newcommand(\\*?))\\s*\\{?\\s*\\\\' + n + '(?![A-Za-z@])').exec(t);
+        if (m) { long = /^long/.test(m[1]) || (/newcommand/.test(m[1]) && !m[2]); break; }
+      }
+      if (!long) return false;
+      let d = 0;
+      for (let i = 0; i < M.body.length; i++) {
+        const ch = M.body[i];
+        if (ch === '\\') { i++; continue; }
+        if (ch === '{') d++; else if (ch === '}') d--; else if (ch === '#' && /\d/.test(M.body[i + 1] || '') && d > 0) return false;
+      }
+      return true;
+    };
     for (let j = st.length - 1; j >= 0; j--) {
       const q = st[j];
       if (L.some((y) => y.page && y.is === q + 1)) continue;
@@ -3145,9 +3175,16 @@ class App {
       let head = /\\([A-Za-z@]+)(?:\*?|\*?(?:[ \t]*\[[^[\]{}\n]*\]|[ \t]*\{[^{}\n]*\})+[ \t]*)$/.exec(pre);
       // (an environment's own argument, \begin{definition}{Title}: a title, made twice no split)
       const envArg = head && head[1] === 'begin' && /\\begin\s*\{\s*([A-Za-z@*]+)\s*\}/.exec(head[0]);
-      if (envArg && !/^(?:document|center|flushleft|flushright|quote|quotation|verse|itemize|enumerate|description|abstract)$/.test(envArg[1])) head[1] = 'title';
+      if (envArg && !/^(?:document|center|flushleft|flushright|quote|quotation|verse|itemize|enumerate|description|abstract)$/.test(envArg[1])) head[1] = 'caption';
       else if (head && /^(?:begin|end|item|noindent|indent|par|centering|raggedright|raggedleft)$/.test(head[1])) head = null;
       if (head && SW.exec('\\' + head[1])[0].length === head[1].length + 1) head = null;
+      // (an argument only while the command takes more than stand before it on the line; an unknown
+      // one's only with no space between, \foo{a}{b}: a group after an argument is a group,
+      // \textbf{Keywords:} {\small ..}, \LaTeX{} {\it ..}, which the break was copied with)
+      if (head && !envArg) {
+        const sig = sigOf(head[1]), n = (head[0].match(/\{/g) || []).length;
+        if (sig != null ? n >= (sig.match(/[mv]/g) || []).length : /[ \t]/.test(head[0])) head = null;
+      }
       // (an optional argument's group, \item[{..}]: left as it is)
       if (!head && /\[\s*$/.test(pre)) break;
       let d = 0, qe = -1;
@@ -3166,13 +3203,19 @@ class App {
     L.sort((x, y) => y.is - x.is);
     const held = [];
     for (const y of L) {
-      if (!y.page && /^(?:footnote|footnotetext|endnote|thanks|parbox|marginpar|marginnote|sidenote|todo|vbox|vtop|vcenter)$/.test(y.name)) break;
+      if (/^(?:footnote|footnotetext|endnote|thanks|parbox|marginpar|marginnote|sidenote|todo|vbox|vtop|vcenter)$/.test(y.name)) break;
       if (!close && !held.length && (y.page ? p === y.ie : !src.slice(p, y.ie).trim())) { p = y.e; continue; }
       if (!open && !held.length && (y.page ? p === y.is : !src.slice(y.is, p).trim())) { p = y.s; continue; }
       // (an argument already holding a blank line takes paragraphs; and in a list, a group round
       // more items or the list's end is none of this item's)
       if (!y.page && (/\n[ \t\r]*\n/.test(src.slice(p, y.ie)) || (list && /\\(?:item|end)(?![A-Za-z])/.test(src.slice(p, y.ie))))) break;
+      // (an environment begun before the break and ended after it inside these braces, a minipage
+      // in a box: closing the braces there would cut it, "Extra }, or forgotten \endgroup"; it
+      // holds paragraphs: review B2)
+      const envs = (t) => (t.match(/\\begin\s*\{/g) || []).length - (t.match(/\\end\s*\{/g) || []).length;
+      if (envs(src.slice(y.is, p)) > 0 || envs(src.slice(p, y.ie)) < 0) break;
       if (!y.page && !y.name && !list) { held.push(y); continue; }
+      if (!y.page && holdsPars(y.name)) break;
       // (a caption, a letter's closing or a title made twice would print twice, numbered twice:
       // no break inside one, as none in a figure's caption)
       if (!y.page && /^(?:caption|captionof|subcaption|closing|opening|signature|address|subject|title|subtitle|author|date|frametitle|framesubtitle|institute)$/.test(y.name)) return { p, close: '', open: '', refuse: true };

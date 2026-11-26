@@ -755,6 +755,28 @@ def real(page):
     # (its words' bold goes on in the new paragraph, as Word's formats do)
     check('real: Enter at the end of its words starts a paragraph after it', '\\question{\\bf Wie haben Sie gelernt?}\n\n{\\bf After}' in src(page), src(page)[-120:])
     compiles(page, 'real question end')
+    # (review B1) a group after an argument is a group, which holds the break: the command before it
+    # was copied into the new paragraph, \textbf{Keywords:} printed twice, \LaTeX{} twice
+    for body, at, want in (('Intro words. \\textbf{Keywords:} {\\small alpha beta gamma} end.', 'beta', '{\\small alpha \n\nQbeta gamma} end.'),
+                           ('We use \\LaTeX{} {\\it for typesetting long documents} here.', 'typesetting', '\\LaTeX{} {\\it for \n\nQtypesetting long'),
+                           ('Start \\textcolor{red}{Warning} {\\bf read this carefully now} end.', 'carefully', '{Warning} {\\bf read this \n\nQcarefully now}')):
+        load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,xcolor}').replace('Agent income here.', body))
+        click_text(page, at, 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
+        check('real: Enter in a group after ' + body.split('{')[0].split()[-1] + ' keeps the group, the command once', want in src(page) and src(page).count(body.split('{')[0].split()[-1]) == 1, src(page)[-140:])
+    compiles(page, 'real group after an argument')
+    # (review B2) Enter in a minipage inside a command of the document's own: the break stays in the
+    # minipage; the command was split between \begin and \end, and TeX stopped
+    Db = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\newcommand{\\mybox}[1]{\\fbox{#1}}').replace('Agent income here.', '\\mybox{\\begin{minipage}{5cm}\nFirst words of the box and more.\n\\end{minipage}}')
+    load_doc(page, Db)
+    click_text(page, 'box and', 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
+    check('real: Enter in a minipage inside \\mybox{..} keeps the break in the minipage', 'First words of the \n\nQbox and more.\n\\end{minipage}}' in src(page) and src(page).count('\\mybox{') == 1, src(page)[-160:])
+    compiles(page, 'real minipage in a command')
+    # (review N1) a \long command of the document's own whose words reach no other command takes
+    # paragraphs: one exercise of two paragraphs, not two exercises
+    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\newcounter{ex}\n\\newcommand{\\exercise}[1]{\\refstepcounter{ex}\\par\\noindent\\textbf{Exercise \\theex.} #1}').replace('Agent income here.', '\\exercise{Prove the first claim and then the second}'))
+    click_text(page, 'and then', 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
+    check('real: Enter in \\exercise{..} (#1 at its top) writes the paragraph inside it', '\\exercise{Prove the first claim \n\nQand then the second}' in src(page), src(page)[-120:])
+    compiles(page, 'real long command')
     # Enter at the end of a list item in a group: the new \item after the group, not in it,
     # where the page drew it as the text "\item"
     load_doc(page, DOC.replace('Agent income here.', '\\begin{enumerate}\n\\item {\\textbf{First}}\n\\item {\\bf Second}\n\\end{enumerate}'))
