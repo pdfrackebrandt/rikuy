@@ -434,7 +434,8 @@ export const collab = {
     const mine = new Map(this.files);
     // (changes of your own waiting: kept, theirs come beside them, never into the base)
     const pending = !!this.base && this.realChanges().length > 0;
-    const { files, conflicts } = mergeProjects(baseFiles, mine, theirs);
+    // (a copy for comments only merged by whole lines: its comment lines never mix into text)
+    const { files, conflicts } = mergeProjects(baseFiles, mine, theirs, { words: role !== 'comments' });
     await this.snapshot('Before the changes from ' + by, { force: true });
     this.closeGroup();
     const edits = [];

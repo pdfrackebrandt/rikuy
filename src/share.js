@@ -349,12 +349,17 @@ function applied(base, hs, s, e) {
 // Where both change the same words their version wins, and the result is flagged as not clean, so
 // the author is told and keeps the text from before the merge under Versions; both adding lines
 // at one place (a comment each under the same line) keeps both, theirs under mine.
-export function merge3(base, mine, theirs) {
+// words: false merges by whole lines alone, so every line of the result is one of mine or one of
+// theirs (a copy from a link for comments only: its comment lines must not mix into text lines).
+// A clash over more than WORDS_MAX characters is not merged word by word: a copy that rewrote the
+// whole document as one long line would cost the page seconds and hundreds of megabytes.
+const WORDS_MAX = 200000;
+export function merge3(base, mine, theirs, { words = true } = {}) {
   if (theirs === base || theirs === mine) return { text: mine, clean: true };
   if (mine === base) return { text: theirs, clean: true };
-  return combine(base, lineEdits(base, mine), lineEdits(base, theirs), true);
+  return combine(base, lineEdits(base, mine), lineEdits(base, theirs), true, words);
 }
-function combine(base, A, C, lines) {
+function combine(base, A, C, lines, words = false) {
   // the hunks in the order of base (an insertion at a point before a replacement that starts
   // there), gathered into runs of hunks that clash with one another
   const all = [...A.map((h) => ({ ...h, mine: true })), ...C].sort((x, y) => x.s - y.s || x.e - y.e);
@@ -374,7 +379,7 @@ function combine(base, A, C, lines) {
       if (m === c) t = c;
       // (whole lines added at one place by both, a comment each under one line: both kept)
       else if (s === e && (s === 0 || base[s - 1] === '\n') && r.every((h) => h.t.endsWith('\n'))) t = m + c;
-      else if (lines) {
+      else if (lines && words && e - s <= WORDS_MAX && m.length <= WORDS_MAX && c.length <= WORDS_MAX) {
         const w = combine(base.slice(s, e), wordEdits(base.slice(s, e), m), wordEdits(base.slice(s, e), c), false);
         if (w.clean) t = w.text; else { t = c; clean = false; }
       } else { t = c; clean = false; }
@@ -385,13 +390,13 @@ function combine(base, A, C, lines) {
 }
 
 // whole projects as Maps name -> text; a file one side removed and the other left alone goes
-export function mergeProjects(base, mine, theirs) {
+export function mergeProjects(base, mine, theirs, opts) {
   const files = new Map(), conflicts = [];
   for (const n of new Set([...base.keys(), ...mine.keys(), ...theirs.keys()])) {
     const b = base.get(n), m = mine.get(n), t = theirs.get(n);
     if (t === undefined) { if (m !== undefined && b === undefined) files.set(n, m); else if (m !== undefined && m !== b) files.set(n, m); continue; }
     if (m === undefined) { if (b === undefined || t !== b) files.set(n, t); continue; }
-    const r = merge3(b ?? '', m, t);
+    const r = merge3(b ?? '', m, t, opts);
     if (!r.clean) conflicts.push(n);
     files.set(n, r.text);
   }

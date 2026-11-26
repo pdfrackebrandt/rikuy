@@ -343,6 +343,13 @@ await ok('merge keeps both sides when they touch different words of one line, an
   assert.deepEqual(merge3(b, b.replace('efect', 'effect'), b.replace('efect', 'effect')), { text: b.replace('efect', 'effect'), clean: true });
   // LaTeX around a word on one side, the word changed on the other
   assert.deepEqual(merge3(b, b.replace('taxes', '\\emph{taxes}'), b.replace('taxes', 'tariffs')).text, b.replace('taxes', '\\emph{tariffs}'));
+  // by whole lines alone (a copy for comments only): no line mixes the two; comment lines under one line still both kept
+  assert.deepEqual(merge3(b, b.replace('efect', 'effect'), b.replace('Chile', 'Bolivia'), { words: false }), { text: b.replace('Chile', 'Bolivia'), clean: false });
+  assert.equal(merge3(b, m, t, { words: false }).clean, false);
+  assert.deepEqual(merge3('x\n', 'x\n% comment (P): a\n', 'x\n% comment (A): b\n', { words: false }), { text: 'x\n% comment (P): a\n% comment (A): b\n', clean: true });
+  // a clash over a line longer than the word merge takes: as by lines
+  const long = 'w '.repeat(150000) + '\n';
+  assert.deepEqual(merge3(long, 'A ' + long, long.slice(0, -2) + 'Z\n'), { text: long.slice(0, -2) + 'Z\n', clean: false });
 });
 
 await ok('a comment line\'s own words start after its head\'s colon, not one in the quoted words (R4)', () => {
