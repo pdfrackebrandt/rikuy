@@ -1633,8 +1633,10 @@ def run():
         click_text(A, 'Rikuy escapes', 3)
         A.keyboard.type('Z')
         saved(A, 1200)
-        vs = A.evaluate('window.rikuy.allSnaps().then(async vs => { for (const v of vs) { const f = new Map(await window.rikuy.versionFiles(v) || []); if (v.label === "From another tab" && (f.get("main.tex") || "").includes("staCCCrt")) return true; } return false; })')
-        check('a tab that writes over another tab\'s text keeps that text as a version', vs)
+        # (R4: its save merges C's text with its own, as a coauthor's copy is, where it had put C's
+        # text into the versions, out of the document)
+        until(A, '() => window.rikuy.files.get("main.tex").includes("staCCCrt")')
+        check('a tab that saves after another tab brings that tab\'s words in, keeping its own', 'staCCCrt typing' in src(A) and 'RikZuy escapes' in src(A), src(A)[:300])
         # a phone hides the page, then kills it without unload
         click_text(D, 'MathBBB is an object', 0)
         D.keyboard.type('V')
@@ -1647,12 +1649,13 @@ def run():
         names = E.evaluate('window.rikuy.allSnaps().then(vs => vs.map(v => v.name))')
         check('pruning versions keeps the last one of a project no longer open', 'Another project' in names and len(names) <= 82, len(names))
         # an edit made just before a quick navigation away (a link followed, a bookmark)
-        click_text(E, 'Rikuy escapes', 0)
+        # (A's Z is in the document now: its save merged it, above)
+        click_text(E, 'RikZuy escapes', 0)
         E.keyboard.type('W')
         E.goto('about:blank')
         E.goto('https://rikuy.test/')
         E.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
-        check('an edit made just before navigating away is kept', 'WRikuy escapes' in src(E), src(E)[src(E).find('Rikuy escapes') - 3:][:20])
+        check('an edit made just before navigating away is kept', 'WRikZuy escapes' in src(E), src(E)[src(E).find('RikZuy escapes') - 3:][:20])
         check('no console errors (tabs)', not errors, errors[:5])
         browser.close()
 
