@@ -558,7 +558,7 @@ export function sameModels(a, b) {
 // Whether an edit of a text ([p, p + del) of old made [p, p + ins) of now) leaves the user's
 // command signatures (scanUserSigs) as they were: plain characters in and out, and no keyword of
 // a definition within 80 characters of it and of the spaces around it, in either text
-const SIG_CHARS = /[\\{}#[\]]/, SIG_WORDS = /def|newcommand|newenvironment|DocumentEnvironment/;
+const SIG_CHARS = /[\\{}#[\]]/, SIG_WORDS = /def|newcommand|newenvironment|DocumentEnvironment|DocumentCommand|RobustCommand/;
 function sigsKept(old, now, p, del, ins) {
   if (SIG_CHARS.test(old.slice(p, p + del)) || SIG_CHARS.test(now.slice(p, p + ins))) return false;
   const near = (t, a, b) => {

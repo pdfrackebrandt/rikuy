@@ -786,6 +786,14 @@ def real(page):
         click_text(page, 'gamma', 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
         check('real: Enter in \\' + cmd + '{..} (its argument no paragraph\'s) splits it', '\\' + cmd + '{alpha beta }\n\n\\' + cmd + '{Qgamma}' in src(page), src(page)[-120:])
         three(page, src(page), 'real \\' + cmd + ' split', ('alpha beta', 'Qgamma'))
+    # (verification V4) xparse's \NewDocumentCommand{\foo}{m} takes one argument: a group after it is
+    # a group, which holds the break; \foo{alpha} was written twice and the italic lost
+    Dx = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,xparse}\n\\NewDocumentCommand{\\foo}{m}{\\textbf{#1}}').replace('Agent income here.', 'Text \\foo{alpha}{\\it beta gamma delta} end.')
+    load_doc(page, Dx)
+    check('real: \\foo{alpha}{\\it ..} drawn as TeX sets it, "alphabeta gamma delta"', 'Text alphabeta gamma delta end.' in page.evaluate("document.getElementById('pages').innerText"), page.evaluate("document.getElementById('pages').innerText")[:80])
+    click_text(page, 'gamma', 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
+    check('real: Enter in the group after an xparse command keeps the group, the command once', '\\foo{alpha}{\\it beta \n\nQgamma delta} end.' in src(page), src(page)[-120:])
+    three(page, src(page), 'real xparse command', ('alphabeta', 'Qgamma delta end.'))
     # Enter at the end of a list item in a group: the new \item after the group, not in it,
     # where the page drew it as the text "\item"
     load_doc(page, DOC.replace('Agent income here.', '\\begin{enumerate}\n\\item {\\textbf{First}}\n\\item {\\bf Second}\n\\end{enumerate}'))
