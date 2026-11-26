@@ -36,6 +36,17 @@ for (const [c, want] of [['x \\%{b} c', 'x %b c'], ['a\\textasciitilde{}{b c} d'
   const got = M.blocks.map((b) => b.items.map((it) => text(it.inl)).join('')).join('');
   if (got !== want) { process.exitCode = 1; console.log('FAIL char command group', JSON.stringify(c), '=>', JSON.stringify(got)); }
 }
+// Inline code read as \verb is, a % in it code (R's %>%, a format's %d): read as a comment, it took
+// the rest of the line off the page ("Use x Next line words."). The native core reads the same
+// (native.test.mjs compares the trees).
+for (const [c, want] of [['Use \\lstinline|x % 2| for odd.\nNext.', 'Use x % 2 for odd. Next.'], ['Use \\lstinline{x % {2}} for odd.\nNext.', 'Use x % {2} for odd. Next.'],
+  ['Use \\lstinline[language=R]{df %>% f} ok.\nNext.', 'Use df %>% f ok. Next.'], ['Use \\mintinline{r}{a %in% b} ok.\nNext.', 'Use a %in% b ok. Next.'],
+  ['Use \\mintinline[x]{r}|a % b| ok.\nNext.', 'Use a % b ok. Next.'], ['Use \\verb|x % 2| ok.\nNext.', 'Use x % 2 ok. Next.']]) {
+  const M = buildModel({ files: new Map([['m.tex', c]]), main: 'm.tex' });
+  const text = (inl) => (inl || []).map((x) => x.k === 'seg' ? x.t : x.kids ? text(x.kids) : x.k === 'verb' ? x.text : '').join('');
+  const got = M.blocks.map((b) => b.items.map((it) => text(it.inl)).join('')).join('').replace(/\s+/g, ' ').trim();
+  if (got !== want) { process.exitCode = 1; console.log('FAIL inline code with %', JSON.stringify(c), '=>', JSON.stringify(got)); }
+}
 // Ranges a deletion may take whole: never one that splits [...] or reads a % inside \verb as a comment.
 for (const [s, a, b, want] of [
   ['\\begin{theorem}[Title]\\label{t} Body', 18, 33, false],

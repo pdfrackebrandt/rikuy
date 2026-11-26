@@ -470,13 +470,28 @@ export function parseJS(src, userSigs) {
       i = k + 2;
       return { t: 'math', s, e: i, is: ne, ie: k, display: name === '[', delim: name === '(' ? '\\(' : '\\[' };
     }
-    if (name === 'verb') {
-      const d = src[ne];
+    // \lstinline and \mintinline read their code as \verb does, after their [options] and minted's
+    // {language}: between two of one character, or in braces (balanced). A % in it (R's %>%, a
+    // format's %d) is code: read as a comment, it took the rest of the line off the page.
+    // (parse.cc: the same, in the same place)
+    if (name === 'verb' || name === 'lstinline' || name === 'mintinline') {
+      const code = name !== 'verb';
+      let a = ne;
+      if (code && src[a] === '[') { const k = src.indexOf(']', a + 1); if (k < 0) { i = ne; return node; } a = k + 1; }
+      if (name === 'mintinline') { const k = src[a] === '{' ? src.indexOf('}', a + 1) : -1; if (k < 0) { i = ne; return node; } a = k + 1; }
+      const d = src[a];
       if (!d || isLetter(d) || isWS(d)) { i = ne; return node; }
-      const k = src.indexOf(d, ne + 1);
-      const end = k < 0 ? n : k;
+      let end;
+      if (code && d === '{') {
+        let depth = 0, k = a;
+        for (; k < n; k++) { if (src[k] === '{') depth++; else if (src[k] === '}' && --depth === 0) break; }
+        end = k;
+      } else {
+        const k = src.indexOf(d, a + 1);
+        end = k < 0 ? n : k;
+      }
       i = Math.min(n, end + 1);
-      return { t: 'verb', s, e: i, is: ne + 1, ie: end };
+      return { t: 'verb', s, e: i, is: a + 1, ie: end };
     }
     if (DEF_CMDS.has(name)) return parseDef(node);
     if (ENV_DEF.has(name)) return parseEnvDef(node);

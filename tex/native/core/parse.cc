@@ -52,7 +52,8 @@ Map NAMES;
 Text namedText;
 struct Named { const char *name; int32_t flag; };
 const Named NAMED[] = {
-  { "begin", F_BEGIN }, { "end", F_END }, { "verb", F_VERB }, { "def", F_TEXDEF }, { "gdef", F_TEXDEF },
+  { "begin", F_BEGIN }, { "end", F_END }, { "verb", F_VERB }, { "lstinline", F_VERB }, { "mintinline", F_VERB },
+  { "def", F_TEXDEF }, { "gdef", F_TEXDEF },
   { "edef", F_TEXDEF }, { "xdef", F_TEXDEF }, { "let", F_LET }, { "DeclareMathOperator", F_DMO },
   { "newtheorem", F_NEWTHM }, { "tikzstyle", F_TIKZ },
 };
@@ -631,13 +632,26 @@ struct Parser {
       o.push(N_MATH); o.push(s); o.push(i); o.push(ne); o.push(k); o.push(paren ? 0 : 1); o.push(paren ? 2 : 3);
       return { N_MATH, i };
     }
+    // \lstinline and \mintinline as \verb, after their [options] and minted's {language}; their
+    // code in braces too (parser.js: the same)
     if (cls & F_VERB) {
-      int d = at(ne);
+      bool code = !sliceIs(ns, nameE, "verb"), mint = sliceIs(ns, nameE, "mintinline");
+      int a = ne;
+      if (code && at(a) == '[') { int k = indexOf(']', a + 1); if (k < 0) { i = ne; head(ns, nameE, s, ge, ne, star); return { N_CMD, ge }; } a = k + 1; }
+      if (mint) { int k = at(a) == '{' ? indexOf('}', a + 1) : -1; if (k < 0) { i = ne; head(ns, nameE, s, ge, ne, star); return { N_CMD, ge }; } a = k + 1; }
+      int d = at(a);
       if (d < 0 || isLetter(d) || isWS(d)) { i = ne; head(ns, nameE, s, ge, ne, star); return { N_CMD, ge }; }
-      int k = indexOf(d, ne + 1);
-      int end = k < 0 ? n : k;
+      int end;
+      if (code && d == '{') {
+        int depth = 0, k = a;
+        for (; k < n; k++) { if (src[k] == '{') depth++; else if (src[k] == '}' && --depth == 0) break; }
+        end = k;
+      } else {
+        int k = indexOf(d, a + 1);
+        end = k < 0 ? n : k;
+      }
       i = end + 1 < n ? end + 1 : n;
-      o.push(N_VERB); o.push(s); o.push(i); o.push(ne + 1); o.push(end);
+      o.push(N_VERB); o.push(s); o.push(i); o.push(a + 1); o.push(end);
       return { N_VERB, i };
     }
     if (cls & F_DEF) return parseDef(ns, nameE, s, ge, ne, star);
