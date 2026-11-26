@@ -1088,6 +1088,9 @@ def hunt_c(page):
         opened = page.evaluate('!!window.rikuy.pop')
         if opened: page.keyboard.press('Escape'); settle(page, 100)
         check('typed in inline code: %r as the code\'s own, its closing character refused' % typed, want in src(page) and not opened, src(page)[40:120])
+    # (review of round 4) AutoCorrect leaves inline code alone: ... typed there wrote \ldots{}
+    load_doc(page, W('Use \\lstinline{abcd} here.')); click_text(page, 'abcd', 2); page.keyboard.type('x...'); settle(page, 200)
+    check('AutoCorrect leaves inline code alone: ... stays three dots', '\\lstinline{abx...cd}' in src(page), src(page)[40:120])
     # and in every verbatim context: what a ' becomes there, as the page would write it
     vb = W('A \\verb|v1 x| B \\lstinline{l1 x} C \\url{u1 x} D \\texttt{t1 \\textbf{b} x} E\n\\begin{verbatim}\nvb1 x\n\\end{verbatim}\n\\begin{lstlisting}\nls1 x\n\\end{lstlisting}\nAfter x1 y.')
     load_doc(page, vb)

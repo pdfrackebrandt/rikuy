@@ -2446,7 +2446,11 @@ class App {
     const raw = c.ghost && this.ghostRaw();
     // What typing passes through (AutoCorrect's place): a hook may write it itself or change it.
     // Not in a LaTeX paragraph or a line to come in one (above and here): typed there is source.
-    if (!raw && !(!c.ghost && this.texAt(c.f, c.a))) {
+    // (in \lstinline's or \mintinline's code: $ and \ are the code's characters, no formula or
+    // command list, nor AutoCorrect's changes (... wrote \ldots{} into the code); the character
+    // that would end the code is refused, said why)
+    const ic = c.ghost || raw ? null : this.inlineCodeAt(range ? range.f : c.f, range ? range.a : c.a);
+    if (!raw && ic == null && !(!c.ghost && this.texAt(c.f, c.a))) {
       for (const h of insertTextHooks) {
         const r = h(this, data, range);
         if (r === true) return;
@@ -2458,10 +2462,7 @@ class App {
     // as the characters, though that is where an equation or a heading most often starts
     // (the second $ of a closing $$ is the next key or none: a $ typed later is a new formula)
     if (data !== '$') this.swallowDollar = 0;
-    // (in \lstinline's or \mintinline's code: $ and \ are the code's characters, no formula or
-    // command list; the character that would end the code is refused, said why)
-    const ic = c.ghost || raw ? null : this.inlineCodeAt(range ? range.f : c.f, range ? range.a : c.a);
-    if (ic != null) {
+    if (ic) {
       const bad = [...data].find((ch) => ic.includes(ch));
       if (bad) { this.toast('A ' + bad + ' here would end the code: TeX reads it as the code\'s end.', 3000); return; }
     }
