@@ -1706,6 +1706,7 @@ def run():
             enter_kept(page, w)
             check('no console errors (Enter kept, %d px)' % w, not errors, errors[:5])
             ghost_looks(page, w)
+            ghost_last(page, w)
             check('no console errors (Enter\'s empty paragraphs, %d px)' % w, not errors, errors[:5])
             browser.close()
 
@@ -1825,6 +1826,22 @@ def ghost_looks(page, w):
     page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000)
     hint = page.evaluate("(() => { const c = getComputedStyle(document.querySelector('.ghostp.empty .gh'), '::after'); return [c.content, c.borderBottomStyle, c.textDecorationLine]; })()")
     check('the blank page says "Type here to start." with no dashed line under it (%d px)' % w, 'Type here' in hint[0] and hint[1] == 'none' and hint[2] == 'none' and not page.evaluate(_DASHED), (hint, page.evaluate(_DASHED)))
+
+
+def ghost_last(page, w):
+    """Enter at the last paragraph's end, then a relayout (a font that came, the window resized, a
+    pane opened): the empty paragraph stays below the paragraph, the caret in it. Its block takes in
+    the line break before \\end{document}, so the place was read as inside it, and the empty
+    paragraph and the caret went above the paragraph (ghostAt)."""
+    load_doc(page, _GHOST_DOC)
+    click_text(page, 'Second one.', 11)
+    page.keyboard.press('Enter'); settle(page, 100)
+    page.evaluate('window.rikuy.relayout(true)'); settle(page, 100)
+    g = page.evaluate(_GHOST_GEO, 'Second')
+    check('Enter at the last paragraph\'s end, then a relayout: the empty paragraph stays below it, the caret in it (%d px)' % w,
+          g['n'] == 1 and abs(g['cy'] - g['y'] - g['lh']) < 2, g)
+    page.keyboard.type('New words'); settle(page, 200)
+    check('and words typed there go after it (%d px)' % w, 'Second one.\n\nNew words\n\n\\end{document}' in src(page), src(page)[-60:])
 
 
 def crlf_enter(page):

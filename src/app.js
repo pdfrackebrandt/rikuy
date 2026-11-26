@@ -3484,9 +3484,13 @@ class App {
   // that starts after it, where none does)
   ghostAt(f, pos, style, line) {
     let prev = null, next = null;
+    // (a block's end may take in the line break after its last words, the last paragraph before
+    // \end{document}: a place between those words and that break is after it. The block before it
+    // was taken, and a relayout moved Enter's empty paragraph at the last paragraph's end above it)
+    const src = this.src(f), ends = (B) => B.e <= pos || (B.s < pos && !src.slice(pos, B.e).trim());
     for (const B of this.renderer.blocks) {
       if (B.f !== f || !B.items.length) continue;
-      if (B.e <= pos && (!prev || B.e >= prev.e)) prev = B;
+      if (ends(B) && (!prev || B.e >= prev.e)) prev = B;
       if (B.s >= pos && (!next || B.s < next.s)) next = B;
     }
     const els = (B) => [...this.root.querySelectorAll('.it[data-b="' + B.id + '"]')];
