@@ -89,6 +89,12 @@ let SPELL = null;
 if (SPELL_ON) {
   const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
   const named = (stem, ext, buf) => { const h = sha(buf); const name = 'spell/' + stem + '-' + h.slice(0, 16) + '.' + ext; SPELL_FILES.set(name, buf); return { name, sha256: h, size: buf.length }; };
+  // The dictionaries and thesauri go gzipped (the worker unpacks them): Cloudflare Pages serves
+  // .dic, .aff, .idx and .dat as types it does not compress, so the English dictionary's 860 KB
+  // travelled whole (302 KB so), and a thesaurus's 1 MiB pieces about 220 KB each. The name and
+  // sha256 are the gzip's, what travels and is checked; size stays the text's, which the pieces'
+  // offsets are counted in. (node's own zlib: the same bytes on every machine with this node)
+  const packed = (stem, ext, buf) => ({ ...named(stem, ext, zlib.gzipSync(buf, { level: 9 })), size: buf.length, gz: true });
   const V = (p) => R('tex/vendor/hunspell/' + p);
   const wasm = fs.readFileSync(V('hunspell.wasm'));
   if (wasm.subarray(0, 4).toString('hex') !== '0061736d') throw new Error('tex/vendor/hunspell/hunspell.wasm is no WebAssembly module');
@@ -100,15 +106,15 @@ if (SPELL_ON) {
   const dicts = {};
   for (const d of fs.readdirSync(V('dict')).filter((n) => n.endsWith('.dic')).sort()) {
     const stem = d.slice(0, -4);
-    dicts[stem] = { aff: named(stem, 'aff', fs.readFileSync(V('dict/' + stem + '.aff'))), dic: named(stem, 'dic', fs.readFileSync(V('dict/' + d))) };
+    dicts[stem] = { aff: packed(stem, 'aff', fs.readFileSync(V('dict/' + stem + '.aff'))), dic: packed(stem, 'dic', fs.readFileSync(V('dict/' + d))) };
   }
   // the thesauri (MyThes's .idx whole, its .dat in the pieces build_tools.sh cut, in order)
   const thes = {};
   for (const d of fs.readdirSync(V('thes')).filter((n) => n.endsWith('.idx')).sort()) {
     const lang = d.slice(0, -4);
-    const dat = fs.readdirSync(V('thes')).filter((n) => n.startsWith(lang + '.dat.')).sort().map((n) => named('th_' + lang + '_' + n.slice(-3), 'dat', fs.readFileSync(V('thes/' + n))));
+    const dat = fs.readdirSync(V('thes')).filter((n) => n.startsWith(lang + '.dat.')).sort().map((n) => packed('th_' + lang + '_' + n.slice(-3), 'dat', fs.readFileSync(V('thes/' + n))));
     if (!dat.length) throw new Error('tex/vendor/hunspell/thes/' + lang + ' has no data');
-    thes[lang] = { idx: named('th_' + lang, 'idx', fs.readFileSync(V('thes/' + d))), dat };
+    thes[lang] = { idx: packed('th_' + lang, 'idx', fs.readFileSync(V('thes/' + d))), dat };
   }
   // grammar: Harper's own WebAssembly build (tex/vendor/harper/) and its worker (src/spell/grammar.js)
   const hw = fs.readFileSync(R('tex/vendor/harper/harper_wasm_slim_bg.wasm'));
