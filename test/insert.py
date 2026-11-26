@@ -1104,6 +1104,12 @@ def hunt_c(page):
         check('inline code ending a paragraph, %s then X: %r' % (' '.join(keys) or 'nothing', want), want in src(page), src(page)[40:120])
     load_doc(page, W('Use \\lstinline|abcd|\n\nNext.')); click_text(page, 'abcd', 4); page.keyboard.type('|X'); settle(page, 200)
     check('its | typed at the end of \\lstinline|..|: out of it, X after it', 'Use \\lstinline|abcd|X\n\nNext.' in src(page), src(page)[40:120])
+    # pasted words go in as typed (escaped as prose, \} ended the code); words with its closing
+    # character are refused
+    PASTE = "(t) => { const d = new DataTransfer(); d.setData('text/plain', t); document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', {clipboardData: d, bubbles: true, cancelable: true})); }"
+    for doc, text, want in (('Use \\lstinline{abcd} here.', 'a_b%c', '\\lstinline{aba_b%ccd}'), ('Use \\lstinline{abcd} here.', 'x}y', '\\lstinline{abcd}'), ('Use \\lstinline|abcd| here.', 'p|q', '\\lstinline|abcd|')):
+        load_doc(page, W(doc)); click_text(page, 'abcd', 2); page.evaluate(PASTE, text); settle(page, 200)
+        check('pasted in inline code: %r as the code\'s own, or refused where it would end it' % text, want in src(page), src(page)[40:120])
     # (review of round 4) AutoCorrect leaves inline code alone: ... typed there wrote \ldots{}
     load_doc(page, W('Use \\lstinline{abcd} here.')); click_text(page, 'abcd', 2); page.keyboard.type('x...'); settle(page, 200)
     check('AutoCorrect leaves inline code alone: ... stays three dots', '\\lstinline{abx...cd}' in src(page), src(page)[40:120])

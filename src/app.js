@@ -3902,6 +3902,17 @@ class App {
     if (plainOnly) latex = '';
     const c = this.caretNow();
     if (!c) return;
+    // (into \lstinline's or \mintinline's code: the words as they are, the code's own characters,
+    // one line, as typed there; escaped as prose a _ printed its backslash and \} ended the code.
+    // Words holding a character that would end it are refused, said why)
+    const icP = c.ghost || this.texAt(c.f, c.a) ? null : this.inlineCodeAt(c.f, c.a);
+    if (icP != null && plain) {
+      const t = plain.replace(/\s*\r?\n\s*/g, ' ');
+      const bad = icP && [...t].find((ch) => icP.includes(ch));
+      if (bad) { this.toast('These words hold a ' + bad + ', which would end the code here: TeX reads it as the code\'s end.', 3500); return; }
+      this.typeIn(t);
+      return;
+    }
     // in LaTeX the source goes in as it is: the source of what was copied on the page, else the text
     const T = c.ghost ? null : this.texHere();
     if (T && T.f === c.f && !this.wholeDoc()) { this.texEdit(T, c.a, c.b, (latex || plain).replace(/\r\n?/g, '\n'), 'paste'); return; }
