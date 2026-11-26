@@ -15,6 +15,7 @@ import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
 import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath, oneLineLatex, headingsAsWords } from './paste.js';
+import { keepCodeSyntax } from './codeguard.js';
 import { chainAt, needsOf, preambleFor, hlTakesColor } from './charfmt.js';
 import { mapPos } from './wrap.js';
 import { findProblems, missingFigures } from './problems.js';
@@ -1484,6 +1485,15 @@ class App {
     // (what is typed, pasted or written by a command: never another version of the text put back,
     // a version or a commit restored, a coauthor's or another tab's text, a change rejected,
     // which keep their own bytes)
+    // (typed, deleted, pasted, cut or moved on the page: never part of inline code's syntax alone,
+    // its | or } taken and the code run on to the line's end; src/codeguard.js)
+    if (/^(type|del|replace|paste|cut|enter|move|delete)$/.test(kind || '')) {
+      const G = keepCodeSyntax(this.files, edits);
+      if (G.moved) {
+        edits = G.edits;
+        if (caret && caret.f != null) { caret = { ...caret }; for (const k of ['p', 'selA', 'selB']) if (caret[k] != null) { const q = G.moved(caret.f, caret[k]); if (q != null) caret[k] = q; } }
+      }
+    }
     if (!/^(restore|reject|merge|other-tab|api)$/.test(kind || '')) ({ edits, caret } = crlfKept(this.files, edits, caret));
     const swaps = (blobs || []).map(({ name, blob }) => ({ name, before: this.assetBlobs.get(name) || null, after: blob }));
     if (!edits.length && !swaps.length) { if (caret) this.restoreCaret(caret); return; }

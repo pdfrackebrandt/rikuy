@@ -1104,6 +1104,18 @@ def hunt_c(page):
         check('inline code ending a paragraph, %s then X: %r' % (' '.join(keys) or 'nothing', want), want in src(page), src(page)[40:120])
     load_doc(page, W('Use \\lstinline|abcd|\n\nNext.')); click_text(page, 'abcd', 4); page.keyboard.type('|X'); settle(page, 200)
     check('its | typed at the end of \\lstinline|..|: out of it, X after it', 'Use \\lstinline|abcd|X\n\nNext.' in src(page), src(page)[40:120])
+    # (review of round 4) an edit never takes part of inline code's syntax alone (src/codeguard.js):
+    # a selection from inside the code to past it keeps its closing | (typed over, deleted or cut,
+    # it went, and the code ran to the line's end); one that takes all the code's text with words
+    # outside it takes the whole run, no empty \lstinline|| left
+    for keys, at, want in ((['Shift+End', 'X'], ('abcd', 2), 'Use \\lstinline|abX|\n'), (['Shift+End', 'Delete'], ('abcd', 2), 'Use \\lstinline|ab|\n'),
+                           (['Shift+End', 'Control+x'], ('abcd', 2), 'Use \\lstinline|ab|\n'), (['Shift+Home', 'X'], ('abcd', 4), '\nX\n\nNext.')):
+        load_doc(page, W('Use \\lstinline|abcd|\n\nNext.')); click_text(page, *at)
+        for k in keys:
+            if len(k) == 1: page.keyboard.type(k)
+            else: page.keyboard.press(k)
+            settle(page, 120)
+        check('in \\lstinline|abcd| then %s: %r' % (' '.join(keys), want), want in src(page), src(page)[40:120])
     # pasted words go in as typed (escaped as prose, \} ended the code); words with its closing
     # character are refused
     PASTE = "(t) => { const d = new DataTransfer(); d.setData('text/plain', t); document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', {clipboardData: d, bubbles: true, cancelable: true})); }"
@@ -1150,7 +1162,116 @@ def hunt_c(page):
     check('AutoCorrect: "i" typed at the end of Italian words stays', '{Ciao i }' in src(page) or '{Ciao i} ' in src(page), src(page)[60:160])
 
 
-EXTRA = [hunt, hunt_c, clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]
+def code_ok(body):
+    """Whether every \verb, \lstinline and \mintinline of body reads as TeX reads it, closed on its
+    line, and the braces outside their code balance (what codeRuns in src/codeguard.js reads)."""
+    import re
+    depth = 0
+    for line in body.split('\n'):
+        i = 0
+        while i < len(line):
+            c = line[i]
+            if c == '%':
+                break
+            if c == '\\':
+                m = re.match(r'\\(verb|lstinline|mintinline)(?![A-Za-z])\*?', line[i:])
+                if not m:
+                    i += 2
+                    continue
+                name, p = m.group(1), i + len(m.group(0))
+                code = name != 'verb'
+                if code:
+                    while p < len(line) and line[p] in ' \t': p += 1
+                    if p < len(line) and line[p] == '[':
+                        q = line.find(']', p)
+                        if q < 0: return False
+                        p = q + 1
+                if name == 'mintinline':
+                    if p >= len(line) or line[p] != '{' or line.find('}', p) < 0: return False
+                    p = line.find('}', p) + 1
+                if p >= len(line) or line[p].isalpha() or line[p].isspace(): return False
+                d = line[p]
+                if code and d == '{' and name == 'mintinline':
+                    k, dep = p + 1, 1
+                    while k < len(line):
+                        if line[k] == '{': dep += 1
+                        elif line[k] == '}':
+                            dep -= 1
+                            if dep == 0: break
+                        k += 1
+                else:
+                    k = line.find('}' if (code and d == '{') else d, p + 1)
+                if k < 0 or k >= len(line): return False
+                i = k + 1
+                continue
+            if c == '{': depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth < 0: return False
+            i += 1
+    return depth == 0
+
+
+def code_fuzz(page):
+    """(review of round 4) inline code's syntax under random edits: random selections and carets over
+    paragraphs holding \lstinline, \mintinline, \verb and \texttt runs, then typing, Delete,
+    Backspace, a cut, a paste, or a key that moves first (End, Home, arrows, Shift with them).
+    Every result keeps each run closed on its line and the braces balanced, one undo (or a few, for
+    a cut) gives the source back byte for byte, and with dist/tex a sample of the results compiles.
+    Seeded (CODE_FUZZ_SEED), so a failure is found again."""
+    import random
+    rnd = random.Random(int(os.environ.get('CODE_FUZZ_SEED', '4')))
+    body = ('Use \\lstinline|ab cd| here and \\verb|x_y| too, then \\lstinline{gh ij}\n\n'
+            'Then \\mintinline{py}|f(x)| and \\texttt{tt w} end \\lstinline[language=R]{df %>% q}\n\n'
+            'Also \\mintinline{c}{p{q}r} last \\verb+k%l+ words.')
+    D = '\\documentclass{article}\n\\usepackage{listings}\n\\usepackage{minted}\n\\begin{document}\n' + body + '\n\\end{document}\n'
+    POS = """(r) => { const ts = []; const w = document.createTreeWalker(document.querySelector('#pages .flow'), NodeFilter.SHOW_TEXT);
+      for (let t; (t = w.nextNode());) if (t.parentElement.closest('span.t') && !t.parentElement.closest('.gh') && t.data.length) ts.push(t);
+      const pick = (x) => { const t = ts[Math.floor(x[0] * ts.length) % ts.length]; return [t, Math.floor(x[1] * (t.data.length + 1))]; };
+      const [a, ao] = pick(r[0]), [b, bo] = pick(r[1]); document.getElementById('pages').focus();
+      const s = getSelection(); s.removeAllRanges(); s.collapse(a, ao); if (r[2]) s.extend(b, bo); return true; }"""
+    PASTE = "(t) => { const d = new DataTransfer(); d.setData('text/plain', t); document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', {clipboardData: d, bubbles: true, cancelable: true})); }"
+    bad, undone, seen = [], [], []
+    for k in range(int(os.environ.get('CODE_FUZZ_N', '36'))):
+        load_doc(page, D)
+        sel = rnd.random() < 0.6
+        page.evaluate(POS, [[rnd.random(), rnd.random()], [rnd.random(), rnd.random()], sel])
+        settle(page, 60)
+        steps = [] if sel else [rnd.choice(['End', 'Home', 'ArrowRight', 'ArrowLeft', 'Shift+End', 'Shift+Home', 'Shift+ArrowRight', 'Shift+ArrowLeft', 'End', 'ArrowRight'])]
+        act = rnd.choice(['type', 'Delete', 'Backspace', 'cut', 'paste', 'type'])
+        for st in steps:
+            page.keyboard.press(st); settle(page, 60)
+        if act == 'type': page.keyboard.type('X')
+        elif act == 'paste': page.evaluate(PASTE, 'p_q')
+        elif act == 'cut': page.keyboard.press('Control+x')
+        else: page.keyboard.press(act)
+        settle(page, 150)
+        got = src(page)
+        what = '%d: %s %s' % (k, ' '.join(steps) or ('selection' if sel else 'caret'), act)
+        if not code_ok(got[got.find('{document}') + 10:got.rfind('\\end{document}')]):
+            bad.append((what, got[got.find('{document}') + 11:got.rfind('\\end{document}')]))
+        elif got != D and got not in seen:
+            seen.append(got)
+        for _ in range(4):
+            if src(page) == D: break
+            page.keyboard.press('Control+z'); settle(page, 120)
+        if src(page) != D:
+            undone.append((what, src(page)[60:200]))
+    check('code fuzz: every random edit leaves each inline code run closed and the braces balanced (%d edits)' % (k + 1), not bad, bad[:3])
+    check('code fuzz: Undo gives each source back byte for byte', not undone, undone[:3])
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')) and seen:
+        page.set_default_timeout(600000)
+        failed = []
+        for t in seen[::max(1, len(seen) // 6)][:6]:
+            r = page.evaluate("""async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile();
+              return { ok: r.ok, errors: (r.problems || []).filter((x) => x.severity === 'error').map((x) => x.message).slice(0, 2) }; }""", t)
+            if not r['ok'] or r['errors']: failed.append((t[60:200], r))
+        page.set_default_timeout(30000)
+        check('code fuzz: a sample of the results compiles in the page', not failed, failed[:2])
+
+
+
+EXTRA = [hunt, hunt_c, code_fuzz, clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]
 
 if __name__ == '__main__':
     sys.exit(run())
