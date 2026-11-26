@@ -362,23 +362,26 @@ function applied(base, hs, s, e) {
 // base -> mine and base -> theirs: both kept where they touch different lines, and where they
 // touch the same lines but different words of them, as Word combines two copies of a document (a
 // paragraph is often one line of the source: two typos fixed in it, one each, are no conflict).
-// Where both change the same words their version wins, and the result is flagged as not clean, so
-// the author is told and keeps the text from before the merge under Versions. Two different
-// things put at one place are a conflict too; only comment lines, a comment each under the same
-// line, are both kept, theirs under mine.
+// Where both change the same words, or put different things at one place, theirs win there, and
+// the result is flagged as not clean, so the author is told and keeps the text from before the
+// merge under Versions. Two things put at one place are a conflict (two \newcommand of one name,
+// two files made under one name): only comment lines, a comment each under one line, are both kept.
 // words: false merges by whole lines alone, so every line of the result is one of mine or one of
 // theirs (a copy from a link for comments only: its comment lines must not mix into text lines).
-// A clash over more than WORDS_MAX characters is not merged word by word: a copy that rewrote the
-// whole document as one long line would cost the page seconds and hundreds of megabytes.
+// The words of at most WORDS_MAX characters of clashing lines are compared in one merge; past it,
+// by lines: a copy that rewrote the document as long lines would cost the page seconds and
+// hundreds of megabytes, inside the save's transaction where two windows merge.
 const WORDS_MAX = 200000;
 export function merge3(base, mine, theirs, { words: byWords = true } = {}) {
   if (theirs === base || theirs === mine) return { text: mine, clean: true };
   if (mine === base) return { text: theirs, clean: true };
-  return combine(base, lineEdits(base, mine), lineEdits(base, theirs), true, byWords);
+  return combine(base, lineEdits(base, mine), lineEdits(base, theirs), byWords ? { left: WORDS_MAX } : null);
 }
 // (lines that are all comment lines, each ended)
 const commentLines = (t) => /\n$/.test(t) && t.slice(0, -1).split('\n').every((l) => isComment(l));
-function combine(base, A, C, lines, words = false) {
+// budget: the characters of clashing lines left to merge word by word (null: by lines alone, and
+// inside a line's words)
+function combine(base, A, C, budget) {
   // the hunks in the order of base (an insertion at a point before a replacement that starts
   // there), gathered into runs of hunks that clash with one another
   const all = [...A.map((h) => ({ ...h, mine: true })), ...C].sort((x, y) => x.s - y.s || x.e - y.e);
@@ -395,17 +398,18 @@ function combine(base, A, C, lines, words = false) {
     if (!ours.length || !theirs.length) t = applied(base, r, s, e);
     else {
       const m = applied(base, ours, s, e), c = applied(base, theirs, s, e);
+      const cost = (e - s) + m.length + c.length;
       if (m === c) t = c;
-      // (two different things put at one place are a conflict: two \newcommand of one name, two
-      // files made under one name; only comment lines at a line's start, a comment each under one
-      // line, are both kept, mine first)
+      // (two things put at one place: comment lines at a line's start both kept, mine first)
       else if (s === e) {
         if ((s === 0 || base[s - 1] === '\n') && commentLines(m) && commentLines(c)) t = m + c;
         else { t = c; clean = false; }
-      }
-      else if (lines && words && e - s <= WORDS_MAX && m.length <= WORDS_MAX && c.length <= WORDS_MAX) {
-        const w = combine(base.slice(s, e), wordEdits(base.slice(s, e), m), wordEdits(base.slice(s, e), c), false);
-        if (w.clean) t = w.text; else { t = c; clean = false; }
+      } else if (budget && budget.left >= cost) {
+        budget.left -= cost;
+        // (word by word: theirs only at the words both changed, every other edit of mine kept)
+        const w = combine(base.slice(s, e), wordEdits(base.slice(s, e), m), wordEdits(base.slice(s, e), c), null);
+        t = w.text;
+        if (!w.clean) clean = false;
       } else { t = c; clean = false; }
     }
     out += base.slice(p, s) + t; p = e;

@@ -376,6 +376,16 @@ await ok('two different things put at one place are a conflict; comment lines th
   assert.deepEqual(merge3('x\r\n', 'x\r\n% comment (P): a\r\n', 'x\r\n% comment (A): b\r\n'), { text: 'x\r\n% comment (P): a\r\n% comment (A): b\r\n', clean: true });
 });
 
+await ok('a word conflict keeps my other words of the line; the word merge has one budget per merge (R4 review nits 6, 7)', () => {
+  assert.deepEqual(merge3('We study the efect of taxes on growth.\n', 'We study the effects of high taxes on growth.\n', 'We study the effect of taxes on growth.\n'), { text: 'We study the effect of high taxes on growth.\n', clean: false });
+  // three 30 kB lines apart, each clashing (90 kB of base, mine and theirs each): two word by word, the budget then spent, the third by lines
+  const L = (k) => 'w' + k + ' ' + 'x '.repeat(15000) + '\n';
+  const B3 = L(1) + 'kept\n' + L(2) + 'kept\n' + L(3);
+  const r = merge3(B3, B3.replace(/x \n/g, 'MINE \n'), B3.replace(/^w/gm, 'W'));
+  assert.equal(r.clean, false);
+  assert.equal(r.text.split('MINE').length - 1, 2);
+});
+
 await ok('a comment line\'s own words start after its head\'s colon, not one in the quoted words (R4)', () => {
   const l = '% comment (Ana) on "ratio: two": Check this';
   assert.equal(l.slice(commentBodyAt(l)), 'Check this');
