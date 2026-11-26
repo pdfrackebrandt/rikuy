@@ -456,7 +456,8 @@ def r4_tabs():
         pa.evaluate("() => { window.rikuy.loadProject(new Map([['main.tex', '\\\\documentclass{article}\\n\\\\begin{document}\\nOther project.\\n\\\\end{document}\\n']]), 'main.tex', 'other', 'Opened'); window.rikuy.persist(); }")
         written(pa)
         click_text(pb, 'First', 0); pb.keyboard.type('Z'); written(pb)
-        check('tabs: another project saved in the other window does not come in', 'Other project' not in src(pb) and 'ZFirst' in src(pb) and pa.evaluate(STORED)[0] == 'two', (src(pb)[:120], pa.evaluate(STORED)))
+        kept = pb.evaluate('async () => { for (const v of await window.rikuy.allSnaps()) { const f = new Map(await window.rikuy.versionFiles(v) || []); if (v.label === "From another tab" && v.name === "other" && (f.get("main.tex") || "").includes("Other project")) return true; } return false; }')
+        check('tabs: another project saved in the other window does not come in, and is kept under Versions', 'Other project' not in src(pb) and 'ZFirst' in src(pb) and pa.evaluate(STORED)[0] == 'two' and kept, (src(pb)[:120], pa.evaluate(STORED), kept))
         # a stranger's archive dropped in the other window marks the project there: this window,
         # bringing its files in at a save, compiles restricted too (as adoptOtherTab does, V2)
         PAPER = '\\documentclass{article}\n\\usepackage{defs}\n\\begin{document}\nMine here.\n\\end{document}\n'
@@ -488,6 +489,20 @@ def r4_tabs():
         pa.evaluate('() => window.rikuy.runCommand("recent", { rename: "tabs3", to: "tabs4" })'); written(pa)
         pb.evaluate('() => window.rikuy.adoptOtherTab()'); until(pb, "() => window.rikuy.name === 'tabs4'")
         check('tabs: and when it is shown again', pb.evaluate('window.rikuy.name') == 'tabs4' and pb.evaluate("document.getElementById('docname').textContent") == 'tabs4', pb.evaluate('window.rikuy.name'))
+        # (review B1) a name Rename gave back, taken by a new document in the other window: that
+        # document is another project, never merged over the renamed one, and kept under Versions
+        THESIS = '\\documentclass{article}\n\\begin{document}\nChapter one.\n\nChapter two.\n\nChapter three.\n\\end{document}\n'
+        pa.evaluate('(t) => { window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "Untitled", "Opened"); window.rikuy.persist(); }', THESIS); written(pa)
+        pa.evaluate('() => window.rikuy.snapshot("x", { force: true })'); written(pa)
+        pa.evaluate('() => window.rikuy.runCommand("recent", { rename: "Untitled", to: "Thesis" })'); written(pa)
+        pb.evaluate("async () => { await window.rikuy.newFromText('\\\\documentclass{article}\\n\\\\begin{document}\\n\\nA shopping list.\\n\\n\\\\end{document}\\n', 'Untitled', 'New'); }")
+        until(pb, "() => window.rikuy.name === 'Untitled' && window.rikuy.files.get('main.tex').includes('shopping')")
+        click_text(pb, 'A shopping', 2); pb.keyboard.type('My '); written(pb)
+        click_text(pa, 'Chapter three', 0); pa.keyboard.type('Then '); written(pa)
+        thesis = src(pa)
+        shop = pa.evaluate('async () => { for (const v of await window.rikuy.allSnaps()) { const f = new Map(await window.rikuy.versionFiles(v) || []); if (v.label === "From another tab" && (f.get("main.tex") || "").includes("My shopping")) return v.name; } return null; }')
+        check('tabs: a new document under a name Rename gave back is never merged over the renamed one (B1)', 'Chapter one.' in thesis and 'Then Chapter three.' in thesis and 'shopping' not in thesis
+              and pa.evaluate('window.rikuy.name') == 'Thesis' and pb.evaluate('window.rikuy.name') == 'Untitled' and 'shopping' in src(pb) and 'Chapter' not in src(pb) and shop == 'Untitled', (thesis[30:140], src(pb)[30:120], shop))
         check('tabs: no page errors', not errors, errors[:3])
         browser.close()
 

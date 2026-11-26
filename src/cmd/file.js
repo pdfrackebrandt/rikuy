@@ -435,10 +435,11 @@ export const methods = {
     if (places && typeof places === 'object' && places[from]) { places[to] = places[from]; delete places[from]; store('rikuy.place.v1', places); }
     if (from === this.name) {
       this.name = to;
-      // (the names it had, in the record every save writes: another tab showing it under one of
-      // them takes the new name, src/app.js renamedHere, instead of writing on as another document)
-      const was = this.wasNames && this.wasNames.key === from + '|' + this.main ? this.wasNames.names : [];
-      this.wasNames = { key: to + '|' + this.main, names: [...was.filter((x) => x !== to), from].slice(-8) };
+      // (when, in the record every save writes with the project's id: another tab showing it under
+      // the old name takes the new one, src/app.js renamedHere, instead of writing on as another
+      // document)
+      this.projectId();
+      this.nameT = Date.now();
       if (this.linkCache) for (const m of mains) { const k = from + '|' + m; if (this.linkCache.has(k)) { this.linkCache.set(to + '|' + m, this.linkCache.get(k)); this.linkCache.delete(k); } }
       if (this.scriptSeen) for (const m of mains) { const k = from + '|' + m; if (this.scriptSeen.has(k)) { this.scriptSeen.set(to + '|' + m, this.scriptSeen.get(k)); this.scriptSeen.delete(k); } }
       if (this.fold) this.fold.key = to + '|' + this.main;
