@@ -203,15 +203,17 @@ export async function push(dir, o) {
 }
 
 // A file both sides changed since their common commit, merged as a coauthor's copy is
-// (src/share.js merge3): edits of different words of one line both kept. Git's own merge calls any
-// two edits of one line a conflict, and a paragraph is often one line of LaTeX, so a coauthor's
-// typo fixed in the paragraph where you fixed another stopped the pull. Edits of the same words are
-// still a conflict. Only text files read as UTF-8 are merged: a picture's bytes, or a Latin-1 file
-// decoded as UTF-8, would be written back damaged, so those are conflicts too.
+// (src/share.js merge3): the document's own text files word by word, edits of different words of
+// one line both kept. Git's own merge calls any two edits of one line a conflict, and a paragraph
+// is often one line of LaTeX, so a coauthor's typo fixed in the paragraph where you fixed another
+// stopped the pull. Any other text (a .tikz, a Makefile, a .py) by whole lines, as git's own merge
+// did. Edits of the same words or lines, and two different things put at one place (a file made on
+// both sides), are still a conflict. Bytes that are no UTF-8 text are never merged: a picture's,
+// or a Latin-1 file decoded as UTF-8, would be written back damaged.
 const TEXT = /\.(tex|bib|sty|cls|bst|txt|ltx|dtx|clo|cfg|def|md|html?|csv|dat|bbx|cbx|lbx)$/i;
 function mergeDriver({ path, contents: [base, ours, theirs] }) {
-  if (!TEXT.test(path) || [base, ours, theirs].some((t) => t.includes('\uFFFD'))) return { cleanMerge: false, mergedText: ours };
-  const r = merge3(base, ours, theirs);
+  if ([base, ours, theirs].some((t) => t.includes('\uFFFD') || t.includes('\u0000'))) return { cleanMerge: false, mergedText: ours };
+  const r = merge3(base, ours, theirs, { words: TEXT.test(path) });
   return { cleanMerge: r.clean, mergedText: r.clean ? r.text : ours };
 }
 

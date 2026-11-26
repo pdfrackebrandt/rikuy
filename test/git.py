@@ -188,13 +188,15 @@ def commits(page):
 # Pull merges the two (git's own merge called any two edits of one line a conflict and stopped);
 # edits of the same words are still a conflict, said, and nothing is written.
 MERGE_TEX = '\\documentclass{article}\n\\begin{document}\nWe study the efect of taxes on growth in Peru and Chile.\n\nSecond paragraph.\n\\end{document}\n'
+# (a .bbl: text the page edits, a kind the word merge does not cover, as a .tikz or a Makefile)
+MERGE_TIKZ = '\\begin{thebibliography}{9}\n\\bibitem{a} A (1,1).\n\\bibitem{b} B.\n\\bibitem{c} C (3,3).\n\\end{thebibliography}\n'
 def r4_pull():
     subprocess.run(['git', 'init', '-q', '--bare', '-b', 'main', ROOT + '/merge.git'], check=True)
     subprocess.run(['git', '--git-dir', ROOT + '/merge.git', 'config', 'http.receivepack', 'true'], check=True)
     murl = 'http://127.0.0.1:%d/merge.git' % PORT
     with sync_playwright() as p:
         browser, page, errors = open_page(p, width=1440, height=900, connect=STANDINS)
-        page.evaluate('(t) => window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "merge", "Opened")', MERGE_TEX)
+        page.evaluate('([t, k]) => window.rikuy.loadProject(new Map([["main.tex", t], ["refs.bbl", k]]), "main.tex", "merge", "Opened")', [MERGE_TEX, MERGE_TIKZ])
         settle(page, 300)
         page.click('#b-nav'); settle(page, 200)
         page.click('#nt-git'); until(page, DRAWN); settle(page, 800)
@@ -209,10 +211,11 @@ def r4_pull():
         remote(page, 'Push', 1500)
         work = tempfile.mkdtemp(prefix='gitmerge-')
         subprocess.run(['git', 'clone', '-q', ROOT + '/merge.git', work], check=True)
-        def desktop(a, b, msg):
+        def desktop(a, b, msg, f='main.tex'):
             subprocess.run(['git', '-C', work, 'pull', '-q', '--no-rebase', 'origin', 'main'], check=True, capture_output=True)
-            t = open(work + '/main.tex', encoding='utf8').read().replace(a, b)
-            open(work + '/main.tex', 'w', encoding='utf8').write(t)
+            t = open(work + '/' + f, encoding='utf8').read().replace(a, b) if a is not None else b
+            open(work + '/' + f, 'w', encoding='utf8').write(t)
+            subprocess.run(['git', '-C', work, 'add', f], check=True)
             subprocess.run(['git', '-C', work, '-c', 'user.name=Bob', '-c', 'user.email=bob@example.org', 'commit', '-qam', msg], check=True)
             subprocess.run(['git', '-C', work, 'push', '-q', 'origin', 'main'], check=True)
         desktop('efect', 'effect', 'Typo')
@@ -227,6 +230,16 @@ def r4_pull():
         remote(page, 'Push', 1500)
         server = subprocess.run(['git', '--git-dir', ROOT + '/merge.git', 'show', 'main:main.tex'], capture_output=True, text=True).stdout
         check('r4 git: and the merge is pushed', 'the effect of taxes on growth in Peru and northern Chile.' in server, server)
+        # (review B4) a file outside the kinds the word merge covers (a .bbl here, as a .tikz or a
+        # Makefile), edited on different lines on each side: merged by lines, as git's own merge did
+        desktop('A (1,1)', 'A (1,2)', 'Bbl line 2', 'refs.bbl')
+        page.evaluate("() => { const g = window.rikuy, t = g.files.get('refs.bbl'), at = t.indexOf('(3,3)'); g.closeGroup(); g.commit([{ f: 'refs.bbl', s: at, e: at + 5, t: '(4,4)' }], null, 'type'); g.closeGroup(); }")
+        refresh(page); commit(page, 'Bbl line 4')
+        page.evaluate(TOASTS)
+        remote(page, 'Pull', 2000)
+        tikz = page.evaluate("() => window.rikuy.files.get('refs.bbl')")
+        check('r4 git: a file the word merge does not cover, edited on different lines on each side, merges by lines', '(1,2)' in tikz and 'C (4,4)' in tikz, (tikz, page.evaluate('() => window.rikuy.__toast')))
+        remote(page, 'Push', 1500)
         # the same words changed on both sides: a conflict, said, the text left as it was
         desktop('northern Chile', 'southern Chile', 'South')
         edit(page, 'northern Chile', 'coastal Chile')
@@ -243,6 +256,17 @@ def r4_pull():
         said = page.evaluate('() => window.rikuy.__toast')
         page.context.set_offline(False)
         check('r4 git: a push while offline says the computer is offline, and the commits are kept', 'offline' in said and 'proxy' not in said, said)
+        # (review B5) a file made on both sides with other contents: a conflict, nothing written
+        page.evaluate(TOASTS)
+        remote(page, 'Pull', 1500)
+        desktop(None, '\\documentclass{article}\n\\begin{document}\nBob notes.\n\\end{document}\n', 'Notes', 'notes.tex')
+        page.evaluate("() => { const g = window.rikuy; g.closeGroup(); g.commit([{ f: 'notes.tex', s: 0, e: 0, t: '\\\\documentclass{article}\\n\\\\begin{document}\\nAda notes.\\n\\\\end{document}\\n' }], null, 'type'); g.closeGroup(); }")
+        refresh(page); commit(page, 'My notes')
+        page.evaluate(TOASTS)
+        remote(page, 'Pull', 1500)
+        said = page.evaluate('() => window.rikuy.__toast')
+        notes = page.evaluate("() => window.rikuy.files.get('notes.tex')")
+        check('r4 git: a file made on both sides with other contents is a conflict, said, nothing written', 'Ada notes.' in notes and 'Bob notes.' not in notes and 'Pull found' in said, (said, notes))
         check('r4 git: no page errors', not errors, errors[:3])
         browser.close()
 
