@@ -1115,7 +1115,7 @@ class App {
       if (x && x.node && y && y.node) { const r = document.createRange(); r.setStart(x.node, x.offset); r.setEnd(y.node, y.offset); this.rbRange = r; }
     }
     if (G && !this.ghost) {
-      this.ghostAt(G.f, G.pos, G.style, G.line);
+      this.ghostAt(G.f, G.pos, G.style, G.line, G.before);
       if (this.ghost) {
         const el = this.ghost.el;
         // (looking as it did, aligned as the paragraph it was made from: showGhost)
@@ -3518,8 +3518,8 @@ class App {
     this.commit([{ f: T.f, s: g.pos, e: g.pos, t }], { f: T.f, p: g.pos + t.length + (g.tex === 'after' ? 1 : 0), bias: 1 }, 'enter');
   }
   // a blank paragraph for pos, after the block of the page that ends before it (before the one
-  // that starts after it, where none does)
-  ghostAt(f, pos, style, line) {
+  // that starts after it, where none does); before: one Enter showed at a paragraph's start
+  ghostAt(f, pos, style, line, before) {
     let prev = null, next = null;
     // (a block's end may take in the line break after its last words, the last paragraph before
     // \end{document}: a place between those words and that break is after it. The block before it
@@ -3537,8 +3537,10 @@ class App {
     // the empty paragraph went above it. Only where the index has words ending there: a display
     // is not in it, and the nearest words were taken, the line after a display in an item drawn
     // after the next item, what was typed written on a line of its own, mathfield.py)
-    const x = inside ? this.index.find(f, pos, -1) : null, it = x && !x.inexact && x.node && x.node.parentElement ? x.node.parentElement.closest('.it.p') : null;
-    if (it && this.root.contains(it) && it.dataset.b === String(inside.id)) { this.showGhost(it, f, pos, { style, line }); return; }
+    // (one made at a paragraph's start goes before the paragraph whose words start there: it went
+    // after it, below the paragraph, and what was typed was written above it; review B2)
+    const x = inside ? this.index.find(f, pos, before ? 1 : -1) : null, it = x && !x.inexact && x.node && x.node.parentElement ? x.node.parentElement.closest('.it.p') : null;
+    if (it && this.root.contains(it) && it.dataset.b === String(inside.id)) { this.showGhost(it, f, pos, { before: !!before, style, line }); return; }
     const els = (B) => [...this.root.querySelectorAll('.it[data-b="' + B.id + '"]')];
     const at = prev ? els(prev).pop() : next ? els(next)[0] : null;
     if (at) this.showGhost(at, f, pos, { before: !prev, style, line });

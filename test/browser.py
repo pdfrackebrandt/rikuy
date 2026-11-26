@@ -1903,7 +1903,8 @@ _ALIGNED_DOC = ('\\documentclass{article}\n\\usepackage{amsthm}\n\\newtheorem{th
 # the caret against the paragraph whose words w are: from its left, its right, its middle, below it
 _CARET_BY = """(w) => { const sp = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(w)), it = sp.closest('.it');
   const I = it.getBoundingClientRect(), C = getSelection().getRangeAt(0).getBoundingClientRect(), g = window.rikuy.ghost;
-  return { left: C.left - I.left, right: I.right - C.left, mid: C.left - (I.left + I.width / 2), below: C.top - I.bottom, after: !!g && g.el.previousElementSibling === it, cls: g && g.el.className }; }"""
+  return { left: C.left - I.left, right: I.right - C.left, mid: C.left - (I.left + I.width / 2), below: C.top - I.bottom, above: I.top - C.bottom,
+    after: !!g && g.el.previousElementSibling === it, before: !!g && g.el.nextElementSibling === it, cls: g && g.el.className }; }"""
 
 
 def ghost_inside(page, w):
@@ -1920,6 +1921,18 @@ def ghost_inside(page, w):
         page.keyboard.type('Zz'); settle(page, 200)
         check('Enter after %r, then a relayout: the empty paragraph and the caret right below it, the words typed after it (%d px)' % (words, w),
               r['after'] and r['below'] > -2 and words + '\n\nZz\n\n' in src(page), (r, src(page)[src(page).find(words):][:60]))
+    # (review B2) at the paragraph's start, then Up into the empty paragraph above it: a relayout
+    # keeps it above, where what is typed is written; it went below the paragraph, the words above
+    for words in ('Theorem words.', 'Quoted words.', 'Right words one.', 'Right words two.'):
+        load_doc(page, _ALIGNED_DOC)
+        click_text(page, words); page.keyboard.press('Enter'); settle(page, 100)
+        page.keyboard.press('ArrowUp'); settle(page, 100)
+        page.evaluate('window.rikuy.relayout(true)'); settle(page, 100)
+        r = page.evaluate(_CARET_BY, words)
+        page.keyboard.type('Zz'); settle(page, 200)
+        s = src(page)
+        check('Enter at the start of %r, Up, then a relayout: the empty paragraph and the caret right above it, the words typed before it (%d px)' % (words, w),
+              r['before'] and r['above'] > -2 and 'Zz\n\n' + words in s, (r, s[s.find('Zz') - 30:][:80]))
 
 
 def ghost_aligned(page, w):
