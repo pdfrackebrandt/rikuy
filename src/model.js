@@ -657,6 +657,9 @@ function incremental(project, hint) {
   if (keptO.length !== keptN.length || keptO.some((x, k) => x !== keptN[k])) return null;
   const failed = H.failed - failedDollars(oldMine) + failedDollars(mine);
   if (failed * now.length > MATH_BUDGET) return null;
+  // (a $ with no closing $ reads the rest of its paragraph as a formula, citations and references
+  // in it too, Builder.inl: the full build says what it then reads)
+  if (failedDollars(mine) || failedDollars(oldMine)) return null;
   // the paragraphs built again where they were: the first one's indent, alignment and direction
   // are the old first one's, and the flow sets the ones after it as the full build's would
   const B = new Builder(project, hint);
@@ -3412,6 +3415,20 @@ class Builder {
         case 'par': if (this.fnPar) { acc.flush(); out.push(this.atom(ctx, { k: 'br', s: nd.s, e: nd.e, par: true })); } else acc.ch(' ', nd.s, nd.e); break;
         case 'comment': acc.flush(); break;
         case 'special': {
+          // (a $ with no closing $: TeX reads on in math to the paragraph's end, or the group's, and
+          // stops there, "Missing $ inserted"; drawn so, a formula to there marked as the error, where
+          // it drew a "$" chip and the words after it as text)
+          if (nd.ch === '$' && nd.err && k + 1 < nodes.length) {
+            let e = nodes[nodes.length - 1].e;
+            while (e > nd.e && /\s/.test(ctx.src[e - 1])) e--;
+            if (e > nd.e) {
+              acc.flush();
+              out.push(this.atom(ctx, { k: 'math', s: nd.s, e, is: nd.e, ie: e, tex: this.mathRefs(ctx.src.slice(nd.e, e)), display: false, unclosed: true }));
+              this.use('m');
+              k = nodes.length;
+              break;
+            }
+          }
           if (nd.ch === '~') acc.ch(' ', nd.s, nd.e);
           else { acc.flush(); out.push(this.chip(ctx, nd.s, nd.e, nd.ch, nd.err ? 'Unbalanced ' + nd.ch : 'Special character ' + nd.ch + ' is only valid in math or tables', true)); }
           break;

@@ -868,6 +868,8 @@ export class Renderer {
         const r = this.katex(x.tex, false);
         s.innerHTML = r.html;
         if (r.err) { s.classList.add('has-err'); s.title = r.err; rec.err = r.err; }
+        // (a $ never closed: TeX's error, the formula it reads to the paragraph's end: src/model.js)
+        else if (x.unclosed) { s.classList.add('has-err'); s.title = rec.err = 'Missing $ inserted: this $ has no closing $, so TeX reads the rest of the paragraph as a formula. Write \\$ for a dollar sign, or close the formula with $.'; }
         break;
       }
       case 'cite': s.textContent = x.text; rec.keys = x.keys; rec.cmd = x.cmd; if (x.missing) s.classList.add('miss'); break;

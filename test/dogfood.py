@@ -889,6 +889,19 @@ def real(page):
     settle(page, 300)
     check('real: "$5 (excl. tax) now." typed is a price, "$2 (ab + c)$" a formula', 'It costs \\$5 (excl. tax) now. So $2 (ab + c)$ holds.' in src(page), src(page)[-120:])
     three(page, src(page), 'real price and formula', ('It costs $5 (excl. tax) now.', 'holds.'))
+    # a $ in the source with no closing $ is drawn as TeX reads it: a formula to the paragraph's end,
+    # marked as TeX's error "Missing $ inserted"; it was a "$" chip and the words after it as text
+    Du = DOC.replace('Agent income here.', 'Costs $5 (excl. tax) now.')
+    load_doc(page, Du)
+    txt = page.evaluate("document.getElementById('pages').innerText")
+    err = page.evaluate("[...document.querySelectorAll('#pages .m.has-err')].map((e) => e.title)")
+    check('real: an unclosed $ draws the rest of its paragraph as a formula, marked', 'Costs 5(excl.tax)now.' in txt and err and 'Missing $ inserted' in err[0], (txt[:80], err))
+    if TEX:
+        for eng in ('pdflatex', 'xelatex', 'lualatex'):
+            load_doc(page, ('% !TeX program = ' + eng + '\n' if eng != 'pdflatex' else '') + Du)
+            r = page.evaluate("async () => { const r = await window.rikuy.api.compile(); return r.problems.filter((p) => p.severity === 'error').map((p) => p.message); }")
+            t = pdf_text(page).replace('\n', ' ')
+            check('real: and TeX (' + eng + ') says "Missing $ inserted" and sets the same', any('Missing $ inserted' in x for x in r) and 'Costs 5(excl.tax)now.' in t.replace(' ', '').replace('Costs', 'Costs '), (r[:2], t[:80]))
     # (review N4) inside a line or a group, and a glue's stretch with it
     Dr = DOC.replace('Agent income here.', 'Before {\\fboxsep=0pt\\fbox{boxed}} after.\n\n\\parfillskip=0pt plus 1fil Some words here.')
     load_doc(page, Dr)
