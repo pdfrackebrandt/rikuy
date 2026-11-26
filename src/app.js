@@ -2012,7 +2012,7 @@ class App {
       if (s.rangeCount && s.isCollapsed && this.ghost.el.contains(s.anchorNode)) {
         const fwd = (e.key === 'ArrowRight') !== (getComputedStyle(this.ghost.el).direction === 'rtl');
         const t = this.ghostSide(fwd);
-        if (t) { e.preventDefault(); s.collapse(t, fwd ? 0 : t.data.length); return; }
+        if (t) { e.preventDefault(); if (t !== 'end') s.collapse(t[0], t[1]); return; }
       }
     }
     // out of a footnote at the page's foot: Esc, or Right at its end (Shift+F5 too: goBack)
@@ -3215,14 +3215,32 @@ class App {
     return true;
   }
   removeGhost() { if (this.ghost) { const g = this.ghost; this.ghost = null; g.el.remove(); if (g.restore) g.restore(); } }
-  // the page's first text after the empty paragraph Enter showed (fwd), or its last text before it:
-  // where Right, Left and Delete there go
+  // Where Right and Delete (fwd) or Left go from the empty paragraph Enter showed: the start of the
+  // paragraph after it in the text's flow, or the end of the one before, across pages; never a
+  // footnote, a header or a footer, which stand outside the flow (the page's last paragraph went
+  // into its footnote). [node, offset]; 'end' where the text ends there (the keys stay: the
+  // browser's went on into the footnotes); null where the block there is none of text (a display,
+  // a float, a page break): those keep the browser's own key, as at any paragraph's end. The end
+  // after an atom that ends the paragraph (a citation, a footnote mark), as End's: its text's end
+  // was before the atom.
   ghostSide(fwd) {
     const g = this.ghost;
     if (!g || !g.el || !g.el.isConnected) return null;
-    const w = document.createTreeWalker(this.root, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (!g.el.contains(n) && n.data.replace(/\u200B/g, '') && n.parentElement.closest('span.t') && !n.parentElement.closest('.atom, .gh, .caplab') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
-    w.currentNode = g.el;
-    return fwd ? w.nextNode() : w.previousNode();
+    const flow = [...this.root.querySelectorAll('.flow > .it')], k = flow.indexOf(g.el), b = k < 0 ? null : flow[fwd ? k + 1 : k - 1];
+    const text = (x) => !x.matches('.atom, .flt, .ghostp') && !!x.querySelector('span.t:not(.gh)');
+    if (k < 0) return null;
+    // (no paragraph of text on that side, past displays and floats too: the browser's key went on
+    // into the footnotes)
+    if (!(fwd ? flow.slice(k + 1) : flow.slice(0, k)).some(text)) return 'end';
+    if (!text(b)) return null;
+    const kids = [...b.childNodes], txt = (x) => x && x.nodeType === 1 && x.matches('span.t:not(.gh)') && x.firstChild && x.firstChild.nodeType === 3;
+    if (fwd) {
+      let i = 0;
+      while (i < kids.length && kids[i].nodeType === 1 && kids[i].matches('.lbl, .secnum, .caplab')) i++;
+      return txt(kids[i]) ? [kids[i].firstChild, 0] : [b, i];
+    }
+    const x = kids[kids.length - 1];
+    return txt(x) ? [x.lastChild, x.lastChild.data.length] : [b, kids.length];
   }
   // the caret where Enter at a paragraph's start left it, the empty paragraph showing above it
   ghostKept() {
@@ -3265,7 +3283,7 @@ class App {
       // (Delete in the empty paragraph above a paragraph: the caret goes to that paragraph's start;
       // in one below a paragraph it goes too, the caret at the next paragraph's start, as Word's
       // Delete takes the empty paragraph's mark: it did nothing. At the text's end, nothing to take)
-      if (how === 'del' && !(g.before || g.tex === 'before') && (g.tex || !this.ghostSide(true))) return false;
+      if (how === 'del' && !(g.before || g.tex === 'before') && (g.tex || !Array.isArray(this.ghostSide(true)))) return false;
     }
     const back = () => { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(g.keepAt); this.ourSel = true; };
     // (of several Enters' empty paragraphs, one goes: review V2)
@@ -3275,10 +3293,10 @@ class App {
       this.ribbonSoon();
       return true;
     }
-    const next = how === 'del' && !(kept || over) && !(g.before || g.tex === 'before') ? this.ghostSide(true) : null;
+    const nx = how === 'del' && !(kept || over) && !(g.before || g.tex === 'before') ? this.ghostSide(true) : null, next = Array.isArray(nx) ? nx : null;
     this.removeGhost();
     if (kept || over) back();
-    else if (next) { const sel = getSelection(); sel.collapse(next, next.data.search(/[^\u200B]/) < 0 ? 0 : next.data.search(/[^\u200B]/)); }
+    else if (next) getSelection().collapse(next[0], next[1]);
     // (Backspace in it ends at the paragraph above, Delete and Undo at the place it stood for)
     else this.restoreCaret({ f: g.f, p: g.pos, bias: g.tex === 'before' || (how !== 'back' && (g.before || how === 'del')) ? 1 : -1 });
     this.ribbonSoon();
