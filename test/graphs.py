@@ -1,6 +1,7 @@
 """Interactive graphs as Rikuy's edge (PLAN.md task 70, docs/handoff/GRAPHS.md). The opening
 document leads with a live graph in its first screen, tied to its Bellman equation, its PDF picture
-drawn as PGF; Graph this from an equation's right click menu, the Equation tab and the search box
+drawn as PGF; every graph's frame lies on its box, at four widths and after the pages move with
+the zoom staying (a wider window, a pane closed, Side to Side); Graph this from an equation's right click menu, the Equation tab and the search box
 inserts a live graph below it in one undo step (byte for byte, files and picture gone), for
 y = f(x), f(x), a parametric pair, F(x, y) = c and a pair of time derivatives, and says what it
 cannot draw; the dialog's new kinds (implicit, phase) and named templates insert and edit as one
@@ -135,6 +136,72 @@ def opening(p):
         check('opening %d: the sample is still the untouched sample (its version check)' % w, page.evaluate('window.rikuy.files.size') == 4)
         check('opening %d: no console errors' % w, not errors, errors[:3])
         browser.close()
+
+
+# How far each live graph's frame lies from its box in the text, in CSS pixels: the largest of its
+# four edges' differences, one number per graph (the frames live in a layer of their own, laid over
+# the boxes, src/widget.js). A frame is matched to its box by the file it runs.
+OFF = '''() => [...document.querySelectorAll('#wlayer .wbox:not([hidden])')].map((b) => {
+  const i = b.querySelector('iframe.rk-widget'), path = i && i.title.replace(/^Live figure /, '');
+  const ph = path && [...document.querySelectorAll('.w-live')].find((e) => e.dataset.wf === path);
+  if (!ph) return 999;
+  const r = b.getBoundingClientRect(), q = ph.getBoundingClientRect();
+  return Math.round(Math.max(...[r.left - q.left, r.top - q.top, r.right - q.right, r.bottom - q.bottom].map(Math.abs)) * 10) / 10; })'''
+
+
+def aligned(p):
+    """Every live graph's frame lies on its box, within a pixel: the opening document's and Learn
+    Rikuy's at 390 px with touch, 1024, 1366 and 1920 px; then with the pages moved and nothing in
+    them drawn again, the zoom staying (a wider window, the Help pane docked and closed, Side to
+    Side on and off), and an inserted graph through the same. The frames once stayed where they
+    were while the pages centred themselves again: the graph stood 167 px left of its box after a
+    window went from 1366 to 1700 px, its pale hover box running on empty past it."""
+    def off(page, n):
+        until(page, '(n) => document.querySelectorAll("#wlayer iframe.rk-widget").length >= n', n, timeout=8000)
+        # (the page's refit after a resize is debounced: 150 ms, src/app.js)
+        settle(page, 400, full=True)
+        return page.evaluate(OFF)
+    ok = lambda v, n: len(v) == n and max(v) <= 1
+    for w, touch in ((390, True), (1024, False), (1366, False), (1920, False)):
+        browser, page, errors = open_page(p, w, 900, touch=touch)
+        v = off(page, 1)
+        check('aligned %d: the opening graph\'s frame lies on its box' % w, ok(v, 1), v)
+        page.evaluate("window.rikuy.runCommand('help-tour')")
+        until(page, '() => window.rikuy.files.has("widgets/wave.html")', timeout=5000)
+        v = off(page, 1)
+        check('aligned %d: Learn Rikuy\'s graph\'s frame lies on its box' % w, ok(v, 1), v)
+        check('aligned %d: no console errors' % w, not errors, errors[:3])
+        browser.close()
+    browser, page, errors = open_page(p, 1366, 900)
+    page.evaluate("window.rikuy.runCommand('help-tour')")
+    until(page, '() => window.rikuy.files.has("widgets/wave.html")', timeout=5000)
+    off(page, 1)
+    z = page.inner_text('#zoomv')
+    page.set_viewport_size({'width': 1920, 'height': 900})
+    v = off(page, 1)
+    check('aligned: the window made wider at the same zoom (%s, %s), the frame follows its box' % (z, page.inner_text('#zoomv')), ok(v, 1) and page.inner_text('#zoomv') == z, v)
+    page.evaluate("window.rikuy.runCommand('help')")
+    until(page, '() => !!document.getElementById("helppane")', timeout=3000)
+    v = off(page, 1)
+    check('aligned: the Help pane docked beside the page, the frame follows its box', ok(v, 1), v)
+    page.evaluate('window.rikuy.closeHelpPane()')
+    v = off(page, 1)
+    check('aligned: the Help pane closed, the frame follows its box', ok(v, 1), v)
+    for k in ('on', 'off'):
+        page.evaluate("window.rikuy.runCommand('side-to-side')")
+        v = off(page, 1)
+        check('aligned: Side to Side %s, the frame follows its box' % k, ok(v, 1), v)
+    click_text(page, 'Drag its sliders')
+    page.evaluate('window.rikuy.runCommand("insert-interactive-graph")'); page.wait_for_selector('#gd-ok'); settle(page, 300)
+    page.click('#gd-ok')
+    v = off(page, 2)
+    check('aligned: an inserted graph\'s frame lies on its box, and the first one\'s still', ok(v, 2), v)
+    z = page.inner_text('#zoomv')
+    page.set_viewport_size({'width': 1500, 'height': 900})
+    v = off(page, 2)
+    check('aligned: the window made narrower at the same zoom, both frames follow their boxes', ok(v, 2) and page.inner_text('#zoomv') == z, v)
+    check('aligned: no console errors', not errors, errors[:3])
+    browser.close()
 
 
 EQ_DOC = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nWith $\\alpha = 0.3$ and $s = 0.25$ the law of motion is\n'
@@ -617,7 +684,7 @@ def run():
     with sync_playwright() as p:
         fns = [graph_this, dialog, hand_edits, upgrade, keyboard, compiles]
         want = sys.argv[1:]
-        for fn in (opening,):
+        for fn in (opening, aligned):
             if not want or fn.__name__ in want:
                 try:
                     fn(p)
