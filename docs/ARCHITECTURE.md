@@ -1239,7 +1239,12 @@ exits from deep inside leave it lower: unreset, Ghostscript's 64 KB stack hit it
 
 TeX does likewise in `newTeX()` and `run()`: after warm runs the first 64 MiB (`MEM_HEADER`) are
 kept and restored after every run, the rest zeroed, the stack reset to `_sp0`, descriptors above 2
-closed; that also frees strings the worker mallocs into TeX's heap. asy's fork to render a 3D
+closed; that also frees strings the worker mallocs into TeX's heap. XeTeX's warm run reads ICU's
+data (5 MB, in a pack of 2.75 MB): it runs the first time an instance runs XeTeX (`xeWarm()`), on
+the heap kept then, which is kept again after it, so a document that never runs XeTeX does not
+fetch that pack; a XeLaTeX compile fetches it with its other packs, and the offline plan keeps it.
+Every PDF of pdfLaTeX, XeLaTeX and LuaLaTeX, in either order in a session, came out byte for byte
+the same as with every warm run at the start. asy's fork to render a 3D
 bitmap becomes `galley_fork_save` (memory below `sbrk(0)`), render, `galley_fork_restore`.
 
 ## 13. The TeX tree, packs, lazy loading, mirror
