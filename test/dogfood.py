@@ -748,13 +748,13 @@ def real(page):
     click_text(page, 'Wie haben', 9); k.press('Enter'); settle(page, 200); k.type('Q')
     settle(page, 200)
     check('real: Enter in a command of its own closes and opens it again round the break', '\\question{\\bf Wie haben}\n\n\\question{\\bf Q Sie gelernt?}' in src(page), src(page)[-120:])
-    compiles(page, 'real question split')
+    three(page, src(page), 'real question split')
     load_doc(page, D)
     click_text(page, 'gelernt?', 8); k.press('Enter'); settle(page, 200); k.type('After')
     settle(page, 200)
     # (its words' bold goes on in the new paragraph, as Word's formats do)
     check('real: Enter at the end of its words starts a paragraph after it', '\\question{\\bf Wie haben Sie gelernt?}\n\n{\\bf After}' in src(page), src(page)[-120:])
-    compiles(page, 'real question end')
+    three(page, src(page), 'real question end')
     # (review B1) a group after an argument is a group, which holds the break: the command before it
     # was copied into the new paragraph, \textbf{Keywords:} printed twice, \LaTeX{} twice
     for body, at, want in (('Intro words. \\textbf{Keywords:} {\\small alpha beta gamma} end.', 'beta', '{\\small alpha \n\nQbeta gamma} end.'),
@@ -763,20 +763,20 @@ def real(page):
         load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,xcolor}').replace('Agent income here.', body))
         click_text(page, at, 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
         check('real: Enter in a group after ' + body.split('{')[0].split()[-1] + ' keeps the group, the command once', want in src(page) and src(page).count(body.split('{')[0].split()[-1]) == 1, src(page)[-140:])
-    compiles(page, 'real group after an argument')
+        three(page, src(page), 'real group after ' + body.split('{')[0].split()[-1], ('Qbeta' if 'beta' in want else 'Qtypesetting' if 'typesetting' in want else 'Qcarefully',))
     # (review B2) Enter in a minipage inside a command of the document's own: the break stays in the
     # minipage; the command was split between \begin and \end, and TeX stopped
     Db = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\newcommand{\\mybox}[1]{\\fbox{#1}}').replace('Agent income here.', '\\mybox{\\begin{minipage}{5cm}\nFirst words of the box and more.\n\\end{minipage}}')
     load_doc(page, Db)
     click_text(page, 'box and', 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
     check('real: Enter in a minipage inside \\mybox{..} keeps the break in the minipage', 'First words of the \n\nQbox and more.\n\\end{minipage}}' in src(page) and src(page).count('\\mybox{') == 1, src(page)[-160:])
-    compiles(page, 'real minipage in a command')
+    three(page, src(page), 'real minipage in a command', ('First words of the', 'Qbox and more.'))
     # (review N1) a \long command of the document's own whose words reach no other command takes
     # paragraphs: one exercise of two paragraphs, not two exercises
     load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\newcounter{ex}\n\\newcommand{\\exercise}[1]{\\refstepcounter{ex}\\par\\noindent\\textbf{Exercise \\theex.} #1}').replace('Agent income here.', '\\exercise{Prove the first claim and then the second}'))
     click_text(page, 'and then', 0); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
     check('real: Enter in \\exercise{..} (#1 at its top) writes the paragraph inside it', '\\exercise{Prove the first claim \n\nQand then the second}' in src(page), src(page)[-120:])
-    compiles(page, 'real long command')
+    three(page, src(page), 'real long command', ('Exercise 1. Prove the first claim', 'Qand then the second'))
     # Enter at the end of a list item in a group: the new \item after the group, not in it,
     # where the page drew it as the text "\item"
     load_doc(page, DOC.replace('Agent income here.', '\\begin{enumerate}\n\\item {\\textbf{First}}\n\\item {\\bf Second}\n\\end{enumerate}'))
@@ -784,7 +784,7 @@ def real(page):
     settle(page, 200)
     check('real: Enter at the end of an item in braces writes the new \\item after them', '\\item {\\bf Second}\n\\item Third\n\\end{enumerate}' in src(page), src(page)[-120:])
     check('real: and the page draws it as an item', page.evaluate("[...document.querySelectorAll('#pages .it')].some((e) => e.dataset.li && e.textContent.trim().endsWith('Third') && !e.textContent.includes('\\\\item'))"))
-    compiles(page, 'real item group')
+    three(page, src(page), 'real item group')
     # Enter in the middle of a caption outside a float (\captionof) or a letter's \closing writes
     # nothing, as in a figure's caption: closed and opened again round the break it printed twice
     load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,caption}').replace('Agent income here.', 'Text.\n\n\\begin{center}\n\\captionof{figure}{Stone with names and years.}\n\\end{center}'))
@@ -797,7 +797,7 @@ def real(page):
     load_doc(page, '\\documentclass{letter}\n\\signature{Pedro}\n\\begin{document}\n\\begin{letter}{Firm\\\\Town}\n\\opening{Dear Sir,}\nBody text here.\n\\closing{Kind regards, yours}\n\\end{letter}\n\\end{document}\n')
     click_text(page, 'regards,', 8); k.press('Enter'); settle(page, 200); k.type('Q'); settle(page, 200)
     check('real: Enter in \\closing{..} writes a line break in it', '\\closing{Kind regards,\\\\\nQ yours}' in src(page), src(page)[-120:])
-    compiles(page, 'real closing')
+    three(page, src(page), 'real closing', ('Kind regards,', 'Q yours'))
     # and in the middle of an environment's own title, \begin{definition}{Title} (a frame of the
     # document's own): a blank line went inside it, and TeX stopped ("Paragraph ended before \@textcolor")
     D2 = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\newenvironment{definition}[1]{\\par\\textcolor{black}{\\textbf{#1}}\\par}{\\par}\n\\usepackage{xcolor}').replace('Agent income here.', '\\begin{definition}{Rekurrentes Neuronale Netz}\nEin RNN ist.\n\\end{definition}')
@@ -806,7 +806,7 @@ def real(page):
     click_text(page, 'Neuronale Netz', 9); k.press('Enter'); settle(page, 200); k.type('Q')
     settle(page, 200)
     check('real: Enter inside an environment\'s title writes no blank line in it', src(page) == before.replace('Neuronale Netz', 'NeuronaleQ Netz'), src(page)[-160:])
-    compiles(page, 'real environment title')
+    three(page, src(page), 'real environment title')
     # the algorithm package's float, as TeX sets it (review B5): ruled by default, the caption first
     # between rules, "Algorithm 1" in bold then a space, wherever \caption stands; plain, "Algorithm 1:"
     # last; numbered within the section by [section]; a \ref to it numbered; its algorithmic drawn
@@ -834,7 +834,7 @@ def real(page):
     click_text(page, 'Solve the', 5); k.press('Enter'); settle(page, 200); k.type('X')
     settle(page, 200)
     check('real: Enter inside an algorithm\'s caption writes no blank line in it', '\\caption{SolveX the problem}' in src(page) and src(page).replace('SolveX', 'Solve') == before, src(page)[-160:])
-    compiles(page, 'real algorithm')
+    three(page, src(page), 'real algorithm')
     # \ac{KDE} and \Gls{slp}: an entry's key, drawn as a field; a word typed after it goes after
     # its braces. It went into the key, and TeX stopped ("Glossary entry `slp Zq' has not been defined")
     load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\usepackage{acronym}\n\\usepackage{glossaries}\n\\newacronym{slp}{SLP}{single-layer perceptron}\n\\makeglossaries').replace('Agent income here.', 'Convallis \\ac{KDE} nec a erat. Egestas \\Gls{slp} Mauris.\n\n\\begin{acronym}\n\\acro{KDE}{K Desktop Environment}\n\\end{acronym}'))
@@ -843,7 +843,7 @@ def real(page):
           const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.getElementById('pages').focus(); }""", i)
         settle(page, 100); k.type('Zq'); settle(page, 200)
     check('real: a word typed after \\ac{..} or \\Gls{..} goes after its braces, not into its key', '\\ac{KDE}Zq nec' in src(page) and '\\Gls{slp}Zq Mauris' in src(page), src(page)[-200:])
-    compiles(page, 'real acronyms')
+    three(page, src(page), 'real acronyms')
     # (acronym's \\acreset and acro's \\acuse print nothing: review N7)
     load_doc(page, src(page).replace('Mauris.', 'Mauris \\acreset{KDE}\\acuse{KDE}\\acused{KDE}end.'))
     txt = page.evaluate("document.getElementById('pages').innerText")
@@ -856,7 +856,7 @@ def real(page):
     click_text(page, 'Tickets', 7); k.press('Enter'); settle(page, 200); k.type('Money')
     settle(page, 200)
     check('real: Enter at the end of its item makes the next item', '\\item Tickets\n  \\item Money\n\\end{todolist}' in src(page), src(page)[-120:])
-    compiles(page, 'real newlist')
+    three(page, src(page), 'real newlist')
     # (review B6) an itemize inside it keeps its own first level's bullet, as enumitem counts a
     # \newlist list's depth apart: it was drawn a level deeper, "–"; (N3) Tab nests an item in a
     # todolist of its own, Shift+Tab takes it back, as in an itemize
@@ -902,7 +902,7 @@ def real(page):
         click_text(page, 'Text', 4); k.type(' "Hallo" und'); settle(page, 300)
         want = "``Hallo''" if 'alone' in name else '\u201eHallo\u201c'
         check('real: German set by ' + name + ': ' + want, 'Text ' + want + ' und hier.' in src(page), src(page)[-80:])
-        compiles(page, 'real quotes, ' + name)
+        three(page, src(page), 'real quotes, ' + name)
 
 
 with sync_playwright() as p:
