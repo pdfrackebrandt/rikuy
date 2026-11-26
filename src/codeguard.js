@@ -65,6 +65,17 @@ export function codeRuns(src, a, b) {
   return out;
 }
 
+// Where the text of a step replacing [a, b) of src lands when a is in a run's code: -1 where it
+// stays in the code (a place there, a range inside it, or one from after its first letter into
+// the words after the run, clipped to the code by guardOne), else the place in the prose it goes
+// to: the run's start where the range takes all of the code and more (the run goes whole), the
+// run's end where it starts at the code's end. Written as code there, a pasted p_q went into the
+// paragraph raw, TeX's Missing $.
+export function proseAt(src, a, b = a) {
+  for (const R of codeRuns(src, a, Math.max(a, b))) if (R.is <= a && a <= R.ie) return b <= R.ie ? -1 : a <= R.is ? R.S : a === R.ie ? R.E : -1;
+  return -1;
+}
+
 // One edit [s, e) -> t of src made to keep the runs whole: a list of edits, t on the one that
 // begins where the edit did (or the first, where that place was syntax).
 // (minted's code in braces ends at the brace that balances: a part of it taken whole only where

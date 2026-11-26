@@ -15,7 +15,7 @@ import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
 import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath, oneLineLatex, headingsAsWords } from './paste.js';
-import { keepCodeSyntax } from './codeguard.js';
+import { keepCodeSyntax, proseAt, codeRuns } from './codeguard.js';
 import { chainAt, needsOf, preambleFor, hlTakesColor } from './charfmt.js';
 import { mapPos } from './wrap.js';
 import { findProblems, missingFigures } from './problems.js';
@@ -2506,7 +2506,9 @@ class App {
     // (in \lstinline's or \mintinline's code: $ and \ are the code's characters, no formula or
     // command list, nor AutoCorrect's changes (... wrote \ldots{} into the code); the character
     // that would end the code, typed at its very end, steps out of it, elsewhere it is refused)
-    const ic = c.ghost || raw ? null : this.inlineCodeAt(range ? range.f : c.f, range ? range.a : c.a);
+    let ic = c.ghost || raw ? null : this.inlineCodeAt(range ? range.f : c.f, range ? range.a : c.a);
+    // (a selection from the code's start or end past the run: the words land in the prose)
+    if (ic != null && range && proseAt(this.src(range.f), range.a, range.b) >= 0) ic = null;
     if (!raw && ic == null && !(!c.ghost && this.texAt(c.f, c.a))) {
       for (const h of insertTextHooks) {
         const r = h(this, data, range);
@@ -2537,7 +2539,7 @@ class App {
     let at = a;
     // If deletion collapsed to visible ranges, insertion goes where the first visible char was
     if (edits.length && edits[0].s > a && edits.length > 0 && edits[0].t === '') at = edits[0].s;
-    const t = this.escapeAt(f, at, data);
+    const t = this.escapeAt(f, at, data, b);
     // merge if insertion point coincides with a deletion start
     const merged = [];
     let inserted = false;
@@ -2645,11 +2647,12 @@ class App {
   // from a paragraph into a LaTeX paragraph or back: the text is written as the place it lands in
   // takes it, as source in the box, escaped in the text; {} after a control word, a bracket kept
   // from being read as the optional argument of the command before it.
-  escapeAt(f, at, data) {
+  escapeAt(f, at, data, end = at) {
     const src = this.src(f), lands = this.texAt(f, at);
     // (in \lstinline's or \mintinline's code every character is the code's own, as typed: escaped
-    // as prose, a _ printed its backslash, and \} ended the code, TeX's Extra })
-    if (!lands && this.inlineCodeAt(f, at) != null) return data;
+    // as prose, a _ printed its backslash, and \} ended the code, TeX's Extra }; text over [at, end)
+    // that lands beside the run, in prose, is written as prose there)
+    if (!lands && this.inlineCodeAt(f, at) != null) { const w = proseAt(src, at, end); if (w < 0) return data; at = w; }
     let t = lands ? data : this.typedTeX(f, at, data);
     if (!lands && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!lands && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
@@ -3845,7 +3848,7 @@ class App {
     const edits = c.collapsed ? [] : this.deletionEdits(c.f, c.a, c.b, true);
     // (as typing writes it, escapeAt: code's quotes straight, a dead key's ' in lstlisting wrote a
     // backtick into the code; {} after a control word)
-    const t = this.escapeAt(c.f, c.a, data);
+    const t = this.escapeAt(c.f, c.a, data, c.b);
     // the deletions of a replaced selection lie after c.a: they do not move the caret back
     const removedBefore = edits.filter((ed) => ed.e <= c.a).reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
     const removed = edits.reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
@@ -3900,7 +3903,8 @@ class App {
     // & and \\ alone, put in a paragraph, stop TeX)
     const cells = blockTabular(src, c.a, c.b);
     if (cells) return cells;
-    if (isBalanced(src, c.a, c.b)) return src.slice(c.a, c.b);
+    // (not where it cuts an inline code run: its letters go in their run, below)
+    if (isBalanced(src, c.a, c.b) && !codeRuns(src, c.a, c.b).some((R) => (c.a > R.S && c.a < R.E) || (c.b > R.S && c.b < R.E))) return src.slice(c.a, c.b);
     const vr = visibleRanges(this.renderer.blocks, c.f, c.a, c.b);
     // (the paragraph on the page each piece is in: words of two paragraphs stay two paragraphs, as
     // Word's paste keeps them. Only a blank line between them in the source counted, and a
@@ -3924,12 +3928,15 @@ class App {
       if (s < e) pieces.push({ s, e });
     }
     pieces.sort((x, y) => x.s - y.s);
+    // (letters of an inline code run go in their run, \lstinline|..| and its kin, as code still:
+    // as bare source a dragged or copied % ended the paragraph's line and a _ stopped TeX)
+    const inCode = (s, e) => { for (const R of codeRuns(src, s, e)) if (R.is <= s && e <= R.ie && R.E > R.ie) return src.slice(R.S, R.is) + src.slice(s, e) + src.slice(R.ie, R.E); return null; };
     let out = '';
     let last = null, lastP = null;
     for (const X of pieces) {
       const P = X.whole ? null : paraOf(X.s);
       if (last != null && (X.whole || last.whole || /\n\s*\n/.test(src.slice(last.e, X.s)) || apart(lastP, P))) out += '\n\n';
-      out += X.whole ? src.slice(X.s, X.e).trim() : src.slice(X.s, X.e);
+      out += X.whole ? src.slice(X.s, X.e).trim() : inCode(X.s, X.e) ?? src.slice(X.s, X.e);
       last = X;
       lastP = X.whole ? null : paraOf(Math.max(X.s, X.e - 1)) || P;
     }
@@ -4016,7 +4023,7 @@ class App {
     // (into \lstinline's or \mintinline's code: the words as they are, the code's own characters,
     // one line, as typed there; escaped as prose a _ printed its backslash and \} ended the code.
     // Words holding a character that would end it are refused, said why)
-    const icP = c.ghost || this.texAt(c.f, c.a) ? null : this.inlineCodeAt(c.f, c.a);
+    const icP = c.ghost || this.texAt(c.f, c.a) || proseAt(this.src(c.f), c.a, c.b) >= 0 ? null : this.inlineCodeAt(c.f, c.a);
     if (icP != null && plain) {
       const t = plain.replace(/\s*\r?\n\s*/g, ' ');
       const bad = icP && [...t].find((ch) => icP.includes(ch));
@@ -4131,7 +4138,11 @@ class App {
     if (!raw) t = this.listPaste(c.f, at, t);
     const removedBefore = edits.filter((ed) => ed.e <= at).reduce((s, ed) => s + (ed.e - ed.s), 0);
     const pk = raw ? [] : this.pastePackages(t), grew = pk.filter((x) => x.f === c.f && x.s <= at).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
-    this.commit([...edits, { f: c.f, s: at, e: at, t }, ...pk], { f: c.f, p: at - removedBefore + t.length + grew }, 'paste');
+    // (words over a selection from inline code's start or end into the words after it: one edit
+    // with the deletion they start, as typing makes it, so the code guard puts them where the
+    // run's syntax lets them land, in the prose they are written for; apart, they went into the code)
+    const put = !raw && proseAt(src, c.a, c.b) >= 0 && edits.length && edits[0].s === at ? [{ ...edits[0], t: edits[0].t + t }, ...edits.slice(1)] : [...edits, { f: c.f, s: at, e: at, t }];
+    this.commit([...put, ...pk], { f: c.f, p: at - removedBefore + t.length + grew }, 'paste');
     // LaTeX source pasted as text got its backslashes escaped: offer to keep it as LaTeX
     if (!latex && !plainOnly && t !== plain && /\\[A-Za-z]+/.test(plain) && /\\textbackslash\{\}|\\\$/.test(t)) {
       const pos = { f: c.f, s: at - removedBefore, len: t.length, raw: plain };

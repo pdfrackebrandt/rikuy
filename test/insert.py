@@ -1151,6 +1151,20 @@ def hunt_c(page):
     load_doc(page, W('Use \\lstinline|abcd| here.'))
     page.evaluate("() => { const g = window.rikuy; g.findSet({ q: 'cd here', rep: 'Z', o: { matchCase: true, wholeWord: false, wildcards: false, regex: false, source: false, insel: false, fmt: 0 } }); g.replaceAll(); }"); settle(page, 200)
     check('Replace All of "cd here" by Z across the code\'s end: the code keeps its closing |', 'Use \\lstinline|abZ|.' in src(page), src(page)[40:120])
+    # (review of round 4) words put over a selection that leaves the code land in the prose and
+    # are written as prose there; code's letters dragged or copied go in their run (from the code's
+    # start or end into the words after it, a pasted p_q went into the paragraph raw, TeX's Missing
+    # $; a dragged %>% of \lstinline ended the paragraph's line)
+    SEL2 = """([a, ao, z, zo]) => { const w = document.createTreeWalker(document.getElementById('pages'), NodeFilter.SHOW_TEXT); const ns = []; for (let n; (n = w.nextNode());) if (n.data.trim()) ns.push(n);
+      const na = ns.find((n) => n.data.includes(a)), nz = ns.find((n) => n !== na && n.data.includes(z));
+      const r = document.createRange(); r.setStart(na, na.data.indexOf(a) + ao); r.setEnd(nz, nz.data.indexOf(z) + zo); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); return true; }"""
+    PASTE2 = "(t) => { const d = new DataTransfer(); d.setData('text/plain', t); document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', {clipboardData: d, bubbles: true, cancelable: true})); }"
+    for sel, how, want in ((['abcd', 0, ' here', 6], 'from the code\'s start', 'Use p\\_q\n'), (['abcd', 4, ' here', 5], 'from the code\'s end', 'Use \\lstinline|abcd|p\\_q.')):
+        load_doc(page, W('Use \\lstinline|abcd| here.')); page.evaluate(SEL2, sel); settle(page, 60); page.evaluate(PASTE2, 'p_q'); settle(page, 200)
+        check('p_q pasted over a selection %s into the words after it: in the prose, as prose (\\_)' % how, want in src(page), src(page)[40:120])
+    load_doc(page, W('Use \\lstinline|abcd| here.')); page.evaluate(SEL2, ['abcd', 2, ' here', 5]); settle(page, 60)
+    got = page.evaluate("() => window.rikuy.selectionLatex(window.rikuy.caretNow())")
+    check('the LaTeX a drag or a copy takes of "cd here": the code\'s letters in their run', got == '\\lstinline|cd| here', got)
     # a delete the guard cuts to nothing says why (it did nothing, silently)
     load_doc(page, W('Use \\mintinline{c}{a{b}c} here.')); before = src(page); page.evaluate("document.getElementById('toast').textContent = ''")
     page.evaluate("() => { const g = window.rikuy, s = g.src('main.tex'), p = s.indexOf('{b}'); g.restoreCaret({ f: 'main.tex', p: p + 2, selA: p, selB: p + 2 }); }"); settle(page, 100); press(['Delete'])
@@ -1203,15 +1217,19 @@ def hunt_c(page):
     check('AutoCorrect: "i" typed at the end of Italian words stays', '{Ciao i }' in src(page) or '{Ciao i} ' in src(page), src(page)[60:160])
 
 
-def code_ok(body):
+def code_ok(body, prose=False):
     """Whether every \verb, \lstinline and \mintinline of body reads as TeX reads it, closed on its
-    line, and the braces outside their code balance (what codeRuns in src/codeguard.js reads)."""
+    line, and the braces outside their code balance (what codeRuns in src/codeguard.js reads);
+    prose: also no _, ^, #, & or % outside the code unescaped (a body with no formula or comment:
+    a pasted p_q went into the paragraph raw, TeX's Missing $)."""
     import re
     depth = 0
     for line in body.split('\n'):
         i = 0
         while i < len(line):
             c = line[i]
+            if prose and c in '_^#&%':
+                return False
             if c == '%':
                 break
             if c == '\\':
@@ -1261,10 +1279,17 @@ def code_fuzz(page):
     Shift with them) and sometimes followed by X and two Backspaces. Every result keeps each run
     closed on its line and the braces beside them balanced; a lone Backspace or Delete at a caret
     takes at most one letter of the page (it took a whole run once); Undo gives the source back
-    byte for byte; with dist/tex a sample of the results compiles. The seed is CODE_FUZZ_SEED, or
-    the commit's (GITHUB_SHA), printed with a failure so it is found again."""
+    byte for byte; no _, ^, #, & or % is left bare in the prose (a body with no formula or
+    comment); with dist/tex a sample of the results compiles. The seed is CODE_FUZZ_SEED, or
+    the commit's (GITHUB_SHA), printed with a failure so it is found again; and always 153620966,
+    whose Shift+End and paste from the code's start wrote p_q raw into the paragraph."""
+    seeds = [int(os.environ['CODE_FUZZ_SEED'])] if os.environ.get('CODE_FUZZ_SEED') else [153620966, int((os.environ.get('GITHUB_SHA') or '4')[:8], 16)]
+    for seed in seeds:
+        code_fuzz_seed(page, seed)
+
+
+def code_fuzz_seed(page, seed):
     import random
-    seed = int(os.environ.get('CODE_FUZZ_SEED') or int((os.environ.get('GITHUB_SHA') or '4')[:8], 16))
     rnd = random.Random(seed)
     body = ('Use \\lstinline|ab cd| here and \\verb|x_y| too, then \\lstinline{gh ij}\n\n'
             'Then \\mintinline{py}|f(x)| and \\texttt{tt w} end \\lstinline[language=R]{df %>% q}\n\n'
@@ -1315,7 +1340,7 @@ def code_fuzz(page):
             for _ in range(2): page.keyboard.press('Backspace'); settle(page, 80)
         got = src(page)
         what = 'seed %d, %d: %s %s%s' % (seed, k, ' '.join(steps) or ('selection' if sel else 'caret'), act, ', X and two Backspaces' if more else '')
-        if not code_ok(got[got.find('{document}') + 10:got.rfind('\\end{document}')]):
+        if not code_ok(got[got.find('{document}') + 10:got.rfind('\\end{document}')], prose=True):
             bad.append((what, got[got.find('{document}') + 11:got.rfind('\\end{document}')]))
         elif got != D and got not in seen:
             seen.append(got)

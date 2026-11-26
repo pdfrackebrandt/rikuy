@@ -1,6 +1,6 @@
 // src/codeguard.js: inline code's syntax kept whole by edits made on the page (its header says why)
 import assert from 'node:assert/strict';
-import { codeRuns, keepCodeSyntax } from '../src/codeguard.js';
+import { codeRuns, keepCodeSyntax, proseAt } from '../src/codeguard.js';
 
 let n = 0;
 const ok = (name, fn) => { try { fn(); n++; } catch (e) { console.log('FAIL', name, e.message); process.exitCode = 1; } };
@@ -39,5 +39,10 @@ ok('the caret after the letters typed over a cut range', () => {
 ok('\\verb and braces of minted the same', () => {
   assert.equal(run('a \\verb|xy| b', 9, 12, 'Q').text, 'a \\verb|xQ|b');
   assert.equal(run('a \\mintinline{c}{xy} b', 18, 22, '').text, 'a \\mintinline{c}{x}');
+});
+ok('where words over a range from inside code land: in the code, or the prose beside the run', () => {
+  // (inside, from after the first letter: the code; from its start past it: before the run, which
+  // goes whole; from its end: after the run)
+  assert.deepEqual([[at('bc'), at('d|')], [at('bc'), at('here')], [at('abcd'), at('here')], [at('| here'), at('here')], [0, 2]].map(([a, b]) => proseAt(S, a, b)), [-1, -1, at('\\lst'), at(' here'), -1]);
 });
 console.log('codeguard: ' + n + ' passed');
