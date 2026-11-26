@@ -260,6 +260,23 @@ try:
             if TEX and keys == 'Q':
                 r = compiles(s10)
                 check('and it compiles in the page', r['ok'] and not r['problems'], r)
+        # A display of its own between paragraphs, emptied in the field and closed: the display goes
+        # and an empty paragraph stays where it stood, the caret in it, as Word leaves the
+        # equation's paragraph. The caret went to the next paragraph's start, and a letter typed
+        # joined its first word ("WNext."). Backspace there ends after the paragraph above, Undo
+        # brings the display back.
+        D2 = P('Before.\n\n\\begin{equation}\na+1\n\\end{equation}\n\nNext.')
+        for keys, want in ((['W'], 'Before.\n\nW\n\nNext.'), (['Backspace', 'W'], 'Before.W\n\nNext.'), (['Control+z'], 'Before.\n\n\\begin{equation}\na+1\n\\end{equation}\n\nNext.')):
+            load_doc(page, D2)
+            page.click('.it.dm >> nth=0'); page.wait_for_selector('#pop-field', timeout=8000); settle(page, 300)
+            for k in range(5): page.keyboard.press('Backspace'); settle(page, 60)
+            page.keyboard.press('Escape'); settle(page, 300, full=True)
+            for k in keys:
+                if len(k) > 1: page.keyboard.press(k)
+                else: page.keyboard.type(k)
+                settle(page, 150)
+            s11 = src(page)
+            check('a display emptied and closed, then %s: %r' % (' '.join(keys), want), P(want) == s11, s11[s11.find('{document}') + 11:s11.find('\\end{document}')])
 
         # --- dark mode look
         check('no console errors', not errors, errors[:5])

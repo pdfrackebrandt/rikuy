@@ -5161,6 +5161,13 @@ class App {
             const sep = !s0 || e0 >= S.length ? '' : nlB >= 2 || nlA >= 2 ? nl + nl : nlB || nlA ? nl : ' ';
             this.commit([{ f: R.f, s: s0, e: e0, t: sep }], null, P.session);
             P.returnCaret = { f: R.f, p: s0 + sep.length };
+            // (a display of its own between paragraphs: an empty paragraph where it stood, the
+            // caret in it, as Word leaves the equation's paragraph; what was typed there joined
+            // the next paragraph's first word, "WNext.")
+            if (sep === nl + nl) {
+              this.ghostAt(R.f, s0);
+              if (this.ghost) { this.ghost.place = true; P.returnCaret = null; }
+            }
           }
           P.removed = true;
           this.eqClosed(P, '');
