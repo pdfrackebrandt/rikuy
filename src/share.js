@@ -443,6 +443,27 @@ function combine(base, A, C, budget) {
   return { text: out + base.slice(p), clean };
 }
 
+// Which copies of a project a copy has seen, as a version vector: for each tab that wrote one, the
+// time of the last of its copies this one comes from. A tab merges another's copy only where it
+// has seen this tab's last copy (vvHas), so a copy written over that one without merging it is
+// never read as this tab's words deleted. One entry per tab, the newest VV_MAX kept: a list of
+// the last copies, 32 of them, filled up in one window's 32 saves, and the other window, saving
+// unfocused, merged no more (review V2-C).
+const VV_MAX = 64;
+export function vvJoin(...vs) {
+  const o = {};
+  for (const v of vs) if (v && typeof v === 'object') for (const [k, t] of Object.entries(v)) if (typeof t === 'number' && !(o[k] >= t)) o[k] = t;
+  const e = Object.entries(o);
+  return e.length > VV_MAX ? Object.fromEntries(e.sort((x, y) => y[1] - x[1]).slice(0, VV_MAX)) : o;
+}
+// whether cur has seen every copy base has (an entry older than all cur keeps, when cur is full,
+// was dropped from it as old, and counts as seen)
+export function vvHas(cur, base) {
+  if (!cur || typeof cur !== 'object') return false;
+  const kept = Object.values(cur), floor = kept.length >= VV_MAX ? Math.min(...kept) : -Infinity;
+  return Object.entries(base && typeof base === 'object' ? base : {}).every(([k, t]) => (cur[k] || 0) >= t || t < floor);
+}
+
 // whole projects as Maps name -> text; a file one side removed and the other left alone goes
 export function mergeProjects(base, mine, theirs, opts = {}) {
   const files = new Map(), conflicts = [];

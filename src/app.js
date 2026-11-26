@@ -59,7 +59,7 @@ import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packag
 import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, THM_STYLES, titleInfo } from './styles.js';
 import { tableAt, cellAt as tableCellAt, colAlign, clipToCell, clearCells, blockTabular } from './table.js';
 import { eolAt } from './blockenv.js';
-import { shareParam, texParam, commentOnly, cleanPath, mergeProjects, merge3 } from './share.js';
+import { shareParam, texParam, commentOnly, cleanPath, mergeProjects, merge3, vvJoin, vvHas } from './share.js';
 import { version as VERSION } from '../package.json';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
 import { scriptNeeds, scriptLines, addScriptSetup, scriptName, scriptSetup, MORE } from './scripts.js';
@@ -7409,10 +7409,11 @@ class App {
     // document each kept typing on its own copy, and each save put the other's words into the
     // versions, out of the document.
     const base = this.savedMap === this.files ? this.savedCopy : null;
-    // (the copies this one comes from, newest first: another tab merges it only where it comes
-    // from that tab's own last copy, so a copy written over that one without merging it is never
-    // read as that tab's words deleted, review N2)
-    meta.anc = [meta.t, ...(base ? (Array.isArray(base.anc) ? base.anc : [base.t]) : [])].slice(0, 32);
+    // (the copies this one has seen, one entry per tab: another tab merges it only where it has
+    // seen that tab's own last copy, so a copy written over that one without merging it is never
+    // read as that tab's words deleted, review N2, V2-C; src/share.js vvJoin)
+    if (!this.tabKey) this.tabKey = [...crypto.getRandomValues(new Uint8Array(9))].map((x) => x.toString(16).padStart(2, '0')).join('');
+    meta.vv = vvJoin(base && base.vv, { [this.tabKey]: meta.t });
     this.savedCopy = meta;
     this.savedMap = this.files;
     let merged = null;
@@ -7458,7 +7459,7 @@ class App {
     if (!meta.pid || cur.pid !== meta.pid || base.pid !== meta.pid || cur.main !== meta.main || base.main !== meta.main) return null;
     // (and only a copy that comes from this tab's last: one written over it without merging it,
     // as a tab with another id or none does, would read as this tab's words deleted)
-    if (!Array.isArray(cur.anc) || !cur.anc.includes(base.t)) return null;
+    if (!vvHas(cur.vv, base.vv)) return null;
     const renamed = this.renamedThere(cur, meta.name, meta.nameT) ? cur.name : null;
     // (this tab's copy as "theirs": the side that wins where both changed the same words)
     const { files, conflicts } = mergeProjects(new Map(base.files), new Map(cur.files), new Map(meta.files));
@@ -7467,8 +7468,8 @@ class App {
     // comes from that tab's copy too: else that tab's next save, finding its own copy nowhere in
     // this one's, would keep it as another's; hT names no Undo steps where the text is the merge,
     // for those kept were written for this tab's text)
-    const anc = [...new Set([meta.t, ...cur.anc, ...meta.anc])].slice(0, 32);
-    return { meta: same ? { ...meta, anc } : { ...meta, ...(renamed ? { name: renamed, nameT: cur.nameT } : {}), files: [...files], hT: 0, anc }, conflicts, renamed, same };
+    const vv = vvJoin(meta.vv, cur.vv);
+    return { meta: same ? { ...meta, vv } : { ...meta, ...(renamed ? { name: renamed, nameT: cur.nameT } : {}), files: [...files], hT: 0, vv }, conflicts, renamed, same };
   }
 
   // The open project's id: made with its texts (opened, new, the sample, a version put in their

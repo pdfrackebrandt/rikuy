@@ -540,6 +540,18 @@ def r4_tabs():
         pb.keyboard.press('Control+z'); settle(pb, 200)
         check('tabs: a window shown again says Ctrl+Z undoes one\'s own typing, and it does: the other window\'s words stay (N3)', 'your own typing' in said and 'undoes it' not in said
               and 'QFirst' not in src(pb) and 'RZSecond' in src(pb), (said, src(pb)[30:130]))
+        # (review V2-C) one window saves forty times; the other, saving unfocused (a script's edit,
+        # an agent's), still merges, and nothing goes to Versions
+        written(pb)
+        pa.evaluate('() => window.rikuy.adoptOtherTab()'); written(pa)
+        FROM = 'async () => (await window.rikuy.allSnaps()).filter((v) => v.label === "From another tab").length'
+        n0 = pa.evaluate(FROM)
+        pb.evaluate('''async () => { const g = window.rikuy; for (let i = 0; i < 40; i++) { const t = g.files.get('main.tex'), at = t.indexOf('\\\\end{document}'); g.closeGroup(); g.commit([{ f: 'main.tex', s: at, e: at, t: 'w' + i + ' ' }], null, 'api'); g.closeGroup(); g.persist(); await new Promise((r) => setTimeout(r, 25)); } }''')
+        written(pb)
+        click_text(pa, 'First', 0); pa.keyboard.type('N'); written(pa)
+        click_text(pb, 'w39', 0); pb.keyboard.type('M'); written(pb)
+        check('tabs: after forty saves in one window the other, saving unfocused, still merges; nothing to Versions (V2-C)', 'w39' in src(pa) and 'NQ' not in src(pa) and 'NFirst' in src(pa) and 'NFirst' in src(pb) and 'Mw39' in src(pb)
+              and pa.evaluate(FROM) == n0, (src(pa)[30:100], src(pb)[30:100], n0, pa.evaluate(FROM)))
         check('tabs: no page errors', not errors, errors[:3])
         browser.close()
 
