@@ -115,6 +115,23 @@ def r4(p):
     check('R4: back to All Markup: the text as it is now, editable again', 'stops here' in text and page.evaluate("document.getElementById('pages').contentEditable") == 'true')
     edit(page, 'first paragraph', 'first PARAGRAPH')
     check('R4: and an edit goes in again', 'first PARAGRAPH' in src(page))
+    # (R4 review V3-C) two authors' deletions side by side, at one place of the text now: Reject
+    # All gives what rejecting each in turn gives, the words in their old order
+    TIE = '\\documentclass{article}\n\\begin{document}\nWe examine \\emph{a b cc} here today.\n\\end{document}\n'
+    got = []
+    for mode in ('all', 'each'):
+        fresh(page, TIE)
+        page.evaluate("window.rikuy.setTracking(true)")
+        edit(page, '\\emph{a b cc}', 'a b cc}')
+        page.evaluate("(() => { const g = window.rikuy, f = g.main, s = g.files.get(f), at = s.indexOf('examine '); g.rvBy = 'Ana'; g.closeGroup(); g.commit([{ f, s: 0, e: s.length, t: s.slice(0, at) + s.slice(at + 8) }], null, 'merge'); g.closeGroup(); g.rvBy = null; })()")
+        settle(page, 200)
+        n = page.evaluate("window.rikuy.currentChanges().length")
+        if mode == 'all': page.evaluate("() => window.rikuy.rejectChanges(window.rikuy.currentChanges(), 'Before rejecting all changes')")
+        else:
+            for i in range(6):
+                if not page.evaluate("() => { const cs = window.rikuy.currentChanges(); if (cs.length) window.rikuy.rejectChanges([cs[0]]); return cs.length; }"): break
+        got.append((n, src(page)))
+    check('R4: Reject All of two deletions at one place gives what rejecting each in turn gives, byte for byte (V3-C)', got[0][0] == 2 and got[0][1] == got[1][1] == TIE, got)
     check('R4: no page errors', not errors, errors[:5])
     browser.close()
     for w, h in ((390, 844), (360, 740)):
@@ -477,6 +494,16 @@ def run():
         check('and writes its line again, in base32, with the new words', src(page) == safe_doc.replace(line32('Shorter?'), line32('Much shorter, please.')), src(page)[-160:])
         page.evaluate("window.rikuy.undo()"); settle(page, 200)
         check('one undo, byte for byte', src(page) == safe_doc)
+        # (R4) a comment on words with a colon in them ("ends: here"): Edit Comment wrote the new
+        # words from that colon on, cutting the line, and the comment was gone from the list
+        colon_doc = DOC.replace('% comment (Bo): Shorter?', '% comment (Bo) on "ends: here": Shorter?')
+        fresh(page, colon_doc)
+        click_text(page, 'third paragraph', 0)
+        page.evaluate("window.rikuy.runCommand('comment-edit')"); settle(page, 250)
+        page.fill('.pop-comment textarea', 'Much shorter, please.')
+        page.locator('.pop-comment').get_by_role('button', name='Save', exact=True).click(); settle(page, 250)
+        check('R4: Edit Comment on quoted words with a colon rewrites its words only, the comment still listed', src(page) == colon_doc.replace('": Shorter?', '": Much shorter, please.')
+              and ['Bo', 'Much shorter, please.'] in page.evaluate("window.rikuy.allComments().map((c) => [c.who, c.body])"), src(page)[-140:])
         fresh(page)
         click_text(page, 'third paragraph', 0)
         r = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); return [r.left, r.top]; })()")
