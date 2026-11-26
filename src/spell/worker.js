@@ -19,6 +19,7 @@
 // piece not yet here notes it and finds nothing, the worker fetches and checks that piece, and
 // asks again (at most four times: an entry spans two pieces at most).
 /* global RikuyHunspell */
+import { gunzip } from './unpack.js';
 
 const MAX_WORD = 64, MAX_LIST = 200000, MAX_SUGGEST = 40;
 let base = '', spec = null, M = null, starting = null;
@@ -34,7 +35,7 @@ async function get(file) {
   if (hex(await crypto.subtle.digest('SHA-256', bytes)) !== file.sha256) throw new Error(file.name + ' is not the file this page was built with');
   if (!file.gz) return bytes;
   // (a dictionary or a thesaurus travels gzipped, build.mjs packed: checked as it came, then unpacked)
-  const out = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+  const out = await gunzip(bytes);
   if (out.length !== file.size) throw new Error(file.name + ' did not unpack to the file this page was built with');
   return out;
 }
