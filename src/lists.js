@@ -57,7 +57,14 @@ function shift(L, d, parent) {
   });
   return M;
 }
-const isList = (name) => /^(itemize|enumerate|description)\*?$|^(compactitem|compactenum|compactdesc|inparaenum|asparaenum|asparaitem|inparaitem)$/.test(name);
+// (R4) the document's own lists, enumitem's \newlist{todolist}{itemize}{2}: name -> { type, depth },
+// set by the model as it reads the preamble (setNewLists), so a todolist is edited as an itemize is
+const NEWLISTS = new Map();
+export function setNewLists(types, depths) {
+  NEWLISTS.clear();
+  for (const n of Object.keys(types || {})) NEWLISTS.set(n, { type: types[n], depth: (depths && depths[n]) || 1 });
+}
+const isList = (name) => /^(itemize|enumerate|description)\*?$|^(compactitem|compactenum|compactdesc|inparaenum|asparaenum|asparaitem|inparaitem)$/.test(name) || NEWLISTS.has(name);
 function walk(nodes, text, parent, out, deep) {
   for (const nd of nodes) {
     if (!nd) continue;
@@ -68,11 +75,12 @@ function walk(nodes, text, parent, out, deep) {
 }
 function readList(nd, text, parent, direct) {
   const name = nd.name, base = name.replace(/\*$/, '');
-  const kind = KINDS[base] || (/enum/.test(name) ? 'enum' : /desc/.test(name) ? 'desc' : 'item');
+  const NL = NEWLISTS.get(name);
+  const kind = KINDS[base] || (NL ? KINDS[NL.type] : /enum/.test(name) ? 'enum' : /desc/.test(name) ? 'desc' : 'item');
   const a = nd.args && nd.args[0];
   const ns = nd.s + text.slice(nd.s, nd.s + 80).indexOf('{') + 1;
   const em = nd.e > nd.es ? /^\\end\s*\{\s*/.exec(text.slice(nd.es, nd.es + 40)) : null;
-  const L = { name, kind, editable: !!KINDS[name], s: nd.s, e: nd.e, be: nd.be, es: nd.es, nameAt: [ns, ns + name.length], endAt: em ? [nd.es + em[0].length, nd.es + em[0].length + name.length] : null,
+  const L = { name, kind, editable: !!KINDS[name] || !!NL, s: nd.s, e: nd.e, be: nd.be, es: nd.es, nameAt: [ns, ns + name.length], endAt: em ? [nd.es + em[0].length, nd.es + em[0].length + name.length] : null,
     opt: a && a.o ? { s: a.s, e: a.e, is: a.is, ie: a.ie } : null, items: [], parent, direct, closed: nd.e > nd.es };
   let cur = null;
   const groups = [];
@@ -432,7 +440,7 @@ export function bulletGlyph(code) {
 // \labelenumi and \theenumi; { setlist: [{ names, levels, kv, s, e, arg }], labelitem: { 1: code },
 // labelenum: { 1: code }, theenum: { 1: code } } (names, levels: null for all). end: where it ends.
 export function listSetup(src, end) {
-  const out = { setlist: [], labelitem: {}, labelenum: {}, theenum: {}, pos: { labelitem: {}, labelenum: {}, theenum: {} }, newlist: Object.create(null) };
+  const out = { setlist: [], labelitem: {}, labelenum: {}, theenum: {}, pos: { labelitem: {}, labelenum: {}, theenum: {} }, newlist: Object.create(null), newlistDepth: Object.create(null) };
   if (end == null) end = preambleEnd(src);
   if (end < 0) return out;
   const pre = stripComments(src.slice(0, Math.min(end, PRE)));
@@ -440,10 +448,11 @@ export function listSetup(src, end) {
   let m, n = 0;
   while ((m = re.exec(pre)) && n++ < 3000) {
     let i = skip(pre, m.index + m[0].length);
-    // (R4) enumitem's lists of the document's own, \newlist{todolist}{itemize}{2}: name -> type
+    // (R4) enumitem's lists of the document's own, \newlist{todolist}{itemize}{2}: name -> type, and
+    // how deep it nests
     if (m[1] === 'newlist') {
-      const w = /^\{\s*([A-Za-z]{1,40}\*?)\s*\}\s*\{\s*(itemize|enumerate|description)\s*\}/.exec(pre.slice(i, i + 120));
-      if (w) out.newlist[w[1]] = w[2];
+      const w = /^\{\s*([A-Za-z]{1,40}\*?)\s*\}\s*\{\s*(itemize|enumerate|description)\s*\}\s*\{\s*(\d)\s*\}/.exec(pre.slice(i, i + 120));
+      if (w) { out.newlist[w[1]] = w[2]; out.newlistDepth[w[1]] = +w[3]; }
       continue;
     }
     if (m[1] === 'setlist') {
@@ -877,6 +886,8 @@ export function demote(src, rs, re, a, b, sigs) {
   const { level, depth } = levelOf(into || L);
   const sub = maxNest(L.items.slice(k, m + 1));
   if (depth + (into ? 0 : 1) + sub.depth > MAX_DEPTH || (into ? level : level + 1) + (sub.levels[kind] || 0) > MAX_LEVEL) return { refused: 'deep' };
+  // (a list of the document's own nests as deep as its \newlist says, counted by its name)
+  { const T = into || L, NL = NEWLISTS.get(T.name); let n = 0; for (let x = T; x; x = x.parent && x.parent.L) if (x.name === T.name) n++; if (NL && n + (into ? 0 : 1) > NL.depth) return { refused: 'deep' }; }
   const from = itemInd(src, L), o = new Out(src);
   let s;
   if (into) {

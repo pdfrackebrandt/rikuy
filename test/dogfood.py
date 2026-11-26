@@ -841,12 +841,17 @@ def real(page):
     check('real: Enter at the end of its item makes the next item', '\\item Tickets\n  \\item Money\n\\end{todolist}' in src(page), src(page)[-120:])
     compiles(page, 'real newlist')
     # (review B6) an itemize inside it keeps its own first level's bullet, as enumitem counts a
-    # \newlist list's depth apart: it was drawn a level deeper, "–"
+    # \newlist list's depth apart: it was drawn a level deeper, "–"; (N3) Tab nests an item in a
+    # todolist of its own, Shift+Tab takes it back, as in an itemize
     Dn = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,amssymb,enumitem}\n\\newlist{todolist}{itemize}{2}\n\\setlist[todolist]{label=$\\square$}').replace('Agent income here.', '\\begin{todolist}\n  \\item Passport\n  \\begin{itemize}\n  \\item Inner\n  \\end{itemize}\n  \\item Tickets\n  \\item Money\n\\end{todolist}')
     load_doc(page, Dn)
     txt = page.evaluate("document.getElementById('pages').innerText")
     check('real: an itemize in a \\newlist list has its first level\'s bullet', '\u25a1\nPassport\n\u2022\nInner\n\u25a1\nTickets' in txt, txt[:120])
     three(page, Dn, 'real nested newlist', ('Passport', '\u2022Inner', 'Tickets'))
+    click_text(page, 'Money', 0); k.press('Tab'); settle(page, 300)
+    check('real: Tab in a todolist item nests it in a todolist', '\\item Tickets\n    \\begin{todolist}\n      \\item Money\n    \\end{todolist}\n\\end{todolist}' in src(page), src(page)[-160:])
+    k.press('Shift+Tab'); settle(page, 300)
+    check('real: Shift+Tab takes it back', src(page) == Dn, src(page)[-160:])
     # marginnote's offset after its text (\marginnote{..}[0cm]) and a layout register's assignment
     # in the text (\columnseprule=.4pt) are no words of the page; they were drawn as "[0cm]", "=.4pt"
     # (and its documented form, \\marginnote[left page's text]{text}[offset]: review B4)

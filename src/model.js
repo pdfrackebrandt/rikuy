@@ -16,7 +16,7 @@ import { fieldText } from './fields.js';
 import { readField } from './forms.js';
 
 const DVIPS = Object.fromEntries(DVIPS_COLORS), XC = Object.fromEntries(BASE_COLORS);
-import { listSetup, formatOf, numText, bulletGlyph, INDENT_KEYS } from './lists.js';
+import { listSetup, formatOf, numText, bulletGlyph, INDENT_KEYS, setNewLists } from './lists.js';
 
 const WIDGET_FILE = /\.html?$/i;
 // the page's set up of the last preamble read (Builder.pageSetup)
@@ -2763,7 +2763,19 @@ class Builder {
   }
 
   // the preamble's list set up (src/lists.js listSetup), read once
-  listsOf() { return this.listCfg || (this.listCfg = this.docBody ? listSetup(this.mainCtx.src, this.docBody.at) : listSetup('')); }
+  listsOf() {
+    if (this.listCfg) return this.listCfg;
+    const cfg = this.listCfg = this.docBody ? listSetup(this.mainCtx.src, this.docBody.at) : listSetup('');
+    // (lists of the document's own declared in a .sty or .cls of the project count too, and the list
+    // commands edit them as lists: src/lists.js setNewLists)
+    for (const [n, t] of this.files || []) {
+      if (typeof t !== 'string' || !/\.(sty|cls)$/.test(n) || !/\\newlist/.test(t)) continue;
+      const x = listSetup(t, t.length);
+      for (const k of Object.keys(x.newlist)) if (!cfg.newlist[k]) { cfg.newlist[k] = x.newlist[k]; cfg.newlistDepth[k] = x.newlistDepth[k]; }
+    }
+    setNewLists(cfg.newlist, cfg.newlistDepth);
+    return cfg;
+  }
 
   listBlock(nd, ctx, env) {
     const name = this.listsOf().newlist[nd.name] || nd.name.replace(/\*$/, '');
