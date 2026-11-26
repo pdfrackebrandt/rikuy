@@ -1,7 +1,7 @@
 // Rikuy model: turns the syntax tree into blocks of flow items with
 // numbering, cross references and citations resolved. Every editable
 // character keeps a pointer to its exact source range.
-import { parse, scanUserSigs, CHARS, ACCENTS, splitRows, MATH_BUDGET } from './parser.js';
+import { parse, scanUserSigs, CHARS, ACCENTS, splitRows, MATH_BUDGET, editTree, failedDollars } from './parser.js';
 import { filesRead, resolveIn } from './scan.js';
 import { refsSetup, readIndexArg, indexKey, istRight } from './refsrc.js';
 import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bib.js';
@@ -426,14 +426,8 @@ const MATH_WRITES = /\\(?:label|intertext|shortintertext)\b|color/;
 // the most paragraphs one edit may touch and still be built alone
 const INCR_UNITS = 8;
 
-// a $ that found no partner: the parse's searches past MATH_BUDGET depend on how many failed, and
-// so on text far from the edit
-function failedDollars(ns) {
-  let k = 0;
-  const walk = (xs) => { for (const n of xs) { if (n.t === 'special' && n.err && (n.ch === '$' || n.ch === '$$')) k++; if (n.nodes) walk(n.nodes); if (n.args) for (const a of n.args) if (a) walk(a.nodes); } };
-  walk(ns);
-  return k;
-}
+// (failedDollars, src/parser.js: a $ that found no partner; the parse's searches past MATH_BUDGET
+// depend on how many failed, and so on text far from the edit)
 
 // An offset moved by the edits since a unit was built: steps [[at, d], ...], each in the
 // coordinates the one before it left (values in other files, and before `at`, stay)
@@ -657,6 +651,10 @@ function incremental(project, hint) {
   if (H.refIndex) B._refIndex = H.refIndex;
   B.dir = it.dir || 'ltr';
   B.userSigs = userSigs;
+  // (the font families the preamble defines, as the full build read them there: read again, from
+  // a builder with no document body, they took the whole text through two patterns at every key,
+  // a fifth of a keystroke on dev/bench/long, and the definitions in the body with them)
+  if (H.fontFams) B.fontFams = H.fontFams;
   // (the line spacing a declaration before it set, \onehalfspacing in the body: flow keeps it as
   // it goes, and the old paragraph carries it)
   const units = B.flow(mine, { f, src: now, pm: null }, { top: true, afterHeading: false, noindent: !it.indent, align: it.align || null, spread: it.spread ?? null });
@@ -704,7 +702,7 @@ function incremental(project, hint) {
     if (hint.ixAt != null && hint.ixFile === f && hint.ixAt >= U.e) r.ixAt = hint.ixAt + d;
     if (hint.docBody) r.docBody = { ...hint.docBody, e: hint.docBody.e + d };
   }
-  Object.defineProperty(r, '_incr', { value: { main: f, files: new Map(files), tree: nodes, sigKey: H.sigKey, userSigs, failed, keys: H.keys, bibItems: H.bibItems, refIndex: B._refIndex || H.refIndex } });
+  Object.defineProperty(r, '_incr', { value: { main: f, files: new Map(files), tree: nodes, sigKey: H.sigKey, userSigs, failed, keys: H.keys, bibItems: H.bibItems, refIndex: B._refIndex || H.refIndex, fontFams: H.fontFams || null } });
   return r;
 }
 
@@ -793,13 +791,40 @@ function trimMasked(nodes, ranges) {
 }
 
 function parseCached(name, t, userSigs, sigKey, beamer = false) {
-  const hit = PARSE_CACHE.get(name);
+  const ranges = [], hit = PARSE_CACHE.get(name);
+  // (the tests' oracle: the text parsed, the cache neither read nor written)
+  if (!PARSE_CHECK.on) { const x = maskOverlays(t, beamer, ranges); return ranges.length ? trimMasked(parse(x, { userSigs }), ranges) : parse(x, { userSigs }); }
   if (hit && hit.text === t && hit.sig === sigKey && hit.beamer === beamer) return hit.nodes;
-  const ranges = [], masked = maskOverlays(t, beamer, ranges);
+  const masked = maskOverlays(t, beamer, ranges);
+  // A keystroke's text: its tree from the last one's where the parser can tell (editTree), not
+  // the whole text parsed again. Only for a text read as it is (no beamer overlays masked), with
+  // the same signatures; the $ that never closed are counted once per parse and kept.
+  if (hit && hit.plain && masked === t && hit.sig === sigKey && hit.beamer === beamer) {
+    const old = hit.text, m = Math.min(old.length, t.length), C = 4096;
+    let p = 0, q = 0;
+    while (p + C <= m && old.slice(p, p + C) === t.slice(p, p + C)) p += C;
+    while (p < m && old.charCodeAt(p) === t.charCodeAt(p)) p++;
+    while (q + C <= m - p && old.slice(old.length - q - C, old.length - q) === t.slice(t.length - q - C, t.length - q)) q += C;
+    while (q < m - p && old.charCodeAt(old.length - 1 - q) === t.charCodeAt(t.length - 1 - q)) q++;
+    if (hit.failed === undefined) hit.failed = failedDollars(hit.nodes);
+    let nodes = editTree(hit.nodes, old, t, p, old.length - q - p, hit.failed);
+    // (a development build holds every eighth against the parse, and takes the parse on a difference)
+    if (nodes && PARSE_CHECK.every && ++PARSE_CHECK.n % PARSE_CHECK.every === 0) {
+      const full = parse(t, { userSigs });
+      if (JSON.stringify(full) !== JSON.stringify(nodes)) { PARSE_CHECK.mismatch++; console.warn('Rikuy: the edited parse tree differed from the parse; the parse is used'); nodes = full; }
+    }
+    if (nodes) {
+      PARSE_CHECK.edited++;
+      PARSE_CACHE.set(name, { text: t, sig: sigKey, nodes, beamer, plain: true, failed: hit.failed });
+      return nodes;
+    }
+  }
   const nodes = ranges.length ? trimMasked(parse(masked, { userSigs }), ranges) : parse(masked, { userSigs });
-  PARSE_CACHE.set(name, { text: t, sig: sigKey, nodes, beamer });
+  PARSE_CACHE.set(name, { text: t, sig: sigKey, nodes, beamer, plain: masked === t });
   return nodes;
 }
+// how many trees editTree made, and the development build's check of them (for the tests)
+export const PARSE_CHECK = { on: true, every: typeof __RIKUY_DEV__ !== 'undefined' && __RIKUY_DEV__ ? 8 : 0, n: 0, edited: 0, mismatch: 0 };
 
 class Builder {
   constructor(project, prev) {
@@ -2676,6 +2701,8 @@ class Builder {
     if (this.fontFams) return this.fontFams;
     this.fontFams = new Map();
     const t = (this.files && this.project && this.files.get(this.project.main)) || '', end = this.docBody ? this.docBody.at : Math.min(t.length, 200000);
+    // (read from the preamble alone: the next keystroke's incremental build takes the map as it is)
+    this.fontFamsPre = !!this.docBody;
     const re = /\\(?:re)?(?:new|set|provide)fontfamily\s*\{?\s*\\([A-Za-z@]+)\s*\}?\s*(?:\[[^\]]*\]\s*)?\{([^{}]*)\}|\\newfontface\s*\{?\s*\\([A-Za-z@]+)\s*\}?\s*(?:\[[^\]]*\]\s*)?\{([^{}]*)\}/g;
     for (const m of t.slice(0, end).replace(/(^|[^\\])%.*$/gm, '$1').matchAll(re)) this.fontFams.set(m[1] || m[3], fontLook(m[2] || m[4]));
     return this.fontFams;
@@ -4018,7 +4045,7 @@ class Builder {
     };
     // what the next keystroke's incremental build compares against (not part of the model)
     // (with the \bibitem list a citation reads, which the model does not carry)
-    if (this.parsed && this.parsed.has(this.project.main)) Object.defineProperty(r, '_incr', { value: { main: this.project.main, files: new Map(this.files), tree: this.parsed.get(this.project.main), sigKey: this.userSigKey, userSigs: this.userSigs, keys: Object.keys(r), bibItems: this.bibItems || null } });
+    if (this.parsed && this.parsed.has(this.project.main)) Object.defineProperty(r, '_incr', { value: { main: this.project.main, files: new Map(this.files), tree: this.parsed.get(this.project.main), sigKey: this.userSigKey, userSigs: this.userSigs, keys: Object.keys(r), bibItems: this.bibItems || null, fontFams: this.fontFamsPre ? this.fontFams : null } });
     return r;
   }
 }

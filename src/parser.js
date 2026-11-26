@@ -177,6 +177,156 @@ export function parse(src, opts = {}) {
   return parseJS(src, userSigs);
 }
 
+// ---- a keystroke's tree from the last one ---------------------------------------------------
+//
+// Typing in a paragraph changes the characters of one run of text and moves everything after it;
+// parsing the whole text again for that took a keystroke's largest part on a long paper (1 ms
+// there, 4 at a phone's speed). editTree gives parse(now) from the tree of old, where old became
+// now by [p, p + del) of it replaced with now's [p, p + ins): the same tree, value for value and
+// in its order of keys, or null where it cannot tell (then the text is parsed). The caller has
+// compared the two texts: they agree outside the edit.
+//
+// It answers only where the parse cannot have changed but for offsets, which holds when:
+//   - what went and what came are inert characters: none the parser reads as more than text
+//     (\ { } $ % ~ & ^ _ # [ ] and control characters, line ends and tabs among them);
+//   - the edit lies inside one run of text, after its first character that is no space: what
+//     reads past a command's end (its arguments, after spaces; a length; \tikzstyle's =[...])
+//     stopped there, at a character before the edit, and stops there again; that character is
+//     no ] (an unknown command takes [..] only when { comes right after its ]), and the run is
+//     no one-character argument (\'e, \textbf x), nor after a command that reads text by a
+//     pattern (a length's plus and minus, a definition), nor in a definition's body (its text
+//     is kept as a string);
+//   - no blank line is made (a deletion between two line ends): that would end a paragraph;
+//   - no $ scan has reached MATH_BUDGET, past which a scan is cut where it starts: failed, the
+//     $ of tree that never closed (failedDollars), times the length bounds what they read.
+// Everything before the edit is the same objects; the nodes holding it are copied with their
+// ends moved; everything after is moved by the edit's length lazily (moved()): a node's own
+// offsets at once, its children the first time they are read, so a keystroke costs the
+// nodes on the way to the edit and one small object per node after it at each level.
+const OFFSET_KEYS = new Set(['s', 'e', 'ne', 'is', 'ie', 'bs', 'be', 'es', 'nameEnd']);
+const READS_ON = new Set([...DIM_CMDS, ...DEF_CMDS, ...ENV_DEF, 'let', 'def', 'gdef', 'edef', 'xdef', 'tikzstyle', 'newtheorem', 'DeclareMathOperator']);
+const MOVED = Symbol('moved');
+// x (a node or an argument) with every offset moved by d, all of which lie at or after the edit
+// (-1 stands for none): its children made when first read, from the one it was first made from
+function moved(x, d) {
+  // (a node with no children, most of a paragraph's: a plain copy, moved again as itself)
+  const t = x.t;
+  if (t === 'text' || t === 'par' || t === 'special' || t === 'comment' || t === 'math' || t === 'verb' || t === 'stray') {
+    const o = {};
+    for (const k in x) { const v = x[k]; o[k] = typeof v === 'number' && v >= 0 && OFFSET_KEYS.has(k) ? v + d : v; }
+    return o;
+  }
+  const m = x[MOVED], base = m ? m.base : x, D = (m ? m.d : 0) + d;
+  if (!D) return base;
+  const o = {};
+  for (const k in base) {
+    const v = base[k];
+    if (typeof v === 'number') o[k] = v >= 0 && OFFSET_KEYS.has(k) ? v + D : v;
+    else if (v !== null && typeof v === 'object') {
+      const keep = (c) => { Object.defineProperty(o, k, { value: c, enumerable: true, configurable: true, writable: true }); return c; };
+      Object.defineProperty(o, k, {
+        enumerable: true, configurable: true,
+        get: () => keep(Array.isArray(v) ? v.map((y) => (y !== null && typeof y === 'object' ? moved(y, D) : y)) : moved(v, D)),
+        set: keep
+      });
+    } else o[k] = v;
+  }
+  Object.defineProperty(o, MOVED, { value: { base, d: D } });
+  return o;
+}
+const isInert = (s, a, b) => {
+  for (let k = a; k < b; k++) {
+    const c = s.charCodeAt(k);
+    if (c < 32 || c === 127 || c === 92 || c === 123 || c === 125 || c === 36 || c === 37 || c === 126 || c === 38 || c === 94 || c === 95 || c === 35 || c === 91 || c === 93) return false;
+  }
+  return true;
+};
+// the last node of list that starts before p (nodes are in order and do not overlap)
+function before(list, p) {
+  let lo = 0, hi = list.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (list[m].s < p) lo = m + 1; else hi = m; }
+  return lo - 1;
+}
+// the $ and $$ of a tree that found no partner (each read on to a blank line or the end)
+export function failedDollars(ns) {
+  let k = 0;
+  const walk = (xs) => { for (const n of xs) { if (n.t === 'special' && n.err && (n.ch === '$' || n.ch === '$$')) k++; if (n.nodes) walk(n.nodes); if (n.args) for (const a of n.args) if (a) walk(a.nodes); } };
+  walk(ns);
+  return k;
+}
+export function editTree(tree, old, now, p, del, failed) {
+  const ins = now.length - old.length + del, d = ins - del, at = p + del;
+  if (!Array.isArray(tree) || p < 1 || del < 0 || ins < 0 || at > old.length || (!del && !ins)) return null;
+  if (!(failed >= 0) || failed * Math.max(old.length, now.length) > MATH_BUDGET) return null;
+  if (!isInert(old, p, at) || !isInert(now, p, p + ins)) return null;
+  // the way down to the run of text: [list, index] at each level, and the arguments taken
+  const path = [];
+  let list = tree, T = null;
+  for (let depth = 0; depth < 400; depth++) {
+    const k = before(list, p);
+    if (k < 0) return null;
+    const n = list[k];
+    if (n.e < at) return null;
+    path.push([list, k]);
+    if (n.t === 'text') { T = n; break; }
+    let inner = null;
+    if (n.t === 'group' || (n.t === 'env' && !n.raw)) {
+      if (n.t === 'group' ? n.is <= p - 1 && at <= n.ie : n.be <= p - 1 && at <= n.es) inner = n.nodes;
+    }
+    if (!inner && (n.t === 'cmd' || n.t === 'env') && n.args && !n.def) {
+      const a = n.args.find((x) => x && x.nodes && !x.raw && !x.single && x.is <= p - 1 && at <= x.ie);
+      if (a) { path[path.length - 1].push(a); inner = a.nodes; }
+    }
+    if (!inner || !inner.length) return null;
+    list = inner;
+  }
+  if (!T || !(T.s < p && at <= T.e) || old[p - 1] === ']') return null;
+  // a character no space before the edit in the run
+  let q = p - 1;
+  while (q >= T.s && (old[q] === ' ' || old[q] === '\t' || old[q] === '\n' || old[q] === '\r')) q--;
+  if (q < T.s) return null;
+  // nor after a command that reads on by a pattern (spaces and blank lines between them)
+  const [tl, ti] = path[path.length - 1];
+  for (let k = ti - 1; k >= 0; k--) {
+    const x = tl[k];
+    if (x.t === 'par') continue;
+    if (x.t === 'cmd' && READS_ON.has(x.name)) return null;
+    break;
+  }
+  // no blank line made: the spaces from the last character before the edit to the next one after
+  let r = p + ins;
+  while (r < T.e + d && (now[r] === ' ' || now[r] === '\t' || now[r] === '\n' || now[r] === '\r')) r++;
+  let nl = 0;
+  for (let k = q + 1; k < r; k++) if (now[k] === '\n' && ++nl > 1) return null;
+  // nor spaces left at the run's end: before a blank line they are the blank line's
+  if (r === T.e + d && r > q + 1) return null;
+  // the copies: from the run up, each level's list with its node replaced and the rest moved
+  const mv = (v) => (typeof v === 'number' && v >= at && v >= 0 ? v + d : v);
+  let made = { t: 'text', s: T.s, e: T.e + d };
+  for (let lv = path.length - 1; lv >= 0; lv--) {
+    const [L, k, arg] = path[lv];
+    const out = L.slice(0, k);
+    out.push(made);
+    for (let j = k + 1; j < L.length; j++) out.push(moved(L[j], d));
+    if (lv === 0) return out;
+    // the node holding this list, copied with its ends moved and this list in place
+    const [PL, pk, parg] = path[lv - 1];
+    const P = PL[pk], c = {};
+    for (const key in P) {
+      const v = P[key];
+      if (key === 'nodes') c.nodes = parg ? v.map((y) => moved(y, d)) : out;
+      else if (key === 'args') {
+        c.args = parg ? P.args.map((a) => {
+          if (a === parg) { const b = {}; for (const ak in a) b[ak] = ak === 'nodes' ? out : OFFSET_KEYS.has(ak) ? mv(a[ak]) : a[ak]; return b; }
+          return a && a.s >= at ? moved(a, d) : a;
+        }) : P.args.map((a) => (a && a.s >= at ? moved(a, d) : a));
+      } else c[key] = OFFSET_KEYS.has(key) ? mv(v) : v;
+    }
+    made = c;
+  }
+  return null;
+}
+
 // (a user's signature is an own entry: \constructor is no member of Object.prototype here)
 const userSig = (sigs, name) => (Object.prototype.hasOwnProperty.call(sigs, name) ? sigs[name] : undefined);
 
