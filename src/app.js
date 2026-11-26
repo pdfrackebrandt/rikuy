@@ -1990,6 +1990,12 @@ class App {
         if (e.shiftKey) s.extend(p, i); else s.collapse(p, i);
         ph.style.display = 'inline';
         setTimeout(() => { ph.style.display = ''; }, 0);
+      } else if (e.key === 'End' && s.modify && !e.shiftKey && this.endInCode(n)) {
+        // (a line ending in inline code: End puts the caret just after the code, so what is typed
+        // next is no longer code; it stayed in the code, codeStepOut)
+        s.modify('move', 'forward', 'lineboundary');
+        e.preventDefault();
+        this.codeStepOut();
       } else if (e.key === 'End' && s.modify) {
         // (a paragraph ending in a citation, a reference, a footnote mark or an address: the
         // browser has no place after such an atom at a paragraph's end, so its End went on to
@@ -2004,6 +2010,9 @@ class App {
         }
       }
     }
+    // (Right at inline code's very end: just after the code, in the same paragraph, codeStepOut;
+    // it went on to the next paragraph, or past the space after the code)
+    if (e.key === 'ArrowRight' && !e.shiftKey && !mod && !e.altKey && this.codeStepOut()) { e.preventDefault(); return; }
     // (Left and Right in the empty paragraph Enter showed: out of it at once, to the end of the
     // paragraph before or the start of the next, as Word's; the browser stepped over its invisible
     // mark first, so the caret seemed not to move and what was typed went into it)
@@ -2448,7 +2457,7 @@ class App {
     // Not in a LaTeX paragraph or a line to come in one (above and here): typed there is source.
     // (in \lstinline's or \mintinline's code: $ and \ are the code's characters, no formula or
     // command list, nor AutoCorrect's changes (... wrote \ldots{} into the code); the character
-    // that would end the code is refused, said why)
+    // that would end the code, typed at its very end, steps out of it, elsewhere it is refused)
     const ic = c.ghost || raw ? null : this.inlineCodeAt(range ? range.f : c.f, range ? range.a : c.a);
     if (!raw && ic == null && !(!c.ghost && this.texAt(c.f, c.a))) {
       for (const h of insertTextHooks) {
@@ -2463,6 +2472,7 @@ class App {
     // (the second $ of a closing $$ is the next key or none: a $ typed later is a new formula)
     if (data !== '$') this.swallowDollar = 0;
     if (ic) {
+      if (!range && data.length === 1 && ic.includes(data) && this.codeStepOut(c)) return;
       const bad = [...data].find((ch) => ic.includes(ch));
       if (bad) { this.toast('A ' + bad + ' here would end the code: TeX reads it as the code\'s end.', 3000); return; }
     }
@@ -2512,6 +2522,23 @@ class App {
     let depth = 1;
     for (let i = k; i < line.length; i++) { if (line[i] === '{') depth++; else if (line[i] === '}' && --depth === 0) return null; }
     return depth === 1 ? '}' : '';
+  }
+  // whether node's paragraph holds a typewriter run and ends in no atom (End's own branch there)
+  endInCode(n) {
+    const el = n && (n.nodeType === 1 ? n : n.parentElement), blk = el && el.closest('.it'), last = blk && blk.lastChild;
+    return !!blk && this.root.contains(blk) && !!blk.querySelector('.y-tt') && !(last && last.nodeType === 1 && last.getAttribute('contenteditable') === 'false');
+  }
+  // At the very end of \lstinline's or \mintinline's code (its closing character next): the caret
+  // goes just after the code, in the same paragraph, so what is typed next is no longer code, as
+  // Ctrl+Space leaves a run's format in Word. The code that ends a paragraph had no way out: its }
+  // was refused, End and Esc stayed in it, Right went to the next paragraph.
+  codeStepOut(c) {
+    c = c || this.caretNow();
+    if (!c || !c.collapsed || c.ghost || this.texAt(c.f, c.a)) return false;
+    const S = this.src(c.f), ic = this.inlineCodeAt(c.f, c.a);
+    if (!ic || !ic.includes(S[c.a])) return false;
+    this.restoreCaret({ f: c.f, p: c.a + 1, bias: -1 }, true);
+    return true;
   }
 
   // Whether place at of file f is code, where typed quotes stay straight (a ' wrote a backtick

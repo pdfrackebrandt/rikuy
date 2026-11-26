@@ -1088,12 +1088,28 @@ def hunt_c(page):
         opened = page.evaluate('!!window.rikuy.pop')
         if opened: page.keyboard.press('Escape'); settle(page, 100)
         check('typed in inline code: %r as the code\'s own, its closing character refused' % typed, want in src(page) and not opened, src(page)[40:120])
+    # (review of round 4) a way out of inline code that ends a paragraph, as Word leaves a run's
+    # format: its closing character typed at its end, End, Right and Ctrl+Space put the caret just
+    # after the code, the next letters outside it (they all stayed in it, or Right went to the next
+    # paragraph); typing at the code's end without them still goes on in the code
+    E2 = 'Use \\lstinline{abcd}\n\nNext.'
+    for keys, at in ((['}'], ('abcd', 4)), (['End'], ('Use', 1)), (['ArrowRight'], ('abcd', 4)), (['Control+Space'], ('abcd', 4)), ([], ('abcd', 4))):
+        load_doc(page, W(E2)); click_text(page, *at)
+        for k in keys:
+            if len(k) == 1: page.keyboard.type(k)
+            else: page.keyboard.press(k)
+            settle(page, 120)
+        page.keyboard.type('X'); settle(page, 200)
+        want = 'Use \\lstinline{abcdX}\n\nNext.' if not keys else 'Use \\lstinline{abcd}X\n\nNext.'
+        check('inline code ending a paragraph, %s then X: %r' % (' '.join(keys) or 'nothing', want), want in src(page), src(page)[40:120])
+    load_doc(page, W('Use \\lstinline|abcd|\n\nNext.')); click_text(page, 'abcd', 4); page.keyboard.type('|X'); settle(page, 200)
+    check('its | typed at the end of \\lstinline|..|: out of it, X after it', 'Use \\lstinline|abcd|X\n\nNext.' in src(page), src(page)[40:120])
     # (review of round 4) AutoCorrect leaves inline code alone: ... typed there wrote \ldots{}
     load_doc(page, W('Use \\lstinline{abcd} here.')); click_text(page, 'abcd', 2); page.keyboard.type('x...'); settle(page, 200)
     check('AutoCorrect leaves inline code alone: ... stays three dots', '\\lstinline{abx...cd}' in src(page), src(page)[40:120])
     # (review of round 4) minted's braces balance: {} typed in its code go in, a } that would close
-    # its own brace is refused
-    for typed, off, want in (('{}', 2, '\\mintinline{c}{ab{}cd} here'), ('}', 2, '\\mintinline{c}{abcd} here')):
+    # its own brace is refused, one typed at its end steps out
+    for typed, off, want in (('{}', 2, '\\mintinline{c}{ab{}cd} here'), ('}', 2, '\\mintinline{c}{abcd} here'), ('}X', 4, '\\mintinline{c}{abcd}X here')):
         load_doc(page, W('Use \\mintinline{c}{abcd} here.')); click_text(page, 'abcd', off); page.keyboard.type(typed); settle(page, 200)
         check('typed in \\mintinline{c}{..}: %r' % typed, want in src(page), src(page)[40:120])
     # and in every verbatim context: what a ' becomes there, as the page would write it
