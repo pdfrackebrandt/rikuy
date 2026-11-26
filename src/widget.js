@@ -291,6 +291,12 @@ export class WidgetLayer {
     // its frame, which covers it
     new MutationObserver(() => this.placeSoon()).observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     root.addEventListener('load', () => this.placeSoon(), true);
+    // and when the pages' column changes width with nothing in it changing: a wider window, a
+    // pane closed beside the page, at a zoom that stays (the app lays nothing out again then, so
+    // no mutation comes). The pages centre themselves again and the frames, which do not move
+    // with them, stood off to one side of their graphs. Placed at once, after the layout and
+    // before the paint, so not even one frame shows them apart.
+    if (typeof ResizeObserver === 'function') new ResizeObserver(() => this.place()).observe(root);
   }
 
   placeSoon() {
