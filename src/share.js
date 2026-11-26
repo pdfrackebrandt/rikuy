@@ -314,6 +314,18 @@ export function stripComments(text) {
 // two edits of the same base clash when their ranges overlap, or when both insert at one point
 // (which goes first is anyone's guess)
 const clash = (a, c) => (a.s < c.e && c.s < a.e) || (a.s === a.e && c.s === c.e && a.s === c.s);
+// Two edits that meet with no space between them clash too: what each put there joins the
+// other's into one word neither side wrote ("the user's' data"; 他不很喜欢; ข้าวต้มผัด, where the
+// script's words, found from the text around them, glue a word put in on one side to its
+// neighbour and not on the other). l ends where r starts; between them in the result stand the
+// last character l leaves and the first r leaves: apart only when one of them is a space.
+const space = (ch) => ch !== undefined && /\s/.test(ch);
+function glued(base, x, y) {
+  const [l, r] = x.e === y.s ? [x, y] : y.e === x.s ? [y, x] : [null, null];
+  if (!l) return false;
+  const left = l.t ? l.t[l.t.length - 1] : base[l.s - 1], right = r.t ? r.t[0] : base[r.e];
+  return !space(left) && !space(right);
+}
 
 // one side's edits of a text as hunks of it, {s, e, t}: by lines, or by words inside lines
 const lineEdits = (a, b) => hunks(a, b).map((h) => ({ s: h.as, e: h.as + h.a.length, t: h.b }));
@@ -388,7 +400,7 @@ function combine(base, A, C, budget) {
   const runs = [];
   for (const h of all) {
     const r = runs[runs.length - 1];
-    if (r && r.some((x) => x.mine !== h.mine && clash(x, h))) r.push(h); else runs.push([h]);
+    if (r && r.some((x) => x.mine !== h.mine && (clash(x, h) || glued(base, x, h)))) r.push(h); else runs.push([h]);
   }
   let clean = true, out = '', p = 0;
   for (const r of runs) {

@@ -345,8 +345,10 @@ await ok('merge keeps both sides when they touch different words of one line, an
   assert.deepEqual(merge3(w, w.replace('whatever', 'WHATEVER'), w.replace(' else', '')), { text: 'Rates rose; WHATEVER a buyer did.\n', clean: true });
   // the same edit made by both is no conflict
   assert.deepEqual(merge3(b, b.replace('efect', 'effect'), b.replace('efect', 'effect')), { text: b.replace('efect', 'effect'), clean: true });
-  // LaTeX around a word on one side, the word changed on the other
-  assert.deepEqual(merge3(b, b.replace('taxes', '\\emph{taxes}'), b.replace('taxes', 'tariffs')).text, b.replace('taxes', '\\emph{tariffs}'));
+  // LaTeX put round a word on one side, the word changed on the other: they meet with no space
+  // between them, a conflict (review N1); LaTeX round a word beside the one changed merges
+  assert.deepEqual(merge3(b, b.replace('taxes', '\\emph{taxes}'), b.replace('taxes', 'tariffs')), { text: b.replace('taxes', 'tariffs'), clean: false });
+  assert.deepEqual(merge3(b, b.replace('taxes', '\\emph{taxes}'), b.replace('growth', 'output')), { text: b.replace('taxes', '\\emph{taxes}').replace('growth', 'output'), clean: true });
   // by whole lines alone (a copy for comments only): no line mixes the two; comment lines under one line still both kept
   assert.deepEqual(merge3(b, b.replace('efect', 'effect'), b.replace('Chile', 'Bolivia'), { words: false }), { text: b.replace('Chile', 'Bolivia'), clean: false });
   assert.equal(merge3(b, m, t, { words: false }).clean, false);
@@ -384,6 +386,14 @@ await ok('a word conflict keeps my other words of the line; the word merge has o
   const r = merge3(B3, B3.replace(/x \n/g, 'MINE \n'), B3.replace(/^w/gm, 'W'));
   assert.equal(r.clean, false);
   assert.equal(r.text.split('MINE').length - 1, 2);
+});
+
+await ok('two edits that meet with no space between them are a conflict: Chinese, Thai, an apostrophe (R4 review N1)', () => {
+  assert.deepEqual(merge3('他喜欢学习。\n', '他很喜欢学习。\n', '他不喜欢学习。\n'), { text: '他不喜欢学习。\n', clean: false });
+  assert.deepEqual(merge3('ฉันกินข้าว', 'ฉันกินข้าวผัด', 'ฉันกินข้าวต้ม'), { text: 'ฉันกินข้าวต้ม', clean: false });
+  assert.deepEqual(merge3('the users data\n', "the user's data\n", "the users' data\n"), { text: "the users' data\n", clean: false });
+  // a space between them: both kept
+  assert.deepEqual(merge3('the users data\n', 'the USERS data\n', 'the users DATA\n'), { text: 'the USERS DATA\n', clean: true });
 });
 
 await ok('a comment line\'s own words start after its head\'s colon, not one in the quoted words (R4)', () => {
