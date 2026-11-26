@@ -19,7 +19,7 @@ across the notes' files keeps the case of what it replaces. And the hostile revi
 Round four, real documents (`real`): Enter in the words of a command of the document's own
 (\\question{..}) or in a caption of algorithm's float, and at the end of a list item in braces;
 a word typed after an acronym's or a glossary entry's command (\\ac{KDE}, \\Gls{slp}); enumitem's
-\\newlist lists.
+\\newlist lists; \\marginnote's offset and \\columnseprule=.4pt drawn as no words.
 
   python3 dogfood.py [part ...]   parts: formula arrows textfield styles table caption cite paste
                                   split filename undo_words enter reload_undo mathpkg intertext envlist replace review review2 review3 real
@@ -781,6 +781,12 @@ def real(page):
     settle(page, 200)
     check('real: Enter at the end of its item makes the next item', '\\item Tickets\n  \\item Money\n\\end{todolist}' in src(page), src(page)[-120:])
     compiles(page, 'real newlist')
+    # marginnote's offset after its text (\marginnote{..}[0cm]) and a layout register's assignment
+    # in the text (\columnseprule=.4pt) are no words of the page; they were drawn as "[0cm]", "=.4pt"
+    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath,marginnote}').replace('Agent income here.', 'Agent income here.\\marginnote{A note.}[0cm] More.\n\n\\columnseprule=.4pt\n\\fboxsep=2pt Last words.'))
+    txt = page.evaluate("document.getElementById('pages').innerText")
+    check('real: \\marginnote{..}[0cm] and \\columnseprule=.4pt draw no "[0cm]" or "=.4pt"', '[0cm]' not in txt and '=.4pt' not in txt and '=2pt' not in txt and 'fboxsep' not in txt and 'More.' in txt and 'Last words.' in txt, txt[:200])
+    compiles(page, 'real margin note')
 
 
 with sync_playwright() as p:

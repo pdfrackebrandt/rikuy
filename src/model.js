@@ -77,7 +77,14 @@ const FILE_CMDS = {
 const SI_CMDS = new Set(['num', 'SI', 'si', 'qty', 'unit', 'numrange', 'SIrange', 'qtyrange', 'numlist', 'SIlist', 'qtylist', 'numproduct', 'SIproduct', 'qtyproduct', 'ang', 'tablenum']);
 // a package's options as { key: value or true }, for src/pagesrc.js setsMedia
 const optsOf = (op) => Object.fromEntries(String(op || '').split(',').map((x) => x.trim()).filter(Boolean).map((x) => { const q = x.indexOf('='); return q < 0 ? [x, true] : [x.slice(0, q).trim(), x.slice(q + 1).trim()]; }));
-const INVIS = new Set([
+// (R4) the layout's registers, written as TeX's assignments in a document's text
+// (\columnseprule=.4pt before a multicols): no text of the page (INVIS), their value read off with
+// them (ASSIGN); the page drew the value as words, "=.4pt"
+const LAYOUT_REGS = ['columnseprule', 'columnsep', 'baselineskip', 'lineskip', 'lineskiplimit', 'topsep', 'itemsep', 'parsep', 'partopsep', 'fboxsep', 'fboxrule',
+  'arraycolsep', 'tabcolsep', 'arrayrulewidth', 'doublerulesep', 'abovedisplayskip', 'belowdisplayskip', 'abovedisplayshortskip', 'belowdisplayshortskip',
+  'textfloatsep', 'intextsep', 'floatsep', 'labelsep', 'labelwidth', 'itemindent', 'listparindent', 'unitlength', 'jot', 'mathsurround', 'parfillskip',
+  'hfuzz', 'vfuzz', 'hbadness', 'vbadness', 'brokenpenalty', 'predisplaypenalty', 'postdisplaypenalty', 'relpenalty', 'binoppenalty', 'overfullrule'];
+const INVIS = new Set([...LAYOUT_REGS,
   'label', 'index', 'glossary', 'nocite', 'phantomsection', 'protect', 'relax', 'indent', 'sloppy', 'fussy',
   'frenchspacing', 'makeatletter', 'makeatother', 'raggedright', 'raggedleft', 'addcontentsline', 'setlength',
   'addtolength', 'setcounter', 'addtocounter', 'stepcounter', 'refstepcounter', 'hypersetup', 'pagestyle',
@@ -224,7 +231,8 @@ const FLUSH = { align: null, flushAll: false };
 const SPACING_ENV = { singlespace: 1, 'singlespace*': 1, SingleSpace: 1, onehalfspace: 'h', OnehalfSpace: 'h', doublespace: 'd', DoubleSpace: 'd', spacing: 'x', Spacing: 'x' };
 const SPACING_DECL = new Set(['onehalfspacing', 'doublespacing', 'singlespacing', 'OnehalfSpacing', 'DoubleSpacing', 'SingleSpacing']);
 const ASSIGN = new Set(['hangindent', 'hangafter', 'parindent', 'parskip', 'widowpenalty', 'clubpenalty', 'displaywidowpenalty', 'interlinepenalty', 'linepenalty',
-  'hyphenpenalty', 'exhyphenpenalty', 'tolerance', 'pretolerance', 'emergencystretch', 'looseness', 'leftskip', 'rightskip']);
+  'hyphenpenalty', 'exhyphenpenalty', 'tolerance', 'pretolerance', 'emergencystretch', 'looseness', 'leftskip', 'rightskip',
+  ...LAYOUT_REGS]);
 const ASSIGN_VALUE = /^[ \t]*=?[ \t]*([+-]?(?:\d+(?:\.\d*)?|\.\d+)[ \t]*(?:pt|bp|mm|cm|in|pc|dd|cc|sp|em|ex)?) ?/;
 // setspace's stretch for one and a half and double spacing at 10, 11 and 12 pt (memoir's too)
 const ONEHALF = { 10: 1.25, 11: 1.213, 12: 1.241 }, DOUBLE = { 10: 1.667, 11: 1.618, 12: 1.655 };
@@ -3870,9 +3878,10 @@ class Builder {
     // vertical space inside a line (\title{\vspace{-1.5em}...}, a box's \smallskip) has no width: TeX
     // ends the paragraph or ignores it, and the page shows nothing either
     if (INVIS.has(name) || nd.def || name === 'vspace' || name === 'smallskip' || name === 'medskip' || name === 'bigskip') return false;
-    if (name === 'marginpar' || name === 'todo') {
+    // (marginnote's \marginnote{text}[offset]: its offset after the text, drawn as words "[0cm]")
+    if (name === 'marginpar' || name === 'todo' || name === 'marginnote') {
       acc.flush();
-      const a = nd.args[1];
+      const a = nd.args.find((x) => x && !x.o);
       out.push(this.atom(ctx, { k: 'chip', s: nd.s, e: nd.e, text: name === 'todo' ? 'TODO' : 'margin', title: a ? texToPlain(ctx.src.slice(a.is, a.ie)) : '', note: true }));
       return false;
     }
