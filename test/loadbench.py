@@ -10,6 +10,9 @@ Parts:
   long    the repeat visit of a 100 page document kept in the browser (dev/bench/long, two and a
           half times): opening one's own long paper
   pdf     a first visit with Preview pressed at once: the first PDF (needs dist/tex), cable line
+  spell   a first visit (Preview not pressed) until spelling has its dictionary, on a cable and a
+          phone line: when the English dictionary's last byte came, its bytes and all of spell/'s
+          on the wire
   scroll  the 100 page document scrolled top to bottom by the wheel: frame gaps (rAF), frames over
           50 ms and long tasks
 
@@ -22,7 +25,7 @@ Arguments: parts (default open,long), and
 Prints, per part and measure, each build's median and 95th percentile and the change of the
 median; the JSON of every run goes to $LOADBENCH_OUT (default /tmp/loadbench.json). Exits 1 when
 a run failed or a page had an error."""
-import atexit, json, os, shutil, statistics, subprocess, sys, tempfile, time, types
+import atexit, json, os, re, shutil, statistics, subprocess, sys, tempfile, time, types
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
@@ -189,6 +192,37 @@ def part_pdf(p, builds, dists):
     return res
 
 
+def part_spell(p, builds, dists):
+    rounds = ROUNDS or 8
+    res = []
+    for prof in ARGS.get('profiles', 'cable,phone').split(','):
+        srvs = [BL.serve(8970 + i, dists[b], 'br' if BL.brotli else 'gzip') for i, b in enumerate(builds)]
+        for s in srvs: s.shaper.set(BL.PROFILES[prof])
+        # (Save-Data: no TeX fetched ahead on the line; quiet 3 s: the spell worker starts once the
+        # page is idle, and the visit is over when nothing more comes)
+        args = types.SimpleNamespace(save_data=True, shape='server', limit=60, quiet=3, dwell=0)
+        for r in range(rounds):
+            for i in order(r, len(builds)):
+                d = tempfile.mkdtemp(prefix='loadbench-spell-')
+                try:
+                    x = BL.one(p, srvs[i], 'http://127.0.0.1:%d/' % (8970 + i), prof, 'idle', d, args)
+                finally:
+                    shutil.rmtree(d, ignore_errors=True)
+                w = x.get('waterfall', [])
+                dic = [q for q in w if re.search(r'^/spell/en_US-[0-9a-f]{16}\.dic$', q['path'])]
+                row = {'part': 'spell', 'build': builds[i], 'profile': prof, 'errors': x['errors'],
+                       'dic_end': dic[0]['end'] if dic else None, 'dic_wire': dic[0]['wire'] if dic else None,
+                       'spell_wire': sum(q['wire'] for q in w if q['path'].startswith('/spell/'))}
+                res.append(row)
+                if x['errors'] or x['failed'] or not dic: failures.append((builds[i], 'spell', prof, x['errors'][:2], x['failed'], 'no dictionary' if not dic else ''))
+                print('  spell %s %s %d: %s' % (builds[i], prof, r, json.dumps({k: row[k] for k in ('dic_end', 'dic_wire', 'spell_wire')})), flush=True)
+        for s in srvs: s.shutdown(); s.server_close()
+        table('spell: a first visit, %s line (ms from the start of the navigation; bytes on the wire)' % prof,
+              [(name, {b: [x[k] for x in res if x['build'] == b and x['profile'] == prof] for b in builds})
+               for name, k in [('dictionary in', 'dic_end'), ('dictionary bytes', 'dic_wire'), ('spell/ bytes', 'spell_wire')]], builds)
+    return res
+
+
 SCROLL = '''async () => { const sc = [...document.querySelectorAll('*')].find((e) => e.scrollHeight > e.clientHeight + 1000 && /auto|scroll/.test(getComputedStyle(e).overflowY));
   window.__sc = sc; sc.scrollTop = 0; window.__fr = []; window.__lt = []; window.__stop = false;
   let last = performance.now(); const tick = (t) => { window.__fr.push(t - last); last = t; if (!window.__stop) requestAnimationFrame(tick); }; requestAnimationFrame(tick);
@@ -234,7 +268,7 @@ def main():
     out = []
     with sync_playwright() as p:
         for part in PARTS:
-            out += {'open': part_open, 'long': part_long, 'pdf': part_pdf, 'scroll': part_scroll}[part](p, builds, dists)
+            out += {'open': part_open, 'long': part_long, 'pdf': part_pdf, 'spell': part_spell, 'scroll': part_scroll}[part](p, builds, dists)
     json.dump({'dists': dists, 'runs': out}, open(OUT, 'w'))
     for f in failures: print('RESULT FAILED', f)
     n = len(out)

@@ -29,7 +29,7 @@ const PLACEHOLDER_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAAAAACRn/EaAAAACXBIWXM
 const PLACEHOLDER_EPS = '%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 320 240\n0.85 setgray 0 0 320 240 rectfill\n0.6 setgray 2 setlinewidth 1 1 318 238 rectstroke\nshowpage\n';
 import { texToPlain, shortAuthors, entryYear, parseBib } from './bib.js';
 import { kvGet, kvPut, kvDel, kvSwap, decodeText, encodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
-import { changes, spacingOnly } from './diff.js';
+import { changes, spacingOnly, hunks } from './diff.js';
 import { TeXEngine, parseTeXLog, issueText } from './tex.js';
 import { PdfView } from './pdfview.js';
 import { collab, installCollab, cleanProjectName } from './collab.js';
@@ -60,7 +60,7 @@ import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packag
 import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf, THM_STYLES, titleInfo } from './styles.js';
 import { tableAt, cellAt as tableCellAt, colAlign, clipToCell, clearCells, blockTabular } from './table.js';
 import { eolAt } from './blockenv.js';
-import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
+import { shareParam, texParam, commentOnly, cleanPath, mergeProjects, merge3, vvJoin, vvHas, wideSaid } from './share.js';
 import { version as VERSION } from '../package.json';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
 import { scriptNeeds, scriptLines, addScriptSetup, scriptName, scriptSetup, MORE } from './scripts.js';
@@ -651,6 +651,7 @@ class App {
     let saved = null;
     try { saved = await kvGet('project'); } catch (e) { saved = null; this.noIdb = true; }
     this.savedT = saved ? saved.t : null; // the copy in IndexedDB this tab last read or wrote
+    this.savedCopy = saved; // (and its text: what another tab's copy and this one's both come from)
     const ls = load(STORE);
     if (ls && ls.files && (!saved || (ls.t || 0) > (saved.t || 0))) saved = ls; // a session that could not use IndexedDB
     if (this.newPrefs) {
@@ -683,6 +684,15 @@ class App {
         }
       } catch (e) { /* text still loads */ }
     } else this.loadSample();
+    // (the texts savedCopy is the stored copy of: a project opened over them, a new Map, comes
+    // from no copy another tab's could be merged with, see persist)
+    this.savedMap = this.files;
+    // (and the project's id: the copy's, or for a copy kept before ids, one every tab that reads
+    // that copy makes alike)
+    if (saved && saved.files) { this.pid = saved.pid || 'kept:' + saved.t + ':' + this.name; this.pidMap = this.files; this.nameT = saved.nameT || 0; }
+    // (the stored copy this tab read, without an id when a version before ids wrote it: the id
+    // every tab that reads it makes alike, so the first saves of two tabs merge, review N2)
+    if (this.savedCopy && this.savedCopy.files && !this.savedCopy.pid && this.savedCopy.name === this.name && this.savedCopy.main === this.main) this.savedCopy = { ...this.savedCopy, pid: this.pid };
     this.bindUI();
     this.applyPrefs();
     this.updateUndoUI();
@@ -1117,6 +1127,8 @@ class App {
     // what it holds. A font that came, the window resized (a phone's keyboard), a pane opened
     // after Enter lost it, and the next words went on the end of the line above)
     const G = c && c.ghost && this.ghost && !this.ghost.tex && !this.ghost.sticky ? { ...this.ghost } : null;
+    // (and those Enter at a paragraph's start showed above it, the caret staying at its start)
+    const K = !G && this.ghost && this.ghost.keepAt && !this.ghost.tex && !this.ghost.sticky && this.ghostKept() ? { ...this.ghost } : null;
     // (a dialog's field with the focus, the Font dialog's size box: the page's selection is not
     // there to read, so what the dialog acts on is read from its own range, to be put on the new
     // nodes; it kept the old ones and OK formatted the document's start. A dialog's alone: a pane's
@@ -1130,10 +1142,14 @@ class App {
       if (x && x.node && y && y.node) { const r = document.createRange(); r.setStart(x.node, x.offset); r.setEnd(y.node, y.offset); this.rbRange = r; }
     }
     if (G && !this.ghost) {
-      this.ghostAt(G.f, G.pos, G.style, G.line);
+      this.ghostAt(G.f, G.pos, G.style, G.line, G.before);
       if (this.ghost) {
         const el = this.ghost.el;
+        // (looking as it did, aligned as the paragraph it was made from: showGhost)
+        el.className = G.el.className;
         Object.assign(this.ghost, G, { el });
+        // (and as many empty lines as Enter made: the new one showed one)
+        this.ghostLines();
         if (G.pend) this.paintGhost();
         return;
       }
@@ -1152,6 +1168,22 @@ class App {
       if (x && x.node && y && y.node) {
         getSelection().setBaseAndExtent(x.node, x.offset, y.node, y.offset);
         if (this.rbRange) this.rbRange = getSelection().getRangeAt(0).cloneRange();
+      }
+    }
+    // The empty paragraphs Enter showed above the paragraph whose start the caret stays at: shown
+    // again before it, as many, the caret kept there. The pass took them away, so a font that came,
+    // the window resized (a phone's keyboard) or a pane opened lost them, and the next Enter began
+    // again at one.
+    if (K && !this.ghost && document.activeElement === this.root) {
+      const sel = getSelection(), keep = sel.rangeCount && sel.isCollapsed ? sel.getRangeAt(0).cloneRange() : null;
+      const n = keep && keep.startContainer, it = n && (n.nodeType === 1 ? n : n.parentElement).closest('.it');
+      if (it && this.root.contains(it)) {
+        this.showGhost(it, K.f, K.pos, { before: true });
+        const el = this.ghost.el;
+        el.className = K.el.className;
+        Object.assign(this.ghost, K, { el, keepAt: keep });
+        sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true;
+        this.ghostLines();
       }
     }
   }
@@ -1649,6 +1681,8 @@ class App {
     this.closePop(true);
     // (an empty paragraph Enter showed is a step of its own: takeBackGhost)
     if (this.takeBackGhost('undo')) return;
+    // (another tab's words brought in at a save are not this person's to undo: undoUnder)
+    if (this.undoUnder()) return;
     const h = this.hist.pop();
     if (!h) { this.toast('Nothing to undo'); return; }
     if (!this.stepFits(h, true)) return;
@@ -3043,6 +3077,9 @@ class App {
     // paragraph above it, as Word's, and one Backspace or Undo takes one away (review V2). The
     // first was shown again in its place, so a second Backspace joined the two paragraphs.
     if (!soft && this.ghost && this.ghost.keepAt && this.ghostKept()) { this.ghost.n = (this.ghost.n || 1) + 1; this.ghostLines(); this.enterAct(); return; }
+    // (Enter again on the empty paragraph an Enter showed shows no second one: what is typed there
+    // is written as one paragraph after the one above, and a second empty line would vanish at the
+    // first key, the words drawn a line higher than the caret was; review B3)
     if (c.ghost) { if (this.ghost.tex) this.texGhostEnter(); else this.ghostLeaveEnv(); return; }
     const T = this.texHere();
     if (T && c.f === T.f) { this.texEnter(T, c); return; }
@@ -3195,7 +3232,7 @@ class App {
       // plain after them; \textsl{..} round a blank line stopped TeX, which takes no paragraph there)
       const out = this.wrapBreak(el, f, E.p);
       if (!out.close) E.p = out.p;
-      this.showGhost(itemEl, f, E.p);
+      this.showGhost(itemEl, f, E.p, { align: true });
       if (E.wrap && this.ghost) this.ghost.wrap = E.wrap;
       this.enterAct();
       return;
@@ -3208,7 +3245,7 @@ class App {
     const ps = c.collapsed && !w.close && itemEl && kind === 'p' ? PARA_START.exec(src.slice(Math.max(0, w.p - 400), w.p)) : null;
     if (ps) {
       const keep = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-      this.showGhost(itemEl, f, w.p - ps[1].length, { before: true });
+      this.showGhost(itemEl, f, w.p - ps[1].length, { before: true, align: true });
       if (keep) { sel.removeAllRanges(); sel.addRange(keep); this.ourSel = true; if (this.ghost) this.ghost.keepAt = keep; }
       this.enterAct();
       return;
@@ -3288,8 +3325,16 @@ class App {
     const g = document.createElement('div');
     g.className = 'it p ghostp' + (!o.line && (afterEl.classList.contains('ind') || afterEl.classList.contains('p') || afterEl.classList.contains('tex')) ? ' ind' : '') + (o.style === 'latex' ? ' tex' : isEnvStyle(o.style) ? ' quote' : '');
     g.dataset.ctx = 'p';
+    // (a paragraph to a screen reader, as the page's own are: it was a bare generic node)
+    g.setAttribute('role', 'paragraph');
     // the new paragraph runs the way the one above it does
     if (afterEl.dir === 'rtl' || afterEl.dir === 'ltr') g.dir = afterEl.dir;
+    // (o.align: made by Enter at a paragraph's words, where it is written in the same flushright,
+    // center or flushleft: it is aligned as that paragraph, without the indent those set to none,
+    // as Word's new paragraph keeps the alignment. The caret was drawn at the left of a right
+    // aligned or centred paragraph, and the first letter typed jumped across.)
+    const al = o.align && [...afterEl.classList].find((k) => /^al-(?:left|center|right)$/.test(k));
+    if (al) { g.classList.add(al); if (!afterEl.classList.contains('ind')) g.classList.remove('ind'); }
     const s = document.createElement('span');
     s.className = 't gh';
     s.textContent = '\u200B';
@@ -3313,7 +3358,10 @@ class App {
     // a center hold paragraphs of their own, and one left out of a frame is set nowhere; review H3)
     const name = m && m[1].trim(), thm = name && (THM_STYLES[name] || name === 'assumption' || (this.model && this.model.thms && this.model.thms.has(name)));
     if (!m || !(thm || /^(quote|quotation|verse)$/.test(name))) return false;
-    const after = g.el.previousElementSibling;
+    // (after the environment's last element on the page: the element before the empty line was
+    // taken, the paragraph above a theorem where the line stood there)
+    const prev = g.el.previousElementSibling, B = this.renderer.blocks.find((b) => b.f === g.f && b.items.length && b.s < g.pos && g.pos < b.e);
+    const after = B && !(prev && prev.dataset.b === String(B.id)) ? [...this.root.querySelectorAll('.it[data-b="' + B.id + '"]')].pop() || prev : prev;
     if (!after) return false;
     this.showGhost(after, g.f, g.pos + m[0].length);
     return true;
@@ -3655,15 +3703,37 @@ class App {
     this.commit([{ f: T.f, s: g.pos, e: g.pos, t }], { f: T.f, p: g.pos + t.length + (g.tex === 'after' ? 1 : 0), bias: 1 }, 'enter');
   }
   // a blank paragraph for pos, after the block of the page that ends before it (before the one
-  // that starts after it, where none does)
-  ghostAt(f, pos, style, line) {
+  // that starts after it, where none does); before: one Enter showed at a paragraph's start
+  ghostAt(f, pos, style, line, before) {
     let prev = null, next = null;
+    // (a block's end may take in the line break after its last words, the last paragraph before
+    // \end{document}: a place between those words and that break is after it. The block before it
+    // was taken, and a relayout moved Enter's empty paragraph at the last paragraph's end above it)
+    const src = this.src(f), ends = (B) => B.e <= pos || (B.s < pos && !src.slice(pos, B.e).trim());
+    let inside = null;
     for (const B of this.renderer.blocks) {
       if (B.f !== f || !B.items.length) continue;
-      if (B.e <= pos && (!prev || B.e >= prev.e)) prev = B;
+      if (ends(B) && (!prev || B.e >= prev.e)) prev = B;
       if (B.s >= pos && (!next || B.s < next.s)) next = B;
+      if (B.s < pos && !ends(B)) inside = B;
     }
+    // (a place inside a block, at a paragraph's end in a theorem, a quote, a flushright: after
+    // that paragraph, found by the page's index. The block before the environment was taken, and
+    // the empty paragraph went above it. Only where the index has words ending there: a display
+    // is not in it, and the nearest words were taken, the line after a display in an item drawn
+    // after the next item, what was typed written on a line of its own, mathfield.py)
+    // (one made at a paragraph's start goes before the paragraph whose words start there: it went
+    // after it, below the paragraph, and what was typed was written above it; review B2)
+    const x = inside ? this.index.find(f, pos, before ? 1 : -1) : null, it = x && !x.inexact && x.node && x.node.parentElement ? x.node.parentElement.closest('.it.p') : null;
+    if (it && this.root.contains(it) && it.dataset.b === String(inside.id)) { this.showGhost(it, f, pos, { before: !!before, style, line }); return; }
     const els = (B) => [...this.root.querySelectorAll('.it[data-b="' + B.id + '"]')];
+    // (or after a display of the block ending there: the line after the display that ends a
+    // theorem, drawn above the theorem. Not in a list, where the letter after a display goes on
+    // the display's line, \]Q: mathfield.py)
+    if (inside && !before) {
+      const all = els(inside), d = all.some((e) => e.dataset.li) ? null : all.find((e) => { const i = e.dataset.a ? atomOfEl(e) : null; return !!i && i.f === f && i.e === pos; });
+      if (d) { this.showGhost(d, f, pos, { style, line }); return; }
+    }
     const at = prev ? els(prev).pop() : next ? els(next)[0] : null;
     if (at) this.showGhost(at, f, pos, { before: !prev, style, line });
   }
@@ -6893,13 +6963,17 @@ class App {
 
   gitError(e) {
     const m = String((e && (e.message || e.code)) || e);
+    // (offline, the proxy and the policy are not why: what to change there would be no help)
+    if (/Failed to fetch|NetworkError|Load failed/i.test(m) && navigator.onLine === false) return 'This computer is offline. Your commits are kept in this browser: pull or push once you are back online.';
     if (/Failed to fetch|NetworkError|Load failed|Content Security Policy|CORS/i.test(m)) {
       // (the hosted copy reaches git hosts through its own proxy alone: its policy refuses any other address)
       if (__RIKUY_APP__) return 'Could not reach the remote. Rikuy reaches git hosts only through its own proxy, ' + gitProxyHere() + ': put that address in CORS proxy, or Download LaTeX and push from your computer. (' + m + ')';
       return 'Could not reach the remote. From inside claude.ai the page may only talk to its own server; run Rikuy on its own site, or Download LaTeX and push from your computer. (' + m + ')';
     }
     if (/401|403|auth/i.test(m)) return 'The remote refused the credentials. Check the token and that it can write to this repository. (' + m + ')';
-    if (/MergeConflict|conflict/i.test(m)) return 'Pull found conflicting edits to the same lines. Commit, then merge on your computer, or restore one side. (' + m + ')';
+    if (/MergeConflict|conflict/i.test(m)) return 'Pull found edits of the same words on both sides, so nothing was merged. Commit, then merge on your computer, or restore one side. (' + m + ')';
+    // (isomorphic-git's own words say to force it, which would throw the other commits away)
+    if (/PushRejected|not a simple fast-forward/i.test(m)) return 'The remote has commits this project does not have yet. Pull first, then push again.';
     return m;
   }
 
@@ -7553,6 +7627,9 @@ class App {
   // Keep the project in this browser: text on every change, binary files when they change.
   persist() {
     const meta = { name: this.name, main: this.main, files: [...this.files.entries()], t: Date.now(), zipDirty: this.zipDirty };
+    // (which project this is, whatever its name, and when that name was given: mergeOtherTab)
+    meta.pid = this.projectId();
+    meta.nameT = this.nameT || 0;
     // when this browser keeps nothing (storage turned off, as in some private windows, or
     // full) or keeps the text but not the figures, the user hears it once, not only in the
     // status line, so nobody closes the page trusting a copy that is not there
@@ -7587,7 +7664,31 @@ class App {
       jobs.push(kvPut('history', this.historyKept(meta)).catch(() => { this.histSig = null; }));
     }
     meta.hT = this.histT;
-    jobs.push(kvSwap('project', meta).then((cur) => { if (cur && cur.files && cur.t !== prevT) return this.keepOtherTab(cur); }));
+    // Another tab's copy found in place of this tab's last is merged with this one in the same
+    // write (mergeOtherTab), from the copy both come from: two windows side by side on one
+    // document each kept typing on its own copy, and each save put the other's words into the
+    // versions, out of the document.
+    const base = this.savedMap === this.files ? this.savedCopy : null;
+    // (the copies this one has seen, one entry per tab: another tab merges it only where it has
+    // seen that tab's own last copy, so a copy written over that one without merging it is never
+    // read as that tab's words deleted, review N2, V2-C; src/share.js vvJoin)
+    if (!this.tabKey) this.tabKey = [...crypto.getRandomValues(new Uint8Array(9))].map((x) => x.toString(16).padStart(2, '0')).join('');
+    meta.vv = vvJoin(base && base.vv, { [this.tabKey]: meta.t });
+    // (the word to the tab whose words a merge here took out goes with every copy until a copy of
+    // that tab's after it is in: one save of this tab's after the merge would have lost it)
+    const dn = this.dropNote;
+    if (dn && !((meta.vv[dn.tab] || 0) > dn.t)) meta.dropped = dn; else this.dropNote = null;
+    this.savedCopy = meta;
+    this.savedMap = this.files;
+    let merged = null;
+    const over = (cur) => (cur && cur.files && cur.t !== prevT && (merged = this.mergeOtherTab(base, meta, cur)) ? merged.meta : null);
+    jobs.push(kvSwap('project', meta, over).then(({ was: cur, put }) => {
+      if (!cur || !cur.files || cur.t === prevT) return;
+      if (!merged) return this.keepOtherTab(cur);
+      if (put !== meta && this.savedCopy === meta) this.savedCopy = put;
+      if (merged.meta && merged.meta.dropped) this.dropNote = merged.meta.dropped;
+      return this.takeOtherTab(meta, merged, cur);
+    }));
     if (this.binaryDirty) {
       this.binaryDirty = false;
       jobs.push(kvPut('binary', {
@@ -7602,12 +7703,211 @@ class App {
 
   // Another tab saved this project (or another one) after this tab last read it: keep that text
   // as a named version, so it is never pruned, and say where it is.
-  async keepOtherTab(cur) {
+  async keepOtherTab(cur, said) {
     const sig = textSig(cur.main, cur.files);
     if (sig === textSig(this.main, [...this.files.entries()])) return;
     try { await snapAdd({ t: Date.now(), label: 'From another tab', named: true, name: cur.name || cur.main, main: cur.main, sig, files: cur.files }); } catch (e) { return; }
     this.snapList = null;
-    this.toast('This document is open in another tab too. What that tab saved is kept under Review, Versions, as “From another tab”.', 9000);
+    this.toast(said || 'This document is open in another tab too. What that tab saved is kept under Review, Versions, as “From another tab”.', 9000);
+  }
+
+  // The copy to write when another tab of this browser saved this project (cur) since this tab
+  // last read or wrote it (base): the two tabs' texts merged as a coauthor's copy is (src/share.js),
+  // so both tabs' words are kept; where both changed the same words, this tab's, typed last, are
+  // written. Called inside the write's transaction, so no tab reads the copy in between. null
+  // where cur is another project or this tab knows no copy both come from.
+  mergeOtherTab(base, meta, cur) {
+    if (!base || !Array.isArray(base.files) || !Array.isArray(cur.files)) return null;
+    // (one project only, known by its id, never by a name: Rename gives a name back, and the next
+    // new document takes it; matched by its old name, a shopping list merged over a thesis, review
+    // B1. Renamed in that tab since this one's name was given: its name is taken.)
+    if (!meta.pid || cur.pid !== meta.pid || base.pid !== meta.pid || cur.main !== meta.main || base.main !== meta.main) return null;
+    // (and only a copy that comes from this tab's last: one written over it without merging it,
+    // as a tab with another id or none does, would read as this tab's words deleted)
+    if (!vvHas(cur.vv, base.vv)) return null;
+    const renamed = this.renamedThere(cur, meta.name, meta.nameT) ? cur.name : null;
+    // (this tab's copy as "theirs": the side that wins where both changed the same words)
+    const { files, conflicts, wide } = mergeProjects(new Map(base.files), new Map(cur.files), new Map(meta.files));
+    const same = !renamed && files.size === meta.files.length && meta.files.every(([n, t]) => files.get(n) === t);
+    // (written again even when it is this tab's text, nothing of that tab's being new, to say it
+    // comes from that tab's copy too: else that tab's next save, finding its own copy nowhere in
+    // this one's, would keep it as another's; hT names no Undo steps where the text is the merge,
+    // for those kept were written for this tab's text)
+    const vv = vvJoin(meta.vv, cur.vv);
+    // (where both changed the same words this tab's are written: that tab, whose words they took
+    // out, is told so when it takes this copy in, not that it brought in what was typed here,
+    // review V4-B; it is known by its entry for its own copy)
+    const tab = Object.keys(cur.vv || {}).find((k) => cur.vv[k] === cur.t);
+    const dropped = conflicts.length && tab ? { tab, t: cur.t, wide: conflicts.map((f) => [f, wide.get(f) || 'words']) } : null;
+    const note = dropped ? { dropped } : {};
+    return { meta: same ? { ...meta, vv, ...note } : { ...meta, ...(renamed ? { name: renamed, nameT: cur.nameT } : {}), files: [...files], hT: 0, vv, ...note }, conflicts, wide, renamed, same };
+  }
+
+  // What another tab's copy says it took out of this tab's: where both changed the same words it
+  // kept its own and put this tab's text under Versions (review V4-B); '' where it took nothing.
+  droppedSaid(cur) {
+    const d = cur && cur.dropped;
+    if (!d || d.tab !== this.tabKey || !Array.isArray(d.wide) || this.droppedSeen === d.t) return '';
+    this.droppedSeen = d.t;
+    const wide = d.wide.filter(([, how]) => how !== 'words');
+    return 'Brought in what was typed in another tab. In ' + d.wide.map(([f]) => f).join(', ') + ' you both changed the same words, and that tab kept its own' + wideSaid(wide) + ': your text from before is under Review, Versions, as “From another tab”, and Compare brings words of it back.';
+  }
+
+  // The open project's id: made with its texts (opened, new, the sample, a version put in their
+  // place: each a new Map of texts), kept by every edit and by Rename, written with every save.
+  projectId() {
+    if (this.pidMap !== this.files) {
+      const b = crypto.getRandomValues(new Uint8Array(12));
+      this.pid = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+      this.pidMap = this.files;
+      this.nameT = 0;
+    }
+    return this.pid;
+  }
+  // Whether the copy another tab wrote (cur) is this project, of this id, renamed there after this
+  // tab's name was given (nameT): Rename moved its versions and records to the new name, and this
+  // tab, under the old one, wrote on as another document; the two never met again.
+  renamedThere(cur, name, nameT) {
+    return !!cur.pid && cur.pid === this.projectId() && typeof cur.name === 'string' && !!cur.name && cur.name !== name && (cur.nameT || 0) > (nameT || 0);
+  }
+  // This tab takes the name another tab gave the project (its records there were moved already)
+  renamedHere(to, nameT) {
+    const from = this.name, main = this.main;
+    this.name = to;
+    this.nameT = nameT || 0;
+    const k = from + '|' + main, n = to + '|' + main;
+    if (this.linkCache && this.linkCache.has(k)) { this.linkCache.set(n, this.linkCache.get(k)); this.linkCache.delete(k); }
+    if (this.scriptSeen && this.scriptSeen.has(k)) { this.scriptSeen.set(n, this.scriptSeen.get(k)); this.scriptSeen.delete(k); }
+    if (this.fold) this.fold.key = n;
+    const d = $('#docname');
+    if (d) d.textContent = to;
+    if (this.saveTitle) this.saveTitle();
+    this.toast(from + ' was renamed ' + to + ' in another tab: this tab shows it under that name.', 7000);
+  }
+
+  // The merged copy written, this tab takes it as one step Ctrl+Z undoes, what was typed here
+  // since the write staying on top, the caret where its words are.
+  async takeOtherTab(meta, merged, cur) {
+    const both = (took) => (took ? 'Brought in what was typed in another tab. ' : 'This document is open in another tab too. ') + 'Where both tabs changed the same words, this one\'s are kept' + wideSaid(merged.wide) + '; that tab\'s are under Review, Versions, as “From another tab”.';
+    // (nothing of that tab's but words this one changed again: those go to the versions)
+    if (merged.same) return merged.conflicts.length ? this.keepOtherTab(cur, both(false)) : undefined;
+    if (merged.renamed && this.name === meta.name && this.main === meta.main && this.pid === meta.pid) this.renamedHere(merged.renamed, cur.nameT);
+    // (the project by its id, whatever its name: a Rename here while this ran is the same project,
+    // and the merge is taken; another project opened meanwhile keeps that tab's text as a version,
+    // and this tab's next copy claims to have seen none, so its write over the merged copy is
+    // never read there as that tab's words deleted, review V2-D)
+    const mine = () => this.main === meta.main && this.pidMap === this.files && this.pid === meta.pid;
+    if (!mine()) { this.savedMap = null; return this.keepOtherTab(cur); }
+    // (that tab may have marked the project a stranger's since this one read its mark, as an
+    // archive dropped there does: read again before its text is drawn and compiled here, V2)
+    await this.freshMark();
+    if (!mine()) { this.savedMap = null; return this.keepOtherTab(cur); }
+    this.syncEngineMenu();
+    const W = new Map(meta.files), edits = [];
+    const want = new Map();
+    for (const [n, t] of merged.meta.files) {
+      const now = this.files.get(n), was = W.get(n);
+      const to = now === was ? t : merge3(was ?? '', t, now ?? '').text;
+      want.set(n, to);
+      if (now === undefined) { edits.push({ f: n, s: 0, e: 0, t: to }); continue; }
+      for (const h of hunks(now, to)) edits.push({ f: n, s: h.as, e: h.as + h.a.length, t: h.b });
+    }
+    let caret = this.caretNow();
+    if (caret && caret.f != null && !caret.ghost) {
+      // (the edits in the order of the text, offsets in it as it is now: one the caret is inside
+      // puts it after what replaced it)
+      let d = 0;
+      for (const ed of edits) if (ed.f === caret.f && ed.s < caret.p) d += ed.e <= caret.p ? ed.t.length - (ed.e - ed.s) : ed.s + ed.t.length - caret.p;
+      caret = { f: caret.f, p: caret.p + d };
+    } else caret = null;
+    if (edits.length) {
+      this.closeGroup();
+      this.commit(edits, caret, 'other-tab');
+      this.closeGroup();
+      // (and that tab's Track Changes base and switch: its edits stay its changes)
+      if (this.rvCheckBase) this.rvCheckBase();
+    }
+    // (refused, as in a link for comments only: that tab's text is kept as a version, as before,
+    // and this tab's next copy claims to come from none, so no tab reads it as that tab's words
+    // deleted)
+    if ([...want].some(([n, t]) => this.files.get(n) !== t)) { this.savedMap = null; return this.keepOtherTab(cur); }
+    if (merged.conflicts.length) return this.keepOtherTab(cur, both(true));
+    // (this tab has that tab's text now: its Allow is no longer refused, see allowMark)
+    if (this.markStale) this.markStale.delete(this.name + '|' + this.main);
+    // (Ctrl+Z takes out this person's own typing, not that tab's words: undoUnder)
+    const dropped = this.droppedSaid(cur);
+    this.toast(dropped || 'Brought in what was typed in another tab. Ctrl+Z undoes your own typing, not theirs.', dropped ? 12000 : 5000);
+  }
+
+  // Ctrl+Z with another tab's words brought in at a save (takeOtherTab) on top of Undo's steps:
+  // the person's own last step is taken out and that tab's words stay, as Word's coauthoring
+  // does. Undone as a step, the merge took that tab's words out of this window, then at the next
+  // saves out of the other one too, with no version (review B2). Their step is taken out around
+  // those words as a merge of the texts (from the text with it, the text without it and the text
+  // now); the words stay one step of that tab's, and the person's step can be redone. Where there
+  // is no step of theirs under it, or it cannot be taken out so, the merge is undone as before,
+  // its text kept under Review, Versions first. false: undo goes on as before.
+  undoUnder() {
+    const H = this.hist;
+    if (!H.length || H[H.length - 1].kind !== 'other-tab') return false;
+    let k = H.length - 1;
+    while (k >= 0 && H[k].kind === 'other-tab') k--;
+    const keep = () => {
+      const files = [...this.files.entries()];
+      snapAdd({ t: Date.now(), label: 'From another tab', named: true, name: this.name, main: this.main, sig: textSig(this.main, files), files }).then(() => { this.snapList = null; }).catch(() => {});
+      this.toast('Undone: what another tab typed. Its text is kept under Review, Versions, as “From another tab”.', 7000);
+      return false;
+    };
+    const X = H[k], tops = H.slice(k + 1);
+    const odd = (h) => (h.blobs && h.blobs.length) || h.base0 || h.files.some((d) => d.made);
+    if (k < 0 || odd(X) || tops.some(odd)) return keep();
+    const names = [...new Set([...X.files, ...tops.flatMap((h) => h.files)].map((d) => d.f))];
+    const back = (t, d) => (t.slice(d.s, d.s + d.ins.length) === d.ins ? t.slice(0, d.s) + d.del + t.slice(d.s + d.ins.length) : null);
+    const T0 = new Map(), T1 = new Map(), R = new Map();
+    for (const f of names) {
+      // the text before that tab's words (t1) and before the person's step (t0)
+      let t1 = this.files.get(f) ?? '';
+      for (let i = tops.length - 1; i >= 0 && t1 != null; i--) for (const d of tops[i].files) if (d.f === f && t1 != null) t1 = back(t1, d);
+      let t0 = t1;
+      for (const d of X.files) if (d.f === f && t0 != null) t0 = back(t0, d);
+      if (t1 == null || t0 == null) return keep();
+      const m = merge3(t1, t0, this.files.get(f) ?? '');
+      if (!m.clean) return keep();
+      T0.set(f, t0); T1.set(f, t1); R.set(f, m.text);
+    }
+    // a step from one text to another, one span per file, as record() makes them
+    const span = (a, b) => {
+      let s = 0, e = 0;
+      const n = Math.min(a.length, b.length);
+      while (s < n && a[s] === b[s]) s++;
+      while (e < n - s && a[a.length - 1 - e] === b[b.length - 1 - e]) e++;
+      return { s, del: a.slice(s, a.length - e), ins: b.slice(s, b.length - e) };
+    };
+    const step = (h, from, to) => ({ ...h, files: names.filter((f) => from.get(f) !== to.get(f)).map((f) => ({ f, ...span(from.get(f), to.get(f)) })), open: false, before: null, win: null, after: null });
+    const Y = step(tops[tops.length - 1], T0, R);
+    // (the person's step again on top, for Redo, where it goes in around those words)
+    const RX = new Map();
+    for (const f of names) { const r = merge3(T0.get(f), T1.get(f), R.get(f)); if (!r.clean) { RX.clear(); break; } RX.set(f, r.text); }
+    const was = new Map(names.map((f) => [f, this.files.get(f) ?? '']));
+    H.splice(k);
+    if (Y.files.length) H.push(Y);
+    if (RX.size === names.length) this.redoStack.push(step(X, R, RX));
+    for (const f of names) this.files.set(f, R.get(f));
+    this.viewMap(new Map(names.map((f) => [f, [{ s: 0, e: was.get(f).length, t: R.get(f) }]])), was);
+    this.lastAct = null;
+    this.rvStep = Y;
+    // (the caret where the step began, moved by that tab's words before it)
+    const cb = X.caretBefore;
+    let c = null;
+    if (cb && cb.f != null && R.has(cb.f)) {
+      const d = span(T0.get(cb.f), R.get(cb.f)), p = cb.p ?? 0;
+      c = { f: cb.f, p: p <= d.s ? p : p >= d.s + d.del.length ? p + d.ins.length - d.del.length : d.s + d.ins.length };
+    } else if (cb) c = cb;
+    this.rebuild(c);
+    this.pushToSource();
+    this.saveSoon();
+    this.updateUndoUI();
+    return true;
   }
 
   // Back in this tab after working in another one on the same project: take its text, as one
@@ -7619,6 +7919,8 @@ class App {
     let cur = null;
     try { cur = await kvGet('project'); } catch (e) { return; }
     if (!cur || !cur.files || cur.t === this.savedT || this.unsaved) return;
+    // (renamed there: the same project, which this tab now shows under its new name)
+    if (cur.main === this.main && this.renamedThere(cur, this.name, this.nameT)) this.renamedHere(cur.name, cur.nameT);
     if (cur.name !== this.name || cur.main !== this.main) return;
     // (that tab may have marked the project a stranger's since this one read its mark, as an
     // archive dropped there does: read again before its text is drawn and compiled here, V2)
@@ -7628,6 +7930,9 @@ class App {
     const edits = [];
     for (const [n, t] of cur.files) { const was = this.files.get(n); if (was !== t) edits.push({ f: n, s: 0, e: was == null ? 0 : was.length, t }); }
     this.savedT = cur.t;
+    this.savedCopy = cur;
+    // (this tab holds that tab's copy now, whole: its id and its name's time too)
+    if (cur.pid) { this.pid = cur.pid; this.pidMap = this.files; this.nameT = cur.nameT || 0; }
     // (this tab has that tab's text now: its Allow is no longer refused, see allowMark)
     if (this.markStale) this.markStale.delete(this.name + '|' + this.main);
     if (!edits.length) return;
@@ -7637,7 +7942,9 @@ class App {
     this.closeGroup();
     // (and that tab's Track Changes base and switch: its edits stay its changes)
     this.rvCheckBase();
-    this.toast('Brought in what was typed in another tab. Ctrl+Z undoes it.', 5000);
+    // (Ctrl+Z takes out this person's own typing, not that tab's words: undoUnder)
+    const dropped = this.droppedSaid(cur);
+    this.toast(dropped || 'Brought in what was typed in another tab. Ctrl+Z undoes your own typing, not theirs.', dropped ? 12000 : 5000);
   }
 
   resetToSample() {

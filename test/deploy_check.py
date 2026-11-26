@@ -1,6 +1,7 @@
 """dev/pages_check.py, the check deploy.yml runs before it uploads to Cloudflare Pages: a dist/
 that fits passes; one file over 25 MiB, more than 20,000 files, a _headers file of more than 100
-rules or a line over 2,000 characters, or a build without the app's files fails. And the hosted
+rules or a line over 2,000 characters, a file over 64 KB of a type Cloudflare does not compress lying
+uncompressed, or a build without the app's files fails. And the hosted
 build's own _headers (build/app.mjs): its policy, every directive pinned (the page's one inline
 script by its hash, WebAssembly, no eval, connections to the site alone (git goes through its own
 /git function); the browser tests run under it, test/serve.py); and the caching, HSTS (this host only), nosniff, Referrer-Policy and Permissions-Policy
@@ -32,6 +33,7 @@ def dist(files):
         os.makedirs(os.path.dirname(p), exist_ok=True)
         with open(p, 'wb') as f:
             if isinstance(size, str): f.write(size.encode())
+            elif isinstance(size, bytes): f.write(size)
             else: f.truncate(size)
     return d
 
@@ -51,6 +53,16 @@ probs, _, _ = pages_check.check(dist(dict(APP, _headers='/w-*\n  A: b\n/*\n  C: 
 ok('two rules for one address pattern fail (Pages keeps only the last)', len(probs) == 1 and '2 rules for /w-*' in probs[0], probs)
 probs, _, _ = pages_check.check(dist({'index.html': 'x', 'rikuy.html': 'x'}))
 ok('the artifact build (no sw.js, no _headers) is not deployed', len(probs) == 2, probs)
+# a file Cloudflare sends as it lies (a type it does not compress) must lie compressed: the English
+# dictionary's 860 KB travelled whole on every visit that checked spelling
+probs, _, _ = pages_check.check(dist(dict(APP, **{'spell/en_US-0123456789abcdef.dic': 860 * 1024})))
+ok('an uncompressed dictionary of 860 KB is refused', any('en_US-0123456789abcdef.dic' in p and 'compress' in p for p in probs), probs)
+gz = b'\x1f\x8b' + b'x' * (300 * 1024)
+probs, _, _ = pages_check.check(dist(dict(APP, **{'spell/en_US-0123456789abcdef.dic': gz, 'word/pandoc-ab-0.bin': gz, 'word/pandoc-ab-1.bin': 200 * 1024,
+                                                  'tex/p-0123456789abcdef.wasm': 900 * 1024, 'app-0123456789abcdef.js': 900 * 1024, 'spell/small.aff': 60 * 1024})))
+ok('a gzipped one, the parts after a gzip\'s first, types Cloudflare compresses and small files pass', probs == [], probs)
+probs, _, _ = pages_check.check(dist(dict(APP, **{'word/pandoc-ab-0.bin': 200 * 1024, 'word/pandoc-ab-1.bin': 200 * 1024})))
+ok('parts of something that is no gzip are refused, each', len([p for p in probs if 'compress' in p]) == 2, probs)
 ok('the script exits 1 on a problem', subprocess.run([sys.executable, os.path.join(ROOT, 'dev', 'pages_check.py'), dist({'index.html': 'x'})], stdout=subprocess.DEVNULL).returncode == 1)
 
 # the hosted build's _headers, as build/app.mjs writes them

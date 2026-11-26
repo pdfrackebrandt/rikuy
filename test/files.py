@@ -413,8 +413,198 @@ def cross_files():
         browser.close()
 
 
+# R4: one project in two windows side by side, both shown: each kept typing on its own copy,
+# and each save put the other window's words into the versions, out of the document. A save now
+# merges what the other window saved since (as a coauthor's copy is), keeps the caret by its
+# words, keeps this window's words where both changed the same ones (the other's go to the
+# versions, said), and leaves another project's text alone.
+TWO = '\\documentclass{article}\n\\begin{document}\nFirst paragraph words here.\n\nSecond paragraph words here.\n\\end{document}\n'
+STORED = """async () => { const r = await new Promise((res) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const g = q.result.transaction('kv').objectStore('kv').get('project'); g.onsuccess = () => res(g.result); }; }); return [r.name, new Map(r.files).get(r.main)]; }"""
+def r4_tabs():
+    from browser import saved as written, ready
+    with sync_playwright() as p:
+        browser, pa, errors = open_page(p)
+        pa.evaluate('(t) => { window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "two", "Opened"); window.rikuy.persist(); }', TWO)
+        written(pa)
+        pb = pa.context.new_page()
+        pb.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+        pb.goto('https://rikuy.test/'); ready(pb)
+        pa.evaluate(SAID); pb.evaluate(SAID)
+        click_text(pa, 'First paragraph', 5); pa.keyboard.type(' AAA'); written(pa)
+        click_text(pb, 'Second paragraph', 6); pb.keyboard.type(' BBB'); written(pb)
+        check('tabs: a save brings in what the other window saved, its own words kept', 'First AAA paragraph' in src(pb) and 'Second BBB paragraph' in src(pb), src(pb))
+        check('tabs: and the copy kept has both', pa.evaluate(STORED)[1] == src(pb), pa.evaluate(STORED))
+        check('tabs: it says so', any('Brought in what was typed in another tab' in x for x in pb.evaluate('() => window.rikuy.__said')), pb.evaluate('() => window.rikuy.__said'))
+        pb.keyboard.type('X')
+        check('tabs: the caret stays after the words typed there', 'Second BBBX paragraph' in src(pb), src(pb))
+        written(pb)
+        click_text(pa, 'Second', 0); pa.keyboard.type('CCC '); written(pa)
+        check('tabs: and the other window, at its next save, brings those in', 'First AAA paragraph' in src(pa) and 'CCC Second BBBX paragraph' in src(pa), src(pa))
+        # the same word changed in both: the window that saves last keeps its own, the other's goes
+        # to the versions, and the user hears it
+        pb.evaluate('() => window.rikuy.adoptOtherTab()')
+        until(pb, '() => window.rikuy.files.get("main.tex").includes("CCC")')
+        pa.evaluate(SAID); pb.evaluate(SAID)
+        pa.evaluate("() => window.rikuy.commit([{ f: 'main.tex', s: window.rikuy.files.get('main.tex').indexOf('words here.\\n\\nCCC'), e: window.rikuy.files.get('main.tex').indexOf('words here.\\n\\nCCC') + 5, t: 'terms' }], null, 'type')")
+        written(pa)
+        pb.evaluate("() => window.rikuy.commit([{ f: 'main.tex', s: window.rikuy.files.get('main.tex').indexOf('words here.\\n\\nCCC'), e: window.rikuy.files.get('main.tex').indexOf('words here.\\n\\nCCC') + 5, t: 'items' }], null, 'type')")
+        written(pb)
+        has = pb.evaluate('async () => { for (const v of await window.rikuy.allSnaps()) { const f = new Map(await window.rikuy.versionFiles(v) || []); if (v.label === "From another tab" && (f.get("main.tex") || "").includes("AAA paragraph terms here")) return true; } return false; }')
+        check('tabs: the same word changed in both: this window\'s is kept, the other\'s under Versions', 'AAA paragraph items here' in src(pb) and pa.evaluate(STORED)[1] == src(pb) and has, (src(pb), has))
+        check('tabs: and it says so', any('changed the same words' in x for x in pb.evaluate('() => window.rikuy.__said')), pb.evaluate('() => window.rikuy.__said'))
+        # another project in the other window: nothing of it comes in
+        pa.evaluate("() => { window.rikuy.loadProject(new Map([['main.tex', '\\\\documentclass{article}\\n\\\\begin{document}\\nOther project.\\n\\\\end{document}\\n']]), 'main.tex', 'other', 'Opened'); window.rikuy.persist(); }")
+        written(pa)
+        click_text(pb, 'First', 0); pb.keyboard.type('Z'); written(pb)
+        kept = pb.evaluate('async () => { for (const v of await window.rikuy.allSnaps()) { const f = new Map(await window.rikuy.versionFiles(v) || []); if (v.label === "From another tab" && v.name === "other" && (f.get("main.tex") || "").includes("Other project")) return true; } return false; }')
+        check('tabs: another project saved in the other window does not come in, and is kept under Versions', 'Other project' not in src(pb) and 'ZFirst' in src(pb) and pa.evaluate(STORED)[0] == 'two' and kept, (src(pb)[:120], pa.evaluate(STORED), kept))
+        # a stranger's archive dropped in the other window marks the project there: this window,
+        # bringing its files in at a save, compiles restricted too (as adoptOtherTab does, V2)
+        PAPER = '\\documentclass{article}\n\\usepackage{defs}\n\\begin{document}\nMine here.\n\\end{document}\n'
+        pb.evaluate("(fs) => { window.rikuy.loadProject(new Map(fs), 'paper.tex', 'tabs2', 'Opened'); window.rikuy.persist(); }", [['paper.tex', PAPER], ['defs.sty', '\\ProvidesPackage{defs}\n']])
+        written(pb)
+        pa.goto('https://rikuy.test/'); ready(pa)
+        pa.evaluate(STUB); pb.evaluate(STUB)
+        z = io.BytesIO()
+        with zipfile.ZipFile(z, 'w') as f: f.writestr('defs.sty', '\\ProvidesPackage{defs}\n\\immediate\\write18{echo pwned}\n')
+        path = os.path.join(TMP, 'defs-r4.zip'); open(path, 'wb').write(z.getvalue())
+        pa.set_input_files('#fileinput', path)
+        pa.wait_for_function("() => (window.rikuy.files.get('defs.sty') || '').includes('write18')", timeout=10000)
+        pa.evaluate('window.rikuy.persist()'); written(pa)
+        click_text(pb, 'Mine here', 4); pb.keyboard.type(' too'); written(pb)
+        until(pb, "() => (window.rikuy.files.get('defs.sty') || '').includes('write18')")
+        f = pb.evaluate(FLAGS)
+        check('tabs: a stranger\'s archive brought in from the other window at a save compiles restricted', 'Mine too here' in src(pb, 'paper.tex') and f['mark'] and f['mark']['allowed'] is False and f['se'] is False, f)
+        # File, Rename in one window: the other, showing the document under its old name, wrote on
+        # as another document (both names in Recent, the words of one never reaching the other);
+        # it takes the new name at its next save, or when it is shown again
+        pa.evaluate(SAID); pb.evaluate(SAID)
+        ok = pa.evaluate('() => window.rikuy.runCommand("recent", { rename: "tabs2", to: "tabs3" })'); written(pa)
+        click_text(pb, 'Mine too here', 0); pb.keyboard.type('Then '); written(pb)
+        names = pb.evaluate('(async () => [...new Set((await window.rikuy.allSnaps()).map((v) => v.name))])()')
+        check('tabs: renamed in one window, the other takes the new name at its save and keeps writing the one document', ok is True and pb.evaluate('window.rikuy.name') == 'tabs3'
+              and pa.evaluate(STORED)[0] == 'tabs3' and 'Then Mine too here' in pa.evaluate("async () => { const r = await new Promise((res) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const g = q.result.transaction('kv').objectStore('kv').get('project'); g.onsuccess = () => res(g.result); }; }); return new Map(r.files).get('paper.tex'); }")
+              and 'tabs2' not in names and any('renamed tabs3' in x for x in pb.evaluate('() => window.rikuy.__said')), (pb.evaluate('window.rikuy.name'), pa.evaluate(STORED)[0], names))
+        pa.evaluate('() => window.rikuy.adoptOtherTab()'); until(pa, "() => window.rikuy.files.get('paper.tex').includes('Then Mine')")
+        pa.evaluate('() => window.rikuy.runCommand("recent", { rename: "tabs3", to: "tabs4" })'); written(pa)
+        pb.evaluate('() => window.rikuy.adoptOtherTab()'); until(pb, "() => window.rikuy.name === 'tabs4'")
+        check('tabs: and when it is shown again', pb.evaluate('window.rikuy.name') == 'tabs4' and pb.evaluate("document.getElementById('docname').textContent") == 'tabs4', pb.evaluate('window.rikuy.name'))
+        # (review B1) a name Rename gave back, taken by a new document in the other window: that
+        # document is another project, never merged over the renamed one, and kept under Versions
+        THESIS = '\\documentclass{article}\n\\begin{document}\nChapter one.\n\nChapter two.\n\nChapter three.\n\\end{document}\n'
+        pa.evaluate('(t) => { window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "Untitled", "Opened"); window.rikuy.persist(); }', THESIS); written(pa)
+        pa.evaluate('() => window.rikuy.snapshot("x", { force: true })'); written(pa)
+        pa.evaluate('() => window.rikuy.runCommand("recent", { rename: "Untitled", to: "Thesis" })'); written(pa)
+        pb.evaluate("async () => { await window.rikuy.newFromText('\\\\documentclass{article}\\n\\\\begin{document}\\n\\nA shopping list.\\n\\n\\\\end{document}\\n', 'Untitled', 'New'); }")
+        until(pb, "() => window.rikuy.name === 'Untitled' && window.rikuy.files.get('main.tex').includes('shopping')")
+        click_text(pb, 'A shopping', 2); pb.keyboard.type('My '); written(pb)
+        click_text(pa, 'Chapter three', 0); pa.keyboard.type('Then '); written(pa)
+        thesis = src(pa)
+        shop = pa.evaluate('async () => { for (const v of await window.rikuy.allSnaps()) { const f = new Map(await window.rikuy.versionFiles(v) || []); if (v.label === "From another tab" && (f.get("main.tex") || "").includes("My shopping")) return v.name; } return null; }')
+        check('tabs: a new document under a name Rename gave back is never merged over the renamed one (B1)', 'Chapter one.' in thesis and 'Then Chapter three.' in thesis and 'shopping' not in thesis
+              and pa.evaluate('window.rikuy.name') == 'Thesis' and pb.evaluate('window.rikuy.name') == 'Untitled' and 'shopping' in src(pb) and 'Chapter' not in src(pb) and shop == 'Untitled', (thesis[30:140], src(pb)[30:120], shop))
+        # (review B2) Ctrl+Z right after a save brought the other window's words in: the person's
+        # own typing goes, the other window's words stay, in both windows; Ctrl+Y puts it back
+        pa.evaluate('(t) => { window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "undo1", "Opened"); window.rikuy.persist(); }', TWO); written(pa)
+        pb.reload(); ready(pb); pb.evaluate(STUB)
+        click_text(pa, 'First paragraph', 5); pa.keyboard.type(' AAA'); written(pa)
+        click_text(pb, 'Second paragraph', 6); pb.keyboard.type(' BBB'); written(pb)
+        both = 'First AAA paragraph' in src(pb) and 'Second BBB paragraph' in src(pb)
+        pb.keyboard.press('Control+z'); settle(pb, 200)
+        after = src(pb)
+        written(pb)
+        click_text(pa, 'Second', 0); pa.keyboard.type('Z'); written(pa)
+        check('tabs: Ctrl+Z after a save that brought the other window\'s words in takes out one\'s own typing, theirs stay in both windows (B2)', both and 'First AAA paragraph' in after and 'Second paragraph words' in after
+              and 'First AAA paragraph' in src(pa) and 'ZSecond paragraph words' in src(pa), (after[30:130], src(pa)[30:130]))
+        pb.keyboard.press('Control+y'); settle(pb, 200)
+        check('tabs: and Ctrl+Y puts one\'s typing back, beside them', 'First AAA paragraph' in src(pb) and 'Second BBB paragraph' in src(pb), src(pb)[30:130])
+        # (review N2) a copy saved by a version before ids, open in two windows: their first saves
+        # merge, and neither loses its own words (both windows' own copies written first, so
+        # neither writes over the old copy as it reloads)
+        written(pb); written(pa)
+        pa.evaluate('''(t) => new Promise((ok) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const x = q.result.transaction('kv', 'readwrite'); x.objectStore('kv').put({ name: 'old', main: 'main.tex', files: [['main.tex', t]], t: 1700000000000 }, 'project'); x.oncomplete = () => ok(true); }; })''', TWO)
+        pa.reload(); ready(pa); pb.reload(); ready(pb)
+        click_text(pa, 'First paragraph', 5); pa.keyboard.type(' AAA'); written(pa)
+        click_text(pb, 'Second paragraph', 6); pb.keyboard.type(' BBB'); written(pb)
+        click_text(pa, 'Second', 0); pa.keyboard.type('Z'); written(pa)
+        check('tabs: a copy saved before ids, open in two windows: the first saves merge, no window loses its words (N2)', pa.evaluate('window.rikuy.name') == 'old' and 'First AAA paragraph' in src(pb)
+              and 'First AAA paragraph' in src(pa) and 'ZSecond BBB paragraph' in src(pa), (src(pa)[30:130], src(pb)[30:130]))
+        # (review N3) brought in when a window is shown again: what the toast says Ctrl+Z does is
+        # what it does (one's own typing goes, the other window's words stay)
+        written(pb)
+        click_text(pb, 'First AAA', 0); pb.keyboard.type('Q'); written(pb)
+        click_text(pa, 'ZSecond', 0); pa.keyboard.type('R'); written(pa)
+        pb.evaluate(SAID)
+        pb.evaluate('() => window.rikuy.adoptOtherTab()'); until(pb, "() => window.rikuy.files.get('main.tex').includes('RZSecond')")
+        said = ' '.join(pb.evaluate('() => window.rikuy.__said'))
+        pb.keyboard.press('Control+z'); settle(pb, 200)
+        check('tabs: a window shown again says Ctrl+Z undoes one\'s own typing, and it does: the other window\'s words stay (N3)', 'your own typing' in said and 'undoes it' not in said
+              and 'QFirst' not in src(pb) and 'RZSecond' in src(pb), (said, src(pb)[30:130]))
+        # (review V2-C) one window saves forty times; the other, saving unfocused (a script's edit,
+        # an agent's), still merges, and nothing goes to Versions
+        written(pb)
+        pa.evaluate('() => window.rikuy.adoptOtherTab()'); written(pa)
+        FROM = 'async () => (await window.rikuy.allSnaps()).filter((v) => v.label === "From another tab").length'
+        n0 = pa.evaluate(FROM)
+        pb.evaluate('''async () => { const g = window.rikuy; for (let i = 0; i < 40; i++) { const t = g.files.get('main.tex'), at = t.indexOf('\\\\end{document}'); g.closeGroup(); g.commit([{ f: 'main.tex', s: at, e: at, t: 'w' + i + ' ' }], null, 'api'); g.closeGroup(); g.persist(); await new Promise((r) => setTimeout(r, 25)); } }''')
+        written(pb)
+        click_text(pa, 'First', 0); pa.keyboard.type('N'); written(pa)
+        click_text(pb, 'w39', 0); pb.keyboard.type('M'); written(pb)
+        check('tabs: after forty saves in one window the other, saving unfocused, still merges; nothing to Versions (V2-C)', 'w39' in src(pa) and 'NQ' not in src(pa) and 'NFirst' in src(pa) and 'NFirst' in src(pb) and 'Mw39' in src(pb)
+              and pa.evaluate(FROM) == n0, (src(pa)[30:100], src(pb)[30:100], n0, pa.evaluate(FROM)))
+        # (review V2-D) File, Rename landing inside a save that brings the other window's words in:
+        # those words are taken all the same, and stay in both windows
+        # (the other window closed once its last save, the one its merge set going, is written)
+        until(pb, '() => !window.rikuy.unsaved'); written(pb); pb.close()
+        pa.evaluate('(t) => { window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "race1", "Opened"); window.rikuy.persist(); }', TWO); written(pa)
+        pb = pa.context.new_page()
+        pb.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+        pb.goto('https://rikuy.test/'); ready(pb); pb.evaluate(STUB)
+        click_text(pa, 'First paragraph', 5); pa.keyboard.type(' AAA'); written(pa)
+        pb.evaluate("() => { const g = window.rikuy, f = g.freshMark; g.freshMark = async function (...a) { g.freshMark = f; await g.runCommand('recent', { rename: 'race1', to: 'race2' }); return f.apply(this, a); }; }")
+        click_text(pb, 'Second paragraph', 6); pb.keyboard.type(' BBB'); written(pb)
+        click_text(pa, 'Second', 0); pa.keyboard.type('Z'); written(pa)
+        check('tabs: a Rename inside a save that brings the other window\'s words in loses none of them (V2-D)', pb.evaluate('window.rikuy.name') == 'race2' and 'First AAA paragraph' in src(pb)
+              and 'First AAA paragraph' in src(pa) and 'ZSecond BBB paragraph' in src(pa), (pb.evaluate('window.rikuy.name'), src(pa)[30:130], src(pb)[30:130]))
+        # (review V4-B) a document with no blank lines; one window wraps two lines in center and
+        # changes a word of the first and of two lines far off, the other changes the same word: the
+        # conflict takes the lines up to the other half of the wrap, not the whole file, the far
+        # lines stay, and each window is told what happened (the one whose words went: where they are)
+        WL = ['Line %d with some words.' % i for i in range(12)]
+        WDOC = lambda ls: '\\documentclass{article}\n\\begin{document}\n' + '\n'.join(ls) + '\n\\end{document}\n'
+        wa = list(WL); wa[5] = wa[5].replace('words', 'WORDS'); wa[0] = wa[0].replace('with', 'WITH'); wa[11] = wa[11].replace('with', 'WITH'); wa.insert(5, '\\begin{center}'); wa.insert(8, '\\end{center}')
+        wb = list(WL); wb[5] = wb[5].replace('words', 'terms'); wb[9] = wb[9].replace('some', 'many')
+        until(pb, '() => !window.rikuy.unsaved'); written(pb); pb.close()
+        pa.evaluate('(t) => { window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "wide1", "Opened"); window.rikuy.persist(); }', WDOC(WL)); written(pa)
+        pb = pa.context.new_page()
+        pb.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+        pb.goto('https://rikuy.test/'); ready(pb); pb.evaluate(STUB)
+        WHOLE = "(t) => { const g = window.rikuy, s = g.files.get('main.tex'); g.closeGroup(); g.commit([{ f: 'main.tex', s: 0, e: s.length, t }], null, 'type'); g.closeGroup(); }"
+        pa.evaluate(WHOLE, WDOC(wa)); written(pa)
+        pa.evaluate(SAID); pb.evaluate(SAID)
+        pb.evaluate(WHOLE, WDOC(wb)); written(pb)
+        said_b = ' '.join(pb.evaluate('() => window.rikuy.__said'))
+        click_text(pa, 'Line 3', 0); pa.keyboard.type('Z'); written(pa)
+        said_a = ' '.join(pa.evaluate('() => window.rikuy.__said'))
+        tb, ta = src(pb), src(pa)
+        check('tabs: a conflict that would split a wrap takes the lines up to its other half, the far lines of the other window stay (V4-B)', 'Line 0 WITH' in tb and 'Line 11 WITH' in tb and 'some terms' in tb and 'center' not in tb and 'many words' in tb, tb[40:400])
+        check('tabs: the window that kept its words says how far; the other, whose words went, is told where they are (V4-B)', 'same words' in said_b and 'other half' in said_b and 'that tab kept its own' in said_a and 'From another tab' in said_a
+              and 'Line 0 WITH' in ta and 'ZLine 3' in ta and 'center' not in ta, (said_b[:300], said_a[:300], ta[40:200]))
+        check('tabs: no page errors', not errors, errors[:3])
+        browser.close()
+
+
 if sys.argv[1:] == ['cross']:
     try: cross_files()
+    except Exception as e:
+        traceback.print_exc()
+        check('the run reaches its end', False, e)
+    bad = [r for r in results if not r[1]]
+    print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
+    sys.exit(1 if bad else 0)
+
+if sys.argv[1:] == ['r4tabs']:
+    try: r4_tabs()
     except Exception as e:
         traceback.print_exc()
         check('the run reaches its end', False, e)
@@ -818,6 +1008,7 @@ try:
             browser.close()
     marks()
     cross_files()
+    r4_tabs()
 except Exception as e:
     # a run that stops part way has failed, whatever the checks before it said
     traceback.print_exc()

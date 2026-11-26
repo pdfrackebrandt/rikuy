@@ -33,7 +33,7 @@ import { setMarks } from '../marks.js';
 import { openSpellPane, spellPaneRefresh } from '../ui/spellpane.js';
 import { openWordCount, setLanguageEdits } from '../ui/wordcount.js';
 import { coreCanRun } from '../native.js';
-import { findComments, commentOnly, safeCommentLine } from '../share.js';
+import { findComments, commentOnly, safeCommentLine, commentBodyAt } from '../share.js';
 import { spacingOnly } from '../diff.js';
 import { kvGet, kvPut } from '../store.js';
 // (places as [block of the page, file, offset], compared in that order)
@@ -579,9 +579,11 @@ export const methods = {
         this.refreshNav();
         return;
       }
-      const k = line.indexOf(':', line.indexOf(')'));
+      // (after the head's colon: one in the quoted words, "ratio: two", cut the line there and
+      // the comment was gone from the list, its words with it)
+      const k = commentBodyAt(line);
       if (k < 0) { this.closePop(true); return; }
-      const s = now.s + k + 1 + (line[k + 1] === ' ' ? 1 : 0);
+      const s = now.s + k;
       this.closePop(true);
       this.commit([{ f: t.f, s, e: now.s + line.length, t: body }], null, 'comment');
       this.closeGroup();
