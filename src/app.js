@@ -1974,6 +1974,18 @@ class App {
         if (e.shiftKey) s.extend(p, i); else s.collapse(p, i);
         ph.style.display = 'inline';
         setTimeout(() => { ph.style.display = ''; }, 0);
+      } else if (e.key === 'End' && s.modify) {
+        // (a paragraph ending in a citation, a reference, a footnote mark or an address: the
+        // browser has no place after such an atom at a paragraph's end, so its End went on to
+        // the next paragraph's start, the letters typed next went there and Shift+End took the
+        // paragraph's end with it; End stays on the line, after the atom, as Word's does)
+        const blk = n && (n.nodeType === 1 ? n : n.parentElement).closest('.it'), last = blk && blk.lastChild;
+        if (blk && this.root.contains(blk) && last && last.nodeType === 1 && last.getAttribute('contenteditable') === 'false') {
+          s.modify(e.shiftKey ? 'extend' : 'move', 'forward', 'lineboundary');
+          const m = s.focusNode, to = m && (m.nodeType === 1 ? m : m.parentElement).closest('.it');
+          if (to !== blk) { if (e.shiftKey) s.extend(blk, blk.childNodes.length); else s.collapse(blk, blk.childNodes.length); }
+          e.preventDefault();
+        }
       }
     }
     // out of a footnote at the page's foot: Esc, or Right at its end (Shift+F5 too: goBack)
