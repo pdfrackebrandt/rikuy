@@ -367,10 +367,10 @@ await ok('a word is never cut from its marks: Hindi, Arabic; Chinese words found
 });
 
 await ok('two different things put at one place are a conflict; comment lines there are both kept (R4 review B5)', () => {
-  assert.equal(merge3('', '\\documentclass{article}\nA\n', '\\documentclass{article}\nB\n').clean, false);
-  const d = '\\begin{document}\nText.\n\\end{document}\n';
+  assert.equal(merge3('', '\\documentclass{article}\n\\begin{document}\nA\n\\end{document}\n', '\\documentclass{article}\n\\begin{document}\nB\n\\end{document}\n').clean, false);
+  const d = '\\documentclass{article}\n\\begin{document}\nText.\n\\end{document}\n';
   assert.deepEqual(merge3(d, d.replace('Text.\n', 'Text.\nMine ends.\n'), d.replace('Text.\n', 'Text.\nTheirs ends.\n')), { text: d.replace('Text.\n', 'Text.\nTheirs ends.\n'), clean: false });
-  const p = '\\usepackage{amsmath}\n\\begin{document}\n';
+  const p = '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nText.\n\\end{document}\n';
   const r = merge3(p, p.replace('}\n', '}\n\\newcommand{\\R}{\\mathbb{R}}\n'), p.replace('}\n', '}\n\\newcommand{\\R}{\\mathbb{R}}\n\\newcommand{\\N}{\\mathbb{N}}\n'));
   assert.equal(r.text.split('\\newcommand{\\R}').length, 2, r.text);
   assert.equal(r.clean, false);
@@ -438,8 +438,9 @@ await ok('what a coauthor puts beside a word the other side changed merges: fift
 });
 
 await ok('a conflict never keeps half of a pair: braces, math, an environment, brackets, quotes (R4 review V2-B)', () => {
-  const bal = (t) => ['{}', '()', '[]'].every(([o, c]) => t.split(o).length === t.split(c).length) && (t.match(/(?<!\\\\)\$/g) || []).length % 2 === 0
-    && (t.match(/\\\\begin\b/g) || []).length === (t.match(/\\\\end\b/g) || []).length && !/`/.test(t.replace(/`[^`']*'/g, ''));
+  // (balanced: braces, brackets, parentheses, unescaped $, \( \), \[ \], \begin \end, and every ` closed by a ')
+  const bal = (t) => ['{}', '()', '[]', ['\\(', '\\)'], ['\\[', '\\]']].every(([o, c]) => t.split(o).length === t.split(c).length) && (t.match(/(?<!\\)\$/g) || []).length % 2 === 0
+    && (t.match(/\\begin\b/g) || []).length === (t.match(/\\end\b/g) || []).length && !/`/.test(t.replace(/`[^`']*'/g, ''));
   const cases = [
     ['We study a b c here.\n', 'We study \\emph{a b cc} here.\n', 'We study a b C here.\n'],
     ['where x plus y holds\n', 'where $x plus yy$ holds\n', 'where x plus Y holds\n'],
@@ -447,6 +448,9 @@ await ok('a conflict never keeps half of a pair: braces, math, an environment, b
     ['as a b c here\n', 'as (a b cc) here\n', 'as a b C here\n'],
     ['make it bold now\n', 'make \\textbf{it bolder} now\n', 'make it BOLD now\n'],
     ['a test here\n', "a `tests' here\n", 'a exam here\n'],
+    // LaTeX's own math delimiters (review V3-A)
+    ['where x plus y holds\n', 'where \\(x plus yy\\) holds\n', 'where x plus Y holds\n'],
+    ['so x plus y holds\n', 'so \\[x plus yy\\] holds\n', 'so x plus Y holds\n'],
   ];
   for (const [b, m, t] of cases) {
     const r = merge3(b, m, t);

@@ -397,8 +397,9 @@ export function merge3(base, mine, theirs, { words: byWords = true, budget = nul
   if (mine === base) return { text: theirs, clean: true };
   return combine(base, lineEdits(base, mine), lineEdits(base, theirs), byWords ? budget || mergeBudget() : null);
 }
-// what a merge may not leave half of: braces, math, brackets, opening quotes, environments
-const PAIRS = /(?<!\\)[{}$()[\]`]|\\begin\b|\\end\b/g;
+// what a merge may not leave half of: braces, math ($, \( \), \[ \]), brackets, opening quotes,
+// environments (\( and \[ counted apart from ( and [: a lone \( stops TeX, review V3-A)
+const PAIRS = /\\[()[\]]|(?<!\\)[{}$()[\]`]|\\begin\b|\\end\b/g;
 const pairsOf = (t) => { const n = {}; for (const [x] of t.matchAll(PAIRS)) n[x] = (n[x] || 0) + 1; return JSON.stringify(Object.entries(n).sort()); };
 // (lines that are all comment lines, each ended)
 const commentLines = (t) => /\n$/.test(t) && t.slice(0, -1).split('\n').every((l) => isComment(l));
