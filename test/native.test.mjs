@@ -6,7 +6,7 @@
 //   and .bib of it too, and every document's model built both ways (buildModel) compared whole.
 import fs from 'fs';
 import path from 'path';
-import { parse, parseJS, scanUserSigs, PARSE_TABLES, MATH_SCAN, MATH_BUDGET } from '../src/parser.js';
+import { parse, parseJS, scanUserSigs, PARSE_TABLES, MATH_SCAN, MATH_BUDGET, editTree, failedDollars } from '../src/parser.js';
 import { loadCore, nativeParse, coreReady, coreStats, coreText, PARSE_MIN } from '../src/native.js';
 
 const root = new URL('..', import.meta.url).pathname;
@@ -117,6 +117,70 @@ for (let k = 0; k < EDITS; k++) {
 }
 check('random edits of the documents the same (' + editOk + ' of ' + EDITS + ')', editOk === EDITS);
 console.log('random edits: ' + editOk + ' of ' + EDITS + ' the same tree; documents: ' + ok + ' of ' + texts.length);
+
+// ---- a keystroke's tree from the last one (editTree) ---------------------------------------------
+// Streams of edits of real documents and of random text, each tree made from the last one where
+// editTree answers (so its lazily moved nodes are moved again), against parseJS and the core on the
+// whole text; and the places the fast path must leave to the parse, each planted.
+{
+  const ref = (s) => JSON.stringify(parseJS(s, scanUserSigs(s, {})));
+  const INERT = ['a', 'e', 'x', ' ', 'the ', 'Z', 'é', '😀', '.', ',', '-', '1', '(', ')', "'", '`', '"', '*', '=', '+', '|', '!', '<', '>', '@', '/'];
+  const OTHER = ['\n', '\n\n', '{', '}', '$', '%', ']', '[', '\\', '~', '\t'];
+  let made = 0, steps = 0, bad = 0;
+  const stream = (name, t0, n) => {
+    let t = t0, tree = parseJS(t, scanUserSigs(t, {}));
+    for (let k = 0; k < n; k++) {
+      steps++;
+      // mostly where a paragraph's words are: inside a run of letters
+      let at = Math.floor(rnd() * (t.length + 1));
+      if (rnd() < 0.7) { const m = /[A-Za-z]{3}/g; m.lastIndex = at; const x = m.exec(t); if (x) at = x.index + 1 + Math.floor(rnd() * 2); }
+      const del = rnd() < 0.35 ? Math.floor(rnd() * 6) : 0;
+      const ins = rnd() < 0.15 && del ? '' : rnd() < 0.85 ? pick(INERT) : pick(OTHER);
+      const now = t.slice(0, at) + ins + t.slice(Math.min(t.length, at + del));
+      const r = editTree(tree, t, now, at, Math.min(del, t.length - at), failedDollars(tree));
+      if (r) {
+        made++;
+        const a = JSON.stringify(r), b = ref(now);
+        if (a !== b) { bad++; if (bad < 4) { let q = 0; while (a[q] === b[q]) q++; check(name + ' edit ' + k + ' at ' + at + ' ' + JSON.stringify(ins) + ' -' + del + ': editTree is the parse', false, 'edited ' + a.slice(Math.max(0, q - 150), q + 150) + '\n   parse ' + b.slice(Math.max(0, q - 150), q + 150)); } tree = parseJS(now, scanUserSigs(now, {})); }
+        else { const c = nativeParse(now, scanUserSigs(now, {}), true); if (c && JSON.stringify(c) !== a) { bad++; check(name + ' edit ' + k + ': the core\'s tree too', false); } tree = r; }
+      } else tree = parseJS(now, scanUserSigs(now, {}));
+      t = now;
+    }
+  };
+  for (let k = 0; k < 40; k++) stream('stream ' + k, pick(pool), 60);
+  for (let k = 0; k < 300; k++) { let s = ''; for (let q = 0, n = 5 + Math.floor(rnd() * 40); q < n; q++) s += pick(PIECES) + (rnd() < 0.5 ? ' words of text ' : 'x'); stream('random text ' + k, s, 12); }
+  check('every tree editTree made is the parse of its text (' + made + ' of ' + steps + ' edits)', bad === 0 && made > steps / 5, [made, steps, bad]);
+  console.log('editTree: ' + made + ' of ' + steps + ' edits made from the last tree, ' + bad + ' differed');
+  // the places it must not answer: each would give another tree than the parse
+  const planted = [
+    ['a space at a run\'s end before a blank line', 'Words x\n\nNext.', 7, 0, ' '],
+    ['a blank line made by a deletion', 'One\nx\ntwo words', 4, 1, ''],
+    ['the first character after a command\'s spaces', '\\item x[a] b', 6, 1, ''],
+    ['a length read on: plus', '\\vskip 2pt plux 1fil and text', 14, 1, 's'],
+    ['] then { for an unknown command', '\\foo[a]x{b} c', 7, 1, ''],
+    ['a one character argument', "\\'e and", 3, 0, 'x'],
+    ['an edit in a definition\'s body', '\\newcommand{\\q}{Some words} text', 19, 0, 'x'],
+    ['a brace typed', 'Some words here', 5, 0, '{'],
+    ['a dollar typed', 'Some words here', 5, 0, '$'],
+    ['inside a formula', 'Some $x + y$ here', 7, 0, 'z'],
+    ['inside a comment', 'Some % words here\nmore', 8, 0, 'z'],
+    ['\\tikzstyle\'s =[ after it', '\\tikzstyle{a}=x[draw] text', 14, 1, '']
+  ];
+  for (const [what, s, at, del, ins] of planted) {
+    const now = s.slice(0, at) + ins + s.slice(at + del);
+    const r = editTree(parseJS(s, scanUserSigs(s, {})), s, now, at, del, 0);
+    check('editTree leaves to the parse: ' + what, r === null, r && JSON.stringify(r));
+  }
+  // and where it must answer: a letter in a paragraph, words deleted, a space between words
+  for (const [what, s, at, del, ins] of [['a letter', 'Some words here and more', 6, 0, 'x'], ['a word deleted', 'Some words here and more', 10, 5, ''], ['a space', 'Some words here', 7, 0, ' '],
+    ['in \\textbf', 'A \\textbf{bold words} b', 13, 0, 'q'], ['after a footnote', 'A\\footnote{n} more words', 17, 1, 'é'], ['in an item', '\\begin{itemize}\\item One two\n\\item Three\\end{itemize}', 25, 0, 'z']]) {
+    const now = s.slice(0, at) + ins + s.slice(at + del);
+    const r = editTree(parseJS(s, scanUserSigs(s, {})), s, now, at, del, 0);
+    check('editTree answers: ' + what, r !== null && JSON.stringify(r) === ref(now), r && JSON.stringify(r));
+  }
+  // the $ budget: failed scans that could reach it are the parse's to read
+  check('editTree leaves to the parse a text whose failed $ could pass MATH_BUDGET', editTree(parseJS('a $ b words', {}), 'a $ b words', 'a $ b wordsx', 11, 0, MATH_BUDGET) === null);
+}
 
 // ---- the text as the core holds it --------------------------------------------------------------
 // every way a code unit travels: ASCII, two and three bytes of UTF-8, a pair of surrogates, a lone

@@ -1321,7 +1321,12 @@ def native_core(page):
     click_text(page, 'Last words', 4)
     page.keyboard.type('XY')
     settle(page, 300)
-    check('typing on a long document parses it in the core', page.evaluate('window.rikuy.core.stats.parsed') > before and 'LastXY words' in src(page), page.evaluate('window.rikuy.core.stats'))
+    typed = 'LastXY words' in src(page)
+    # (letters typed in a paragraph make its tree from the last one, src/parser.js editTree, with no
+    # parse: Enter, which makes a paragraph, has the text parsed)
+    page.keyboard.press('Enter')
+    settle(page, 300)
+    check('typing on a long document parses it in the core', typed and page.evaluate('window.rikuy.core.stats.parsed') > before and 'LastXY' in src(page), page.evaluate('window.rikuy.core.stats'))
     check('the core\'s tree of it in Chromium is JavaScript\'s', page.evaluate('() => { const g = window.rikuy; return g.core.same(g.files.get("main.tex")) && g.core.same(g.files.get("main.tex") + "\\\\verb|\\ud83d\\ude00| \\\\begin{toString}"); }'))
 
 
