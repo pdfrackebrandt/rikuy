@@ -1079,6 +1079,15 @@ def hunt_c(page):
     shown = page.evaluate("document.querySelector('#pages .flow .it').textContent")
     click_text(page, 'mycode', 3); page.keyboard.type('X'); settle(page, 200)
     check('inline code with a %: the line\'s words after it drawn, its code typed in where it stands', 'for odd.' in shown and 'Next' in shown and 'words.' in shown and '\\lstinline{mycXode}' in src(page), (shown, src(page)[40:140]))
+    # (review of round 4) what is typed in that code is the code's own, as typed: escaped as prose a _
+    # printed its backslash, $ opened a formula, \ the command list, and \} ended the code (Extra }).
+    # The character that would end it (its delimiter, or }) is refused.
+    for doc, at, typed, want in (('Use \\lstinline{abcd} here.', 'abcd', '_%$\\~', '\\lstinline{ab_%$\\~cd}'), ('Use \\lstinline{abcd} here.', 'abcd', '}', '\\lstinline{abcd}'),
+                                 ('Use \\lstinline|abcd| here.', 'abcd', '|}', '\\lstinline|ab}cd|'), ('Use \\mintinline{r}{abcd} here.', 'abcd', '}%', '\\mintinline{r}{ab%cd}')):
+        load_doc(page, W(doc)); click_text(page, at, 2); page.keyboard.type(typed); settle(page, 200)
+        opened = page.evaluate('!!window.rikuy.pop')
+        if opened: page.keyboard.press('Escape'); settle(page, 100)
+        check('typed in inline code: %r as the code\'s own, its closing character refused' % typed, want in src(page) and not opened, src(page)[40:120])
     # and in every verbatim context: what a ' becomes there, as the page would write it
     vb = W('A \\verb|v1 x| B \\lstinline{l1 x} C \\url{u1 x} D \\texttt{t1 \\textbf{b} x} E\n\\begin{verbatim}\nvb1 x\n\\end{verbatim}\n\\begin{lstlisting}\nls1 x\n\\end{lstlisting}\nAfter x1 y.')
     load_doc(page, vb)

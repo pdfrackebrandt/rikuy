@@ -2458,12 +2458,19 @@ class App {
     // as the characters, though that is where an equation or a heading most often starts
     // (the second $ of a closing $$ is the next key or none: a $ typed later is a new formula)
     if (data !== '$') this.swallowDollar = 0;
-    if (data === '$' && !range && !raw && (c.collapsed || c.ghost)) {
+    // (in \lstinline's or \mintinline's code: $ and \ are the code's characters, no formula or
+    // command list; the character that would end the code is refused, said why)
+    const ic = c.ghost || raw ? null : this.inlineCodeAt(range ? range.f : c.f, range ? range.a : c.a);
+    if (ic != null) {
+      const bad = [...data].find((ch) => ic.includes(ch));
+      if (bad) { this.toast('A ' + bad + ' here would end the code: TeX reads it as the code\'s end.', 3000); return; }
+    }
+    if (data === '$' && ic == null && !range && !raw && (c.collapsed || c.ghost)) {
       // (the second $ of a display's closing $$: the first one closed it)
       if (this.swallowDollar && performance.now() - this.swallowDollar < 1500) { this.swallowDollar = 0; return; }
       this.newMath(); return;
     }
-    if (data === '\\' && !range && !raw && (c.collapsed || c.ghost)) { this.openPalette(); return; }
+    if (data === '\\' && ic == null && !range && !raw && (c.collapsed || c.ghost)) { this.openPalette(); return; }
     if (c.ghost) { this.ghostInsert(raw ? data : this.typedTeX(this.ghost.f, this.ghost.pos, data, { prev: ' ', wrap: this.ghost.wrap })); return; }
     const f = range ? range.f : c.f;
     let a = range ? range.a : c.a, b = range ? range.b : c.b;
@@ -2483,6 +2490,18 @@ class App {
     const removedBefore = edits.filter((ed) => ed.e <= at).reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
     const caret = { f, p: at - removedBefore + t.length, bias: -1 };
     this.commit(merged, caret, edits.length ? 'replace' : 'type');
+  }
+
+  // The characters that end the \lstinline or \mintinline code place at of file f is in (its
+  // delimiter, or the closing brace: listings ends its braces at the first }, minted's balance, so
+  // { too there), or null outside such code; read on the line before at, as codeAt reads
+  inlineCodeAt(f, at) {
+    const src = this.src(f), near = src.slice(Math.max(0, at - 400), at), line = near.slice(near.lastIndexOf('\n') + 1);
+    let m = /\\lstinline[ \t]*(?:\[[^\]\n]*\][ \t]*)?(?:\{[^}]*|([^A-Za-z\s{[])(?:(?!\1).)*)$/.exec(line);
+    if (m) return m[1] || '}';
+    m = /\\mintinline[ \t]*(?:\[[^\]\n]*\][ \t]*)?\{[^{}]*\}[ \t]*(?:\{[^{}]*|([^A-Za-z\s{[])(?:(?!\1).)*)$/.exec(line);
+    if (m) return m[1] || '{}';
+    return null;
   }
 
   // Whether place at of file f is code, where typed quotes stay straight (a ' wrote a backtick
@@ -2516,6 +2535,9 @@ class App {
   // from being read as the optional argument of the command before it.
   escapeAt(f, at, data) {
     const src = this.src(f), lands = this.texAt(f, at);
+    // (in \lstinline's or \mintinline's code every character is the code's own, as typed: escaped
+    // as prose, a _ printed its backslash, and \} ended the code, TeX's Extra })
+    if (!lands && this.inlineCodeAt(f, at) != null) return data;
     let t = lands ? data : this.typedTeX(f, at, data);
     if (!lands && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
     if (!lands && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
