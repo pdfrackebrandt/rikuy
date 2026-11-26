@@ -1073,6 +1073,12 @@ def hunt_c(page):
     load_doc(page, W('Run \\texttt{print x} now.')); click_text(page, 'print', 5)
     page.keyboard.type(" 'a' \"b\""); settle(page, 300)
     check('quotes typed in \\texttt stay straight', '\\texttt{print \'a\' "b" x}' in src(page), src(page)[40:120])
+    # (round 4) inline code with a % in it keeps the rest of its line on the page, and its code is
+    # typed in where it stands (read as \verb is, it had become an atom a letter went past)
+    load_doc(page, W('Run \\lstinline{mycode} and \\lstinline|x % 2| for odd.\nNext \\url|a%b| words.'))
+    shown = page.evaluate("document.querySelector('#pages .flow .it').textContent")
+    click_text(page, 'mycode', 3); page.keyboard.type('X'); settle(page, 200)
+    check('inline code with a %: the line\'s words after it drawn, its code typed in where it stands', 'for odd.' in shown and 'Next' in shown and 'words.' in shown and '\\lstinline{mycXode}' in src(page), (shown, src(page)[40:140]))
     # and in every verbatim context: what a ' becomes there, as the page would write it
     vb = W('A \\verb|v1 x| B \\lstinline{l1 x} C \\url{u1 x} D \\texttt{t1 \\textbf{b} x} E\n\\begin{verbatim}\nvb1 x\n\\end{verbatim}\n\\begin{lstlisting}\nls1 x\n\\end{lstlisting}\nAfter x1 y.')
     load_doc(page, vb)

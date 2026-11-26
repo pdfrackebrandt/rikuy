@@ -241,6 +241,14 @@ struct Parser {
     for (; lit[q]; q++) if (a + q >= b || src[a + q] != (unsigned char)lit[q]) return false;
     return a + q == b;
   }
+  // where an argument given between two of one character (\url|..|) ends on its line, or -1
+  // (parser.js delimEnd)
+  int delimEnd(int a) const {
+    int d = at(a);
+    if (d < 33 || d > 126 || isLetter(d) || (d >= '0' && d <= '9') || d == '{' || d == '}' || d == '[' || d == ']' || d == '\\' || d == '%') return -1;
+    for (int k = a + 1; k < n && src[k] != '\n'; k++) if (src[k] == d) return k;
+    return -1;
+  }
   // src.indexOf(c, from) for one code unit
   int indexOf(int c, int from) const {
     if (from < 0) from = 0;
@@ -540,6 +548,14 @@ struct Parser {
         } else if (src[i] == '}' || src[i] == ']' || (src[i] == '\\' && startsWith("\\end", i) && !isLetter(at(i + 4)))) {
           o.push(A_NULL); o.inc(argc);
           i = save;
+        } else if (kind == 'v' && delimEnd(i) >= 0) {
+          // \url|a%b|: between two of one character on its line (parser.js: the same)
+          int s = i, k = delimEnd(i);
+          i = k + 1;
+          o.push(A_RAW); o.push(s); o.push(i); o.push(s + 1); o.push(k);
+          o.inc(argc);
+          acc.allNull = false;
+          if (i > acc.maxE) acc.maxE = i;
         } else if (src[i] == '\\') {
           int s = i;
           o.push(A_SINGLE); o.push(s);
@@ -632,25 +648,43 @@ struct Parser {
       o.push(N_MATH); o.push(s); o.push(i); o.push(ne); o.push(k); o.push(paren ? 0 : 1); o.push(paren ? 2 : 3);
       return { N_MATH, i };
     }
-    // \lstinline and \mintinline as \verb, after their [options] and minted's {language}; their
-    // code in braces too (parser.js: the same)
+    // \lstinline and \mintinline as \verb, after their [options] and minted's {language}, spaces
+    // before those skipped; their code in braces too (listings: to the first }, minted: to the one
+    // that balances); the code ends at its line's end at the latest (parser.js: the same)
     if (cls & F_VERB) {
       bool code = !sliceIs(ns, nameE, "verb"), mint = sliceIs(ns, nameE, "mintinline");
       int a = ne;
-      if (code && at(a) == '[') { int k = indexOf(']', a + 1); if (k < 0) { i = ne; head(ns, nameE, s, ge, ne, star); return { N_CMD, ge }; } a = k + 1; }
-      if (mint) { int k = at(a) == '{' ? indexOf('}', a + 1) : -1; if (k < 0) { i = ne; head(ns, nameE, s, ge, ne, star); return { N_CMD, ge }; } a = k + 1; }
+      auto sp = [&]() { if (code) while (at(a) == ' ' || at(a) == '\t') a++; };
+      sp();
+      if (code && at(a) == '[') {
+        int depth = 0, k = a + 1;
+        for (; k < n; k++) { if (src[k] == '{') depth++; else if (src[k] == '}') depth--; else if (src[k] == ']' && depth <= 0) break; }
+        if (k >= n) { i = ne; head(ns, nameE, s, ge, ne, star); return { N_CMD, ge }; }
+        a = k + 1; sp();
+      }
+      if (mint) {
+        int k = at(a) == '{' ? a + 1 : n;
+        while (k < n && src[k] != '}' && src[k] != '\n') k++;
+        if (k >= n || src[k] != '}') { i = ne; head(ns, nameE, s, ge, ne, star); return { N_CMD, ge }; }
+        a = k + 1; sp();
+      }
       int d = at(a);
       if (d < 0 || isLetter(d) || isWS(d)) { i = ne; head(ns, nameE, s, ge, ne, star); return { N_CMD, ge }; }
-      int end;
-      if (code && d == '{') {
-        int depth = 0, k = a;
-        for (; k < n; k++) { if (src[k] == '{') depth++; else if (src[k] == '}' && --depth == 0) break; }
-        end = k;
-      } else {
-        int k = indexOf(d, a + 1);
-        end = k < 0 ? n : k;
+      // (one pass to the closing character or the line's end, whichever comes first)
+      int close = code && d == '{' && !mint ? '}' : d;
+      bool bal = code && d == '{' && mint;
+      int end = -1, eol = a + 1, depth = 1;
+      for (; eol < n && src[eol] != '\n'; eol++) {
+        if (bal) { if (src[eol] == '{') depth++; else if (src[eol] == '}' && --depth == 0) { end = eol; break; } }
+        else if (src[eol] == close) { end = eol; break; }
       }
-      i = end + 1 < n ? end + 1 : n;
+      if (end < 0) {
+        int z = eol > a + 1 && src[eol - 1] == '\r' ? eol - 1 : eol;
+        i = z;
+        o.push(N_VERB); o.push(s); o.push(z); o.push(a + 1); o.push(z);
+        return { N_VERB, i };
+      }
+      i = end + 1;
       o.push(N_VERB); o.push(s); o.push(i); o.push(a + 1); o.push(end);
       return { N_VERB, i };
     }
