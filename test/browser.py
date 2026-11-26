@@ -1708,6 +1708,7 @@ def run():
             ghost_looks(page, w)
             ghost_last(page, w)
             ghost_enters(page, w)
+            ghost_inside(page, w)
             check('no console errors (Enter\'s empty paragraphs, %d px)' % w, not errors, errors[:5])
             browser.close()
 
@@ -1870,6 +1871,31 @@ def ghost_enters(page, w):
     page.keyboard.press('Enter'); settle(page, 100)
     page.keyboard.type('New words'); settle(page, 200)
     check('words typed on the last of them are a paragraph of their own (%d px)' % w, 'Second one.\n\nNew words\n\n\\end{document}' in src(page) and not page.evaluate('window.rikuy.ghost'), src(page)[-60:])
+
+
+_ALIGNED_DOC = ('\\documentclass{article}\n\\usepackage{amsthm}\n\\newtheorem{theorem}{Theorem}\n\\begin{document}\nBefore it.\n\n'
+                '\\begin{flushright}\nRight words one.\n\nRight words two.\n\\end{flushright}\n\n\\begin{center}\nCentred words.\n\\end{center}\n\n'
+                '\\begin{theorem}\nTheorem words.\n\\end{theorem}\n\n\\begin{quote}\nQuoted words.\n\\end{quote}\n\nAfter it.\n\\end{document}\n')
+# the caret against the paragraph whose words w are: from its left, its right, its middle, below it
+_CARET_BY = """(w) => { const sp = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(w)), it = sp.closest('.it');
+  const I = it.getBoundingClientRect(), C = getSelection().getRangeAt(0).getBoundingClientRect(), g = window.rikuy.ghost;
+  return { left: C.left - I.left, right: I.right - C.left, mid: C.left - (I.left + I.width / 2), below: C.top - I.bottom, after: !!g && g.el.previousElementSibling === it, cls: g && g.el.className }; }"""
+
+
+def ghost_inside(page, w):
+    """Enter at the end of a paragraph in an environment (a theorem, a quote, a flushright, one of
+    two there), then a relayout (a font that came, the window resized, a pane): the empty paragraph
+    stays right after that paragraph, the caret in it, and what is typed goes there. The
+    environment is one block of the page, and the place inside it was read as before it: the empty
+    paragraph and the caret went above the environment (ghostAt)."""
+    for words in ('Theorem words.', 'Quoted words.', 'Right words one.', 'Right words two.'):
+        load_doc(page, _ALIGNED_DOC)
+        click_text(page, words, len(words)); page.keyboard.press('Enter'); settle(page, 100)
+        page.evaluate('window.rikuy.relayout(true)'); settle(page, 100)
+        r = page.evaluate(_CARET_BY, words)
+        page.keyboard.type('Zz'); settle(page, 200)
+        check('Enter after %r, then a relayout: the empty paragraph and the caret right below it, the words typed after it (%d px)' % (words, w),
+              r['after'] and r['below'] > -2 and words + '\n\nZz\n\n' in src(page), (r, src(page)[src(page).find(words):][:60]))
 
 
 def crlf_enter(page):

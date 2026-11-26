@@ -3499,11 +3499,18 @@ class App {
     // \end{document}: a place between those words and that break is after it. The block before it
     // was taken, and a relayout moved Enter's empty paragraph at the last paragraph's end above it)
     const src = this.src(f), ends = (B) => B.e <= pos || (B.s < pos && !src.slice(pos, B.e).trim());
+    let inside = null;
     for (const B of this.renderer.blocks) {
       if (B.f !== f || !B.items.length) continue;
       if (ends(B) && (!prev || B.e >= prev.e)) prev = B;
       if (B.s >= pos && (!next || B.s < next.s)) next = B;
+      if (B.s < pos && !ends(B)) inside = B;
     }
+    // (a place inside a block, at a paragraph's end in a theorem, a quote, a flushright: after
+    // that paragraph, found by the page's index. The block before the environment was taken, and
+    // the empty paragraph went above it)
+    const x = inside ? this.index.find(f, pos, -1) : null, it = x && x.node && x.node.parentElement ? x.node.parentElement.closest('.it.p') : null;
+    if (it && this.root.contains(it) && it.dataset.b === String(inside.id)) { this.showGhost(it, f, pos, { style, line }); return; }
     const els = (B) => [...this.root.querySelectorAll('.it[data-b="' + B.id + '"]')];
     const at = prev ? els(prev).pop() : next ? els(next)[0] : null;
     if (at) this.showGhost(at, f, pos, { before: !prev, style, line });
