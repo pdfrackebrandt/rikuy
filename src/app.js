@@ -3534,8 +3534,10 @@ class App {
     }
     // (a place inside a block, at a paragraph's end in a theorem, a quote, a flushright: after
     // that paragraph, found by the page's index. The block before the environment was taken, and
-    // the empty paragraph went above it)
-    const x = inside ? this.index.find(f, pos, -1) : null, it = x && x.node && x.node.parentElement ? x.node.parentElement.closest('.it.p') : null;
+    // the empty paragraph went above it. Only where the index has words ending there: a display
+    // is not in it, and the nearest words were taken, the line after a display in an item drawn
+    // after the next item, what was typed written on a line of its own, mathfield.py)
+    const x = inside ? this.index.find(f, pos, -1) : null, it = x && !x.inexact && x.node && x.node.parentElement ? x.node.parentElement.closest('.it.p') : null;
     if (it && this.root.contains(it) && it.dataset.b === String(inside.id)) { this.showGhost(it, f, pos, { style, line }); return; }
     const els = (B) => [...this.root.querySelectorAll('.it[data-b="' + B.id + '"]')];
     const at = prev ? els(prev).pop() : next ? els(next)[0] : null;
