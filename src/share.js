@@ -3,7 +3,7 @@
 // comments, so Overleaf, Git and every TeX keep them and print nothing, and a coauthor's copy
 // comes back as a three way merge against the version that was shared.
 
-import { hunks } from './diff.js';
+import { hunks, diffSeq } from './diff.js';
 
 // ---- links --------------------------------------------------------------------------------
 
@@ -307,24 +307,71 @@ export function stripComments(text) {
 // (which goes first is anyone's guess)
 const clash = (a, c) => (a.s < c.e && c.s < a.e) || (a.s === a.e && c.s === c.e && a.s === c.s);
 
-// base -> mine and base -> theirs, line by line: both kept when they touch different lines
+// one side's edits of a text as hunks of it, {s, e, t}: by lines, or by words inside lines
+const lineEdits = (a, b) => hunks(a, b).map((h) => ({ s: h.as, e: h.as + h.a.length, t: h.b }));
+// (a line end is a word of its own, so lines added stay whole lines)
+const WORDS = /\r?\n|[^\S\n]+|[\p{L}\p{N}]+|\\[A-Za-z@]+|[\s\S]/gu;
+function wordEdits(a, b) {
+  const out = [];
+  let p = 0, cur = null;
+  for (const [op, v] of diffSeq(a.match(WORDS) || [], b.match(WORDS) || [])) {
+    if (op === ' ') { if (cur) { out.push(cur); cur = null; } p += v.length; continue; }
+    if (!cur) cur = { s: p, e: p, t: '' };
+    if (op === '-') { p += v.length; cur.e = p; } else cur.t += v;
+  }
+  if (cur) out.push(cur);
+  // a line added after a line's last word reads as "\nline" before that line's end: the same
+  // edit as "line\n" after it, which is where the other side's added line is looked for
+  for (const h of out) {
+    const nl = h.s === h.e && /^\r?\n/.exec(a.slice(h.s, h.s + 2));
+    if (nl && h.t.startsWith(nl[0])) { h.s = h.e = h.s + nl[0].length; h.t = h.t.slice(nl[0].length) + nl[0]; }
+  }
+  return out;
+}
+// the text of base from s to e with these hunks (all inside it) applied
+function applied(base, hs, s, e) {
+  let out = '', p = s;
+  for (const h of hs) { out += base.slice(p, h.s) + h.t; p = h.e; }
+  return out + base.slice(p, e);
+}
+
+// base -> mine and base -> theirs: both kept where they touch different lines, and where they
+// touch the same lines but different words of them, as Word combines two copies of a document (a
+// paragraph is often one line of the source: two typos fixed in it, one each, are no conflict).
+// Where both change the same words their version wins, and the result is flagged as not clean, so
+// the author is told and keeps the text from before the merge under Versions; both adding lines
+// at one place (a comment each under the same line) keeps both, theirs under mine.
 export function merge3(base, mine, theirs) {
   if (theirs === base || theirs === mine) return { text: mine, clean: true };
   if (mine === base) return { text: theirs, clean: true };
-  const A = hunks(base, mine).map((h) => ({ s: h.as, e: h.as + h.a.length, t: h.b }));
-  const C = hunks(base, theirs).map((h) => ({ s: h.as, e: h.as + h.a.length, t: h.b }));
-  // Take every one of their hunks, and every one of mine that clashes with none of theirs, so my
-  // edits on lines they did not touch survive: a clash on one line must not throw away the rest of
-  // my work. Where we do clash, their version wins (and the result is flagged as not clean, so the
-  // author is told and keeps the pre-merge text under Versions).
-  let clean = true;
-  const keep = [];
-  for (const a of A) { if (C.some((c) => clash(a, c))) clean = false; else keep.push(a); }
-  // an insertion at a point goes before a replacement that starts there
-  let out = '', p = 0;
-  for (const h of [...keep, ...C].sort((x, y) => x.s - y.s || x.e - y.e)) {
-    if (h.s < p) continue; // a kept hunk never overlaps a later one, but never write past p
-    out += base.slice(p, h.s) + h.t; p = h.e;
+  return combine(base, lineEdits(base, mine), lineEdits(base, theirs), true);
+}
+function combine(base, A, C, lines) {
+  // the hunks in the order of base (an insertion at a point before a replacement that starts
+  // there), gathered into runs of hunks that clash with one another
+  const all = [...A.map((h) => ({ ...h, mine: true })), ...C].sort((x, y) => x.s - y.s || x.e - y.e);
+  const runs = [];
+  for (const h of all) {
+    const r = runs[runs.length - 1];
+    if (r && r.some((x) => x.mine !== h.mine && clash(x, h))) r.push(h); else runs.push([h]);
+  }
+  let clean = true, out = '', p = 0;
+  for (const r of runs) {
+    const s = Math.min(...r.map((h) => h.s)), e = Math.max(...r.map((h) => h.e));
+    const ours = r.filter((h) => h.mine), theirs = r.filter((h) => !h.mine);
+    let t;
+    if (!ours.length || !theirs.length) t = applied(base, r, s, e);
+    else {
+      const m = applied(base, ours, s, e), c = applied(base, theirs, s, e);
+      if (m === c) t = c;
+      // (whole lines added at one place by both, a comment each under one line: both kept)
+      else if (s === e && (s === 0 || base[s - 1] === '\n') && r.every((h) => h.t.endsWith('\n'))) t = m + c;
+      else if (lines) {
+        const w = combine(base.slice(s, e), wordEdits(base.slice(s, e), m), wordEdits(base.slice(s, e), c), false);
+        if (w.clean) t = w.text; else { t = c; clean = false; }
+      } else { t = c; clean = false; }
+    }
+    out += base.slice(p, s) + t; p = e;
   }
   return { text: out + base.slice(p), clean };
 }

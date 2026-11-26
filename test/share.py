@@ -314,6 +314,61 @@ def comments_only():
         A.close(); B.close()
 
 
+MERGE_DOC = '\\documentclass{article}\n\\begin{document}\nWe study the efect of taxes on growth in Peru and Chile.\n\nSecond paragraph.\n\\end{document}\n'
+
+
+def comment_here(page, words, who, body):
+    select_text(page, words, 0)
+    page.wait_for_selector('#bubble:not([hidden])')
+    page.click('#bubble button[data-act="cm"]')
+    page.wait_for_selector('.pop-comment textarea')
+    if page.locator('.pop-comment .share-name').count():
+        page.fill('.pop-comment .share-name', who)
+    page.fill('.pop-comment textarea', body)
+    page.click('.pop-comment button.btn:not(.ghost)')
+    wait_src(page, body)
+
+
+def r4_merge():
+    """R4: a paragraph is often one line of the source. The coauthor fixes a word of it and
+    comments on it; the author meanwhile changes another word of the same line and comments on it
+    too. Word combines the two copies keeping both: the merge went line by line, so the author's
+    word and comment were thrown out for theirs, and the author was told they had edited the same
+    lines."""
+    with sync_playwright() as p:
+        A, page, errs = open_page(p)
+        page.evaluate('(t) => window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "merge", "Opened")', MERGE_DOC)
+        settle(page, 400)
+        link = share_link(page, 'Pedro', 'Copy link')
+        B, page2, errs2 = open_page(p, clear=False)
+        page2.goto('about:blank'); page2.goto(link)
+        page2.wait_for_function('window.rikuy && document.body.classList.contains("guest")', timeout=20000)
+        settle(page2, 400)
+        click_text(page2, 'efect', 2)
+        page2.keyboard.type('f')
+        comment_here(page2, 'growth', 'Ana', 'Which measure?')
+        check('merge: the coauthor fixed a word and commented', 'the effect of taxes' in src(page2) and 'Which measure?' in src(page2), src(page2))
+        back = share_link(page2, 'Ana', 'Copy the link for Pedro')
+        # the author, meanwhile, in the same paragraph's line
+        click_text(page, 'Chile', 0)
+        page.keyboard.type('northern ')
+        comment_here(page, 'Peru', 'Pedro', 'Add Bolivia?')
+        check('merge: the author changed another word of the line and commented', 'and northern Chile' in src(page) and 'Add Bolivia?' in src(page), src(page))
+        go_link(page, back)
+        page.wait_for_function('() => window.rikuy.files.get("main.tex").includes("effect")', timeout=20000)
+        settle(page, 500)
+        s = src(page)
+        check('merge: both words are in the line', 'We study the effect of taxes on growth in Peru and northern Chile.' in s, s)
+        check('merge: both comments are kept, theirs under mine', '% comment (Pedro) on "Peru": Add Bolivia?\n% comment (Ana) on "growth": Which measure?\n' in s, s)
+        toast = page.evaluate(TOASTS)
+        check('merge: no word of being told both edited the same lines', 'same lines' not in toast, toast)
+        ch = page.evaluate('() => window.rikuy.currentChanges().map((c) => [c.a, c.b])')
+        check('merge: her edit is the one tracked change, the author\'s word is not among them', not any('northern' in a + b for a, b in ch) and any('effect' in b for a, b in ch), ch)
+        bad = [e for e in errs + errs2 if 'clipboard' not in e.lower()]
+        check('merge: no page errors', not bad, bad[:3])
+        A.close(); B.close()
+
+
 ATTACK_DOC = ('\\documentclass{article}\n\\usepackage{url}\n\\begin{document}\nFirst line of text \\cite{knuth}.\n\nSee \\url{http://example.org/\nlong}.\n\n'
               '\\begin{verbatim}\ncode\n\\end{verbatim}\nSecond line stays.\n\\bibliographystyle{plain}\\bibliography{refs}\n\\end{document}\n')
 ATTACK_BIB = '@book{knuth, author={Knuth}, title={TeXbook}, publisher={AW}, year=1984}\n'
@@ -495,6 +550,8 @@ if __name__ == '__main__':
             comments_attacks()
         if len(sys.argv) < 2 or 'catcodes' in sys.argv[1:]:
             comments_catcodes()
+        if len(sys.argv) < 2 or 'r4_merge' in sys.argv[1:]:
+            r4_merge()
     except Exception:
         import traceback
         traceback.print_exc()

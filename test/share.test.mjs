@@ -327,6 +327,24 @@ await ok('merge keeps both sides when they touch different lines', () => {
     { text: 'ONE\ntwo\nthree-theirs\nfour\nFIVE\n', clean: false });
 });
 
+await ok('merge keeps both sides when they touch different words of one line, and a comment each under it (R4)', () => {
+  const b = 'We study the efect of taxes on growth in Peru and Chile.\n\nSecond.\n';
+  const m = 'We study the efect of taxes on growth in Peru and northern Chile.\n% comment (P) on "Peru": Bolivia?\n\nSecond.\n';
+  const t = 'We study the effect of taxes on growth in Peru and Chile.\n% comment (A) on "growth": Which?\n\nSecond.\n';
+  assert.deepEqual(merge3(b, m, t), { text: 'We study the effect of taxes on growth in Peru and northern Chile.\n% comment (P) on "Peru": Bolivia?\n% comment (A) on "growth": Which?\n\nSecond.\n', clean: true });
+  const crlf = (s) => s.replace(/\n/g, '\r\n');
+  assert.deepEqual(merge3(crlf(b), crlf(m), crlf(t)).text, crlf('We study the effect of taxes on growth in Peru and northern Chile.\n% comment (P) on "Peru": Bolivia?\n% comment (A) on "growth": Which?\n\nSecond.\n'));
+  // a line rewrapped on one side, a word of it changed on the other
+  assert.deepEqual(merge3('one two three\nfour five six\n', 'one two three four\nfive six\n', 'one two three\nfour FIVE six\n'), { text: 'one two three four\nFIVE six\n', clean: true });
+  // the same word changed by both, or a word each put at one place: theirs, and said
+  assert.deepEqual(merge3(b, b.replace('efect', 'effects'), b.replace('efect', 'effect')), { text: b.replace('efect', 'effect'), clean: false });
+  assert.deepEqual(merge3(b, b.replace('taxes', 'high taxes'), b.replace('taxes', 'low taxes')), { text: b.replace('taxes', 'low taxes'), clean: false });
+  // the same edit made by both is no conflict
+  assert.deepEqual(merge3(b, b.replace('efect', 'effect'), b.replace('efect', 'effect')), { text: b.replace('efect', 'effect'), clean: true });
+  // LaTeX around a word on one side, the word changed on the other
+  assert.deepEqual(merge3(b, b.replace('taxes', '\\emph{taxes}'), b.replace('taxes', 'tariffs')).text, b.replace('taxes', '\\emph{tariffs}'));
+});
+
 await ok('merge of whole projects', () => {
   const m = (o) => new Map(Object.entries(o));
   const r = mergeProjects(m({ 'a.tex': 'a\n', 'b.tex': 'b\n', 'c.tex': 'c\n' }), m({ 'a.tex': 'A\n', 'b.tex': 'b\n', 'c.tex': 'c\n', 'mine.tex': 'm\n' }), m({ 'a.tex': 'a\n', 'c.tex': 'C\n', 'new.tex': 'n\n' }));
