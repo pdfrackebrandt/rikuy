@@ -158,6 +158,30 @@ await ok('the offline plan is the core packs and the packs holding files under t
   assert.deepEqual([ctx.packFolder(1), ctx.packFolder(3), ctx.packFolder(2)], ['tex/latex/amsmath', 'fonts/type1/public/lm', 'tex/latex/amsmath2']);
 });
 
+await ok('the offline plan keeps ICU\'s data, which XeTeX reads as it starts and no start fetches now', () => {
+  run("INDEX.files.push(['/texlive/icudt78l.dat', 1, 3, 0]);");
+  try {
+    assert.equal(ctx.icuPack(), 3);
+    assert.deepEqual([...ctx.keepPlan(['tex/latex/amsmath'])], [0, 1, 3]);
+  } finally { run('INDEX.files.pop();'); }
+  assert.equal(ctx.icuPack(), null);
+});
+
+await ok('XeTeX is warmed once, the first time an instance runs it, before that run, and the heap kept after it', () => {
+  // (a TeX instance with a heap just past the part kept: the warm run writes there and above it)
+  const calls = [];
+  ctx.__calls = calls;
+  run(`M = { FS: { streams: [] }, _out: {}, _sp0: 7, HEAPU8: new Uint8Array(MEM_HEADER + 8), _memHeader: new Uint8Array(MEM_HEADER),
+    _stackRestore: (v) => { M._sp = v; }, _spGet: () => 5,
+    callMain: (a) => { __calls.push(a.join(' ') + ' sp' + M._sp); M.HEAPU8[0] = a[0] === 'xetex' ? 1 : M.HEAPU8[0]; M.HEAPU8[MEM_HEADER] = 9; } };`);
+  run('run(["pdflatex", "a.tex"]);');
+  assert.deepEqual(calls, ['pdflatex a.tex sp7'], 'pdfLaTeX warms nothing');
+  run('run(["xelatex", "a.tex"]); run(["xelatex", "b.tex"]); run(["xetex", "-ini", "c"]);');
+  assert.deepEqual(calls.slice(1), ['xetex --version sp7', 'xelatex a.tex sp5', 'xelatex b.tex sp5', 'xetex -ini c sp5']);
+  // the heap kept is the one after XeTeX's warm run, and above it nothing is left
+  assert.equal(run('[M._memHeader[0], M.HEAPU8[0], M.HEAPU8[MEM_HEADER]].join()'), '1,1,0');
+});
+
 await ok('a pack TeX cannot load is counted as missed until it loads, and bytes that do not unpack are not kept', async () => {
   blobs.clear(); served.clear(); run('packs.clear(); packMissed.clear();');
   const f1 = run('INDEX.packs[1].f');
