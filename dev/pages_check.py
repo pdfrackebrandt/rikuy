@@ -3,19 +3,29 @@
 deploy.yml), and say what it holds: at most 20,000 files, none over 25 MiB, and a _headers file of
 at most 100 rules, one per address pattern, with no line over 2,000 characters. Pages refuses a deployment past the first
 two and ignores a _headers file past the last; finding out here is cheaper than a failed upload.
+And no file over 64 KB of a type Cloudflare does not compress lies uncompressed: it would travel
+whole on every visit that fetches it (the English dictionary's 860 KB did, before build.mjs gzipped
+spell/'s dictionaries and thesauri).
 The hosted build needs index.html, sw.js and _headers (build.mjs without RIKUY_SHARE).
 
 Usage: python3 dev/pages_check.py DIST   (exit 1 when a limit is broken)"""
-import os, sys
+import os, re, sys
 
 MAX_FILES = 20000
 MAX_BYTES = 25 * 1024 * 1024
 MAX_RULES = 100
 MAX_LINE = 2000
+# Cloudflare compresses an answer by its type (developers.cloudflare.com/speed/optimization/content/
+# compression: text, scripts, JSON, WebAssembly, SVG and the like); Pages gives an extension it does
+# not know (.dic, .aff, .idx, .dat, .bin) application/octet-stream, which it sends as it lies. Such
+# a file must lie compressed already: gzip, or a format compressed of itself (woff2, PNG, JPEG, zip).
+COMPRESSED_EXT = ('.js', '.mjs', '.css', '.html', '.json', '.webmanifest', '.wasm', '.txt', '.xml', '.svg')
+PACKED = (b'\x1f\x8b', b'wOF2', b'\x89PNG', b'\xff\xd8\xff', b'PK\x03\x04')
+MAX_RAW = 64 * 1024
 
 
 def check(dist):
-    problems, files, total, big = [], 0, 0, []
+    problems, files, total, big, raw = [], 0, 0, [], []
     for dp, dns, fns in os.walk(dist):
         for f in fns:
             p = os.path.join(dp, f)
@@ -24,10 +34,23 @@ def check(dist):
             total += n
             if n > MAX_BYTES:
                 big.append((os.path.relpath(p, dist), n))
+            if n > MAX_RAW and not f.endswith(COMPRESSED_EXT):
+                with open(p, 'rb') as fh:
+                    head = fh.read(4)
+                # (the parts after the first of one gzip cut in pieces, word/pandoc-<hash>-<n>.bin:
+                # the first one's header says so)
+                m = re.match(r'^(.*-)(\d+)(\.[A-Za-z0-9]+)$', f)
+                if m and int(m.group(2)) > 0 and os.path.isfile(os.path.join(dp, m.group(1) + '0' + m.group(3))):
+                    with open(os.path.join(dp, m.group(1) + '0' + m.group(3)), 'rb') as fh:
+                        head = fh.read(4)
+                if not head.startswith(PACKED):
+                    raw.append((os.path.relpath(p, dist), n))
     if files > MAX_FILES:
         problems.append('%d files, more than the %d Pages takes' % (files, MAX_FILES))
     for rel, n in big:
         problems.append('%s is %.1f MiB, more than the 25 MiB Pages takes per file' % (rel, n / 1048576))
+    for rel, n in raw:
+        problems.append('%s is %d KB of a type Cloudflare does not compress, and not compressed: gzip it in the build (as build.mjs packs spell/)' % (rel, n // 1024))
     for need in ('index.html', 'sw.js', '_headers'):
         if not os.path.isfile(os.path.join(dist, need)):
             problems.append('no %s: not the hosted build (build.mjs without RIKUY_SHARE)' % need)

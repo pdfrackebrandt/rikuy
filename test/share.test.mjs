@@ -1,6 +1,6 @@
 // Share links, comments in the source and the three way merge (src/share.js).
 import assert from 'node:assert/strict';
-import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, merge3, mergeProjects, commentOnly, base32, unbase32, parseCommentLine } from '../src/share.js';
+import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, merge3, mergeProjects, commentOnly, base32, unbase32, parseCommentLine, commentBodyAt, wideSaid } from '../src/share.js';
 import { changes } from '../src/diff.js';
 import { TeXEngine } from '../src/tex.js';
 import { graphShort, graphWhole, graphHtml, readGraph, OTHER_VERSION } from '../src/graph.js';
@@ -325,6 +325,188 @@ await ok('merge keeps both sides when they touch different lines', () => {
   assert.deepEqual(
     merge3(five, 'ONE\ntwo\nthree-mine\nfour\nFIVE\n', 'one\ntwo\nthree-theirs\nfour\nfive\n'),
     { text: 'ONE\ntwo\nthree-theirs\nfour\nFIVE\n', clean: false });
+});
+
+await ok('merge keeps both sides when they touch different words of one line, and a comment each under it (R4)', () => {
+  const b = 'We study the efect of taxes on growth in Peru and Chile.\n\nSecond.\n';
+  const m = 'We study the efect of taxes on growth in Peru and northern Chile.\n% comment (P) on "Peru": Bolivia?\n\nSecond.\n';
+  const t = 'We study the effect of taxes on growth in Peru and Chile.\n% comment (A) on "growth": Which?\n\nSecond.\n';
+  assert.deepEqual(merge3(b, m, t), { text: 'We study the effect of taxes on growth in Peru and northern Chile.\n% comment (P) on "Peru": Bolivia?\n% comment (A) on "growth": Which?\n\nSecond.\n', clean: true });
+  const crlf = (s) => s.replace(/\n/g, '\r\n');
+  assert.deepEqual(merge3(crlf(b), crlf(m), crlf(t)).text, crlf('We study the effect of taxes on growth in Peru and northern Chile.\n% comment (P) on "Peru": Bolivia?\n% comment (A) on "growth": Which?\n\nSecond.\n'));
+  // a line rewrapped on one side, a word of it changed on the other
+  assert.deepEqual(merge3('one two three\nfour five six\n', 'one two three four\nfive six\n', 'one two three\nfour FIVE six\n'), { text: 'one two three four\nFIVE six\n', clean: true });
+  // the same word changed by both, or a word each put at one place: theirs, and said
+  assert.deepEqual(merge3(b, b.replace('efect', 'effects'), b.replace('efect', 'effect')), { text: b.replace('efect', 'effect'), clean: false });
+  assert.deepEqual(merge3(b, b.replace('taxes', 'high taxes'), b.replace('taxes', 'low taxes')), { text: b.replace('taxes', 'low taxes'), clean: false });
+  // words side by side, one deleted on each side, or one changed beside one deleted
+  const w = 'Rates rose; whatever else a buyer did.\n';
+  assert.deepEqual(merge3(w, w.replace('whatever ', ''), w.replace('else ', '')), { text: 'Rates rose; a buyer did.\n', clean: true });
+  assert.deepEqual(merge3(w, w.replace('whatever', 'WHATEVER'), w.replace(' else', '')), { text: 'Rates rose; WHATEVER a buyer did.\n', clean: true });
+  // the same edit made by both is no conflict
+  assert.deepEqual(merge3(b, b.replace('efect', 'effect'), b.replace('efect', 'effect')), { text: b.replace('efect', 'effect'), clean: true });
+  // LaTeX put round a word on one side, the word changed on the other: merged (review V2-A); LaTeX
+  // round a word beside the one changed too
+  assert.deepEqual(merge3(b, b.replace('taxes', '\\emph{taxes}'), b.replace('taxes', 'tariffs')), { text: b.replace('taxes', '\\emph{tariffs}'), clean: true });
+  assert.deepEqual(merge3(b, b.replace('taxes', '\\emph{taxes}'), b.replace('growth', 'output')), { text: b.replace('taxes', '\\emph{taxes}').replace('growth', 'output'), clean: true });
+  // by whole lines alone (a copy for comments only): no line mixes the two; comment lines under one line still both kept
+  assert.deepEqual(merge3(b, b.replace('efect', 'effect'), b.replace('Chile', 'Bolivia'), { words: false }), { text: b.replace('Chile', 'Bolivia'), clean: false });
+  assert.equal(merge3(b, m, t, { words: false }).clean, false);
+  assert.deepEqual(merge3('x\n', 'x\n% comment (P): a\n', 'x\n% comment (A): b\n', { words: false }), { text: 'x\n% comment (P): a\n% comment (A): b\n', clean: true });
+  // a clash over a line longer than the word merge takes: as by lines
+  const long = 'w '.repeat(150000) + '\n';
+  assert.deepEqual(merge3(long, 'A ' + long, long.slice(0, -2) + 'Z\n'), { text: long.slice(0, -2) + 'Z\n', clean: false });
+});
+
+await ok('a word is never cut from its marks: Hindi, Arabic; Chinese words found without spaces (R4 review B3)', () => {
+  assert.deepEqual(merge3('मैं किताब पढ़ता हूँ।', 'मैं किताबें पढ़ता हूँ।', 'मैं खिताब पढ़ता हूँ।'), { text: 'मैं खिताब पढ़ता हूँ।', clean: false });
+  assert.deepEqual(merge3('كَتَبَ الولد', 'كُتَبَ الولد', 'كَتَبْ الولد'), { text: 'كَتَبْ الولد', clean: false });
+  assert.deepEqual(merge3('मैं किताब पढ़ता हूँ।\n', 'मैं किताबें पढ़ता हूँ।\n', 'मैं किताब पढ़ती हूँ।\n'), { text: 'मैं किताबें पढ़ती हूँ।\n', clean: true });
+  assert.deepEqual(merge3('我们研究税收对增长的影响。\n', '我们研究关税对增长的影响。\n', '我们研究税收对发展的影响。\n'), { text: '我们研究关税对发展的影响。\n', clean: true });
+  assert.equal(merge3('我们研究税收对增长的影响。\n', '我们研究税收对增长的作用。\n', '我们研究税收对增长的效果。\n').clean, false);
+});
+
+await ok('two different things put at one place are a conflict; comment lines there are both kept (R4 review B5)', () => {
+  assert.equal(merge3('', '\\documentclass{article}\n\\begin{document}\nA\n\\end{document}\n', '\\documentclass{article}\n\\begin{document}\nB\n\\end{document}\n').clean, false);
+  const d = '\\documentclass{article}\n\\begin{document}\nText.\n\\end{document}\n';
+  assert.deepEqual(merge3(d, d.replace('Text.\n', 'Text.\nMine ends.\n'), d.replace('Text.\n', 'Text.\nTheirs ends.\n')), { text: d.replace('Text.\n', 'Text.\nTheirs ends.\n'), clean: false });
+  const p = '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nText.\n\\end{document}\n';
+  const r = merge3(p, p.replace('}\n', '}\n\\newcommand{\\R}{\\mathbb{R}}\n'), p.replace('}\n', '}\n\\newcommand{\\R}{\\mathbb{R}}\n\\newcommand{\\N}{\\mathbb{N}}\n'));
+  assert.equal(r.text.split('\\newcommand{\\R}').length, 2, r.text);
+  assert.equal(r.clean, false);
+  assert.deepEqual(merge3('x\n', 'x\n% comment (P): a\n', 'x\n% comment (A): b\n'), { text: 'x\n% comment (P): a\n% comment (A): b\n', clean: true });
+  assert.deepEqual(merge3('x\r\n', 'x\r\n% comment (P): a\r\n', 'x\r\n% comment (A): b\r\n'), { text: 'x\r\n% comment (P): a\r\n% comment (A): b\r\n', clean: true });
+});
+
+await ok('a word conflict keeps my other words of the line; the word merge has one budget per merge (R4 review nits 6, 7)', () => {
+  assert.deepEqual(merge3('We study the efect of taxes on growth.\n', 'We study the effects of high taxes on growth.\n', 'We study the effect of taxes on growth.\n'), { text: 'We study the effect of high taxes on growth.\n', clean: false });
+  // three 30 kB lines apart, each clashing (90 kB of base, mine and theirs each): two word by word, the budget then spent, the third by lines
+  const L = (k) => 'w' + k + ' ' + 'x '.repeat(15000) + '\n';
+  const B3 = L(1) + 'kept\n' + L(2) + 'kept\n' + L(3);
+  const r = merge3(B3, B3.replace(/x \n/g, 'MINE \n'), B3.replace(/^w/gm, 'W'));
+  assert.equal(r.clean, false);
+  assert.equal(r.text.split('MINE').length - 1, 2);
+});
+
+await ok('two edits that meet with no space between them are a conflict: Chinese, Thai, an apostrophe (R4 review N1)', () => {
+  assert.deepEqual(merge3('他喜欢学习。\n', '他很喜欢学习。\n', '他不喜欢学习。\n'), { text: '他不喜欢学习。\n', clean: false });
+  assert.deepEqual(merge3('ฉันกินข้าว', 'ฉันกินข้าวผัด', 'ฉันกินข้าวต้ม'), { text: 'ฉันกินข้าวต้ม', clean: false });
+  assert.deepEqual(merge3('the users data\n', "the user's data\n", "the users' data\n"), { text: "the users' data\n", clean: false });
+  // a space between them: both kept
+  assert.deepEqual(merge3('the users data\n', 'the USERS data\n', 'the users DATA\n'), { text: 'the USERS DATA\n', clean: true });
+});
+
+await ok('one word budget for a whole project: thirty files each at the limit merge fast, the rest by lines (R4 review N4)', () => {
+  // each file: base, mine and theirs of 60 kB of one clashing line, about the budget alone
+  const line = 'w ' + 'x '.repeat(30000) + '\n';
+  const base = new Map(), mine = new Map(), theirs = new Map();
+  for (let k = 0; k < 30; k++) { const f = 'f' + k + '.tex'; base.set(f, line); mine.set(f, line.replace(/x \n$/, 'MINE \n')); theirs.set(f, line.replace(/^w/, 'W')); }
+  const t0 = Date.now();
+  const r = mergeProjects(base, mine, theirs);
+  const ms = Date.now() - t0;
+  const merged = [...r.files.values()].filter((t) => t.startsWith('W') && t.includes('MINE')).length;
+  assert.ok(ms < 8000, ms + ' ms');
+  assert.equal(merged, 1, 'one file within the budget merged word by word');
+  assert.equal(r.conflicts.length, 29, 'the others by lines: conflicts, theirs shown');
+});
+
+await ok('what a coauthor puts beside a word the other side changed merges: fifteen ordinary pairs (R4 review V2-A)', () => {
+  const P = (base, mine, theirs, want) => assert.deepEqual(merge3(base, mine, theirs), { text: want, clean: true }, JSON.stringify([base, mine, theirs]));
+  const t = 'We study the efect of taxes on growth.\n';
+  P(t, t.replace('efect', 'effect'), t.replace('efect', 'efect,'), t.replace('efect', 'effect,'));
+  P(t, t.replace('efect', 'efect,'), t.replace('efect', 'effect'), t.replace('efect', 'effect,'));
+  P(t, t.replace('growth', 'output'), t.replace('growth.', 'growth..'), t.replace('growth.', 'output..'));
+  P(t, t.replace('taxes', 'tariffs'), t.replace('taxes', 'taxes\\footnote{Income taxes.}'), t.replace('taxes', 'tariffs\\footnote{Income taxes.}'));
+  P(t, t.replace('growth', 'output'), t.replace('growth', 'growth~\\cite{solow}'), t.replace('growth', 'output~\\cite{solow}'));
+  P(t, t.replace('taxes', 'tariffs'), t.replace('taxes', '\\emph{taxes}'), t.replace('taxes', '\\emph{tariffs}'));
+  P(t, t.replace('taxes', 'tariffs'), t.replace('taxes', '\\textbf{taxes}'), t.replace('taxes', '\\textbf{tariffs}'));
+  P(t, t.replace('efect', 'effects'), t.replace('efect', 'efect,'), t.replace('efect', 'effects,'));
+  P(t, t.replace('taxes', 'tariffs'), t.replace('taxes', 'taxes:'), t.replace('taxes', 'tariffs:'));
+  P(t, t.replace('taxes', 'tariffs'), t.replace('taxes', 'taxes---'), t.replace('taxes', 'tariffs---'));
+  const m = 'Then $a + b = c$ holds.\n';
+  P(m, m.replace('b =', 'd ='), m.replace('b =', 'b^2 ='), m.replace('b =', 'd^2 ='));
+  const pc = 'Rates rose by 5 points.\n';
+  P(pc, pc.replace('5', '7'), pc.replace('5 ', '5\\% '), pc.replace('5 ', '7\\% '));
+  const eq = 'Equation one holds.\n';
+  P(eq, eq.replace('one', 'two'), eq.replace('one', 'one\\label{e}'), eq.replace('one', 'two\\label{e}'));
+  // the first word of a line deleted on one side, the second changed on the other; line 1 deleted, line 2's first word changed
+  P('The results show growth.\n', 'results show growth.\n', 'The findings show growth.\n', 'findings show growth.\n');
+  P('Title line\nFirst words here.\n', 'First words here.\n', 'Title line\nOpening words here.\n', 'Opening words here.\n');
+  // quotes put round a word the other side changed, TeX's ``double'' and `single' (review V4-A)
+  P('the word test here\n', "the word ``test'' here\n", 'the word exam here\n', "the word ``exam'' here\n");
+  P('the word test here\n', 'the word exam here\n', "the word ``test'' here\n", "the word ``exam'' here\n");
+  P('the word test here\n', "the word `test' here\n", 'the word exam here\n', "the word `exam' here\n");
+  // N1's cases stay conflicts, a lone ' after a word too
+  assert.equal(merge3('他喜欢学习。\n', '他很喜欢学习。\n', '他不喜欢学习。\n').clean, false);
+  assert.equal(merge3('the users data\n', "the users' data\n", "the user's data\n").clean, false);
+  assert.equal(merge3('the users data\n', "the user's data\n", "the users' data\n").clean, false);
+});
+
+await ok('a conflict never keeps half of a pair: braces, math, an environment, brackets, quotes (R4 review V2-B)', () => {
+  // (balanced: braces, brackets, parentheses, unescaped $, \( \), \[ \], \begin \end, and every ` closed by a ')
+  const bal = (t) => ['{}', '()', '[]', ['\\(', '\\)'], ['\\[', '\\]']].every(([o, c]) => t.split(o).length === t.split(c).length) && (t.match(/(?<!\\)\$/g) || []).length % 2 === 0
+    && (t.match(/\\begin\b/g) || []).length === (t.match(/\\end\b/g) || []).length && !/`/.test(t.replace(/`[^`']*'/g, ''));
+  const cases = [
+    ['We study a b c here.\n', 'We study \\emph{a b cc} here.\n', 'We study a b C here.\n'],
+    ['where x plus y holds\n', 'where $x plus yy$ holds\n', 'where x plus Y holds\n'],
+    ['see a b c now\n', 'see \\begin{em}a b cc\\end{em} now\n', 'see a b C now\n'],
+    ['as a b c here\n', 'as (a b cc) here\n', 'as a b C here\n'],
+    ['make it bold now\n', 'make \\textbf{it bolder} now\n', 'make it BOLD now\n'],
+    ['a test here\n', "a `tests' here\n", 'a exam here\n'],
+    // LaTeX's own math delimiters (review V3-A)
+    ['where x plus y holds\n', 'where \\(x plus yy\\) holds\n', 'where x plus Y holds\n'],
+    ['so x plus y holds\n', 'so \\[x plus yy\\] holds\n', 'so x plus Y holds\n'],
+  ];
+  for (const [b, m, t] of cases) {
+    const r = merge3(b, m, t);
+    assert.equal(r.clean, false, b);
+    assert.ok(bal(r.text), JSON.stringify(r.text));
+  }
+  // where both halves stay, my other words of the line are still kept (nit 6)
+  assert.deepEqual(merge3('We study the efect of taxes on growth.\n', 'We study the effects of high taxes on growth.\n', 'We study the effect of taxes on growth.\n'), { text: 'We study the effect of high taxes on growth.\n', clean: false });
+});
+
+await ok('a conflict never keeps half of a pair across lines: its paragraph, its environment, or the file goes to theirs (R4 review V3-B)', () => {
+  const D = (b) => '\\documentclass{article}\n\\begin{document}\nIntro words.\n\n' + b + '\nClosing words.\n\\end{document}\n';
+  const base = D('Line one alpha.\nLine two beta.\nLine three gamma.\n'), theirs = D('Line one Alpha.\nLine two beta.\nLine three gamma.\n');
+  // a quote put round the paragraph, on lines of their own or glued to its first and last; and my word elsewhere kept
+  for (const q of ['\\begin{quote}\nLine one ALPHA.\nLine two beta.\nLine three gamma.\n\\end{quote}\n', '\\begin{quote}Line one ALPHA.\nLine two beta.\nLine three gamma.\\end{quote}\n']) {
+    const r = merge3(base, D(q).replace('Intro', 'Opening'), theirs);
+    assert.deepEqual(r, { text: theirs.replace('Intro', 'Opening'), clean: false }, q);
+  }
+  // a quote over two paragraphs: the file is theirs
+  const b3 = D('Para one alpha.\n\nPara two beta.\n');
+  const t3 = D('Para one Alpha.\n\nPara two beta.\n');
+  assert.deepEqual(merge3(b3, D('\\begin{quote}\nPara one ALPHA.\n\nPara two beta.\n\\end{quote}\n'), t3), { text: t3, clean: false });
+  // an environment of base: the conflict inside it takes theirs for it whole
+  const b4 = D('\\begin{itemize}\n\\item One alpha.\n\n\\item Two beta.\n\\end{itemize}\n');
+  const m4 = b4.replace('\\item One alpha.', '\\begin{quote}\\item One ALPHA.').replace('\\item Two beta.', '\\item Two beta.\\end{quote}');
+  const t4 = b4.replace('One alpha', 'One Alpha');
+  const r4 = merge3(b4, m4, t4);
+  assert.equal(r4.clean, false);
+  assert.equal(r4.text, t4);
+});
+
+await ok('a conflict that would split a pair takes the lines up to its other half before a paragraph; the scope is said (R4 review V4-B)', () => {
+  const L = Array.from({ length: 12 }, (_, i) => 'Line ' + i + ' with some words.');
+  const doc = (ls) => '\\documentclass{article}\n\\begin{document}\n' + ls.join('\n') + '\n\\end{document}\n';
+  const a = [...L]; a[5] = a[5].replace('words', 'WORDS'); a[0] = a[0].replace('with', 'WITH'); a[11] = a[11].replace('with', 'WITH'); a.splice(5, 0, '\\begin{center}'); a.splice(8, 0, '\\end{center}');
+  const b = [...L]; b[5] = b[5].replace('words', 'terms'); b[9] = b[9].replace('some', 'many');
+  const want = [...b]; want[0] = want[0].replace('with', 'WITH'); want[11] = want[11].replace('with', 'WITH');
+  const r = mergeProjects(new Map([['main.tex', doc(L)]]), new Map([['main.tex', doc(a)]]), new Map([['main.tex', doc(b)]]));
+  assert.equal(r.files.get('main.tex'), doc(want));
+  assert.deepEqual(r.conflicts, ['main.tex']);
+  assert.deepEqual([...r.wide], [['main.tex', 'lines']]);
+  assert.ok(/main\.tex: .*other half/.test(wideSaid(r.wide)), wideSaid(r.wide));
+  assert.equal(wideSaid(new Map()), '');
+});
+
+await ok('a comment line\'s own words start after its head\'s colon, not one in the quoted words (R4)', () => {
+  const l = '% comment (Ana) on "ratio: two": Check this';
+  assert.equal(l.slice(commentBodyAt(l)), 'Check this');
+  assert.equal('% reply (Bo):Yes.'.slice(commentBodyAt('% reply (Bo):Yes.')), 'Yes.');
+  assert.equal(commentBodyAt('% note: x'), -1);
+  assert.equal(commentBodyAt('% comment32 AB 0 CD'), -1);
 });
 
 await ok('merge of whole projects', () => {

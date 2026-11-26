@@ -45,9 +45,16 @@ export const kvPut = (k, v) => tx('kv', 'readwrite', (s) => s.put(v, k));
 export const kvDel = (k) => tx('kv', 'readwrite', (s) => s.delete(k));
 // Write v under k and hand back what was there, in one transaction: both requests go out at
 // once, so a write made as the page closes is not left waiting on a read first.
-export function kvSwap(k, v) {
-  let was;
-  return tx('kv', 'readwrite', (s) => { const g = s.get(k); g.onsuccess = () => { was = g.result; }; s.put(v, k); }).then(() => was);
+// over(was): what to write instead, once what was there is known (another tab's text merged with
+// this one's), in the same transaction, so no other tab reads the copy in between; null keeps v.
+export function kvSwap(k, v, over = null) {
+  let was, put = v;
+  return tx('kv', 'readwrite', (s) => {
+    const g = s.get(k);
+    // (a throw in a request's handler would abort the transaction, v's write with it)
+    g.onsuccess = () => { was = g.result; let w = null; try { w = over && over(was); } catch (e) { w = null; } if (w) s.put(put = w, k); };
+    s.put(v, k);
+  }).then(() => (over ? { was, put } : was));
 }
 
 // Versions. The list ('snaps') holds { id, t, label, named, name, main, sig } so it loads

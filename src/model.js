@@ -674,6 +674,10 @@ function incremental(project, hint) {
   if (H.refIndex) B._refIndex = H.refIndex;
   B.dir = it.dir || 'ltr';
   B.userSigs = userSigs;
+  // (the font families the preamble defines, as the full build read them there: read again, from
+  // a builder with no document body, they took the whole text through two patterns at every key,
+  // a fifth of a keystroke on dev/bench/long, and the definitions in the body with them)
+  if (H.fontFams) B.fontFams = H.fontFams;
   // (the line spacing a declaration before it set, \onehalfspacing in the body: flow keeps it as
   // it goes, and the old paragraph carries it)
   const units = B.flow(mine, { f, src: now, pm: null }, { top: true, afterHeading: false, noindent: !it.indent, align: it.align || null, spread: it.spread ?? null });
@@ -721,7 +725,7 @@ function incremental(project, hint) {
     if (hint.ixAt != null && hint.ixFile === f && hint.ixAt >= U.e) r.ixAt = hint.ixAt + d;
     if (hint.docBody) r.docBody = { ...hint.docBody, e: hint.docBody.e + d };
   }
-  Object.defineProperty(r, '_incr', { value: { main: f, files: new Map(files), tree: nodes, sigKey: H.sigKey, userSigs, failed, keys: H.keys, bibItems: H.bibItems, refIndex: B._refIndex || H.refIndex } });
+  Object.defineProperty(r, '_incr', { value: { main: f, files: new Map(files), tree: nodes, sigKey: H.sigKey, userSigs, failed, keys: H.keys, bibItems: H.bibItems, refIndex: B._refIndex || H.refIndex, fontFams: H.fontFams || null } });
   return r;
 }
 
@@ -2699,6 +2703,8 @@ class Builder {
     if (this.fontFams) return this.fontFams;
     this.fontFams = new Map();
     const t = (this.files && this.project && this.files.get(this.project.main)) || '', end = this.docBody ? this.docBody.at : Math.min(t.length, 200000);
+    // (read from the preamble alone: the next keystroke's incremental build takes the map as it is)
+    this.fontFamsPre = !!this.docBody;
     const re = /\\(?:re)?(?:new|set|provide)fontfamily\s*\{?\s*\\([A-Za-z@]+)\s*\}?\s*(?:\[[^\]]*\]\s*)?\{([^{}]*)\}|\\newfontface\s*\{?\s*\\([A-Za-z@]+)\s*\}?\s*(?:\[[^\]]*\]\s*)?\{([^{}]*)\}/g;
     for (const m of t.slice(0, end).replace(/(^|[^\\])%.*$/gm, '$1').matchAll(re)) this.fontFams.set(m[1] || m[3], fontLook(m[2] || m[4]));
     return this.fontFams;
@@ -4134,7 +4140,7 @@ class Builder {
     };
     // what the next keystroke's incremental build compares against (not part of the model)
     // (with the \bibitem list a citation reads, which the model does not carry)
-    if (this.parsed && this.parsed.has(this.project.main)) Object.defineProperty(r, '_incr', { value: { main: this.project.main, files: new Map(this.files), tree: this.parsed.get(this.project.main), sigKey: this.userSigKey, userSigs: this.userSigs, keys: Object.keys(r), bibItems: this.bibItems || null } });
+    if (this.parsed && this.parsed.has(this.project.main)) Object.defineProperty(r, '_incr', { value: { main: this.project.main, files: new Map(this.files), tree: this.parsed.get(this.project.main), sigKey: this.userSigKey, userSigs: this.userSigs, keys: Object.keys(r), bibItems: this.bibItems || null, fontFams: this.fontFamsPre ? this.fontFams : null } });
     return r;
   }
 }

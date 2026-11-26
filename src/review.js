@@ -487,8 +487,16 @@ export const review = {
     cs = cs.filter((c) => this.src(c.f).slice(c.bs, c.be) === c.b);
     if (!cs.length) { this.refreshNav(); return; }
     if (cs.length > 1) this.snapshot(label || 'Before rejecting changes', { force: true });
+    // (changes at one place of the text now, two authors' deletions side by side, go back as one
+    // edit, their old words in their old order: as separate edits at one point the later went in
+    // before the earlier, "\emph{examine" for "examine \emph{", where Reject one by one was right)
+    const edits = [];
+    for (const c of [...cs].sort((x, y) => (x.f < y.f ? -1 : x.f > y.f ? 1 : x.bs - y.bs || x.as - y.as))) {
+      const L = edits[edits.length - 1];
+      if (L && L.f === c.f && L.s === c.bs) { L.t += c.a; L.e = Math.max(L.e, c.be); } else edits.push({ f: c.f, s: c.bs, e: c.be, t: c.a });
+    }
     this.closeGroup();
-    this.commit(cs.map((c) => ({ f: c.f, s: c.bs, e: c.be, t: c.a })), null, 'reject');
+    this.commit(edits, null, 'reject');
     this.closeGroup();
     this.refreshNav();
     if (cs.length === 1) this.goTo(cs[0].f, cs[0].bs);

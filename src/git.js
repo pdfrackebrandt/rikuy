@@ -12,6 +12,7 @@ import git from 'isomorphic-git';
 import http from 'isomorphic-git/http/web';
 import LightningFS from '@isomorphic-git/lightning-fs';
 import { authFor, canonicalRemote } from './gitauth.js';
+import { merge3, mergeBudget } from './share.js';
 
 const lfs = new LightningFS('galley-git');
 const fs = lfs;
@@ -201,11 +202,31 @@ export async function push(dir, o) {
   return git.push({ ...net(o), dir, remote: 'origin', url, ref: current || 'main', remoteRef: current || 'main', force: !!o.force });
 }
 
-// fetch and merge (fast-forward or a real merge commit); conflicts are reported, not written
+// A file both sides changed since their common commit, merged as a coauthor's copy is
+// (src/share.js merge3): the document's own text files word by word, edits of different words of
+// one line both kept. Git's own merge calls any two edits of one line a conflict, and a paragraph
+// is often one line of LaTeX, so a coauthor's typo fixed in the paragraph where you fixed another
+// stopped the pull. Any other text (a .tikz, a Makefile, a .py) by whole lines, as git's own merge
+// did. Edits of the same words or lines, and two different things put at one place (a file made on
+// both sides), are still a conflict. Bytes that are no UTF-8 text are never merged: a picture's,
+// or a Latin-1 file decoded as UTF-8, would be written back damaged.
+const TEXT = /\.(tex|bib|sty|cls|bst|txt|ltx|dtx|clo|cfg|def|md|html?|csv|dat|bbx|cbx|lbx)$/i;
+// (budget: one for the words of every file of one pull, src/share.js mergeBudget)
+const mergeDriver = (budget) => ({ path, contents: [base, ours, theirs] }) => {
+  if ([base, ours, theirs].some((t) => t.includes('\uFFFD') || t.includes('\u0000'))) return { cleanMerge: false, mergedText: ours };
+  const r = merge3(base, ours, theirs, { words: TEXT.test(path), budget });
+  return { cleanMerge: r.clean, mergedText: r.clean ? r.text : ours };
+};
+
+// fetch and merge (fast-forward or a real merge commit); conflicts are reported, not written.
+// git.pull's own steps (fetch, merge, checkout), with the merge driver above, which pull takes not.
 export async function pull(dir, o, author) {
   const { current } = await branches(dir);
   const url = await target(dir, o);
-  return git.pull({ ...net(o), dir, remote: 'origin', url, ref: current || 'main', remoteRef: current || 'main', singleBranch: true, fastForward: true, author: { name: author.name, email: author.email } });
+  const ref = current || 'main';
+  const { fetchHead, fetchHeadDescription } = await git.fetch({ ...net(o), dir, remote: 'origin', url, ref, remoteRef: ref, singleBranch: true });
+  await git.merge({ fs, dir, ours: ref, theirs: fetchHead, fastForward: true, message: 'Merge ' + fetchHeadDescription, author: { name: author.name, email: author.email }, mergeDriver: mergeDriver(mergeBudget()) });
+  await git.checkout({ fs, dir, ref, remote: 'origin', noCheckout: false });
 }
 
 export async function clone(dir, raw, o) {

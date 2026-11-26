@@ -32,114 +32,114 @@
  "shards": [
   {
    "name": "1",
-   "p95_seconds": 508,
+   "p95_seconds": 511,
    "minutes": 13,
    "commands": [
     {"name": "Styles (the gallery, every heading and environment, the Styles pane, Modify and Create a Style, the Design tab)", "argv": ["python3", "styles.py"], "p95": 167.0, "n": 1},
-    {"name": "References (the table of contents, notes, sources and the bibliography, captions, cross references, the index, links, phones)", "argv": ["python3", "refs.py"], "p95": 100.1, "n": 1},
     {"name": "The views (Page, LaTeX, PDF), Show LaTeX, the View and Help tabs, on phones too", "argv": ["python3", "view.py"], "p95": 70.1, "n": 1},
-    {"name": "Word style math", "argv": ["python3", "wordmath.py"], "p95": 46.9, "n": 1},
-    {"name": "One look (the ribbon, the tab row, the title bar and the status bar against UI-PRINCIPLES.md, at six widths, light, dark, forced colours and touch) (part)", "argv": ["python3", "consistency.py", "--schemes", "forced"], "p95": 44.3, "n": 1}
+    {"name": "One look (the ribbon, the tab row, the title bar and the status bar against UI-PRINCIPLES.md, at six widths, light, dark, forced colours and touch) (part)", "argv": ["python3", "consistency.py", "--schemes", "forced"], "p95": 44.3, "n": 1},
+    {"name": "The ribbon (styles, lists, inserting, the three downloads)", "argv": ["python3", "ribbon.py"], "p95": 102.2, "n": 1},
+    {"name": "Git, push and pull through git http-backend", "argv": ["python3", "git.py"], "p95": 47.3, "n": 1}
    ]
   },
   {
    "name": "2",
-   "p95_seconds": 496,
+   "p95_seconds": 507,
    "minutes": 13,
    "commands": [
-    {"name": "One look (the ribbon, the tab row, the title bar and the status bar against UI-PRINCIPLES.md, at six widths, light, dark, forced colours and touch) (part)", "argv": ["python3", "consistency.py", "--schemes", "light"], "p95": 69.0, "n": 1},
-    {"name": "Word's keyboard shortcuts (each added key pressed on the page, the tooltips, Help's list, a Mac)", "argv": ["python3", "shortcuts.py"], "p95": 70.6, "n": 1},
-    {"name": "The ribbon (styles, lists, inserting, the three downloads)", "argv": ["python3", "ribbon.py"], "p95": 102.2, "n": 1},
     {"name": "Home's Font group, the Format Painter and the Font dialog", "argv": ["python3", "font.py"], "p95": 146.5, "n": 1},
-    {"name": "Share links, comments, the copy back, Overleaf and .tex out", "argv": ["python3", "share.py"], "p95": 27.9, "n": 1}
+    {"name": "Whole projects saved byte for byte", "argv": ["python3", "files.py"], "p95": 64.5, "n": 1},
+    {"name": "Motion (each animation's duration, curve and properties, reduced and off, clicks during one, the animated caret)", "argv": ["python3", "motion.py"], "p95": 103.2, "n": 1},
+    {"name": "The page's set up (margins, size, breaks, columns, headers and footers, line numbers, background)", "argv": ["python3", "page.py"], "p95": 73.6, "n": 1},
+    {"name": "Find, Replace and Go To (the Navigation pane's search, the Find and Replace dialog, Select)", "argv": ["python3", "find.py"], "p95": 38.9, "n": 1}
    ]
   },
   {
    "name": "3",
-   "p95_seconds": 496,
+   "p95_seconds": 497,
    "minutes": 13,
    "commands": [
-    {"name": "Whole projects saved byte for byte", "argv": ["python3", "files.py"], "p95": 64.5, "n": 1},
-    {"name": "The installed app offline, its updates, and none in the artifact build", "argv": ["python3", "offline.py"], "p95": 29.0, "n": 1},
-    {"name": "Motion (each animation's duration, curve and properties, reduced and off, clicks during one, the animated caret)", "argv": ["python3", "motion.py"], "p95": 103.2, "n": 1},
-    {"name": "The page's set up (margins, size, breaks, columns, headers and footers, line numbers, background)", "argv": ["python3", "page.py"], "p95": 73.6, "n": 1},
-    {"name": "Insert, interactive graphs, the clipboard, symbols and AutoCorrect", "argv": ["python3", "insert.py"], "p95": 145.3, "n": 1}
+    {"name": "One look (the ribbon, the tab row, the title bar and the status bar against UI-PRINCIPLES.md, at six widths, light, dark, forced colours and touch) (part)", "argv": ["python3", "consistency.py", "--schemes", "light"], "p95": 69.0, "n": 1},
+    {"name": "Word's keyboard shortcuts (each added key pressed on the page, the tooltips, Help's list, a Mac)", "argv": ["python3", "shortcuts.py"], "p95": 70.6, "n": 1},
+    {"name": "Insert, interactive graphs, the clipboard, symbols and AutoCorrect", "argv": ["python3", "insert.py"], "p95": 145.3, "n": 1},
+    {"name": "Pictures and objects (selecting, Picture Format as round trips, handles, crop, the page's drawing, Insert's objects, phones)", "argv": ["python3", "picture.py"], "p95": 105.8, "n": 1},
+    {"name": "Projects with several files", "argv": ["python3", "features.py"], "p95": 6.4, "n": 1},
+    {"name": "Versions and track changes", "argv": ["python3", "history.py"], "p95": 19.9, "n": 1}
    ]
   },
   {
    "name": "4",
-   "p95_seconds": 504,
+   "p95_seconds": 498,
    "minutes": 13,
    "commands": [
-    {"name": "Review (Track Changes, Display for Review, Accept and Reject, comments, Word Count, Compare, Read Aloud, phones)", "argv": ["python3", "review.py"], "p95": 48.9, "n": 1},
+    {"name": "Share links, comments, the copy back, Overleaf and .tex out", "argv": ["python3", "share.py"], "p95": 27.9, "n": 1},
     {"name": "What a newcomer meets outside the ribbon (dialogs, the File view, the status bar, panes, phones) (part)", "argv": ["python3", "ux.py", "consistency", "target_gaps", "keyboard_room", "empty_panes", "contrast", "verify_lows", "lows", "download_pdf", "pdf_bar", "panes", "file_view", "tab_picker", "ios_autocorrect"], "p95": 135.5, "n": 1},
-    {"name": "Pictures and objects (selecting, Picture Format as round trips, handles, crop, the page's drawing, Insert's objects, phones)", "argv": ["python3", "picture.py"], "p95": 105.8, "n": 1},
-    {"name": "Find, Replace and Go To (the Navigation pane's search, the Find and Replace dialog, Select)", "argv": ["python3", "find.py"], "p95": 38.9, "n": 1},
-    {"name": "Typing on the page", "argv": ["python3", "browser.py"], "p95": 94.6, "n": 1}
+    {"name": "Typing on the page", "argv": ["python3", "browser.py"], "p95": 94.6, "n": 1},
+    {"name": "The File tab (templates, recent documents, properties, accessibility, Export as)", "argv": ["python3", "file.py"], "p95": 107.1, "n": 1},
+    {"name": "One look (the ribbon, the tab row, the title bar and the status bar against UI-PRINCIPLES.md, at six widths, light, dark, forced colours and touch) (part)", "argv": ["python3", "consistency.py", "--schemes", "dark"], "p95": 53.0, "n": 1}
    ]
   },
   {
    "name": "5",
-   "p95_seconds": 501,
+   "p95_seconds": 497,
    "minutes": 13,
    "commands": [
-    {"name": "Word, both ways, and a coauthor's edits back (LibreOffice's checks run where it is installed)", "argv": ["python3", "word.py"], "p95": 49.6, "n": 1},
-    {"name": "Interactive graphs as the edge, Graph this, the web page with live graphs, speed, phones", "argv": ["python3", "graphs.py", "opening", "graph_this", "dialog", "hand_edits", "upgrade", "keyboard", "webpage", "speed", "phones"], "p95": 94.6, "n": 1},
-    {"name": "The File tab (templates, recent documents, properties, accessibility, Export as)", "argv": ["python3", "file.py"], "p95": 107.1, "n": 1},
-    {"name": "Live figures (rikuy.sty), under the host's policy", "argv": ["python3", "widgets.py"], "p95": 35.4, "n": 1},
-    {"name": "Word's gaps, the document's (tables, the header, View, References, Equation, Insert)", "argv": ["python3", "docgaps.py"], "p95": 134.1, "n": 1}
+    {"name": "References (the table of contents, notes, sources and the bibliography, captions, cross references, the index, links, phones)", "argv": ["python3", "refs.py"], "p95": 100.1, "n": 1},
+    {"name": "Word style math", "argv": ["python3", "wordmath.py"], "p95": 46.9, "n": 1},
+    {"name": "The installed app offline, its updates, and none in the artifact build", "argv": ["python3", "offline.py"], "p95": 29.0, "n": 1},
+    {"name": "Word's gaps, the document's (tables, the header, View, References, Equation, Insert)", "argv": ["python3", "docgaps.py"], "p95": 134.1, "n": 1},
+    {"name": "Paragraphs (alignment, line spacing, indents, spacing, breaks, shading and borders, Show marks, the Paragraph dialog)", "argv": ["python3", "para.py"], "p95": 107.2, "n": 1}
    ]
   },
   {
    "name": "6",
-   "p95_seconds": 506,
+   "p95_seconds": 498,
    "minutes": 13,
    "commands": [
-    {"name": "The outline (promote, demote, move; the Navigation pane's headings, pages and results; the Outline view)", "argv": ["python3", "outline.py"], "p95": 41.9, "n": 1},
-    {"name": "Paragraphs (alignment, line spacing, indents, spacing, breaks, shading and borders, Show marks, the Paragraph dialog)", "argv": ["python3", "para.py"], "p95": 107.2, "n": 1},
-    {"name": "Git, push and pull through git http-backend", "argv": ["python3", "git.py"], "p95": 47.3, "n": 1},
-    {"name": "A power user's keys (footnotes, formulas typed as LaTeX, Tab, the pickers, KeyTips, Alt+Q, the insert list, F4, Go to File) (part)", "argv": ["python3", "power.py", "accept", "dollars", "tab", "pickers", "linear", "keytips", "burst", "paste"], "p95": 96.3, "n": 1},
-    {"name": "The Equation tab", "argv": ["python3", "eqtab.py"], "p95": 133.4, "n": 1}
+    {"name": "The Equation tab", "argv": ["python3", "eqtab.py"], "p95": 133.4, "n": 1},
+    {"name": "Rikuy as an agent meets it (the scripting surface, every control by its name, the WebMCP tools, the page in the accessibility tree)", "argv": ["python3", "agent.py"], "p95": 113.1, "n": 1},
+    {"name": "Opening .tex, .bib and .zip with the installed app, and sharing files to it", "argv": ["python3", "launch.py"], "p95": 4.4, "n": 1},
+    {"name": "Spelling (Hunspell in its worker, only prose marked, suggestions, Ignore, Add to Dictionary, languages, the Spelling pane, phones)", "argv": ["python3", "spell.py"], "p95": 57.1, "n": 1},
+    {"name": "The ribbon's frame (tabs, contextual tabs, folding, keys, search, the right click menu, the kit) (part)", "argv": ["python3", "tabs.py", "mouse_and_keys", "keys", "context_menu", "kit", "word_layout", "fold_sweep", "mac_keytips", "downloads_group", "no_caret", "focus_kept"], "p95": 90.4, "n": 1},
+    {"name": "Paste from Word, Google Docs, web pages and chat assistants", "argv": ["python3", "paste.py"], "p95": 7.7, "n": 1},
+    {"name": "Equation extras", "argv": ["python3", "eqextras.py"], "p95": 12.1, "n": 1}
    ]
   },
   {
    "name": "7",
-   "p95_seconds": 493,
+   "p95_seconds": 494,
    "minutes": 13,
    "commands": [
+    {"name": "Interactive graphs as the edge, Graph this, the web page with live graphs, speed, phones", "argv": ["python3", "graphs.py", "opening", "aligned", "graph_this", "dialog", "hand_edits", "upgrade", "keyboard", "webpage", "speed", "phones"], "p95": 114.6, "n": 1},
     {"name": "Print, outline, problems and rich copy", "argv": ["python3", "frontier.py"], "p95": 8.1, "n": 1},
     {"name": "Lists (levels by Tab, the libraries, numbering values, multilevel lists, sorting, automatic lists)", "argv": ["python3", "lists.py"], "p95": 85.3, "n": 1},
     {"name": "The math field", "argv": ["python3", "mathfield.py"], "p95": 9.7, "n": 1},
-    {"name": "Rikuy as an agent meets it (the scripting surface, every control by its name, the WebMCP tools, the page in the accessibility tree)", "argv": ["python3", "agent.py"], "p95": 113.1, "n": 1},
     {"name": "What a newcomer meets outside the ribbon (dialogs, the File view, the status bar, panes, phones) (part)", "argv": ["python3", "ux.py", "motion", "tap_alternatives", "dialog_kinds", "widen", "caret_back", "help_pane", "mobile_view", "first_comment", "status_bar", "first_visit", "android_input", "keyboard_caret", "desktop_input"], "p95": 132.2, "n": 1},
     {"name": "Tables (the grid of sizes, Table Design and Table Layout, round trips, the page's drawing)", "argv": ["python3", "table.py"], "p95": 64.3, "n": 1}
    ]
   },
   {
    "name": "8",
-   "p95_seconds": 497,
+   "p95_seconds": 503,
    "minutes": 13,
    "commands": [
-    {"name": "Opening .tex, .bib and .zip with the installed app, and sharing files to it", "argv": ["python3", "launch.py"], "p95": 4.4, "n": 1},
+    {"name": "Word, both ways, and a coauthor's edits back (LibreOffice's checks run where it is installed)", "argv": ["python3", "word.py"], "p95": 49.6, "n": 1},
+    {"name": "Live figures (rikuy.sty), under the host's policy", "argv": ["python3", "widgets.py"], "p95": 35.4, "n": 1},
     {"name": "A power user's keys (footnotes, formulas typed as LaTeX, Tab, the pickers, KeyTips, Alt+Q, the insert list, F4, Go to File) (part)", "argv": ["python3", "power.py", "footnote", "latex", "follow", "modes", "palette", "insertlist", "repeat", "quickopen", "pairs"], "p95": 115.7, "n": 1},
-    {"name": "Spelling (Hunspell in its worker, only prose marked, suggestions, Ignore, Add to Dictionary, languages, the Spelling pane, phones)", "argv": ["python3", "spell.py"], "p95": 57.1, "n": 1},
-    {"name": "The ribbon's frame (tabs, contextual tabs, folding, keys, search, the right click menu, the kit) (part)", "argv": ["python3", "tabs.py", "mouse_and_keys", "keys", "context_menu", "kit", "word_layout", "fold_sweep", "mac_keytips", "downloads_group", "no_caret", "focus_kept"], "p95": 90.4, "n": 1},
-    {"name": "Paste from Word, Google Docs, web pages and chat assistants", "argv": ["python3", "paste.py"], "p95": 7.7, "n": 1},
-    {"name": "Equation extras", "argv": ["python3", "eqextras.py"], "p95": 12.1, "n": 1},
-    {"name": "Objects formatted after they are in (Shape Format, Chart Design and Format, SmartArt Design and Format, picture tools, Arrange, Selection Pane, phones)", "argv": ["python3", "objects.py", "shapes", "charts", "smart", "menus", "pictures", "arrange", "selpane", "phones", "pictures_unloaded", "pictures_phone"], "p95": 129.3, "n": 1}
+    {"name": "Objects formatted after they are in (Shape Format, Chart Design and Format, SmartArt Design and Format, picture tools, Arrange, Selection Pane, phones)", "argv": ["python3", "objects.py", "shapes", "charts", "smart", "menus", "pictures", "arrange", "selpane", "phones", "pictures_unloaded", "pictures_phone"], "p95": 129.3, "n": 1},
+    {"name": "A paper written fast, keys first (the dogfood's cases)", "argv": ["python3", "dogfood.py"], "p95": 93.2, "n": 1}
    ]
   },
   {
    "name": "9",
-   "p95_seconds": 495,
+   "p95_seconds": 509,
    "minutes": 13,
    "commands": [
+    {"name": "Review (Track Changes, Display for Review, Accept and Reject, comments, Word Count, Compare, Read Aloud, phones)", "argv": ["python3", "review.py"], "p95": 48.9, "n": 1},
+    {"name": "The outline (promote, demote, move; the Navigation pane's headings, pages and results; the Outline view)", "argv": ["python3", "outline.py"], "p95": 41.9, "n": 1},
+    {"name": "A power user's keys (footnotes, formulas typed as LaTeX, Tab, the pickers, KeyTips, Alt+Q, the insert list, F4, Go to File) (part)", "argv": ["python3", "power.py", "accept", "dollars", "tab", "pickers", "linear", "keytips", "burst", "paste"], "p95": 96.3, "n": 1},
     {"name": "The ribbon's frame (tabs, contextual tabs, folding, keys, search, the right click menu, the kit) (part)", "argv": ["python3", "tabs.py", "contextual", "widths", "collapse", "every_command", "search_box", "round_trips", "kept_braces", "review_fixes", "tablet", "frontier"], "p95": 118.4, "n": 1},
-    {"name": "Projects with several files", "argv": ["python3", "features.py"], "p95": 6.4, "n": 1},
-    {"name": "Versions and track changes", "argv": ["python3", "history.py"], "p95": 19.9, "n": 1},
-    {"name": "One look (the ribbon, the tab row, the title bar and the status bar against UI-PRINCIPLES.md, at six widths, light, dark, forced colours and touch) (part)", "argv": ["python3", "consistency.py", "--schemes", "dark"], "p95": 53.0, "n": 1},
-    {"name": "What a newcomer meets outside the ribbon (dialogs, the File view, the status bar, panes, phones) (part)", "argv": ["python3", "ux.py", "bar_room", "tooltips", "text_spacing", "menus", "focus_rules", "place_kept", "pane_room", "wide_print", "sample_spelling", "doc_name", "dialogs", "phone_dialogs", "box_tab"], "p95": 123.9, "n": 1},
-    {"name": "A paper written fast, keys first (the dogfood's cases)", "argv": ["python3", "dogfood.py"], "p95": 93.2, "n": 1}
+    {"name": "What a newcomer meets outside the ribbon (dialogs, the File view, the status bar, panes, phones) (part)", "argv": ["python3", "ux.py", "bar_room", "tooltips", "text_spacing", "menus", "focus_rules", "place_kept", "pane_room", "wide_print", "sample_spelling", "doc_name", "dialogs", "phone_dialogs", "box_tab"], "p95": 123.9, "n": 1}
    ]
   }
  ]
