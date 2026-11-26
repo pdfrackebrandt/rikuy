@@ -1487,12 +1487,15 @@ class App {
     // which keep their own bytes)
     // (typed, deleted, pasted, cut or moved on the page: never part of inline code's syntax alone,
     // its | or } taken and the code run on to the line's end; src/codeguard.js)
-    if (/^(type|del|replace|paste|cut|enter|move|delete)$/.test(kind || '')) {
-      const G = keepCodeSyntax(this.files, edits);
-      if (G.moved) {
-        edits = G.edits;
-        if (caret && caret.f != null) { caret = { ...caret }; for (const k of ['p', 'selA', 'selB']) if (caret[k] != null) { const q = G.moved(caret.f, caret[k]); if (q != null) caret[k] = q; } }
-      }
+    // (every edit made from the page: never what is written as source as it is (a LaTeX paragraph,
+    // the equation or a command's source box, a merge, a version, Reject, Undo, an agent's text))
+    if (!/^(restore|reject|merge|other-tab|api|word|undo|redo|src)$/.test(kind || '') && !/^pop/.test(kind || '')) {
+      const raw = edits.filter((ed) => this.texAt(ed.f, ed.s)), page = edits.filter((ed) => !raw.includes(ed));
+      const G = keepCodeSyntax(this.files, page, { typing: /^(type|del|replace|paste|cut|enter|delete|autocorrect)$/.test(kind || '') });
+      if (G.why) this.toast(G.why, 3500);
+      if (G.why && !G.edits.length && !raw.length) { if (caret) this.restoreCaret(caret); return; }
+      if (G.edits !== page) edits = [...raw, ...G.edits];
+      if (G.moved && caret && caret.f != null) { caret = { ...caret }; for (const k of ['p', 'selA', 'selB']) if (caret[k] != null) { const q = G.moved(caret.f, caret[k]); if (q != null) caret[k] = q; } }
     }
     if (!/^(restore|reject|merge|other-tab|api)$/.test(kind || '')) ({ edits, caret } = crlfKept(this.files, edits, caret));
     const swaps = (blobs || []).map(({ name, blob }) => ({ name, before: this.assetBlobs.get(name) || null, after: blob }));

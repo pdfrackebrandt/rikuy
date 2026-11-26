@@ -111,8 +111,87 @@ function guardOne(src, ed) {
 // The edits of one step, each kept clear of inline code's syntax. files: the texts by name.
 // Returns { edits, moved }: moved(f, p) takes a place in the text the original edits make to the
 // one the new ones make (the caret's), or null where nothing changed.
-export function keepCodeSyntax(files, edits) {
-  let changed = false;
+// Whether the lines [a, b) of src hold inline code that all closes on its lines, and the balance of
+// the braces outside its code ({ up, } down): what an edit must keep as it found it
+function intact(src, a, b) {
+  let net = 0, from = a, closed = true;
+  for (const R of codeRuns(src, a, Math.max(a, b - 1))) {
+    if (R.S < a || R.E > b) continue;
+    net += braceNet(src.slice(from, R.S)); from = R.E;
+    if (R.E === R.ie) closed = false;
+  }
+  net += braceNet(src.slice(from, b));
+  return { closed, net };
+}
+function braceNet(t) {
+  let d = 0;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (c === '\\') { i++; continue; }
+    if (c === '%') { const k = t.indexOf('\n', i); if (k < 0) break; i = k; continue; }
+    if (c === '{') d++; else if (c === '}') d--;
+  }
+  return d;
+}
+const MARKUP = /[\\{}$%&#^_~]/;
+
+// The edits of one step, kept clear of inline code's syntax. files: the texts by name. o.typing:
+// the step is what was typed, deleted, pasted, cut or moved (its letters may go into the code);
+// else a command's (a format, Replace All, a link, a list, a style): what it writes holding
+// LaTeX's markup goes beside the code, never into it (Ctrl+B over "cd here" wrote \textbf{ into
+// the code and its } after it, TeX's Extra }), the format then on the words outside the code.
+// Returns { edits, moved, why }: moved(f, p) takes a place in the text the old edits make to the
+// one the new ones make (the caret's), null where nothing changed; why, where the step cannot be
+// made without breaking the code and nothing is done, the words that say so (edits then []).
+export function keepCodeSyntax(files, edits, o = {}) {
+  const near = (src, ed) => /\\(?:verb|lstinline|mintinline)/.test(src.slice(Math.max(0, src.lastIndexOf('\n', ed.s - 1)), (() => { const k = src.indexOf('\n', ed.e); return k < 0 ? src.length : k; })()));
+  if (!edits.some((ed) => { const src = files.get(ed.f); return src != null && ed.s != null && near(src, ed); })) return { edits, moved: null };
+  let why;
+  if (!o.typing) {
+    // (markup written into a run's code by a command: an insertion to the run's edge, away from the
+    // rest of the step's edits, so the command takes the words beside the code and leaves the code
+    // as it is; with nothing of the step beside the run, or over the code's letters, that edit is
+    // not made, said why)
+    const FMT = 'Inline code takes no formatting: it is printed as it is typed.';
+    edits = edits.flatMap((ed) => {
+      const src = files.get(ed.f);
+      if (src == null || ed.s == null || !MARKUP.test(ed.t || '')) return [ed];
+      for (const R of codeRuns(src, ed.s, ed.e)) {
+        if (ed.e < R.is || ed.s > R.ie || (ed.s <= R.S && ed.e >= R.E)) continue;
+        if (ed.s !== ed.e) { why = FMT; return []; }
+        const others = edits.filter((x) => x !== ed && x.f === ed.f);
+        if (others.some((x) => x.s >= R.E)) return [{ ...ed, s: R.E, e: R.E }];
+        if (others.some((x) => x.e <= R.S)) return [{ ...ed, s: R.S, e: R.S }];
+        why = FMT; return [];
+      }
+      return [ed];
+    });
+    // (a format's opener with its closer dropped, or the other way: neither)
+    if (why && edits.some((ed) => /[{}]/.test(ed.t || '') && braceNet(ed.t))) edits = edits.filter((ed) => !(/[{}]/.test(ed.t || '') && braceNet(ed.t)));
+    if (!edits.length) return { edits: [], moved: null, why };
+  }
+  const r = guardStep(files, edits);
+  // (last, whatever the step: the code it found closed stays closed, the braces outside it as
+  // they were; a step that would break them is not made)
+  const after = r.edits;
+  for (const f of new Set(after.map((x) => x.f))) {
+    const src = files.get(f), mine = after.filter((x) => x.f === f);
+    if (src == null || !mine.length) continue;
+    const lo = Math.min(...mine.map((x) => src.lastIndexOf('\n', x.s - 1) + 1)), hi = Math.max(...mine.map((x) => { const k = src.indexOf('\n', x.e); return k < 0 ? src.length : k; }));
+    if (!/\\(?:verb|lstinline|mintinline)/.test(src.slice(lo, hi))) continue;
+    // (a { typed in minted's braced code: its } comes with a later key, as it does in any editor)
+    const x0 = mine[0];
+    if (o.typing && mine.length === 1 && x0.s === x0.e && x0.t === '{' && codeRuns(src, x0.s, x0.s).some((R) => R.bal && R.is <= x0.s && x0.s <= R.ie)) continue;
+    let t = src.slice(lo, hi);
+    for (const x of [...mine].sort((a, b) => b.s - a.s)) t = t.slice(0, x.s - lo) + x.t + t.slice(x.e - lo);
+    const A = intact(src, lo, hi), B = intact(t, 0, t.length);
+    if (A.closed && (!B.closed || A.net !== B.net)) return { edits: [], moved: null, why: o.typing ? 'That would break the inline code here: its closing character or a brace in it would go.' : 'This cannot reach into inline code, which is printed as it is typed: select the words beside it.' };
+  }
+  return why ? { ...r, edits: r.edits === edits ? [...r.edits] : r.edits, why: r.why || why } : r;
+}
+
+function guardStep(files, edits) {
+  let changed = false, cut = false;
   const out = [], pairs = [];
   // (a step of several edits that takes all of a run's code with text outside the run, a selection
   // from before the code to its end cut into the words and the code's text: the whole run, no
@@ -133,6 +212,7 @@ export function keepCodeSyntax(files, edits) {
     if (src == null || ed.s == null || !/\\(?:verb|lstinline|mintinline)/.test(src.slice(Math.max(0, src.lastIndexOf('\n', ed.s - 1)), (() => { const k = src.indexOf('\n', ed.e); return k < 0 ? src.length : k; })()))) { out.push(ed); pairs.push([o, [ed]]); return; }
     const g = guardOne(src, ed);
     if (g.length !== 1 || g[0] !== ed) changed = true;
+    if (o.e > o.s && g.every((x) => x.s === x.e)) cut = true;
     out.push(...g); pairs.push([o, g]);
   });
   if (!changed) return { edits, moved: null };
@@ -158,5 +238,6 @@ export function keepCodeSyntax(files, edits) {
     }
     return inT ? null : src + d;
   };
-  return { edits: out, moved };
+  // (a part of minted's braced code that would leave its braces unbalanced is not taken: said why)
+  return { edits: out, moved, why: cut ? 'Part of the code is kept: taking it would leave the code\'s braces unbalanced.' : undefined };
 }

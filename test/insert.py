@@ -1140,6 +1140,21 @@ def hunt_c(page):
     kept = src(page)
     press(['Backspace'])
     check('Backspace over the code\'s letters leaves \\lstinline|| until one Backspace more takes it', 'Use \\lstinline|| here.' in kept and 'Use  here.' in src(page), (kept[40:100], src(page)[40:100]))
+    # (review of round 4) commands that act on a selection reach the code through the same guard:
+    # Ctrl+B over code wrote \textbf{ in it and } after it, Replace All took the closing |
+    SEL = """([a, z]) => { const w = document.createTreeWalker(document.getElementById('pages'), NodeFilter.SHOW_TEXT); const ns = []; for (let n; (n = w.nextNode());) if (n.data.trim()) ns.push(n);
+      const na = ns.find((n) => n.data.includes(a)), nz = a === z ? na : ns.find((n) => n !== na && n.data.includes(z));
+      const r = document.createRange(); r.setStart(na, na.data.indexOf(a)); r.setEnd(nz, nz.data.indexOf(z) + z.length); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); return true; }"""
+    for a, z in (('cd', ' here'), ('bc', 'bc')):
+        load_doc(page, W('Use \\lstinline|abcd| here.')); before = src(page); page.evaluate("document.getElementById('toast').textContent = ''"); page.evaluate(SEL, [a, z]); settle(page, 60); press(['Control+b'])
+        check('Ctrl+B over %r of \\lstinline|abcd| here: the source unchanged, a toast says why' % (a + '..' + z if a != z else a), src(page) == before and 'no formatting' in page.inner_text('#toast'), (src(page)[40:120], page.inner_text('#toast')[:80]))
+    load_doc(page, W('Use \\lstinline|abcd| here.'))
+    page.evaluate("() => { const g = window.rikuy; g.findSet({ q: 'cd here', rep: 'Z', o: { matchCase: true, wholeWord: false, wildcards: false, regex: false, source: false, insel: false, fmt: 0 } }); g.replaceAll(); }"); settle(page, 200)
+    check('Replace All of "cd here" by Z across the code\'s end: the code keeps its closing |', 'Use \\lstinline|abZ|.' in src(page), src(page)[40:120])
+    # a delete the guard cuts to nothing says why (it did nothing, silently)
+    load_doc(page, W('Use \\mintinline{c}{a{b}c} here.')); before = src(page); page.evaluate("document.getElementById('toast').textContent = ''")
+    page.evaluate("() => { const g = window.rikuy, s = g.src('main.tex'), p = s.indexOf('{b}'); g.restoreCaret({ f: 'main.tex', p: p + 2, selA: p, selB: p + 2 }); }"); settle(page, 100); press(['Delete'])
+    check('Delete of "{b" in \\mintinline{c}{a{b}c}: nothing deleted, a toast says why', src(page) == before and 'braces' in page.inner_text('#toast'), (src(page)[40:120], page.inner_text('#toast')[:100]))
     load_doc(page, W('Use \\lstinline|abcd| here.')); click_text(page, 'abcd', 4); page.keyboard.press('ArrowRight'); settle(page, 120); page.keyboard.press('ArrowLeft'); settle(page, 120); page.keyboard.type('X'); settle(page, 200)
     check('Right out of the code, then Left: back at its end, X in the code after its last letter', '\\lstinline|abcdX| here.' in src(page), src(page)[40:120])
     # pasted words go in as typed (escaped as prose, \} ended the code); words with its closing
@@ -1296,8 +1311,44 @@ def code_fuzz(page):
         check('code fuzz: a sample of the results compiles in the page', not failed, failed[:2])
 
 
+def code_commands(page):
+    """(review of round 4) every command of the registry over inline code: with a selection that
+    reaches from a run's code to the words after it, and one inside the code, each command that
+    can run there (all but those that leave the document, open a file or a network, or replace it
+    whole) is run, its dialog or menu closed; the source keeps every run closed on its line and the
+    braces beside them balanced. Ctrl+B there wrote \textbf{ into the code and } after it (Extra }),
+    Replace All took the closing | (the code ran to the line's end)."""
+    D = W('Use \\lstinline|abcd| here and \\verb|xy| too.\n\nThen \\mintinline{py}|f(x)| end.')
+    skip = re.compile(r'(^|-)(download|export|share|publish|upload|push|pull|clone|email|send|print|open|save|recent|new|template|sample|git|version|versions|restore|compare|import|close|remove|rename|project|install|offline|help|tour|learn|compile|pdf|engine|word|quit|reload|fullscreen|focus|read)(-|$)')
+    ids = page.evaluate("() => window.rikuy.cmds.commands().filter((c) => c.run).map((c) => c.id)")
+    sels = (("cd", " here"), ("bc", "bc"))
+    SEL = """([a, z]) => { const w = document.createTreeWalker(document.getElementById('pages'), NodeFilter.SHOW_TEXT); const ns = []; for (let n; (n = w.nextNode());) if (n.data.trim()) ns.push(n);
+      const na = ns.find((n) => n.data.includes(a)), nz = a === z ? na : ns.find((n) => n !== na && n.data.includes(z));
+      const r = document.createRange(); r.setStart(na, na.data.indexOf(a)); r.setEnd(nz, nz.data.indexOf(z) + z.length); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); return true; }"""
+    broken, ran = [], 0
+    page.on('dialog', lambda d: d.dismiss())
+    for cid in ids:
+        if skip.search(cid):
+            continue
+        for a, z in sels:
+            load_doc(page, D)
+            page.evaluate(SEL, [a, z]); settle(page, 40)
+            try:
+                r = page.evaluate("(id) => { try { return !!window.rikuy.runCommand(id); } catch (e) { return 'threw ' + e.message; } }", cid)
+            except Exception as e:
+                r = 'failed ' + str(e)[:60]
+            if r: ran += 1
+            for _ in range(2):
+                page.keyboard.press('Escape'); settle(page, 30)
+            got = src(page)
+            if not code_ok(got[got.find('{document}') + 10:got.rfind('\\end{document}')]):
+                broken.append((cid, a, got[got.find('{document}') + 11:got.rfind('\\end{document}')][:120]))
+    print('code_commands: %d commands, %d runs made' % (len(ids), ran))
+    check('every command run over inline code keeps its runs closed and the braces beside them balanced (%d runs)' % ran, not broken and ran > 50, broken[:4])
 
-EXTRA = [hunt, hunt_c, code_fuzz, clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]
+
+
+EXTRA = [hunt, hunt_c, code_fuzz, code_commands, clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]
 
 if __name__ == '__main__':
     sys.exit(run())
