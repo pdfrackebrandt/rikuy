@@ -183,7 +183,24 @@ export function refsSetup(src, chapters = false) {
   // (the algorithm package's float, which it declares itself, captioned "Algorithm 1: ..." as
   // float's are: drawn as an unknown environment, its \caption was words of a paragraph, and Enter
   // in it wrote a blank line into the caption, which TeX refuses)
-  if (!R.floats.algorithm && has('algorithm')) R.floats.algorithm = { name: 'Algorithm', by: 'algorithm' };
+  // As TeX sets them (review B5, N8): algorithm.sty's float style, ruled unless told plain or boxed
+  // (ruled: the caption first, between rules, "Algorithm 1" bold then a space; plain and boxed: the
+  // caption last, "Algorithm 1:"), its numbering within part, chapter or section; algorithm2e's
+  // float, "Algorithm 1:" in bold, first between rules where ruled (ruled, algoruled, tworuled,
+  // boxruled), else last, numbered within by algopart, algochapter or algosection.
+  if (!R.floats.algorithm && (has('algorithm') || has('algorithm2e'))) {
+    const a2e = !has('algorithm') || has('algorithm2e'), o = Object.keys(packageOptions(src, a2e ? 'algorithm2e' : 'algorithm', end) || {});
+    let style, within;
+    if (a2e) {
+      style = o.some((x) => /^(ruled|algoruled|tworuled|boxruled)$/.test(x)) ? 'ruled' : o.includes('boxed') ? 'boxed' : 'plain';
+      within = o.includes('algopart') ? 'part' : o.includes('algochapter') ? 'chapter' : o.includes('algosection') ? 'section' : null;
+    } else {
+      style = o.includes('plain') ? 'plain' : o.includes('boxed') ? 'boxed' : 'ruled';
+      within = ['part', 'chapter', 'section', 'subsection', 'subsubsection'].find((x) => o.includes(x)) || null;
+    }
+    R.floats.algorithm = { name: 'Algorithm', by: a2e ? 'algorithm2e' : 'algorithm', style, sep: !a2e && style === 'ruled' ? ' ' : ': ', bold: a2e || style === 'ruled' };
+    if (within && R.within.algorithm === undefined && R.reset.algorithm === undefined) R.within.algorithm = within;
+  }
   for (const c of cmdCalls(t, 'floatname', 2)) { const env = argOf(t, c, 0); if (R.floats[env]) R.floats[env].name = unbrace(argOf(t, c, 1)); }
   R.capFormats = {};
   for (const c of cmdCalls(t, 'DeclareCaptionLabelFormat', 2)) { const n = argOf(t, c, 0); if (/^[A-Za-z-]{1,30}$/.test(n)) R.capFormats[n] = argOf(t, c, 1); }

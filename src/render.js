@@ -369,6 +369,8 @@ export class Renderer {
       }
       case 'float': {
         el.classList.add('flt', 'flt-' + it.kind);
+        // (float's styles: ruled's rules round the caption and under the float, boxed's frame)
+        if (it.rule) el.classList.add('flt-' + it.rule);
         if (it.wide) el.classList.add('wide');
         if (it.depth) { el.classList.add('deep'); el.style.setProperty('--depth', it.depth); }
         // a wrapfigure: its parts as wide as it is (its pictures' \linewidth), until the page wraps
@@ -602,7 +604,8 @@ export class Renderer {
       const lab = p.lab != null ? p.lab : { figure: 'Figure', table: 'Table' }[p.kind] || p.kind;
       // (\caption*: the words alone; beamer's: "Figure:" with no number)
       if (p.kind === 'sub') d.appendChild(chr('(' + p.num + ') ', 'caplab'));
-      else if (!p.star) { d.appendChild(chr((lab ? lab + (p.num ? ' ' + p.num : '') : p.num) + ': ', 'caplab')); d.dataset.cap = p.kind + ':' + (p.num || ''); }
+      // (a float style's label: algorithm's ruled "Algorithm 1" in bold, then a space)
+      else if (!p.star) { d.appendChild(chr((lab ? lab + (p.num ? ' ' + p.num : '') : p.num) + (p.sep != null ? p.sep : ': '), p.bold ? 'caplab caplab-b' : 'caplab')); d.dataset.cap = p.kind + ':' + (p.num || ''); }
       this.inl(p.inl, d);
       return d;
     }

@@ -3059,13 +3059,22 @@ class Builder {
     walk(nd.nodes);
     flushP();
     this.lastTarget = saveT;
+    // (a float with a style of its own, algorithm's: its caption first or last wherever \caption
+    // stands, its label as the style writes it, its rules: src/refsrc.js)
+    const FS = RR.floats && Object.prototype.hasOwnProperty.call(RR.floats, kind) ? RR.floats[kind] : null;
+    if (FS && FS.style) {
+      const caps = parts.filter((x) => x.type === 'caption'), rest = parts.filter((x) => x.type !== 'caption');
+      for (const c of caps) { c.sep = FS.sep; c.bold = FS.bold; }
+      parts.length = 0;
+      parts.push(...(FS.style === 'ruled' ? [...caps, ...rest] : [...rest, ...caps]));
+    }
     if (!parts.length) parts.push({ type: 'p', inl: [{ k: 'chip', f: ctx.f, s: nd.s, e: nd.e, text: kind, title: 'Empty ' + kind }], align: 'center', indent: false, ctx: 'p', f: ctx.f });
     const placement = nd.args[0] ? this.argText(ctx, nd.args[0]) : 'tbp';
     // (a wrapfigure's width: the line its pictures' \linewidth is, B8)
     const wrapW = /^wrap(figure|table)$/.test(nd.name) && nd.args[3] ? this.argText(ctx, nd.args[3]).trim() : null;
     // (R3) its side: r, l, or the outer and inner margins, which a one sided page has right and left
     const side = wrapW && nd.args[1] ? ({ r: 'r', l: 'l', o: 'r', i: 'l' }[this.argText(ctx, nd.args[1]).trim().toLowerCase()[0]] || 'r') : null;
-    return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind, num, parts, f: ctx.f, placement, wide: /\*$/.test(nd.name), wrapW, side }], fns };
+    return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind, num, parts, f: ctx.f, placement, wide: /\*$/.test(nd.name), wrapW, side, rule: FS && FS.style ? FS.style : null }], fns };
   }
 
   // set: what stands before the table in its float or group (B7: \rowcolors, \arraystretch,

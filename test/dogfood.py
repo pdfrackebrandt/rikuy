@@ -807,12 +807,29 @@ def real(page):
     settle(page, 200)
     check('real: Enter inside an environment\'s title writes no blank line in it', src(page) == before.replace('Neuronale Netz', 'NeuronaleQ Netz'), src(page)[-160:])
     compiles(page, 'real environment title')
-    # the algorithm package's float: its caption drawn as one ("Algorithm 1: ..."), a \ref to it
-    # numbered, its algorithmic drawn in it; Enter inside the caption writes nothing (as in a
-    # figure's), where it wrote a blank line in \caption and TeX stopped
-    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\usepackage{algorithm}\n\\usepackage{algpseudocode}').replace('Agent income here.', 'See Algorithm~\\ref{alg:a}.\n\n\\begin{algorithm}\n\\begin{algorithmic}\n\\State $s \\gets 0$\n\\end{algorithmic}\n\\caption{Solve the problem}\\label{alg:a}\n\\end{algorithm}'))
+    # the algorithm package's float, as TeX sets it (review B5): ruled by default, the caption first
+    # between rules, "Algorithm 1" in bold then a space, wherever \caption stands; plain, "Algorithm 1:"
+    # last; numbered within the section by [section]; a \ref to it numbered; its algorithmic drawn
+    # in it. Enter inside the caption writes nothing (as in a figure's), where it wrote a blank
+    # line in \caption and TeX stopped
+    alg = lambda opt: DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\usepackage' + opt + '{algorithm}\n\\usepackage{algpseudocode}').replace('Agent income here.', '\\section{Intro}\nSee Algorithm~\\ref{alg:a}.\n\n\\begin{algorithm}\n\\begin{algorithmic}\n\\State $s \\gets 0$\n\\end{algorithmic}\n\\caption{Solve the problem}\\label{alg:a}\n\\end{algorithm}')
+    for opt, cap, first in (('', 'Algorithm 1 Solve the problem', True), ('[section]', 'Algorithm 1.1 Solve the problem', True), ('[plain]', 'Algorithm 1: Solve the problem', False)):
+        load_doc(page, alg(opt))
+        txt = page.evaluate("document.getElementById('pages').innerText").replace('\u00a0', ' ')
+        num = cap.split()[1].rstrip(':')
+        order = txt.find(cap) >= 0 and txt.find('\\State') >= 0 and (txt.find(cap) < txt.find('\\State')) == first
+        check('real: algorithm' + opt + ' drawn "' + cap + '" ' + ('above' if first else 'below') + ' its lines, "See Algorithm ' + num + '."', order and 'See Algorithm ' + num + '.' in txt, txt[:300])
+        if TEX:
+            three(page, alg(opt), 'real algorithm' + opt, ('See Algorithm ' + num + '.', cap.replace(' Solve', 'Solve') if first else cap.replace(': ', ':')))
+            r = pdf_text(page).replace('\n', ' ')
+            check('real: and TeX prints it ' + ('above' if first else 'below') + ' the lines (pdfLaTeX)', (r.find('Solve the problem') < r.find('s\u2190')) == first, r[:200])
+    # (review N8) algorithm2e's float, ruled: "Algorithm 1:" in bold, first
+    D2e = DOC.replace('\\usepackage{amsmath}', '\\usepackage{amsmath}\n\\usepackage[ruled]{algorithm2e}').replace('Agent income here.', 'See Algorithm~\\ref{alg:b}.\n\n\\begin{algorithm}\n$s \\gets 0$\\;\n\\caption{Solve it}\\label{alg:b}\n\\end{algorithm}')
+    load_doc(page, D2e)
     txt = page.evaluate("document.getElementById('pages').innerText").replace('\u00a0', ' ')
-    check('real: an algorithm float is drawn with its caption, number and lines', 'Algorithm 1: Solve the problem' in txt and 'See Algorithm 1.' in txt and '\\State' in txt, txt[:300])
+    check('real: algorithm2e\'s ruled float drawn "Algorithm 1: Solve it" first, "See Algorithm 1."', 'See Algorithm 1.' in txt and 0 <= txt.find('Algorithm 1: Solve it') < txt.find('s\u2190'), txt[:200])
+    three(page, D2e, 'real algorithm2e', ('See Algorithm 1.', 'Algorithm 1:Solve it'))
+    load_doc(page, alg(''))
     before = src(page)
     click_text(page, 'Solve the', 5); k.press('Enter'); settle(page, 200); k.type('X')
     settle(page, 200)
