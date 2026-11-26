@@ -382,13 +382,17 @@ def caret_keys(page):
     load_doc(page, EQ); click_text(page, 'paragraph is here', 3); key(page, 'Control+Shift+ArrowDown', 150)
     check('Ctrl+Shift+Down selects to the paragraph\'s end', selected(page) == 'agraph is here and it runs on with words enough to stand above the formula.', selected(page))
     # End on a line whose last thing is a citation, a reference, a footnote mark or an address: the
-    # browser's End went on to the next paragraph's start, so the words typed next began it (Shift+End
-    # then Delete: a guard on the selection's side of the same fix)
+    # browser's End went on to the next paragraph's start, so the words typed next began it; Shift+End
+    # selected into that paragraph's start, a paragraph mark Word leaves out (what Delete did with it
+    # came out the same, so the check is on the selection itself)
     for tail, name in (('\\cite{k}', 'a citation'), ('\\footnote{A note.}', 'a footnote mark'), ('\\url{http://a.b}', 'an address'), ('\\ref{x}', 'a reference')):
         doc = '\\documentclass{article}\n\\usepackage{hyperref}\n\\begin{document}\nSee the site ' + tail + '\n\nNext para.\n\\end{document}\n'
         load_doc(page, doc); click_text(page, 'See the', 2); key(page, 'End', 150)
         typed_at(page, 'End', doc, 'End on a paragraph ending in %s stays on its line' % name, tail + 'Q\n')
-        load_doc(page, doc); click_text(page, 'See the', 2); key(page, 'Shift+End', 150); key(page, 'Delete', 150)
+        load_doc(page, doc); click_text(page, 'See the', 2); key(page, 'Shift+End', 150)
+        ends = page.evaluate("(() => { const s = getSelection(), b = (n) => (n.nodeType === 1 ? n : n.parentElement).closest('.it'); return [b(s.anchorNode) === b(s.focusNode), s.toString().includes('\\n')]; })()")
+        check('Shift+End on a paragraph ending in %s selects to the line\'s end, not into the next paragraph' % name, ends == [True, False], (ends, selected(page)))
+        key(page, 'Delete', 150)
         got = src(page)
         check('Shift+End then Delete on a paragraph ending in %s keeps the next paragraph apart' % name, 'Se\n\nNext para.' in got, got[got.find('Se'):got.find('Se') + 30])
 
