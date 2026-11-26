@@ -3201,7 +3201,10 @@ class App {
     // a center hold paragraphs of their own, and one left out of a frame is set nowhere; review H3)
     const name = m && m[1].trim(), thm = name && (THM_STYLES[name] || name === 'assumption' || (this.model && this.model.thms && this.model.thms.has(name)));
     if (!m || !(thm || /^(quote|quotation|verse)$/.test(name))) return false;
-    const after = g.el.previousElementSibling;
+    // (after the environment's last element on the page: the element before the empty line was
+    // taken, the paragraph above a theorem where the line stood there)
+    const prev = g.el.previousElementSibling, B = this.renderer.blocks.find((b) => b.f === g.f && b.items.length && b.s < g.pos && g.pos < b.e);
+    const after = B && !(prev && prev.dataset.b === String(B.id)) ? [...this.root.querySelectorAll('.it[data-b="' + B.id + '"]')].pop() || prev : prev;
     if (!after) return false;
     this.showGhost(after, g.f, g.pos + m[0].length);
     return true;
@@ -3536,6 +3539,13 @@ class App {
     const x = inside ? this.index.find(f, pos, before ? 1 : -1) : null, it = x && !x.inexact && x.node && x.node.parentElement ? x.node.parentElement.closest('.it.p') : null;
     if (it && this.root.contains(it) && it.dataset.b === String(inside.id)) { this.showGhost(it, f, pos, { before: !!before, style, line }); return; }
     const els = (B) => [...this.root.querySelectorAll('.it[data-b="' + B.id + '"]')];
+    // (or after a display of the block ending there: the line after the display that ends a
+    // theorem, drawn above the theorem. Not in a list, where the letter after a display goes on
+    // the display's line, \]Q: mathfield.py)
+    if (inside && !before) {
+      const all = els(inside), d = all.some((e) => e.dataset.li) ? null : all.find((e) => { const i = e.dataset.a ? atomOfEl(e) : null; return !!i && i.f === f && i.e === pos; });
+      if (d) { this.showGhost(d, f, pos, { style, line }); return; }
+    }
     const at = prev ? els(prev).pop() : next ? els(next)[0] : null;
     if (at) this.showGhost(at, f, pos, { before: !prev, style, line });
   }

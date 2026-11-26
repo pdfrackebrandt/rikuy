@@ -1710,6 +1710,7 @@ def run():
             ghost_kept(page, w)
             ghost_enters(page, w)
             ghost_inside(page, w)
+            ghost_display(page, w)
             ghost_aligned(page, w)
             check('no console errors (Enter\'s empty paragraphs, %d px)' % w, not errors, errors[:5])
             browser.close()
@@ -1936,6 +1937,27 @@ def ghost_inside(page, w):
         s = src(page)
         check('Enter at the start of %r, Up, then a relayout: the empty paragraph and the caret right above it, the words typed before it (%d px)' % (words, w),
               r['before'] and r['above'] > -2 and 'Zz\n\n' + words in s, (r, s[s.find('Zz') - 30:][:80]))
+
+
+def ghost_display(page, w):
+    """The line after a display that ends a theorem (Esc out of the equation's field): drawn under
+    the equation, in the theorem, where what is typed goes; Enter twice, out of the theorem, under
+    its last line. It was drawn above the theorem, the caret there, though the words went after the
+    equation (review nit of bugs-ghost; main does it too)."""
+    D = ('\\documentclass{article}\n\\usepackage{amsmath,amsthm}\n\\newtheorem{theorem}{Theorem}\n\\begin{document}\nBefore.\n\n'
+         '\\begin{theorem}\nTheorem words:\n\\begin{equation}y=2\\end{equation}\n\\end{theorem}\n\nAfter.\n\\end{document}\n')
+    at = """() => { const g = window.rikuy.ghost, dm = document.querySelector('#pages .it.dm'), C = getSelection().getRangeAt(0).getBoundingClientRect();
+      return { after: !!g && g.el.previousElementSibling === dm, below: C.top - dm.getBoundingClientRect().bottom }; }"""
+    for keys, want, name in (([], 'y=2\\end{equation}\nZz\n\\end{theorem}', 'the line after it, in the theorem'),
+                             (['Enter', 'Enter'], '\\end{theorem}\n\nZz\n\nAfter.', 'Enter twice there: a paragraph after the theorem')):
+        load_doc(page, D)
+        page.click('.it.dm >> nth=0'); page.wait_for_selector('#pop-field', timeout=8000); settle(page, 300)
+        page.keyboard.press('Escape'); settle(page, 120, full=True)
+        for k in keys: page.keyboard.press(k); settle(page, 100)
+        a = page.evaluate(at)
+        page.keyboard.type('Zz'); settle(page, 300, full=True)
+        check('Esc out of a display ending a theorem, %s: the empty line and the caret under the equation, the words written there (%d px)' % (name, w),
+              a['after'] and a['below'] > -2 and want in src(page), (a, src(page)[src(page).find('Theorem words'):][:90]))
 
 
 def ghost_aligned(page, w):
